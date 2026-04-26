@@ -12,6 +12,7 @@ COPY deno.json deno.lock ./
 COPY src ./src
 COPY static ./static
 COPY drizzle ./drizzle
+COPY drizzle.config.ts ./drizzle.config.ts
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 
 RUN deno cache --node-modules-dir=auto src/main.ts
