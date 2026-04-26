@@ -30,7 +30,9 @@ export interface LobbyCreateInput {
 
 const LISTENING_IP = Deno.env.get("LISTENING_IP") ?? "0.0.0.0";
 const OVERRIDE_IP =
-  LISTENING_IP !== "0.0.0.0" && LISTENING_IP !== "127.0.0.1"
+  LISTENING_IP !== "0.0.0.0" &&
+  LISTENING_IP !== "127.0.0.1" &&
+  LISTENING_IP !== "localhost"
     ? LISTENING_IP
     : null;
 
