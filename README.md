@@ -24,8 +24,8 @@ connect to:
 docker run -d \
   --name mgo2-server \
   --network host \
-  -e LISTENING_IP=<YOUR_IP> \
-  -e JWT_SECRET=changeme \
+  -e LISTENING_IP="0.0.0.0" \
+  -e JWT_SECRET="changeme" \
   -v mgo2-data:/app/data \
   -v postgres-data:/var/lib/postgresql \
   ghcr.io/miguelripoll23/mgo2-server:main
