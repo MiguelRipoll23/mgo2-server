@@ -37,9 +37,9 @@ configuration. Subsequent restarts skip seeding.
 
 ## RPCS3 configuration
 
-Using the custom RPCS3 build for Metal Gear Online 2, go to the `Config`
-section, go to the tab `Metal Gear Onlien 2` and change the DNS IP address to
-your listening IP.
+Using the custom RPCS3 build for Metal Gear Online 2, open the `Config` menu,
+navigate to the `Metal Gear Online 2` tab, and set the DNS IP address to your
+listening IP address.
 
 ## Server configuration
 
