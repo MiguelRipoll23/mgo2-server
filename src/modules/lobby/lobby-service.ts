@@ -28,6 +28,12 @@ export interface LobbyCreateInput {
   playersCount?: number;
 }
 
+const LISTENING_IP = Deno.env.get("LISTENING_IP") ?? "0.0.0.0";
+const OVERRIDE_IP =
+  LISTENING_IP !== "0.0.0.0" && LISTENING_IP !== "127.0.0.1"
+    ? LISTENING_IP
+    : null;
+
 // Stale threshold: instances that haven't reported in 2× the cron interval are excluded.
 // Default cron is every 15 minutes → 30 minutes stale threshold.
 const STALE_SECONDS = (() => {
@@ -82,10 +88,13 @@ export class LobbyService {
 
       this.cache = rows.map((lobby) => ({
         ...lobby,
+        ipAddress: OVERRIDE_IP ?? lobby.ipAddress,
         playersCount: sumByLobbyId.get(lobby.id) ?? 0,
       }));
     } else {
-      this.cache = rows;
+      this.cache = OVERRIDE_IP
+        ? rows.map((lobby) => ({ ...lobby, ipAddress: OVERRIDE_IP }))
+        : rows;
     }
   }
 
@@ -168,7 +177,7 @@ export class LobbyService {
       typeId: lobby.typeId,
       subtypeId: lobby.subtypeId,
       name: lobby.name,
-      ipAddress: lobby.ipAddress,
+      ipAddress: OVERRIDE_IP ?? lobby.ipAddress,
       port: lobby.port,
       playersCount: lobby.playersCount,
       beginnerOnly: lobby.beginnerOnly,
