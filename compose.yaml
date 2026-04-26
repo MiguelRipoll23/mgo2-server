@@ -1,0 +1,17 @@
+services:
+  mgo2-server:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/mgo2-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    network_mode: host
+    volumes:
+      - mgo2-data:/app/data
+      - postgres-data:/var/lib/postgresql
+    restart: unless-stopped
+
+volumes:
+  mgo2-data:
+  postgres-data:

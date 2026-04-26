@@ -1,0 +1,15 @@
+import "./get-game-list.ts";
+import "./get-host-settings.ts";
+import "./get-game-details.ts";
+import "./create-game.ts";
+import "./join-game.ts";
+import "./quit-game.ts";
+import "./host-player-connected.ts";
+import "./host-player-disconnected.ts";
+import "./host-set-player-team.ts";
+import "./host-kick-player.ts";
+import "./host-pass.ts";
+import "./host-update-stats.ts";
+import "./host-set-game.ts";
+import "./host-update-pings.ts";
+import "./host-start-round.ts";
