@@ -38,7 +38,8 @@
     "generate": "deno run --permission-set=database --node-modules-dir npm:drizzle-kit generate",
     "migrate": "deno run --permission-set=database --node-modules-dir npm:drizzle-kit migrate",
     "setup": "deno run --permission-set=database --env src/tasks/seed-data.ts",
-    "dns": "deno run --permission-set=development --env src/tasks/dns.ts"
+    "dns": "deno run --permission-set=development --env src/tasks/dns.ts",
+    "udp": "deno run --permission-set=development --env src/tasks/udp-dump.ts"
   },
   "unstable": ["cron", "net"]
 }
