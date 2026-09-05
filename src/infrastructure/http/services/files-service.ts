@@ -82,6 +82,9 @@ export class FilesService {
     try {
       const upstream = await fetch(`${LAUNCHER_SERVER}/files/${filePath}`, {
         method,
+        headers: {
+          "user-agent": "Mozilla/5.0 (PLAYSTATION 3; 3.55)",
+        },
       });
       if (upstream.ok) {
         if (method === "HEAD") {
