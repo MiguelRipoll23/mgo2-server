@@ -6,6 +6,7 @@ import {
   gamePlayersTable,
   gameRoundsTable,
   hostReviewsTable,
+  characterConnectionsTable,
 } from "../../db/schema.ts";
 import type { Game, NewGame } from "../../db/schema.ts";
 
@@ -16,12 +17,8 @@ export interface ConnectionInfo {
   privatePort: number;
 }
 
-/**
- * Peer-to-peer endpoints registered by hosts via 0x4700, keyed by character.
- * In-memory: an endpoint is only meaningful while its host is connected, and a
- * stale row after a crash would hand joiners an unreachable address.
- */
-const connectionInfos = new Map<number, ConnectionInfo>();
+/** Rows of the character_connections table, keyed by character id. */
+type ConnectionRow = typeof characterConnectionsTable.$inferSelect;
 
 /** The 1..5 star range the client's own picker sends; anything else is a mis-parse. */
 export const MIN_HOST_RATING = 1;
@@ -72,13 +69,46 @@ export class GameService {
   }
 
   // ── Peer-to-peer endpoints (0x4700 → 0x4321 handoff) ──────────────────────
+  // DB-backed so a seed can provision a standing endpoint (e.g. the P2P
+  // TESTING host); a live 0x4700 push upserts over it.
 
-  saveConnectionInfo(characterId: number, info: ConnectionInfo): void {
-    connectionInfos.set(characterId, info);
+  async saveConnectionInfo(characterId: number, info: ConnectionInfo): Promise<void> {
+    await this.db
+      .insert(characterConnectionsTable)
+      .values({
+        character_id: characterId,
+        public_ip: info.publicIp,
+        public_port: info.publicPort,
+        private_ip: info.privateIp,
+        private_port: info.privatePort,
+      })
+      .onConflictDoUpdate({
+        target: characterConnectionsTable.character_id,
+        set: {
+          public_ip: info.publicIp,
+          public_port: info.publicPort,
+          private_ip: info.privateIp,
+          private_port: info.privatePort,
+          updated_at: new Date(),
+        },
+      });
   }
 
-  getConnectionInfo(characterId: number): ConnectionInfo | null {
-    return connectionInfos.get(characterId) ?? null;
+  async getConnectionInfo(characterId: number): Promise<ConnectionInfo | null> {
+    const rows = await this.db
+      .select()
+      .from(characterConnectionsTable)
+      .where(eq(characterConnectionsTable.character_id, characterId))
+      .limit(1);
+    const row: ConnectionRow | undefined = rows[0];
+    return row
+      ? {
+        publicIp: row.public_ip,
+        publicPort: row.public_port,
+        privateIp: row.private_ip,
+        privatePort: row.private_port,
+      }
+      : null;
   }
 
   // ── In-game roster (DB-backed: pings, teams, round attribution) ───────────

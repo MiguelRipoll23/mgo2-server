@@ -1,6 +1,15 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { sql } from "drizzle-orm";
-import { lobbiesTable, LobbyType } from "../db/schema.ts";
+import { eq, sql } from "drizzle-orm";
+import {
+  characterConnectionsTable,
+  charactersTable,
+  gamePlayersTable,
+  gamesTable,
+  lobbiesTable,
+  LobbyType,
+  usersTable,
+} from "../db/schema.ts";
+import { CryptoService } from "../core/services/crypto-service.ts";
 
 const databaseUrl = Deno.env.get("DATABASE_URL");
 
@@ -174,7 +183,7 @@ const lobbyRows = [
 
 console.log("Seeding lobby_game_types and lobbies tables...");
 
-await db.transaction(async (tx) => {
+const npcSeedResult = await db.transaction(async (tx) => {
   await tx.delete(lobbiesTable);
 
   // Delete all game types via raw SQL to avoid FK order issues
@@ -198,8 +207,103 @@ await db.transaction(async (tx) => {
   await tx.execute(
     sql`SELECT setval('lobbies_id_seq', (SELECT MAX(id) FROM lobbies))`,
   );
+
+  // ── NPC account, character, and the standing P2P test match ──────────────
+  // A second peer to test P2P against: log in as npc/npc, and a hosted game
+  // named "P2P TESTING" is always up in the Free Battle lobby.
+  const freeBattleLobbyId =
+    lobbyRows.find((row) => row.name === "Free Battle")?.id ?? 3;
+
+  // Account "npc" with password "npc" (stored as the MD5 the login flow
+  // compares against).
+  const npcPasswordHash = new CryptoService().md5Hex("npc");
+  let [npcUser] = await tx
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.display_name, "npc"))
+    .limit(1);
+  if (!npcUser) {
+    [npcUser] = await tx
+      .insert(usersTable)
+      .values({ display_name: "npc", password: npcPasswordHash })
+      .returning();
+  }
+
+  // Character "npc" parked in the Free Battle lobby.
+  let [npcCharacter] = await tx
+    .select()
+    .from(charactersTable)
+    .where(eq(charactersTable.name, "npc"))
+    .limit(1);
+  if (!npcCharacter) {
+    [npcCharacter] = await tx
+      .insert(charactersTable)
+      .values({
+        user_id: npcUser.id,
+        name: "npc",
+        lobby_id: freeBattleLobbyId,
+        comment: "P2P test peer",
+      })
+      .returning();
+  }
+
+  // The standing match. Re-created on every seed run so its settings always
+  // match this file. Joins require the host's registered 0x4700 endpoint, so
+  // the NPC must actually be connected (in game, past check-session and its
+  // 0x4700 push) for a P2P handoff to succeed — that is the thing being
+  // tested.
+  await tx.delete(gamesTable).where(eq(gamesTable.name, "P2P TESTING"));
+  const [p2pGame] = await tx
+    .insert(gamesTable)
+    .values({
+      host_id: npcCharacter.id,
+      lobby_id: freeBattleLobbyId,
+      name: "P2P TESTING",
+      password: "",
+      comment: "Standing match for P2P testing",
+      max_players: 8,
+      games: JSON.stringify([[1, 0, 0]]),
+    })
+    .returning();
+
+  // Required FK row: the host is the game's first roster member. Pings,
+  // round attribution and the details player list all read from here.
+  await tx
+    .insert(gamePlayersTable)
+    .values({ game_id: p2pGame.id, character_id: npcCharacter.id })
+    .onConflictDoNothing();
+
+  // The host's P2P endpoint, required by the join handoff (0x4321): without
+  // a row the join refuses with a generic error. Provisioned at loopback
+  // port 5731 (external == internal) so a test client dials the server host
+  // itself; a real client's 0x4700 push overwrites this row when the NPC
+  // logs in for real.
+  await tx
+    .insert(characterConnectionsTable)
+    .values({
+      character_id: npcCharacter.id,
+      public_ip: "127.0.0.1",
+      public_port: 5731,
+      private_ip: "127.0.0.1",
+      private_port: 5731,
+    })
+    .onConflictDoUpdate({
+      target: characterConnectionsTable.character_id,
+      set: {
+        public_ip: "127.0.0.1",
+        public_port: 5731,
+        private_ip: "127.0.0.1",
+        private_port: 5731,
+      },
+    });
+
+  return { gameId: p2pGame.id, characterId: npcCharacter.id };
 });
 
 console.log("Done.");
 console.log(`Game types inserted: ${gameTypeRows.length}`);
 console.log(`Lobbies inserted: ${lobbyRows.length}`);
+console.log(
+  `P2P test match: game ${npcSeedResult.gameId} "P2P TESTING" hosted by character ${npcSeedResult.characterId} "npc" in Free Battle`,
+);
+console.log("NPC account: npc / npc");
