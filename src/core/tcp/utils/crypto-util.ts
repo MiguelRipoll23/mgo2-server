@@ -3,6 +3,7 @@ import {
   XOR_KEY_BYTES,
   BLOWFISH_KEY_PACKET,
   BLOWFISH_KEY_AUTH,
+  SESSION_FIELD_IV,
 } from "../../constants/crypto-keys-constants.ts";
 
 // ---------------------------------------------------------------------------
@@ -165,6 +166,69 @@ export function computeHmacMd5(
   outerMessage.set(innerHash, HMAC_BLOCK_SIZE);
 
   return md5(outerMessage);
+}
+
+// ---------------------------------------------------------------------------
+// Session field — the value the client presents in the 0x3003 check-session
+// packet. Ported from the reference SessionField.java (ELF-derived, verified
+// against live captures).
+//
+// The client never sends the login token back. When it parses the login reply
+// it keeps the token as its sixteen ASCII characters, immediately derives a
+// sixteen-byte value from them, and presents THAT on check-session. So the
+// server never inverts anything: it applies the same transform to the token it
+// issued and stores the result (hex) for a plain lookup at check-session time.
+//
+// The transform (context = 8-byte IV followed by a 56-byte key):
+//   C[i] = decrypt(P[i]) XOR P[i-1],  with P[-1] = IV
+//
+// Note the block is DECRYPTED rather than encrypted, and the XOR is against
+// the previous PLAINTEXT block, not the previous ciphertext. That is neither
+// ECB nor CBC — which is why the transform resisted being guessed from
+// captured pairs. Capture-proven vectors pin it:
+//   1.36: token "f5a0880bc3a40336" -> 8dde80bae7eac2753b7c89139395cb21
+//   1.0:  token "1888e089ebe181fd" -> a5a0dd9199494cf00e06ae9dc4655563
+// (this server serves 1.36, whose kit schedule is BLOWFISH_KEY_AUTH above)
+// ---------------------------------------------------------------------------
+
+const SESSION_FIELD_TOKEN_LENGTH = 16;
+const SESSION_FIELD_LENGTH = 16;
+
+export function deriveSessionField(token: string): Uint8Array {
+  const plain = new Uint8Array(SESSION_FIELD_TOKEN_LENGTH);
+  for (let index = 0; index < SESSION_FIELD_TOKEN_LENGTH; index++) {
+    plain[index] = token.charCodeAt(index) & 0xff;
+  }
+
+  const out = new Uint8Array(SESSION_FIELD_LENGTH);
+  let previous = SESSION_FIELD_IV;
+
+  for (let offset = 0; offset < plain.length; offset += 8) {
+    const block = plain.slice(offset, offset + 8);
+    const transformed = block.slice();
+    blowfishDecrypt(transformed, AUTH_KEY_VIEW);
+    for (let i = 0; i < 8; i++) {
+      out[offset + i] = transformed[i] ^ previous[i];
+    }
+    // The chain carries the plaintext block forward, not the block just written.
+    previous = block;
+  }
+
+  return out;
+}
+
+/** The derived field in the form stored on the session row (hex). */
+export function storeSessionField(token: string): string {
+  return Array.from(deriveSessionField(token))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** Renders a field taken off the wire into the form storeSessionField produces. */
+export function storedSessionFieldFromWire(field: Uint8Array): string {
+  return Array.from(field.slice(0, SESSION_FIELD_LENGTH))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 // ---------------------------------------------------------------------------

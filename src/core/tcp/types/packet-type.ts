@@ -11,5 +11,7 @@ export interface Packet {
 }
 
 export const HEADER_SIZE = 24;
-export const MAX_PAYLOAD_LENGTH = 0x3ff;
+// 0x400 (1024) is accepted on decode: payloads are zero-padded to block
+// alignment for Blowfish, and padded inbound packets carry the padded length.
+export const MAX_PAYLOAD_LENGTH = 0x400;
 export const MAX_PACKET_LENGTH = MAX_PAYLOAD_LENGTH + HEADER_SIZE + 1;

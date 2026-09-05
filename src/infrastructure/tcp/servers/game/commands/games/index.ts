@@ -13,3 +13,6 @@ import "./host-update-stats.ts";
 import "./host-set-game.ts";
 import "./host-update-pings.ts";
 import "./host-start-round.ts";
+import "./host-skill-experience.ts";
+import "./rate-host.ts";
+import "./echo.ts";

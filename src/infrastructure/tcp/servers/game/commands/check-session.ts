@@ -3,20 +3,22 @@ import { GameCommandHandler } from "../../../../../core/tcp/decorators/game-comm
 import type { ICommandHandler } from "../../../../../core/tcp/interfaces/command-handler-interface.ts";
 import type { TcpSession } from "../../../../../core/tcp/types/session-type.ts";
 import type { Packet } from "../../../../../core/tcp/types/packet-type.ts";
-import { PacketReader, PacketWriter } from "../../../../../core/tcp/utils/packet-builder-util.ts";
+import { PacketReader } from "../../../../../core/tcp/utils/packet-builder-util.ts";
 import { SessionsService } from "../../../../../modules/auth/sessions-service.ts";
 import { CharacterService } from "../../../../../modules/character/character-service.ts";
 import { LobbyTrackerService } from "../../../services/lobby-tracker-service.ts";
-import { LobbyService } from "../../../../../modules/lobby/lobby-service.ts";
-import { sendError, sendPacket, sendStartEndPacket } from "../../../../../core/tcp/utils/session-helpers-util.ts";
-import { ERROR_INVALID_SESSION } from "../../../../../core/constants/error-codes-constants.ts";
-import { XOR_SESSION_ID_BYTES } from "../../../../../core/constants/crypto-keys-constants.ts";
+import { sendResult } from "../../../../../core/tcp/utils/session-helpers-util.ts";
+import { storedSessionFieldFromWire } from "../../../../../core/tcp/utils/crypto-util.ts";
 import {
-  xorBufferWithKey,
-  encryptAuthPayload,
-} from "../../../../../core/tcp/utils/crypto-util.ts";
+  RESULT_NONE,
+  RESULT_LOBBY_LOGIN_AGAIN,
+} from "../../../../../core/constants/error-codes-constants.ts";
 
-const INVALID_SESSION_ERROR = 0x80000201;
+import { GameService } from "../../../../../modules/game/game-service.ts";
+
+// Field length of the check-session value the client derives from its login
+// token. The payload is {u32 claimedCharacterId, byte[16] sessionField}.
+const SESSION_FIELD_LENGTH = 16;
 
 @injectable()
 @GameCommandHandler(0x3003)
@@ -25,69 +27,128 @@ export class CheckSessionHandler implements ICommandHandler {
     private sessionsService = inject(SessionsService),
     private characterService = inject(CharacterService),
     private lobbyTrackerService = inject(LobbyTrackerService),
-    private lobbyService = inject(LobbyService),
   ) {}
 
   async handle(session: TcpSession, packet: Packet): Promise<void> {
+    if (packet.payload.length < 4 + SESSION_FIELD_LENGTH) {
+      console.log(
+        `[tcp][game] check session: payload too short (${packet.payload.length} bytes)`,
+      );
+      await sendResult(session, 0x3004, RESULT_LOBBY_LOGIN_AGAIN);
+      return;
+    }
+
     const reader = new PacketReader(packet.payload);
-    const characterId = reader.readUint32();
-    const rawSessionBytes = reader.readBytes(8);
-    const _unknown = reader.readBytes(8);
+    const claimedCharacterId = reader.readUint32();
+    const sessionField = storedSessionFieldFromWire(reader.readBytes(SESSION_FIELD_LENGTH));
 
-    xorBufferWithKey(rawSessionBytes, XOR_SESSION_ID_BYTES);
-    encryptAuthPayload(rawSessionBytes);
-
-    const sessionToken = new TextDecoder("iso-8859-1").decode(rawSessionBytes);
-    const user = await this.sessionsService.findSessionByToken(sessionToken);
+    // The client derived this from its login token, so the session row
+    // already holds the same value and it is matched directly. Nothing is
+    // decoded back into a token.
+    const user = await this.sessionsService.findSessionByToken(sessionField);
 
     if (user === null) {
-      console.log(`[tcp][game] session not found: ${sessionToken}`);
-      await sendError(session, 0x3004, ERROR_INVALID_SESSION);
+      console.log(
+        `[tcp][game] check session: no account holds the presented session`,
+      );
+      await sendResult(session, 0x3004, RESULT_LOBBY_LOGIN_AGAIN);
       return;
     }
 
     session.userId = user.user_id;
 
-    const character = await this.characterService.findById(characterId);
+    // The client decides which of its characters is entering, so the check is
+    // OWNERSHIP, not equality with whatever we last recorded. Requiring the
+    // two to match rejected a legitimate login: creating a character points
+    // current_character_id at the new one, and entering the lobby as a
+    // DIFFERENT character then failed with a bogus invalid-session error.
+    //
+    // A leaked token still cannot claim someone else's character: the id has
+    // to belong to this account. What it can do is pick between this
+    // account's own characters, which is exactly what the character-select
+    // screen is for.
+    const character = await this.characterService.findById(claimedCharacterId);
     if (!character || character.user_id !== user.user_id) {
-      await sendError(session, 0x3004, INVALID_SESSION_ERROR);
+      console.log(
+        `[tcp][game] check session: user ${user.user_id} claimed character ${claimedCharacterId}, which it does not own`,
+      );
+      await sendResult(session, 0x3004, RESULT_LOBBY_LOGIN_AGAIN);
       return;
     }
 
-    session.characterId = characterId;
+    session.characterId = claimedCharacterId;
     session.lobbyId = character.lobby_id;
-    session.userId = user.user_id;
 
     if (session.lobbyId !== null) {
       this.lobbyTrackerService.joinLobby(session, session.lobbyId);
       await this.lobbyTrackerService.syncAllLobbyCounts();
     }
 
-    await sendStartEndPacket(session, 0x3004);
+    await sendResult(session, 0x3004, RESULT_NONE);
   }
 }
+
+// ── 0x4700: the client's peer-to-peer endpoint ──────────────────────────────
+// Payload: {u16 privatePort, char privateIp[16], u16 publicPort, u16 unknown}.
+// The endpoint is persisted against the character: the join reply (0x4321)
+// hands it to every joining player, so a join cannot proceed past the P2P
+// handoff unless the host registered here. The public IP is taken from the
+// socket rather than trusted from the payload.
+
+const PRIVATE_IP_LENGTH = 16;
+const CONNECTION_INFO_SIZE = 2 + PRIVATE_IP_LENGTH + 2;
 
 @injectable()
 @GameCommandHandler(0x4700)
 export class GetPlayerDataHandler implements ICommandHandler {
-  async handle(session: TcpSession, packet: Packet): Promise<void> {
-    const reader = new PacketReader(packet.payload);
-    reader.readBytes(16);
+  constructor(private gameService = inject(GameService)) {}
 
-    await sendStartEndPacket(session, 0x4701);
+  async handle(session: TcpSession, packet: Packet): Promise<void> {
+    if (packet.payload.length < CONNECTION_INFO_SIZE) {
+      // Nothing readable to register — acknowledge anyway: the client blocks
+      // on this reply and an unanswered command is a guaranteed hang.
+      await sendResult(session, 0x4701, RESULT_NONE);
+      return;
+    }
+
+    const reader = new PacketReader(packet.payload);
+    const privatePort = reader.readUint16();
+    const privateIp = readNulString(reader.readBytes(PRIVATE_IP_LENGTH));
+    const publicPort = reader.readUint16();
+
+    const charaId = session.characterId;
+    const publicIp = publicIpFromRemote(session.remoteAddress);
+    if (charaId === null || publicIp === null) {
+      await sendResult(session, 0x4701, RESULT_NONE);
+      return;
+    }
+
+    await this.gameService.saveConnectionInfo(charaId, {
+      publicIp,
+      publicPort,
+      privateIp,
+      privatePort,
+    });
+
+    await sendResult(session, 0x4701, RESULT_NONE);
   }
 }
 
-@injectable()
-@GameCommandHandler(0x4440)
-export class GetPlayerOptionsHandler implements ICommandHandler {
-  async handle(session: TcpSession, packet: Packet): Promise<void> {
-    const reader = new PacketReader(packet.payload);
-    reader.readUint8();
-
-    const writer = new PacketWriter();
-    writer.writeUint32(0);
-    writer.writeUint8(0);
-    await sendPacket(session, 0x4441, writer.build());
+function readNulString(bytes: Uint8Array): string {
+  const chars: string[] = [];
+  for (const byte of bytes) {
+    if (byte === 0) break;
+    chars.push(String.fromCharCode(byte));
   }
+  return chars.join("");
+}
+
+// Strips the port from "host:port" (IPv4) or "[host]:port" (IPv6).
+function publicIpFromRemote(remoteAddress: string): string | null {
+  if (remoteAddress.startsWith("[")) {
+    const end = remoteAddress.indexOf("]");
+    return end > 0 ? remoteAddress.slice(1, end) : null;
+  }
+  const colon = remoteAddress.lastIndexOf(":");
+  return colon > 0 ? remoteAddress.slice(0, colon) : remoteAddress;
 }

@@ -2,7 +2,12 @@
 export const XOR_KEY = 0x5a7085af;
 export const XOR_KEY_BYTES = new Uint8Array([0x5a, 0x70, 0x85, 0xaf]);
 
-export const XOR_SESSION_ID_BYTES = new Uint8Array([
+// First eight bytes of the check-session (0x3003) derived context — the other
+// half is the BLOWFISH_KEY_AUTH schedule below. The pair must switch together:
+// mixing one build's IV with another's schedule silently produces a wrong
+// field rather than an error. This is the 1.36 patch kit's IV (the disc build
+// used b0 78 1d 53 65 e3 91 0e).
+export const SESSION_FIELD_IV = new Uint8Array([
   0x35, 0xd5, 0xc3, 0x8e, 0xd0, 0x11, 0x0e, 0xa8,
 ]);
 
@@ -338,6 +343,12 @@ export const BLOWFISH_KEY_PACKET: Uint8Array = new Uint8Array([
   0x93, 0x8a, 0x1f, 0x5b, 0xd3, 0xc7, 0x7e, 0xe3,
 ]);
 
+// Blowfish schedule for the check-session (0x3003) field transform — the 56-byte key half of the
+// derived context whose IV is SESSION_FIELD_IV above. This is the 1.36 patch kit's schedule
+// (reference crypto/session_136.key), reproduced from the `kit` file the 1.36 patch ships at
+// o/dl/p/kit, which shadows the disc's o/kit. Not compiled into the game: a registration function
+// (byte-identical in both builds) opens the file, reads 64 bytes and registers them as crypto
+// mode 6.
 export const BLOWFISH_KEY_AUTH: Uint8Array = new Uint8Array([
   0xe0, 0xcc, 0x5d, 0x24, 0x95, 0x29, 0x33, 0x77, 0xcd, 0x6c, 0x46, 0x86, 0x98,
   0x8e, 0x57, 0x73, 0xb3, 0x13, 0xba, 0x4d, 0x27, 0x20, 0x9d, 0x38, 0x42, 0x6a,

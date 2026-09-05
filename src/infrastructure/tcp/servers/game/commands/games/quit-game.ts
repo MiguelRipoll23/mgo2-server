@@ -4,7 +4,8 @@ import type { ICommandHandler } from "../../../../../../core/tcp/interfaces/comm
 import type { TcpSession } from "../../../../../../core/tcp/types/session-type.ts";
 import type { Packet } from "../../../../../../core/tcp/types/packet-type.ts";
 import { GameService } from "../../../../../../modules/game/game-service.ts";
-import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import { sendResult } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import { RESULT_NONE } from "../../../../../../core/constants/error-codes-constants.ts";
 
 @injectable()
 @GameCommandHandler(0x4380)
@@ -16,10 +17,13 @@ export class QuitGameHandler implements ICommandHandler {
     if (gameId !== null) {
       const game = await this.gameService.findById(gameId);
       if (game && game.host_id === session.characterId) {
+        // Roster and round-snapshot rows cascade with the game.
         await this.gameService.delete(gameId);
+      } else if (game) {
+        await this.gameService.removePlayer(gameId, session.characterId ?? 0);
       }
       session.gameId = null;
     }
-    await sendPacket(session, 0x4381, null);
+    await sendResult(session, 0x4381, RESULT_NONE);
   }
 }

@@ -47,6 +47,23 @@ export async function sendStartEndPacket(
   await sendPacket(session, commandId, new Uint8Array(4));
 }
 
+/**
+ * Sends an explicit {u32 result} payload — the shape most "result-style" reply
+ * parsers actually read. An empty payload does NOT fail the client: its readers
+ * bound-check the 1023-byte receive buffer rather than the payload length, so a
+ * short reply is filled from stale buffer content (the failure mode behind
+ * several "works but only sometimes" reports).
+ */
+export async function sendResult(
+  session: TcpSession,
+  commandId: number,
+  result: number,
+): Promise<void> {
+  const payload = new Uint8Array(4);
+  new DataView(payload.buffer).setUint32(0, result >>> 0, false);
+  await sendPacket(session, commandId, payload);
+}
+
 export async function sendAck(session: TcpSession, commandId: number): Promise<void> {
   await sendPacket(session, commandId, null);
 }

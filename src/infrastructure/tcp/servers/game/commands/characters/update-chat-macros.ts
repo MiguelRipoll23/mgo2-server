@@ -5,7 +5,8 @@ import type { TcpSession } from "../../../../../../core/tcp/types/session-type.t
 import type { Packet } from "../../../../../../core/tcp/types/packet-type.ts";
 import { PacketReader } from "../../../../../../core/tcp/utils/packet-builder-util.ts";
 import { CharacterService } from "../../../../../../modules/character/character-service.ts";
-import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import { sendResult } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import { RESULT_NONE } from "../../../../../../core/constants/error-codes-constants.ts";
 
 const MACRO_TEXT_LENGTH = 64;
 
@@ -29,6 +30,6 @@ export class UpdateChatMacrosHandler implements ICommandHandler {
 
       await this.characterService.updateChatMacros(characterId, macros);
     }
-    await sendPacket(session, 0x4115, null);
+    await sendResult(session, 0x4115, RESULT_NONE);
   }
 }

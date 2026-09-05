@@ -7,7 +7,7 @@ import { PacketReader, PacketWriter } from "../../../../../../core/tcp/utils/pac
 import { CharacterService } from "../../../../../../modules/character/character-service.ts";
 import { ActiveGameSessionsService } from "../../../../services/active-game-sessions-service.ts";
 import { LobbyService } from "../../../../../../modules/lobby/lobby-service.ts";
-import { sendPacket, sendStartEndPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import { sendPacket, sendResult, sendStartEndPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
 
 const MAX_PER_PACKET = 15;
 
@@ -63,15 +63,17 @@ export class AddFriendsBlockedHandler implements ICommandHandler {
 
       const target = await this.characterService.findById(targetId);
       const dataWriter = new PacketWriter();
-      dataWriter.writeUint8(type);
+      // Reply is a SINGLE 0x4502 entry: {u32 lead(0), u32 target, u8 state,
+      // char[16] name}. ADDLIST breaks the start/entries/end idiom — no
+      // separate ack packet exists in the client's parser.
+      dataWriter.writeUint32(0);
       dataWriter.writeUint32(targetId);
+      dataWriter.writeUint8(type);
       dataWriter.writeFixedString(target?.name ?? "", 16);
-      dataWriter.writePadding(4);
-      await sendPacket(session, 0x4501, null);
       await sendPacket(session, 0x4502, dataWriter.build());
       return;
     }
-    await sendPacket(session, 0x4501, null);
+    await sendResult(session, 0x4502, 1);
   }
 }
 
@@ -94,14 +96,15 @@ export class RemoveFriendsBlockedHandler implements ICommandHandler {
       await this.characterService.removeFriendOrBlocked(characterId, targetId);
 
       const dataWriter = new PacketWriter();
+      // Reply is a SINGLE 0x4512 entry: {u32 lead(0), u8 state, u32 target} —
+      // note the field order differs from 0x4502 (state before id, no name).
+      dataWriter.writeUint32(0);
       dataWriter.writeUint8(type);
       dataWriter.writeUint32(targetId);
-      dataWriter.writePadding(4);
-      await sendPacket(session, 0x4511, null);
       await sendPacket(session, 0x4512, dataWriter.build());
       return;
     }
-    await sendPacket(session, 0x4511, null);
+    await sendResult(session, 0x4512, 1);
   }
 }
 

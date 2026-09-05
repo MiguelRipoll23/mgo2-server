@@ -15,6 +15,8 @@ export const loginRequestSchema = z.object({
 export const loginResponseSchema = z
   .string()
   .describe(
-    "Format: status,userId,perks,hexToken — e.g. 0,35771,1000000_1000000_...,c1850f7a00000000. " +
-      "status=0 on success, non-zero on error.",
+    "Format: status,userId,perks,hexToken — e.g. 0,35771,1000_1000_5000_10000_1000_3000_1000_1000_2000_1000,c1850f7a00000000. " +
+      "status=0 on success, non-zero on error. The perks field is build-specific: the 1.36 " +
+      "client requires ten underscore-separated integers (an empty field also parses); the 1.0 " +
+      "disc client requires exactly one integer. There is no value valid for both.",
   );

@@ -3,7 +3,8 @@ import { GameCommandHandler } from "../../../../../../core/tcp/decorators/game-c
 import type { ICommandHandler } from "../../../../../../core/tcp/interfaces/command-handler-interface.ts";
 import type { TcpSession } from "../../../../../../core/tcp/types/session-type.ts";
 import type { Packet } from "../../../../../../core/tcp/types/packet-type.ts";
-import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import { sendResult } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import { RESULT_NONE } from "../../../../../../core/constants/error-codes-constants.ts";
 import { GameService } from "../../../../../../modules/game/game-service.ts";
 import { CharacterService } from "../../../../../../modules/character/character-service.ts";
 import { CharacterStatsService } from "../../../../../../modules/character/character-stats-service.ts";
@@ -24,7 +25,7 @@ export class UpdateStatsHandler implements ICommandHandler {
 
   async handle(session: TcpSession, packet: Packet): Promise<void> {
     await processStatsPacket(session, packet, this.gameService, this.characterService, this.statsService);
-    await sendPacket(session, 0x4351, null);
+    await sendResult(session, 0x4351, RESULT_NONE);
   }
 }
 
@@ -43,7 +44,7 @@ export class HostUpdateStatsHandler implements ICommandHandler {
 
   async handle(session: TcpSession, packet: Packet): Promise<void> {
     await processStatsPacket(session, packet, this.gameService, this.characterService, this.statsService);
-    await sendPacket(session, 0x4391, null);
+    await sendResult(session, 0x4391, RESULT_NONE);
   }
 }
 

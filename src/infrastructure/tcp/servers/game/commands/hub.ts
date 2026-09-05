@@ -8,8 +8,10 @@ import { LobbyService } from "../../../../../modules/lobby/lobby-service.ts";
 import { LobbyTrackerService } from "../../../services/lobby-tracker-service.ts";
 import {
   sendPacket,
+  sendResult,
   sendStartEndPacket,
 } from "../../../../../core/tcp/utils/session-helpers-util.ts";
+import { RESULT_NONE } from "../../../../../core/constants/error-codes-constants.ts";
 
 const MAX_LOBBIES_PER_PACKET = 8;
 
@@ -21,7 +23,7 @@ export class GetLobbyDisconnectHandler implements ICommandHandler {
   async handle(session: TcpSession, _packet: Packet): Promise<void> {
     this.lobbyTrackerService.leaveLobby(session);
     await this.lobbyTrackerService.syncAllLobbyCounts();
-    await sendPacket(session, 0x4151, null);
+    await sendResult(session, 0x4151, RESULT_NONE);
   }
 }
 
@@ -86,10 +88,13 @@ export class GetGameLobbyInfoHandler implements ICommandHandler {
 @GameCommandHandler(0x4990)
 export class GetGameEntryInfoHandler implements ICommandHandler {
   async handle(session: TcpSession, _packet: Packet): Promise<void> {
+    // The parser does NOT skip this block: result, a word into rec+0x120,
+    // then a FIXED loop of four 57-byte records — 4 + 4 + 4*57 = 236 bytes.
+    // The previous 172-byte reply was read out of stale receive buffer.
     const writer = new PacketWriter()
-      .writeUint32(0)
-      .writeUint32(1)
-      .writePadding(0xa4);
+      .writeUint32(RESULT_NONE) // result
+      .writeUint32(4) // record count (client overwrites this slot with 4)
+      .writePadding(4 * 57); // four 57-byte records, layout undecoded
     await sendPacket(session, 0x4991, writer.build());
   }
 }
@@ -98,7 +103,7 @@ export class GetGameEntryInfoHandler implements ICommandHandler {
 @GameCommandHandler(0x43a2)
 export class HostUnknown43a2Handler implements ICommandHandler {
   async handle(session: TcpSession, _packet: Packet): Promise<void> {
-    await sendPacket(session, 0x43a3, null);
+    await sendResult(session, 0x43a3, RESULT_NONE);
   }
 }
 
@@ -106,14 +111,16 @@ export class HostUnknown43a2Handler implements ICommandHandler {
 @GameCommandHandler(0x43c0)
 export class HostUnknown43c0Handler implements ICommandHandler {
   async handle(session: TcpSession, _packet: Packet): Promise<void> {
-    await sendPacket(session, 0x43c1, null);
+    await sendResult(session, 0x43c1, RESULT_NONE);
   }
 }
 
+// Sole 0x4440 handler (was registered in both hub.ts and check-session.ts,
+// one silently shadowing the other). Echo answers {u32 result=0}.
 @injectable()
 @GameCommandHandler(0x4440)
 export class ChatUnknown4440Handler implements ICommandHandler {
   async handle(session: TcpSession, _packet: Packet): Promise<void> {
-    await sendPacket(session, 0x4441, null);
+    await sendResult(session, 0x4441, RESULT_NONE);
   }
 }

@@ -5,7 +5,8 @@ import type { TcpSession } from "../../../../../../core/tcp/types/session-type.t
 import type { Packet } from "../../../../../../core/tcp/types/packet-type.ts";
 import { PacketReader, PacketWriter } from "../../../../../../core/tcp/utils/packet-builder-util.ts";
 import { CharacterService } from "../../../../../../modules/character/character-service.ts";
-import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import { sendPacket, sendResult } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import { RESULT_NONE } from "../../../../../../core/constants/error-codes-constants.ts";
 
 const HOST_SETTINGS_RESPONSE_SIZE = 128;
 
@@ -57,6 +58,6 @@ export class CheckHostSettingsHandler implements ICommandHandler {
         settingsJson,
       );
     }
-    await sendPacket(session, 0x4311, null);
+    await sendResult(session, 0x4311, RESULT_NONE);
   }
 }

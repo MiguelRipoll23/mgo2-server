@@ -6,6 +6,7 @@ import "./commands/get-character-list.ts";
 import "./commands/create-character.ts";
 import "./commands/select-character.ts";
 import "./commands/delete-character.ts";
+import "./commands/check-character-name.ts";
 
 export class AccountServer extends BaseTcpServer {
   protected readonly serverType = "account" as const;

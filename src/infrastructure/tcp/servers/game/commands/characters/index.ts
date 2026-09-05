@@ -8,6 +8,7 @@ import "./get-chat-macros.ts";
 import "./get-post-game-info.ts";
 import "./get-personal-info.ts";
 import "./update-personal-info.ts";
+import "./commit-outfit.ts";
 import "./get-gear.ts";
 import "./get-skills.ts";
 import "./get-skill-sets.ts";

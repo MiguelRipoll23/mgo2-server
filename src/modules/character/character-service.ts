@@ -9,6 +9,7 @@ import {
   characterHostSettingsTable,
   characterSetGearTable,
   characterSetSkillsTable,
+  characterSkillsTable,
   charactersTable,
   clanMembersTable,
   clansTable,
@@ -21,6 +22,7 @@ import type {
   CharacterHostSettings,
   CharacterSetGear,
   CharacterSetSkills,
+  CharacterSkill,
   CharacterStats,
   NewCharacter,
   NewCharacterAppearance,
@@ -30,6 +32,16 @@ type AppearanceInput = Omit<NewCharacterAppearance, "id" | "character_id">;
 type SkillSetInput = Omit<CharacterSetSkills, "id" | "character_id">;
 type GearSetInput = Omit<CharacterSetGear, "id" | "character_id">;
 type ChatMacroInput = Omit<CharacterChatMacros, "id" | "character_id">;
+
+/**
+ * The client's own validator zeroes any skill record whose experience exceeds
+ * this (ELF 0x93E418: `cmpwi cr7,r0,24576; ble+` — the value is level 3, the
+ * cap of min(experience >> 13, 3)). Storing an over-cap value does not merely
+ * render oddly — it makes the skill disappear from the player's list the next
+ * time 0x4125 sends it back. Clamping keeps the store inside the range the
+ * client will accept.
+ */
+export const MAX_SKILL_EXPERIENCE = 24576;
 
 @injectable()
 export class CharacterService {
@@ -399,5 +411,71 @@ export class CharacterService {
     if (experience < 2925) return 18;
     if (experience < 3275) return 19;
     return 20;
+  }
+
+  // ── Skill ownership & progression (0x4125 / 0x43a4) ───────────────────────
+
+  /** All skills this character owns — a missing row is a zeroed client slot. */
+  public async getSkills(
+    characterId: number,
+  ): Promise<CharacterSkill[]> {
+    const db = this.databaseService.get();
+    return await db
+      .select()
+      .from(characterSkillsTable)
+      .where(eq(characterSkillsTable.character_id, characterId))
+      .orderBy(characterSkillsTable.skill_id);
+  }
+
+  /**
+   * Applies a 0x43a4 per-skill experience report, returning how many rows
+   * moved.
+   *
+   * The values are ABSOLUTE totals, not deltas — the client's builder computes
+   * a delta only to decide whether a skill changed, then overwrites it with the
+   * live value before writing the record. Accumulating instead would compound
+   * every round.
+   *
+   * Only skills the character already owns are touched: a record for a missing
+   * skill would be the client claiming a grant, which is not this command's
+   * job — 0x4125 decides what a character owns — so those update nothing and
+   * show up in the returned count.
+   */
+  public async applySkillExperience(
+    characterId: number,
+    experienceBySkill: Map<number, number>,
+  ): Promise<number> {
+    if (experienceBySkill.size === 0) return 0;
+    const db = this.databaseService.get();
+
+    let moved = 0;
+    for (const [skillId, experience] of experienceBySkill) {
+      const rows = await db
+        .update(characterSkillsTable)
+        .set({
+          experience: Math.max(0, Math.min(MAX_SKILL_EXPERIENCE, experience)),
+        })
+        .where(
+          and(
+            eq(characterSkillsTable.character_id, characterId),
+            eq(characterSkillsTable.skill_id, skillId),
+          ),
+        )
+        .returning();
+      moved += rows.length;
+    }
+    return moved;
+  }
+
+  /** Inserts skill-ownership rows, ignoring ones the character already has. */
+  public async grantSkills(
+    skills: { character_id: number; skill_id: number; experience: number; flag: number }[],
+  ): Promise<void> {
+    if (skills.length === 0) return;
+    const db = this.databaseService.get();
+    await db
+      .insert(characterSkillsTable)
+      .values(skills)
+      .onConflictDoNothing();
   }
 }

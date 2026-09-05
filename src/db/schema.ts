@@ -12,3 +12,5 @@ export * from "./schema/news-table.ts";
 export * from "./schema/sessions-table.ts";
 export * from "./schema/character-stats-table.ts";
 export * from "./schema/lobby-instance-counts-table.ts";
+export * from "./schema/character-skills-table.ts";
+export * from "./schema/host-reviews-table.ts";
