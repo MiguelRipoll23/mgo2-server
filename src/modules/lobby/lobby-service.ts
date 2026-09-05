@@ -67,10 +67,12 @@ export class LobbyService {
   }
 
   async loadCache(instanceId?: string): Promise<void> {
+    // Ordered by id, not name: the client expects list index and lobby type to coincide
+    // (index 0 = gate, 1 = account, 2 = game). Ordering by name breaks the client.
     const rows = await this.db
       .select()
       .from(lobbiesTable)
-      .orderBy(asc(lobbiesTable.name));
+      .orderBy(asc(lobbiesTable.id));
 
     if (instanceId) {
       // Sum player counts from all non-stale instances per lobby.
@@ -104,7 +106,7 @@ export class LobbyService {
     const rows = await this.db
       .select()
       .from(lobbiesTable)
-      .orderBy(asc(lobbiesTable.name));
+      .orderBy(asc(lobbiesTable.id));
     return rows.map((r) => this.toLobbyResponse(r));
   }
 

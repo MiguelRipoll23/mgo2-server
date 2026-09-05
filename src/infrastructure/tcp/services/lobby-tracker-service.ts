@@ -13,6 +13,10 @@ export class LobbyTrackerService {
     this.instanceId = id;
   }
 
+  getInstanceId(): string | null {
+    return this.instanceId;
+  }
+
   joinLobby(session: TcpSession, lobbyId: number): void {
     this.leaveLobby(session);
 

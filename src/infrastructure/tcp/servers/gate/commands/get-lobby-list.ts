@@ -9,12 +9,14 @@ import { LobbyService } from "../../../../../modules/lobby/lobby-service.ts";
 import {
   sendError,
   sendPacket,
-  sendStartEndPacket,
+  sendResult,
 } from "../../../../../core/tcp/utils/session-helpers-util.ts";
 import { ERROR_GENERAL } from "../../../../../core/constants/error-codes-constants.ts";
 import { createLogger } from "../../../../../core/tcp/utils/logger-util.ts";
 
 const MAX_LOBBIES_PER_PACKET = 22;
+/** The client aborts the whole list above 32 entries across all packets (client 0xD363FC). */
+const MAX_LOBBIES_TOTAL = 32;
 const LOBBY_NAME_LENGTH = 16;
 const LOBBY_IP_LENGTH = 15;
 
@@ -33,11 +35,15 @@ export class GetLobbyListHandler implements ICommandHandler {
 
   async handle(session: TcpSession, _packet: Packet): Promise<void> {
     try {
-      const lobbies = this.lobbyService.getCached();
-      const writer = new PacketWriter();
+      // Slice to the client's hard cap of 32 entries before batching.
+      const lobbies = this.lobbyService.getCached().slice(0, MAX_LOBBIES_TOTAL);
+
+      // One 0x2003 per batch of 22 entries (payload limit), none at all when the list is empty.
+      const pages: Uint8Array[] = [];
       let baseIndex = 0;
 
       forEachPage(lobbies, MAX_LOBBIES_PER_PACKET, (pageLobbies) => {
+        const writer = new PacketWriter();
         for (const lobby of pageLobbies) {
           const beginnerOnly = lobby.beginnerOnly ?? false;
           const expansionOnly = lobby.expansionOnly ?? false;
@@ -57,11 +63,14 @@ export class GetLobbyListHandler implements ICommandHandler {
           writer.writeUint16(lobby.id);
           writer.writeUint8(restriction);
         }
+        pages.push(writer.build());
       });
 
-      await sendPacket(session, 0x2002, new Uint8Array(4)); // refactor this is just to send a int32 32
-      await sendPacket(session, 0x2003, writer.build());
-      await sendStartEndPacket(session, 0x2004);
+      await sendResult(session, 0x2002, 0);
+      for (const payload of pages) {
+        await sendPacket(session, 0x2003, payload);
+      }
+      await sendResult(session, 0x2004, 0);
     } catch (error) {
       this.log?.error("getLobbyList error:", error);
       await sendError(session, 0x2002, ERROR_GENERAL);

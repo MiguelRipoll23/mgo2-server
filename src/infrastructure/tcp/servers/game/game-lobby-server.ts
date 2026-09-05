@@ -35,5 +35,10 @@ export class GameLobbyServer extends BaseTcpServer {
   protected override onSessionDestroyed(session: TcpSession): void {
     this.activeGameSessionsService.remove(session);
     this.lobbyTrackerService.leaveLobby(session);
+    // Fire-and-forget (base hook is sync): without this, an abrupt disconnect that
+    // never sends 0x4150 leaves the lobby count stale until the next join/leave.
+    this.lobbyTrackerService.syncAllLobbyCounts().catch((error) => {
+      console.error(`[${this.logPrefix}] lobby count sync after disconnect failed:`, error);
+    });
   }
 }

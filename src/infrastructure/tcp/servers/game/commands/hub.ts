@@ -5,6 +5,7 @@ import type { TcpSession } from "../../../../../core/tcp/types/session-type.ts";
 import type { Packet } from "../../../../../core/tcp/types/packet-type.ts";
 import { PacketWriter } from "../../../../../core/tcp/utils/packet-builder-util.ts";
 import { LobbyService } from "../../../../../modules/lobby/lobby-service.ts";
+import { LobbyType } from "../../../../../db/schema.ts";
 import { LobbyTrackerService } from "../../../services/lobby-tracker-service.ts";
 import {
   sendPacket,
@@ -53,7 +54,10 @@ export class GetGameLobbyInfoHandler implements ICommandHandler {
   constructor(private lobbyService = inject(LobbyService)) {}
 
   async handle(session: TcpSession, _packet: Packet): Promise<void> {
-    const lobbies = this.lobbyService.getCached();
+    // Only lobbies of type GAME are listed on the hub's Lobby Select.
+    const lobbies = this.lobbyService
+      .getCached()
+      .filter((lobby) => lobby.typeId === LobbyType.GAME);
 
     await sendStartEndPacket(session, 0x4901);
 
@@ -68,12 +72,18 @@ export class GetGameLobbyInfoHandler implements ICommandHandler {
         const lobby = batch[index];
         writer
           .writeUint32(offset + index)
+          // Attributes u32: subtype in the top byte. Byte 0x06 of the entry must be 3
+          // for the subtype-5 category; left 0 like the reference servers.
           .writeUint32(((lobby.subtypeId & 0xff) << 24) >>> 0)
           .writeUint16(lobby.id)
           .writeFixedString(lobby.name, 16)
-          .writeUint32(0)
-          .writeUint32(0)
-          .writeUint8(1);
+          // 64-byte text block at 0x1a: the parser reads entries at a FIXED 99-byte
+          // stride and bound-checks the receive buffer, not the payload length —
+          // omitting it made every entry after the first parse as rubbish.
+          .writeFixedString("", 64)
+          .writeUint32(0) // open time
+          .writeUint32(0) // close time
+          .writeUint8(1); // open flag
       }
       if (writer.size > 0) {
         await sendPacket(session, 0x4902, writer.build());

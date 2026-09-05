@@ -1,4 +1,3 @@
-const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder("iso-8859-1");
 
 export function readFixedString(buffer: Uint8Array, offset: number, maxLength: number): string {
@@ -9,8 +8,11 @@ export function readFixedString(buffer: Uint8Array, offset: number, maxLength: n
 
 export function writeFixedString(value: string, maxLength: number): Uint8Array {
   const bytes = new Uint8Array(maxLength);
-  const encoded = ENCODER.encode(value).slice(0, maxLength);
-  bytes.set(encoded);
+  // Fixed wire strings are ISO-8859-1 (one byte per char), not UTF-8 — multi-byte
+  // characters would shift every field that follows.
+  for (let i = 0; i < maxLength; i++) {
+    bytes[i] = i < value.length ? value.charCodeAt(i) & 0xff : 0;
+  }
   return bytes;
 }
 
