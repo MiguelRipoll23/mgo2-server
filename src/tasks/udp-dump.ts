@@ -1,24 +1,36 @@
-// Minimal UDP echo of raw bytes: binds a UDP socket and prints every
-// datagram it receives as a byte array (hex + decimal), with the sender's
-// address. Useful for watching what a client actually puts on the wire —
-// e.g. P2P probes — without any protocol handling.
+// Minimal UDP echo of raw bytes: binds UDP sockets and prints every datagram
+// it receives as a byte array (hex + decimal), with the sender's address and
+// the local port it arrived on. Useful for watching what a client actually
+// puts on the wire — e.g. P2P probes — without any protocol handling.
 //
-// Port comes from UDP_PORT (default 5731); bind address from UDP_HOSTNAME
-// (default 0.0.0.0).
+// Ports come from UDP_PORTS (comma-separated; default 5730,11181 — 5730 is
+// the legacy/STUN-facing port, 11181 (0x2bad) is the MGO2PC p2p session
+// socket); bind address from UDP_HOSTNAME (default 0.0.0.0).
 
-const port = Number(Deno.env.get("UDP_PORT") ?? 5731);
+const ports = (Deno.env.get("UDP_PORTS") ?? "5730,11181")
+  .split(",")
+  .map((part) => Number(part.trim()))
+  .filter((port) => Number.isInteger(port) && port > 0);
 const hostname = Deno.env.get("UDP_HOSTNAME") ?? "0.0.0.0";
 
-const socket = Deno.listenDatagram({
+const sockets = ports.map((port) => ({
   port,
-  hostname,
-  transport: "udp",
-});
+  socket: Deno.listenDatagram({ port, hostname, transport: "udp" }),
+}));
 
-console.log(`[udp] listening on ${hostname}:${port}`);
+for (const { port } of sockets) {
+  console.log(`[udp] listening on ${hostname}:${port}`);
+}
 
-while (true) {
-  const [data, remote] = await socket.receive();
+while (sockets.length > 0) {
+  const result = await Promise.race(
+    sockets.map(async ({ port, socket }) => ({
+      port,
+      data: (await socket.receive()) as [Uint8Array, Deno.NetAddr],
+    })),
+  );
+
+  const [data, remote] = result.data;
   const bytes = Array.from(new Uint8Array(data));
 
   const hex = bytes
@@ -32,7 +44,7 @@ while (true) {
     ? `${remote.hostname}:${remote.port}`
     : "unix";
 
-  console.log(`[udp] ${sender} (${bytes.length} bytes)`);
-  console.log(`[udp]   hex: ${hex}`);
-  console.log(`[udp]  dec : [${decimal}]`);
-}
+  console.log(`[udp:${result.port}] ${sender} (${bytes.length} bytes)`);
+  console.log(`[udp:${result.port}]   hex: ${hex}`);
+  console.log(`[udp:${result.port}]  dec : [${decimal}]`);
+}

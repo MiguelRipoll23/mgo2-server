@@ -274,26 +274,30 @@ const npcSeedResult = await db.transaction(async (tx) => {
     .onConflictDoNothing();
 
   // The host's P2P endpoint, required by the join handoff (0x4321): without
-  // a row the join refuses with a generic error. Provisioned at loopback
-  // port 5731 (external == internal) so a test client dials the server host
-  // itself; a real client's 0x4700 push overwrites this row when the NPC
-  // logs in for real.
+  // a row the join refuses with a generic error. The joiner dials exactly
+  // what this row advertises, so the value here is simply where the test
+  // peer listens. Loopback port 5730 (the udp-dump task's default listener):
+  // NOT 11181 — the joining client binds its own p2p socket on 11181
+  // (0x2bad), so a same-machine dial to 11181 would loop back into the
+  // client itself. NOT 0.0.0.0 either: the client sendto()s the advertised
+  // address, and 0.0.0.0 is not a dialable target on Windows. A real
+  // client's 0x4700 push overwrites this row when the NPC logs in for real.
   await tx
     .insert(characterConnectionsTable)
     .values({
       character_id: npcCharacter.id,
       public_ip: "127.0.0.1",
-      public_port: 5731,
+      public_port: 5730,
       private_ip: "127.0.0.1",
-      private_port: 5731,
+      private_port: 5730,
     })
     .onConflictDoUpdate({
       target: characterConnectionsTable.character_id,
       set: {
         public_ip: "127.0.0.1",
-        public_port: 5731,
+        public_port: 5730,
         private_ip: "127.0.0.1",
-        private_port: 5731,
+        private_port: 5730,
       },
     });
 
