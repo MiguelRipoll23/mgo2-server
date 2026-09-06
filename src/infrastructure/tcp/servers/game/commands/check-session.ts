@@ -77,9 +77,14 @@ export class CheckSessionHandler implements ICommandHandler {
     }
 
     session.characterId = claimedCharacterId;
-    session.lobbyId = character.lobby_id;
 
+    // The lobby is the server the client connected to (stamped on the session
+    // at connection time), not characters.lobby_id — that column was never
+    // written, so trusting it rejected create-game with invalid-session.
+    // Persist it so the character's parked lobby stays accurate (e.g. after
+    // the account server clears it on disconnect).
     if (session.lobbyId !== null) {
+      await this.characterService.setLobby(claimedCharacterId, session.lobbyId);
       this.lobbyTrackerService.joinLobby(session, session.lobbyId);
       await this.lobbyTrackerService.syncAllLobbyCounts();
     }

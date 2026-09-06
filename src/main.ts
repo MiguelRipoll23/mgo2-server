@@ -32,7 +32,7 @@ const httpService = container.get(HTTPService);
 
 const gameLobbyServers = allLobbies
   .filter((lobby) => lobby.typeId === LobbyType.GAME)
-  .map((lobby) => new GameLobbyServer(lobby.port, lobby.name));
+  .map((lobby) => new GameLobbyServer(lobby.port, lobby.name, lobby.id));
 
 const disableDns = Deno.env.get("DISABLE_DNS_SERVER") === "true";
 const servers = [

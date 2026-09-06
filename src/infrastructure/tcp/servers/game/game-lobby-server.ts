@@ -15,13 +15,15 @@ export class GameLobbyServer extends BaseTcpServer {
   protected readonly serverType = "game" as const;
   protected readonly port: number;
   private readonly name: string;
+  private readonly lobbyId: number;
   private readonly activeGameSessionsService = container.get(ActiveGameSessionsService);
   private readonly lobbyTrackerService = container.get(LobbyTrackerService);
 
-  constructor(port: number, name: string) {
+  constructor(port: number, name: string, lobbyId: number) {
     super();
     this.port = port;
     this.name = name;
+    this.lobbyId = lobbyId;
   }
 
   protected override get logPrefix(): string {
@@ -30,6 +32,10 @@ export class GameLobbyServer extends BaseTcpServer {
 
   protected override onSessionCreated(session: TcpSession): void {
     this.activeGameSessionsService.add(session);
+    // The lobby a client lands in is the server it connected to, not a DB
+    // column that is never written. Stamped here so create-game / join-game
+    // can validate the session without trusting characters.lobby_id.
+    session.lobbyId = this.lobbyId;
   }
 
   protected override onSessionDestroyed(session: TcpSession): void {
