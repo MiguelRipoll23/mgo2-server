@@ -7,13 +7,16 @@ import { PacketWriter } from "../../../../../../core/tcp/utils/packet-builder-ut
 import { GameService } from "../../../../../../modules/game/game-service.ts";
 import { CharacterService } from "../../../../../../modules/character/character-service.ts";
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
-import { RESULT_GENERAL, RESULT_INVALID_SESSION } from "../../../../../../core/constants/error-codes-constants.ts";
+import { RESULT_INVALID_SESSION } from "../../../../../../core/constants/error-codes-constants.ts";
+import {
+  HOST_SETTINGS_TYPE,
+  decodeHostSettingsBytes,
+} from "./get-host-settings.ts";
 
-// The 0x4316 payload is ONE byte (a settings-type selector). Name, password,
-// comment, rotation and rule/map arrive earlier via the Blowfish-encrypted
-// 0x4310 push, which we persist per character — reading 163 bytes here would
-// read past the payload into stale receive buffer.
-const SETTINGS_TYPE_DEFAULT = 0;
+// The 0x4316 payload is not a settings selector. Name, password, comment,
+// rotation and rule/map arrive earlier via the Blowfish-encrypted 0x4310 push,
+// which we persist per character under a fixed key — 0x4316 then reads the
+// blob the client pushed moments before.
 
 @injectable()
 @GameCommandHandler(0x4316)
@@ -36,18 +39,12 @@ export class CreateGameHandler implements ICommandHandler {
       return;
     }
 
-    // Settings type selector from the 1-byte payload (0 when absent).
-    const settingsType =
-      packet.payload.length > 0 ? packet.payload[0] : SETTINGS_TYPE_DEFAULT;
-
-    // Pull the stored 0x4310 blob for this character + settings type.
+    // Pull the blob the 0x4310 push stored for this character.
     const settingsRows = await this.characterService.getHostSettings(
       characterId,
     );
     const pushed =
-      settingsRows.find((row) => row.type === settingsType) ??
-        settingsRows[0] ??
-        null;
+      settingsRows.find((row) => row.type === HOST_SETTINGS_TYPE) ?? null;
 
     // 0x4310 blob layout: name[16] @0x00, comment[128] @0x10,
     // passwordEnabled u8 @0x90, password[16] @0x91.
@@ -104,23 +101,16 @@ function decodeSettingsBlob(settingsJson: string): {
   maxPlayers: number;
   rotation: number[][];
 } | null {
-  try {
-    const raw = JSON.parse(settingsJson) as unknown;
-    const bytes = Array.isArray(raw)
-      ? Uint8Array.from(raw as number[])
-      : null;
-    if (!bytes || bytes.length < 0xf9) return null;
-    return {
-      name: readNulString(bytes, 0x00, 16),
-      comment: readNulString(bytes, 0x10, 128),
-      passwordEnabled: bytes[0x90] !== 0,
-      password: readNulString(bytes, 0x91, 16),
-      maxPlayers: bytes[0xe5],
-      rotation: parseRotation(bytes),
-    };
-  } catch {
-    return null;
-  }
+  const bytes = decodeHostSettingsBytes(settingsJson);
+  if (!bytes || bytes.length < 0xf9) return null;
+  return {
+    name: readNulString(bytes, 0x00, 16),
+    comment: readNulString(bytes, 0x10, 128),
+    passwordEnabled: bytes[0x90] !== 0,
+    password: readNulString(bytes, 0x91, 16),
+    maxPlayers: bytes[0xe5],
+    rotation: parseRotation(bytes),
+  };
 }
 
 /** Reads a NUL-terminated ISO-8859-1 string from a fixed-width field. */
