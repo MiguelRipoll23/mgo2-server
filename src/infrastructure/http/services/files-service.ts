@@ -1,8 +1,10 @@
 import { injectable } from "@needle-di/core";
+import { createLogger } from "../../../core/tcp/utils/logger-util.ts";
 
 const LAUNCHER_SERVER = Deno.env.get("LAUNCHER_SERVER") ?? "http://mgo2pc.com";
 const LOCAL_FILES_DIR = "./static/files";
 const UPSTREAM_FETCH_TIMEOUT_MS = 3000;
+const log = createLogger("files");
 
 function getContentType(filePath: string): string {
   if (filePath.endsWith(".zip")) return "application/zip";
@@ -60,7 +62,10 @@ function buildResponseHeaders(
   return responseHeaders;
 }
 
-async function saveLocalCopy(filePath: string, data: Uint8Array): Promise<void> {
+async function saveLocalCopy(
+  filePath: string,
+  data: Uint8Array,
+): Promise<void> {
   try {
     await Deno.mkdir(LOCAL_FILES_DIR, { recursive: true });
     await Deno.writeFile(`${LOCAL_FILES_DIR}/${filePath}`, data);
@@ -79,7 +84,10 @@ async function loadLocalCopy(filePath: string): Promise<Uint8Array | null> {
 
 @injectable()
 export class FilesService {
-  async getFile(filePath: string, method: "GET" | "HEAD" = "GET"): Promise<Response> {
+  async getFile(
+    filePath: string,
+    method: "GET" | "HEAD" = "GET",
+  ): Promise<Response> {
     try {
       const upstream = await fetch(`${LAUNCHER_SERVER}/files/${filePath}`, {
         method,
@@ -125,8 +133,14 @@ export class FilesService {
           }),
         });
       }
-    } catch {
-      // Upstream unavailable or timed out — fall through to local copy.
+      log.warn(
+        `Upstream file request failed with status ${upstream.status}; falling back to the local copy.`,
+      );
+    } catch (error) {
+      log.warn(
+        "Upstream file request failed; falling back to the local copy.",
+        error,
+      );
     }
 
     if (method === "HEAD") {
