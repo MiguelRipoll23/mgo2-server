@@ -1,13 +1,4 @@
-// Minimal UDP echo of raw bytes: binds UDP sockets and prints every datagram
-// it receives as a byte array (hex + decimal), with the sender's address and
-// the local port it arrived on. Useful for watching what a client actually
-// puts on the wire — e.g. P2P probes — without any protocol handling.
-//
-// Ports come from UDP_PORTS (comma-separated; default 5730,11181 — 5730 is
-// the legacy/STUN-facing port, 11181 (0x2bad) is the MGO2PC p2p session
-// socket); bind address from UDP_HOSTNAME (default 0.0.0.0).
-
-const ports = (Deno.env.get("UDP_PORTS") ?? "5730,11181")
+const ports = (Deno.env.get("UDP_PORTS") ?? "3578,11181")
   .split(",")
   .map((part) => Number(part.trim()))
   .filter((port) => Number.isInteger(port) && port > 0);
@@ -47,4 +38,4 @@ while (sockets.length > 0) {
   console.log(`[udp:${result.port}] ${sender} (${bytes.length} bytes)`);
   console.log(`[udp:${result.port}]   hex: ${hex}`);
   console.log(`[udp:${result.port}]  dec : [${decimal}]`);
-}
+}
