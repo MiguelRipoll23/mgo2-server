@@ -1,1 +1,3 @@
-This is the policy text.
+You are using MiguelRipoll23\mgo2-server, to create an account please visit http://localhost and select the register account endpoint.
+
+Original response from server:

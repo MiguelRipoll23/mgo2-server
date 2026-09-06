@@ -2,6 +2,7 @@ import { injectable } from "@needle-di/core";
 
 const LAUNCHER_SERVER = Deno.env.get("LAUNCHER_SERVER") ?? "http://mgo2pc.com";
 const LOCAL_FILES_DIR = "./static/files";
+const UPSTREAM_FETCH_TIMEOUT_MS = 3000;
 
 function getContentType(filePath: string): string {
   if (filePath.endsWith(".zip")) return "application/zip";
@@ -85,6 +86,7 @@ export class FilesService {
         headers: {
           "user-agent": "Mozilla/5.0 (PLAYSTATION 3; 3.55)",
         },
+        signal: AbortSignal.timeout(UPSTREAM_FETCH_TIMEOUT_MS),
       });
       if (upstream.ok) {
         if (method === "HEAD") {
@@ -124,7 +126,7 @@ export class FilesService {
         });
       }
     } catch {
-      // Upstream unavailable — fall through to local copy.
+      // Upstream unavailable or timed out — fall through to local copy.
     }
 
     if (method === "HEAD") {
