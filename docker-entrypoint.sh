@@ -2,13 +2,31 @@
 set -e
 
 SEED_MARKER="/app/data/.seeded"
-PGDATA="/var/lib/postgresql/17/docker"
+PGDATA="/var/lib/postgresql/18/docker"
 PG_LOG="/var/log/postgresql/entrypoint.log"
-PG_BIN="/usr/lib/postgresql/17/bin"
+PG_BIN="/usr/lib/postgresql/18/bin"
 
 # Ensure PostgreSQL directories exist with correct ownership
 mkdir -p "$PGDATA" /var/log/postgresql
 chown -R postgres:postgres /var/lib/postgresql /var/log/postgresql
+
+# Refuse to silently start fresh when a data directory from an older major
+# version exists: PostgreSQL 18 cannot read a cluster initialized by 17, so an
+# in-place upgrade would otherwise leave the old data unused and boot with an
+# empty database. Migrate the data (pg_dump/pg_restore) or remove the old
+# directory to start fresh.
+if [ ! -s "$PGDATA/PG_VERSION" ]; then
+  for candidate in /var/lib/postgresql/*/docker; do
+    [ "$candidate" = "$PGDATA" ] && continue
+    if [ -s "$candidate/PG_VERSION" ]; then
+      echo "[entrypoint] ERROR: found an existing PostgreSQL data directory at $candidate" >&2
+      echo "[entrypoint] This image runs PostgreSQL 18, which cannot read clusters" >&2
+      echo "[entrypoint] initialized by an older major version. Migrate the data" >&2
+      echo "[entrypoint] (pg_dump/pg_restore) or delete $candidate to start a fresh cluster." >&2
+      exit 1
+    fi
+  done
+fi
 
 # Initialize PostgreSQL data directory if needed
 if [ ! -s "$PGDATA/PG_VERSION" ]; then

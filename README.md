@@ -10,7 +10,6 @@ server for domain redirection, and a PostgreSQL-backed persistence layer.
 | ----------------- | --------- | --------------------------------------------------------------- |
 | DNS server        | 53/udp    | Resolves configured local domains to `LISTENING_IP`             |
 | HTTP API          | 80/tcp    | REST API for administration and game client integration         |
-| STUN server       | 3478/udp  | NAT traversal for peer-to-peer connections                      |
 | Gate server       | 5731/tcp  | First connection point; delivers lobby list and news to clients |
 | Account server    | 5732/tcp  | Character creation, deletion, selection, and session validation |
 | Game lobby server | 5733+/tcp | Game room management, player sessions, and match statistics     |
@@ -31,9 +30,14 @@ docker run -d \
   ghcr.io/miguelripoll23/mgo2-server:main
 ```
 
-PostgreSQL is bundled inside the image and starts automatically. On first
+PostgreSQL 18 is bundled inside the image and starts automatically. On first
 startup the database is initialized, migrated, and seeded with the default lobby
 configuration. Subsequent restarts skip seeding.
+
+**Upgrading from an older image:** PostgreSQL 18 cannot read data directories
+created by PostgreSQL 17. If a 17-era data directory is found, the container
+refuses to start — dump the old database (`pg_dump`) and restore it into the
+fresh cluster, or delete the old data directory to start over.
 
 ## RPCS3 configuration
 
@@ -56,8 +60,6 @@ All options are set via environment variables.
 | `ALTERNATIVE_DNS_SERVER`      | `8.8.8.8`                              | Upstream DNS for non-local queries                            |
 | `ALTERNATIVE_DNS_PORT`        | `53`                                   | Port of the upstream DNS server                               |
 | `LOBBIES_REFRESH_CRON`        | `*/15 * * * *`                         | Cron schedule for refreshing the in-memory lobby cache        |
-| `HDX_API_KEY`                 | —                                      | HyperDX API key; omit to disable OpenTelemetry telemetry      |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | —                                      | OpenTelemetry Collector endpoint                              |
 
 ## Development
 

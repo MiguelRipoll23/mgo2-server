@@ -1,8 +1,12 @@
 FROM denoland/deno:latest
 
-# Install PostgreSQL 17 (available in Debian trixie main, no PGDG repo needed)
+# Install PostgreSQL 18 from the PGDG apt repo (latest; not in Debian main yet)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-17 \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-18 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -20,7 +24,6 @@ RUN deno cache --node-modules-dir=auto src/main.ts
 # Expose the ports used by the server.
 EXPOSE 80/tcp
 EXPOSE 53/udp
-EXPOSE 3478/udp
 EXPOSE 5731/tcp
 EXPOSE 5732/tcp
 EXPOSE 5733/tcp

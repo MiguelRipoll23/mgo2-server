@@ -1,16 +1,14 @@
 {
   "imports": {
-    "@hono/zod-openapi": "npm:@hono/zod-openapi@^1.2.4",
-    "@hyperdx/node-opentelemetry": "npm:@hyperdx/node-opentelemetry@^0.10.3",
-    "@needle-di/core": "jsr:@needle-di/core@^1.1.1",
-    "@scalar/hono-api-reference": "npm:@scalar/hono-api-reference@^0.10.5",
-    "@types/pg": "npm:@types/pg@^8.20.0",
+    "@hono/zod-openapi": "npm:@hono/zod-openapi@^1.6.3",
+    "@needle-di/core": "jsr:@needle-di/core@^1.2.1",
+    "@scalar/hono-api-reference": "npm:@scalar/hono-api-reference@^0.12.0",
+    "@types/pg": "npm:@types/pg@^8.23.1",
     "drizzle-kit": "npm:drizzle-kit@^0.31.10",
     "drizzle-orm": "npm:drizzle-orm@^0.45.2",
-    "pg": "npm:pg@^8.20.0",
-    "hono": "npm:hono@^4.12.9",
-    "stun": "npm:stun@^2.1.0",
-    "zod": "npm:zod@^4.3.6"
+    "pg": "npm:pg@^8.23.0",
+    "hono": "npm:hono@^4.13.7",
+    "zod": "npm:zod@^4.5.4"
   },
   "permissions": {
     "development": {
@@ -36,7 +34,7 @@
     "check": "deno check src/main.ts",
     "studio": "deno run --permission-set=database --node-modules-dir npm:drizzle-kit studio",
     "generate": "deno run --permission-set=database --node-modules-dir npm:drizzle-kit generate",
-    "migrate": "deno run --permission-set=database --node-modules-dir npm:drizzle-kit migrate",
+    "migrate": "deno run --permission-set=database --node-modules-dir --env src/tasks/migrate.ts",
     "setup": "deno run --permission-set=database --env src/tasks/seed-data.ts",
     "dns": "deno run --permission-set=development --env src/tasks/dns.ts",
     "udp": "deno run --permission-set=development --env src/tasks/udp-dump.ts"

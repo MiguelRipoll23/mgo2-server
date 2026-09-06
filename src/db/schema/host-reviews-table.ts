@@ -23,7 +23,9 @@ import { gamesTable } from "./games-table.ts";
 export const hostReviewsTable = pgTable(
   "host_reviews",
   {
-    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+    // Not a primary key: the composite (game_id, voter_character_id) key below
+    // is the table's single primary key (PostgreSQL allows only one per table).
+    id: integer("id").generatedByDefaultAsIdentity(),
     game_id: integer("game_id").notNull(),
     host_character_id: integer("host_character_id")
       .notNull()

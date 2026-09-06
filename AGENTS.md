@@ -7,7 +7,6 @@
 - **ORM:** Drizzle ORM + PostgreSQL
 - **DI:** `@needle-di/core`
 - **Validation:** Zod
-- **STUN:** `npm:stun`
 
 ## Project Hierarchy
 
@@ -191,7 +190,6 @@ All handlers implement `ICommandHandler` with a `handle(session, packet)` method
 |---------|------|----------|-------------|
 | DNS | 53 | UDP | Resolves configured domains to LISTENING_IP |
 | HTTP API | 80 | TCP | REST API (Hono), JWT auth, public + authenticated routes |
-| STUN | 3478 | UDP | NAT traversal via `npm:stun` |
 
 ## Databases (PostgreSQL via Drizzle ORM)
 

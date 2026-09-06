@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1777208260535,
-      "tag": "0000_marvelous_pyro",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1788646812099,
-      "tag": "0001_broken_ken_ellis",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1788647619052,
-      "tag": "0002_wealthy_ted_forrester",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1788648388425,
-      "tag": "0003_yellow_bullseye",
+      "when": 1788699073534,
+      "tag": "0000_sharp_james_howlett",
       "breakpoints": true
     }
   ]

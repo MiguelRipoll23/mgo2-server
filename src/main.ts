@@ -1,5 +1,4 @@
 import { container } from "./container.ts";
-import { init as initTelemetry } from "./core/services/telemetry-service.ts";
 import { DatabaseService } from "./core/services/database-service.ts";
 import { LobbyService } from "./modules/lobby/lobby-service.ts";
 import { LobbyType } from "./db/schema.ts";
@@ -13,8 +12,6 @@ import { DnsServer } from "./infrastructure/dns/dns-server.ts";
 import "./infrastructure/crons/refresh-lobbies-cron.ts";
 
 const instanceId = Deno.env.get("INSTANCE_ID") ?? crypto.randomUUID();
-
-initTelemetry();
 
 container.get(DatabaseService).init();
 
