@@ -1,3 +1,7 @@
-You are using MiguelRipoll23\mgo2-server, to create an account please visit http://localhost and select the register account endpoint.
+You are now using MiguelRipoll23\mgo2-server!
 
-Original response from server:
+In order to create an account please visit http://localhost
+in your browser and select the register account endpoint,
+then hit send.
+
+Response from mgo2pc.com:

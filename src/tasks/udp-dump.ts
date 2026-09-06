@@ -1,4 +1,9 @@
-const ports = (Deno.env.get("UDP_PORTS") ?? "3578,11181")
+// Listen on the port the NPC host's character_connections row advertises
+// (the joiner dials exactly that). 11181 must NEVER be in this set: it is the
+// port the joining game client binds for its own p2p socket (0x2bad), and
+// while this dump holds it the game's session init fails its bind and never
+// sends a single datagram.
+const ports = (Deno.env.get("UDP_PORTS") ?? "3578")
   .split(",")
   .map((part) => Number(part.trim()))
   .filter((port) => Number.isInteger(port) && port > 0);

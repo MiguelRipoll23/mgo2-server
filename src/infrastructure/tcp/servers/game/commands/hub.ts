@@ -77,10 +77,12 @@ export class GetGameLobbyInfoHandler implements ICommandHandler {
           .writeUint32(((lobby.subtypeId & 0xff) << 24) >>> 0)
           .writeUint16(lobby.id)
           .writeFixedString(lobby.name, 16)
-          // 64-byte text block at 0x1a: the parser reads entries at a FIXED 99-byte
-          // stride and bound-checks the receive buffer, not the payload length —
-          // omitting it made every entry after the first parse as rubbish.
-          .writeFixedString("", 64)
+          // No 64-byte text block: this server serves the 1.36 build, whose 0x4902
+          // parser reads entries at a FIXED 35-byte stride (the text block only
+          // exists on the 1.0 disc build). Sending the disc layout to 1.36 makes
+          // the client parse every entry after the first from the wrong offset —
+          // Lobby Select then shows no Training row. The reference project
+          // reproduced exactly this live (mgo2server ClientVersion.java).
           .writeUint32(0) // open time
           .writeUint32(0) // close time
           .writeUint8(1); // open flag
