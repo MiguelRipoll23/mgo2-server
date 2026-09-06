@@ -1,11 +1,9 @@
 import { injectable } from "@needle-di/core";
-import { createLogger } from "../../../core/tcp/utils/logger-util.ts";
 
 const LAUNCHER_SERVER = Deno.env.get("LAUNCHER_SERVER") ?? "http://mgo2pc.com";
 const UPSTREAM_FETCH_TIMEOUT_MS = 3000;
 const UPSTREAM_UNAVAILABLE_MESSAGE = "Request has timed out.";
 const LOCAL_POLICY_FILE = "./static/policy.txt";
-const log = createLogger("policy");
 
 @injectable()
 export class PolicyService {
@@ -24,12 +22,14 @@ export class PolicyService {
       if (upstream.ok) {
         upstreamPolicy = await upstream.text();
       } else {
-        log.warn(
+        console.log(
+          "[http]",
           `Upstream policy request failed with status ${upstream.status}; using the fallback message.`,
         );
       }
     } catch (error) {
-      log.warn(
+      console.log(
+        "[http]",
         "Upstream policy request failed; using the fallback message.",
         error,
       );
