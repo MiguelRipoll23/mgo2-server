@@ -6,62 +6,112 @@ import type { Packet } from "../../../../../../core/tcp/types/packet-type.ts";
 import { PacketWriter } from "../../../../../../core/tcp/utils/packet-builder-util.ts";
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
 
-// All unlockable gear item IDs (1-byte each), matching the reference protocol.
-// Items with gear_slot > 255 from the shop catalog belong to other packet types
-// (faces, character creation, etc.) and are NOT sent here.
-export const GEAR_ITEMS = new Uint8Array([
-  0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-  0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x16, 0x17, 0x18,
-  0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24,
-  0x25, 0x26, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2e, 0x2f, 0x30, 0x31, 0x32,
-  0x33, 0x34, 0x35, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x44,
-  0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
-  0x51, 0x52, 0x53, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e,
-  0x5f, 0x60, 0x61, 0x62, 0x63, 0x64, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b,
-  0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77,
-  0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b,
-  0x8c, 0x8d, 0x8e, 0x8f, 0xa0, 0xa1, 0xa2, 0xb0, 0xc0, 0xc1, 0xc2, 0xc3,
-  0xc4, 0xf0, 0xf1, 0xf2, 0xf3, 0xf4,
-]);
+// The gear catalogue (0x4124 connect burst, echoed by 0x4133), per the
+// reference's ELF-traced parser — the payload is exactly:
+//
+//   u32 count
+//   count × { u8 item_id, u32 colour_mask }   (5 bytes each)
+//   16 × { u8 item_id, u8 bit_index }         (32-byte colour-highlight tail)
+//
+// The old layout here (35-byte camo header, u8 count, 0xff terminator, 30
+// zeros and a 0x3370 trailer) reads as a count of 0x24242424 to the client's
+// parser and is wrong. There is no camo section in this packet.
+//
+// Two gates, both server-controlled (confirmed live in the reference):
+//  - item ownership: an id absent from this packet is never listed in the
+//    wardrobe, so serving every item is what "everything unlocked" means;
+//  - colour availability: record mask & (1 << slot) per swatch. Colour bits
+//    are PER-ITEM SLOTS — the client's catalogue (0x10506BC) maps each item's
+//    slots to colour names, and slots beyond an item's count are skipped
+//    before the mask is read. The correct all-unlocked mask is therefore each
+//    item's real legal mask (1 << n) - 1, not 0xffffffff — which was harmless
+//    and meaningless at once.
+//
+// The 67 ids below are exactly what the wardrobe can render: nine fixed
+// {base, count} windows from the client's 9-arm table (0x9270AC), 67 ids with
+// a maximum of 116. Everything else is a phantom id the wardrobe never asks
+// for, so it is not sent. Five None ids (28, 68, 86, 102) are hardcoded
+// always-available client-side and carry no colour records (mask 0).
 
-// 35-byte weapon camos header:
-//   bytes  0-9:  0x24 (White camo for MK.2)
-//   byte   10:   0x08 (M4 Maroon)
-//   byte   11:   0x1C (AK World Champion)
-//   bytes 12-34: 0x00 (reserved)
-const CAMO_HEADER = new Uint8Array(35);
-CAMO_HEADER.fill(0x24, 0, 10);
-CAMO_HEADER[10] = 0x08;
-CAMO_HEADER[11] = 0x1c;
+// 21-slot camo family — 39 items.
+const MASK_CAMO_21 = 0x1fffff;
+const CAMO_21_ITEMS = [
+  11, 22, 29, 30, 31, 32, 34, 35, 36, 37,
+  57, 58, 59, 60, 61, 62,
+  69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80,
+  87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97,
+];
 
-const GEAR_TERMINATOR = new Uint8Array(32).fill(0xff);
+// 10-slot solid-colour family — 6 items.
+const MASK_SOLID_10 = 0x3ff;
+const SOLID_10_ITEMS = [12, 13, 33, 38, 104, 108];
+
+// 8-slot family (skips Green and Maroon) — 3 items.
+const MASK_EIGHT = 0xff;
+const EIGHT_ITEMS = [105, 109, 111];
+
+// Lens families — goggles (6 slots) and eye wear (5 slots).
+const MASK_LENS_6 = 0x3f;
+const LENS_6_ITEMS = [103];
+const MASK_LENS_5 = 0x1f;
+const LENS_5_ITEMS = [106, 107];
+
+// Scarf family — Shemagh (5 slots).
+const MASK_SCARF_5 = 0x1f;
+const SCARF_5_ITEMS = [113];
+
+// Single-colour items (slot 0, the null colour name) — 10 items.
+const MASK_SINGLE = 0x1;
+const SINGLE_ITEMS = [46, 47, 48, 49, 50, 51, 112, 114, 115, 116];
+
+// The one 24-slot item — widest in the game.
+const MASK_SCARF_24 = 0xffffff;
+const SCARF_24_ITEMS = [110];
+
+// None entries: hardcoded always-available, no colour records at all.
+const MASK_NONE = 0x0;
+const NONE_ITEMS = [28, 68, 86, 102];
+
+type GearEntry = { id: number; mask: number };
+
+const GEAR_CATALOGUE: GearEntry[] = [
+  ...CAMO_21_ITEMS.map((id) => ({ id, mask: MASK_CAMO_21 })),
+  ...SOLID_10_ITEMS.map((id) => ({ id, mask: MASK_SOLID_10 })),
+  ...EIGHT_ITEMS.map((id) => ({ id, mask: MASK_EIGHT })),
+  ...LENS_6_ITEMS.map((id) => ({ id, mask: MASK_LENS_6 })),
+  ...LENS_5_ITEMS.map((id) => ({ id, mask: MASK_LENS_5 })),
+  ...SCARF_5_ITEMS.map((id) => ({ id, mask: MASK_SCARF_5 })),
+  ...SCARF_24_ITEMS.map((id) => ({ id, mask: MASK_SCARF_24 })),
+  ...SINGLE_ITEMS.map((id) => ({ id, mask: MASK_SINGLE })),
+  ...NONE_ITEMS.map((id) => ({ id, mask: MASK_NONE })),
+].sort((a, b) => a.id - b.id);
+
+// The 32-byte tail: sixteen {item, bit} colour-highlight pairs. These GRANT
+// NOTHING — the parser ORs a pair into record+16 only if the bit is already
+// set in the colour mask, and +16 drives a wardrobe highlight, not
+// availability. With everything unlocked there is nothing to highlight, so
+// the slots keep the 0xff filler, which the parser provably skips (item 255
+// exceeds its 128-entry bound). This makes the payload byte-identical to a
+// character with no highlight rows.
+const HIGHLIGHT_SLOTS = 16;
 
 export function buildGearPayload(): Uint8Array {
   const writer = new PacketWriter();
 
-  // 35-byte weapon camos header
-  writer.writeBytes(CAMO_HEADER);
-
-  // Item count (byte 35)
-  writer.writeUint8(GEAR_ITEMS.length);
-
-  // Items: 1-byte ID + 4-byte color bitmask (0xffffffff = all colors unlocked)
-  for (const id of GEAR_ITEMS) {
+  writer.writeUint32(GEAR_CATALOGUE.length);
+  for (const { id, mask } of GEAR_CATALOGUE) {
     writer.writeUint8(id);
-    writer.writeUint32(0xffffffff);
+    writer.writeUint32(mask);
   }
-
-  // 32-byte 0xFF terminator
-  writer.writeBytes(GEAR_TERMINATOR);
-
-  // 30 zero bytes + 0x3370 trailing short
-  writer.writePadding(30);
-  writer.writeUint16(0x3370);
+  for (let slot = 0; slot < HIGHLIGHT_SLOTS; slot++) {
+    writer.writeUint8(0xff);
+    writer.writeUint8(0xff);
+  }
 
   return writer.build();
 }
 
-// Pre-built payload — gear list is static, no per-character lookup needed.
+// Pre-built payload — the catalogue is static, no per-character lookup needed.
 export const GEAR_PAYLOAD = buildGearPayload();
 
 @injectable()
