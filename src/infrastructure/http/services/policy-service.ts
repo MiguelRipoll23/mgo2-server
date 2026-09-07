@@ -41,6 +41,6 @@ export class PolicyService {
       : UPSTREAM_UNAVAILABLE_MESSAGE;
 
     const localPolicy = await Deno.readTextFile(LOCAL_POLICY_FILE);
-    return `${localPolicy.trimEnd()}\n\n${originalResponse}\n`;
+    return `${localPolicy.trimEnd()}\n${originalResponse}\n`;
   }
 }
