@@ -8,11 +8,19 @@ import { GameService } from "../../../../../../modules/game/game-service.ts";
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
 import { RESULT_NONE } from "../../../../../../core/constants/error-codes-constants.ts";
 
-// Start round, host side. The 1.36 client (per the comradesean/mgo2server ELF
-// scan) builds 0x43c8 and parses 0x43c9; 0x43ca has no builder in that binary.
-// Live servers still see 0x43ca on the wire from other client builds, and the
-// old reference servers bound start-round to 0x43ca/0x43cb — so both ids get
-// the same treatment here and the no-handler stall is gone either way.
+// Start round, host side. Two client builds, two id pairings — both handled,
+// each request answered on exactly the id its own build parses:
+//
+// 1.36 build (comradesean ELF scan): builds 0x43c8, parses 0x43c9.
+// This repo's MGO2.ELF (capstone, PPC64 BE): li r4,0x43ca builder at 0xF0E260
+// (payload = a single u8, stb into the request buffer) whose request slot 0x7f
+// is completed by the 0x43cb waiter at 0xF0D4C0 (cmpwi 0x43cb in the reply
+// dispatcher at 0xF04994; the waiter reads the first u32 of the reply as the
+// result). So here the pairing is 0x43ca -> 0x43cb.
+//
+// One reply per request, never both: the client completes the request slot on
+// the first reply and treats the second as unexpected (the double-0x4b71
+// failure the reference documents).
 const START_ROUND = 0x43c8;
 const START_ROUND_RESULT = 0x43c9;
 const START_ROUND_ALIAS = 0x43ca;
@@ -37,22 +45,18 @@ export class HostStartRoundHandler implements ICommandHandler {
     // Reply is {u32 result, u32 token}. The second word must be ZERO: the
     // client stores a nonzero value into profile+0x32F8 and republishes it to
     // every peer, where it gates the instructor-recognition prompt ("an
-    // instructor is already saved"). It is not a round handle.
+    // instructor is already saved"). It is not a round handle. The 0x43cb
+    // waiter of this build visibly consumes only the first word (lwa of the
+    // result); the second is unread but harmless.
     const payload = new PacketWriter()
       .writeUint32(RESULT_NONE)
       .writeUint32(0)
       .build();
 
-    await sendPacket(session, START_ROUND_RESULT, payload);
-
-    // Only a 0x43ca request double-replies: a client that sends the legacy id
-    // may listen on either the paired legacy reply (0x43cb) or the renumbered
-    // one (0x43c9). Unmatched replies are dropped by the client (its dispatch
-    // table simply has no parser for them), so covering both ids is what makes
-    // the round start regardless of which build sent the request. The
-    // protocol-correct 0x43c8 request keeps its single 0x43c9 reply.
-    if (packet.header.command === START_ROUND_ALIAS) {
-      await sendPacket(session, START_ROUND_ALIAS_RESULT, payload);
-    }
+    // Paired reply only: 0x43c8 -> 0x43c9 (1.36), 0x43ca -> 0x43cb (this ELF).
+    const replyCommand = packet.header.command === START_ROUND_ALIAS
+      ? START_ROUND_ALIAS_RESULT
+      : START_ROUND_RESULT;
+    await sendPacket(session, replyCommand, payload);
   }
 }
