@@ -389,3 +389,20 @@ export class SearchClanHandler implements ICommandHandler {
     await sendStartEndPacket(session, 0x4b93);
   }
 }
+
+// ============================================================================
+// APPLICANTS (0x4b73) → START(0x4b74) DATA(0x4b75)* END(0x4b76)
+// Input: u32 clanId. Entry: 93 bytes — u32 charaId, 64B application text
+// (never written by 0x4b42, so zero), name(16), padding. This server does not
+// persist applications, so the list is empty — which the client renders as
+// "no pending applications" instead of inventing rows.
+// ============================================================================
+
+@injectable()
+@GameCommandHandler(0x4b73)
+export class GetClanApplicantsHandler implements ICommandHandler {
+  async handle(session: TcpSession, _packet: Packet): Promise<void> {
+    await sendStartEndPacket(session, 0x4b74);
+    await sendStartEndPacket(session, 0x4b76);
+  }
+}

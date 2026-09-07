@@ -36,3 +36,11 @@ export const RESULT_GAME_FULL = 0xfffffe09;
 export const RESULT_CHARACTER_GONE = 0xfffffef6;
 // Official: mail "Unable to locate designated mail"(-800)
 export const RESULT_MAIL_NOT_FOUND = 0xfffffce0;
+// Official automatch codes (GameError.java) — a masked 0xC0FFEExx matches
+// nothing in the client's discriminated set and would print the wrong sentence.
+// Official: AUTOMATCH_CANNOT_START(-950)
+export const RESULT_AUTOMATCH_CANNOT_START = 0xfffffc4a;
+// Official: AUTOMATCH_CANCEL_TOO_LATE(-953) — unused until a queue exists
+export const RESULT_AUTOMATCH_CANCEL_TOO_LATE = 0xfffffc47;
+// Official: AUTOMATCH_NOT_OPEN(-970)
+export const RESULT_AUTOMATCH_NOT_OPEN = 0xfffffc36;

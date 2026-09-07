@@ -44,8 +44,17 @@ export const SET_GAME = 0x4392;
 export const UPDATE_PINGS = 0x4398;
 export const QUIT_GAME = 0x4380;
 export const PASS_ROUND = 0x43a0;
+export const PUT_CLIENT_SETTING = 0x43a6;
+// Start round. The 1.36 client builds 0x43c8 and parses 0x43c9 (the ELF has no
+// 0x43ca builder); 0x43ca/0x43cb are kept as a live-observed legacy alias some
+// client builds send — both ids get identical start-round treatment.
+export const START_ROUND = 0x43c8;
+export const START_ROUND_RESULT = 0x43c9;
+export const START_ROUND_ALIAS = 0x43ca;
+export const START_ROUND_ALIAS_RESULT = 0x43cb;
 export const TRAINING_CONNECT = 0x43d0;
-export const START_ROUND = 0x43ca;
+export const START_AUTOMATCH = 0x43e0;
+export const CANCEL_AUTOMATCH = 0x43e2;
 export const SEND_CHAT = 0x4400;
 
 // Game - Friends/Search (0x45xx-0x46xx)
@@ -54,6 +63,7 @@ export const REMOVE_FRIENDS_BLOCKED = 0x4510;
 export const GET_FRIENDS_BLOCKED_LIST = 0x4580;
 export const SEARCH_PLAYER = 0x4600;
 export const GET_MATCH_HISTORY = 0x4680;
+export const GET_MATCH_DETAILS = 0x4684;
 
 // Game - Hub (0x49xx)
 export const GET_GAME_LOBBY_INFO = 0x4900;
@@ -86,6 +96,7 @@ export const SET_EMBLEM_EDITOR = 0x4b62;
 export const UPDATE_CLAN_COMMENT = 0x4b64;
 export const UPDATE_CLAN_NOTICE = 0x4b66;
 export const GET_CLAN_STATS = 0x4b70;
+export const GET_CLAN_APPLICANTS = 0x4b73;
 export const GET_CLAN_INFO = 0x4b80;
 export const SEARCH_CLAN = 0x4b90;
 

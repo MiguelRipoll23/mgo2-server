@@ -19,3 +19,4 @@ import "./get-character-card.ts";
 import "./friends-blocked.ts";
 import "./search.ts";
 import "./match-history.ts";
+import "./get-match-details.ts";

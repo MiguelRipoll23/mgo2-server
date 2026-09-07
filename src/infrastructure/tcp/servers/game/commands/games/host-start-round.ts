@@ -8,17 +8,23 @@ import { GameService } from "../../../../../../modules/game/game-service.ts";
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
 import { RESULT_NONE } from "../../../../../../core/constants/error-codes-constants.ts";
 
-// The client sends 0x43c8 and parses 0x43c9. 0x43ca has no builder in the
-// client — a handler registered there is never reached and start-round stalls.
+// Start round, host side. The 1.36 client (per the comradesean/mgo2server ELF
+// scan) builds 0x43c8 and parses 0x43c9; 0x43ca has no builder in that binary.
+// Live servers still see 0x43ca on the wire from other client builds, and the
+// old reference servers bound start-round to 0x43ca/0x43cb — so both ids get
+// the same treatment here and the no-handler stall is gone either way.
 const START_ROUND = 0x43c8;
 const START_ROUND_RESULT = 0x43c9;
+const START_ROUND_ALIAS = 0x43ca;
+const START_ROUND_ALIAS_RESULT = 0x43cb;
 
 @injectable()
 @GameCommandHandler(START_ROUND)
+@GameCommandHandler(START_ROUND_ALIAS)
 export class HostStartRoundHandler implements ICommandHandler {
   constructor(private gameService = inject(GameService)) {}
 
-  async handle(session: TcpSession, _packet: Packet): Promise<void> {
+  async handle(session: TcpSession, packet: Packet): Promise<void> {
     // Snapshot the roster: everyone in the game now "played this round",
     // which is what the attribution checks for the host's end-of-round
     // reports (0x4390/0x43a2/0x43a4) consult before applying stats to a
@@ -36,6 +42,17 @@ export class HostStartRoundHandler implements ICommandHandler {
       .writeUint32(RESULT_NONE)
       .writeUint32(0)
       .build();
+
     await sendPacket(session, START_ROUND_RESULT, payload);
+
+    // Only a 0x43ca request double-replies: a client that sends the legacy id
+    // may listen on either the paired legacy reply (0x43cb) or the renumbered
+    // one (0x43c9). Unmatched replies are dropped by the client (its dispatch
+    // table simply has no parser for them), so covering both ids is what makes
+    // the round start regardless of which build sent the request. The
+    // protocol-correct 0x43c8 request keeps its single 0x43c9 reply.
+    if (packet.header.command === START_ROUND_ALIAS) {
+      await sendPacket(session, START_ROUND_ALIAS_RESULT, payload);
+    }
   }
 }
