@@ -3,6 +3,7 @@ import { container } from "../../../../container.ts";
 import type { TcpSession } from "../../../../core/tcp/types/session-type.ts";
 import { ActiveGameSessionsService } from "../../services/active-game-sessions-service.ts";
 import { LobbyTrackerService } from "../../services/lobby-tracker-service.ts";
+import { AutomatchService } from "../../../../modules/game/automatch-service.ts";
 import "./commands/check-session.ts";
 import "./commands/hub.ts";
 import "./commands/chat.ts";
@@ -41,6 +42,11 @@ export class GameLobbyServer extends BaseTcpServer {
   protected override onSessionDestroyed(session: TcpSession): void {
     this.activeGameSessionsService.remove(session);
     this.lobbyTrackerService.leaveLobby(session);
+    // A dropped connection sends no cancel; mark the searcher dead so the
+    // automatch tick reaps them (and fails any pending match they host).
+    if (session.characterId !== null) {
+      container.get(AutomatchService).disconnect(session.characterId);
+    }
     // Fire-and-forget (base hook is sync): without this, an abrupt disconnect that
     // never sends 0x4150 leaves the lobby count stale until the next join/leave.
     this.lobbyTrackerService.syncAllLobbyCounts().catch((error) => {

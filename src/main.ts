@@ -10,6 +10,7 @@ import { AccountServer } from "./infrastructure/tcp/servers/account/account-serv
 import { GameLobbyServer } from "./infrastructure/tcp/servers/game/game-lobby-server.ts";
 import { DnsServer } from "./infrastructure/dns/dns-server.ts";
 import "./infrastructure/crons/refresh-lobbies-cron.ts";
+import { startAutomatchTicker } from "./infrastructure/crons/automatch-cron.ts";
 
 const instanceId = Deno.env.get("INSTANCE_ID") ?? crypto.randomUUID();
 
@@ -45,5 +46,7 @@ const servers = [
 if (!disableDns) {
   servers.push(new DnsServer().start());
 }
+
+startAutomatchTicker();
 
 await Promise.all(servers);

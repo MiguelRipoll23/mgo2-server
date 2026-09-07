@@ -15,6 +15,13 @@
       "when": 1788805183163,
       "tag": "0001_nebulous_wolfsbane",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788823324843,
+      "tag": "0002_late_punisher",
+      "breakpoints": true
     }
   ]
 }

@@ -44,3 +44,21 @@ export const RESULT_AUTOMATCH_CANNOT_START = 0xfffffc4a;
 export const RESULT_AUTOMATCH_CANCEL_TOO_LATE = 0xfffffc47;
 // Official: AUTOMATCH_NOT_OPEN(-970)
 export const RESULT_AUTOMATCH_NOT_OPEN = 0xfffffc36;
+
+//
+// Clan application refusals (0x4b43/0x4b31/0x4b33) and mail send failures
+// (0x4801) — official client-table codes, sent verbatim.
+//
+// Official: -1207 "Unable to locate designated clan, or clan may be disbanded."
+export const RESULT_CLAN_NOT_FOUND = 0xfffffb49;
+// Official: -1201 "You are already a member of another clan."
+export const RESULT_ALREADY_IN_CLAN = 0xfffffb4f;
+// Official: -1219 (unrenderable — the client's cooldown sentence has no result
+// code binding, so this lands on the generic "Unable to apply to join clan.")
+export const RESULT_CLAN_APPLY_TOO_SOON = 0xfffffb3d;
+// Official: -801 "Improper address entered. Unable to send mail."
+export const RESULT_MAIL_RECIPIENT_UNKNOWN = 0xfffffcdf;
+// Official: -802 "Receiver's mailbox is full. Unable to send mail."
+export const RESULT_MAIL_RECIPIENT_FULL = 0xfffffcde;
+// Official: -830 "The receiver has blocked incoming mail." (no block system yet)
+export const RESULT_MAIL_RECIPIENT_BLOCKED = 0xfffffcc2;

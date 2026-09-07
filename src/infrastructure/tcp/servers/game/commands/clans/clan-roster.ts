@@ -9,7 +9,16 @@ import { CharacterService } from "../../../../../../modules/character/character-
 import { GameService } from "../../../../../../modules/game/game-service.ts";
 import { LobbyService } from "../../../../../../modules/lobby/lobby-service.ts";
 import { ActiveGameSessionsService } from "../../../../services/active-game-sessions-service.ts";
-import { sendError, sendPacket, sendStartEndPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import {
+  sendError,
+  sendPacket,
+  sendResult,
+  sendStartEndPacket,
+} from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import {
+  RESULT_NONE,
+  RESULT_GENERAL,
+} from "../../../../../../core/constants/error-codes-constants.ts";
 
 const CLAN_DOES_NOT_EXIST = 0x40;
 const MAX_PER_PACKET = 15;
@@ -149,6 +158,11 @@ export class GetClanMemberInfoHandler implements ICommandHandler {
 
 // ============================================================================
 // ACCEPT_JOIN (0x4b30) → response (0x4b31)
+// DECLINE_JOIN (0x4b32) → response (0x4b33)
+// Both are leader-only and consume a pending application. The payload names
+// the APPLICANT by character id. Answering success when nothing was approved
+// was the reference's bug: the roster silently disagreed with what the leader
+// had just been shown — GENERAL rather than a guessed specific code.
 // ============================================================================
 
 @injectable()
@@ -157,25 +171,45 @@ export class AcceptClanJoinHandler implements ICommandHandler {
   constructor(private clanService = inject(ClanService)) {}
 
   async handle(session: TcpSession, packet: Packet): Promise<void> {
-    if (packet.payload.length >= 8) {
-      const reader = new PacketReader(packet.payload);
-      const clanId = reader.readUint32();
-      const applicantCharacterId = reader.readUint32();
-      await this.clanService.addMember(clanId, applicantCharacterId);
+    const characterId = session.characterId;
+    const targetId = packet.payload.length >= 8
+      ? new DataView(packet.payload.buffer, packet.payload.byteOffset).getUint32(4, false)
+      : 0;
+
+    const membership = characterId !== null
+      ? await this.clanService.findMembershipByCharacterId(characterId)
+      : null;
+    if (!membership?.isLeader) {
+      await sendResult(session, 0x4b31, RESULT_GENERAL);
+      return;
     }
-    await sendPacket(session, 0x4b31, null);
+
+    const changed = await this.clanService.approve(membership.clanId, targetId);
+    await sendResult(session, 0x4b31, changed ? RESULT_NONE : RESULT_GENERAL);
   }
 }
-
-// ============================================================================
-// DECLINE_JOIN (0x4b32) → response (0x4b33)
-// ============================================================================
 
 @injectable()
 @GameCommandHandler(0x4b32)
 export class DeclineClanJoinHandler implements ICommandHandler {
-  async handle(session: TcpSession, _packet: Packet): Promise<void> {
-    await sendPacket(session, 0x4b33, null);
+  constructor(private clanService = inject(ClanService)) {}
+
+  async handle(session: TcpSession, packet: Packet): Promise<void> {
+    const characterId = session.characterId;
+    const targetId = packet.payload.length >= 8
+      ? new DataView(packet.payload.buffer, packet.payload.byteOffset).getUint32(4, false)
+      : 0;
+
+    const membership = characterId !== null
+      ? await this.clanService.findMembershipByCharacterId(characterId)
+      : null;
+    if (!membership?.isLeader) {
+      await sendResult(session, 0x4b32 + 1, RESULT_GENERAL);
+      return;
+    }
+
+    const changed = await this.clanService.decline(membership.clanId, targetId);
+    await sendResult(session, 0x4b33, changed ? RESULT_NONE : RESULT_GENERAL);
   }
 }
 
@@ -393,16 +427,42 @@ export class SearchClanHandler implements ICommandHandler {
 // ============================================================================
 // APPLICANTS (0x4b73) → START(0x4b74) DATA(0x4b75)* END(0x4b76)
 // Input: u32 clanId. Entry: 93 bytes — u32 charaId, 64B application text
-// (never written by 0x4b42, so zero), name(16), padding. This server does not
-// persist applications, so the list is empty — which the client renders as
-// "no pending applications" instead of inventing rows.
+// (never written by 0x4b42, so zero), name(16), padding. Applications now
+// persist (clan_applications table); the leader judges them with 0x4b30/0x4b32
+// or from the clan-applications mailbox (0x4820 selector 0x10).
 // ============================================================================
+
+const APPLICANT_RECORD_SIZE = 93;
+const APPLICANT_TEXT_LENGTH = 64;
 
 @injectable()
 @GameCommandHandler(0x4b73)
 export class GetClanApplicantsHandler implements ICommandHandler {
-  async handle(session: TcpSession, _packet: Packet): Promise<void> {
+  constructor(private clanService = inject(ClanService)) {}
+
+  async handle(session: TcpSession, packet: Packet): Promise<void> {
+    const clanId = packet.payload.length >= 4
+      ? new DataView(packet.payload.buffer, packet.payload.byteOffset).getUint32(0, false)
+      : 0;
+    const pending = clanId > 0 ? await this.clanService.applicantsFor(clanId) : [];
+
     await sendStartEndPacket(session, 0x4b74);
+
+    for (let offset = 0; offset < pending.length; offset += MAX_PER_PACKET) {
+      const batch = pending.slice(offset, offset + MAX_PER_PACKET);
+      const writer = new PacketWriter();
+      for (const applicant of batch) {
+        const recordStart = writer.size;
+        writer.writeUint32(applicant.characterId);
+        // Applications carry no message on the wire (0x4b42 sends only an id).
+        writer.writePadding(APPLICANT_TEXT_LENGTH);
+        writer.writeFixedString(applicant.name, 16);
+        // Pad the record out to exactly 93 bytes.
+        writer.writePadding(APPLICANT_RECORD_SIZE - (writer.size - recordStart));
+      }
+      await sendPacket(session, 0x4b75, writer.build());
+    }
+
     await sendStartEndPacket(session, 0x4b76);
   }
 }

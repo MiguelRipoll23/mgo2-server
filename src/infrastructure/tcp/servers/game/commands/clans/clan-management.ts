@@ -5,7 +5,17 @@ import type { TcpSession } from "../../../../../../core/tcp/types/session-type.t
 import type { Packet } from "../../../../../../core/tcp/types/packet-type.ts";
 import { PacketReader, PacketWriter } from "../../../../../../core/tcp/utils/packet-builder-util.ts";
 import { ClanService } from "../../../../../../modules/clan/clan-service.ts";
-import { sendError, sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import { CharacterService } from "../../../../../../modules/character/character-service.ts";
+import {
+  sendError,
+  sendPacket,
+  sendResult,
+} from "../../../../../../core/tcp/utils/session-helpers-util.ts";
+import {
+  RESULT_NONE,
+  RESULT_CLAN_NOT_FOUND,
+  RESULT_ALREADY_IN_CLAN,
+} from "../../../../../../core/constants/error-codes-constants.ts";
 
 const CLAN_NAME_NAMETAKEN_ERROR = 0x80000501;
 
@@ -73,11 +83,45 @@ export class LeaveClanHandler implements ICommandHandler {
   }
 }
 
+// APPLY_TO_JOIN (0x4b42 → 0x4b43): payload is just the clan id — the
+// application carries no message on the wire. Refusals use the client's own
+// codes: -1207 for an unknown/disbanded clan (which also covers the race of
+// a clan disbanded between listing and applying), -1201 for being in one
+// already. The client's join-cooldown sentence has NO result-code binding
+// (its error block is total: -1217/-1201/-1207/-160/default), so the cooldown
+// is not enforced here rather than sending a code that lies specifically.
 @injectable()
 @GameCommandHandler(0x4b42)
 export class ApplyToClanHandler implements ICommandHandler {
-  async handle(session: TcpSession, _packet: Packet): Promise<void> {
-    await sendPacket(session, 0x4b43, null);
+  constructor(
+    private clanService = inject(ClanService),
+    private characterService = inject(CharacterService),
+  ) {}
+
+  async handle(session: TcpSession, packet: Packet): Promise<void> {
+    const characterId = session.characterId;
+    const clanId = packet.payload.length >= 4
+      ? new DataView(packet.payload.buffer, packet.payload.byteOffset).getUint32(0, false)
+      : 0;
+
+    if (characterId === null || clanId === 0) {
+      await sendResult(session, 0x4b43, RESULT_CLAN_NOT_FOUND);
+      return;
+    }
+
+    const clan = await this.clanService.findById(clanId);
+    if (!clan) {
+      await sendResult(session, 0x4b43, RESULT_CLAN_NOT_FOUND);
+      return;
+    }
+
+    if (await this.characterService.getClanInfo(characterId)) {
+      await sendResult(session, 0x4b43, RESULT_ALREADY_IN_CLAN);
+      return;
+    }
+
+    await this.clanService.apply(characterId, clanId);
+    await sendResult(session, 0x4b43, RESULT_NONE);
   }
 }
 

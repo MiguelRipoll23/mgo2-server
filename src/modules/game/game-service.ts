@@ -7,6 +7,7 @@ import {
   gameRoundsTable,
   hostReviewsTable,
   characterConnectionsTable,
+  lobbiesTable,
 } from "../../db/schema.ts";
 import type { Game, NewGame } from "../../db/schema.ts";
 
@@ -338,6 +339,20 @@ export class GameService {
       result.set(row.hostId, { ratingSum: row.ratingSum, votes: row.votes });
     }
     return result;
+  }
+
+  /** The lobby row for a lobby id (subtype for report stamping / labels). */
+  async findLobby(lobbyId: number): Promise<{ id: number; subtypeId: number; name: string } | null> {
+    const rows = await this.db
+      .select({
+        id: lobbiesTable.id,
+        subtypeId: lobbiesTable.subtypeId,
+        name: lobbiesTable.name,
+      })
+      .from(lobbiesTable)
+      .where(eq(lobbiesTable.id, lobbyId))
+      .limit(1);
+    return rows[0] ?? null;
   }
 
   /** The game this character is currently in (any slot), or null. */

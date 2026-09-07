@@ -14,3 +14,6 @@ export * from "./schema/character-stats-table.ts";
 export * from "./schema/lobby-instance-counts-table.ts";
 export * from "./schema/host-reviews-table.ts";
 export * from "./schema/character-connections-table.ts";
+export * from "./schema/mail-table.ts";
+export * from "./schema/clan-applications-table.ts";
+export * from "./schema/round-reports-table.ts";

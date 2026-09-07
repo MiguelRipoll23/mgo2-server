@@ -6,6 +6,9 @@ import type { Packet } from "../../../../../core/tcp/types/packet-type.ts";
 import { PacketWriter } from "../../../../../core/tcp/utils/packet-builder-util.ts";
 import { LobbyService } from "../../../../../modules/lobby/lobby-service.ts";
 import { LobbyType } from "../../../../../db/schema.ts";
+import type { NewWeaponTally } from "../../../../../db/schema.ts";
+import { GameService } from "../../../../../modules/game/game-service.ts";
+import { RoundReportService } from "../../../../../modules/game/round-report-service.ts";
 import { LobbyTrackerService } from "../../../services/lobby-tracker-service.ts";
 import {
   sendPacket,
@@ -15,6 +18,10 @@ import {
 import { RESULT_NONE } from "../../../../../core/constants/error-codes-constants.ts";
 
 const MAX_LOBBIES_PER_PACKET = 8;
+
+// The ELF's caller caps 0x43a2 entries at 50; each entry is 7 bytes.
+const MAX_WEAPON_TALLIES = 50;
+const WEAPON_TALLY_BYTES = 7;
 
 @injectable()
 @GameCommandHandler(0x4150)
@@ -111,19 +118,61 @@ export class GetGameEntryInfoHandler implements ICommandHandler {
   }
 }
 
+// Round end (0x43a2 → 0x43a3): the host submits weapon tallies for one
+// player — {u32 charaId, u32 count, count × {u8 weapon, u16 a, u16 b, u16 c}}.
+// The ELF's caller caps entries at 50; a larger count is a mis-parse, and a
+// short payload is dropped rather than stored in part. Participation mirrors
+// 0x4390: the target must be in the game or in the round snapshot.
 @injectable()
 @GameCommandHandler(0x43a2)
 export class HostUnknown43a2Handler implements ICommandHandler {
-  async handle(session: TcpSession, _packet: Packet): Promise<void> {
-    await sendResult(session, 0x43a3, RESULT_NONE);
-  }
-}
+  constructor(
+    private gameService = inject(GameService),
+    private reportService = inject(RoundReportService),
+  ) {}
 
-@injectable()
-@GameCommandHandler(0x43c0)
-export class HostUnknown43c0Handler implements ICommandHandler {
-  async handle(session: TcpSession, _packet: Packet): Promise<void> {
-    await sendResult(session, 0x43c1, RESULT_NONE);
+  async handle(session: TcpSession, packet: Packet): Promise<void> {
+    const gameId = session.gameId;
+    const game = gameId !== null ? await this.gameService.findById(gameId) : null;
+
+    if (game !== null && packet.payload.length >= 8) {
+      const view = new DataView(
+        packet.payload.buffer,
+        packet.payload.byteOffset,
+      );
+      const charaId = view.getUint32(0, false);
+      const count = view.getUint32(4, false);
+
+      if (count > MAX_WEAPON_TALLIES) {
+        console.warn(
+          `[tcp][game] game ${game.id}: 0x43a2 for character ${charaId} declared ${count} weapon entries, past the client's own cap of ${MAX_WEAPON_TALLIES}; dropped as a mis-parse.`,
+        );
+      } else if (packet.payload.length < 8 + count * WEAPON_TALLY_BYTES) {
+        console.warn(
+          `[tcp][game] game ${game.id}: 0x43a2 for character ${charaId} declared ${count} weapon entries but carries ${packet.payload.length - 8} bytes; dropped rather than stored in part.`,
+        );
+      } else if (await this.gameService.isInGame(game.id, game.host_id, charaId)) {
+        const tallies: NewWeaponTally[] = [];
+        for (let i = 0; i < count; i++) {
+          const at = 8 + i * WEAPON_TALLY_BYTES;
+          tallies.push({
+            game_id: game.id,
+            character_id: charaId,
+            weapon_id: packet.payload[at],
+            value_a: view.getUint16(at + 1, false),
+            value_b: view.getUint16(at + 3, false),
+            value_c: view.getUint16(at + 5, false),
+          });
+        }
+        await this.reportService.insertTallies(tallies);
+      } else {
+        console.warn(
+          `[tcp][game] game ${game.id}: weapon tallies for character ${charaId} who neither is in the game nor played the round; dropped.`,
+        );
+      }
+    }
+
+    await sendResult(session, 0x43a3, RESULT_NONE);
   }
 }
 

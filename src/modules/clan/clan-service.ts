@@ -1,7 +1,12 @@
 import { injectable, inject } from "@needle-di/core";
-import { and, like, sql, eq } from "drizzle-orm";
+import { and, asc, like, sql, eq } from "drizzle-orm";
 import { DatabaseService } from "../../core/services/database-service.ts";
-import { clanMembersTable, clansTable, charactersTable } from "../../db/schema.ts";
+import {
+  clanApplicationsTable,
+  clanMembersTable,
+  clansTable,
+  charactersTable,
+} from "../../db/schema.ts";
 import type { Clan, ClanMember } from "../../db/schema.ts";
 
 @injectable()
@@ -299,5 +304,88 @@ export class ClanService {
       .where(eq(clanMembersTable.id, memberId))
       .limit(1);
     return rows[0]?.characterId ?? null;
+  }
+
+  // ── Applications (0x4b42 / 0x4b30 / 0x4b32 / 0x4b73) ─────────────────────
+
+  /**
+   * Records a pending application. Returns false when one already exists —
+   * the unique pair absorbs a re-apply, which is not an error on the wire.
+   */
+  async apply(characterId: number, clanId: number): Promise<boolean> {
+    const rows = await this.db
+      .insert(clanApplicationsTable)
+      .values({ clan_id: clanId, character_id: characterId })
+      .onConflictDoNothing()
+      .returning();
+    return rows.length > 0;
+  }
+
+  /** Pending applicants of a clan, oldest first, with names for the wire. */
+  async applicantsFor(clanId: number): Promise<Array<{
+    characterId: number;
+    name: string;
+    appliedAt: Date;
+  }>> {
+    const rows = await this.db
+      .select({
+        characterId: clanApplicationsTable.character_id,
+        name: charactersTable.name,
+        appliedAt: clanApplicationsTable.applied_at,
+      })
+      .from(clanApplicationsTable)
+      .innerJoin(
+        charactersTable,
+        eq(clanApplicationsTable.character_id, charactersTable.id),
+      )
+      .where(eq(clanApplicationsTable.clan_id, clanId))
+      .orderBy(asc(clanApplicationsTable.applied_at));
+    return rows;
+  }
+
+  /**
+   * Accepts a pending application: consumes the row and adds the member.
+   * Returns false when there was no pending application — answering success
+   * then would make the roster silently disagree with what the leader saw.
+   */
+  async approve(clanId: number, characterId: number): Promise<boolean> {
+    return await this.db.transaction(async (tx) => {
+      const deleted = await tx
+        .delete(clanApplicationsTable)
+        .where(
+          and(
+            eq(clanApplicationsTable.clan_id, clanId),
+            eq(clanApplicationsTable.character_id, characterId),
+          ),
+        )
+        .returning();
+      if (deleted.length === 0) return false;
+      await tx
+        .insert(clanMembersTable)
+        .values({ clan_id: clanId, character_id: characterId })
+        .onConflictDoNothing();
+      return true;
+    });
+  }
+
+  /** Declines a pending application. False when there was none. */
+  async decline(clanId: number, characterId: number): Promise<boolean> {
+    const deleted = await this.db
+      .delete(clanApplicationsTable)
+      .where(
+        and(
+          eq(clanApplicationsTable.clan_id, clanId),
+          eq(clanApplicationsTable.character_id, characterId),
+        ),
+      )
+      .returning();
+    return deleted.length > 0;
+  }
+
+  /** Withdraws all of a character's pending applications (any clan). */
+  async withdrawAllApplications(characterId: number): Promise<void> {
+    await this.db
+      .delete(clanApplicationsTable)
+      .where(eq(clanApplicationsTable.character_id, characterId));
   }
 }

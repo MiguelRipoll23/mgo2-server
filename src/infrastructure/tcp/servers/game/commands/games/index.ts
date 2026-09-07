@@ -10,6 +10,7 @@ import "./host-player-disconnected.ts";
 import "./host-pass.ts";
 import "./host-update-stats.ts";
 import "./host-set-game.ts";
+import "./host-in-game-info.ts";
 import "./host-update-pings.ts";
 import "./host-start-round.ts";
 import "./host-put-client-setting.ts";

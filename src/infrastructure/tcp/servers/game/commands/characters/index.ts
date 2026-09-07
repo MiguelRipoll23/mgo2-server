@@ -20,3 +20,4 @@ import "./friends-blocked.ts";
 import "./search.ts";
 import "./match-history.ts";
 import "./get-match-details.ts";
+import "./get-match-history.ts";

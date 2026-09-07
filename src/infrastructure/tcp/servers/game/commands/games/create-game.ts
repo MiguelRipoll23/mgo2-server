@@ -5,6 +5,7 @@ import type { TcpSession } from "../../../../../../core/tcp/types/session-type.t
 import type { Packet } from "../../../../../../core/tcp/types/packet-type.ts";
 import { PacketWriter } from "../../../../../../core/tcp/utils/packet-builder-util.ts";
 import { GameService } from "../../../../../../modules/game/game-service.ts";
+import { AutomatchService } from "../../../../../../modules/game/automatch-service.ts";
 import { CharacterService } from "../../../../../../modules/character/character-service.ts";
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
 import { RESULT_INVALID_SESSION } from "../../../../../../core/constants/error-codes-constants.ts";
@@ -24,6 +25,7 @@ export class CreateGameHandler implements ICommandHandler {
   constructor(
     private gameService = inject(GameService),
     private characterService = inject(CharacterService),
+    private automatch = inject(AutomatchService),
   ) {}
 
   async handle(session: TcpSession, packet: Packet): Promise<void> {
@@ -79,6 +81,12 @@ export class CreateGameHandler implements ICommandHandler {
     await this.gameService.addPlayer(game.id, characterId);
 
     session.gameId = game.id;
+
+    // Told to the automatch queue so a pending match releases without waiting
+    // for the next tick to notice the row (applyHostSettings runs after the
+    // row exists; a tick landing between the two would hand joiners a game
+    // whose rule and map are still zero).
+    this.automatch.gameCreated(characterId, game.id);
 
     // Reply is 8 bytes: {s32 result, u32 gameId}. The client's parser reads
     // the second u32 BEFORE testing the result, so a 4-byte "game id only"
