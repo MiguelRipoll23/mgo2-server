@@ -7,7 +7,9 @@ import { PacketReader, PacketWriter } from "../../../../../../core/tcp/utils/pac
 import { CharacterService } from "../../../../../../modules/character/character-service.ts";
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
 
-const SKILL_EXP = 0x600000;
+// The client's legal maximum (level 3) — the old 0x600000 was 256x over and
+// only survived because the client clamps levels with `>> 13`.
+const SKILL_EXP = 24576;
 
 interface PersonalInfoUpdate {
   upper: number;

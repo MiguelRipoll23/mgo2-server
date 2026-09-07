@@ -4,7 +4,11 @@ import type { ICommandHandler } from "../../../../../../core/tcp/interfaces/comm
 import type { TcpSession } from "../../../../../../core/tcp/types/session-type.ts";
 import type { Packet } from "../../../../../../core/tcp/types/packet-type.ts";
 import { PacketWriter } from "../../../../../../core/tcp/utils/packet-builder-util.ts";
-import { CharacterService } from "../../../../../../modules/character/character-service.ts";
+import {
+  CharacterService,
+  MAX_SKILL_EXPERIENCE,
+  skillLevelAtMax,
+} from "../../../../../../modules/character/character-service.ts";
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
 
 // 25-byte fixed block that follows the clan info header (matches ref BYTES_1)
@@ -15,7 +19,10 @@ const PERSONAL_INFO_FIXED_BYTES = new Uint8Array([
 
 const PERSONAL_INFO_TRAILER = new Uint8Array([0x00, 0xa7, 0x00, 0x0d]);
 
-const DEFAULT_SKILL_EXP = 0x600000;
+// The client's legal maximum (level 3) — the old 0x600000 here was 256x over
+// and only survived because the client clamps levels with `>> 13` (the same
+// out-of-spec value the reference lists as fixed in POST_LAUNCH).
+const DEFAULT_SKILL_EXP = MAX_SKILL_EXPERIENCE;
 
 export async function buildPersonalInfoPayload(
   characterService: CharacterService,
@@ -74,10 +81,11 @@ export async function buildPersonalInfoPayload(
     writer.writeUint8(skills.skill_3);
     writer.writeUint8(skills.skill_4);
     writer.writeUint8(0);
-    writer.writeUint8(skills.level_1);
-    writer.writeUint8(skills.level_2);
-    writer.writeUint8(skills.level_3);
-    writer.writeUint8(skills.level_4);
+    // Levels are served at max — skill levels are not persisted (see 0x4125).
+    writer.writeUint8(skillLevelAtMax(skills.skill_1));
+    writer.writeUint8(skillLevelAtMax(skills.skill_2));
+    writer.writeUint8(skillLevelAtMax(skills.skill_3));
+    writer.writeUint8(skillLevelAtMax(skills.skill_4));
     writer.writeUint8(0);
   } else {
     writer.writePadding(10);

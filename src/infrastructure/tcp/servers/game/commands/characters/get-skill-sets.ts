@@ -4,7 +4,10 @@ import type { ICommandHandler } from "../../../../../../core/tcp/interfaces/comm
 import type { TcpSession } from "../../../../../../core/tcp/types/session-type.ts";
 import type { Packet } from "../../../../../../core/tcp/types/packet-type.ts";
 import { PacketWriter } from "../../../../../../core/tcp/utils/packet-builder-util.ts";
-import { CharacterService } from "../../../../../../modules/character/character-service.ts";
+import {
+  CharacterService,
+  skillLevelAtMax,
+} from "../../../../../../modules/character/character-service.ts";
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
 
 const SKILL_SET_NAME_LENGTH = 63;
@@ -59,7 +62,18 @@ export class GetSkillSetsHandler implements ICommandHandler {
     }
 
     const sets = await this.characterService.getSkillSets(characterId);
-    const payload = buildSkillSetsPayload(sets);
+    // Levels are not read back from storage: every skill is max level, so
+    // each assigned slot serves its skill's max regardless of what a stale
+    // row (or an older client save) recorded.
+    const payload = buildSkillSetsPayload(
+      sets.map((set) => ({
+        ...set,
+        level_1: skillLevelAtMax(set.skill_1),
+        level_2: skillLevelAtMax(set.skill_2),
+        level_3: skillLevelAtMax(set.skill_3),
+        level_4: skillLevelAtMax(set.skill_4),
+      })),
+    );
     await sendPacket(session, 0x4140, payload);
   }
 }

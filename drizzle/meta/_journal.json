@@ -8,6 +8,13 @@
       "when": 1788699073534,
       "tag": "0000_sharp_james_howlett",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788805183163,
+      "tag": "0001_nebulous_wolfsbane",
+      "breakpoints": true
     }
   ]
 }
