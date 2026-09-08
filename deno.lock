@@ -2,7 +2,9 @@
   "version": "5",
   "specifiers": {
     "jsr:@needle-di/core@^1.2.1": "1.2.1",
+    "jsr:@std/bytes@^1.0.2": "1.0.6",
     "jsr:@std/dotenv@*": "0.225.6",
+    "jsr:@std/io@0.224": "0.224.9",
     "npm:@hono/zod-openapi@^1.6.3": "1.6.3_hono@4.13.7_zod@4.5.4",
     "npm:@scalar/hono-api-reference@0.12": "0.12.0_hono@4.13.7",
     "npm:@types/pg@^8.23.1": "8.23.1",
@@ -17,8 +19,17 @@
     "@needle-di/core@1.2.1": {
       "integrity": "fa6491594d66754f7793abba982a2ddba23eea9129ccdc7f6f66efcad1f56eb2"
     },
+    "@std/bytes@1.0.6": {
+      "integrity": "f6ac6adbd8ccd99314045f5703e23af0a68d7f7e58364b47d2c7f408aeb5820a"
+    },
     "@std/dotenv@0.225.6": {
       "integrity": "1d6f9db72f565bd26790fa034c26e45ecb260b5245417be76c2279e5734c421b"
+    },
+    "@std/io@0.224.9": {
+      "integrity": "4414664b6926f665102e73c969cfda06d2c4c59bd5d0c603fd4f1b1c840d6ee3",
+      "dependencies": [
+        "jsr:@std/bytes"
+      ]
     }
   },
   "npm": {

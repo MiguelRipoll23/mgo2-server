@@ -275,29 +275,40 @@ const npcSeedResult = await db.transaction(async (tx) => {
 
   // The host's P2P endpoint, required by the join handoff (0x4321): without
   // a row the join refuses with a generic error. The joiner dials exactly
-  // what this row advertises, so the value here is simply where the test
-  // peer listens. Loopback port 5730 (the udp-dump task's default listener):
-  // NOT 11181 — the joining client binds its own p2p socket on 11181
-  // (0x2bad), so a same-machine dial to 11181 would loop back into the
-  // client itself. NOT 0.0.0.0 either: the client sendto()s the advertised
-  // address, and 0.0.0.0 is not a dialable target on Windows. A real
-  // client's 0x4700 push overwrites this row when the NPC logs in for real.
+  // what this row advertises (verified in MGO2.ELF: the connect driver reads
+  // the 0x4321-stored endpoints and hands them to the p2p session init), so
+  // the value here is simply where the test peer listens.
+  //
+  //   IP    — the host machine's LAN IP (ipconfig IPv4, e.g. 192.168.1.100),
+  //           NOT 127.0.0.1. The joining client runs inside RPCS3, and a dial
+  //           to 127.0.0.1 is routed to the GUEST's own loopback — the
+  //           datagram never leaves the emulator, so the host-side dump/fake
+  //           player never sees it. Every observed working join advertised a
+  //           real LAN address. Set P2P_HOST accordingly.
+  //   PORT  — where the test peer listens (udp-dump / cli-fake-player).
+  //           NOT 11181: the joining client binds its own p2p socket on 11181
+  //           (0x2bad), so a same-machine dial to 11181 would loop back into
+  //           the client itself.
+  //           NOT 5730 either: the joining client's own p2p socket uses 5730
+  //           (the dials' source port), so the fake host listens on 5731.
+  const p2pHost = Deno.env.get("P2P_HOST") ?? "127.0.0.1";
+  const p2pPort = Number(Deno.env.get("P2P_PORT") ?? 5731);
   await tx
     .insert(characterConnectionsTable)
     .values({
       character_id: npcCharacter.id,
-      public_ip: "127.0.0.1",
-      public_port: 5730,
-      private_ip: "127.0.0.1",
-      private_port: 5730,
+      public_ip: p2pHost,
+      public_port: p2pPort,
+      private_ip: p2pHost,
+      private_port: p2pPort,
     })
     .onConflictDoUpdate({
       target: characterConnectionsTable.character_id,
       set: {
-        public_ip: "127.0.0.1",
-        public_port: 5730,
-        private_ip: "127.0.0.1",
-        private_port: 5730,
+        public_ip: p2pHost,
+        public_port: p2pPort,
+        private_ip: p2pHost,
+        private_port: p2pPort,
       },
     });
 
