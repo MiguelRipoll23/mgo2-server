@@ -1,0 +1,40 @@
+== MACfmt @ 16ec4
+   ref by FUN_00003750 @00003750
+== MACdefault @ 16ee4
+   ref by FUN_00003750 @00003750
+== salsa_const @ 16f80
+   ref by FUN_00004164 @00004164
+   ref by FUN_00004164 @00004164
+== auth @ 16e98
+   ref by FUN_00003d94 @00003d94
+== client @ 16ea8
+== v2.18.0 @ 16eb0
+== Ver2.18.0 @ 16eb8
+== base64 @ 00016f00
+   ref by FUN_00003810 @00003810
+== base64 @ 00016f24
+   ref by FUN_00003810 @00003810
+== base64 @ 00016f4c
+   ref by FUN_00003810 @00003810
+== syscall sites -> containing function
+   1b50 -> FUN_00001b18 @00001b18
+   3738 -> FUN_00003700 @00003700
+   23f8 -> FUN_00002378 @00002378
+   2498 -> FUN_00002418 @00002418
+   2550 -> FUN_000024b8 @000024b8
+   2608 -> FUN_00002570 @00002570
+   164bc -> FUN_000164ac @000164ac
+   1650c -> FUN_000164dc @000164dc
+wrote C:/Users/migue/Downloads/plugin_decomp/f_3810_FUN_00003810.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_2378_FUN_00002378.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_3d94_FUN_00003d94.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_4164_FUN_00004164.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_2570_FUN_00002570.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_164ac_FUN_000164ac.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_164dc_FUN_000164dc.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_3750_FUN_00003750.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_3700_FUN_00003700.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_2418_FUN_00002418.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_1b18_FUN_00001b18.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_24b8_FUN_000024b8.c
+DONE

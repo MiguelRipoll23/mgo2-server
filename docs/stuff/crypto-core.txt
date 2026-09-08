@@ -1,0 +1,222 @@
+==== A FN 00fa1af0 .opd.FUN_00fa1af0 size=140
+
+undefined4
+_opd_FUN_00fa1af0(undefined1 *param_1,int param_2,undefined4 param_3,undefined8 param_4,
+                 undefined8 param_5,undefined8 param_6,undefined8 param_7,undefined8 param_8)
+
+{
+  undefined4 uVar1;
+  undefined8 uStack00000048;
+  undefined8 uStack00000050;
+  undefined8 uStack00000058;
+  undefined8 uStack00000060;
+  undefined8 uStack00000068;
+  undefined1 *local_c [3];
+  
+  local_c[0] = param_1;
+  if (param_2 == 0) {
+    local_c[0] = (undefined1 *)0x0;
+  }
+  uStack00000048 = param_4;
+  uStack00000050 = param_5;
+  uStack00000058 = param_6;
+  uStack00000060 = param_7;
+  uStack00000068 = param_8;
+  uVar1 = _opd_FUN_00fa1e50(PTR_PTR_0121de44,local_c,param_3,&stack0x00000048);
+  if (local_c[0] != (undefined1 *)0x0) {
+    *local_c[0] = 0;
+  }
+  return uVar1;
+}
+
+
+
+==== B FN 00fbc1fc FUN_00fbc1fc size=32
+
+void FUN_00fbc1fc(void)
+
+{
+                    /* WARNING: Could not recover jumptable at 0x00fbc218. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+  (**(code **)PTR_FUN_0119f550)();
+  return;
+}
+
+
+
+==== C FN 00fa1af0 .opd.FUN_00fa1af0 size=140
+
+undefined4
+_opd_FUN_00fa1af0(undefined1 *param_1,int param_2,undefined4 param_3,undefined8 param_4,
+                 undefined8 param_5,undefined8 param_6,undefined8 param_7,undefined8 param_8)
+
+{
+  undefined4 uVar1;
+  undefined8 uStack00000048;
+  undefined8 uStack00000050;
+  undefined8 uStack00000058;
+  undefined8 uStack00000060;
+  undefined8 uStack00000068;
+  undefined1 *local_c [3];
+  
+  local_c[0] = param_1;
+  if (param_2 == 0) {
+    local_c[0] = (undefined1 *)0x0;
+  }
+  uStack00000048 = param_4;
+  uStack00000050 = param_5;
+  uStack00000058 = param_6;
+  uStack00000060 = param_7;
+  uStack00000068 = param_8;
+  uVar1 = _opd_FUN_00fa1e50(PTR_PTR_0121de44,local_c,param_3,&stack0x00000048);
+  if (local_c[0] != (undefined1 *)0x0) {
+    *local_c[0] = 0;
+  }
+  return uVar1;
+}
+
+
+
+==== D FN 00fa1b80 .opd.FUN_00fa1b80 size=132
+
+int * _opd_FUN_00fa1b80(int *param_1,undefined4 param_2,uint param_3)
+
+{
+  uint uVar1;
+  
+  uVar1 = param_1[1];
+  if (param_3 < (uint)param_1[1]) {
+    uVar1 = param_3;
+  }
+  if (uVar1 != 0) {
+    _opd_FUN_00f9ac38(*param_1,param_2,uVar1);
+    *param_1 = *param_1 + uVar1;
+    param_1[1] = param_1[1] - uVar1;
+  }
+  return param_1;
+}
+
+
+
+### callers of 00fa1af0 .opd.FUN_00fa1af0
+   0121a008 fn=?
+   00028620 fn=00028500 .opd.FUN_00028500
+   00028da0 fn=00028c68 .opd.FUN_00028c68
+   008eec8c fn=008eec18 .opd.FUN_008eec18
+   008ef848 fn=008ef7e8 .opd.FUN_008ef7e8
+   00d4cc44 fn=00d4cb20 .opd.FUN_00d4cb20
+   00d4ce14 fn=00d4cb20 .opd.FUN_00d4cb20
+   00ea245c fn=00ea2348 .opd.FUN_00ea2348
+   00ea2484 fn=00ea2348 .opd.FUN_00ea2348
+   00d4c884 fn=00d4c7a0 .opd.FUN_00d4c7a0
+   00d70c9c fn=00d70c58 .opd.FUN_00d70c58
+   00d733c8 fn=00d73190 .opd.FUN_00d73190
+   00f5cd3c fn=00f5cc90 .opd.FUN_00f5cc90
+   00f633b4 fn=00f63180 .opd.FUN_00f63180
+   00f633dc fn=00f63180 .opd.FUN_00f63180
+   00f63408 fn=00f63180 .opd.FUN_00f63180
+   00f63438 fn=00f63180 .opd.FUN_00f63180
+   00f63b58 fn=00f63a70 .opd.FUN_00f63a70
+   00f7104c fn=00f70fd8 .opd.FUN_00f70fd8
+   00f71488 fn=00f70fd8 .opd.FUN_00f70fd8
+   00f714c8 fn=00f70fd8 .opd.FUN_00f70fd8
+   00f6af6c fn=00f6ae48 .opd.FUN_00f6ae48
+   00f6855c fn=00f68508 .opd.FUN_00f68508
+   00f70b64 fn=00f70a08 .opd.FUN_00f70a08
+   00f744dc fn=00f74400 .opd.FUN_00f74400
+   00f74564 fn=00f74400 .opd.FUN_00f74400
+   00f614ec fn=00f61490 .opd.FUN_00f61490
+   00f61540 fn=00f61490 .opd.FUN_00f61490
+   00f73574 fn=00f733a8 .opd.FUN_00f733a8
+   00f7359c fn=00f733a8 .opd.FUN_00f733a8
+   00f735c0 fn=00f733a8 .opd.FUN_00f733a8
+   00f735e4 fn=00f733a8 .opd.FUN_00f733a8
+   00f73600 fn=00f733a8 .opd.FUN_00f733a8
+   00f74268 fn=00f74208 .opd.FUN_00f74208
+   00f743f4 fn=00f74208 .opd.FUN_00f74208
+   00d78574 fn=00d78310 .opd.FUN_00d78310
+   00ea1888 fn=00ea17d0 .opd.FUN_00ea17d0
+   00ea18b0 fn=00ea17d0 .opd.FUN_00ea17d0
+   00ea1a78 fn=00ea19c0 .opd.FUN_00ea19c0
+   00ea1aa0 fn=00ea19c0 .opd.FUN_00ea19c0
+   00f5d30c fn=00f5d2e0 .opd.FUN_00f5d2e0
+   00f60b48 fn=00f60398 .opd.FUN_00f60398
+   00f60c5c fn=00f60398 .opd.FUN_00f60398
+   00f60c80 fn=00f60398 .opd.FUN_00f60398
+   00f613f8 fn=00f613b8 .opd.FUN_00f613b8
+   00f77788 fn=00f77678 .opd.FUN_00f77678
+   00f778b4 fn=00f77678 .opd.FUN_00f77678
+   00f77944 fn=00f77678 .opd.FUN_00f77678
+   00f77998 fn=00f77678 .opd.FUN_00f77678
+   00f77a4c fn=00f77678 .opd.FUN_00f77678
+   00f77b00 fn=00f77678 .opd.FUN_00f77678
+   00f77b90 fn=00f77678 .opd.FUN_00f77678
+   00f77bdc fn=00f77678 .opd.FUN_00f77678
+   00f77c94 fn=00f77678 .opd.FUN_00f77678
+   00f77d20 fn=00f77678 .opd.FUN_00f77678
+   00f77de8 fn=00f77678 .opd.FUN_00f77678
+   00f77e7c fn=00f77678 .opd.FUN_00f77678
+   00f77e9c fn=00f77678 .opd.FUN_00f77678
+   00f77f14 fn=00f77678 .opd.FUN_00f77678
+   00f77f98 fn=00f77678 .opd.FUN_00f77678
+   00f78064 fn=00f77678 .opd.FUN_00f77678
+   00f78108 fn=00f77678 .opd.FUN_00f77678
+   00f78168 fn=00f77678 .opd.FUN_00f77678
+   00f781b8 fn=00f77678 .opd.FUN_00f77678
+   00f78254 fn=00f77678 .opd.FUN_00f77678
+   00f78284 fn=00f77678 .opd.FUN_00f77678
+   00f782c4 fn=00f77678 .opd.FUN_00f77678
+   00f7830c fn=00f77678 .opd.FUN_00f77678
+   00f78374 fn=00f77678 .opd.FUN_00f77678
+   00f783a8 fn=00f77678 .opd.FUN_00f77678
+   00f783dc fn=00f77678 .opd.FUN_00f77678
+   00f78410 fn=00f77678 .opd.FUN_00f77678
+   00f78470 fn=00f77678 .opd.FUN_00f77678
+   00f784a8 fn=00f77678 .opd.FUN_00f77678
+   00f78550 fn=00f77678 .opd.FUN_00f77678
+   00f78628 fn=00f77678 .opd.FUN_00f77678
+   00f78674 fn=00f77678 .opd.FUN_00f77678
+   00f786b0 fn=00f77678 .opd.FUN_00f77678
+   00f786e4 fn=00f77678 .opd.FUN_00f77678
+   00f787c4 fn=00f77678 .opd.FUN_00f77678
+   00f78810 fn=00f77678 .opd.FUN_00f77678
+   00f7883c fn=00f77678 .opd.FUN_00f77678
+   00f78898 fn=00f77678 .opd.FUN_00f77678
+   00f7896c fn=00f77678 .opd.FUN_00f77678
+   00f78a40 fn=00f77678 .opd.FUN_00f77678
+   00f78a88 fn=00f77678 .opd.FUN_00f77678
+   00f78ab0 fn=00f77678 .opd.FUN_00f77678
+   00f78adc fn=00f77678 .opd.FUN_00f77678
+   00f78b24 fn=00f77678 .opd.FUN_00f77678
+   00f78c08 fn=00f77678 .opd.FUN_00f77678
+   00f78cac fn=00f77678 .opd.FUN_00f77678
+   00f78d48 fn=00f77678 .opd.FUN_00f77678
+   00f78de4 fn=00f77678 .opd.FUN_00f77678
+   00f78e8c fn=00f77678 .opd.FUN_00f77678
+   00f78f34 fn=00f77678 .opd.FUN_00f77678
+   00f78f70 fn=00f77678 .opd.FUN_00f77678
+   00f78fbc fn=00f77678 .opd.FUN_00f77678
+   00f79008 fn=00f77678 .opd.FUN_00f77678
+   00f790bc fn=00f77678 .opd.FUN_00f77678
+   00f745c8 fn=00f74578 .opd.FUN_00f74578
+   00f74614 fn=00f74578 .opd.FUN_00f74578
+   00f65e94 fn=00f65ab0 .opd.FUN_00f65ab0
+   00f746b0 fn=00f74648 .opd.FUN_00f74648
+   00f747a4 fn=00f74648 .opd.FUN_00f74648
+   00f74840 fn=00f74648 .opd.FUN_00f74648
+   00f7488c fn=00f74648 .opd.FUN_00f74648
+   00f748b4 fn=00f74648 .opd.FUN_00f74648
+   00f741a0 fn=00f74110 .opd.FUN_00f74110
+   00f670fc fn=00f666e0 .opd.FUN_00f666e0
+   00f674c8 fn=00f666e0 .opd.FUN_00f666e0
+   00f675bc fn=00f666e0 .opd.FUN_00f666e0
+   00f651a4 fn=00f64bf8 .opd.FUN_00f64bf8
+   00f725cc fn=00f724b8 .opd.FUN_00f724b8
+   00f72658 fn=00f724b8 .opd.FUN_00f724b8
+
+### callers of 00fbc1fc FUN_00fbc1fc
+   00028658 fn=00028500 .opd.FUN_00028500
+   00028dd8 fn=00028c68 .opd.FUN_00028c68
+   00fbc20c fn=00fbc1fc FUN_00fbc1fc
+   0119f550 fn=?
+

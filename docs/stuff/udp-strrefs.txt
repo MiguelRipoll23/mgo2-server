@@ -1,0 +1,108 @@
+## string 'tr_netRecvFrom' at 010004a0
+## string 'mrd_upnp_socket.c' at 01000210
+   REF from 00f5a9c4 fn=00f5a8d0 .opd.FUN_00f5a8d0 type=PARAM
+   REF from 00f5aa18 fn=00f5a8d0 .opd.FUN_00f5a8d0 type=PARAM
+   REF from 00f5a1a4 fn=00f5a0f8 .opd.FUN_00f5a0f8 type=PARAM
+   REF from 00f5a268 fn=00f5a0f8 .opd.FUN_00f5a0f8 type=PARAM
+   REF from 00f5a298 fn=00f5a0f8 .opd.FUN_00f5a0f8 type=PARAM
+   REF from 00f5a288 fn=00f5a0f8 .opd.FUN_00f5a0f8 type=PARAM
+   REF from 00f5a2f8 fn=00f5a2b8 .opd.FUN_00f5a2b8 type=PARAM
+   REF from 00f5a430 fn=00f5a2b8 .opd.FUN_00f5a2b8 type=PARAM
+   REF from 00f5a438 fn=00f5a2b8 .opd.FUN_00f5a2b8 type=PARAM
+   REF from 00f5a47c fn=00f5a2b8 .opd.FUN_00f5a2b8 type=PARAM
+   REF from 00f5a45c fn=00f5a2b8 .opd.FUN_00f5a2b8 type=PARAM
+   REF from 00f5a4fc fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a528 fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a574 fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a590 fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a5c0 fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a6a8 fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a7e4 fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a8a4 fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a8ac fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a864 fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a640 fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a678 fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f5a810 fn=00f5a498 .opd.FUN_00f5a498 type=PARAM
+   REF from 00f59948 fn=00f598f0 .opd.FUN_00f598f0 type=PARAM
+   REF from 00f59a58 fn=00f598f0 .opd.FUN_00f598f0 type=PARAM
+   REF from 00f59b20 fn=00f59ad0 .opd.FUN_00f59ad0 type=PARAM
+   REF from 00f59c18 fn=00f59ad0 .opd.FUN_00f59ad0 type=PARAM
+   REF from 00f59d60 fn=00f59c88 .opd.FUN_00f59c88 type=PARAM
+   REF from 00f59da4 fn=00f59c88 .opd.FUN_00f59c88 type=PARAM
+   REF from 00f59e6c fn=00f59c88 .opd.FUN_00f59c88 type=PARAM
+   REF from 00f59e4c fn=00f59c88 .opd.FUN_00f59c88 type=PARAM
+   REF from 00f591a4 fn=00f59150 .opd.FUN_00f59150 type=PARAM
+   REF from 00f59280 fn=00f59150 .opd.FUN_00f59150 type=PARAM
+   REF from 00f592b0 fn=00f59150 .opd.FUN_00f59150 type=PARAM
+   REF from 00f592cc fn=00f59150 .opd.FUN_00f59150 type=PARAM
+   REF from 00f59388 fn=00f59150 .opd.FUN_00f59150 type=PARAM
+   REF from 00f59424 fn=00f593a8 .opd.FUN_00f593a8 type=PARAM
+   REF from 00f594cc fn=00f593a8 .opd.FUN_00f593a8 type=PARAM
+   REF from 00f596dc fn=00f59670 .opd.FUN_00f59670 type=PARAM
+   REF from 00f5974c fn=00f59670 .opd.FUN_00f59670 type=PARAM
+   REF from 00f5976c fn=00f59670 .opd.FUN_00f59670 type=PARAM
+   REF from 00f59828 fn=00f59670 .opd.FUN_00f59670 type=PARAM
+   REF from 00f59894 fn=00f59670 .opd.FUN_00f59670 type=PARAM
+   REF from 00f598c8 fn=00f59670 .opd.FUN_00f59670 type=PARAM
+   REF from 00f598d0 fn=00f59670 .opd.FUN_00f59670 type=PARAM
+   REF from 00f589b8 fn=00f58978 .opd.FUN_00f58978 type=PARAM
+   REF from 00f58a0c fn=00f58978 .opd.FUN_00f58978 type=PARAM
+   REF from 00f58a4c fn=00f58978 .opd.FUN_00f58978 type=PARAM
+   REF from 00f58ab4 fn=00f58a60 .opd.FUN_00f58a60 type=PARAM
+   REF from 00f58b14 fn=00f58a60 .opd.FUN_00f58a60 type=PARAM
+   REF from 00f58b5c fn=00f58a60 .opd.FUN_00f58a60 type=PARAM
+   REF from 00f58b88 fn=00f58a60 .opd.FUN_00f58a60 type=PARAM
+   REF from 00f58bb4 fn=00f58a60 .opd.FUN_00f58a60 type=PARAM
+   REF from 00f58d20 fn=00f58cc8 .opd.FUN_00f58cc8 type=PARAM
+   REF from 00f58f2c fn=00f58ef8 .opd.FUN_00f58ef8 type=PARAM
+   REF from 00f58fec fn=00f58ef8 .opd.FUN_00f58ef8 type=PARAM
+   REF from 00f58404 fn=00f583d0 .opd.FUN_00f583d0 type=PARAM
+   REF from 00f58464 fn=00f583d0 .opd.FUN_00f583d0 type=PARAM
+   REF from 00f58370 fn=00f58370 .opd.FUN_00f58370 type=PARAM
+   REF from 00f584bc fn=00f58498 .opd.FUN_00f58498 type=PARAM
+   REF from 00f58530 fn=00f58498 .opd.FUN_00f58498 type=PARAM
+   REF from 00f585a4 fn=00f58568 .opd.FUN_00f58568 type=PARAM
+   REF from 00f5866c fn=00f58568 .opd.FUN_00f58568 type=PARAM
+   REF from 00f586d8 fn=00f58568 .opd.FUN_00f58568 type=PARAM
+   REF from 00f58720 fn=00f586f8 .opd.FUN_00f586f8 type=PARAM
+   REF from 00f58748 fn=00f586f8 .opd.FUN_00f586f8 type=PARAM
+   REF from 00f5882c fn=00f587f0 .opd.FUN_00f587f0 type=PARAM
+   REF from 00f5887c fn=00f587f0 .opd.FUN_00f587f0 type=PARAM
+   REF from 00f58894 fn=00f587f0 .opd.FUN_00f587f0 type=PARAM
+   REF from 00f58900 fn=00f587f0 .opd.FUN_00f587f0 type=PARAM
+   REF from 00f58924 fn=00f587f0 .opd.FUN_00f587f0 type=PARAM
+   REF from 00f5894c fn=00f587f0 .opd.FUN_00f587f0 type=PARAM
+   REF from 0121cf04 fn=? type=DATA
+## string 'mgonet_connect_timeo' at 00ff8fc8
+   REF from 00f007e4 fn=00f00778 .opd.FUN_00f00778 type=PARAM
+   REF from 011e6cd8 fn=? type=DATA
+## string 'recved_sz[' at 00ffeef8
+   REF from 00f51d38 fn=00f516b8 .opd.FUN_00f516b8 type=PARAM
+   REF from 0121cc28 fn=? type=DATA
+## string 'Could not bind port' at 01000530
+   REF from 0121cfe8 fn=? type=DATA
+## string 'mrd_upnp_port_bind.c' at 00ffeac0
+   REF from 00f4ec08 fn=00f4ebc8 .opd.FUN_00f4ebc8 type=PARAM
+   REF from 00f4ed54 fn=00f4ebc8 .opd.FUN_00f4ebc8 type=PARAM
+   REF from 00f4ed98 fn=00f4ebc8 .opd.FUN_00f4ebc8 type=PARAM
+   REF from 00f4e434 fn=00f4df68 .opd.FUN_00f4df68 type=PARAM
+   REF from 00f4e5fc fn=00f4df68 .opd.FUN_00f4df68 type=PARAM
+   REF from 00f4e6c8 fn=00f4df68 .opd.FUN_00f4df68 type=PARAM
+   REF from 00f4e7e4 fn=00f4df68 .opd.FUN_00f4df68 type=PARAM
+   REF from 00f4e878 fn=00f4df68 .opd.FUN_00f4df68 type=PARAM
+   REF from 00f4e720 fn=00f4df68 .opd.FUN_00f4df68 type=PARAM
+   REF from 0121cbbc fn=? type=DATA
+## string 'Could not create socket' at 010008a0
+   REF from 0121d090 fn=? type=DATA
+## string 'Could not connect socket' at 01000590
+   REF from 0121cff4 fn=? type=DATA
+## string 'gethostbyname return NULL' at 01000570
+   REF from 0121cff0 fn=? type=DATA
+## string 'getaddrinfo' NOT FOUND
+## string 'TR_PEER_FROM' at 010016b0
+## string 'Torrent protocol' at 010013f8
+   REF from 00f6878c fn=00f68638 .opd.FUN_00f68638 type=PARAM
+   REF from 0121d2b4 fn=? type=DATA
+## string 'BitTorrent protocol' at 010021c8
+   REF from 0121d4b8 fn=? type=DATA

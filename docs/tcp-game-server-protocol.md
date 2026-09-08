@@ -63,16 +63,16 @@ under the `mgonet_connect_timeo` / `mgo_connect_server_by_index()` strings **[V]
 - `0xff9040` … `0xff9048` = the two frame keys **[C]** (Nomad `KEY_XOR`/`KEY_HMAC`).
 - `0xff905c+` = **canonical Blowfish initialization constants** (P-array starts
   `243f6a88 85a308d3 …`, 4168 bytes total — 18 P + 4×256 S words, big-endian u32s,
-  dumped verbatim to `keys/blowfish_pi_tables.bin`). The game builds its Blowfish schedule
+  dumped verbatim to `keys/blowfish-pi-tables.bin`). The game builds its Blowfish schedule
   from these at runtime; Nomad instead ships the **pre-scheduled** tables in
   `Constants.CRYPTO_PACKET` (starts `B0 8E 37 6F 3D 82 D6 3E …`) and `CRYPTO_AUTH`
   (starts `E0 CC 5D 24 95 29 33 77 …`) — dumped byte-for-byte to
-  `keys/blowfish_packet_key.bin` / `keys/blowfish_auth_key.bin` so a client can load the final
+  `keys/blowfish-packet-key.bin` / `keys/blowfish-auth-key.bin` so a client can load the final
   schedule directly without running the key schedule **[C]**.
 
-> **Key files (see `keys/tcp_keys.md`):** `tcp_xor_key.bin` (`0x5a7085af`),
-> `tcp_hmac_md5_key.bin` (`"Z7/biJ46TzGF-8yx"`), `blowfish_pi_tables.bin` (canonical π),
-> `blowfish_packet_key.bin` / `blowfish_auth_key.bin` (pre-scheduled Blowfish states).
+> **Key files (see `keys/tcp-keys.md`):** `tcp-xor-key.bin` (`0x5a7085af`),
+> `tcp-hmac-md5-key.bin` (`"Z7/biJ46TzGF-8yx"`), `blowfish-pi-tables.bin` (canonical π),
+> `blowfish-packet-key.bin` / `blowfish-auth-key.bin` (pre-scheduled Blowfish states).
 
 ---
 
@@ -158,7 +158,7 @@ Key handlers resolved to the game-flow commands (full map in `tools/mgo2_tcpdisp
 | `0x4801..0x4881` | `FUN_00f24a68`…`FUN_00f23bd4` | clan packets |
 | `0x4901..0x4a50`, `0x4b01..0x4b93`, `0x4d00`, `0x4e10..0x4e23`, `0x4f01..0x4f18` | dedicated handlers (see `tcp_dispatch.json`) | chat / friends / message blocks |
 
-> **peer_id provenance (cross-ref to `udp_p2p.md` §4):** the character id delivered by
+> **peer_id provenance (cross-ref to `udp-p2p-protocol.md` §4):** the character id delivered by
 > `0x4101` lands at `game_ctx+0x15710`; accessor `FUN_00f02e04` reads it; the peer-struct
 > builder `FUN_00aa0f48` puts it in word 0 and calls the p2p module's setter
 > `FUN_002616d8` → `module_base+0x74` = the UDP handshake's `peer_id`.

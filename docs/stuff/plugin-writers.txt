@@ -1,0 +1,29 @@
+== callers of 2628
+   call @000027e0 in FUN_00002778 @00002778
+   call @00001abc in FUN_000019a8 @000019a8
+== callers of 26d0
+   call @0000286c in FUN_00002778 @00002778
+   call @000028f0 in FUN_00002778 @00002778
+   call @00002bc0 in FUN_00002ac8 @00002ac8
+   call @000011b4 in FUN_00000784 @00000784
+   call @000011d0 in FUN_00000784 @00000784
+   call @00001a40 in FUN_000019a8 @000019a8
+   call @00001adc in FUN_000019a8 @000019a8
+   call @00002cec in FUN_00002bd8 @00002bd8
+== callers of 2378
+   call @00002684 in FUN_00002628 @00002628
+== callers of 2418
+   call @0000272c in FUN_000026d0 @000026d0
+   call @00001aa0 in FUN_000019a8 @000019a8
+== callers of 19a8
+   call @00001dc4 (no func)
+== callers of 1dc4
+wrote C:/Users/migue/Downloads/plugin_decomp/f_2778_FUN_00002778.c
+already: C:/Users/migue/Downloads/plugin_decomp/f_19a8_FUN_000019a8.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_2ac8_FUN_00002ac8.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_1c30_FUN_00001c30.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_784_FUN_00000784.c
+wrote C:/Users/migue/Downloads/plugin_decomp/f_2bd8_FUN_00002bd8.c
+already: C:/Users/migue/Downloads/plugin_decomp/f_2628_FUN_00002628.c
+already: C:/Users/migue/Downloads/plugin_decomp/f_26d0_FUN_000026d0.c
+DONE

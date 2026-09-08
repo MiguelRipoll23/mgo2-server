@@ -1,0 +1,15 @@
+## 'mgonet_connect_timeo' at 00ff8fc8
+   REF 00f007e4 fn=00f00778 .opd.FUN_00f00778
+   REF 011e6cd8 fn=?
+## '**** wait ***' at 00ff8fe0
+   REF 00f0083c fn=00f00778 .opd.FUN_00f00778
+   REF 011e6cdc fn=?
+## '**** poll off ***' at 00ff8ff0
+   REF 00f00850 fn=00f00778 .opd.FUN_00f00778
+   REF 011e6ce0 fn=?
+## 'mgo_connect_server_by_index() index=%d, type=%d ' at 00ff9008
+   REF 00f008fc fn=00f00890 .opd.FUN_00f00890
+   REF 011e6ce4 fn=?
+## 'recved_sz[%d]' at 00ffeef8
+   REF 00f51d38 fn=00f516b8 .opd.FUN_00f516b8
+   REF 0121cc28 fn=?

@@ -4,7 +4,7 @@ The wire protocol of the **UDP peer-to-peer** channel of `MGO2.ELF` (`NPMG00020`
 reverse-engineered from the game binary **and verified byte-for-byte against 10 live
 captures** of a real join dial — and exercised end-to-end through the **data phase**
 by a working fake host (2026-09-09, §6.2/§11). The TCP game-server channel is documented separately in
-`tcp_protocol.md` and is **not** part of this channel — the mgonet XOR/HMAC/Blowfish
+`tcp-game-server-protocol.md` and is **not** part of this channel — the mgonet XOR/HMAC/Blowfish
 framing and the `0x2a`/`0x2d` stream readers that open `socket(2,1,0)` must not be
 conflated with the p2p channel.
 
@@ -270,7 +270,7 @@ The joiner's reply is routed by the receive loop (`FUN_002620d8`) to its dial se
 > v2.18.7 twin at plugin `0x1c300`) — it calls the original `FUN_002666c8` with unchanged
 > arguments and only accumulates a write-only telemetry counter. It changes no wire byte,
 > no key, and no validation gate, and cannot distinguish a real host from a fake one on
-> this channel. See `common_code_injection.md` §3.4.
+> this channel. See `code-injection.md` §3.4.
 
 ---
 

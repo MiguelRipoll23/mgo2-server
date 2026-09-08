@@ -4,7 +4,7 @@
 the game (`MGO2.ELF`, the MGO2PC EBOOT for `NPMG00020`), and the runtime plugin
 (`plugin.sprx`, module name `MGOPlugin`).*
 
-Companion doc: [`tcp_fingerprint.md`](tcp_fingerprint.md) covers what each component collects/transmits.
+Companion doc: [`code-injection-fingerprint.md`](code-injection-fingerprint.md) covers what each component collects/transmits.
 This doc explains the *mechanism* of code injection. All addresses are virtual addresses in the
 respective binary. Artifacts referenced at the bottom.
 
@@ -160,7 +160,7 @@ functions). Evidence labels, from strings the replacements pass:
 
 | Plugin fn | Hooked sites (game) | Evidence / purpose |
 |---|---|---|
-| `FUN_3520` | `0x262e9c` (in `FUN_00262d10`, orig `bl 0x26c6d8`) | **Auth token.** Calls game API `[DAT_17f04+0x44]` (runtime-resolved) then `FUN_3d94` → builds the MAC/media-id credential into global token (Salsa20). See tcp_fingerprint.md |
+| `FUN_3520` | `0x262e9c` (in `FUN_00262d10`, orig `bl 0x26c6d8`) | **Auth token.** Calls game API `[DAT_17f04+0x44]` (runtime-resolved) then `FUN_3d94` → builds the MAC/media-id credential into global token (Salsa20). See code-injection-fingerprint.md |
 | `FUN_35a4` | `0xfbb29c` (16-B dispatch stub, via `FUN_2778` trampoline, §3.3) | **`auth`/`client` pair injection** — runs the relocated original stub, then registers `{"auth", &token}` and `{"client", "2.18.0"}` on the object the game builds through that dispatch |
 | `FUN_3674` | `0xa0ecc0`, `0xc07af8` | Passes **`"Ver.2.18.0"`** into game API `[+0x2c]` — client-version injection into a game handshake/UI call |
 | `FUN_11f50` | `0x9bd6c8` (orig `bl 0xaa8920`) | **Custom map rules** — carries the whole MGO2PC rule set: `"Night (DP)"`, `"Dust Enabled (DP)"`, `"Storm Disabled"`, … |
@@ -198,7 +198,7 @@ Instead of overwriting a branch, plugin `FUN_2778`:
    bytes are only written at load time), then
 2. writes a **jump to the plugin replacement `FUN_35a4`** over the game stub.
 
-`FUN_35a4` is the **auth/client pair builder** (see tcp_fingerprint.md §4.5):
+`FUN_35a4` is the **auth/client pair builder** (see code-injection-fingerprint.md §4.5):
 - it runs the relocated original stub (so the game's own dispatch still happens), then
 - when the caller passes a non-null second argument, it calls the same dispatch twice more
   with the string-pointer pairs `{"auth", &token}` (token global `DAT_183bd`, built by
@@ -216,7 +216,7 @@ rewrites.
 Two of the 60 `bl`-rewrite sites sit in the **UDP p2p receive loop** (`FUN_002620d8`),
 both replacing calls to the p2p **message decoder** `FUN_002666c8` (the function that
 undoes the header scramble + XOR chain, validates the tail digest, and parses the
-handshake — see `udp_p2p.md` §5):
+handshake — see `udp-p2p-protocol.md` §5):
 
 ```
  game site    game fn (containing)      orig callee   plugin fn
@@ -266,7 +266,7 @@ Verified effects (both plugin images):
   cannot be what blocks a fake player:
   - the branch fires identically for a real host's reply — the wrapper has no way to tell
     them apart, because the p2p channel carries no credential (the Salsa20 `auth` token
-    travels over TCP/HTTP only, see `tcp_fingerprint.md`, and `udp_p2p.md` §1 confirms the
+    travels over TCP/HTTP only, see `code-injection-fingerprint.md`, and `udp-p2p-protocol.md` §1 confirms the
     fingerprint is not sent on this channel); and
   - even in the worst case the reply is **not lost**: the receive loop falls through to
     the global accept session, whose receiver `FUN_00267d58` calls the decoder again at
@@ -278,7 +278,7 @@ Verified effects (both plugin images):
 
 **Bottom line:** the plugin's only p2p-path footprint is this transparent counter wrapper.
 It changes no packet, no key, no validation gate. A fake player whose handshake reply is
-byte-correct per `udp_p2p.md` §4–§5 is indistinguishable from a real host on this channel.
+byte-correct per `udp-p2p-protocol.md` §4–§5 is indistinguishable from a real host on this channel.
 
 ---
 
@@ -385,7 +385,7 @@ table `DAT_17f04` (saved originals / game services).
    MAC + embedded keys, Salsa20). When the game later dispatches through stub `0xfbb29c`,
    `FUN_35a4` attaches that token as the **`auth`** field (with `client=2.18.0`) to the object
    being built — the record the game's own login code serializes and transmits (see
-   `tcp_fingerprint.md`).
+   `code-injection-fingerprint.md`).
 
 ---
 
@@ -406,7 +406,7 @@ table `DAT_17f04` (saved originals / game services).
 
 | File | Contents |
 |---|---|
-| `tcp_fingerprint.md` | what each component reads/transmits (MAC, media ID, IDPS, tokens) |
+| `code-injection-fingerprint.md` | what each component reads/transmits (MAC, media ID, IDPS, tokens) |
 | `eboot_analysis/plugin_analysis/hook_map.txt` | 60-row machine-readable hook table |
 | `mgo2_decomp/INDEX.txt` | hook sites → containing game fn; original targets |
 | `mgo2_decomp/site_*.c` | decompiled game functions containing hook sites |
