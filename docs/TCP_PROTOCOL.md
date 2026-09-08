@@ -70,7 +70,7 @@ under the `mgonet_connect_timeo` / `mgo_connect_server_by_index()` strings **[V]
   `keys/blowfish_packet_key.bin` / `keys/blowfish_auth_key.bin` so a client can load the final
   schedule directly without running the key schedule **[C]**.
 
-> **Key files (see `keys/TCP_KEYS.md`):** `tcp_xor_key.bin` (`0x5a7085af`),
+> **Key files (see `keys/tcp_keys.md`):** `tcp_xor_key.bin` (`0x5a7085af`),
 > `tcp_hmac_md5_key.bin` (`"Z7/biJ46TzGF-8yx"`), `blowfish_pi_tables.bin` (canonical π),
 > `blowfish_packet_key.bin` / `blowfish_auth_key.bin` (pre-scheduled Blowfish states).
 
@@ -158,7 +158,7 @@ Key handlers resolved to the game-flow commands (full map in `tools/mgo2_tcpdisp
 | `0x4801..0x4881` | `FUN_00f24a68`…`FUN_00f23bd4` | clan packets |
 | `0x4901..0x4a50`, `0x4b01..0x4b93`, `0x4d00`, `0x4e10..0x4e23`, `0x4f01..0x4f18` | dedicated handlers (see `tcp_dispatch.json`) | chat / friends / message blocks |
 
-> **peer_id provenance (cross-ref to `UDP_P2P.md` §4):** the character id delivered by
+> **peer_id provenance (cross-ref to `udp_p2p.md` §4):** the character id delivered by
 > `0x4101` lands at `game_ctx+0x15710`; accessor `FUN_00f02e04` reads it; the peer-struct
 > builder `FUN_00aa0f48` puts it in word 0 and calls the p2p module's setter
 > `FUN_002616d8` → `module_base+0x74` = the UDP handshake's `peer_id`.

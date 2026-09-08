@@ -2,12 +2,12 @@
 
 All values verified in `MGO2.ELF` (retail `NPMG00020`) and/or against **10 live
 captures** of a real join dial unless marked **[N]** (Nomad). The full protocol
-description lives in `../UDP_P2P.md`; this file is the quick reference.
+description lives in `../udp_p2p.md`; this file is the quick reference.
 
 > **Correction:** the old "12-byte envelope" model in earlier revisions of this file was
 > the *internal* queue-node header, not the wire format. On the wire a datagram is:
 > `[ 2-byte scrambled header ][ 4-byte prefix ][ message ][ 10-byte unchained tail ]`
-> (see "Wire prefix" below and `../UDP_P2P.md` §3/§5).
+> (see "Wire prefix" below and `../udp_p2p.md` §3/§5).
 
 ## Handshake gate — the one constant the receiver validates
 
@@ -41,7 +41,7 @@ The handshake receiver does **not** validate these bytes — zeros/constants are
 
 | Off | Size | Field | Endian | Notes |
 |---|---|---|---|---|
-| `0x00` | u16 | **scrambled header** — unscrambles to the per-frame counter (`LE` u16); seeds the XOR chain | LE | see `../UDP_P2P.md` §5.1 |
+| `0x00` | u16 | **scrambled header** — unscrambles to the per-frame counter (`LE` u16); seeds the XOR chain | LE | see `../udp_p2p.md` §5.1 |
 | `0x02` | u16 | const tag `0x1000` | LE (wire `00 10`) | constant across all 10 captures; meaning unresolved |
 | `0x04` | u16 | **message length** | LE (wire `1c 00` = 28 for the handshake) | the size of the message that follows |
 
@@ -93,7 +93,7 @@ the sender's queue-drain, and an unmatched datagram through the global accept se
 ## Frame crypto — verified implementation
 
 Verified byte-for-byte: decoding each of the 10 live captures and re-encoding
-reproduces the exact wire bytes. See `../UDP_P2P.md` §5 for the annotated version.
+reproduces the exact wire bytes. See `../udp_p2p.md` §5 for the annotated version.
 
 ```python
 import hashlib
@@ -162,7 +162,7 @@ def encode(plain, hdr, keyed):
 - **The tail is a self-verifying MD5 digest, validated on every datagram** (decoder
   `0x266ff4`/`0x266948`, memcmp at `0x267274`); mismatch = silent drop before any
   field check. Computed on the **unscrambled pre-chain** datagram, so the sender
-  applies it after the chain and before the scramble (§5.3 of `../UDP_P2P.md`).
+  applies it after the chain and before the scramble (§5.3 of `../udp_p2p.md`).
 - `q0`/`q1` are mod `len` and can land on the header bytes themselves (44-byte
   handshake: `q0=3, q1=42`) — the swap order matters; encode is the exact inverse.
 

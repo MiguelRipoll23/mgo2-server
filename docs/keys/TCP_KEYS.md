@@ -32,7 +32,7 @@ Only these command ids decrypt with the packet instance:
 The auth instance is used for login/account command payloads
 (`Users.java: Crypto.instanceAuth().encrypt(...)`).
 
-## Frame layout recap (see `../TCP_PROTOCOL.md` for the full protocol)
+## Frame layout recap (see `../tcp_protocol.md` for the full protocol)
 
 | Off | Size | Field |
 |---|---|---|

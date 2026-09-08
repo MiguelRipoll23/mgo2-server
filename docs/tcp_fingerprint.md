@@ -281,7 +281,7 @@ extracted blob is the raw lobby geometry data the game loads into memory.
 
 ## 9. Artifacts
 
-- `FINGERPRINT.md` — this research note
+- `tcp_fingerprint.md` — this research note
 - `eboot_analysis/README.md` — launcher + manifest + stage-file analysis index
 - `eboot_analysis/strings_all.txt`, `strings_launcher.txt`, `string_code_map.txt`, `urls.txt`, `syscalls.txt`
 - `eboot_analysis/downloads/` — `latest.txt` (`00.35`), `mgo.zip`/`mgo.json`, `NPMG00010.zip`, `MPO+THEME.dbm`, verified CDN samples, decrypted lobby stage files
