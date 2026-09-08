@@ -17,6 +17,26 @@ function parseStoredOptions(json: string): Record<string, unknown> {
   }
 }
 
+/**
+ * Builds the stored (or default) 0x4120 payload for a character. Shared with
+ * the connect burst: sending an empty or flag-less 0x4120 there makes the
+ * client's validator reset every gameplay setting to its hardcoded default,
+ * which is exactly the "settings are not saved" symptom.
+ */
+export async function loadGameplayOptionsPayload(
+  characterService: CharacterService,
+  characterId: number | null,
+): Promise<Uint8Array> {
+  if (characterId === null) {
+    return buildGameplayOptionsPayload({});
+  }
+  const character = await characterService.findById(characterId);
+  const stored = character?.gameplay_options
+    ? parseStoredOptions(character.gameplay_options)
+    : {};
+  return buildGameplayOptionsPayload(stored);
+}
+
 @injectable()
 @GameCommandHandler(0x411b)
 export class GetGameplayOptionsUiSettingsHandler implements ICommandHandler {

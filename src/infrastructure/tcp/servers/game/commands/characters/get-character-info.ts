@@ -9,6 +9,10 @@ import { UserService } from "../../../../../../modules/user/user-service.ts";
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
 import { buildPersonalInfoPayload } from "./get-personal-info.ts";
 import { GEAR_PAYLOAD } from "./get-gear.ts";
+import { loadGameplayOptionsPayload } from "./get-gameplay-options-ui-settings.ts";
+import { buildSkillsPayload } from "./get-skills.ts";
+import { loadSkillSetsPayload } from "./get-skill-sets.ts";
+import { loadGearSetsPayload } from "./get-gear-sets.ts";
 
 const CHAR_INFO_FIXED_BYTES = new Uint8Array([
   0x16, 0xae, 0x03, 0x38, 0x01, 0x3e, 0x01, 0x50,
@@ -53,6 +57,12 @@ function buildCharacterInfoPayload(
   }
   // 25-byte tail: u8 + 16 bytes + two u32s, all zeros.
   writer.writePadding(INFO_PAYLOAD_SIZE - writer.size);
+  // Byte 0x142 — the feature-flag byte this build's parser reads past the
+  // grid (0xf08cb0 feeds it to the splitter at 0xf06450, which stores its
+  // low four bits as separate feature flags). All zeros = no optional
+  // features. Without this byte the parse fails with -0x47 and every
+  // derived field stays zero — including anything that gates content.
+  writer.writeUint8(0);
 
   return writer.build();
 }
@@ -105,7 +115,18 @@ export class GetCharacterInfoHandler implements ICommandHandler {
     // 0x4124 (gear) was missing entirely — the client's gear table was
     // filled by whatever 0x4133 happened to send later.
     await sendPacket(session, 0x4101, characterInfoPayload);
-    await sendPacket(session, 0x4120);
+    // 0x4120 with the stored settings. An empty or flag-less 0x4120 makes
+    // the client's validator overwrite every gameplay setting (camera
+    // speed, weapon cycling, volumes, ...) with hardcoded defaults —
+    // exactly the "settings are not saved" symptom.
+    await sendPacket(
+      session,
+      0x4120,
+      await loadGameplayOptionsPayload(
+        this.characterService,
+        characterId > 0 ? characterId : null,
+      ),
+    );
     if (characterId > 0) {
       const macros = await this.characterService.getChatMacros(characterId);
       await sendPacket(session, 0x4121, buildChatMacroPayload(macros, 0));
@@ -124,9 +145,26 @@ export class GetCharacterInfoHandler implements ICommandHandler {
       await sendPacket(session, 0x4122);
     }
     await sendPacket(session, 0x4124, GEAR_PAYLOAD);
-    await sendPacket(session, 0x4125);
-    await sendPacket(session, 0x4140);
-    await sendPacket(session, 0x4142);
+    // The remaining catalogues with real payloads too: empty versions left
+    // the client's skill table and saved skill/gear-set slots unpopulated
+    // after login (the reference's burst sends these fully populated).
+    await sendPacket(session, 0x4125, buildSkillsPayload());
+    await sendPacket(
+      session,
+      0x4140,
+      await loadSkillSetsPayload(
+        this.characterService,
+        characterId > 0 ? characterId : null,
+      ),
+    );
+    await sendPacket(
+      session,
+      0x4142,
+      await loadGearSetsPayload(
+        this.characterService,
+        characterId > 0 ? characterId : null,
+      ),
+    );
   }
 }
 

@@ -8,7 +8,16 @@ import { CharacterService } from "../../../../../../modules/character/character-
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
 
 const SKILL_SET_NAME_LENGTH = 63;
+/** u32 modes + 5 skill bytes + 5 level bytes + 63-byte name. */
+const SKILL_SET_RECORD_SIZE = 4 + 5 + 5 + SKILL_SET_NAME_LENGTH;
 
+/**
+ * 0x4141 — the client's skill-set save. In this build the request is
+ * three records of { u32 modes, 5×u8 skill ids, 5×u8 levels, 63-byte name }
+ * (builder 0xf0c6ec: one 0x50-stride loop, append-bytes for the id/level
+ * runs), and the ack is parsed on the SAME id 0x4141 (waiter 0xf06bfc reads
+ * one u32 result). Replying 0x4142 left the client's request slot hanging.
+ */
 @injectable()
 @GameCommandHandler(0x4141)
 export class UpdateSkillSetsHandler implements ICommandHandler {
@@ -33,35 +42,45 @@ export class UpdateSkillSetsHandler implements ICommandHandler {
       }> = [];
 
       let index = 0;
-      while (reader.remaining() >= SKILL_SET_NAME_LENGTH + 9 * 4) {
-        const name = reader.readFixedString(SKILL_SET_NAME_LENGTH);
+      while (reader.remaining() >= SKILL_SET_RECORD_SIZE) {
         const modes = reader.readUint32();
-        const skill_1 = reader.readUint32();
-        const skill_2 = reader.readUint32();
-        const skill_3 = reader.readUint32();
-        const skill_4 = reader.readUint32();
-        const level_1 = reader.readUint32();
-        const level_2 = reader.readUint32();
-        const level_3 = reader.readUint32();
-        const level_4 = reader.readUint32();
+        const skills = [
+          reader.readUint8(),
+          reader.readUint8(),
+          reader.readUint8(),
+          reader.readUint8(),
+          reader.readUint8(),
+        ];
+        const levels = [
+          reader.readUint8(),
+          reader.readUint8(),
+          reader.readUint8(),
+          reader.readUint8(),
+          reader.readUint8(),
+        ];
+        const name = reader.readFixedString(SKILL_SET_NAME_LENGTH);
+
+        // The wire carries five skill/level slots; storage models four.
+        // The fifth slot is part of the record and is consumed either way.
         sets.push({
           idx: index,
           name,
           modes,
-          skill_1,
-          skill_2,
-          skill_3,
-          skill_4,
-          level_1,
-          level_2,
-          level_3,
-          level_4,
+          skill_1: skills[0],
+          skill_2: skills[1],
+          skill_3: skills[2],
+          skill_4: skills[3],
+          level_1: levels[0],
+          level_2: levels[1],
+          level_3: levels[2],
+          level_4: levels[3],
         });
         index++;
       }
 
       await this.characterService.updateSkillSets(characterId, sets);
     }
-    await sendPacket(session, 0x4142, null);
+    // Ack on the request's own id; the waiter reads the first u32 as result.
+    await sendPacket(session, 0x4141, new Uint8Array(4));
   }
 }
