@@ -1,0 +1,25 @@
+fn @0xfbb29c = FUN_00fbb29c
+
+void FUN_00fbb29c(void)
+
+{
+                    /* WARNING: Could not recover jumptable at 0x00fbb2b8. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+  (**(code **)PTR_FUN_0119f4c0)();
+  return;
+}
+
+
+  REF 00d728d8 UNCONDITIONAL_CALL .opd.FUN_00d723f0
+  REF 00d70904 UNCONDITIONAL_CALL .opd.FUN_00d708e8
+  REF 00d709c4 UNCONDITIONAL_CALL .opd.FUN_00d70920
+  REF 00d722ec UNCONDITIONAL_CALL .opd.FUN_00d71ec8
+  REF 00d72d5c UNCONDITIONAL_CALL .opd.FUN_00d72938
+  REF 00fbb2ac READ FUN_00fbb29c
+  REF 0119f4c0 DATA ?
+11af4b0 = fbf9a0
+11af4b4 = fbf9b0
+11af4b8 = fbf860
+11af4bc = fbfe40
+11af4c0 = fc1a50
+11af4c4 = fbfdf0

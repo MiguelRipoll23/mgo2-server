@@ -1,0 +1,15 @@
+slot 11af4c0 -> fc1a50
+  contains fn ?
+slot 119f4c0 -> fbb29c
+  contains fn FUN_00fbb29c @00fbb29c
+
+void FUN_00fbb29c(void)
+
+{
+                    /* WARNING: Could not recover jumptable at 0x00fbb2b8. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+  (**(code **)PTR_FUN_0119f4c0)();
+  return;
+}
+
+

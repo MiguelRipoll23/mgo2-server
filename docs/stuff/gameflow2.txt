@@ -1,0 +1,251 @@
+======== DECOMP 0x000106a0 (.opd.FUN_000106a0)
+
+/* WARNING: Removing unreachable block (ram,0x00010b08) */
+/* WARNING: Removing unreachable block (ram,0x000109dc) */
+
+void _opd_FUN_000106a0(void)
+
+{
+  char cVar1;
+  undefined4 *puVar2;
+  undefined4 *puVar3;
+  undefined8 uVar4;
+  undefined *puVar5;
+  undefined4 uVar6;
+  int iVar7;
+  undefined4 *puVar8;
+  
+  puVar5 = PTR_PTR_0121aa58;
+  syscall(0);
+  syscall(0);
+  **(float **)(PTR_PTR_0121aa58 + -0x8000) = *(float *)(PTR_PTR_0121aa58 + -0x7ffc) / 6.0;
+  do {
+    uVar4 = TBLr;
+  } while ((int)uVar4 == 0);
+  puVar2 = *(undefined4 **)(puVar5 + -0x7fec);
+  puVar3 = *(undefined4 **)(puVar5 + -0x7ff0);
+  iVar7 = puVar2[1];
+  **(undefined8 **)(puVar5 + -0x7ff4) = uVar4;
+  puVar8 = (undefined4 *)*puVar2;
+  *puVar3 = 9;
+  if (iVar7 == 0) {
+    puVar3 = *(undefined4 **)(puVar5 + -0x7fe4);
+  }
+  else {
+    puVar3 = *(undefined4 **)(puVar5 + -0x7fe4);
+    while( true ) {
+      if ((*(char *)*puVar8 == '-') && (cVar1 = ((char *)*puVar8)[1], (byte)(cVar1 + 0x9aU) < 0x10))
+      {
+                    /* WARNING: Could not recover jumptable at 0x00010798. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+        (*(code *)(*(int *)((uint)(byte)(cVar1 + 0x9a) * 4 + *(int *)(puVar5 + -0x7fe8)) +
+                  *(int *)(puVar5 + -0x7fe8)))();
+        return;
+      }
+      iVar7 = iVar7 + -1;
+      if (iVar7 == 0) break;
+      puVar8 = puVar8 + 1;
+    }
+  }
+  FUN_00fbac3c(0,0);
+  FUN_00fbac3c(1);
+  FUN_00fbac3c(2);
+  FUN_00fbac3c(3);
+  FUN_00fbac3c(9);
+  FUN_00fbac3c(0xe);
+  FUN_00fbac3c(0x14);
+  FUN_00fbac3c(0x19);
+  FUN_00fbac3c(0x40);
+  FUN_00fbac3c(0x1a);
+  FUN_00fbac3c(0x1c);
+  FUN_00fbac3c(0x1e);
+  FUN_00fbac3c(0x22);
+  FUN_00fbac3c(0x31);
+  FUN_00fbac3c(0x3b);
+  FUN_00fbac3c(0x16);
+  _opd_FUN_000f26f8();
+  _opd_FUN_00f49938(*(undefined4 *)(puVar5 + -0x7fd8),*(undefined4 *)(puVar5 + -0x7fd4),0x140,0,
+                    0x10000,0,0);
+  _opd_FUN_000bb6f8();
+  _opd_FUN_00162000();
+  uVar6 = _opd_FUN_000c89c0(0x1c0000,0);
+  _opd_FUN_00262d10(uVar6,0x1c0000);
+  _opd_FUN_00238608(6);
+  _opd_FUN_000f2e38();
+  _opd_FUN_000cce80();
+  puVar2[6] = 2;
+  _opd_FUN_000110e8(2);
+  _opd_FUN_00011218(*puVar3);
+  _opd_FUN_0017cca0();
+  _opd_FUN_000e2a58();
+  _opd_FUN_00172980();
+  _opd_FUN_001ec7a0();
+  _opd_FUN_000aa4b8();
+  _opd_FUN_001cdc50();
+  _opd_FUN_001ec098();
+  _opd_FUN_0026ec50();
+  _opd_FUN_0028ab30();
+  uVar6 = _opd_FUN_0028b070();
+  uVar6 = _opd_FUN_000c8650(uVar6,0,0x80);
+  _opd_FUN_0028adb0(uVar6);
+  uVar6 = _opd_FUN_000c8650(0x800000,0,0x10);
+  _opd_FUN_002934d0(uVar6,0x800000);
+  *(undefined4 *)(**(int **)(puVar5 + -0x7fd0) + 0x54) = 0xffffffff;
+  _opd_FUN_00034068();
+  _opd_FUN_000c85e8();
+  do {
+    do {
+      _opd_FUN_000bf360();
+    } while (puVar2[7] == 0);
+    iVar7 = _opd_FUN_000ba5b0();
+  } while (iVar7 == 0);
+  **(uint **)(puVar5 + -0x7fcc) = **(uint **)(puVar5 + -0x7fcc) | 0x40;
+  _opd_FUN_0026e380();
+  _opd_FUN_000c19d8(0);
+  do {
+    syscall(0);
+    _opd_FUN_000bf360(16000);
+    iVar7 = _opd_FUN_000be9a0();
+  } while (iVar7 == 0);
+  _opd_FUN_008eeb50();
+  _opd_FUN_008ed178();
+  _opd_FUN_00034038();
+  _opd_FUN_000aa1f0();
+  _opd_FUN_00292ce8();
+  _opd_FUN_0028a7f0();
+  _opd_FUN_000111b8();
+  _opd_FUN_00236158();
+  _opd_FUN_002630b0();
+  _opd_FUN_00162008();
+  _opd_FUN_000ba618();
+  _opd_FUN_000f2830();
+  _opd_FUN_000e3448();
+  return;
+}
+
+
+======== DECOMP 0x00288ff0 (.opd.FUN_00288ff0)
+
+undefined8 _opd_FUN_00288ff0(void)
+
+{
+  int *piVar1;
+  undefined *puVar2;
+  undefined8 uVar3;
+  undefined4 uVar4;
+  int iVar5;
+  undefined1 auStack_190 [376];
+  
+  puVar2 = PTR_DAT_0121afa4;
+  uVar3 = 0x40;
+  piVar1 = (int *)**(undefined4 **)(PTR_DAT_0121afa4 + -0x7ffc);
+  if (piVar1 != (int *)0x0) {
+    iVar5 = *piVar1;
+    if (iVar5 == 1) {
+      iVar5 = (**(code **)**(undefined4 **)piVar1[1])((undefined4 *)piVar1[1]);
+      if (iVar5 == 8) {
+        _opd_FUN_000d60b8(auStack_190,0x164);
+        _opd_FUN_00270e00(0,piVar1[1],0x18,auStack_190);
+        *piVar1 = 2;
+        _opd_FUN_00281dd8();
+        return 0;
+      }
+    }
+    else if (iVar5 < 2) {
+      if (iVar5 == 0) {
+        iVar5 = _opd_FUN_00261f50(8,0);
+        piVar1[1] = iVar5;
+        if (iVar5 == 0) {
+          *piVar1 = 5;
+          return 0x40;
+        }
+        *piVar1 = 1;
+        return 0;
+      }
+    }
+    else if (iVar5 == 2) {
+      iVar5 = _opd_FUN_00281db0();
+      if (iVar5 == 0) {
+        _opd_FUN_0026f290(0x17,0x4002,*(undefined4 *)(puVar2 + -0x8000),0);
+        _opd_FUN_0026e9f8(10,0);
+        *piVar1 = 3;
+        return 0;
+      }
+    }
+    else if (iVar5 == 3) {
+      uVar4 = _opd_FUN_0027e2b0(0);
+      iVar5 = _opd_FUN_0027e198(uVar4,0xa1,1);
+      if (iVar5 != 0) {
+        _opd_FUN_0026f158();
+        _opd_FUN_0027e198(uVar4,0x52,1);
+        _opd_FUN_0027e198(uVar4,0x58,1);
+        *piVar1 = 4;
+        return 0x20;
+      }
+    }
+    uVar3 = 0;
+  }
+  return uVar3;
+}
+
+
+======== DECOMP 0x00288d18 (.opd.FUN_00288d18)
+
+undefined8 _opd_FUN_00288d18(int *param_1)
+
+{
+  undefined *puVar1;
+  undefined4 uVar2;
+  int iVar3;
+  undefined1 auStack_190 [376];
+  
+  puVar1 = PTR_DAT_0121afa4;
+  iVar3 = *param_1;
+  if (iVar3 == 1) {
+    iVar3 = (**(code **)**(undefined4 **)param_1[1])((undefined4 *)param_1[1]);
+    if (iVar3 == 8) {
+      _opd_FUN_000d60b8(auStack_190,0x164);
+      _opd_FUN_00270e00(0,param_1[1],0x18,auStack_190);
+      *param_1 = 2;
+      _opd_FUN_00281dd8();
+      return 0;
+    }
+  }
+  else if (iVar3 < 2) {
+    if (iVar3 == 0) {
+      iVar3 = _opd_FUN_00261f50(8,0);
+      param_1[1] = iVar3;
+      if (iVar3 == 0) {
+        *param_1 = 5;
+        return 0x40;
+      }
+      *param_1 = 1;
+      return 0;
+    }
+  }
+  else if (iVar3 == 2) {
+    iVar3 = _opd_FUN_00281db0();
+    if (iVar3 == 0) {
+      _opd_FUN_0026f290(0x17,0x4002,*(undefined4 *)(puVar1 + -0x8000),0);
+      _opd_FUN_0026e9f8(10,0);
+      *param_1 = 3;
+      return 0;
+    }
+  }
+  else if (iVar3 == 3) {
+    uVar2 = _opd_FUN_0027e2b0(0);
+    iVar3 = _opd_FUN_0027e198(uVar2,0xa1,1);
+    if (iVar3 != 0) {
+      _opd_FUN_0026f158();
+      _opd_FUN_0027e198(uVar2,0x52,1);
+      _opd_FUN_0027e198(uVar2,0x58,1);
+      *param_1 = 4;
+      return 0x20;
+    }
+  }
+  return 0;
+}
+
+
+======== REFS TO FUN_00ab6688 @00ab6688
+  REF 01209018 type=DATA

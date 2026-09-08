@@ -1,0 +1,16 @@
+/* ===== .opd.FUN_00010360 @ 00010360 size=464 ===== */
+// failed
+
+// === callers of .opd.FUN_00010360 ===
+caller ref from 011e73a0 in ?
+caller ref from 0001024c in .opd.FUN_00010230
+/* ===== .opd.FUN_00010230 @ 00010230 size=32 ===== */
+
+void _opd_FUN_00010230(void)
+
+{
+                    /* WARNING: Subroutine does not return */
+  _opd_FUN_00010360();
+}
+
+

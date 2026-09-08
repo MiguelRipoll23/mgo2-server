@@ -1,0 +1,33 @@
+==== 0x00262d10 function=.opd.FUN_00262d10
+  CALLER 000108f8  .opd.FUN_000106a0
+==== 0x00270e00 function=.opd.FUN_00270e00
+  CALLER 002890c0  .opd.FUN_00288ff0
+  CALLER 00288dd8  .opd.FUN_00288d18
+==== 0x00275a90 function=.opd.FUN_00275a90
+  (no direct callers found)
+==== 0x00275718 function=.opd.FUN_00275718
+  (no direct callers found)
+==== 0x00276e88 function=.opd.FUN_00276e88
+  (no direct callers found)
+==== 0x00ab6688 function=.opd.FUN_00ab6688
+  (no direct callers found)
+==== 0x00a0e65c function=.opd.FUN_00a0e65c
+  CALLER 00a0eee4  .opd.FUN_00a0ed68
+  CALLER 00c4c504  .opd.FUN_00c4c218
+  CALLER 00c6d928  .opd.FUN_00c6d8a0
+  CALLER 00c6d988  .opd.FUN_00c6d8a0
+  CALLER 00c6e38c  .opd.FUN_00c6e030
+  CALLER 00c728b0  .opd.FUN_00c72778
+  CALLER 00c755ac  .opd.FUN_00c75400
+  CALLER 00c76148  .opd.FUN_00c75ca0
+  CALLER 00c761c4  .opd.FUN_00c75ca0
+  CALLER 00c779d8  .opd.FUN_00c77948
+  CALLER 00eb1340  .opd.FUN_00eb0d0c
+  CALLER 00eb0604  .opd.FUN_00eb051c
+  CALLER 00a0ed64  .opd.FUN_00a0ed24
+==== 0x00c07828 function=.opd.FUN_00c07828
+  (no direct callers found)
+==== 0x0026c6d8 function=.opd.FUN_0026c6d8
+  CALLER 00262e9c  .opd.FUN_00262d10
+==== 0x000f9598 function=.opd.FUN_000f9598
+  CALLER 000f3344  .opd.FUN_000f31b8

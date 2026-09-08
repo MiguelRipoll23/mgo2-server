@@ -1,0 +1,194 @@
+[udp] continuation=keepalive our base=0x12345678
+[udp:5731] IN 192.168.1.50:5730 (44 bytes)
+[udp:5731]   hex: 2c 31 2e 7d 0c 87 2c 4c 2c 87 d4 e5 fc 2e a3 7c d9 7d c9 81 22 7c 94 00 32 4b 44 15 f3 e3 89 2b 91 e5 97 67 75 5a cb f2 3c 78 00 4e
+[udp:5731]   dec: [44, 49, 46, 125, 12, 135, 44, 76, 44, 135, 212, 229, 252, 46, 163, 124, 217, 125, 201, 129, 34, 124, 148, 0, 50, 75, 68, 21, 243, 227, 137, 43, 145, 229, 151, 103, 117, 90, 203, 242, 60, 120, 0, 78]
+[udp:5731] HANDSHAKE IN  peerId=0x00000002 base=0xa9d0a9e4 magic=0x4d258ab7 flags=0x02 unk=0x0001 count=2
+[udp:5731] HANDSHAKE IN    pair0: 192.168.1.50:5730
+[udp:5731] HANDSHAKE IN    pair1: 192.168.1.50:5730
+[udp:5731]   override: public pair0 89.129.16.203:5730 -> 192.168.1.50:5730 (P2P_OVERRIDE_PUBLIC on)
+[udp:5731] OUT 192.168.1.50:5730 (44 bytes)
+[udp:5731]   hex: 2c f5 2e d4 0c 87 2f 4c 2c 87 57 1a 18 95 10 28 45 d4 5c 2c 86 e4 a0 86 87 da 43 c1 47 b2 82 df 24 d5 67 f9 c1 6e 42 a5 ca 68 86 b4
+[udp:5731]   dec: [44, 245, 46, 212, 12, 135, 47, 76, 44, 135, 87, 26, 24, 149, 16, 40, 69, 212, 92, 44, 134, 228, 160, 134, 135, 218, 67, 193, 71, 178, 130, 223, 36, 213, 103, 249, 193, 110, 66, 165, 202, 104, 134, 180]
+[udp:5731] HANDSHAKE OUT peerId=0x00000001 base=0x12345678 magic=0x4d258ab7 flags=0x02 unk=0x0001 count=2
+[udp:5731] HANDSHAKE OUT   pair0: 192.168.1.50:5731
+[udp:5731] HANDSHAKE OUT   pair1: 192.168.1.50:5731
+[udp:5731]   reply peer_id=1 (host id — joiner gates on it; joiner's own id is 2)
+[udp:5731] ESTABLISH OUT 192.168.1.50:5730 (16 bytes, SESSION-keyed K=0xbbe4ff9c, digest=K^const, tag=0x5000, hdr=0x0000)
+[udp:5731]   hex: 9d af 51 21 e4 bb e2 3d 5d 07 51 78 e5 21 1c 62
+[udp:5731] IN 192.168.1.50:5730 (16 bytes)
+[udp:5731]   hex: 49 e7 81 52 48 da 88 8c b5 e2 80 81 6b 52 ba ae
+[udp:5731]   dec: [73, 231, 129, 82, 72, 218, 136, 140, 181, 226, 128, 129, 107, 82, 186, 174]
+[udp:5731] PRE-KEYED frame hdr=0x0001 tag=0x5000 msgLen=0 — joiner session in the handshake phase (state < 8)
+[udp:5731]   plain: 01 00 00 50 00 00 88 8c b5 e2 80 81 6b 52 ba ae
+[udp:5731] PING-ACK OUT 192.168.1.50:5730 (16 bytes, PRE-keyed keep-alive, hdr=0x0001)
+[udp:5731]   hex: 49 e7 81 52 48 da 88 8c b5 e2 80 81 6b 52 ba ae
+[udp:5731] IN 192.168.1.50:5730 (89 bytes)
+[udp:5731]   hex: a0 82 d7 2d 7e 51 df b9 81 57 57 ad 15 18 67 a1 d4 c3 92 c4 1b 95 8d 39 23 ea 2c 87 ab a9 cc c7 5c ec f1 28 58 bf 10 d8 d1 c0 2d e6 ee 32 93 1e 10 4e 53 1d fe df 50 2c 70 d9 53 d3 81 64 5a 9b 2d 32 31 cd 05 6e 71 a3 92 bc 4b 23 a5 3c 4b d8 c6 77 7d 60 3f 4d 01 91 7c
+[udp:5731]   dec: [160, 130, 215, 45, 126, 81, 223, 185, 129, 87, 87, 173, 21, 24, 103, 161, 212, 195, 146, 196, 27, 149, 141, 57, 35, 234, 44, 135, 171, 169, 204, 199, 92, 236, 241, 40, 88, 191, 16, 216, 209, 192, 45, 230, 238, 50, 147, 30, 16, 78, 83, 29, 254, 223, 80, 44, 112, 217, 83, 211, 129, 100, 90, 155, 45, 50, 49, 205, 5, 110, 113, 163, 146, 188, 75, 35, 165, 60, 75, 216, 198, 119, 125, 96, 63, 77, 1, 145, 124]
+[udp:5731] SESSION-KEYED frame hdr=0x8002 tag=0xc480 msgLen=20523 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 02 80 80 c4 2b 50 08 14 00 06 88 6c 03 4f 00 8f 51 65 f5 79 cd 9e d1 0e 87 40 01 c1 80 42 e2 c0 f0 c1 e1 e0 3c 50 e1 70 08 ff ff ff 0c 0c 42 07 ff 04 40 3c 10 90 03 71 8e 06 05 1d 0d 82 01 70 b4 5a 6d 96 4b ad b8 52 0b cc ca 67 00 00 00 d8 c6 77 7d 60 3f 4d 01 91 7c
+[udp:5731] IN 192.168.1.50:5730 (89 bytes)
+[udp:5731]   hex: 08 1a 2c 99 c6 f3 24 36 19 f2 bc 5a b0 b5 bc 2d 4d 2c 49 48 a3 30 60 a5 bc 0d 83 7b 42 cf 61 bb b3 11 84 dc b2 c2 a7 6d 79 1d d8 71 75 ed 64 89 79 e9 28 a9 95 62 ab a0 1b 84 ae 5f 29 0b b1 2f 85 51 dc 59 ae c8 a6 34 3a df 1c df 3c df a0 38 fb 72 40 60 9d 0f b7 df f7
+[udp:5731]   dec: [8, 26, 44, 153, 198, 243, 36, 54, 25, 242, 188, 90, 176, 181, 188, 45, 77, 44, 73, 72, 163, 48, 96, 165, 188, 13, 131, 123, 66, 207, 97, 187, 179, 17, 132, 220, 178, 194, 167, 109, 121, 29, 216, 113, 117, 237, 100, 137, 121, 233, 40, 169, 149, 98, 171, 160, 27, 132, 174, 95, 41, 11, 177, 47, 133, 81, 220, 89, 174, 200, 166, 52, 58, 223, 28, 223, 60, 223, 160, 56, 251, 114, 64, 96, 157, 15, 183, 223, 247]
+[udp:5731] SESSION-KEYED frame hdr=0x8003 tag=0xc480 msgLen=20523 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 03 80 80 c4 2b 50 08 14 00 06 88 6c 03 4f 00 8f 51 65 f5 79 cd 9e d1 0e 87 40 01 c1 80 42 e2 c0 f0 c1 e1 e0 3c 50 e1 70 08 ff ff ff 0c 0c 42 07 ff 04 40 3c 10 90 03 71 8e 06 05 1d 0d 82 01 70 b4 5a 6d 96 4b ad b8 52 0b cc ca 67 00 00 00 38 fb 72 40 60 9d 0f b7 df f7
+[udp:5731] IN 192.168.1.50:5730 (89 bytes)
+[udp:5731]   hex: f1 b1 89 16 ad 9e 81 82 b2 18 19 c6 c7 6b 19 98 e7 16 ec df ca 47 df 2e 52 37 de ef dc fa 02 2f 2c 3b 23 50 08 ec 42 e1 02 f2 7b fd 1f 00 c1 05 df 1c 85 35 0f 8d 06 37 a1 ab 0d aa b0 31 0c a4 7e 6f 63 d2 34 3d c3 88 c1 f1 f9 4a d6 09 fd 21 d5 15 3a 2a b2 2c ec c0 b9
+[udp:5731]   dec: [241, 177, 137, 22, 173, 158, 129, 130, 178, 24, 25, 198, 199, 107, 25, 152, 231, 22, 236, 223, 202, 71, 223, 46, 82, 55, 222, 239, 220, 250, 2, 47, 44, 59, 35, 80, 8, 236, 66, 225, 2, 242, 123, 253, 31, 0, 193, 5, 223, 28, 133, 53, 15, 141, 6, 55, 161, 171, 13, 170, 176, 49, 12, 164, 126, 111, 99, 210, 52, 61, 195, 136, 193, 241, 249, 74, 214, 9, 253, 33, 213, 21, 58, 42, 178, 44, 236, 192, 185]
+[udp:5731] SESSION-KEYED frame hdr=0x8004 tag=0xc480 msgLen=20523 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 04 80 80 c4 2b 50 08 14 00 06 88 6c 03 4f 00 8f 51 65 f5 79 cd 9e d1 0e 87 40 01 c1 80 42 e2 c0 f0 c1 e1 e0 3c 50 e1 70 08 ff ff ff 0c 0c 42 07 ff 04 40 3c 10 90 03 71 8e 06 05 1d 0d 82 01 70 b4 5a 6d 96 4b ad b8 52 0b cc ca 67 00 00 00 21 d5 15 3a 2a b2 2c ec c0 b9
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 68 22 67 57 5f de 67 db c2 55 5f 9a ab 93 b2 db 6d
+[udp:5731]   dec: [104, 34, 103, 87, 95, 222, 103, 219, 194, 85, 95, 154, 171, 147, 178, 219, 109]
+[udp:5731] SESSION-KEYED frame hdr=0x0005 tag=0x1001 msgLen=257 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 05 00 01 10 01 01 00 db c2 55 5f 9a ab 93 b2 22 6d
+[udp:5731] IN 192.168.1.50:5730 (89 bytes)
+[udp:5731]   hex: 02 20 43 7f dc db 4b 94 23 da c3 f8 88 ad d3 8f 76 54 26 f6 b5 08 19 07 c1 75 98 d9 4d 37 78 19 bd 79 9d 7a c0 2a bc 0b 73 35 c1 13 8f c5 7f eb 6f d1 3f cf 9f 4a bc 5e 2e 6c c7 bd 23 f3 c6 cd 8f a9 a5 bb bb e0 8d 96 30 37 27 71 47 c7 b7 b1 8d f9 b2 11 35 64 57 de fb
+[udp:5731]   dec: [2, 32, 67, 127, 220, 219, 75, 148, 35, 218, 195, 248, 136, 173, 211, 143, 118, 84, 38, 246, 181, 8, 25, 7, 193, 117, 152, 217, 77, 55, 120, 25, 189, 121, 157, 122, 192, 42, 188, 11, 115, 53, 193, 19, 143, 197, 127, 235, 111, 209, 63, 207, 159, 74, 188, 94, 46, 108, 199, 189, 35, 243, 198, 205, 143, 169, 165, 187, 187, 224, 141, 150, 48, 55, 39, 113, 71, 199, 183, 177, 141, 249, 178, 17, 53, 100, 87, 222, 251]
+[udp:5731] SESSION-KEYED frame hdr=0x8006 tag=0xc480 msgLen=20523 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 06 80 80 c4 2b 50 08 14 00 06 88 6c 03 4f 00 8f 51 65 f5 79 cd 9e d1 0e 87 40 01 c1 80 42 e2 c0 f0 c1 e1 e0 3c 50 e1 70 08 ff ff ff 0c 0c 42 07 ff 04 40 3c 10 90 03 71 8e 06 05 1d 0d 82 01 70 b4 5a 6d 96 4b ad b8 52 0b cc ca 67 00 00 00 b1 8d f9 b2 11 35 64 57 de fb
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 37 9e 59 20 8e 13 59 14 6d 65 a9 2d a8 06 70 14 20
+[udp:5731]   dec: [55, 158, 89, 32, 142, 19, 89, 20, 109, 101, 169, 45, 168, 6, 112, 20, 32]
+[udp:5731] SESSION-KEYED frame hdr=0x0007 tag=0x1001 msgLen=257 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 07 00 01 10 01 01 00 14 6d 65 a9 2d a8 06 70 9e 20
+[udp:5731] IN 192.168.1.50:5730 (89 bytes)
+[udp:5731]   hex: 5b 4f 35 60 0b 01 3d 7d 4c a7 b5 11 45 e8 c5 66 1e 93 30 01 6c c5 6b fc e9 ba 8a c0 76 78 6e 02 86 bc 8f 63 b0 6f ae 14 ac 70 cf 2a a0 82 6d d2 46 9e 31 e0 a8 0f b2 69 47 29 b1 94 5a b4 b8 d6 d0 e2 d7 80 52 be 9f ff 6f 0c 15 98 6f 8c a9 29 3b 5a 2b 5b 62 72 a0 f3 78
+[udp:5731]   dec: [91, 79, 53, 96, 11, 1, 61, 125, 76, 167, 181, 17, 69, 232, 197, 102, 30, 147, 48, 1, 108, 197, 107, 252, 233, 186, 138, 192, 118, 120, 110, 2, 134, 188, 143, 99, 176, 111, 174, 20, 172, 112, 207, 42, 160, 130, 109, 210, 70, 158, 49, 224, 168, 15, 178, 105, 71, 41, 177, 148, 90, 180, 184, 214, 208, 226, 215, 128, 82, 190, 159, 255, 111, 12, 21, 152, 111, 140, 169, 41, 59, 90, 43, 91, 98, 114, 160, 243, 120]
+[udp:5731] SESSION-KEYED frame hdr=0x8008 tag=0xc480 msgLen=20523 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 08 80 80 c4 2b 50 08 14 00 06 88 6c 03 4f 00 8f 51 65 f5 79 cd 9e d1 0e 87 40 01 c1 80 42 e2 c0 f0 c1 e1 e0 3c 50 e1 70 08 ff ff ff 0c 0c 42 07 ff 04 40 3c 10 90 03 71 8e 06 05 1d 0d 82 01 70 b4 5a 6d 96 4b ad b8 52 0b cc ca 67 00 00 00 29 3b 5a 2b 5b 62 72 a0 f3 78
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: f2 c9 13 09 f9 6d 13 64 ac 23 ce 9c 28 7c 02 64 69
+[udp:5731]   dec: [242, 201, 19, 9, 249, 109, 19, 100, 172, 35, 206, 156, 40, 124, 2, 100, 105]
+[udp:5731] SESSION-KEYED frame hdr=0x0009 tag=0x1001 msgLen=257 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 09 00 01 10 01 01 00 64 ac 23 ce 9c 28 7c 02 c9 69
+[udp:5731] IN 192.168.1.50:5730 (89 bytes)
+[udp:5731]   hex: e4 be ef 4a ba 4e e7 46 bd 68 7f 0a 37 3b 7f 5c 91 a6 8a 1b df b7 a5 d2 58 87 44 2a e6 4a a4 6c 17 8b c9 8d 78 5c e8 3e 1d a2 15 41 11 50 ab b9 d5 6c 6b fa 39 fd 68 73 b4 fb 6b 6e c5 81 72 e0 61 df 19 96 c1 4d 59 c4 de 41 53 8e e0 59 63 30 90 64 9b a8 32 74 f3 8c 41
+[udp:5731]   dec: [228, 190, 239, 74, 186, 78, 231, 70, 189, 104, 127, 10, 55, 59, 127, 92, 145, 166, 138, 27, 223, 183, 165, 210, 88, 135, 68, 42, 230, 74, 164, 108, 23, 139, 201, 141, 120, 92, 232, 62, 29, 162, 21, 65, 17, 80, 171, 185, 213, 108, 107, 250, 57, 253, 104, 115, 180, 251, 107, 110, 197, 129, 114, 224, 97, 223, 25, 150, 193, 77, 89, 196, 222, 65, 83, 142, 224, 89, 99, 48, 144, 100, 155, 168, 50, 116, 243, 140, 65]
+[udp:5731] SESSION-KEYED frame hdr=0x800a tag=0xc480 msgLen=20523 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 0a 80 80 c4 2b 50 08 14 00 06 88 6c 03 4f 00 8f 51 65 f5 79 cd 9e d1 0e 87 40 01 c1 80 42 e2 c0 f0 c1 e1 e0 3c 50 e1 70 08 ff ff ff 0c 0c 42 07 ff 04 40 3c 10 90 03 71 8e 06 05 1d 0d 82 01 70 b4 5a 6d 96 4b ad b8 52 0b cc ca 67 00 00 00 30 90 64 9b a8 32 74 f3 8c 41
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: bb 4e c5 12 28 d3 c5 d8 13 69 c4 7e b8 03 be d8 5b
+[udp:5731]   dec: [187, 78, 197, 18, 40, 211, 197, 216, 19, 105, 196, 126, 184, 3, 190, 216, 91]
+[udp:5731] SESSION-KEYED frame hdr=0x000b tag=0x1001 msgLen=513 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 0b 00 01 10 01 02 00 d8 13 69 c4 7e b8 03 be 4e 5b
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: da 77 20 67 c3 5a 22 56 7b b2 cd 89 d3 58 ef 56 d2
+[udp:5731]   dec: [218, 119, 32, 103, 195, 90, 34, 86, 123, 178, 205, 137, 211, 88, 239, 86, 210]
+[udp:5731] SESSION-KEYED frame hdr=0x000c tag=0x1001 msgLen=257 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 0c 00 01 10 01 01 00 56 7b b2 cd 89 d3 58 ef 77 d2
+[udp:5731] IN 192.168.1.50:5730 (89 bytes)
+[udp:5731]   hex: de c4 3e 2f b0 56 36 a4 c7 50 ce a8 0f 13 ce bf 9a ce 3b c6 d1 8f 12 37 6d ef 95 89 f1 b2 77 c9 02 f3 96 2a ce a4 b9 db 17 ba c6 e3 24 48 7a 1b ca 54 3a 1f 24 c5 b9 2e ca e3 b8 cd df 69 c3 9d 6b 37 ae cb df 65 88 a6 d4 b9 22 21 eb 41 b2 ad b7 d2 06 b9 56 06 15 9a a4
+[udp:5731]   dec: [222, 196, 62, 47, 176, 86, 54, 164, 199, 80, 206, 168, 15, 19, 206, 191, 154, 206, 59, 198, 209, 143, 18, 55, 109, 239, 149, 137, 241, 178, 119, 201, 2, 243, 150, 42, 206, 164, 185, 219, 23, 186, 198, 227, 36, 72, 122, 27, 202, 84, 58, 31, 36, 197, 185, 46, 202, 227, 184, 205, 223, 105, 195, 157, 107, 55, 174, 203, 223, 101, 136, 166, 212, 185, 34, 33, 235, 65, 178, 173, 183, 210, 6, 185, 86, 6, 21, 154, 164]
+[udp:5731] SESSION-KEYED frame hdr=0x800d tag=0xc480 msgLen=20523 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 0d 80 80 c4 2b 50 08 14 00 06 88 6c 03 4f 00 8f 51 65 f5 79 cd 9e d1 0e 87 40 01 c1 80 42 e2 c0 f0 c1 e1 e0 3c 50 e1 70 08 ff ff ff 0c 0c 42 07 ff 04 40 3c 10 90 03 71 8e 06 05 1d 0d 82 01 70 b4 5a 6d 96 4b ad b8 52 0b cc ca 67 00 00 00 ad b7 d2 06 b9 56 06 15 9a a4
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: a3 1b 1a 70 32 45 1c 4b f6 3d 69 91 5c 32 9b 4b 91
+[udp:5731]   dec: [163, 27, 26, 112, 50, 69, 28, 75, 246, 61, 105, 145, 92, 50, 155, 75, 145]
+[udp:5731] SESSION-KEYED frame hdr=0x000e tag=0x1001 msgLen=513 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 0e 00 01 10 01 02 00 4b f6 3d 69 91 5c 32 9b 1b 91
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: c2 3d 71 c5 d5 69 71 66 eb 7f e0 b7 98 84 4d 66 b1
+[udp:5731]   dec: [194, 61, 113, 197, 213, 105, 113, 102, 235, 127, 224, 183, 152, 132, 77, 102, 177]
+[udp:5731] SESSION-KEYED frame hdr=0x000f tag=0x1001 msgLen=257 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 0f 00 01 10 01 01 00 66 eb 7f e0 b7 98 84 4d 3d b1
+[udp:5731] IN 192.168.1.50:5730 (89 bytes)
+[udp:5731]   hex: 8f 9b 4d 8d 47 3e 45 1a 98 b8 dd 4e 66 8b dd 01 ca 76 28 64 20 e6 03 99 3d 57 a2 67 c1 1a 46 a7 32 5b 67 c8 c0 0c 86 79 f8 53 b7 85 f4 a7 05 7d fa bc c9 bd 14 2d ca cc 9a 4b c9 33 ae d1 d0 3b 04 8f bf 2d 2f 9d 87 00 bb 11 3d c3 bb a9 c1 ed 5f 47 75 26 12 0c 55 8f bc
+[udp:5731]   dec: [143, 155, 77, 141, 71, 62, 69, 26, 152, 184, 221, 78, 102, 139, 221, 1, 202, 118, 40, 100, 32, 230, 3, 153, 61, 87, 162, 103, 193, 26, 70, 167, 50, 91, 103, 200, 192, 12, 134, 121, 248, 83, 183, 133, 244, 167, 5, 125, 250, 188, 201, 189, 20, 45, 202, 204, 154, 75, 201, 51, 174, 209, 208, 59, 4, 143, 191, 45, 47, 157, 135, 0, 187, 17, 61, 195, 187, 169, 193, 237, 95, 71, 117, 38, 18, 12, 85, 143, 188]
+[udp:5731] SESSION-KEYED frame hdr=0x8010 tag=0xc480 msgLen=20523 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 10 80 80 c4 2b 50 08 14 00 06 88 6c 03 4f 00 8f 51 65 f5 79 cd 9e d1 0e 87 40 01 c1 80 42 e2 c0 f0 c1 e1 e0 3c 50 e1 70 08 ff ff ff 0c 0c 42 07 ff 04 40 3c 10 90 03 71 8e 06 05 1d 0d 82 01 70 b4 5a 6d 96 4b ad b8 52 0b cc ca 67 00 00 00 ed 5f 47 75 26 12 0c 55 8f bc
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 8a 07 2b ae 04 53 2b 42 55 82 f0 60 73 d1 40 42 d2
+[udp:5731]   dec: [138, 7, 43, 174, 4, 83, 43, 66, 85, 130, 240, 96, 115, 209, 64, 66, 210]
+[udp:5731] SESSION-KEYED frame hdr=0x0011 tag=0x1001 msgLen=769 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 11 00 01 10 01 03 00 42 55 82 f0 60 73 d1 40 07 d2
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 29 8a 86 22 dc dc 88 ce 0e 04 40 63 8c 7f 72 ce d3
+[udp:5731]   dec: [41, 138, 134, 34, 220, 220, 136, 206, 14, 4, 64, 99, 140, 127, 114, 206, 211]
+[udp:5731] SESSION-KEYED frame hdr=0x0012 tag=0x1001 msgLen=513 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 12 00 01 10 01 02 00 ce 0e 04 40 63 8c 7f 72 8a d3
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 57 8a 1d b7 77 20 1d 33 f4 b8 3a e9 06 3a 57 33 25
+[udp:5731]   dec: [87, 138, 29, 183, 119, 32, 29, 51, 244, 184, 58, 233, 6, 58, 87, 51, 37]
+[udp:5731] SESSION-KEYED frame hdr=0x0013 tag=0x1001 msgLen=257 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 13 00 01 10 01 01 00 33 f4 b8 3a e9 06 3a 57 8a 25
+[udp:5731] IN 192.168.1.50:5730 (89 bytes)
+[udp:5731]   hex: 68 3a f9 d8 25 a1 f1 f4 39 47 89 99 e5 08 89 ee 6c f3 7c 89 43 65 af 64 db da 4e b8 63 98 b2 fa 94 dc d3 1b 68 8f f2 ac 99 d0 0b b3 96 22 b1 4b 58 3e 75 68 b6 af 76 e1 38 c9 7d 1c 48 54 7c 6e e6 02 13 18 4d 1e 53 76 59 ac 69 10 5d 2c 6d 0e 8d 16 92 d0 21 bd 28 6e 36
+[udp:5731]   dec: [104, 58, 249, 216, 37, 161, 241, 244, 57, 71, 137, 153, 229, 8, 137, 238, 108, 243, 124, 137, 67, 101, 175, 100, 219, 218, 78, 184, 99, 152, 178, 250, 148, 220, 211, 27, 104, 143, 242, 172, 153, 208, 11, 179, 150, 34, 177, 75, 88, 62, 117, 104, 182, 175, 118, 225, 56, 201, 125, 28, 72, 84, 124, 110, 230, 2, 19, 24, 77, 30, 83, 118, 89, 172, 105, 16, 93, 44, 109, 14, 141, 22, 146, 208, 33, 189, 40, 110, 54]
+[udp:5731] SESSION-KEYED frame hdr=0x8014 tag=0xc480 msgLen=20523 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 14 80 80 c4 2b 50 08 14 00 06 88 6c 03 4f 00 8f 51 65 f5 79 cd 9e d1 0e 87 40 01 c1 80 42 e2 c0 f0 c1 e1 e0 3c 50 e1 70 08 ff ff ff 0c 0c 42 07 ff 04 40 3c 10 90 03 71 8e 06 05 1d 0d 82 01 70 b4 5a 6d 96 4b ad b8 52 0b cc ca 67 00 00 00 0e 8d 16 92 d0 21 bd 28 6e 36
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 10 85 d7 80 a6 27 d7 32 36 e9 97 b5 d5 7e 04 32 1f
+[udp:5731]   dec: [16, 133, 215, 128, 166, 39, 215, 50, 54, 233, 151, 181, 213, 126, 4, 50, 31]
+[udp:5731] SESSION-KEYED frame hdr=0x0015 tag=0x1001 msgLen=769 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 15 00 01 10 01 03 00 32 36 e9 97 b5 d5 7e 04 85 1f
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: bc c4 32 15 7e 9b 34 8d 21 ac 46 87 a7 d8 c4 8d 71
+[udp:5731]   dec: [188, 196, 50, 21, 126, 155, 52, 141, 33, 172, 70, 135, 167, 216, 196, 141, 113]
+[udp:5731] SESSION-KEYED frame hdr=0x0016 tag=0x1001 msgLen=513 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 16 00 01 10 01 02 00 8d 21 ac 46 87 a7 d8 c4 c4 71
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: dd 06 89 69 11 3a 89 2d dd e9 5e 87 68 8e 43 2d b1
+[udp:5731]   dec: [221, 6, 137, 105, 17, 58, 137, 45, 221, 233, 94, 135, 104, 142, 67, 45, 177]
+[udp:5731] SESSION-KEYED frame hdr=0x0017 tag=0x1001 msgLen=1025 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 17 00 01 10 01 04 00 2d dd e9 5e 87 68 8e 43 06 b1
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 7a b4 e4 fe a8 d6 e6 ce e3 2d c3 6d f2 9f a2 ce 8a
+[udp:5731]   dec: [122, 180, 228, 254, 168, 214, 230, 206, 227, 45, 195, 109, 242, 159, 162, 206, 138]
+[udp:5731] SESSION-KEYED frame hdr=0x0018 tag=0x1001 msgLen=257 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 18 00 01 10 01 01 00 ce e3 2d c3 6d f2 9f a2 b4 8a
+[udp:5731] IN 192.168.1.50:5730 (89 bytes)
+[udp:5731]   hex: b4 6e c2 a7 6a f6 ca 33 6d f0 42 57 ae b3 52 27 21 2e a7 4e 0f 2e 96 bf 08 0f 19 01 96 d2 fb 41 67 13 1a a1 5e c4 3d 52 cd 1b 42 6c c1 ef fe 94 25 eb be a6 c9 64 3d a6 67 82 44 55 75 09 47 15 31 57 2a 43 72 c5 0c 39 8e d9 a6 d9 90 e1 36 60 48 be 93 95 52 43 ab 61 be
+[udp:5731]   dec: [180, 110, 194, 167, 106, 246, 202, 51, 109, 240, 66, 87, 174, 179, 82, 39, 33, 46, 167, 78, 15, 46, 150, 191, 8, 15, 25, 1, 150, 210, 251, 65, 103, 19, 26, 161, 94, 196, 61, 82, 205, 27, 66, 108, 193, 239, 254, 148, 37, 235, 190, 166, 201, 100, 61, 166, 103, 130, 68, 85, 117, 9, 71, 21, 49, 87, 42, 67, 114, 197, 12, 57, 142, 217, 166, 217, 144, 225, 54, 96, 72, 190, 147, 149, 82, 67, 171, 97, 190]
+[udp:5731] SESSION-KEYED frame hdr=0x8019 tag=0xc480 msgLen=20523 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 19 80 80 c4 2b 50 08 14 00 06 88 6c 03 4f 00 8f 51 65 f5 79 cd 9e d1 0e 87 40 01 c1 80 42 e2 c0 f0 c1 e1 e0 3c 50 e1 70 08 ff ff ff 0c 0c 42 07 ff 04 40 3c 10 90 03 71 8e 06 05 1d 0d 82 01 70 b4 5a 6d 96 4b ad b8 52 0b cc ca 67 00 00 00 60 48 be 93 95 52 43 ab 61 be
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: c2 63 de c7 1b a2 e0 b8 0a bc 88 b6 83 94 ec b8 fc
+[udp:5731]   dec: [194, 99, 222, 199, 27, 162, 224, 184, 10, 188, 136, 182, 131, 148, 236, 184, 252]
+[udp:5731] SESSION-KEYED frame hdr=0x001a tag=0x1001 msgLen=769 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 1a 00 01 10 01 03 00 b8 0a bc 88 b6 83 94 ec 63 fc
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 61 06 35 5c b3 54 35 4f 52 50 2e 2f 3e 39 e1 4f ea
+[udp:5731]   dec: [97, 6, 53, 92, 179, 84, 53, 79, 82, 80, 46, 47, 62, 57, 225, 79, 234]
+[udp:5731] SESSION-KEYED frame hdr=0x001b tag=0x1001 msgLen=513 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 1b 00 01 10 01 02 00 4f 52 50 2e 2f 3e 39 e1 06 ea
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 8a 82 90 d0 4a aa 92 b6 2f 3e 9d 4b 76 f0 98 b6 24
+[udp:5731]   dec: [138, 130, 144, 208, 74, 170, 146, 182, 47, 62, 157, 75, 118, 240, 152, 182, 36]
+[udp:5731] SESSION-KEYED frame hdr=0x001c tag=0x1001 msgLen=1025 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 1c 00 01 10 01 04 00 b6 2f 3e 9d 4b 76 f0 98 82 24
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 29 8e ef 25 e2 31 ef 2c 37 28 f8 41 58 79 a0 2c 6d
+[udp:5731]   dec: [41, 142, 239, 37, 226, 49, 239, 44, 55, 40, 248, 65, 88, 121, 160, 44, 109]
+[udp:5731] SESSION-KEYED frame hdr=0x001d tag=0x1001 msgLen=257 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 1d 00 01 10 01 01 00 2c 37 28 f8 41 58 79 a0 8e 6d
+[udp:5731] IN 192.168.1.50:5730 (89 bytes)
+[udp:5731]   hex: f7 b3 cb 6e af 1b c3 7a b0 9d 5b ee 48 ee 5b 60 e2 95 ae 07 c8 c8 81 f6 55 b4 20 c6 da 77 c0 08 2a b6 e5 69 50 69 04 19 00 75 39 25 1c 85 87 dd e2 91 47 de 0c 0a 44 6f a3 2c 4f 92 b6 b2 4e dc 7c e8 3d 8a 36 a0 05 e0 c3 76 bf 62 d4 86 3f 13 70 cb 7b 7e 4c 47 58 84 82
+[udp:5731]   dec: [247, 179, 203, 110, 175, 27, 195, 122, 176, 157, 91, 238, 72, 238, 91, 96, 226, 149, 174, 7, 200, 200, 129, 246, 85, 180, 32, 198, 218, 119, 192, 8, 42, 182, 229, 105, 80, 105, 4, 25, 0, 117, 57, 37, 28, 133, 135, 221, 226, 145, 71, 222, 12, 10, 68, 111, 163, 44, 79, 146, 182, 178, 78, 220, 124, 232, 61, 138, 54, 160, 5, 224, 195, 118, 191, 98, 212, 134, 63, 19, 112, 203, 123, 126, 76, 71, 88, 132, 130]
+[udp:5731] SESSION-KEYED frame hdr=0x801e tag=0xc480 msgLen=20523 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 1e 80 80 c4 2b 50 08 14 00 06 88 6c 03 4f 00 8f 51 65 f5 79 cd 9e d1 0e 87 40 01 c1 80 42 e2 c0 f0 c1 e1 e0 3c 50 e1 70 08 ff ff ff 0c 0c 42 07 ff 04 40 3c 10 90 03 71 8e 06 05 1d 0d 82 01 70 b4 5a 6d 96 4b ad b8 52 0b cc ca 67 00 00 00 13 70 cb 7b 7e 4c 47 58 84 82
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: f3 6f a1 0e 5d 57 a1 48 77 82 31 18 23 38 36 48 a9
+[udp:5731]   dec: [243, 111, 161, 14, 93, 87, 161, 72, 119, 130, 49, 24, 35, 56, 54, 72, 169]
+[udp:5731] SESSION-KEYED frame hdr=0x001f tag=0x1001 msgLen=1281 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 1f 00 01 10 01 05 00 48 77 82 31 18 23 38 36 6f a9
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 13 49 3c 83 f4 ec 3e cc 4a 6c 13 6e 17 27 8c cc 1b
+[udp:5731]   dec: [19, 73, 60, 131, 244, 236, 62, 204, 74, 108, 19, 110, 23, 39, 140, 204, 27]
+[udp:5731] SESSION-KEYED frame hdr=0x0020 tag=0x1001 msgLen=769 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 20 00 01 10 01 03 00 cc 4a 6c 13 6e 17 27 8c 49 1b
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: b1 76 9b 17 8c 77 9b 56 6b b8 1e 43 e4 f7 9b 56 7c
+[udp:5731]   dec: [177, 118, 155, 23, 140, 119, 155, 86, 107, 184, 30, 67, 228, 247, 155, 86, 124]
+[udp:5731] SESSION-KEYED frame hdr=0x0021 tag=0x1001 msgLen=513 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 21 00 01 10 01 02 00 56 6b b8 1e 43 e4 f7 9b 76 7c
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: da 14 f6 6c 27 a6 f8 84 55 8a 8e 1e 71 af 8d 84 d1
+[udp:5731]   dec: [218, 20, 246, 108, 39, 166, 248, 132, 85, 138, 142, 30, 113, 175, 141, 132, 209]
+[udp:5731] SESSION-KEYED frame hdr=0x0022 tag=0x1001 msgLen=1025 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 22 00 01 10 01 04 00 84 55 8a 8e 1e 71 af 8d 14 d1
+[udp:5731] IN 192.168.1.50:5730 (17 bytes)
+[udp:5731]   hex: 79 6d 4d e1 fe 5f 4d 7c c4 8e f6 c1 5e 30 a7 7c a4
+[udp:5731]   dec: [121, 109, 77, 225, 254, 95, 77, 124, 196, 142, 246, 193, 94, 48, 167, 124, 164]
+[udp:5731] SESSION-KEYED frame hdr=0x0023 tag=0x1001 msgLen=257 K=0xbbe4ff9c — JOINER IS IN THE DATA PHASE (state >= 8)
+[udp:5731]   plain: 23 00 01 10 01 01 00 7c c4 8e f6 c1 5e 30 a7 6d a4
