@@ -37,7 +37,7 @@
     "migrate": "deno run --permission-set=database --node-modules-dir --env src/tasks/migrate.ts",
     "setup": "deno run --permission-set=database --env src/tasks/seed-data.ts",
     "dns": "deno run --permission-set=development --env src/tasks/dns.ts",
-    "udp": "deno run --permission-set=development --env src/tasks/udp-dump.ts",
+    "udp-server": "deno run --permission-set=development --env src/tasks/udp-dump.ts",
     "udp-client": "deno run --permission-set=development --env src/tasks/udp-client.ts"
   },
   "unstable": ["cron", "net"]
