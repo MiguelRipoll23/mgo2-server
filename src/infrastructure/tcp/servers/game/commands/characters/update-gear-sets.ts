@@ -8,7 +8,22 @@ import { CharacterService } from "../../../../../../modules/character/character-
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
 
 const GEAR_SET_NAME_LENGTH = 63;
+/** u32 stages + 22 appearance bytes + 63-byte name. */
+const GEAR_SET_RECORD_SIZE = 4 + 22 + GEAR_SET_NAME_LENGTH;
 
+/**
+ * 0x4143 — the client's gear-set save. In this build the request is three
+ * records of { u32 stages, 22×u8 appearance bytes, 63-byte name } (builder
+ * 0xf0ca34: u32 via 0xf2df64, then 22 single-byte appends at +0x44..+0x59,
+ * then the 63-byte name), and the ack is parsed on the SAME id 0x4143
+ * (waiter 0xf06b38 reads one u32 result). Replying 0x4144 was never parsed.
+ *
+ * Byte map for the 22 appearance bytes (0x44-relative): 0 face, 1 head,
+ * 2 upper, 3 lower, 4 chest, 5 waist, 6 hands, 7 feet, 8 accessory1,
+ * 9 accessory2, 10 head colour, 11 upper colour, 12 lower colour,
+ * 13 chest colour, 14 waist colour, 15 hands colour, 16 feet colour,
+ * 17 accessory1 colour, 18 accessory2 colour, 19 face paint; 20-21 unused.
+ */
 @injectable()
 @GameCommandHandler(0x4143)
 export class UpdateGearSetsHandler implements ICommandHandler {
@@ -45,59 +60,42 @@ export class UpdateGearSetsHandler implements ICommandHandler {
       }> = [];
 
       let index = 0;
-      while (reader.remaining() >= GEAR_SET_NAME_LENGTH + 22 * 4) {
-        const name = reader.readFixedString(GEAR_SET_NAME_LENGTH);
+      while (reader.remaining() >= GEAR_SET_RECORD_SIZE) {
         const stages = reader.readUint32();
-        const face = reader.readUint32();
-        const head = reader.readUint32();
-        const head_color = reader.readUint32();
-        const upper = reader.readUint32();
-        const upper_color = reader.readUint32();
-        const lower = reader.readUint32();
-        const lower_color = reader.readUint32();
-        const chest = reader.readUint32();
-        const chest_color = reader.readUint32();
-        const waist = reader.readUint32();
-        const waist_color = reader.readUint32();
-        const hands = reader.readUint32();
-        const hands_color = reader.readUint32();
-        const feet = reader.readUint32();
-        const feet_color = reader.readUint32();
-        const accessory1 = reader.readUint32();
-        const accessory1_color = reader.readUint32();
-        const accessory2 = reader.readUint32();
-        const accessory2_color = reader.readUint32();
-        const face_paint = reader.readUint32();
+        const b = reader.readBytes(22);
+        const name = reader.readFixedString(GEAR_SET_NAME_LENGTH);
+
         sets.push({
           idx: index,
           name,
           stages,
-          face,
-          head,
-          head_color,
-          upper,
-          upper_color,
-          lower,
-          lower_color,
-          chest,
-          chest_color,
-          waist,
-          waist_color,
-          hands,
-          hands_color,
-          feet,
-          feet_color,
-          accessory1,
-          accessory1_color,
-          accessory2,
-          accessory2_color,
-          face_paint,
+          face: b[0],
+          head: b[1],
+          upper: b[2],
+          lower: b[3],
+          chest: b[4],
+          waist: b[5],
+          hands: b[6],
+          feet: b[7],
+          accessory1: b[8],
+          accessory2: b[9],
+          head_color: b[10],
+          upper_color: b[11],
+          lower_color: b[12],
+          chest_color: b[13],
+          waist_color: b[14],
+          hands_color: b[15],
+          feet_color: b[16],
+          accessory1_color: b[17],
+          accessory2_color: b[18],
+          face_paint: b[19],
         });
         index++;
       }
 
       await this.characterService.updateGearSets(characterId, sets);
     }
-    await sendPacket(session, 0x4144, null);
+    // Ack on the request's own id; the waiter reads the first u32 as result.
+    await sendPacket(session, 0x4143, new Uint8Array(4));
   }
 }

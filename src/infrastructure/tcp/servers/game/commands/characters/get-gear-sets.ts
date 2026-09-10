@@ -68,20 +68,32 @@ function buildGearSetsPayload(
   return writer.build();
 }
 
+/**
+ * Builds the stored gear-sets payload (0x4142) for a character. Shared with
+ * the connect burst: an empty 0x4142 there leaves the client's saved-outfit
+ * table unpopulated.
+ */
+export async function loadGearSetsPayload(
+  characterService: CharacterService,
+  characterId: number | null,
+): Promise<Uint8Array> {
+  if (characterId === null) {
+    return buildGearSetsPayload([]);
+  }
+  const sets = await characterService.getGearSets(characterId);
+  return buildGearSetsPayload(sets);
+}
+
 @injectable()
 @GameCommandHandler(0x4142)
 export class GetGearSetsHandler implements ICommandHandler {
   constructor(private characterService = inject(CharacterService)) {}
 
   async handle(session: TcpSession, _packet: Packet): Promise<void> {
-    const characterId = session.characterId;
-    if (characterId === null) {
-      await sendPacket(session, 0x4142);
-      return;
-    }
-
-    const sets = await this.characterService.getGearSets(characterId);
-    const payload = buildGearSetsPayload(sets);
+    const payload = await loadGearSetsPayload(
+      this.characterService,
+      session.characterId,
+    );
     await sendPacket(session, 0x4142, payload);
   }
 }
