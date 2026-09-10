@@ -127,7 +127,8 @@ One datagram (any length `len`):
 ```
 [ 0 .. 2)         scrambled header — unscrambles to a LE u16 counter (§5.1)
 [ 2 .. 4)         message type (u16 LE) — 0x1000 = handshake/one-shot, 0x5000 = keep-alive,
-                  0xc480 = reliable data, 0x1001 = control (§6.2)
+                  0x1001 = control (§6.2); frames with the compression marker carry a raw
+                  LZSS stream from [2) instead of a message header (§6.2/§7)
 [ 4 .. 5)         len (u8) — this message's body length
 [ 5 .. 6)         flags2 (u8) — per-message flags byte
 [ 6 .. 6+len)     message body — further messages (each with their own type/len/flags2/body)
@@ -220,7 +221,7 @@ Mirror the joiner's shape, encoded with the inverse scramble (§5.1):
 ```
 
 Send it back to the joiner's **source address** (its UDP socket). This is exactly what
-`mgo2-server`'s `src/tasks/udp-dump.ts` does (fake-host mode), verified end-to-end:
+`mgo2-server`'s `src/tasks/udp-server.ts` does (fake-host mode), verified end-to-end:
 decode of the joiner's live dial → build → encode → joiner-side re-decode parses as a
 valid handshake **[V]**.
 
@@ -465,7 +466,7 @@ established the key from the handshake reply alone.
 
 **Confirmed live 2026-09-09:** the fake host sent exactly one session-keyed empty
 `tag-0x5000` keep-alive (ESTABLISH OUT — the default `P2P_SEND_KEYED_FRAME=
-keepalive` continuation in `udp-dump.ts`) after its handshake reply; the joiner's
+keepalive` continuation in `udp-server.ts`) after its handshake reply; the joiner's
 ~2 s handshake re-dials stopped within one retry cycle and its next frames were
 session-keyed. The key-establishment path is not just in the decompile — it works
 on a real client. What the joiner sends next is documented in §6.2.
@@ -498,39 +499,49 @@ handshake's `00 10 1c 00`):
 
 The §3 "u16 LE message length" reading is really `len u8 + flags2 u8` — it only
 read as one u16 because handshake lens are < 256. (The dump tool's `msgLen` line
-for data frames is likewise the `len|flags2` merge, e.g. `0x502b` for the frame
-below — ignore it; parse per this layout.)
+for data frames is likewise the `len|flags2` merge — ignore it; parse per this
+layout.) **This header only exists on UNCOMPRESSED frames**: when the hdr
+`0x8000` marker is set, the frame's `[2 .. len-0xa)` region is a raw LZSS stream
+instead (§7), and the message header(s) materialize only after decompression.
 
-**Observed message types:**
+**Observed message types (post-decode):**
 
-- **`0xc480` — reliable, LZSS-compressed game data.** 89-byte frames with hdr bit
-  `0x8000` set. Example (hdr `0x8002`):
-  `02 80 | 80 c4 | 2b | 50 | 08 14 00 06 88 6c … 67 00 00 00 | <10B tail>`
-  = type `0xc480`, len `0x2b` (43), flags2 `0x50`, body starting `08 14 00 06…`
-  (`0x0814` BE = 2068 — the LZSS decompressed-size prefix, §7). The **identical
-  body is re-sent on every subsequent compressed frame** (hdr `0x8003`, `0x8004`,
-  `0x8006`, `0x8008`…) — a reliable message awaiting its ACK. The fake host must
-  ACK it; the pump treats a message whose id (low 12 bits of its first u32) matches
-  the pending reliable message as the ACK **[I]** — exact ACK bytes **[U]**.
-  The compressed content (the joiner's first game message) is still undecoded **[U]**.
-- **`0x1001` — control / window signaling.** 17-byte frames, marker bit clear.
-  Example (hdr `0x0005`): `05 00 | 01 10 | 01 | 01 | 00 | <10B tail>` = type
-  `0x1001`, len 1, flags2 1, body `0x00`. flags2 cycles
-  `1,1,1,2,1,2,1,3,2,1,3,2,4,1,3,2,4,1,5,3,2,4,1` (1..5) across the run —
-  send-window / credit grants **[I]**.
+- **`0x1001` — the data-phase record type.** Two shapes in the capture:
+  - **Compressed (89-byte frames, hdr `0x8002`…):** the LZSS stream
+    (`plain[2 .. len-0xa)`, 77 bytes) decompresses to **94 bytes = 4 + 0x5a**
+    (header + declared length, exactly) ending at the LZSS EOF marker — one
+    `type 0x1001, len 0x5a` record whose body is the joiner's **player
+    profile**: `02 00` (peer_id 2 = the joiner's character id), 12 zero bytes,
+    status bytes `0d 00 a7 00 1e`, 6 bytes `45 2f 57 39 67 68`, small integer
+    fields, then the NUL-terminated **account name `phildunphy23`** at offset
+    `0x51`. Key offsets:
+    `0000 01 10 5a 00 02 00 …` / `0051 70 68 69 6c 64 75 6e 70 68 79 32 33 00`.
+    (An earlier decoding pass produced `phildun\0y23` — that was the wrong LZSS
+    ring-index/length-bias model, not a string-table split; the corrected §7
+    model resolves the real name byte-for-byte. The name is pure ASCII, so
+    ISO-8859-1 vs UTF-8 was never a factor.)
+    The **identical stream is re-sent on every subsequent compressed frame**
+    (hdr `0x8003`, `0x8004`, `0x8006`, `0x8008`…) — a reliable record awaiting
+    its ACK. The fake host must ACK it; ACK semantics **[U]**.
+    (The previously reported "type `0xc480`, len `0x2b`, flags2 `0x50`" was a
+    misreading of stream bytes as a wire header: no `0xc480` immediate exists
+    anywhere in the image, and `08 14` is stream data, not a decompressed-size
+    prefix — 43 stream bytes can hold at most ~338 output bytes under this
+    format, never 2068.)
+  - **Uncompressed (17-byte frames, marker clear):** hdr `0x0005`:
+    `05 00 | 01 10 | 01 | 01 | 00 | <10B tail>` = type `0x1001`, len 1,
+    flags2 1, body `0x00`. flags2 cycles
+    `1,1,1,2,1,2,1,3,2,1,3,2,4,1,3,2,4,1,5,3,2,4,1` (1..5) across the run —
+    send-window / credit grants **[I]**.
 
 **Observed message types at a glance:**
 
-| type (u16 LE) | len | flags2 | role |
-|---|---|---|---|
-| `0x1000` | `0x1c` | `0x00` | handshake (§4) |
-| `0x5000` | `0x00` | `0x00` | keep-alive (§6.1) |
-| `0xc480` | `0x2b` | `0x50` | reliable, LZSS-compressed game data (above) |
-| `0x1001` | `0x01` | `0x01..0x05` | control / window signaling (above) |
-
-Note: the 89-byte `0xc480` frames carry the 43-byte message above followed by ~30
-further bytes (`04 40 3c 10 … 67 00 00 00`) that do not yet parse as a clean
-second message — they repeat byte-identically on every re-send; structure **[U]**.
+| marker | decoded content | role |
+|---|---|---|
+| — | `0x1000`, len `0x1c`, flags2 `0x00` | handshake (§4) |
+| — | `0x5000`, len `0x00` | keep-alive (§6.1) |
+| `0x8000` | `0x1001`, len `0x5a` (LZSS; 94-byte profile record) | reliable game data — joiner's player profile (above) |
+| — | `0x1001`, len `0x01`, flags2 `0x01..0x05` | control / window signaling (above) |
 
 **Shared counter confirmed live.** The joiner's hdrs over the run form one
 monotonic sequence `0x8002, 0x8003, 0x8004, 0x0005, 0x8006, 0x0007, 0x8008, 0x0009,
@@ -542,10 +553,11 @@ one-outbound-counter rule: a host must share one counter or its frames fall
 outside the joiner's `last+1..last+0x20` seq window and are dropped.
 
 **Where the join stands:** the transport join is complete — state 8, session key
-established, the joiner streaming K-keyed frames. What remains is game content:
-the reliable `0xc480` message stays unacked and is re-sent forever, the `0x1001`
-grants keep cycling. Decode the LZSS body and answer its reliable message to let
-the room/host data exchange proceed **[U]**.
+established, the joiner streaming K-keyed frames — and the LZSS layer is now
+decoded (§7): the repeated compressed frame carries the joiner's `0x1001`
+player-profile record (§6.2). What remains is to ACK that reliable record and
+answer it with the host's own record so the room/host exchange proceeds; the
+exact ACK wire format is the last transport-side unknown **[U]**.
 
 ---
 
@@ -561,17 +573,35 @@ the room/host data exchange proceed **[U]**.
 - **Self-describing when on:** the builder toggles header byte `param_2[1] ^= 0x80`
   (bit 7) as the marker, and only keeps the compressed result if it is smaller than the
   input, so small frames stay literal even with the flag set.
-- **Algorithm:** LZSS — a running MSB-first bit stream of **1 flag bit per token**;
-  `0` = one literal byte, `1` = a back-reference of **9-bit offset** then **4-bit
-  (length − 2)**; the history window is **512 bytes** (`& 0x1ff` ring, mirrored writes at
-  `i` and `i+0x11`); match finding uses a hash-chain; inputs capped at `0x2000` bytes into
-  an `0x800`-byte output buffer.
-- **Confirmed on the wire 2026-09-09:** the joiner's data-phase stream is
-  compressed — its frames set the marker (hdr `0x8002`…`0x801e`) and their
-  bodies begin with a `u16 BE` output-size prefix (`0x0814` = 2068) followed by
-  the LZSS bit stream (§6.2). Handshake and `0x1001` control frames never set
-  the marker **[V]**; which runtime path sets the `0x200` gate flag for the
-  data phase remains **[U]**.
+- **Algorithm** (decoder `FUN_00efd840`, instruction-exact, reproduces the
+  capture's profile record byte-for-byte including the account name):
+  LZSS — a running MSB-first bit stream of **1 flag bit per token**; `1` = one
+  literal byte (8 bits follow), `0` = a back-reference of a **9-bit absolute
+  ring offset** then a **4-bit length field, len = field + 2 (2..17)** — the
+  copy loop's exit check is off by one against its emit placement, so the
+  final preloaded byte is still copied; the compressor symmetrically stores
+  `len − 2` in the field. Matches read byte *j* from `ring[(off + j) & 0x1FF]`
+  (first byte directly from `ring[off]`); every emitted byte, literal or
+  copied, is also written to `ring[w++ & 0x1FF]` where the write index
+  **starts at 1** (`li r31, 1`, `0x00efd894`) — `ring[0]` stays zero, so ring
+  position *k* holds output byte *k−1*, i.e. `off` is effectively 1-based:
+  byte *j* of a match copies `output[off + j − 1]`. Matches may overrun the
+  write position (reading unwritten ring = zeros), so zero runs encode as
+  RLE with `off = n`. Offset **0 is the EOF marker** (stream ends; any
+  remaining flag bits are padding). No size prefix, no mirrored ring writes,
+  and the window is a **separate 512-byte ring**, not the output buffer.
+  Inputs capped at `0x2000` bytes into an `0x800`-byte output buffer; match
+  finding uses a hash-chain (`FUN_00efdc40` head / `FUN_00efd5d0` per byte).
+- **On the wire (2026-09-09 live, format resolved 2026-09-10):** the stream is
+  the whole `[2 .. len-0xa)` region of the frame — everything after the 2-byte
+  scrambled header, before the 10-byte tail (the tail is outside the chain and
+  outside the stream; the EOF marker stops the decompressor first). Data-phase
+  frames set the marker (hdr `0x8002`…`0x801e`); handshake and `0x1001` control
+  frames never set it **[V]**. The earlier "u16 BE output-size prefix
+  `0x0814` = 2068" reading was wrong — those bytes are simply the first stream
+  bytes, and a 43-byte stream could never expand to 2068 under this format.
+  Which runtime path sets the `0x200` gate flag for the data phase remains
+  **[U]**.
 
 ---
 
@@ -655,7 +685,7 @@ the room/host data exchange proceed **[U]**.
 | Compression gate flag | `0x200` in session flags word | LZSS on/off (§7) **[V]** |
 | Compression marker | bit 7 (`0x80`) of header byte 1 | on-wire "compressed" marker (§7) **[V]** |
 | Wire prefix tag | `0x1000` (u16 LE) at `[2..4)` | the handshake/one-shot message type (§6.2); constant across captures **[V]** |
-| Message type high bits | `0x4000`/`0x8000` class bits, `0x2000` wide-len candidate — set in `0xc480`; exact meaning **[U]** | message type word (§6.2) |
+| Frame marker | hdr bit `0x8000` | LZSS-compressed frame; `[2..len-0xa)` is a raw stream, no wire message header (§6.2/§7) **[V]** |
 | Writer / gate selectors | `0xa0020`, `0x1f`, `0x18` | one-shot writer arg / `FUN_00fbc1fc` selectors — meaning unresolved **[U]** |
 | **`module_magic`** | **`0x4d258ab7`** | the one constant the handshake receiver validates (LE on the wire: `b7 8a 25 4d`) — wrong value = silent drop. Stored at `*(0x0122a5cc)` **[V]** |
 
@@ -692,14 +722,14 @@ to be pinned **[V]**.
 ## 11. Implementation guide — building a fake host / p2p server [V]
 
 A working, verified implementation of everything below lives in
-`mgo2-server/src/tasks/udp-dump.ts` (`deno task udp`) and has taken a real
+`mgo2-server/src/tasks/udp-server.ts` (`deno task udp`) and has taken a real
 MGO2/RPCS3 client from the first dial through the session-keyed data phase. The
 crypto formulas are exact — copy them from §5.
 
 ### 11.1 Listen
 
 - Bind UDP on the port the TCP `0x4321` reply advertises as the host endpoint (the
-  fake host's `character_connections` row). `udp-dump.ts` defaults to 5731.
+  fake host's `character_connections` row). `udp-server.ts` defaults to 5731.
 - **Never** bind 11181 (`0x2bad`) — the joining client binds it for its own p2p
   socket and a collision aborts its session init before any datagram is sent. Also
   avoid the client's own source port (5730).
@@ -789,15 +819,19 @@ compression bit OR'd per frame (§6.2).
   `K ^ 0x2b58de69` → `xorChain(K, decrypt)`.
 - Parse messages per §6.2: `type u16 LE | len u8 | flags2 u8 | body`, concatenated
   up to the 10-byte tail.
-- `0xc480` = reliable LZSS message (hdr bit `0x8000`; body starts with
-  decompressed-size u16 BE then the LZSS stream, §7). Re-sent byte-identical until
-  ACKed — answer it (ACK bytes **[U]**, id-match semantics **[I]**, §6.2).
-- `0x1001` = control/window signaling (`len 1`, `flags2` 1..5 cycling).
+- Frames with hdr bit `0x8000` = LZSS-compressed: decompress `plain[2 .. len-0xa)`
+  per §7 (1=literal / 0=match, 9-bit absolute ring offset + 4-bit len field
+  with len = field + 2, ring write index starting at 1, offset 0 = EOF); the
+  output is ordinary `type|len|flags2|body` messages. The capture's
+  repeated compressed frame holds the joiner's `0x1001` player-profile record —
+  re-sent byte-identical until ACKed (ACK bytes **[U]**, §6.2).
+- Uncompressed `0x1001` frames = control/window signaling (`len 1`, `flags2`
+  1..5 cycling).
 - Answer with session-keyed frames on the shared counter; the joiner's messages
   after its reliable exchange is acked tell you what the room/host handshake
   wants next.
 
-### 11.7 Minimal code sketch (TypeScript, from udp-dump.ts)
+### 11.7 Minimal code sketch (TypeScript, from udp-server.ts)
 
 ```ts
 const lcg    = (x: number) => (Math.imul(x, 0x5d588b65) + 1) >>> 0;
@@ -828,7 +862,7 @@ const hs = parseHandshake(work);                    // §4; null → not a hands
 // 3) mirror pre-keyed keep-alives; then data-phase handling (§11.6)
 ```
 
-Env knobs in `udp-dump.ts`: `P2P_ID` (host character id), `P2P_BASE`,
+Env knobs in `udp-server.ts`: `P2P_ID` (host character id), `P2P_BASE`,
 `P2P_HOST` (advertised IP), `P2P_OVERRIDE_PUBLIC`, `P2P_SEND_KEYED_FRAME`
 (keepalive | data | keyed | never), `P2P_ESTABLISH`, `P2P_FRAME_TYPE`/
 `P2P_FRAME_BODY`, `UDP_PORTS`, `UDP_HOSTNAME`.
@@ -858,15 +892,15 @@ Env knobs in `udp-dump.ts`: `P2P_ID` (host character id), `P2P_BASE`,
 6. `FUN_00fbc1fc`'s resolved target (`PTR_FUN_0119f550`) and the meaning of
    `0x1f`/`0x18`/`0xa0020`.
 7. Whether **mid-match game-data datagrams** differ from the `0x1000` one-shots.
-   **Resolved (2026-09-09, live):** yes — data-phase frames carry message type
-   `0xc480` (reliable, LZSS-compressed) and `0x1001` (control), with the §6.2
-   header `type u16 LE | len u8 | flags2 u8`; the `0x1000` tag is just the
-   handshake/one-shot message type. **Resolved for the tail and the keyed key:**
-   state-8 frames verify the §5.3 tail with `K ^ 0x2b58de69` and the §5.2 chain
-   with `K = peer_base ^ own_base` — now confirmed live, not only from the
-   decompile (§6.2). Still open: the LZSS decompressor port (§7), the ACK wire
-   format for reliable `0xc480` messages, and the compressed message's game
-   content.
+   **Resolved (2026-09-09, live):** yes — data-phase frames are `0x1001` records,
+   either uncompressed (control, `len 1`) or LZSS-compressed (hdr marker
+   `0x8000`, raw stream per §7); the `0x1000` tag is just the handshake/one-shot
+   message type. **Resolved for the tail and the keyed key:** state-8 frames
+   verify the §5.3 tail with `K ^ 0x2b58de69` and the §5.2 chain with
+   `K = peer_base ^ own_base` — confirmed live (§6.2). **Resolved (2026-09-10):
+   the LZSS decompressor (§7) and the compressed content** — the repeated
+   compressed frame holds the joiner's `0x1001` player-profile record
+   ("phildunphy23", §6.2). Still open: the ACK wire format for reliable records.
 8. Which datagram template/payload type carries **voice** — expected to share this
    datagram path as one payload type among many **[I]**.
 

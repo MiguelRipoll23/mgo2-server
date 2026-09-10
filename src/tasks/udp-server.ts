@@ -1,5 +1,4 @@
-// Fake MGO2 p2p host + packet dump.
-//
+// Fake MGO2 p2p host server.
 // Listens on the port the NPC host's character_connections row advertises
 // (the joiner dials exactly that) and acts as a fake host:
 //   1. Decrypts the joiner's first datagram (the p2p handshake — scrambled
@@ -36,11 +35,110 @@
 //   replies were zeroing it, so the joiner silently dropped every reply and
 //   kept re-dialing. All 10 captured dials verify against this formula.
 //
-// 11181 must NEVER be in UDP_PORTS: it is the port the joining game client
-// binds for its own p2p socket (0x2bad), and while this dump holds it the
-// game's session init fails its bind and never sends a single datagram.
+// 11181 (0x2bad) is intentionally NOT handled here: it is the port the
+// joining game client binds for its own p2p socket — only the client-side
+// tool listens there. It is filtered from UDP_PORTS below, silently.
 // The joiner's own p2p socket is also on 5730 (the dials' source port), so
 // the default listener is 5731 — never 5730, or both sockets fight for it.
+
+import {
+  logUdpInPacket,
+  logUdpOutPacket,
+} from "../core/tcp/utils/traffic-logger-util.ts";
+
+/**
+ * LZSS decompressor (docs/udp-p2p-protocol.md §7) — instruction-exact port of
+ * MGO2.ELF FUN_00efd840, verified byte-for-byte on the capture's profile
+ * record (account name decodes intact). MSB-first bitstream; flag 1 = literal
+ * (8 bits), flag 0 = back-reference (9-bit absolute ring offset + 4-bit length
+ * field, len = field + 2); ring write index starts at 1; offset 0 = EOF.
+ */
+function lzssDecompress(src: Uint8Array, maxout = 0x800): Uint8Array | null {
+  const out = new Uint8Array(maxout);
+  const ring = new Uint8Array(0x200);
+  let w = 1;
+  let n = 0;
+  let bitpos = 0;
+  const total = src.length * 8;
+
+  const bit = (): number => {
+    if (bitpos >= total) return -1;
+    const v = (src[bitpos >> 3] >> (7 - (bitpos & 7))) & 1;
+    bitpos++;
+    return v;
+  };
+  const bits = (k: number): number => {
+    let v = 0;
+    for (let i = 0; i < k; i++) {
+      const b = bit();
+      if (b < 0) return -1;
+      v = (v << 1) | b;
+    }
+    return v;
+  };
+
+  while (bitpos < total && n < maxout) {
+    const flag = bit();
+    if (flag < 0) break;
+    if (flag === 1) {
+      const b = bits(8);
+      if (b < 0) return null;
+      out[n++] = b;
+      ring[w++ & 0x1ff] = b;
+    } else {
+      const off = bits(9);
+      const lf = bits(4);
+      if (off < 0 || lf < 0) return null;
+      if (off === 0) break; // EOF marker
+      for (let j = 0; j < lf + 2 && n < maxout; j++) {
+        const b = ring[(off + j) & 0x1ff];
+        out[n++] = b;
+        ring[w++ & 0x1ff] = b;
+      }
+    }
+  }
+  return out.slice(0, n);
+}
+
+/** Printable ASCII runs (>= 3 chars) in a message body. */
+function extractStrings(body: Uint8Array): string[] {
+  const strings: string[] = [];
+  let current = "";
+  for (const b of body) {
+    if (b >= 0x20 && b <= 0x7e) {
+      current += String.fromCharCode(b);
+    } else {
+      if (current.length >= 3) strings.push(current);
+      current = "";
+    }
+  }
+  if (current.length >= 3) strings.push(current);
+  return strings;
+}
+
+/**
+ * Describe §6.2 messages (`type u16 LE | len u8 | flags2 u8 | body`) — the
+ * layout of a decompressed (or uncompressed) data frame's content region.
+ */
+function describeMessages(buf: Uint8Array): string {
+  const parts: string[] = [];
+  let off = 0;
+  while (off + 4 <= buf.length) {
+    const type = u16LE(buf, off);
+    const len = buf[off + 2];
+    const flags2 = buf[off + 3];
+    const body = buf.subarray(off + 4, Math.min(off + 4 + len, buf.length));
+    const strings = extractStrings(body).map((s) => `"${s}"`).join(",");
+    const peer = type === 0x1001 && body.length >= 2 ? ` peer=${u16LE(body, 0)}` : "";
+    parts.push(
+      `type=0x${type.toString(16).padStart(4, "0")} len=${len}${
+        flags2 ? ` flags2=${flags2}` : ""
+      }${peer}${strings ? ` strings=[${strings}]` : ""}`,
+    );
+    off += 4 + len;
+  }
+  return parts.join(" | ") || `${buf.length}B`;
+}
 
 const LCG_MULT = 0x5d588b65;
 const PRE_HANDSHAKE_XOR = 0x87103c2f;
@@ -169,10 +267,13 @@ function verifyTailDigest(unscrambled: Uint8Array, key: number): boolean {
   return true;
 }
 
+const CLIENT_ONLY_PORT = 11181; // 0x2bad — the game client's own p2p socket
+
 const ports = (Deno.env.get("UDP_PORTS") ?? "5731")
   .split(",")
   .map((part) => Number(part.trim()))
-  .filter((port) => Number.isInteger(port) && port > 0);
+  .filter((port) => Number.isInteger(port) && port > 0)
+  .filter((port) => port !== CLIENT_ONLY_PORT);
 const hostname = Deno.env.get("UDP_HOSTNAME") ?? "0.0.0.0";
 
 // Our fake-host identity: peerId + counterBase go into the reply handshake,
@@ -234,21 +335,15 @@ const frameBodyHex = (Deno.env.get("P2P_FRAME_BODY") ?? "").replace(/[^0-9a-fA-F
 const frameBody = new Uint8Array(frameBodyHex.length / 2)
   .map((_, i) => parseInt(frameBodyHex.slice(i * 2, i * 2 + 2), 16));
 
-if (ports.includes(11181)) {
-  console.warn(
-    "[udp] WARNING: 11181 is in UDP_PORTS — the game client binds that port for its own p2p socket, so the join will never dial. Remove it.",
-  );
-}
-
 const sockets = ports.map((port) => ({
   port,
   socket: Deno.listenDatagram({ port, hostname, transport: "udp" }),
 }));
 
 for (const { port } of sockets) {
-  console.log(`[udp] listening on ${hostname}:${port}`);
+  console.info(`[udp] listening on ${hostname}:${port}`);
 }
-console.log(`[udp] continuation=${sendKeyedMode} our base=0x${ourBase.toString(16)}`);
+console.info(`[udp] continuation=${sendKeyedMode} our base=0x${ourBase.toString(16)}`);
 
 // ---------------------------------------------------------------------------
 // Wire crypto (verified against 10 live captures)
@@ -509,41 +604,50 @@ interface Peer {
 
 const peers = new Map<string, Peer>();
 
-const hexOf = (bytes: Uint8Array): string =>
-  Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(" ");
-
-const decOf = (bytes: Uint8Array): string => Array.from(bytes).join(", ");
-
-function logHandshake(tag: string, hs: Handshake): void {
-  console.log(`${tag} peerId=0x${hs.peerId.toString(16).padStart(8, "0")} base=0x${
+function handshakeTag(hs: Handshake): string {
+  const pairs = hs.pairs.map((p) => `${p.ip}:${p.port}`).join(", ");
+  return `hs peer=0x${hs.peerId.toString(16).padStart(8, "0")} base=0x${
     hs.counterBase.toString(16).padStart(8, "0")
-  } magic=0x${hs.magic.toString(16).padStart(8, "0")} flags=0x${
-    hs.flags.toString(16).padStart(2, "0")
-  } unk=0x${hs.unk.toString(16).padStart(4, "0")} count=${hs.count}`);
-  for (let i = 0; i < hs.pairs.length; i++) {
-    const p = hs.pairs[i];
-    console.log(`${tag}   pair${i}: ${p.ip}:${p.port}`);
-  }
+  } flags=0x${hs.flags.toString(16).padStart(2, "0")} pairs=[${pairs}]`;
 }
 
 while (sockets.length > 0) {
-  const result = await Promise.race(
-    sockets.map(async ({ port, socket }) => ({
-      port,
-      socket,
-      data: (await socket.receive()) as [Uint8Array, Deno.NetAddr],
-    })),
-  );
+  // A previous dial-back send to an unreachable endpoint surfaces as an ICMP
+  // port-unreachable on the NEXT receive (Windows WSAECONNRESET 10054) —
+  // tolerate it instead of tearing down the server.
+  let result: {
+    port: number;
+    socket: Deno.DatagramConn;
+    data: [Uint8Array, Deno.NetAddr];
+  };
+  try {
+    result = await Promise.race(
+      sockets.map(async ({ port, socket }) => ({
+        port,
+        socket,
+        data: (await socket.receive()) as [Uint8Array, Deno.NetAddr],
+      })),
+    );
+  } catch (e) {
+    if (e instanceof Deno.errors.ConnectionReset) continue;
+    throw e;
+  }
 
   const [raw, remote] = result.data;
   const sender = remote.transport === "udp"
     ? `${remote.hostname}:${remote.port}`
     : "unix";
-  const tag = `[udp:${result.port}]`;
+  // No brackets: the traffic-logger helpers add their own.
+  const tag = `udp:${result.port}`;
 
-  console.log(`${tag} IN ${sender} (${raw.length} bytes)`);
-  console.log(`${tag}   hex: ${hexOf(raw)}`);
-  console.log(`${tag}   dec: [${decOf(raw)}]`);
+  // Send with ICMP-noise tolerance (dial-back endpoints can be unreachable).
+  const safeSend = async (data: Uint8Array, addr: Deno.NetAddr): Promise<void> => {
+    try {
+      await result.socket.send(data, addr);
+    } catch (e) {
+      console.warn(`[${tag}] send to ${addr.hostname}:${addr.port} failed: ${e}`);
+    }
+  };
 
   // Classify the datagram by its digest key (the gate runs pre-chain, §5.3):
   // pre-keyed (state < 8) frames verify with the bare constant; true
@@ -576,25 +680,21 @@ while (sockets.length > 0) {
       }
       const frameTag = decoded.length >= 6 ? u16LE(decoded, 2) : -1;
       const frameMsgLen = decoded.length >= 6 ? u16LE(decoded, 4) : -1;
-      console.log(
-        `${tag} PRE-KEYED frame hdr=0x${hdr.toString(16).padStart(4, "0")} tag=0x${
-          (frameTag & 0xffff).toString(16).padStart(4, "0")
-        } msgLen=${frameMsgLen} — joiner session in the handshake phase (state < 8)`,
+      logUdpInPacket(
+        tag,
+        `pre tag=0x${(frameTag & 0xffff).toString(16).padStart(4, "0")} hdr=0x${
+          hdr.toString(16).padStart(4, "0")
+        }`,
+        decoded,
       );
-      console.log(`${tag}   plain: ${hexOf(decoded)}`);
       // Mirror the keep-alive back, pre-keyed (what a state-6 host answers).
       if (frameTag === 0x5000 && frameMsgLen === 0 && sendKeyedMode !== "never") {
         const pingHdr = knownPeer ? knownPeer.outHdr : 0;
         if (knownPeer) knownPeer.outHdr = pingHdr + 1;
         const ackPlain = buildKeepaliveFrame(pingHdr);
         const ack = encodeFrame(ackPlain, pingHdr, PRE_HANDSHAKE_XOR);
-        console.log(
-          `${tag} PING-ACK OUT ${sender} (${ack.length} bytes, PRE-keyed keep-alive, hdr=0x${
-            pingHdr.toString(16).padStart(4, "0")
-          })`,
-        );
-        console.log(`${tag}   hex: ${hexOf(ack)}`);
-        await result.socket.send(ack, {
+        logUdpOutPacket(tag, `ka hdr=0x${pingHdr.toString(16).padStart(4, "0")}`, ackPlain);
+        await safeSend(ack, {
           transport: "udp",
           port: remote.port,
           hostname: remote.hostname,
@@ -608,18 +708,28 @@ while (sockets.length > 0) {
       const decodedK = work.slice();
       xorChain(decodedK, hdr, sessionKey, false);
       const frameTag = decodedK.length >= 6 ? u16LE(decodedK, 2) : -1;
-      const frameMsgLen = decodedK.length >= 6 ? u16LE(decodedK, 4) : -1;
-      console.log(
-        `${tag} SESSION-KEYED frame hdr=0x${hdr.toString(16).padStart(4, "0")} tag=0x${
-          (frameTag & 0xffff).toString(16).padStart(4, "0")
-        } msgLen=${frameMsgLen} K=0x${sessionKey.toString(16)} — JOINER IS IN THE DATA PHASE (state >= 8)`,
+      // Content region: [2 .. len-0xa). Compressed frames (hdr 0x8000 marker)
+      // hold a raw LZSS stream there; decompress to recover the messages.
+      let content: Uint8Array | null = decodedK.subarray(2, decodedK.length - 0xa);
+      let compressed = false;
+      if (decodedK.length > 0x0c && (decodedK[1] & 0x80) !== 0) {
+        compressed = true;
+        content = lzssDecompress(content);
+      }
+      const msgNote =
+        content && content.length > 0 ? ` msg [${describeMessages(content)}]` : "";
+      logUdpInPacket(
+        tag,
+        `keyed tag=0x${(frameTag & 0xffff).toString(16).padStart(4, "0")} hdr=0x${
+          hdr.toString(16).padStart(4, "0")
+        } K=0x${sessionKey.toString(16)}${compressed ? " lzss" : ""}${msgNote}`,
+        decodedK,
       );
-      console.log(`${tag}   plain: ${hexOf(decodedK)}`);
     } else {
-      console.log(
-        `${tag} undecodable frame: digest fails with the pre-key${
-          knownPeer ? ` and with K^const (K=0x${sessionKey.toString(16)})` : " (no known peer yet)"
-        }, raw hdr=0x${hdr.toString(16).padStart(4, "0")}`,
+      console.warn(
+        `[${tag}] IN undecodable from ${sender} hdr=0x${hdr.toString(16).padStart(4, "0")}${
+          knownPeer ? ` K=0x${sessionKey.toString(16)}` : ""
+        }`,
       );
     }
     continue;
@@ -633,10 +743,11 @@ while (sockets.length > 0) {
     hs.pairs[0] = { ...hs.pairs[1] };
   }
 
-  logHandshake(`${tag} HANDSHAKE IN `, hs);
-  if (overrideNote) {
-    console.log(`${tag}   override: public pair0 ${overrideNote} (P2P_OVERRIDE_PUBLIC on)`);
-  }
+  logUdpInPacket(
+    tag,
+    `${handshakeTag(hs)}${overrideNote ? ` override ${overrideNote}` : ""}`,
+    decoded,
+  );
 
   // Reply with our own handshake to the joiner's socket.
   const now = Date.now();
@@ -645,11 +756,9 @@ while (sockets.length > 0) {
 
   if (existing) {
     const since = now - existing.lastReplyAt;
-    console.log(
-      `${tag}   handshake ${since}ms after our reply (joiner session: ${
-        existing.accepted
-          ? "signaled us — keep-alive/keyed frames seen"
-          : "handshake phase, no keep-alives yet"
+    console.info(
+      `[${tag}] re-dial from ${sender} ${since}ms after last reply (${
+        existing.accepted ? "signaled" : "handshake phase"
       })`,
     );
   }
@@ -677,15 +786,13 @@ while (sockets.length > 0) {
   const plain = buildHandshake(replyHdr, advertiseIp, result.port, replyPeerId);
   const reply = encodeFrame(plain, replyHdr, PRE_HANDSHAKE_XOR);
 
-  console.log(`${tag} OUT ${sender} (${reply.length} bytes)`);
-  console.log(`${tag}   hex: ${hexOf(reply)}`);
-  console.log(`${tag}   dec: [${decOf(reply)}]`);
-  logHandshake(`${tag} HANDSHAKE OUT`, parseHandshake(plain)!);
-  console.log(
-    `${tag}   reply peer_id=${replyPeerId} (host id — joiner gates on it; joiner's own id is ${hs.peerId})`,
+  logUdpOutPacket(
+    tag,
+    `hs hdr=0x${replyHdr.toString(16).padStart(4, "0")} peer=${replyPeerId}`,
+    plain,
   );
 
-  await result.socket.send(reply, {
+  await safeSend(reply, {
     transport: "udp",
     port: remote.port,
     hostname: remote.hostname,
@@ -713,13 +820,12 @@ while (sockets.length > 0) {
       keyed,
       (keyed ^ TAIL_DIGEST_KEY) >>> 0,
     );
-    console.log(
-      `${tag} ESTABLISH OUT ${peer.dialBack.hostname}:${peer.dialBack.port} (${frame.length} bytes, SESSION-keyed K=0x${
-        keyed.toString(16)
-      }, digest=K^const, tag=0x5000, hdr=0x${estHdr.toString(16).padStart(4, "0")})`,
+    logUdpOutPacket(
+      tag,
+      `ka hdr=0x${estHdr.toString(16).padStart(4, "0")} keyed K=0x${keyed.toString(16)}`,
+      plain,
     );
-    console.log(`${tag}   hex: ${hexOf(frame)}`);
-    await result.socket.send(frame, {
+    await safeSend(frame, {
       transport: "udp",
       port: peer.dialBack.port,
       hostname: peer.dialBack.hostname,
@@ -738,17 +844,14 @@ while (sockets.length > 0) {
       preKeyed ? PRE_HANDSHAKE_XOR : keyed,
       preKeyed ? TAIL_DIGEST_KEY : (keyed ^ TAIL_DIGEST_KEY) >>> 0,
     );
-    console.log(
-      `${tag} DATA OUT ${peer.dialBack.hostname}:${peer.dialBack.port} (${frame.length} bytes, ${
-        preKeyed
-          ? "PRE-keyed (state<8 crypto)"
-          : `SESSION-keyed K=0x${keyed.toString(16)}, digest=K^const`
-      }, type=0x${frameType.toString(16).padStart(4, "0")}, body=${frameBody.length}B, hdr=0x${
-        dataHdr.toString(16).padStart(4, "0")
-      })`,
+    logUdpOutPacket(
+      tag,
+      `data hdr=0x${dataHdr.toString(16).padStart(4, "0")} type=0x${
+        frameType.toString(16).padStart(4, "0")
+      } body=${frameBody.length}B${preKeyed ? " pre" : " keyed"}`,
+      plain,
     );
-    console.log(`${tag}   hex: ${hexOf(frame)}`);
-    await result.socket.send(frame, {
+    await safeSend(frame, {
       transport: "udp",
       port: peer.dialBack.port,
       hostname: peer.dialBack.hostname,

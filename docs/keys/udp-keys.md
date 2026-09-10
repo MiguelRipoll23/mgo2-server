@@ -192,7 +192,7 @@ above reproduces the wire tail of every capture exactly.
 
 ## Reference implementation
 
-`mgo2-server` (Deno) `src/tasks/udp-dump.ts` — fake-host mode: decodes the joiner's
+`mgo2-server` (Deno) `src/tasks/udp-server.ts` — fake-host mode: decodes the joiner's
 handshake with the code above, logs it, and replies with an encoded handshake
 (`P2P_ID`/`P2P_BASE`/`P2P_HOST` env tunables). The earlier `mgo2-udp-tools`
 implementation used the wrong (plaintext/envelope) model and is superseded.

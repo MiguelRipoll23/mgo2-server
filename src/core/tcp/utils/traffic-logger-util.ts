@@ -30,6 +30,37 @@ export function logUdpTraffic(
   );
 }
 
+const hexOf = (buffer: Uint8Array): string =>
+  Array.from(buffer, (byte) => byte.toString(16).padStart(2, "0")).join(" ");
+
+/** UDP p2p equivalent of logTcpInPacket — decrypted datagram, hex-only line. */
+export function logUdpInPacket(
+  logPrefix: string,
+  tag: string,
+  buffer: Uint8Array,
+): void {
+  const hex = hexOf(buffer);
+  console.debug(`[${logPrefix}] IN ${tag} (${buffer.length} bytes): ${hex}`);
+}
+
+/** UDP p2p equivalent of encodePacket's OUT log — plaintext frame, hex-only line. */
+export function logUdpOutPacket(
+  logPrefix: string,
+  tag: string,
+  buffer: Uint8Array,
+): void {
+  const hex = hexOf(buffer);
+  console.debug(`[${logPrefix}] OUT ${tag} (${buffer.length} bytes): ${hex}`);
+}
+
+export function logUdpConnection(logPrefix: string, remoteAddress: string): void {
+  console.info(`[${logPrefix}] Peer connected from ${remoteAddress}`);
+}
+
+export function logUdpDisconnection(logPrefix: string, remoteAddress: string): void {
+  console.info(`[${logPrefix}] Peer disconnected from ${remoteAddress}`);
+}
+
 export function logTcpConnection(logPrefix: string, remoteAddress: string): void {
   console.info(`[${logPrefix}] Client connected from ${remoteAddress}`);
 }
