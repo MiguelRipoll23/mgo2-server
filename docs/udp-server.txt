@@ -1,0 +1,55 @@
+[replay] captured datagrams: 36
+[udp:5731] listening on 127.0.0.1:5731
+[udp:5731] IN pre ctr=0x0000 (34 bytes): 00 00 00 10 1c 00 02 00 00 00 e4 a9 d0 a9 b7 8a 25 4d 02 01 00 02 59 81 10 cb 62 16 c0 a8 01 32 62 16
+[udp:5731] handshake from 127.0.0.1:62021 peer=0x00000002 base=0xa9d0a9e4 pairs=[89.129.16.203:5730, 192.168.1.50:5730]
+[udp:5731] OUT msg ctr=0x0000 type=0x1000 pre (44 bytes): 00 00 00 10 1c 00 01 00 00 00 78 56 34 12 b7 8a 25 4d 02 01 00 02 7f 00 00 01 63 16 7f 00 00 01 63 16 00 00 00 00 00 00 00 00 00 00
+[udp:5731] OUT msg ctr=0x0001 type=0x5000 (16 bytes): 01 00 00 50 00 00 00 00 00 00 00 00 00 00 00 00
+[udp:5731] session with peer=0x00000002 established
+[udp:5731] IN pre ctr=0x0001 (6 bytes): 01 00 00 50 00 00
+[udp:5731] OUT msg ctr=0x0002 type=0x5000 (16 bytes): 02 00 00 50 00 00 00 00 00 00 00 00 00 00 00 00
+[udp:5731] IN keyed ctr=0x8002 lzss K=0xbbe4ff9c (96 bytes): 02 80 01 10 5a 00 02 00 00 00 00 00 00 00 00 00 00 00 0d 00 a7 00 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00 00 00 00 00 00 00 00 00 43 0b 00 1f ff ff 0c 00 00 03 ff 0d 00 00 03 ff 16 00 1f ff ff 1c 00 00 00 00 1d 00 1f 00 70 68 69 6c 64 75 6e 70 68 79 32 33 00
+[udp:5731] Character 2 (phildunphy23) attempting to join...
+[udp:5731] IN keyed ctr=0x8003 lzss K=0xbbe4ff9c (96 bytes): 03 80 01 10 5a 00 02 00 00 00 00 00 00 00 00 00 00 00 0d 00 a7 00 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00 00 00 00 00 00 00 00 00 43 0b 00 1f ff ff 0c 00 00 03 ff 0d 00 00 03 ff 16 00 1f ff ff 1c 00 00 00 00 1d 00 1f 00 70 68 69 6c 64 75 6e 70 68 79 32 33 00
+[udp:5731] Character 2 (phildunphy23) attempting to join...
+[udp:5731] IN keyed ctr=0x8004 lzss K=0xbbe4ff9c (96 bytes): 04 80 01 10 5a 00 02 00 00 00 00 00 00 00 00 00 00 00 0d 00 a7 00 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00 00 00 00 00 00 00 00 00 43 0b 00 1f ff ff 0c 00 00 03 ff 0d 00 00 03 ff 16 00 1f ff ff 1c 00 00 00 00 1d 00 1f 00 70 68 69 6c 64 75 6e 70 68 79 32 33 00
+[udp:5731] Character 2 (phildunphy23) attempting to join...
+[udp:5731] IN keyed ctr=0x0005 K=0xbbe4ff9c (7 bytes): 05 00 01 10 01 01 00
+[udp:5731] IN keyed ctr=0x8006 lzss K=0xbbe4ff9c (96 bytes): 06 80 01 10 5a 00 02 00 00 00 00 00 00 00 00 00 00 00 0d 00 a7 00 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00 00 00 00 00 00 00 00 00 43 0b 00 1f ff ff 0c 00 00 03 ff 0d 00 00 03 ff 16 00 1f ff ff 1c 00 00 00 00 1d 00 1f 00 70 68 69 6c 64 75 6e 70 68 79 32 33 00
+[udp:5731] Character 2 (phildunphy23) attempting to join...
+[udp:5731] IN keyed ctr=0x0007 K=0xbbe4ff9c (7 bytes): 07 00 01 10 01 01 00
+[udp:5731] IN keyed ctr=0x8008 lzss K=0xbbe4ff9c (96 bytes): 08 80 01 10 5a 00 02 00 00 00 00 00 00 00 00 00 00 00 0d 00 a7 00 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00 00 00 00 00 00 00 00 00 43 0b 00 1f ff ff 0c 00 00 03 ff 0d 00 00 03 ff 16 00 1f ff ff 1c 00 00 00 00 1d 00 1f 00 70 68 69 6c 64 75 6e 70 68 79 32 33 00
+[udp:5731] Character 2 (phildunphy23) attempting to join...
+[udp:5731] IN keyed ctr=0x0009 K=0xbbe4ff9c (7 bytes): 09 00 01 10 01 01 00
+[udp:5731] IN keyed ctr=0x800a lzss K=0xbbe4ff9c (96 bytes): 0a 80 01 10 5a 00 02 00 00 00 00 00 00 00 00 00 00 00 0d 00 a7 00 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00 00 00 00 00 00 00 00 00 43 0b 00 1f ff ff 0c 00 00 03 ff 0d 00 00 03 ff 16 00 1f ff ff 1c 00 00 00 00 1d 00 1f 00 70 68 69 6c 64 75 6e 70 68 79 32 33 00
+[udp:5731] Character 2 (phildunphy23) attempting to join...
+[udp:5731] IN keyed ctr=0x000b K=0xbbe4ff9c (7 bytes): 0b 00 01 10 01 02 00
+[udp:5731] IN keyed ctr=0x000c K=0xbbe4ff9c (7 bytes): 0c 00 01 10 01 01 00
+[udp:5731] IN keyed ctr=0x800d lzss K=0xbbe4ff9c (96 bytes): 0d 80 01 10 5a 00 02 00 00 00 00 00 00 00 00 00 00 00 0d 00 a7 00 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00 00 00 00 00 00 00 00 00 43 0b 00 1f ff ff 0c 00 00 03 ff 0d 00 00 03 ff 16 00 1f ff ff 1c 00 00 00 00 1d 00 1f 00 70 68 69 6c 64 75 6e 70 68 79 32 33 00
+[udp:5731] Character 2 (phildunphy23) attempting to join...
+[udp:5731] IN keyed ctr=0x000e K=0xbbe4ff9c (7 bytes): 0e 00 01 10 01 02 00
+[udp:5731] IN keyed ctr=0x000f K=0xbbe4ff9c (7 bytes): 0f 00 01 10 01 01 00
+[udp:5731] IN keyed ctr=0x8010 lzss K=0xbbe4ff9c (96 bytes): 10 80 01 10 5a 00 02 00 00 00 00 00 00 00 00 00 00 00 0d 00 a7 00 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00 00 00 00 00 00 00 00 00 43 0b 00 1f ff ff 0c 00 00 03 ff 0d 00 00 03 ff 16 00 1f ff ff 1c 00 00 00 00 1d 00 1f 00 70 68 69 6c 64 75 6e 70 68 79 32 33 00
+[udp:5731] Character 2 (phildunphy23) attempting to join...
+[udp:5731] IN keyed ctr=0x0011 K=0xbbe4ff9c (7 bytes): 11 00 01 10 01 03 00
+[udp:5731] IN keyed ctr=0x0012 K=0xbbe4ff9c (7 bytes): 12 00 01 10 01 02 00
+[udp:5731] IN keyed ctr=0x0013 K=0xbbe4ff9c (7 bytes): 13 00 01 10 01 01 00
+[udp:5731] IN keyed ctr=0x8014 lzss K=0xbbe4ff9c (96 bytes): 14 80 01 10 5a 00 02 00 00 00 00 00 00 00 00 00 00 00 0d 00 a7 00 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00 00 00 00 00 00 00 00 00 43 0b 00 1f ff ff 0c 00 00 03 ff 0d 00 00 03 ff 16 00 1f ff ff 1c 00 00 00 00 1d 00 1f 00 70 68 69 6c 64 75 6e 70 68 79 32 33 00
+[udp:5731] Character 2 (phildunphy23) attempting to join...
+[udp:5731] IN keyed ctr=0x0015 K=0xbbe4ff9c (7 bytes): 15 00 01 10 01 03 00
+[udp:5731] IN keyed ctr=0x0016 K=0xbbe4ff9c (7 bytes): 16 00 01 10 01 02 00
+[udp:5731] IN keyed ctr=0x0017 K=0xbbe4ff9c (7 bytes): 17 00 01 10 01 04 00
+[udp:5731] IN keyed ctr=0x0018 K=0xbbe4ff9c (7 bytes): 18 00 01 10 01 01 00
+[udp:5731] IN keyed ctr=0x8019 lzss K=0xbbe4ff9c (96 bytes): 19 80 01 10 5a 00 02 00 00 00 00 00 00 00 00 00 00 00 0d 00 a7 00 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00 00 00 00 00 00 00 00 00 43 0b 00 1f ff ff 0c 00 00 03 ff 0d 00 00 03 ff 16 00 1f ff ff 1c 00 00 00 00 1d 00 1f 00 70 68 69 6c 64 75 6e 70 68 79 32 33 00
+[udp:5731] Character 2 (phildunphy23) attempting to join...
+[udp:5731] IN keyed ctr=0x001a K=0xbbe4ff9c (7 bytes): 1a 00 01 10 01 03 00
+[udp:5731] IN keyed ctr=0x001b K=0xbbe4ff9c (7 bytes): 1b 00 01 10 01 02 00
+[udp:5731] IN keyed ctr=0x001c K=0xbbe4ff9c (7 bytes): 1c 00 01 10 01 04 00
+[udp:5731] IN keyed ctr=0x001d K=0xbbe4ff9c (7 bytes): 1d 00 01 10 01 01 00
+[udp:5731] IN keyed ctr=0x801e lzss K=0xbbe4ff9c (96 bytes): 1e 80 01 10 5a 00 02 00 00 00 00 00 00 00 00 00 00 00 0d 00 a7 00 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00 00 00 00 00 00 00 00 00 43 0b 00 1f ff ff 0c 00 00 03 ff 0d 00 00 03 ff 16 00 1f ff ff 1c 00 00 00 00 1d 00 1f 00 70 68 69 6c 64 75 6e 70 68 79 32 33 00
+[udp:5731] Character 2 (phildunphy23) attempting to join...
+[udp:5731] IN keyed ctr=0x001f K=0xbbe4ff9c (7 bytes): 1f 00 01 10 01 05 00
+[udp:5731] IN keyed ctr=0x0020 K=0xbbe4ff9c (7 bytes): 20 00 01 10 01 03 00
+[udp:5731] IN keyed ctr=0x0021 K=0xbbe4ff9c (7 bytes): 21 00 01 10 01 02 00
+[udp:5731] IN keyed ctr=0x0022 K=0xbbe4ff9c (7 bytes): 22 00 01 10 01 04 00
+[udp:5731] IN keyed ctr=0x0023 K=0xbbe4ff9c (7 bytes): 23 00 01 10 01 01 00
+[replay] done

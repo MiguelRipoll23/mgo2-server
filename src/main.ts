@@ -9,6 +9,8 @@ import { GateServer } from "./infrastructure/tcp/servers/gate/gate-server.ts";
 import { AccountServer } from "./infrastructure/tcp/servers/account/account-server.ts";
 import { GameLobbyServer } from "./infrastructure/tcp/servers/game/game-lobby-server.ts";
 import { DnsServer } from "./infrastructure/dns/dns-server.ts";
+import { DedicatedHostService } from "./infrastructure/udp/services/dedicated-host-service.ts";
+import "./infrastructure/udp/commands/register-commands.ts";
 import "./infrastructure/crons/refresh-lobbies-cron.ts";
 import { startAutomatchTicker } from "./infrastructure/crons/automatch-cron.ts";
 
@@ -41,6 +43,8 @@ const servers = [
   account.start(),
   httpService.listen(),
   ...gameLobbyServers.map((gameLobby) => gameLobby.start()),
+  // UDP dedicated p2p host — one port, standalone service.
+  new DedicatedHostService(Number(Deno.env.get("UDP_PORT") ?? "5731")).start(),
 ];
 
 if (!disableDns) {

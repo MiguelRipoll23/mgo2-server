@@ -285,7 +285,7 @@ const npcSeedResult = await db.transaction(async (tx) => {
   //           datagram never leaves the emulator, so the host-side dump/fake
   //           player never sees it. Every observed working join advertised a
   //           real LAN address. Set P2P_HOST accordingly.
-  //   PORT  — where the test peer listens (udp-dump / cli-fake-player).
+  //   PORT  — where the test peer listens (the UDP p2p host / udp-client).
   //           NOT 11181: the joining client binds its own p2p socket on 11181
   //           (0x2bad), so a same-machine dial to 11181 would loop back into
   //           the client itself.

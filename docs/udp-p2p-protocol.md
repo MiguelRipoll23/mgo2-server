@@ -221,7 +221,7 @@ Mirror the joiner's shape, encoded with the inverse scramble (§5.1):
 ```
 
 Send it back to the joiner's **source address** (its UDP socket). This is exactly what
-`mgo2-server`'s `src/tasks/udp-server.ts` does (fake-host mode), verified end-to-end:
+`mgo2-server`'s `DedicatedHostService` (accept-handshake handler) does, verified
 decode of the joiner's live dial → build → encode → joiner-side re-decode parses as a
 valid handshake **[V]**.
 
@@ -465,11 +465,11 @@ the joiner's state-6 keep-alives (below) are pre-keyed, i.e. it had not
 established the key from the handshake reply alone.
 
 **Confirmed live 2026-09-09:** the fake host sent exactly one session-keyed empty
-`tag-0x5000` keep-alive (ESTABLISH OUT — the default `P2P_SEND_KEYED_FRAME=
-keepalive` continuation in `udp-server.ts`) after its handshake reply; the joiner's
+`tag-0x5000` keep-alive (ESTABLISH OUT) after its handshake reply; the joiner's
 ~2 s handshake re-dials stopped within one retry cycle and its next frames were
 session-keyed. The key-establishment path is not just in the decompile — it works
-on a real client. What the joiner sends next is documented in §6.2.
+on a real client (the `DedicatedHostService` handshake handler does the same on
+every accept). What the joiner sends next is documented in §6.2.
 
 **Decryption (offline, no brute force):** decode the peer's handshake (§5) for its
 `counter_base` → `peer_base`; own base is what we sent. Then per data frame: undo the
@@ -722,14 +722,16 @@ to be pinned **[V]**.
 ## 11. Implementation guide — building a fake host / p2p server [V]
 
 A working, verified implementation of everything below lives in
-`mgo2-server/src/tasks/udp-server.ts` (`deno task udp`) and has taken a real
+`mgo2-server`'s UDP stack (`src/core/udp/` + `src/infrastructure/udp/`, started by
+`src/main.ts` on port 5730) and has taken a real
 MGO2/RPCS3 client from the first dial through the session-keyed data phase. The
 crypto formulas are exact — copy them from §5.
 
 ### 11.1 Listen
 
 - Bind UDP on the port the TCP `0x4321` reply advertises as the host endpoint (the
-  fake host's `character_connections` row). `udp-server.ts` defaults to 5731.
+  host's `character_connections` row). The mgo2-server `DedicatedHostService`
+  defaults to 5730 (`UDP_PORT`).
 - **Never** bind 11181 (`0x2bad`) — the joining client binds it for its own p2p
   socket and a collision aborts its session init before any datagram is sent. Also
   avoid the client's own source port (5730).
@@ -831,7 +833,7 @@ compression bit OR'd per frame (§6.2).
   after its reliable exchange is acked tell you what the room/host handshake
   wants next.
 
-### 11.7 Minimal code sketch (TypeScript, from udp-server.ts)
+### 11.7 Minimal code sketch (TypeScript, from the mgo2-server UDP stack)
 
 ```ts
 const lcg    = (x: number) => (Math.imul(x, 0x5d588b65) + 1) >>> 0;
@@ -862,10 +864,8 @@ const hs = parseHandshake(work);                    // §4; null → not a hands
 // 3) mirror pre-keyed keep-alives; then data-phase handling (§11.6)
 ```
 
-Env knobs in `udp-server.ts`: `P2P_ID` (host character id), `P2P_BASE`,
-`P2P_HOST` (advertised IP), `P2P_OVERRIDE_PUBLIC`, `P2P_SEND_KEYED_FRAME`
-(keepalive | data | keyed | never), `P2P_ESTABLISH`, `P2P_FRAME_TYPE`/
-`P2P_FRAME_BODY`, `UDP_PORTS`, `UDP_HOSTNAME`.
+Env knobs: `UDP_PORT` (default 5730), `UDP_HOSTNAME` (bind address). The host
+identity (peer id / counter base) comes from `udp-host-identity-constants.ts`.
 
 ---
 
