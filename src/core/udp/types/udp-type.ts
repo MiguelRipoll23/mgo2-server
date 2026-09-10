@@ -44,4 +44,17 @@ export interface PeerSession {
   established: boolean;
   /** Last time this peer sent us anything (ms timestamp). */
   lastSeenAt: number;
+  /**
+   * Highest inbound frame seq processed (0 = none yet). Every newly observed
+   * seq is acknowledged (type 0x1000 | seq); duplicates (seq ≤ this) are not
+   * re-acked. Gaps self-heal: a lost frame returns as a re-send with a fresh
+   * seq and is acked then.
+   */
+  lastInSeq: number;
+  /**
+   * Inbound ACK type ids (0x1000|seq) already seen — the joiner keeps
+   * re-sending its ACK until it sees ours, so duplicates are expected and
+   * must not re-trigger the same acknowledgement.
+   */
+  seenAcks: Set<number>;
 }

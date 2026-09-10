@@ -522,7 +522,7 @@ instead (§7), and the message header(s) materialize only after decompression.
     ISO-8859-1 vs UTF-8 was never a factor.)
     The **identical stream is re-sent on every subsequent compressed frame**
     (hdr `0x8003`, `0x8004`, `0x8006`, `0x8008`…) — a reliable record awaiting
-    its ACK. The fake host must ACK it; ACK semantics **[U]**.
+    its ACK (§6.3).
     (The previously reported "type `0xc480`, len `0x2b`, flags2 `0x50`" was a
     misreading of stream bytes as a wire header: no `0xc480` immediate exists
     anywhere in the image, and `08 14` is stream data, not a decompressed-size
@@ -530,9 +530,9 @@ instead (§7), and the message header(s) materialize only after decompression.
     format, never 2068.)
   - **Uncompressed (17-byte frames, marker clear):** hdr `0x0005`:
     `05 00 | 01 10 | 01 | 01 | 00 | <10B tail>` = type `0x1001`, len 1,
-    flags2 1, body `0x00`. flags2 cycles
-    `1,1,1,2,1,2,1,3,2,1,3,2,4,1,3,2,4,1,5,3,2,4,1` (1..5) across the run —
-    send-window / credit grants **[I]**.
+    flags2 1, body `0x00`. These are the joiner's **ACKs of the host's
+    frames** (§6.3) — the flags2 value is the send attempt (1..5 escalating on
+    the re-sends that pile up while the host stays silent).
 
 **Observed message types at a glance:**
 
@@ -541,7 +541,7 @@ instead (§7), and the message header(s) materialize only after decompression.
 | — | `0x1000`, len `0x1c`, flags2 `0x00` | handshake (§4) |
 | — | `0x5000`, len `0x00` | keep-alive (§6.1) |
 | `0x8000` | `0x1001`, len `0x5a` (LZSS; 94-byte profile record) | reliable game data — joiner's player profile (above) |
-| — | `0x1001`, len `0x01`, flags2 `0x01..0x05` | control / window signaling (above) |
+| — | `0x1001`, len `0x01`, flags2 `0x01..0x05` | ACK of the host's frame seq 1 (§6.3; flags2 = attempt) |
 
 **Shared counter confirmed live.** The joiner's hdrs over the run form one
 monotonic sequence `0x8002, 0x8003, 0x8004, 0x0005, 0x8006, 0x0007, 0x8008, 0x0009,
@@ -552,12 +552,67 @@ masked out of the §5.2 seed by `hdr & 0x7fff`. This is the live proof for §2's
 one-outbound-counter rule: a host must share one counter or its frames fall
 outside the joiner's `last+1..last+0x20` seq window and are dropped.
 
+### 6.3 The ACK mechanism — reliable frames [V]
+
+Resolved 2026-09-10 from the binary (decoder enqueue path `0x266d48..0x266e04`,
+receiver pump `FUN_0026e790`, serializer `FUN_00269860`) and the capture.
+
+The serializer's "type" halfword is `(id & 0xfff) | class-bits` (`0x1000` =
+reliable class, `0x2000` = long-len, set when the body exceeds 0xff) — the
+`0x1001` record is reliable-class id 1. A frame is acknowledged with a **single
+entry message**:
+
+```
+type   = 0x1000 | (ackedSeq & 0xfff)   u16 LE   (reliable-class, acked frame seq)
+len    = 0x01
+flags2 = send attempt (starts at 1, escalates per re-send)
+body   = 0x00
+```
+
+Sent as an ordinary session-keyed frame drawing the host's shared outbound
+counter. Wire evidence from the capture: the joiner's 17-byte control frames
+(`05 00 | 01 10 | 01 01 00`) are its ACK of **our seq 1** (the establish +
+keep-alive mirror both drew seq 1) — cumulative, one ACK covers both. The
+escalating flags2 (1→5) is its re-send counter while the host stays silent.
+
+Binary evidence:
+
+- **Decoder enqueue (`0x266e00`):** every accepted keyed frame writes the
+  received hdr counter into an outbound ACK envelope template
+  (`session+0x3c+4`) — the acked seq is the received frame's hdr.
+- **Serializer (`0x26607c`):** reliable outbound envelopes get `session+0x88`
+  (a per-message attempt/retry stamp) written into the envelope's `[4..6)`
+  field, and `ori 0x20` (`0x2655c0`) marks re-sent envelopes — flags2 is the
+  attempt count.
+- **Receiver pump (`FUN_0026e790`):** matches inbound ACK entries against the
+  session's pending (offset, size) message slots — first byte = slot id,
+  envelope[4] = start, `[0xc]` = end — and frees them (`bl 0x27a180`); the
+  duplicate gate `0xbcb & 1` collapses re-sent acks. Acks of acks are consumed,
+  never answered — the host must not ACK a frame whose only content is ACK
+  entries (verified in the replay: no ping-pong).
+- **Parser (`FUN_0026a0e8`):** walks the frame content as
+  `type u16 LE | len u8 | flags2 u8 | body` — the §6.2 layout — and registers
+  (offset, size) slots per message.
+
+Implementation rules for a host:
+
+1. ACK each newly observed inbound seq (`hdr & 0x7fff`) exactly once —
+   type `0x1000 | seq`, len 1, flags2 1, body `[0]` — on the shared counter.
+2. Cumulative: the joiner's single `0x1001` covers both host seqs 0 and 1;
+   duplicate frames (re-sends of an acked record, seq ≤ lastInSeq) are not
+   re-acked.
+3. Never ack a frame whose only message is an ACK entry (no ack-of-ack).
+4. Keep ONE outbound counter for data frames and acks alike (§2/§6.2).
+
+mgo2-server implements this in `DedicatedHostService.ackInbound()`
+(`src/infrastructure/udp/services/dedicated-host-service.ts`).
+
 **Where the join stands:** the transport join is complete — state 8, session key
 established, the joiner streaming K-keyed frames — and the LZSS layer is now
 decoded (§7): the repeated compressed frame carries the joiner's `0x1001`
-player-profile record (§6.2). What remains is to ACK that reliable record and
-answer it with the host's own record so the room/host exchange proceeds; the
-exact ACK wire format is the last transport-side unknown **[U]**.
+player-profile record (§6.2). **Resolved (2026-09-10): the ACK wire format**
+(§6.3) — ack it, then answer with the host's own record so the room/host
+exchange proceeds.
 
 ---
 
@@ -826,9 +881,12 @@ compression bit OR'd per frame (§6.2).
   with len = field + 2, ring write index starting at 1, offset 0 = EOF); the
   output is ordinary `type|len|flags2|body` messages. The capture's
   repeated compressed frame holds the joiner's `0x1001` player-profile record —
-  re-sent byte-identical until ACKed (ACK bytes **[U]**, §6.2).
-- Uncompressed `0x1001` frames = control/window signaling (`len 1`, `flags2`
-  1..5 cycling).
+  re-sent byte-identical until ACKed (§6.3).
+- Uncompressed `0x1001` frames = the joiner's ACKs of your frames (§6.3;
+  `len 1`, `flags2` = its re-send attempt).
+- **ACK each inbound seq once** (§6.3: `type 0x1000 | seq, len 1, flags2 1,
+  body [0]`, on the shared counter) — but never a frame whose only content is
+  ACK entries.
 - Answer with session-keyed frames on the shared counter; the joiner's messages
   after its reliable exchange is acked tell you what the room/host handshake
   wants next.
@@ -900,7 +958,9 @@ identity (peer id / counter base) comes from `udp-host-identity-constants.ts`.
    `K = peer_base ^ own_base` — confirmed live (§6.2). **Resolved (2026-09-10):
    the LZSS decompressor (§7) and the compressed content** — the repeated
    compressed frame holds the joiner's `0x1001` player-profile record
-   ("phildunphy23", §6.2). Still open: the ACK wire format for reliable records.
+   ("phildunphy23", §6.2). **Resolved (2026-09-10): the ACK wire format for
+   reliable records** — §6.3: `type 0x1000 | seq, len 1, flags2 = attempt,
+   body [0]`, cumulative, one shared outbound counter, no ack-of-ack.
 8. Which datagram template/payload type carries **voice** — expected to share this
    datagram path as one payload type among many **[I]**.
 
@@ -921,3 +981,5 @@ landing on old captures or old notes.
 | 2026-09-09 | header sequence gate at `0x2668e4..0x266914`, window `> 0x100` | gate at `0x26712c..0x267198`; signed 16-bit diff `> 0x1f` (31) drops (§5.2) |
 | 2026-09-09 | key selection reads the state byte at `session[5]` | state byte at `session+4` (§5.2/§6.1) |
 | 2026-09-09 | flags word read at `session+5` (u16) | flags word at `session+0x14` (§6/§7) |
+| 2026-09-10 | the 17-byte `0x1001 len 1` frames are control/window signaling with cyclic flags2 | they are **ACKs** of the host's frames — `flags2` is the send attempt, escalating while unacknowledged (§6.3) |
+| 2026-09-10 | "exact ACK wire format is the last transport-side unknown" | resolved: `type 0x1000 \| seq, len 1, flags2 = attempt, body [0]`, cumulative, no ack-of-ack (§6.3) |

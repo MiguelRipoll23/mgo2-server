@@ -44,7 +44,7 @@ const servers = [
   httpService.listen(),
   ...gameLobbyServers.map((gameLobby) => gameLobby.start()),
   // UDP dedicated p2p host — one port, standalone service.
-  new DedicatedHostService(Number(Deno.env.get("UDP_PORT") ?? "5731")).start(),
+  new DedicatedHostService(Number(Deno.env.get("UDP_PORT") ?? "5730")).start(),
 ];
 
 if (!disableDns) {

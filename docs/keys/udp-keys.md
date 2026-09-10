@@ -194,8 +194,7 @@ above reproduces the wire tail of every capture exactly.
 
 `mgo2-server` (Deno) — the p2p host lives in `src/infrastructure/udp/`
 (`DedicatedHostService` + `src/core/udp/` frame-crypto/compression utilities),
-started by `src/main.ts` on port 5730. The earlier `mgo2-udp-tools` implementation
-used the wrong (plaintext/envelope) model and is superseded.
+started by `src/main.ts` on port 5730.
 
 ## Where these live in the binary
 

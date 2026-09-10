@@ -26,10 +26,8 @@ export class PlayerProfileHandler implements IPeerCommandHandler {
     console.info(
       `[udp:${context.localPort}] Character ${characterId}${name ? ` (${name})` : ""} attempting to join...`,
     );
-
-    // TODO(protocol): ACK the reliable record once the ACK wire format is
-    // confirmed (docs/udp-p2p-protocol.md §6.2 "Where the join stands").
-    // Until then the joiner keeps re-sending it — harmless, it is identical.
+    // The frame carrying this record is ACKed by the transport
+    // (DedicatedHostService.ackInbound) — no handler-side reply needed.
     await Promise.resolve();
   }
 }
