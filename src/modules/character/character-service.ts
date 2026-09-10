@@ -5,6 +5,7 @@ import { DatabaseService } from "../../core/services/database-service.ts";
 import {
   characterAppearanceTable,
   characterChatMacrosTable,
+  characterEquippedSkillsTable,
   characterFriendsTable,
   characterHostSettingsTable,
   characterSetGearTable,
@@ -17,6 +18,7 @@ import type {
   Character,
   CharacterAppearance,
   CharacterChatMacros,
+  CharacterEquippedSkills,
   CharacterFriend,
   CharacterHostSettings,
   CharacterSetGear,
@@ -30,6 +32,7 @@ type AppearanceInput = Omit<NewCharacterAppearance, "id" | "character_id">;
 type SkillSetInput = Omit<CharacterSetSkills, "id" | "character_id">;
 type GearSetInput = Omit<CharacterSetGear, "id" | "character_id">;
 type ChatMacroInput = Omit<CharacterChatMacros, "id" | "character_id">;
+type EquippedSkillsInput = Omit<CharacterEquippedSkills, "character_id">;
 
 /**
  * The client's own validator zeroes any skill record whose experience exceeds
@@ -43,20 +46,25 @@ export const MAX_SKILL_EXPERIENCE = 24576;
 
 // ── Skill catalogue (all characters own every skill, maxed out) ───────────
 
-// The client defines exactly 17 skills: its own bound is `(id - 1) <= 16`
-// (0x8DC3A8, repeated at 0xB3B530/0xB3B5B0) and every id-keyed lookup clamps
-// to 17. Ids 18..127 are addressable by the parser and defined by nothing.
-export const NUM_DEFINED_SKILLS = 17;
+// This build (MGO2PC EBOOT, NPMG00020) defines 25 skills. Capstone on
+// MGO2.ELF: the id→name pointer table at 0x11d36e8 runs exactly 25 entries
+// (Skill_HAND_MAS … Skill_CHARM), and the 0x4125 parser at 0xf096ac accepts
+// every id > 0 up to its 0x80-record loop bound (128). The retail disc
+// (BLUS30109) defines only 17, which is where the earlier "17 skills" bound
+// came from — it does not apply to this client.
+export const NUM_DEFINED_SKILLS = 25;
 
 // Skill level is `experience >> 13`, capped at 3 (the ELF's own validator
 // zeroes any record above MAX_SKILL_EXPERIENCE, which is exactly level 3).
 export const SKILL_LEVEL_CAP = 3;
 
-// Skill 17 (Instructor) has no experience path in the client binary at all
-// (0x8DB8A8 renders it without a level bar) — its highest meaningful level is
-// 1, which is what the reference advertises (0x2000, not 0x6000).
+// Skills with no meaningful experience path: id 17 (Instructor, renders
+// without a level bar — 0x8DB8A8) and the two "EX" unlockables, ids 20
+// (CQC Expert) and 22 (Scanner EX). They are advertised at 0x2000 (level 1),
+// matching both the reference LoadoutWriter table and the 0x4129 post-game
+// reply; every other skill is served at 0x6000 (level 3).
 export const SKILL_EXP_NO_PATH = 0x2000;
-const NO_PATH_SKILL_ID = 17;
+export const LOW_EXP_SKILL_IDS = new Set([17, 20, 22]);
 
 export interface MaxLevelSkill {
   skill_id: number;
@@ -72,13 +80,16 @@ export interface MaxLevelSkill {
 export function maxLevelSkills(): MaxLevelSkill[] {
   return Array.from(
     { length: NUM_DEFINED_SKILLS },
-    (_, index) => ({
-      skill_id: index + 1,
-      experience: index + 1 === NO_PATH_SKILL_ID
-        ? SKILL_EXP_NO_PATH
-        : MAX_SKILL_EXPERIENCE,
-      flag: 0,
-    }),
+    (_, index) => {
+      const skillId = index + 1;
+      return {
+        skill_id: skillId,
+        experience: LOW_EXP_SKILL_IDS.has(skillId)
+          ? SKILL_EXP_NO_PATH
+          : MAX_SKILL_EXPERIENCE,
+        flag: 0,
+      };
+    },
   );
 }
 
@@ -90,7 +101,7 @@ export function skillLevelFromExperience(experience: number): number {
 /** Max level of a skill id, 0 for unassigned slots and undefined ids. */
 export function skillLevelAtMax(skillId: number): number {
   if (skillId < 1 || skillId > NUM_DEFINED_SKILLS) return 0;
-  return skillId === NO_PATH_SKILL_ID
+  return LOW_EXP_SKILL_IDS.has(skillId)
     ? SKILL_EXP_NO_PATH >> 13
     : SKILL_LEVEL_CAP;
 }
@@ -379,14 +390,28 @@ export class CharacterService {
 
   public async getEquippedSkills(
     characterId: number,
-  ): Promise<CharacterSetSkills | null> {
+  ): Promise<CharacterEquippedSkills | null> {
     const db = this.databaseService.get();
     const rows = await db
       .select()
-      .from(characterSetSkillsTable)
-      .where(eq(characterSetSkillsTable.character_id, characterId))
+      .from(characterEquippedSkillsTable)
+      .where(eq(characterEquippedSkillsTable.character_id, characterId))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  public async updateEquippedSkills(
+    characterId: number,
+    skills: EquippedSkillsInput,
+  ): Promise<void> {
+    const db = this.databaseService.get();
+    await db
+      .insert(characterEquippedSkillsTable)
+      .values({ ...skills, character_id: characterId })
+      .onConflictDoUpdate({
+        target: characterEquippedSkillsTable.character_id,
+        set: skills,
+      });
   }
 
   public async updateRank(

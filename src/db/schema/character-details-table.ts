@@ -63,6 +63,21 @@ export const characterSetSkillsTable = pgTable("characters_sets_skills", {
 export type CharacterSetSkills = typeof characterSetSkillsTable.$inferSelect;
 export type NewCharacterSetSkills = typeof characterSetSkillsTable.$inferInsert;
 
+export const characterEquippedSkillsTable = pgTable("characters_equipped_skills", {
+  character_id: integer("character_id").notNull().references(() => charactersTable.id).unique(),
+  skill_1: integer("skill_1").notNull().default(0),
+  skill_2: integer("skill_2").notNull().default(0),
+  skill_3: integer("skill_3").notNull().default(0),
+  skill_4: integer("skill_4").notNull().default(0),
+  level_1: integer("level_1").notNull().default(0),
+  level_2: integer("level_2").notNull().default(0),
+  level_3: integer("level_3").notNull().default(0),
+  level_4: integer("level_4").notNull().default(0),
+});
+
+export type CharacterEquippedSkills = typeof characterEquippedSkillsTable.$inferSelect;
+export type NewCharacterEquippedSkills = typeof characterEquippedSkillsTable.$inferInsert;
+
 export const characterSetGearTable = pgTable("characters_sets_gear", {
   id: serial("id").primaryKey(),
   character_id: integer("character_id").notNull().references(() => charactersTable.id),

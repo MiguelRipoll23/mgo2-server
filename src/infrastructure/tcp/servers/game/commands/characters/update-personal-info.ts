@@ -4,12 +4,11 @@ import type { ICommandHandler } from "../../../../../../core/tcp/interfaces/comm
 import type { TcpSession } from "../../../../../../core/tcp/types/session-type.ts";
 import type { Packet } from "../../../../../../core/tcp/types/packet-type.ts";
 import { PacketReader, PacketWriter } from "../../../../../../core/tcp/utils/packet-builder-util.ts";
-import { CharacterService } from "../../../../../../modules/character/character-service.ts";
+import {
+  CharacterService,
+  MAX_SKILL_EXPERIENCE,
+} from "../../../../../../modules/character/character-service.ts";
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
-
-// The client's legal maximum (level 3) — the old 0x600000 was 256x over and
-// only survived because the client clamps levels with `>> 13`.
-const SKILL_EXP = 24576;
 
 interface PersonalInfoUpdate {
   upper: number;
@@ -125,7 +124,7 @@ function writePersonalInfoUpdateResponse(
   writer.writePadding(1);
 
   for (let i = 0; i < 4; i++) {
-    writer.writeUint32(SKILL_EXP);
+    writer.writeUint32(MAX_SKILL_EXPERIENCE);
   }
 
   writer.writePadding(5);
@@ -168,6 +167,20 @@ export class UpdatePersonalInfoHandler implements ICommandHandler {
         accessory1_color: update.accessory1Color,
         accessory2: update.accessory2,
         accessory2_color: update.accessory2Color,
+      });
+
+      // The equipped skills were echoed but never stored — they survived the
+      // session only because the menu stayed populated, then vanished on the
+      // next connect burst, whose 0x4122 reads characters_equipped_skills.
+      await this.characterService.updateEquippedSkills(characterId, {
+        skill_1: update.skill1,
+        skill_2: update.skill2,
+        skill_3: update.skill3,
+        skill_4: update.skill4,
+        level_1: update.level1,
+        level_2: update.level2,
+        level_3: update.level3,
+        level_4: update.level4,
       });
     }
 

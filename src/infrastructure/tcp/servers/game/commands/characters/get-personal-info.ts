@@ -24,6 +24,11 @@ const PERSONAL_INFO_TRAILER = new Uint8Array([0x00, 0xa7, 0x00, 0x0d]);
 // out-of-spec value the reference lists as fixed in POST_LAUNCH).
 const DEFAULT_SKILL_EXP = MAX_SKILL_EXPERIENCE;
 
+/** Clamp a stored level to [0, catalogue max] for the skill id. */
+function clampLevel(skillId: number, level: number): number {
+  return Math.min(Math.max(level, 0), skillLevelAtMax(skillId));
+}
+
 export async function buildPersonalInfoPayload(
   characterService: CharacterService,
   characterId: number,
@@ -81,11 +86,15 @@ export async function buildPersonalInfoPayload(
     writer.writeUint8(skills.skill_3);
     writer.writeUint8(skills.skill_4);
     writer.writeUint8(0);
-    // Levels are served at max — skill levels are not persisted (see 0x4125).
-    writer.writeUint8(skillLevelAtMax(skills.skill_1));
-    writer.writeUint8(skillLevelAtMax(skills.skill_2));
-    writer.writeUint8(skillLevelAtMax(skills.skill_3));
-    writer.writeUint8(skillLevelAtMax(skills.skill_4));
+    // Stored levels, clamped to the catalogue max. The client's loadout
+    // sanitiser (ELF 0x93E46C) zeroes any slot whose level exceeds
+    // `experience >> 13`, so an out-of-range stored level would silently
+    // strip the skill; the exp sent below is always MAX_SKILL_EXPERIENCE
+    // (level 3), so any level within the catalogue is safe.
+    writer.writeUint8(clampLevel(skills.skill_1, skills.level_1));
+    writer.writeUint8(clampLevel(skills.skill_2, skills.level_2));
+    writer.writeUint8(clampLevel(skills.skill_3, skills.level_3));
+    writer.writeUint8(clampLevel(skills.skill_4, skills.level_4));
     writer.writeUint8(0);
   } else {
     writer.writePadding(10);

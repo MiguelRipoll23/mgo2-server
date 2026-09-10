@@ -10,9 +10,9 @@ import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-uti
 // The skill catalogue (0x4125): every defined skill, at its max level.
 // Skill levels are NOT persisted — this fixed catalogue is the character's
 // whole skill state (see maxLevelSkills in CharacterService for the level
-// math: experience >> 13 capped at 3, legal maximum 24576, skill 17 capped
-// at level 1 by its missing experience path). A missing record would be a
-// zeroed client slot, so all 17 defined skills are always served.
+// math: experience >> 13 capped at 3, legal maximum 24576, skills 17/20/22
+// capped at level 1 by their missing experience path). A missing record
+// would be a zeroed client slot, so all 25 defined skills are always served.
 /**
  * Builds the skill-catalogue payload (0x4125): every defined skill, at its
  * max level. Shared with the connect burst — a missing or empty 0x4125 in

@@ -5,14 +5,16 @@ import type { TcpSession } from "../../../../../../core/tcp/types/session-type.t
 import type { Packet } from "../../../../../../core/tcp/types/packet-type.ts";
 import { PacketWriter } from "../../../../../../core/tcp/utils/packet-builder-util.ts";
 import { sendPacket } from "../../../../../../core/tcp/utils/session-helpers-util.ts";
-import { CharacterService } from "../../../../../../modules/character/character-service.ts";
+import {
+  CharacterService,
+  LOW_EXP_SKILL_IDS,
+  MAX_SKILL_EXPERIENCE,
+  NUM_DEFINED_SKILLS,
+  SKILL_EXP_NO_PATH,
+} from "../../../../../../modules/character/character-service.ts";
 
 // Total packet size (matches echo's PostGameInfoPacket.BUFFER_SIZE)
 const BUFFER_SIZE = 0x8b;
-
-// Skills with reduced EXP in the hardcoded skill table
-const LOW_EXP_SKILLS = new Set([17, 20, 22]);
-const NUM_SKILLS = 25;
 
 @injectable()
 @GameCommandHandler(0x4128)
@@ -47,9 +49,11 @@ export class GetPostGameInfoHandler implements ICommandHandler {
     writer.writeUint8(0);            // padding
 
     // Skills table: writeInt(count) then for each skill: byte(id) + uint16(exp) + byte(0)
-    writer.writeUint32(NUM_SKILLS);
-    for (let i = 1; i <= NUM_SKILLS; i++) {
-      const skillExp = LOW_EXP_SKILLS.has(i) ? 0x2000 : 0x6000;
+    // Same catalogue as 0x4125 (see maxLevelSkills): 0x6000 is level 3, and
+    // the ids without a progression path (17, 20, 22) are served at 0x2000.
+    writer.writeUint32(NUM_DEFINED_SKILLS);
+    for (let i = 1; i <= NUM_DEFINED_SKILLS; i++) {
+      const skillExp = LOW_EXP_SKILL_IDS.has(i) ? SKILL_EXP_NO_PATH : MAX_SKILL_EXPERIENCE;
       writer.writeUint8(i);
       writer.writeUint16(skillExp);
       writer.writeUint8(0);
