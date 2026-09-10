@@ -44,7 +44,7 @@ const RULE_TIMERS: Record<number, number[]> = {
   3: [2, 2], // Capture         — time, rounds
   4: [0, 2], // Sneaking        — time, rounds (+ SNAKE)
   5: [11, 2], // Base           — time, rounds
-  6: [13, 2], // Bomb           — time, rounds. Not served
+  6: [13, 2], // Bomb           — time, rounds (patched clients only)
   7: [15, 2], // Team Sneaking  — time, rounds
 };
 

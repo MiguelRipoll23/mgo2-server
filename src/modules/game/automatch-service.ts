@@ -8,10 +8,16 @@ import { CharacterService } from "../character/character-service.ts";
 /** "Do not specify rules" — the sentinel outside the 0-10 label range. */
 export const ANY_RULE = 11;
 
-/** Selectable rule filters: menu rows carry 0-5 and 7 (Team Sneaking, gated by the 0x4101 feature bit this server now sets); row 0 carries the sentinel. */
-export const RULE_FILTERS = new Set([0, 1, 2, 3, 4, 5, 7, ANY_RULE]);
+/**
+ * Rule filters accepted from 0x43e0: every rule the stock client can offer —
+ * 0-5 plus 7 (Team Sneaking, gated by the 0x4101 feature bit this server now
+ * sets) — plus 6 (BOMB) and 8 (COOP), which stock clients hardcode off but a
+ * patched client may send. Accepting them costs nothing on a stock client
+ * (no menu row produces them) and keeps a patched one from being refused.
+ */
+export const RULE_FILTERS = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, ANY_RULE]);
 
-/** Rules a wildcard search may be given (6 has no menu row). */
+/** Rules a wildcard search may be given — only ones stock clients can actually play. */
 export const WILDCARD_RULES = [0, 1, 2, 3, 4, 5, 7];
 
 /** The maps automatching may pick — the disc's five shipping stages. */
