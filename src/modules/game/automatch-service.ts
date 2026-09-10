@@ -8,11 +8,11 @@ import { CharacterService } from "../character/character-service.ts";
 /** "Do not specify rules" — the sentinel outside the 0-10 label range. */
 export const ANY_RULE = 11;
 
-/** Selectable rule filters: menu rows carry 0-5, row 0 carries the sentinel. */
-export const RULE_FILTERS = new Set([0, 1, 2, 3, 4, 5, ANY_RULE]);
+/** Selectable rule filters: menu rows carry 0-5 and 7 (Team Sneaking, gated by the 0x4101 feature bit this server now sets); row 0 carries the sentinel. */
+export const RULE_FILTERS = new Set([0, 1, 2, 3, 4, 5, 7, ANY_RULE]);
 
-/** Rules a wildcard search may be given (rule 7 is behind a cleared feature bit; 6 has no menu row). */
-export const WILDCARD_RULES = [0, 1, 2, 3, 4, 5];
+/** Rules a wildcard search may be given (6 has no menu row). */
+export const WILDCARD_RULES = [0, 1, 2, 3, 4, 5, 7];
 
 /** The maps automatching may pick — the disc's five shipping stages. */
 export const MAP_POOL = [2, 3, 4, 7, 12];

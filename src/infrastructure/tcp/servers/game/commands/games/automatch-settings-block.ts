@@ -45,7 +45,7 @@ const RULE_TIMERS: Record<number, number[]> = {
   4: [0, 2], // Sneaking        — time, rounds (+ SNAKE)
   5: [11, 2], // Base           — time, rounds
   6: [13, 2], // Bomb           — time, rounds. Not served
-  7: [15, 2], // Team Sneaking  — time, rounds. Not served
+  7: [15, 2], // Team Sneaking  — time, rounds
 };
 
 // Values a real automatch game was observed to use, by rule id.
