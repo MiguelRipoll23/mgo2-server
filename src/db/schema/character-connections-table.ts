@@ -8,7 +8,7 @@ import { charactersTable } from "./characters-table.ts";
  * private is what the client reported for its LAN.
  *
  * DB-backed rather than in-memory so a seed can provision a standing
- * endpoint (e.g. the P2P TESTING host at loopback): a live 0x4700 push
+ * endpoint (e.g. the dedicated host at loopback): a live 0x4700 push
  * upserts over it. One row per character — a client listens on one endpoint.
  */
 export const characterConnectionsTable = pgTable("character_connections", {

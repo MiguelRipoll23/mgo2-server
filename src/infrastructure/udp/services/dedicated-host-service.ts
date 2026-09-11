@@ -33,17 +33,20 @@ import {
   logUdpOutPacket,
 } from "../../../core/udp/utils/udp-logger-util.ts";
 import { u32LE } from "../../../core/udp/utils/binary-util.ts";
+import { GameService } from "../../../modules/game/game-service.ts";
 
 export class DedicatedHostService {
   private readonly sessions = new PeerSessionService();
   private socket: Deno.DatagramConn | null = null;
-  // The host is always the seeded NPC character (id 1) — the joiner's drain
-  // gate checks the reply's peer_id against that character (§4 gate 1).
+  // The host is always the seeded server character (id 1) — the joiner's
+  // drain gate checks the reply's peer_id against that character (§4 gate 1).
   private readonly hostPeerId = UDP_HOST_PEER_ID;
   private readonly hostCounterBase = UDP_HOST_COUNTER_BASE;
 
   constructor(
     private readonly port: number,
+    private readonly lobbyId: number,
+    private readonly gameService: GameService,
     private readonly hostname = "0.0.0.0",
   ) {}
 
@@ -52,6 +55,8 @@ export class DedicatedHostService {
   }
 
   async start(): Promise<void> {
+    await this.createConnection();
+    await this.createMatch();
     this.socket = Deno.listenDatagram({
       port: this.port,
       hostname: this.hostname,
@@ -60,6 +65,35 @@ export class DedicatedHostService {
     this.sessions.start();
     console.info(`[${this.logPrefix}] listening on ${this.hostname}:${this.port}`);
     await this.receiveLoop();
+  }
+
+  private async createConnection(): Promise<void> {
+    const host = Deno.env.get("P2P_HOST") ?? "127.0.0.1";
+    await this.gameService.saveConnectionInfo(this.hostPeerId, {
+      publicIp: host,
+      publicPort: this.port,
+      privateIp: host,
+      privatePort: this.port,
+    });
+  }
+
+  private async createMatch(): Promise<void> {
+    const name = `server-${this.port}`;
+    const existing = (await this.gameService.findByLobby(this.lobbyId))
+      .find((game) => game.host_id === this.hostPeerId && game.name === name);
+    if (existing) return;
+
+    const game = await this.gameService.create({
+      host_id: this.hostPeerId,
+      lobby_id: this.lobbyId,
+      name,
+      password: "",
+      comment: "Dedicated host",
+      max_players: 8,
+      games: JSON.stringify([[1, 0, 0]]),
+    });
+    await this.gameService.addPlayer(game.id, this.hostPeerId);
+    console.info(`[${this.logPrefix}] created match ${game.id} (${name})`);
   }
 
   stop(): void {

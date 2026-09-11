@@ -215,7 +215,7 @@ Mirror the joiner's shape, encoded with the inverse scramble (§5.1):
 
 ```
 { hdr counter, 00 10 1c 00, peer_id = the HOST's character id (sender's own id —
-  the joiner gates on it; default 1 for the seeded NPC),
+  the joiner gates on it; default 1 for the seeded server character),
   our counter_base, module_magic b7 8a 25 4d, ver=2, unk=1, count=2,
   our endpoint ×2 (public+private, same value in a LAN test), tail = §5.3 digest }
 ```
@@ -243,7 +243,7 @@ The joiner's reply is routed by the receive loop (`FUN_002620d8`) to its dial se
    Wire peer_id is the **sender's own character id** (the joiner's handshake carries
    its own id, 2 in all captures — so the field is not an echo of the receiver). The
    gate therefore asks "is this reply from the peer I am dialing": for a joiner's
-   dial session that is the **HOST's character id** (1 = the seeded NPC), NOT an echo
+   dial session that is the **HOST's character id** (1 = the seeded server character), NOT an echo
    of the joiner's id. Gate check at decoder `0x269340`
    (`lwz session+0x18; cmpw; beq accept-side / li r27,0 skip-side`).
    **A peer_id mismatch fails SILENTLY** — the record is skipped, state stays 5, the
@@ -829,7 +829,7 @@ Plaintext 44 bytes:
 
 **peer_id is the #1 fake-host bug.** The joiner's gate compares the reply's
 `peer_id` to the peer descriptor its dial session stored at creation — the HOST's
-character id (1 for the seeded NPC). Echoing the joiner's id fails **silently**
+character id (1 for the seeded server character). Echoing the joiner's id fails **silently**
 (state stays 5, re-dial forever); a wrong magic would at least move the session
 on (§4 gate 1). `P2P_ID` overrides the default 1.
 

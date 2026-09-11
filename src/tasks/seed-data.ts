@@ -1,10 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, sql } from "drizzle-orm";
 import {
-  characterConnectionsTable,
   charactersTable,
-  gamePlayersTable,
-  gamesTable,
   lobbiesTable,
   LobbyType,
   usersTable,
@@ -183,7 +180,7 @@ const lobbyRows = [
 
 console.log("Seeding lobby_game_types and lobbies tables...");
 
-const npcSeedResult = await db.transaction(async (tx) => {
+await db.transaction(async (tx) => {
   await tx.delete(lobbiesTable);
 
   // Delete all game types via raw SQL to avoid FK order issues
@@ -208,117 +205,42 @@ const npcSeedResult = await db.transaction(async (tx) => {
     sql`SELECT setval('lobbies_id_seq', (SELECT MAX(id) FROM lobbies))`,
   );
 
-  // ── NPC account, character, and the standing P2P test match ──────────────
-  // A second peer to test P2P against: log in as npc/npc, and a hosted game
-  // named "P2P TESTING" is always up in the Free Battle lobby.
+  // The dedicated UDP host presents this character id to joining clients.
   const freeBattleLobbyId =
     lobbyRows.find((row) => row.name === "Free Battle")?.id ?? 3;
-
-  // Account "npc" with password "npc" (stored as the MD5 the login flow
-  // compares against).
-  const npcPasswordHash = new CryptoService().md5Hex("npc");
-  let [npcUser] = await tx
+  const serverPasswordHash = new CryptoService().md5Hex("server");
+  let [serverUser] = await tx
     .select()
     .from(usersTable)
-    .where(eq(usersTable.display_name, "npc"))
+    .where(eq(usersTable.display_name, "server"))
     .limit(1);
-  if (!npcUser) {
-    [npcUser] = await tx
+  if (!serverUser) {
+    [serverUser] = await tx
       .insert(usersTable)
-      .values({ display_name: "npc", password: npcPasswordHash })
+      .values({ display_name: "server", password: serverPasswordHash })
       .returning();
   }
 
-  // Character "npc" parked in the Free Battle lobby.
-  let [npcCharacter] = await tx
+  let [serverCharacter] = await tx
     .select()
     .from(charactersTable)
-    .where(eq(charactersTable.name, "npc"))
+    .where(eq(charactersTable.name, "server"))
     .limit(1);
-  if (!npcCharacter) {
-    [npcCharacter] = await tx
+  if (!serverCharacter) {
+    [serverCharacter] = await tx
       .insert(charactersTable)
       .values({
-        user_id: npcUser.id,
-        name: "npc",
+        user_id: serverUser.id,
+        name: "server",
         lobby_id: freeBattleLobbyId,
-        comment: "P2P test peer",
+        comment: "Dedicated host",
       })
       .returning();
   }
 
-  // The standing match. Re-created on every seed run so its settings always
-  // match this file. Joins require the host's registered 0x4700 endpoint, so
-  // the NPC must actually be connected (in game, past check-session and its
-  // 0x4700 push) for a P2P handoff to succeed — that is the thing being
-  // tested.
-  await tx.delete(gamesTable).where(eq(gamesTable.name, "P2P TESTING"));
-  const [p2pGame] = await tx
-    .insert(gamesTable)
-    .values({
-      host_id: npcCharacter.id,
-      lobby_id: freeBattleLobbyId,
-      name: "P2P TESTING",
-      password: "",
-      comment: "Standing match for P2P testing",
-      max_players: 8,
-      games: JSON.stringify([[1, 0, 0]]),
-    })
-    .returning();
-
-  // Required FK row: the host is the game's first roster member. Pings,
-  // round attribution and the details player list all read from here.
-  await tx
-    .insert(gamePlayersTable)
-    .values({ game_id: p2pGame.id, character_id: npcCharacter.id })
-    .onConflictDoNothing();
-
-  // The host's P2P endpoint, required by the join handoff (0x4321): without
-  // a row the join refuses with a generic error. The joiner dials exactly
-  // what this row advertises (verified in MGO2.ELF: the connect driver reads
-  // the 0x4321-stored endpoints and hands them to the p2p session init), so
-  // the value here is simply where the test peer listens.
-  //
-  //   IP    — the host machine's LAN IP (ipconfig IPv4, e.g. 192.168.1.100),
-  //           NOT 127.0.0.1. The joining client runs inside RPCS3, and a dial
-  //           to 127.0.0.1 is routed to the GUEST's own loopback — the
-  //           datagram never leaves the emulator, so the host-side dump/fake
-  //           player never sees it. Every observed working join advertised a
-  //           real LAN address. Set P2P_HOST accordingly.
-  //   PORT  — where the test peer listens (the UDP p2p host / udp-client).
-  //           NOT 11181: the joining client binds its own p2p socket on 11181
-  //           (0x2bad), so a same-machine dial to 11181 would loop back into
-  //           the client itself.
-  //           NOT 5730 either: the joining client's own p2p socket uses 5730
-  //           (the dials' source port), so the fake host listens on 5731.
-  const p2pHost = Deno.env.get("P2P_HOST") ?? "127.0.0.1";
-  const p2pPort = Number(Deno.env.get("P2P_PORT") ?? 5731);
-  await tx
-    .insert(characterConnectionsTable)
-    .values({
-      character_id: npcCharacter.id,
-      public_ip: p2pHost,
-      public_port: p2pPort,
-      private_ip: p2pHost,
-      private_port: p2pPort,
-    })
-    .onConflictDoUpdate({
-      target: characterConnectionsTable.character_id,
-      set: {
-        public_ip: p2pHost,
-        public_port: p2pPort,
-        private_ip: p2pHost,
-        private_port: p2pPort,
-      },
-    });
-
-  return { gameId: p2pGame.id, characterId: npcCharacter.id };
 });
 
 console.log("Done.");
 console.log(`Game types inserted: ${gameTypeRows.length}`);
 console.log(`Lobbies inserted: ${lobbyRows.length}`);
-console.log(
-  `P2P test match: game ${npcSeedResult.gameId} "P2P TESTING" hosted by character ${npcSeedResult.characterId} "npc" in Free Battle`,
-);
-console.log("NPC account: npc / npc");
+console.log("Dedicated host account: server / server; character: server");

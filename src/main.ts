@@ -3,6 +3,7 @@ import { DatabaseService } from "./core/services/database-service.ts";
 import { LobbyService } from "./modules/lobby/lobby-service.ts";
 import { LobbyType } from "./db/schema.ts";
 import { CharacterService } from "./modules/character/character-service.ts";
+import { GameService } from "./modules/game/game-service.ts";
 import { LobbyTrackerService } from "./infrastructure/tcp/services/lobby-tracker-service.ts";
 import { HTTPService } from "./infrastructure/http/services/http-service.ts";
 import { GateServer } from "./infrastructure/tcp/servers/gate/gate-server.ts";
@@ -43,8 +44,12 @@ const servers = [
   account.start(),
   httpService.listen(),
   ...gameLobbyServers.map((gameLobby) => gameLobby.start()),
-  // UDP dedicated p2p host — one port, standalone service.
-  new DedicatedHostService(Number(Deno.env.get("UDP_PORT") ?? "5730")).start(),
+  // UDP dedicated p2p host — it owns a match in the Free Battle lobby.
+  new DedicatedHostService(
+    Number(Deno.env.get("UDP_PORT") ?? "5730"),
+    allLobbies.find((lobby) => lobby.typeId === LobbyType.GAME && lobby.name === "Free Battle")!.id,
+    container.get(GameService),
+  ).start(),
 ];
 
 if (!disableDns) {

@@ -70,8 +70,8 @@ export class GameService {
   }
 
   // ── Peer-to-peer endpoints (0x4700 → 0x4321 handoff) ──────────────────────
-  // DB-backed so a seed can provision a standing endpoint (e.g. the P2P
-  // TESTING host); a live 0x4700 push upserts over it.
+  // DB-backed so the dedicated host and live 0x4700 pushes can upsert
+  // endpoints consistently.
 
   async saveConnectionInfo(characterId: number, info: ConnectionInfo): Promise<void> {
     await this.db
