@@ -20,7 +20,7 @@ public sealed class ServerOptions
     public int LobbiesRefreshIntervalMinutes { get; set; } = 5;
 
     /// <summary>Port of the dedicated UDP gameplay host, when this instance runs one.</summary>
-    public int DedicatedHostPort { get; set; } = 5730;
+    public int GameplayServerPort { get; set; } = 5730;
 
     /// <summary>
     /// Address the dedicated host announces to peers. Defaults to the loopback
@@ -29,8 +29,8 @@ public sealed class ServerOptions
     /// </summary>
     public string? PublicHostAddress { get; set; }
 
-    /// <summary>Name of the lobby the dedicated host publishes its match in.</summary>
-    public string DedicatedHostLobbyName { get; set; } = "Free Battle";
+    /// <summary>Name of the lobby the gameplay server publishes its match in.</summary>
+    public string GameplayLobbyName { get; set; } = "Free Battle";
 
     /// <summary>
     /// Address published to clients in place of each lobby's stored address.

@@ -40,7 +40,7 @@ var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Ga
 logger.LogInformation(
     "Starting Gameplay server on port {Port} (lobby {LobbyName})",
     options.GameplayServerPort,
-    options.GameplayServerLobbyName);
+    options.GameplayLobbyName);
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArguments) =>

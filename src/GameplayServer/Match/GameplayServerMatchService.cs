@@ -57,7 +57,7 @@ public sealed class GameplayServerMatchService(
                 // instead of ending the host.
                 logger.LogWarning(
                     "No gameplay lobby named '{LobbyName}' has been published yet; retrying in {Delay}",
-                    options.GameplayServerLobbyName,
+                    options.GameplayLobbyName,
                     LobbyLookupRetryDelay);
 
                 await Task.Delay(LobbyLookupRetryDelay, cancellationToken);
@@ -86,7 +86,7 @@ public sealed class GameplayServerMatchService(
     private async Task<int> EnsureMatchAsync(CancellationToken cancellationToken)
     {
         var lobby = (await lobbyService.FindActiveGameLobbiesAsync(cancellationToken))
-            .FirstOrDefault(candidate => candidate.Name == options.GameplayServerLobbyName);
+            .FirstOrDefault(candidate => candidate.Name == options.GameplayLobbyName);
 
         if (lobby is null)
         {
