@@ -17,7 +17,7 @@ internal static class GameEndpoints
             .RequireAuthorization();
 
         games.MapGet("/", ListGamesAsync)
-            .WithSummary("List all games")
+            .WithSummary("List games")
             .WithDescription("Returns a list of all active game rooms ordered by ID");
 
         games.MapGet("/{id:int}", GetGameAsync)
@@ -25,15 +25,15 @@ internal static class GameEndpoints
             .WithDescription("Returns a single game room by its numeric identifier");
 
         games.MapPost("/", CreateGameAsync)
-            .WithSummary("Create a game")
+            .WithSummary("Create game")
             .WithDescription("Creates a new game room and returns the created resource");
 
         games.MapPatch("/{id:int}", PatchGameAsync)
-            .WithSummary("Update a game")
+            .WithSummary("Update game")
             .WithDescription("Partially updates an existing game room by its numeric identifier");
 
         games.MapDelete("/{id:int}", DeleteGameAsync)
-            .WithSummary("Delete a game")
+            .WithSummary("Delete game")
             .WithDescription("Permanently removes a game room by its numeric identifier");
     }
 
