@@ -16,24 +16,24 @@ internal static class NewsEndpoints
             .RequireAuthorization();
 
         news.MapGet("/", ListNewsAsync)
-            .WithSummary("List all news items")
-            .WithDescription("Returns a list of all news items ordered by most recent first");
+            .WithSummary("List news entries")
+            .WithDescription("Returns a list of all news entries ordered by most recent first");
 
         news.MapGet("/{id:int}", GetNewsAsync)
-            .WithSummary("Get news")
-            .WithDescription("Returns a single news item by its numeric identifier");
+            .WithSummary("Get news entry")
+            .WithDescription("Returns a single news entry by its numeric identifier");
 
         news.MapPost("/", CreateNewsAsync)
-            .WithSummary("Create a news item")
-            .WithDescription("Creates a new news item and returns the created resource");
+            .WithSummary("Create news entry")
+            .WithDescription("Creates a new news entry and returns the created resource");
 
         news.MapPatch("/{id:int}", PatchNewsAsync)
-            .WithSummary("Update a news item")
-            .WithDescription("Partially updates an existing news item by its numeric identifier");
+            .WithSummary("Update news entry")
+            .WithDescription("Partially updates an existing news entry by its numeric identifier");
 
         news.MapDelete("/{id:int}", DeleteNewsAsync)
-            .WithSummary("Delete a news item")
-            .WithDescription("Permanently removes a news item by its numeric identifier");
+            .WithSummary("Delete news entry")
+            .WithDescription("Permanently removes a news entry by its numeric identifier");
     }
 
     private static async Task<IResult> ListNewsAsync(NewsService newsService, CancellationToken cancellationToken)
