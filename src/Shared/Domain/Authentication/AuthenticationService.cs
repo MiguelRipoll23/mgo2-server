@@ -72,6 +72,11 @@ public sealed class AuthenticationService(
         string passwordHash,
         CancellationToken cancellationToken = default)
     {
+        if (displayName.Equals("server", StringComparison.OrdinalIgnoreCase))
+        {
+            return FailedLoginReply;
+        }
+
         var user = await FindByCredentialsAsync(displayName, passwordHash, cancellationToken);
         if (user is null)
         {
