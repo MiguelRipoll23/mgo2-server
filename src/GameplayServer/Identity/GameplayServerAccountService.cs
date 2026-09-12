@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Identity;
 
 /// <summary>
-/// Creates the account and character the dedicated host presents to the clients
+/// Creates the account and character the Gameplay server presents to the clients
 /// that join its matches. The row carries an explicit identifier, because the
 /// peer identifier announced on the peer-to-peer channel is the character
 /// identifier and must not depend on how many characters exist already.
@@ -14,28 +14,28 @@ namespace Mgo2Server.GameplayServer.Identity;
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 /// <param name="cryptographyService">Service that hashes the account password.</param>
 /// <param name="logger">Logger of the service.</param>
-public sealed class DedicatedHostAccountService(
+public sealed class GameplayServerAccountService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
     CryptographyService cryptographyService,
-    ILogger<DedicatedHostAccountService> logger)
+    ILogger<GameplayServerAccountService> logger)
 {
-    /// <summary>Display name of the account the dedicated host logs in with.</summary>
+    /// <summary>Display name of the account the Gameplay server logs in with.</summary>
     public const string DisplayName = "server";
 
-    /// <summary>Password of the dedicated host account.</summary>
+    /// <summary>Password of the Gameplay server account.</summary>
     public const string Password = "server";
 
-    /// <summary>Name of the character the dedicated host plays as.</summary>
+    /// <summary>Name of the character the Gameplay server plays as.</summary>
     public const string CharacterName = "server";
 
-    /// <summary>Comment shown for the dedicated host character.</summary>
-    public const string CharacterComment = "Dedicated host";
+    /// <summary>Comment shown for the Gameplay server character.</summary>
+    public const string CharacterComment = "Gameplay server";
 
     /// <summary>Creates the account and its character when they are missing.</summary>
     /// <param name="characterIdentifier">Identifier the character must carry.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <exception cref="InvalidOperationException">Thrown when another character already holds the identifier.</exception>
-    /// <returns>The identifier of the dedicated host character.</returns>
+    /// <returns>The identifier of the Gameplay server character.</returns>
     public async Task<int> EnsureAccountAsync(
         int characterIdentifier,
         CancellationToken cancellationToken = default)
@@ -78,12 +78,12 @@ public sealed class DedicatedHostAccountService(
         {
             throw new InvalidOperationException(
                 $"The character '{CharacterName}' carries identifier {actualIdentifier} instead of " +
-                $"{characterIdentifier}. The dedicated host announces its character identifier as its " +
+                $"{characterIdentifier}. The Gameplay server announces its character identifier as its " +
                 "peer identifier, so the account must own that identifier.");
         }
 
         logger.LogInformation(
-            "Dedicated host account ready: {DisplayName} / {Password}, character {CharacterName} ({Identifier})",
+            "Gameplay server account ready: {DisplayName} / {Password}, character {CharacterName} ({Identifier})",
             DisplayName,
             Password,
             CharacterName,

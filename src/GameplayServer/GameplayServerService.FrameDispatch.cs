@@ -9,11 +9,11 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Mgo2Server.GameplayServer;
 
 /// <summary>
-/// The dispatch half of the dedicated host: it classifies an inbound datagram,
+/// The dispatch half of the Gameplay server: it classifies an inbound datagram,
 /// removes its frame chain, hands the messages to their handlers and keeps the
 /// cumulative acknowledgement window.
 /// </summary>
-public sealed partial class DedicatedHostService
+public sealed partial class GameplayServerService
 {
     private async Task HandleDatagramAsync(byte[] wire, IPEndPoint remote)
     {

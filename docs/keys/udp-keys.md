@@ -193,7 +193,7 @@ above reproduces the wire tail of every capture exactly.
 ## Reference implementation
 
 `mgo2-server` (Deno) — the p2p host lives in `src/infrastructure/udp/`
-(`DedicatedHostService` + `src/core/udp/` frame-crypto/compression utilities),
+(`GameplayServerService` + `src/core/udp/` frame-crypto/compression utilities),
 started by `src/main.ts` on port 5730.
 
 ## Where these live in the binary

@@ -3,7 +3,7 @@ using Mgo2Server.Shared.Constants;
 namespace Mgo2Server.GameplayServer.Identity;
 
 /// <summary>
-/// Identity the dedicated host presents on the peer-to-peer channel: its
+/// Identity the Gameplay server presents on the peer-to-peer channel: its
 /// character identifier, which the joining client gates on, and the counter
 /// base that feeds the session key.
 /// </summary>

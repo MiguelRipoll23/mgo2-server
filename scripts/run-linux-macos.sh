@@ -4,7 +4,7 @@
 #
 # Runs the gate, the account server, one gameplay lobby per process (Free
 # Battle, Replays, Survival, Basic Training, Combat Training, Survival Hosts,
-# Automatching, Registration, Tournament), a dedicated host, the HTTP API and
+# Automatching, Registration, Tournament), a Gameplay server, the HTTP API and
 # the name server: the same servers compose.yaml starts, minus PostgreSQL.
 #
 # PostgreSQL is not started by this script. The servers connect to the remote
@@ -342,9 +342,9 @@ for lobby in "${lobbies[@]}"; do
         'LOBBY_REPLAYS_ONLY=false'
 done
 
-start_server gameplay-5730 GameplayServer 'dedicated host (5730/udp)' \
-    'DEDICATED_HOST_PORT=5730' \
-    'DEDICATED_HOST_LOBBY_NAME=Free Battle' \
+start_server gameplay-5730 GameplayServer 'Gameplay server (5730/udp)' \
+    'GAMEPLAY_SERVER_PORT=5730' \
+    'GAMEPLAY_SERVER_LOBBY_NAME=Free Battle' \
     'P2P_HOST=127.0.0.1'
 
 start_server http Http "HTTP API (${http_port}/tcp)" \

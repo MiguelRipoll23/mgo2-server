@@ -80,7 +80,7 @@ public sealed partial class LobbyService
 
     /// <summary>
     /// Lists the gameplay lobbies whose heartbeat is recent. The gate publishes
-    /// these, and a dedicated host picks the lobby its match belongs to among them.
+    /// these, and a Gameplay server picks the lobby its match belongs to among them.
     /// </summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<List<LobbyResponse>> FindActiveGameLobbiesAsync(

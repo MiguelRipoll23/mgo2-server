@@ -18,13 +18,13 @@ builder.Logging.AddServerLogging(builder.Configuration);
 builder.Services.AddServerServices(builder.Configuration);
 
 builder.Services.AddSingleton<HostIdentityService>();
-builder.Services.AddSingleton<DedicatedHostAccountService>();
-builder.Services.AddSingleton<DedicatedHostMatchService>();
+builder.Services.AddSingleton<GameplayServerAccountService>();
+builder.Services.AddSingleton<GameplayServerMatchService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 builder.Services.AddSingleton<AcceptHandshakeHandler>();
 builder.Services.AddSingleton<AcknowledgeKeepAliveHandler>();
 builder.Services.AddSingleton<PlayerProfileHandler>();
-builder.Services.AddSingleton<DedicatedHostService>();
+builder.Services.AddSingleton<GameplayServerService>();
 
 var host = builder.Build();
 
@@ -33,14 +33,14 @@ PeerCommandHandlerRegistration.RegisterCommandHandlers(registry);
 
 await host.Services.GetRequiredService<DatabaseInitializer>().InitializeAsync();
 
-var dedicatedHost = host.Services.GetRequiredService<DedicatedHostService>();
+var GameplayServer = host.Services.GetRequiredService<GameplayServerService>();
 var options = host.Services.GetRequiredService<IOptions<ServerOptions>>().Value;
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("GameplayServer");
 
 logger.LogInformation(
-    "Starting dedicated host on port {Port} (lobby {LobbyName})",
-    options.DedicatedHostPort,
-    options.DedicatedHostLobbyName);
+    "Starting Gameplay server on port {Port} (lobby {LobbyName})",
+    options.GameplayServerPort,
+    options.GameplayServerLobbyName);
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArguments) =>
@@ -52,7 +52,7 @@ Console.CancelKeyPress += (_, eventArguments) =>
 
 try
 {
-    await dedicatedHost.RunAsync(cancellation.Token);
+    await GameplayServer.RunAsync(cancellation.Token);
 }
 catch (OperationCanceledException)
 {
@@ -60,5 +60,5 @@ catch (OperationCanceledException)
 }
 finally
 {
-    await dedicatedHost.DisposeAsync();
+    await GameplayServer.DisposeAsync();
 }

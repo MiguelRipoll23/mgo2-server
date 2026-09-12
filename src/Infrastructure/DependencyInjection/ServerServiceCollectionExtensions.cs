@@ -39,13 +39,13 @@ public static class ServerServiceCollectionExtensions
             options.LobbiesRefreshIntervalMinutes = configuration.ReadNumber(
                 "LOBBIES_REFRESH_INTERVAL_MINUTES",
                 options.LobbiesRefreshIntervalMinutes);
-            options.DedicatedHostPort = configuration.ReadNumber(
-                "DEDICATED_HOST_PORT",
-                configuration.ReadNumber("UDP_PORT", options.DedicatedHostPort));
+            options.GameplayServerPort = configuration.ReadNumber(
+                "GAMEPLAY_SERVER_PORT",
+                configuration.ReadNumber("UDP_PORT", options.GameplayServerPort));
             options.PublicHostAddress =
                 configuration.ReadText("P2P_HOST") ?? options.PublicHostAddress;
-            options.DedicatedHostLobbyName = configuration.ReadText("DEDICATED_HOST_LOBBY_NAME")
-                ?? options.DedicatedHostLobbyName;
+            options.GameplayServerLobbyName = configuration.ReadText("GAMEPLAY_SERVER_LOBBY_NAME")
+                ?? options.GameplayServerLobbyName;
         });
 
         services.Configure<LobbyOptions>(options =>

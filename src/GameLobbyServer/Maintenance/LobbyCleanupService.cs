@@ -10,7 +10,7 @@ namespace Mgo2Server.GameLobbyServer.Maintenance;
 /// Removes the gameplay lobbies that stopped being heartbeated, so a lobby
 /// container that was deleted or killed does not linger in the lobby list. Only
 /// a game lobby server runs it: the gate and the account server are permanent
-/// and the dedicated hosts own matches, not lobbies.
+/// and the Gameplay servers own matches, not lobbies.
 /// </summary>
 /// <param name="lobbyService">Service that owns the lobby rows.</param>
 /// <param name="options">Options of this instance.</param>

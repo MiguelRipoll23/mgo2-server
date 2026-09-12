@@ -79,21 +79,21 @@ with the QCLASS field omitted triggers it.
 **Fix:** require a complete question (name + QTYPE + QCLASS) in `ParseQuery`, and validate the
 recomputed `questionLength` against the datagram length in `BuildAddressResponse`.
 
-### 4. Dedicated host: a two-byte datagram kills the UDP host
+### 4. Gameplay server: a two-byte datagram kills the UDP host
 
 `src/Shared/Utils/FrameCryptoUtility.cs` — `ScramblePositions`, `UnscrambleHeaderOnly`
 
 `ScramblePositions(length)` computes `span = (uint)(length - 2)` and takes a modulo by it. For
 `length == 2` that is a division by zero; for `length` 0 or 1 the derived swap indices read
 outside the buffer. `HandleDatagramAsync` is awaited directly from `ReceiveLoopAsync`
-(`src/GameplayServer/DedicatedHostService.cs`) with no `try`/`catch`, so
+(`src/GameplayServer/GameplayServerService.cs`) with no `try`/`catch`, so
 `DivideByZeroException` / `IndexOutOfRangeException` escapes `RunAsync` and ends the process.
 
 **Fix:** require a minimum datagram length (`HeaderSize + TailSize`, matching what
 `VerifyTailDigest` already assumes) before unscrambling, and wrap per-datagram handling in a
 `try`/`catch`.
 
-### 5. Dedicated host: a truncated handshake crashes the parser
+### 5. Gameplay server: a truncated handshake crashes the parser
 
 `src/Shared/Utils/FrameBuilderUtility.cs` — `ParseHandshakeBody`
 
@@ -245,9 +245,9 @@ The state is assigned and the searcher is removed from the dictionary in the sam
 so nothing can ever observe `Matched`. Either keep the entry until the client has been told
 about the match, or drop the assignment — as written it reads like a lost step.
 
-### 14. The dedicated host account is publicly loginable
+### 14. The Gameplay server account is publicly loginable
 
-`src/GameplayServer/Identity/DedicatedHostAccountService.cs`
+`src/GameplayServer/Identity/GameplayServerAccountService.cs`
 
 The service creates `server` / `server` (MD5) in `users`, and the login endpoint is public,
 so anyone who knows the password can log in as that account and select the character whose
@@ -272,7 +272,7 @@ belongs in a comment so it is not "fixed" into an incompatibility later.
   the name rules (`IsValidName` already rejects it for characters, not for clan or lobby
   names).
 - `ClanService.UpdateNoticeAsync` stores the notice time as `(int)` Unix seconds (2038).
-- `DatabaseInitializer.SynchronizeSequenceAsync` and `DedicatedHostAccountService` call
+- `DatabaseInitializer.SynchronizeSequenceAsync` and `GameplayServerAccountService` call
   `setval(..., (SELECT MAX(id) …))`, which errors on an empty table. Use
   `coalesce(max(id), 1)`.
 - `RoundReportService.InsertAsync` is called once per player per round (N round-trips);

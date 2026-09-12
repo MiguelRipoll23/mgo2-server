@@ -11,31 +11,31 @@ using Microsoft.Extensions.Options;
 namespace Mgo2Server.GameplayServer.Match;
 
 /// <summary>
-/// Owns the match a dedicated host publishes in its lobby. The row is created
+/// Owns the match a Gameplay server publishes in its lobby. The row is created
 /// on the first run, heartbeated so that it stays in the room list, and the
 /// matches of the hosts that stopped are expired, which is what removes a
-/// dedicated host that was killed without shutting down from the list.
+/// Gameplay server that was killed without shutting down from the list.
 /// </summary>
 /// <param name="gameService">Service that owns the rooms.</param>
 /// <param name="lobbyService">Service that owns the lobby rows.</param>
-/// <param name="accountService">Service that owns the dedicated host account.</param>
-/// <param name="hostIdentity">Identity the dedicated host presents.</param>
+/// <param name="accountService">Service that owns the Gameplay server account.</param>
+/// <param name="hostIdentity">Identity the Gameplay server presents.</param>
 /// <param name="options">Options of this instance.</param>
 /// <param name="logger">Logger of the service.</param>
-public sealed class DedicatedHostMatchService(
+public sealed class GameplayServerMatchService(
     GameService gameService,
     LobbyService lobbyService,
-    DedicatedHostAccountService accountService,
+    GameplayServerAccountService accountService,
     HostIdentityService hostIdentity,
     IOptions<ServerOptions> options,
-    ILogger<DedicatedHostMatchService> logger)
+    ILogger<GameplayServerMatchService> logger)
     : PeriodicWorker(TimeSpan.FromSeconds(options.Value.LobbyHeartbeatIntervalSeconds), logger)
 {
     /// <summary>How long to wait before looking again for the lobby of the match.</summary>
     private static readonly TimeSpan LobbyLookupRetryDelay = TimeSpan.FromSeconds(5);
 
     private readonly ServerOptions options = options.Value;
-    private readonly int port = options.Value.DedicatedHostPort;
+    private readonly int port = options.Value.GameplayServerPort;
     private int matchIdentifier;
 
     /// <summary>Identifier of the match this host published, or zero until it exists.</summary>
@@ -57,7 +57,7 @@ public sealed class DedicatedHostMatchService(
                 // instead of ending the host.
                 logger.LogWarning(
                     "No gameplay lobby named '{LobbyName}' has been published yet; retrying in {Delay}",
-                    options.DedicatedHostLobbyName,
+                    options.GameplayServerLobbyName,
                     LobbyLookupRetryDelay);
 
                 await Task.Delay(LobbyLookupRetryDelay, cancellationToken);
@@ -73,7 +73,7 @@ public sealed class DedicatedHostMatchService(
 
         if (expired > 0)
         {
-            logger.LogInformation("Expired {Count} stale dedicated-host match(es)", expired);
+            logger.LogInformation("Expired {Count} stale gameplay-server match(es)", expired);
         }
     }
 
@@ -86,7 +86,7 @@ public sealed class DedicatedHostMatchService(
     private async Task<int> EnsureMatchAsync(CancellationToken cancellationToken)
     {
         var lobby = (await lobbyService.FindActiveGameLobbiesAsync(cancellationToken))
-            .FirstOrDefault(candidate => candidate.Name == options.DedicatedHostLobbyName);
+            .FirstOrDefault(candidate => candidate.Name == options.GameplayServerLobbyName);
 
         if (lobby is null)
         {
@@ -109,7 +109,7 @@ public sealed class DedicatedHostMatchService(
             room.LobbyIdentifier = lobby.Identifier;
             room.Name = name;
             room.Password = string.Empty;
-            room.Comment = "Dedicated host";
+            room.Comment = "Gameplay server";
             room.MaximumPlayers = 8;
             room.Games = JsonSerializer.Serialize(new[] { new[] { 1, 0, 0 } });
         }, cancellationToken);

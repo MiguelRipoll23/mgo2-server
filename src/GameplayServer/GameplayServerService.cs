@@ -12,42 +12,42 @@ using Microsoft.Extensions.Options;
 namespace Mgo2Server.GameplayServer;
 
 /// <summary>
-/// The standalone dedicated host: it owns one UDP port, decodes the peer-to-peer
+/// The standalone Gameplay server: it owns one UDP port, decodes the peer-to-peer
 /// frames, keeps a session per peer and dispatches the messages to their
 /// handlers. Handshake acceptance and keep-alive acknowledgements are ordinary
 /// command handlers, so this class stays transport-only. The frame pipeline it
 /// feeds lives in the dispatch half of this class.
 /// </summary>
-public sealed partial class DedicatedHostService : IAsyncDisposable
+public sealed partial class GameplayServerService : IAsyncDisposable
 {
     private readonly IServiceProvider serviceProvider;
     private readonly GameService gameService;
-    private readonly DedicatedHostAccountService accountService;
-    private readonly DedicatedHostMatchService matchService;
+    private readonly GameplayServerAccountService accountService;
+    private readonly GameplayServerMatchService matchService;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
-    private readonly ILogger<DedicatedHostService> logger;
+    private readonly ILogger<GameplayServerService> logger;
     private readonly ServerOptions options;
     private readonly PeerSessionService sessions = new(TimeSpan.FromSeconds(60));
     private readonly int port;
     private UdpClient? socket;
 
-    /// <summary>Creates the dedicated host of one port.</summary>
+    /// <summary>Creates the Gameplay server of one port.</summary>
     /// <param name="serviceProvider">Container the handlers are resolved from.</param>
     /// <param name="options">Options of this instance.</param>
     /// <param name="logger">Logger of this host.</param>
-    public DedicatedHostService(
+    public GameplayServerService(
         IServiceProvider serviceProvider,
         IOptions<ServerOptions> options,
-        ILogger<DedicatedHostService> logger)
+        ILogger<GameplayServerService> logger)
     {
         this.serviceProvider = serviceProvider;
         this.logger = logger;
         this.options = options.Value;
-        port = this.options.DedicatedHostPort;
+        port = this.options.GameplayServerPort;
         gameService = serviceProvider.GetRequiredService<GameService>();
-        accountService = serviceProvider.GetRequiredService<DedicatedHostAccountService>();
-        matchService = serviceProvider.GetRequiredService<DedicatedHostMatchService>();
+        accountService = serviceProvider.GetRequiredService<GameplayServerAccountService>();
+        matchService = serviceProvider.GetRequiredService<GameplayServerMatchService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
     }

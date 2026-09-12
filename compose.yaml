@@ -1,5 +1,5 @@
 # Every role runs as its own container built from its own project, so a gate,
-# an account server, a gameplay lobby, a dedicated host, the HTTP API or the
+# an account server, a gameplay lobby, a Gameplay server, the HTTP API or the
 # name server can be restarted, scaled or replaced independently.
 #
 # Every setting is a single upper-case environment variable. The images are the
@@ -239,8 +239,8 @@ services:
     <<: *gameplay-server
     container_name: mgo2-gameplay-1
     environment:
-      DEDICATED_HOST_PORT: "5730"
-      DEDICATED_HOST_LOBBY_NAME: Free Battle
+      GAMEPLAY_SERVER_PORT: "5730"
+      GAMEPLAY_SERVER_LOBBY_NAME: Free Battle
       P2P_HOST: 127.0.0.1
     ports:
       - "5730:5730/udp"

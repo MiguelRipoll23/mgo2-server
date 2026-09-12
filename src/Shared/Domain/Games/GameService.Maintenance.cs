@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Mgo2Server.Shared.Domain.Games;
 
 /// <summary>
-/// The lifecycle half of the game service: the heartbeat a dedicated host
+/// The lifecycle half of the game service: the heartbeat a Gameplay server
 /// writes for its match, and the expiry of the matches whose host stopped.
 /// </summary>
 public sealed partial class GameService
@@ -25,12 +25,12 @@ public sealed partial class GameService
     }
 
     /// <summary>
-    /// Deletes the rooms hosted by a dedicated host whose heartbeat stopped.
+    /// Deletes the rooms hosted by a Gameplay server whose heartbeat stopped.
     /// Only the rooms of that host are considered: a room created by a player
     /// belongs to its session and is never expired by this cleanup, so an idle
     /// room that is still occupied keeps its current lifetime.
     /// </summary>
-    /// <param name="hostCharacterIdentifier">Character the dedicated host plays as.</param>
+    /// <param name="hostCharacterIdentifier">Character the Gameplay server plays as.</param>
     /// <param name="staleAfter">Age at which a room is considered abandoned.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>How many rooms were removed.</returns>
