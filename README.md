@@ -22,7 +22,7 @@ Windows:
 irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/install-windows.ps1 | iex
 ```
 
-Then go to the ‘Metal Gear Online’ tab in RPCS3 settings and set the DNS server to ‘0.0.0.0’.
+Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to `0.0.0.0`
 
 ### Project layout
 
