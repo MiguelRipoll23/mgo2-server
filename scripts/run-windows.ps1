@@ -340,8 +340,8 @@ try {
         Write-Host ''
         Write-Host 'Starting every server'
 
-        Start-Server 'gate-lobby-5731' 'GateLobbyServer' 'gate (5731/tcp)' @{}
-        Start-Server 'account-lobby-5732' 'AccountLobbyServer' 'account (5732/tcp)' @{}
+        Start-Server 'gate-lobby-5731' 'GateLobbyServer' 'Gate (5731/tcp)' @{}
+        Start-Server 'account-lobby-5732' 'AccountLobbyServer' 'Account (5732/tcp)' @{}
 
         # One process per gameplay lobby, with the identity and the attributes
         # the compose file gives each container.
@@ -380,7 +380,7 @@ try {
             LAUNCHER_SERVER = $launcherServer
         }
 
-        Start-Server 'dns' 'Dns' "name server ($dnsPort/udp)" @{
+        Start-Server 'dns' 'Dns' "DNS ($dnsPort/udp)" @{
             DNS_PORT = $dnsPort
         }
 

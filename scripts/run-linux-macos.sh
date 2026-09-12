@@ -313,8 +313,8 @@ launcher_server="${LAUNCHER_SERVER:-http://mgo2pc.com}"
 echo ''
 echo 'Starting every server'
 
-start_server gate-lobby-5731 GateLobbyServer 'gate (5731/tcp)'
-start_server account-lobby-5732 AccountLobbyServer 'account (5732/tcp)'
+start_server gate-lobby-5731 GateLobbyServer 'Gate (5731/tcp)'
+start_server account-lobby-5732 AccountLobbyServer 'Account (5732/tcp)'
 
 # One process per gameplay lobby, with the identity and the attributes the
 # compose file gives each container: name|subtype|port.
@@ -351,7 +351,7 @@ start_server http Http "HTTP API (${http_port}/tcp)" \
     "HTTP_PORT=${http_port}" \
     "LAUNCHER_SERVER=${launcher_server}"
 
-start_server dns Dns "name server (${dns_port}/udp)" \
+start_server dns Dns "DNS (${dns_port}/udp)" \
     "DNS_PORT=${dns_port}"
 
 # Give the processes a moment to fail fast before the state is reported.
