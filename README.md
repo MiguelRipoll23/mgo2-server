@@ -1,8 +1,8 @@
 # MGO2 server
 
 A server implementation for Metal Gear Online 2, written in C# on .NET 10.
-It provides the gate, account and gameplay lobby TCP servers, the peer-to-peer
-gameplay host, an HTTP REST API, a name server for domain redirection and a
+It provides the gate, account and gameplay lobby TCP servers, the UDP peer-to-peer
+gameplay host, an HTTP API, a name server for domain redirection and a
 PostgreSQL-backed persistence layer.
 
 ## Quick start
