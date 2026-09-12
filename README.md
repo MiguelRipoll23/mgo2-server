@@ -78,8 +78,7 @@ dotnet run --project src/GameplayServer      # Run a dedicated host
 The scripts of `scripts/` split building from running: `build-linux-macos.sh`
 and `build-windows.ps1` build every project, and `run-linux-macos.sh` and
 `run-windows.ps1` start the whole deployment from the built binaries against
-the remote database. The run scripts build nothing on their own, so run the
-build script again after changing the code.
+the remote database.
 
 ```sh
 scripts/build-linux-macos.sh             # Build every project
