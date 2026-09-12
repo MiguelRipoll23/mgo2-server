@@ -22,8 +22,8 @@ public sealed partial class GameplayServerService : IAsyncDisposable
 {
     private readonly IServiceProvider serviceProvider;
     private readonly GameService gameService;
-    private readonly GameplayServerAccountService accountService;
-    private readonly GameplayServerMatchService matchService;
+    private readonly AccountService accountService;
+    private readonly MatchService matchService;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
     private readonly ILogger<GameplayServerService> logger;
@@ -46,8 +46,8 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         this.options = options.Value;
         port = this.options.GameplayServerPort;
         gameService = serviceProvider.GetRequiredService<GameService>();
-        accountService = serviceProvider.GetRequiredService<GameplayServerAccountService>();
-        matchService = serviceProvider.GetRequiredService<GameplayServerMatchService>();
+        accountService = serviceProvider.GetRequiredService<AccountService>();
+        matchService = serviceProvider.GetRequiredService<MatchService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
     }

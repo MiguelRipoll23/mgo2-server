@@ -22,13 +22,13 @@ namespace Mgo2Server.GameplayServer.Match;
 /// <param name="hostIdentity">Identity the gameplay server presents.</param>
 /// <param name="options">Options of this instance.</param>
 /// <param name="logger">Logger of the service.</param>
-public sealed class GameplayServerMatchService(
+public sealed class MatchService(
     GameService gameService,
     LobbyService lobbyService,
-    GameplayServerAccountService accountService,
+    AccountService accountService,
     HostIdentityService hostIdentity,
     IOptions<ServerOptions> options,
-    ILogger<GameplayServerMatchService> logger)
+    ILogger<MatchService> logger)
     : PeriodicWorker(TimeSpan.FromSeconds(options.Value.LobbyHeartbeatIntervalSeconds), logger)
 {
     /// <summary>How long to wait before looking again for the lobby of the match.</summary>

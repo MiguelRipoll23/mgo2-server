@@ -18,8 +18,8 @@ builder.Logging.AddServerLogging(builder.Configuration);
 builder.Services.AddServerServices(builder.Configuration);
 
 builder.Services.AddSingleton<HostIdentityService>();
-builder.Services.AddSingleton<GameplayServerAccountService>();
-builder.Services.AddSingleton<GameplayServerMatchService>();
+builder.Services.AddSingleton<AccountService>();
+builder.Services.AddSingleton<MatchService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 builder.Services.AddSingleton<AcceptHandshakeHandler>();
 builder.Services.AddSingleton<AcknowledgeKeepAliveHandler>();

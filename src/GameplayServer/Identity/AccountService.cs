@@ -14,10 +14,10 @@ namespace Mgo2Server.GameplayServer.Identity;
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 /// <param name="cryptographyService">Service that hashes the account password.</param>
 /// <param name="logger">Logger of the service.</param>
-public sealed class GameplayServerAccountService(
+public sealed class AccountService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
     CryptographyService cryptographyService,
-    ILogger<GameplayServerAccountService> logger)
+    ILogger<AccountService> logger)
 {
     /// <summary>Display name of the account the gameplay server logs in with.</summary>
     public const string DisplayName = "server";
