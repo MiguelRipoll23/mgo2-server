@@ -234,8 +234,8 @@ initialize_dotnet() {
 }
 
 # Starts one built server. The settings are name=value pairs applied to this
-# one process only. In Debug builds stdout and stderr are merged into a single
-# log file under .logs/; Release builds write to the console.
+# one process only. The app writes log files through Serilog when LOG_DIRECTORY
+# is set; stdout is left on the console so the script can show server status.
 start_server() {
     local name="$1" project="$2" label="$3"
     shift 3
@@ -246,21 +246,14 @@ start_server() {
         exit 1
     fi
 
-    local log_file="/dev/null"
-    if [ -n "$log_directory" ]; then
-        log_file="${log_directory}/${name}.log"
-    fi
-
     (
         while [ "$#" -gt 0 ]; do
             export "$1"
             shift
         done
-        # The working directory is the project root because the HTTP API reads
-        # its policy document from ./static. In Debug builds stdout and stderr
-        # are merged into a single log file; Release builds write to the console.
+        export LOG_DIRECTORY="$log_directory"
         exec dotnet "$dll"
-    ) >"${log_file}" 2>&1 &
+    ) &
 
     server_pids+=("$!")
     server_labels+=("$label")
@@ -298,11 +291,8 @@ load_env_file "${project_directory}/.env"
 DATABASE_CONNECTION_STRING="$(resolve_database_connection_string)"
 export DATABASE_CONNECTION_STRING
 
-log_directory=""
-if [ "$configuration" = "Debug" ]; then
-    log_directory="${project_directory}/.logs"
-    mkdir -p "$log_directory"
-fi
+log_directory="${project_directory}/.logs"
+mkdir -p "$log_directory"
 
 initialize_dotnet
 

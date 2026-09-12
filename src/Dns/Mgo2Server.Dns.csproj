@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Shared\Mgo2Server.Shared.csproj" />
+    <ProjectReference Include="..\Infrastructure\Mgo2Server.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

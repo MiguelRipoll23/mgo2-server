@@ -49,6 +49,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+$SolutionName = 'Mgo2Server.slnx'
+
 $DotNetChannel = '10.0'
 
 # Database connection string. Required; set DATABASE_CONNECTION_STRING in the
@@ -239,8 +241,8 @@ function Resolve-DatabaseConnectionString {
 }
 
 # Starts one built server. The settings are name=value pairs applied to this
-# one process only. In Debug builds stdout and stderr are merged into a single
-# log file under .logs/; Release builds write to the console.
+# one process only. In Debug builds the app writes log files through Serilog
+# when LOG_DIRECTORY is set; Release builds write to the console only.
 function Start-Server([string]$Name, [string]$Project, [string]$Label, [hashtable]$Settings) {
     $assembly = "Mgo2Server.$Project"
     $dll = Join-Path $projectDirectory "src/$Project/bin/$Configuration/net10.0/$assembly.dll"
@@ -248,32 +250,30 @@ function Start-Server([string]$Name, [string]$Project, [string]$Label, [hashtabl
         throw "$dll was not built; run .\scripts\build-windows.ps1 first"
     }
 
-    # Start-Process copies the environment when it creates the process, so the
-    # settings are applied around the call and the session is left as it was.
+    # Merge lobby settings and the log directory into one environment change
+    # block so Start-Process sees them both and the session is left as it was.
+    $envOverrides = @{}
+    foreach ($setting in $Settings.Keys) {
+        $envOverrides[$setting] = [string]$Settings[$setting]
+    }
+
+    # Always pass LOG_DIRECTORY so Serilog writes to disk regardless of
+    # build configuration. The app no longer relies on shell redirection.
+    $envOverrides['LOG_DIRECTORY'] = $logDirectory
+
     $savedSettings = @{}
-    foreach ($name in $Settings.Keys) {
+    foreach ($name in $envOverrides.Keys) {
         $savedSettings[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
-        [Environment]::SetEnvironmentVariable($name, [string]$Settings[$name], 'Process')
+        [Environment]::SetEnvironmentVariable($name, $envOverrides[$name], 'Process')
     }
 
     try {
-        # The working directory is the project root because the HTTP API reads
-        # its policy document from ./static. In Debug builds stdout and stderr
-        # are merged into a single log file; Release builds write to the console.
-        if ($logDirectory) {
-            $logPath = Join-Path $logDirectory "$Name.log"
-            $process = Start-Process -FilePath 'cmd' -NoNewWindow -PassThru `
-                -ArgumentList "/c", "dotnet `"$dll`" > `"$logPath`" 2>&1" `
-                -WorkingDirectory $projectDirectory
-        }
-        else {
-            $process = Start-Process -FilePath 'dotnet' -NoNewWindow -PassThru `
-                -ArgumentList $dll `
-                -WorkingDirectory $projectDirectory
-        }
+        $process = Start-Process -FilePath 'dotnet' -NoNewWindow -PassThru `
+            -ArgumentList $dll `
+            -WorkingDirectory $projectDirectory
     }
     finally {
-        foreach ($name in $savedSettings.Keys) {
+        foreach ($name in $envOverrides.Keys) {
             [Environment]::SetEnvironmentVariable($name, $savedSettings[$name], 'Process')
         }
     }
@@ -324,11 +324,8 @@ try {
     Import-EnvFile (Join-Path $projectDirectory '.env')
     $env:DATABASE_CONNECTION_STRING = Resolve-DatabaseConnectionString
 
-    $logDirectory = if ($Configuration -eq 'Debug') {
-        $directory = Join-Path $projectDirectory '.logs'
-        New-Item -ItemType Directory -Force -Path $directory | Out-Null
-        $directory
-    }
+    $logDirectory = Join-Path $projectDirectory '.logs'
+    New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 
     Initialize-DotNet
 
