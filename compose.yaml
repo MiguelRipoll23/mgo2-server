@@ -19,7 +19,7 @@
 #   5733 Free Battle   5735 Survival           5740 Automatching
 #   5734 Replays       5737 Basic Training     5741 Registration
 #   5738 Combat Training  5739 Survival Hosts  5742 Tournament
-#   5731 gate          5732 account            5730 Dedicated host (UDP)
+#   5731 gate          5732 account            5730 Gameplay Host (UDP)
 #     80 HTTP API        53 Name server (UDP)
 
 name: mgo2
@@ -232,12 +232,12 @@ services:
     ports:
       - "5742:5742/tcp"
 
-  # Dedicated gameplay hosts. Add one block per host, each with its own UDP
+  # Gameplay hosrs. Add one block per host, each with its own UDP
   # port and the lobby it publishes its match in. The host waits for that lobby
   # to be registered by its game lobby server.
-  mgo2-host-1:
+  mgo2-gameplay-1:
     <<: *gameplay-server
-    container_name: mgo2-host-1
+    container_name: mgo2-gameplay-1
     environment:
       DEDICATED_HOST_PORT: "5730"
       DEDICATED_HOST_LOBBY_NAME: Free Battle
