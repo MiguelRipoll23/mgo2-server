@@ -120,7 +120,9 @@ try {
     $envFile = Join-Path $projectDirectory '.env'
     if (-not (Test-Path $envFile)) {
         Copy-Item (Join-Path $projectDirectory '.env.example') $envFile
-        Write-Host 'Created .env from .env.example. Review it before exposing the deployment.'
+        $jwtSecret = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
+        (Get-Content $envFile) -replace '^JWT_SECRET=.*', "JWT_SECRET=$jwtSecret" | Set-Content $envFile
+        Write-Host 'Created .env from .env.example with a random JWT_SECRET. Review it before exposing the deployment.'
     }
 
     if ([string]::IsNullOrWhiteSpace($ImagePrefix)) {

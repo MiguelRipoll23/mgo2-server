@@ -5,9 +5,8 @@ using Mgo2Server.Shared.Domain.Authentication;
 namespace Mgo2Server.Http.Endpoints;
 
 /// <summary>
-/// The endpoints the game client reaches without a token: the login, the
-/// registration, the policy document, the version check, the data list and the
-/// patch files.
+/// The endpoints the game client reaches without a token: the login, the policy
+/// document, the version check, the data list and the patch files.
 /// </summary>
 internal static class PublicEndpoints
 {
@@ -23,13 +22,6 @@ internal static class PublicEndpoints
             .WithTags("Game")
             .WithSummary("Login")
             .WithDescription("Authenticates a player and returns a session token");
-
-        app.MapPost("/account/register", RegisterAsync)
-            .DisableAntiforgery()
-            .WithTags("Account")
-            .WithSummary("Register account")
-            .WithDescription("Creates a new player account.")
-            .Produces<RegistrationResponseContract>(StatusCodes.Status201Created);
 
         app.MapGet("/jp/mgo2/policy/policy.txt", GetPolicyAsync)
             .WithTags("Game")
@@ -75,21 +67,6 @@ internal static class PublicEndpoints
         // The login answers with a plain-text body, whatever the documented
         // description of the route says.
         return Results.Text(response, PlainTextContentType);
-    }
-
-    private static async Task<IResult> RegisterAsync(
-        RegistrationService registrationService,
-        RegistrationRequest request,
-        CancellationToken cancellationToken)
-    {
-        var issues = RequestBodyValidation.Validate(request);
-        if (issues.Count > 0)
-        {
-            return RequestBodyValidation.Reject([.. issues]);
-        }
-
-        var created = await registrationService.RegisterAsync(request.DisplayName, request.Password, cancellationToken);
-        return Results.Json(new RegistrationResponseContract(created.Identifier, created.DisplayName), statusCode: StatusCodes.Status201Created);
     }
 
     private static async Task<IResult> GetDataListAsync(

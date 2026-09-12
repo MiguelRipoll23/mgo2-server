@@ -126,7 +126,10 @@ cd "${project_directory}"
 
 if [ ! -f .env ]; then
     cp .env.example .env
-    echo "Created .env from .env.example. Review it before exposing the deployment."
+    jwt_secret="$(openssl rand -base64 48)"
+    sed -i.bak "s/^JWT_SECRET=.*/JWT_SECRET=${jwt_secret}/" .env
+    rm -f .env.bak
+    echo "Created .env from .env.example with a random JWT_SECRET. Review it before exposing the deployment."
 fi
 
 image_prefix="$(normalise_prefix "${1:-${MGO2_IMAGE_PREFIX:-$(read_env_value MGO2_IMAGE_PREFIX)}}")"

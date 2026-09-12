@@ -115,6 +115,7 @@ app.MapScalarApiReference("/", reference =>
 app.MapPublicEndpoints();
 
 var authenticated = app.MapGroup("/");
+authenticated.MapAccountEndpoints();
 authenticated.MapNewsEndpoints();
 authenticated.MapLobbyEndpoints();
 authenticated.MapGameEndpoints();
