@@ -68,7 +68,7 @@ builder.Services.AddOpenApi(options =>
         {
             Title = "MGO2 HTTP API",
             Version = "1.0.0",
-            Description = "MGO2 server HTTP API",
+            Description = "Metal Gear Online 2 server HTTP API",
         };
 
         document.Components ??= new OpenApiComponents();
