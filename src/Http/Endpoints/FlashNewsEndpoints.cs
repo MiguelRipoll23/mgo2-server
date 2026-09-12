@@ -11,7 +11,7 @@ internal static class FlashNewsEndpoints
     public static void MapFlashNewsEndpoints(this RouteGroupBuilder group)
     {
         var flashNews = group.MapGroup("/flash-news")
-            .WithTags("Flash News")
+            .WithTags("Flash news")
             .RequireAuthorization();
 
         flashNews.MapPost("/broadcast", BroadcastAsync)

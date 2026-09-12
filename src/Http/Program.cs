@@ -106,8 +106,7 @@ app.MapScalarApiReference("/", reference =>
     reference
         .WithTitle("MGO2 HTTP API")
         .WithOpenApiRoutePattern("/.well-known/openapi")
-        .ExpandAllTags()
-        .EnableDarkMode();
+        .ExpandAllTags();
 });
 
 app.MapLoginEndpoints();
@@ -120,8 +119,8 @@ var authenticated = app.MapGroup("/");
 authenticated.MapAccountEndpoints();
 authenticated.MapNewsEndpoints();
 authenticated.MapLobbyEndpoints();
-authenticated.MapGameEndpoints();
 authenticated.MapFlashNewsEndpoints();
+authenticated.MapGameEndpoints();
 
 app.Logger.LogInformation("HTTP API listening on port {Port}", httpPort);
 
