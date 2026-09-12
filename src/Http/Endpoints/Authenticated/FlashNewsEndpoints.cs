@@ -15,13 +15,13 @@ internal static class FlashNewsEndpoints
             .RequireAuthorization();
 
         flashNews.MapPost("/broadcast", BroadcastAsync)
-            .WithSummary("Broadcast a server message")
+            .WithSummary("Broadcast flash news")
             .WithDescription(
                 "Sends a ticker packet with the server-message subcommand to every active player. " +
                 "The message text is displayed in the client's ticker.");
 
         flashNews.MapPost("/emergency", BroadcastEmergencyAsync)
-            .WithSummary("Broadcast an emergency maintenance notice")
+            .WithSummary("Broadcast emergency maintenance")
             .WithDescription(
                 "Sends a ticker packet with the emergency-maintenance subcommand to every active player. " +
                 "The client ignores the message text and displays a built-in emergency maintenance screen.");
