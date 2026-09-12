@@ -20,7 +20,7 @@ public sealed class PolicyService(
     private const string UpstreamUnavailableMessage = "Request has timed out.";
 
     /// <summary>User agent every upstream launcher request is made with, so the launcher tells the client from a generic crawler.</summary>
-    public const string UpstreamUserAgent = "Mozilla/5.0 (PLAYSTATION 3; 3.55)";
+    public const string UpstreamUserAgent = "Mozilla/5.0 (PLAYSTATION 3; 1.00)";
 
     private readonly HttpApiOptions options = options.Value;
 
