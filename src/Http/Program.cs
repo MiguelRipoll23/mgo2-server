@@ -107,8 +107,6 @@ app.MapScalarApiReference("/", reference =>
         .WithTitle("MGO2 HTTP API")
         .WithOpenApiRoutePattern("/.well-known/openapi")
         .ExpandAllTags()
-        .AddPreferredSecuritySchemes("bearer")
-        .EnablePersistentAuthentication()
         .EnableDarkMode();
 });
 
