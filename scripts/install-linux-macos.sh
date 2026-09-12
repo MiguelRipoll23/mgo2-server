@@ -14,8 +14,8 @@
 #   scripts/install-linux-macos.sh ghcr.io/owner/repo       # registry prefix from the argument
 #
 # Running it again installs the update: it refreshes the compose file, pulls the
-# newest images and recreates the containers whose image or configuration
-# changed, so a new release is one command away.
+# newest images, recreates the containers whose image or configuration changed
+# and removes old dangling images, so a new release is one command away.
 #
 # The script runs against a clone when it is started from one; otherwise it
 # creates a deployment directory (./mgo2-server, or MGO2_HOME) and downloads
@@ -148,6 +148,10 @@ docker compose pull
 echo
 echo "Starting every container and waiting for them to come up"
 docker compose up --detach --no-build --remove-orphans --wait --wait-timeout 180
+
+echo
+echo "Removing old images left behind by the update"
+docker image prune --force
 
 expected="$(docker compose config --services | wc -l | tr -d ' ')"
 running="$(docker compose ps --status running --services | wc -l | tr -d ' ')"
