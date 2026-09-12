@@ -2,7 +2,7 @@ using Mgo2Server.Http.Contracts;
 using Mgo2Server.Shared.Domain.News;
 using Mgo2Server.Shared.Persistence.Entities;
 
-namespace Mgo2Server.Http.Endpoints;
+namespace Mgo2Server.Http.Endpoints.Authenticated;
 
 /// <summary>The news endpoints of the authenticated API surface.</summary>
 internal static class NewsEndpoints

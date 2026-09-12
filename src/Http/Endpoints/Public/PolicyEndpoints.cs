@@ -1,15 +1,15 @@
 using Mgo2Server.Http.Services;
 
-namespace Mgo2Server.Http.Endpoints;
+namespace Mgo2Server.Http.Endpoints.Public;
 
 /// <summary>The policy document endpoint.</summary>
 internal static class PolicyEndpoints
 {
     /// <summary>Maps the policy endpoint.</summary>
-    /// <param name="app">Application the endpoint is added to.</param>
-    public static void MapPolicyEndpoints(this WebApplication app)
+    /// <param name="group">Group the endpoint is added to.</param>
+    public static void MapPolicyEndpoints(this RouteGroupBuilder group)
     {
-        app.MapGet("/jp/mgo2/policy/policy.txt", GetPolicyAsync)
+        group.MapGet("/jp/mgo2/policy/policy.txt", GetPolicyAsync)
             .WithTags("Game")
             .WithSummary("Policy document")
             .WithDescription("Returns the terms of service policy document");

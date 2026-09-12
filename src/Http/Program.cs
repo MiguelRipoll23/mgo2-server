@@ -1,5 +1,7 @@
 using Mgo2Server.Http.Authentication;
 using Mgo2Server.Http.Endpoints;
+using Mgo2Server.Http.Endpoints.Authenticated;
+using Mgo2Server.Http.Endpoints.Public;
 using Mgo2Server.Http.Errors;
 using Mgo2Server.Http.Middleware;
 using Mgo2Server.Http.Options;
@@ -109,18 +111,8 @@ app.MapScalarApiReference("/", reference =>
         .ExpandAllTags();
 });
 
-app.MapLoginEndpoints();
-app.MapPolicyEndpoints();
-app.MapCheckVerEndpoints();
-app.MapDataListEdnpoints();
-app.MapFilesEndpoints();
-
-var authenticated = app.MapGroup("/");
-authenticated.MapAccountEndpoints();
-authenticated.MapNewsEndpoints();
-authenticated.MapLobbyEndpoints();
-authenticated.MapFlashNewsEndpoints();
-authenticated.MapGameEndpoints();
+app.MapPublicEndpoints();
+app.MapAuthenticatedEndpoints();
 
 app.Logger.LogInformation("HTTP API listening on port {Port}", httpPort);
 

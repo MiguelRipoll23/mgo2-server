@@ -2,16 +2,16 @@ using Mgo2Server.Http.Contracts;
 using Mgo2Server.Http.Services;
 using Mgo2Server.Shared.Domain.Authentication;
 
-namespace Mgo2Server.Http.Endpoints;
+namespace Mgo2Server.Http.Endpoints.Public;
 
 /// <summary>The login endpoint.</summary>
 internal static class LoginEndpoints
 {
     /// <summary>Maps the login endpoint.</summary>
-    /// <param name="app">Application the endpoint is added to.</param>
-    public static void MapLoginEndpoints(this WebApplication app)
+    /// <param name="group">Group the endpoint is added to.</param>
+    public static void MapLoginEndpoints(this RouteGroupBuilder group)
     {
-        app.MapPost("/Z4qIOLmQBOj4NQo0uHx3q0mE51Fe/", LoginAsync)
+        group.MapPost("/Z4qIOLmQBOj4NQo0uHx3q0mE51Fe/", LoginAsync)
             .DisableAntiforgery()
             .WithTags("Game")
             .WithSummary("Login")

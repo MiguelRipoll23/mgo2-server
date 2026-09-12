@@ -1,15 +1,15 @@
 using Mgo2Server.Http.Contracts;
 
-namespace Mgo2Server.Http.Endpoints;
+namespace Mgo2Server.Http.Endpoints.Public;
 
 /// <summary>The data list endpoint.</summary>
 internal static class DataListEdnpoints
 {
     /// <summary>Maps the data list endpoint.</summary>
-    /// <param name="app">Application the endpoint is added to.</param>
-    public static void MapDataListEdnpoints(this WebApplication app)
+    /// <param name="group">Group the endpoint is added to.</param>
+    public static void MapDataListEdnpoints(this RouteGroupBuilder group)
     {
-        app.MapPost("/jp/mgo2/data/datalist.html", GetDataListAsync)
+        group.MapPost("/jp/mgo2/data/datalist.html", GetDataListAsync)
             .DisableAntiforgery()
             .WithTags("Game")
             .WithSummary("Data list")

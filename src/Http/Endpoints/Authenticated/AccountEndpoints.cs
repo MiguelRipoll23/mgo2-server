@@ -1,7 +1,7 @@
 using Mgo2Server.Http.Contracts;
 using Mgo2Server.Shared.Domain.Authentication;
 
-namespace Mgo2Server.Http.Endpoints;
+namespace Mgo2Server.Http.Endpoints.Authenticated;
 
 /// <summary>The account endpoints of the authenticated API surface.</summary>
 internal static class AccountEndpoints

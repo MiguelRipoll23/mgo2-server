@@ -1,19 +1,19 @@
 using Mgo2Server.Http.Contracts;
 using Mgo2Server.Http.Services;
 
-namespace Mgo2Server.Http.Endpoints;
+namespace Mgo2Server.Http.Endpoints.Public;
 
 /// <summary>The version check endpoint.</summary>
 internal static class CheckVerEndpoints
 {
     /// <summary>Maps the version check endpoint.</summary>
-    /// <param name="app">Application the endpoint is added to.</param>
-    public static void MapCheckVerEndpoints(this WebApplication app)
+    /// <param name="group">Group the endpoint is added to.</param>
+    public static void MapCheckVerEndpoints(this RouteGroupBuilder group)
     {
         // The client posts to /jp/mgo2//patch/checkver.html and
         // /jp/mgo2//patch//checkver.html; the path normaliser collapses the
         // repeated slashes before routing, so one route serves both.
-        app.MapPost("/jp/mgo2/patch/checkver.html", CheckVersionAsync)
+        group.MapPost("/jp/mgo2/patch/checkver.html", CheckVersionAsync)
             .DisableAntiforgery()
             .WithTags("Game")
             .WithSummary("Check version")

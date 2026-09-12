@@ -1,7 +1,7 @@
 using Mgo2Server.Http.Contracts;
 using Mgo2Server.Shared.Domain.News;
 
-namespace Mgo2Server.Http.Endpoints;
+namespace Mgo2Server.Http.Endpoints.Authenticated;
 
 /// <summary>The ticker broadcast endpoints of the authenticated API surface.</summary>
 internal static class FlashNewsEndpoints

@@ -3,7 +3,7 @@ using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Errors;
 using Mgo2Server.Shared.Persistence.Entities;
 
-namespace Mgo2Server.Http.Endpoints;
+namespace Mgo2Server.Http.Endpoints.Authenticated;
 
 /// <summary>The lobby endpoints of the authenticated API surface.</summary>
 internal static class LobbyEndpoints
