@@ -73,7 +73,7 @@ public sealed class Game
     public DateTime? CreatedAt { get; set; }
 
     /// <summary>
-    /// Timestamp of the last heartbeat. Only a Gameplay server maintains this
+    /// Timestamp of the last heartbeat. Only a gameplay server maintains this
     /// stamp; a gameplay-server match whose heartbeat stopped is expired, while
     /// a player-hosted room keeps its current lifetime.
     /// </summary>

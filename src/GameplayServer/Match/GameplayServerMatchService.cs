@@ -11,15 +11,15 @@ using Microsoft.Extensions.Options;
 namespace Mgo2Server.GameplayServer.Match;
 
 /// <summary>
-/// Owns the match a Gameplay server publishes in its lobby. The row is created
+/// Owns the match a gameplay server publishes in its lobby. The row is created
 /// on the first run, heartbeated so that it stays in the room list, and the
 /// matches of the hosts that stopped are expired, which is what removes a
 /// Gameplay server that was killed without shutting down from the list.
 /// </summary>
 /// <param name="gameService">Service that owns the rooms.</param>
 /// <param name="lobbyService">Service that owns the lobby rows.</param>
-/// <param name="accountService">Service that owns the Gameplay server account.</param>
-/// <param name="hostIdentity">Identity the Gameplay server presents.</param>
+/// <param name="accountService">Service that owns the gameplay server account.</param>
+/// <param name="hostIdentity">Identity the gameplay server presents.</param>
 /// <param name="options">Options of this instance.</param>
 /// <param name="logger">Logger of the service.</param>
 public sealed class GameplayServerMatchService(

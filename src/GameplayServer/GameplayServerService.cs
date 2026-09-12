@@ -32,7 +32,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly int port;
     private UdpClient? socket;
 
-    /// <summary>Creates the Gameplay server of one port.</summary>
+    /// <summary>Creates the gameplay server of one port.</summary>
     /// <param name="serviceProvider">Container the handlers are resolved from.</param>
     /// <param name="options">Options of this instance.</param>
     /// <param name="logger">Logger of this host.</param>

@@ -1,5 +1,5 @@
 # Every role runs as its own container built from its own project, so a gate,
-# an account server, a gameplay lobby, a Gameplay server, the HTTP API or the
+# an account server, a gameplay lobby, a gameplay server, the HTTP API or the
 # name server can be restarted, scaled or replaced independently.
 #
 # Every setting is a single upper-case environment variable. The images are the

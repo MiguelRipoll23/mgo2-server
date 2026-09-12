@@ -74,7 +74,7 @@ dotnet test                              # Run the unit tests
 dotnet run --project src/GateLobbyServer     # Run the gate
 dotnet run --project src/AccountLobbyServer  # Run the account server
 dotnet run --project src/GameLobbyServer     # Run one gameplay lobby
-dotnet run --project src/GameplayServer      # Run a Gameplay server
+dotnet run --project src/GameplayServer      # Run a gameplay server
 ```
 
 The scripts of `scripts/` split building from running: `build-linux-macos.sh`

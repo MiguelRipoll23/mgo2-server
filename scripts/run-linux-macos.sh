@@ -4,7 +4,7 @@
 #
 # Runs the gate, the account server, one gameplay lobby per process (Free
 # Battle, Replays, Survival, Basic Training, Combat Training, Survival Hosts,
-# Automatching, Registration, Tournament), a Gameplay server, the HTTP API and
+# Automatching, Registration, Tournament), a gameplay server, the HTTP API and
 # the name server: the same servers compose.yaml starts, minus PostgreSQL.
 #
 # PostgreSQL is not started by this script. The servers connect to the remote

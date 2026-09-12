@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Mgo2Server.GameplayServer;
 
 /// <summary>
-/// The dispatch half of the Gameplay server: it classifies an inbound datagram,
+/// The dispatch half of the gameplay server: it classifies an inbound datagram,
 /// removes its frame chain, hands the messages to their handlers and keeps the
 /// cumulative acknowledgement window.
 /// </summary>
