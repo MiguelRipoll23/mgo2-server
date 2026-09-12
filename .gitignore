@@ -1,2 +1,12 @@
 .env
-node_modules/
+bin/
+obj/
+
+# Output of scripts/run-linux-macos.sh and scripts/run-windows.ps1.
+.run-logs/
+
+# Patch files mirrored from the upstream launcher at runtime.
+static/files/
+*.user
+.vs/
+.idea/

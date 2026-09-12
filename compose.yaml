@@ -1,17 +1,283 @@
+# Every role runs as its own container built from its own project, so a gate,
+# an account server, a gameplay lobby, a dedicated host, the HTTP API or the
+# name server can be restarted, scaled or replaced independently.
+#
+# Every setting is a single upper-case environment variable. The images are the
+# same ones the CI workflow publishes to ghcr.io, so a deployment may build them
+# locally (as below) or pull them from the registry by setting MGO2_IMAGE_PREFIX
+# and MGO2_IMAGE_TAG in .env; scripts/install-linux-macos.sh and
+# scripts/install-windows.ps1 do exactly that pull-and-install sequence.
+#
+# There is one container per lobby listed below, which is the same set of
+# servers the original deployment ran.
+#
+# Only the gate and the account server are seeded. A gameplay lobby exists
+# because its container was started: it publishes its own row from the
+# environment below and heartbeats it while it runs.
+#
+# Ports of the gameplay lobbies that reference the original server:
+#   5733 Free Battle   5735 Survival           5740 Automatching
+#   5734 Replays       5737 Basic Training     5741 Registration
+#   5738 Combat Training  5739 Survival Hosts  5742 Tournament
+#   5731 gate          5732 account            5730 Dedicated host (UDP)
+#     80 HTTP API        53 Name server (UDP)
+
+name: mgo2
+
+x-database: &database
+  env_file:
+    - .env
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+
+x-gate-lobby-server: &gate-lobby-server
+  <<: *database
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      PROJECT: src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj
+      ASSEMBLY: Mgo2Server.GateLobbyServer
+  image: ${MGO2_IMAGE_PREFIX:-}mgo2-gate-lobby-server:${MGO2_IMAGE_TAG:-latest}
+
+x-account-lobby-server: &account-lobby-server
+  <<: *database
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      PROJECT: src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj
+      ASSEMBLY: Mgo2Server.AccountLobbyServer
+  image: ${MGO2_IMAGE_PREFIX:-}mgo2-account-lobby-server:${MGO2_IMAGE_TAG:-latest}
+
+x-game-lobby-server: &game-lobby-server
+  <<: *database
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      PROJECT: src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj
+      ASSEMBLY: Mgo2Server.GameLobbyServer
+  image: ${MGO2_IMAGE_PREFIX:-}mgo2-game-lobby-server:${MGO2_IMAGE_TAG:-latest}
+
+x-gameplay-server: &gameplay-server
+  <<: *database
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      PROJECT: src/GameplayServer/Mgo2Server.GameplayServer.csproj
+      ASSEMBLY: Mgo2Server.GameplayServer
+  image: ${MGO2_IMAGE_PREFIX:-}mgo2-gameplay-server:${MGO2_IMAGE_TAG:-latest}
+
 services:
-  mgo2-server:
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/mgo2-server:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    network_mode: host
+  postgres:
+    image: postgres:18
+    container_name: mgo2-postgres
+    environment:
+      POSTGRES_DB: mgo2
+      POSTGRES_USER: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
-      - mgo2-data:/app/data
       - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mgo2"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     restart: unless-stopped
 
+  # First connection point of the game: the lobby list and the news.
+  mgo2-gate:
+    <<: *gate-lobby-server
+    container_name: mgo2-gate
+    ports:
+      - "5731:5731/tcp"
+
+  # Character creation, selection and deletion.
+  mgo2-account:
+    <<: *account-lobby-server
+    container_name: mgo2-account
+    ports:
+      - "5732:5732/tcp"
+
+  # One container per gameplay lobby. The identity and the attributes of the
+  # lobby come from the environment; LOBBY_SUBTYPE is the name of a game type
+  # of the lobby_game_types table.
+  mgo2-free-battle:
+    <<: *game-lobby-server
+    container_name: mgo2-free-battle
+    environment:
+      LOBBY_NAME: Free Battle
+      LOBBY_SUBTYPE: FREE BATTLE
+      LOBBY_PORT: "5733"
+      LOBBY_BEGINNER_ONLY: "false"
+      LOBBY_EXPANSION_ONLY: "false"
+      LOBBY_NO_HEADSHOT: "false"
+      LOBBY_REPLAYS_ONLY: "false"
+    ports:
+      - "5733:5733/tcp"
+
+  mgo2-replays:
+    <<: *game-lobby-server
+    container_name: mgo2-replays
+    environment:
+      LOBBY_NAME: Replays
+      LOBBY_SUBTYPE: TRAINING
+      LOBBY_PORT: "5734"
+      LOBBY_BEGINNER_ONLY: "false"
+      LOBBY_EXPANSION_ONLY: "false"
+      LOBBY_NO_HEADSHOT: "false"
+      LOBBY_REPLAYS_ONLY: "false"
+    ports:
+      - "5734:5734/tcp"
+
+  mgo2-survival:
+    <<: *game-lobby-server
+    container_name: mgo2-survival
+    environment:
+      LOBBY_NAME: Survival
+      LOBBY_SUBTYPE: SURVIVAL
+      LOBBY_PORT: "5735"
+      LOBBY_BEGINNER_ONLY: "false"
+      LOBBY_EXPANSION_ONLY: "false"
+      LOBBY_NO_HEADSHOT: "false"
+      LOBBY_REPLAYS_ONLY: "false"
+    ports:
+      - "5735:5735/tcp"
+
+  mgo2-basic-training:
+    <<: *game-lobby-server
+    container_name: mgo2-basic-training
+    environment:
+      LOBBY_NAME: Basic Training
+      LOBBY_SUBTYPE: TRAINING
+      LOBBY_PORT: "5737"
+      LOBBY_BEGINNER_ONLY: "false"
+      LOBBY_EXPANSION_ONLY: "false"
+      LOBBY_NO_HEADSHOT: "false"
+      LOBBY_REPLAYS_ONLY: "false"
+    ports:
+      - "5737:5737/tcp"
+
+  mgo2-combat-training:
+    <<: *game-lobby-server
+    container_name: mgo2-combat-training
+    environment:
+      LOBBY_NAME: Combat Training
+      LOBBY_SUBTYPE: TRAINING
+      LOBBY_PORT: "5738"
+      LOBBY_BEGINNER_ONLY: "false"
+      LOBBY_EXPANSION_ONLY: "false"
+      LOBBY_NO_HEADSHOT: "false"
+      LOBBY_REPLAYS_ONLY: "false"
+    ports:
+      - "5738:5738/tcp"
+
+  mgo2-survival-hosts:
+    <<: *game-lobby-server
+    container_name: mgo2-survival-hosts
+    environment:
+      LOBBY_NAME: Survival Hosts
+      LOBBY_SUBTYPE: UNKNOWN
+      LOBBY_PORT: "5739"
+      LOBBY_BEGINNER_ONLY: "false"
+      LOBBY_EXPANSION_ONLY: "false"
+      LOBBY_NO_HEADSHOT: "false"
+      LOBBY_REPLAYS_ONLY: "false"
+    ports:
+      - "5739:5739/tcp"
+
+  mgo2-automatching:
+    <<: *game-lobby-server
+    container_name: mgo2-automatching
+    environment:
+      LOBBY_NAME: Automatching
+      LOBBY_SUBTYPE: AUTOMATCHING
+      LOBBY_PORT: "5740"
+      LOBBY_BEGINNER_ONLY: "false"
+      LOBBY_EXPANSION_ONLY: "false"
+      LOBBY_NO_HEADSHOT: "false"
+      LOBBY_REPLAYS_ONLY: "false"
+    ports:
+      - "5740:5740/tcp"
+
+  mgo2-registration:
+    <<: *game-lobby-server
+    container_name: mgo2-registration
+    environment:
+      LOBBY_NAME: Registration
+      LOBBY_SUBTYPE: TOURNAMENT REGISTRATION
+      LOBBY_PORT: "5741"
+      LOBBY_BEGINNER_ONLY: "false"
+      LOBBY_EXPANSION_ONLY: "false"
+      LOBBY_NO_HEADSHOT: "false"
+      LOBBY_REPLAYS_ONLY: "false"
+    ports:
+      - "5741:5741/tcp"
+
+  mgo2-tournament:
+    <<: *game-lobby-server
+    container_name: mgo2-tournament
+    environment:
+      LOBBY_NAME: Tournament
+      LOBBY_SUBTYPE: TOURNAMENT
+      LOBBY_PORT: "5742"
+      LOBBY_BEGINNER_ONLY: "false"
+      LOBBY_EXPANSION_ONLY: "false"
+      LOBBY_NO_HEADSHOT: "false"
+      LOBBY_REPLAYS_ONLY: "false"
+    ports:
+      - "5742:5742/tcp"
+
+  # Dedicated gameplay hosts. Add one block per host, each with its own UDP
+  # port and the lobby it publishes its match in. The host waits for that lobby
+  # to be registered by its game lobby server.
+  mgo2-host-1:
+    <<: *gameplay-server
+    container_name: mgo2-host-1
+    environment:
+      DEDICATED_HOST_PORT: "5730"
+      DEDICATED_HOST_LOBBY_NAME: Free Battle
+      P2P_HOST: 127.0.0.1
+    ports:
+      - "5730:5730/udp"
+
+  # Public HTTP API and its Scalar reference UI.
+  mgo2-http:
+    <<: *database
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        PROJECT: src/Http/Mgo2Server.Http.csproj
+        ASSEMBLY: Mgo2Server.Http
+    image: ${MGO2_IMAGE_PREFIX:-}mgo2-http:${MGO2_IMAGE_TAG:-latest}
+    container_name: mgo2-http
+    environment:
+      HTTP_PORT: "80"
+      LAUNCHER_SERVER: http://mgo2pc.com
+    ports:
+      - "80:80/tcp"
+
+  # Name server. It owns the well-known port 53, so only this container needs
+  # any elevated networking.
+  mgo2-dns:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        PROJECT: src/Dns/Mgo2Server.Dns.csproj
+        ASSEMBLY: Mgo2Server.Dns
+    image: ${MGO2_IMAGE_PREFIX:-}mgo2-dns:${MGO2_IMAGE_TAG:-latest}
+    container_name: mgo2-dns
+    env_file:
+      - .env
+    restart: unless-stopped
+    ports:
+      - "53:53/udp"
+
 volumes:
-  mgo2-data:
   postgres-data:

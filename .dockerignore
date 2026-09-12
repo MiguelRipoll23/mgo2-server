@@ -1,6 +1,7 @@
-.git
-.github
-node_modules
-tools
 .env
-*.log
+.git
+**/bin
+**/obj
+**/*.user
+tests
+tools

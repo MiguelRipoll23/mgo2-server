@@ -1,0 +1,30 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/AccountLobbyServer/">
+    <Project Path="src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj" />
+  </Folder>
+  <Folder Name="/src/Dns/">
+    <Project Path="src/Dns/Mgo2Server.Dns.csproj" />
+  </Folder>
+  <Folder Name="/src/GameLobbyServer/">
+    <Project Path="src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj" />
+  </Folder>
+  <Folder Name="/src/GameplayServer/">
+    <Project Path="src/GameplayServer/Mgo2Server.GameplayServer.csproj" />
+  </Folder>
+  <Folder Name="/src/GateLobbyServer/">
+    <Project Path="src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj" />
+  </Folder>
+  <Folder Name="/src/Http/">
+    <Project Path="src/Http/Mgo2Server.Http.csproj" />
+  </Folder>
+  <Folder Name="/src/Infrastructure/">
+    <Project Path="src/Infrastructure/Mgo2Server.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/Mgo2Server.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Mgo2Server.Tests/Mgo2Server.Tests.csproj" />
+  </Folder>
+</Solution>

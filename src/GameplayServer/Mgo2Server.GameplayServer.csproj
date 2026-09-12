@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Mgo2Server.GameplayServer</RootNamespace>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Mgo2Server.GameplayServer</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shared\Mgo2Server.Shared.csproj" />
+    <ProjectReference Include="..\Infrastructure\Mgo2Server.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
