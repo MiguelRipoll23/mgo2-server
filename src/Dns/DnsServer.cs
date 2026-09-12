@@ -52,35 +52,46 @@ public sealed class DnsServer(DnsServerOptions options, ILogger<DnsServer> logge
         UdpReceiveResult received,
         CancellationToken cancellationToken)
     {
-        var query = DnsMessageCodec.ParseQuery(received.Buffer);
-        if (query is null)
+        try
         {
-            return;
-        }
+            var query = DnsMessageCodec.ParseQuery(received.Buffer);
+            if (query is null)
+            {
+                return;
+            }
 
-        if (IsLocalDomain(query.Domain) &&
-            query.QueryType is DnsMessageCodec.AddressRecordType or DnsMessageCodec.AnyRecordType)
-        {
+            if (IsLocalDomain(query.Domain) &&
+                query.QueryType is DnsMessageCodec.AddressRecordType or DnsMessageCodec.AnyRecordType)
+            {
+                logger.LogInformation(
+                    "Overriding {Domain} locally to {Address}",
+                    query.Domain,
+                    options.ResolvedIpAddress);
+
+                var response = DnsMessageCodec.BuildAddressResponse(received.Buffer, options.ResolvedIpAddress);
+                if (response.Length > 0)
+                {
+                    await socket.SendAsync(response, received.RemoteEndPoint, cancellationToken);
+                }
+
+                return;
+            }
+
             logger.LogInformation(
-                "Overriding {Domain} locally to {Address}",
+                "Resolving {Domain} via the alternative name server {Address}:{Port}",
                 query.Domain,
-                options.ResolvedIpAddress);
+                options.AlternativeNameServer,
+                options.AlternativeNameServerPort);
 
-            var response = DnsMessageCodec.BuildAddressResponse(received.Buffer, options.ResolvedIpAddress);
-            await socket.SendAsync(response, received.RemoteEndPoint, cancellationToken);
-            return;
+            var forwarded = await ForwardAsync(received.Buffer, cancellationToken);
+            if (forwarded is not null)
+            {
+                await socket.SendAsync(forwarded, received.RemoteEndPoint, cancellationToken);
+            }
         }
-
-        logger.LogInformation(
-            "Resolving {Domain} via the alternative name server {Address}:{Port}",
-            query.Domain,
-            options.AlternativeNameServer,
-            options.AlternativeNameServerPort);
-
-        var forwarded = await ForwardAsync(received.Buffer, cancellationToken);
-        if (forwarded is not null)
+        catch (Exception exception)
         {
-            await socket.SendAsync(forwarded, received.RemoteEndPoint, cancellationToken);
+            logger.LogError(exception, "Error handling DNS query");
         }
     }
 

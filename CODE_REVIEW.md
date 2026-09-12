@@ -30,56 +30,16 @@ from reading code, not from a failing build or test.
   (`LzssMaximumOutput`).
 - The concurrency design — one receive loop per process, writes serialized by
   `TcpSession.WriteAsync`, sequence numbers advanced through `SessionHelper` — is sound in
-  principle (see finding 10 for the one gap).
+  principle (see finding 7 for the one gap).
 
 ---
 
 ## Critical — unauthenticated remote crash
 
-These four make a container exit rather than log an error. They are reachable by any host
+These two make a container exit rather than log an error. They are reachable by any host
 that can send a UDP packet to the published ports.
 
-### 1. DNS: compression-pointer recursion has no cycle guard
-
-`src/Dns/DnsMessageCodec.cs` — `ParseDomainName`
-
-A compression pointer is followed by calling `ParseDomainName` recursively with no visited
-set and no depth limit. A query whose name is `c0 0c` (a pointer back to offset 12) recurses
-forever. `StackOverflowException` cannot be caught, so `mgo2-dns` dies with no log line and
-no chance for a graceful restart.
-
-**Fix:** reject a pointer that has already been visited, and cap the label/pointer count (a
-DNS name is at most 255 bytes / 127 labels).
-
-### 2. DNS: label length and pointer bytes are not bounds-checked
-
-`src/Dns/DnsMessageCodec.cs` — `ParseDomainName`
-
-`Encoding.UTF8.GetString(data, offset, length)` is called with a label length taken from the
-datagram (up to 63) that can run past the end of `data`, which throws
-`ArgumentOutOfRangeException`. The same happens for `data[offset + 1]` when a `0xc0` byte is
-the last byte of the datagram. `DnsServer.HandleQueryAsync` has no `try`/`catch`, and
-`src/Dns/Program.cs` only catches `OperationCanceledException`, so any of these terminates
-the process.
-
-**Fix:** check `offset + length <= data.Length` before decoding, check `offset + 1 <
-data.Length` before reading a pointer, and wrap per-query handling in a `try`/`catch`.
-
-### 3. DNS: the response builder copies past the end of a truncated query
-
-`src/Dns/DnsMessageCodec.cs` — `BuildAddressResponse`
-
-`ParseQuery` only guarantees that the QTYPE field is present (`nextOffset + 1 <
-data.Length`), but `BuildAddressResponse` assumes QCLASS follows it and computes
-`questionLength = nameEnd + 4 - 12`. For a query that stops after QTYPE, `questionLength`
-exceeds the datagram and `Array.Copy` throws `ArgumentException` — process-fatal through the
-same unguarded path as finding 2. A query for any configured local domain (`mgo2pc.com`, …)
-with the QCLASS field omitted triggers it.
-
-**Fix:** require a complete question (name + QTYPE + QCLASS) in `ParseQuery`, and validate the
-recomputed `questionLength` against the datagram length in `BuildAddressResponse`.
-
-### 4. Gameplay server: a two-byte datagram kills the UDP host
+### 1. Gameplay server: a two-byte datagram kills the UDP host
 
 `src/Shared/Utils/FrameCryptoUtility.cs` — `ScramblePositions`, `UnscrambleHeaderOnly`
 
@@ -93,7 +53,7 @@ outside the buffer. `HandleDatagramAsync` is awaited directly from `ReceiveLoopA
 `VerifyTailDigest` already assumes) before unscrambling, and wrap per-datagram handling in a
 `try`/`catch`.
 
-### 5. Gameplay server: a truncated handshake crashes the parser
+### 2. Gameplay server: a truncated handshake crashes the parser
 
 `src/Shared/Utils/FrameBuilderUtility.cs` — `ParseHandshakeBody`
 
@@ -102,7 +62,7 @@ The guard is `body.Length < 0x10`, but the pairing loop then reads up to
 `pairCount = 2` throws from `body[offset]` or from
 `BinaryUtilities.ReadUInt16LittleEndian`. The pre-handshake digest key is a compile-time
 constant, so a forged pre-keyed frame reaches this parser from an unauthenticated sender and
-kills the host through the same unguarded path as finding 4.
+kills the host through the same unguarded path as finding 1.
 
 **Fix:** guard with `body.Length < HandshakeBodySize` (0x1c), or check `offset + 6 <=
 body.Length` per pair, and add the per-datagram `try`/`catch`.
@@ -111,7 +71,7 @@ body.Length` per pair, and add the per-datagram `try`/`catch`.
 
 ## High — authorization gaps
 
-### 6. Clan write commands trust the clan identifier from the packet
+### 3. Clan write commands trust the clan identifier from the packet
 
 `src/GameLobbyServer/Commands/Game/Clans/ClanManagementHandlers.cs` and
 `src/GameLobbyServer/Commands/Game/Clans/ClanEmblemHandlers.cs`
@@ -129,7 +89,7 @@ the clans looking for one the caller leads). That is the pattern the others need
 `ClanService.GetMemberAsync(clanIdentifier, session.CharacterIdentifier)` followed by a
 leader check where the operation requires it.
 
-### 7. Room mutations are not host-gated
+### 4. Room mutations are not host-gated
 
 `src/GameLobbyServer/Commands/Game/Rooms/RoomHostHandlers.cs`
 
@@ -149,7 +109,7 @@ Every domain service is registered as a singleton, and connection handlers resol
 container and run concurrently on the thread pool while `PeriodicWorker`s and HTTP requests
 touch the same objects.
 
-### 8. `TcpServerBase.sessions` is an unsynchronized `Dictionary`
+### 5. `TcpServerBase.sessions` is an unsynchronized `Dictionary`
 
 `src/Shared/Tcp/TcpServerBase.cs`
 
@@ -164,7 +124,7 @@ state is simultaneously dead and unsafe.
 **Fix:** delete the dictionary and the property, or make it a `ConcurrentDictionary` if a
 future reader is intended.
 
-### 9. `LobbyTrackerService` is read and written concurrently
+### 6. `LobbyTrackerService` is read and written concurrently
 
 `src/Shared/Domain/Lobbies/LobbyTrackerService.cs`
 
@@ -186,7 +146,7 @@ updating** while the server keeps running.
 republishes every lobby's count on a timer, so syncing on every disconnect is a DB write
 storm under connect/disconnect churn.
 
-### 10. Session sequence numbers are advanced without synchronization
+### 7. Session sequence numbers are advanced without synchronization
 
 `src/Shared/Utils/SessionHelper.cs`, `src/Shared/Tcp/TcpServerBase.cs` — `SendKeepAliveAsync`
 
@@ -200,7 +160,7 @@ number. Use `Interlocked.Increment` and take the value inside the write lock.
 
 ## Medium — data integrity and correctness
 
-### 11. Check-then-insert races on uniqueness
+### 8. Check-then-insert races on uniqueness
 
 | Path | Check | Insert |
 | ---- | ----- | ------ |
@@ -214,7 +174,7 @@ number. Use `Interlocked.Increment` and take the value inside the write lock.
 for `sessions.user_id`, `clans.name` and `characters.name`; without the index, concurrent
 requests create duplicate rows. The mailbox cap can be exceeded by two simultaneous senders.
 
-### 12. `EncodePacket` has no payload-length guard
+### 9. `EncodePacket` has no payload-length guard
 
 `src/Shared/Tcp/PacketCodecService.cs` — `EncodePacket`
 
@@ -225,7 +185,7 @@ connection instead of failing. No handler reaches that size today (mail bodies a
 and letters are paged one packet each, and the flash-news message is capped at 255 characters
 by `FlashNewsBroadcastRequest`), so this is a defensive gap — add an explicit throw or clamp.
 
-### 13. `AutomatchState.Matched` is unreachable
+### 10. `AutomatchState.Matched` is unreachable
 
 `src/Shared/Domain/Automatch/AutomatchMatchmaking.cs` — `ReleaseMatchAsync`
 
@@ -245,7 +205,7 @@ The state is assigned and the searcher is removed from the dictionary in the sam
 so nothing can ever observe `Matched`. Either keep the entry until the client has been told
 about the match, or drop the assignment — as written it reads like a lost step.
 
-### 14. The Gameplay server account is publicly loginable
+### 11. The Gameplay server account is publicly loginable
 
 `src/GameplayServer/Identity/GameplayServerAccountService.cs`
 
@@ -312,28 +272,24 @@ belongs in a comment so it is not "fixed" into an incompatibility later.
 entity and table) and `DnsMessageCodecTests`. That leaves the highest-risk code untested:
 
 - `LzssUtility.Decompress` — bit-level, ring buffer, bounded output.
-- `FrameCryptoUtility` — scramble positions, XOR chain, tail digest (findings 4 and 5 are
+- `FrameCryptoUtility` — scramble positions, XOR chain, tail digest (findings 1 and 2 are
   directly in this area).
 - `GameplayOptionsCodec` and `HostSettingsBlobCodec` — fixed-offset codecs whose two
   directions must be changed together.
 - `PacketCodecService` — encode/decode round-trip and malformed input.
 
-The DNS tests did not catch the three crash paths in the codec, which suggests they only
-cover well-formed queries; adding a fuzz-style case per parser is cheap and would cover all
-five crashes.
+The DNS tests should be verified to cover malformed queries (compression pointer cycles,
+truncated labels, missing QCLASS) to ensure the crash paths are guarded.
 
 ---
 
 ## Suggested order of work
 
-1. **DNS hardening (findings 1–3).** Bounds-check names, guard pointer recursion, wrap
-   per-query handling in a `try`/`catch`. One file, low risk, removes three remote crash
-   vectors.
-2. **UDP datagram hardening (findings 4–5).** Minimum-length check before unscrambling, a
+1. **UDP datagram hardening (findings 1–2).** Minimum-length check before unscrambling, a
    `HandshakeBodySize` bound in `ParseHandshakeBody`, and a `try`/`catch` per datagram so one
    bad packet can never end the host.
-3. **Authorization (findings 6–7).** Add the membership/leadership checks the clan handlers
+2. **Authorization (findings 3–4).** Add the membership/leadership checks the clan handlers
    are missing, and the host checks the room handlers are missing.
-4. **Concurrency (findings 8–10).** Make the two session collections thread-safe, remove the
+3. **Concurrency (findings 5–7).** Make the two session collections thread-safe, remove the
    dead `TcpServerBase.Sessions`, and make sequence-number advances atomic.
-5. **Data integrity (findings 11–14), then the nits.**
+4. **Data integrity (findings 8–11), then the nits.**

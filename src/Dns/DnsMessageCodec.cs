@@ -36,7 +36,13 @@ public static class DnsMessageCodec
         }
 
         var (domain, nextOffset) = ParseDomainName(data, QuestionOffset);
-        if (nextOffset + 1 >= data.Length)
+        if (domain is null)
+        {
+            return null;
+        }
+
+        // QTYPE (2 bytes) + QCLASS (2 bytes) must follow the name.
+        if (nextOffset + 4 > data.Length)
         {
             return null;
         }
@@ -66,6 +72,13 @@ public static class DnsMessageCodec
         offset += 4; // Query type and class.
 
         var questionLength = offset - QuestionOffset;
+
+        // The echoed question must fit inside the original datagram.
+        if (QuestionOffset + questionLength > query.Length)
+        {
+            return Array.Empty<byte>();
+        }
+
         var response = new byte[QuestionOffset + questionLength + 16];
 
         response[0] = query[0];
@@ -102,8 +115,24 @@ public static class DnsMessageCodec
     /// <summary>Reads a domain name, following compression pointers.</summary>
     /// <param name="data">Datagram to read from.</param>
     /// <param name="startOffset">Offset the name starts at.</param>
-    private static (string Domain, int NextOffset) ParseDomainName(byte[] data, int startOffset)
+    /// <param name="visited">Set of offsets already visited (cycle guard).</param>
+    /// <param name="depth">Current pointer recursion depth.</param>
+    /// <returns>The parsed domain, or <c>null</c> when the datagram is malformed.</returns>
+    private static (string? Domain, int NextOffset) ParseDomainName(
+        byte[] data,
+        int startOffset,
+        HashSet<int>? visited = null,
+        int depth = 0)
     {
+        // A DNS name is at most 255 bytes / 127 labels, and compression
+        // pointers can chain at most 128 times before hitting the limit.
+        const int MaxDepth = 128;
+
+        if (depth >= MaxDepth)
+        {
+            return (null, data.Length);
+        }
+
         var labels = new List<string>();
         var offset = startOffset;
 
@@ -120,9 +149,24 @@ public static class DnsMessageCodec
             // A compression pointer sets the two top bits.
             if ((length & 0xc0) == 0xc0)
             {
+                // Need at least one more byte for the pointer target.
+                if (offset + 1 >= data.Length)
+                {
+                    return (null, data.Length);
+                }
+
                 var pointer = ((length & 0x3f) << 8) | data[offset + 1];
-                var (domain, _) = ParseDomainName(data, pointer);
-                if (domain.Length > 0)
+
+                // Cycle guard: reject if we have already followed a pointer
+                // to this offset.
+                visited ??= [];
+                if (!visited.Add(pointer))
+                {
+                    return (null, data.Length);
+                }
+
+                var (domain, _) = ParseDomainName(data, pointer, visited, depth + 1);
+                if (domain is not null && domain.Length > 0)
                 {
                     labels.Add(domain);
                 }
@@ -132,6 +176,13 @@ public static class DnsMessageCodec
             }
 
             offset++;
+
+            // Bounds-check: the label must fit inside the datagram.
+            if (offset + length > data.Length)
+            {
+                return (null, data.Length);
+            }
+
             labels.Add(Encoding.UTF8.GetString(data, offset, length));
             offset += length;
         }
