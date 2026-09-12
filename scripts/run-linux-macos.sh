@@ -8,13 +8,11 @@
 # the name server: the same servers compose.yaml starts, minus PostgreSQL.
 #
 # PostgreSQL is not started by this script. The servers connect to the remote
-# database of $default_database_connection_string, defined below. A connection
-# string in the environment, or a real one in .env, replaces the default; the
-# placeholder of .env.example, which names the container of compose, is ignored,
-# so a .env copied for compose still brings the local run up against the remote
-# database. Either the keyword form Npgsql reads or the postgresql:// URL form
-# Neon and other providers hand out is accepted; the URL is translated before it
-# reaches the servers.
+# database of DATABASE_CONNECTION_STRING, which must be set in .env or in the
+# environment. The compose placeholder (Host=postgres) is ignored. Either the
+# keyword form Npgsql reads or the postgresql:// URL form Neon and other
+# providers hand out is accepted; the URL is translated before it reaches the
+# servers.
 #
 # The schema of an empty database is created by the servers themselves on their
 # first start, so nothing has to be applied by hand.
@@ -40,10 +38,8 @@ project_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dotnet_channel="10.0"
 configuration="${MGO2_CONFIGURATION:-Debug}"
 
-# Database this script runs against. It is the remote server, never a local one,
-# so a local run and a compose deployment never fight over a database. A real
-# connection string in the environment or in .env still wins over it.
-default_database_connection_string='postgresql://neondb_owner:npg_o7dsfXpKQjU4@ep-damp-voice-aynxkoq0-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+# Database connection string. Required; set DATABASE_CONNECTION_STRING in the
+# environment or in .env. The compose placeholder (Host=postgres) is ignored.
 
 # Settings this script started, so a failure anywhere still stops them.
 server_pids=()
@@ -164,14 +160,14 @@ convert_to_npgsql_connection_string() {
 }
 
 # Reports the connection string of the remote database: the one in the
-# environment, the one in .env when it is not the placeholder of compose, or the
-# default of this script, in that order.
+# environment or the one in .env, ignoring the compose placeholder.
 resolve_database_connection_string() {
     local connection_string="${DATABASE_CONNECTION_STRING:-}"
 
     if [ -z "$connection_string" ] ||
         [[ "$connection_string" =~ (^|;)[[:space:]]*Host=postgres[[:space:]]*(;|$) ]]; then
-        connection_string="$default_database_connection_string"
+        echo 'error: DATABASE_CONNECTION_STRING is not set or is the compose placeholder. Set it in .env or in the environment' >&2
+        exit 1
     fi
 
     connection_string="$(convert_to_npgsql_connection_string "$connection_string")"
