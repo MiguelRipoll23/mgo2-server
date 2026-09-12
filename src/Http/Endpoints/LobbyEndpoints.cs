@@ -17,7 +17,7 @@ internal static class LobbyEndpoints
             .RequireAuthorization();
 
         lobbies.MapGet("/", ListLobbiesAsync)
-            .WithSummary("List all lobbies")
+            .WithSummary("List lobbies")
             .WithDescription("Returns a list of all registered lobbies ordered by name");
 
         lobbies.MapGet("/{id:int}", GetLobbyAsync)
@@ -25,15 +25,15 @@ internal static class LobbyEndpoints
             .WithDescription("Returns a single lobby by its numeric identifier");
 
         lobbies.MapPost("/", CreateLobbyAsync)
-            .WithSummary("Create a lobby")
+            .WithSummary("Create lobby")
             .WithDescription("Creates a new lobby and returns the created resource");
 
         lobbies.MapPatch("/{id:int}", PatchLobbyAsync)
-            .WithSummary("Update a lobby")
+            .WithSummary("Update lobby")
             .WithDescription("Partially updates an existing lobby by its numeric identifier");
 
         lobbies.MapDelete("/{id:int}", DeleteLobbyAsync)
-            .WithSummary("Delete a lobby")
+            .WithSummary("Delete lobby")
             .WithDescription("Permanently removes a lobby by its numeric identifier");
     }
 
