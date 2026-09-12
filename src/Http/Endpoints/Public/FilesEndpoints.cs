@@ -17,13 +17,14 @@ internal static class FilesEndpoints
     }
 
     private static Task<IResult> GetFileAsync(
-        FileService fileService,
+        FilesService filesService,
         HttpContext context,
         string path,
         CancellationToken cancellationToken) =>
-        fileService.GetFileAsync(
+        filesService.GetFileAsync(
             path,
             HttpMethods.IsHead(context.Request.Method),
             context.Request.Headers.Range.Count > 0 ? context.Request.Headers.Range.ToString() : null,
+            context.Request,
             cancellationToken);
 }

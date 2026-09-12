@@ -43,7 +43,7 @@ builder.Services.AddServerServices(builder.Configuration);
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<PolicyService>();
 builder.Services.AddSingleton<VersionService>();
-builder.Services.AddSingleton<FileService>();
+builder.Services.AddSingleton<FilesService>();
 builder.Services.AddSingleton<FlashNewsService>();
 
 // The API registers a single scheme, and a single registered scheme is also the

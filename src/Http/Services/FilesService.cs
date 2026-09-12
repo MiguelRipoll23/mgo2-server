@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
+using System.IO;
 using Mgo2Server.Http.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -15,10 +16,10 @@ namespace Mgo2Server.Http.Services;
 /// <param name="httpClientFactory">Factory the upstream requests are made with.</param>
 /// <param name="options">Options of the HTTP API.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class FileService(
+public sealed class FilesService(
     IHttpClientFactory httpClientFactory,
     IOptions<HttpApiOptions> options,
-    ILogger<FileService> logger)
+    ILogger<FilesService> logger)
 {
     private readonly HttpApiOptions options = options.Value;
 
@@ -31,6 +32,7 @@ public sealed class FileService(
         string filePath,
         bool isHeadRequest,
         string? rangeHeader = null,
+        HttpRequest request = null!,
         CancellationToken cancellationToken = default)
     {
         if (EscapesFilesDirectory(filePath))
@@ -39,7 +41,7 @@ public sealed class FileService(
         }
 
         var range = ParseRange(rangeHeader);
-        var upstream = await TryFetchUpstreamAsync(filePath, isHeadRequest, range, cancellationToken);
+        var upstream = await TryFetchUpstreamAsync(filePath, isHeadRequest, range, request, cancellationToken);
 
         if (upstream is not null)
         {
@@ -88,21 +90,27 @@ public sealed class FileService(
         string filePath,
         bool isHeadRequest,
         RangeRequest? range,
+        HttpRequest request,
         CancellationToken cancellationToken)
     {
         try
         {
             var client = CreateUpstreamClient();
-            using var request = new HttpRequestMessage(
+            using var upstreamRequest = new HttpRequestMessage(
                 isHeadRequest ? HttpMethod.Head : HttpMethod.Get,
                 $"/files/{filePath}");
 
             if (range is not null && !isHeadRequest)
             {
-                request.Headers.Range = range.ToHeaderValue();
+                upstreamRequest.Headers.Range = range.ToHeaderValue();
             }
 
-            using var response = await client.SendAsync(request, cancellationToken);
+            foreach (var header in request.Headers)
+            {
+                upstreamRequest.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }
+
+            using var response = await client.SendAsync(upstreamRequest, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogInformation(
@@ -328,13 +336,9 @@ public sealed class FileService(
 
     private HttpClient CreateUpstreamClient()
     {
-        // The user agent is the one every upstream launcher request carries, so
-        // the launcher tells the files service from a generic crawler the same
-        // way it tells the policy service.
-        var client = httpClientFactory.CreateClient(nameof(FileService));
+        var client = httpClientFactory.CreateClient(nameof(FilesService));
         client.BaseAddress = new Uri(options.LauncherServer);
         client.Timeout = TimeSpan.FromMilliseconds(options.UpstreamFetchTimeoutMilliseconds);
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(PolicyService.UpstreamUserAgent);
         return client;
     }
 
