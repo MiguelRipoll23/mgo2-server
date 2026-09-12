@@ -1,9 +1,9 @@
 using Mgo2Server.Http.Contracts;
 using Mgo2Server.Shared.Domain.Authentication;
 
-namespace Mgo2Server.Http.Endpoints.Authenticated;
+namespace Mgo2Server.Http.Endpoints.Public;
 
-/// <summary>The account endpoints of the authenticated API surface.</summary>
+/// <summary>The account endpoints.</summary>
 internal static class AccountEndpoints
 {
     /// <summary>Maps the account endpoints.</summary>
@@ -11,8 +11,7 @@ internal static class AccountEndpoints
     public static void MapAccountEndpoints(this RouteGroupBuilder group)
     {
         var accounts = group.MapGroup("/account")
-            .WithTags("Account")
-            .RequireAuthorization();
+            .WithTags("Account");
 
         accounts.MapPost("/register", RegisterAsync)
             .DisableAntiforgery()

@@ -10,6 +10,7 @@ internal static class PublicEndpoints
         var group = app.MapGroup("/");
 
         group.MapLoginEndpoints();
+        group.MapAccountEndpoints();
         group.MapPolicyEndpoints();
         group.MapCheckVerEndpoints();
         group.MapDataListEdnpoints();
