@@ -22,8 +22,9 @@
 # binaries themselves are built by scripts/build-linux-macos.sh, which this
 # script refuses to start without.
 #
-# The servers run in the foreground and Ctrl+C stops all of them. Their output
-# goes to .run-logs/<server>.log.
+# The servers run in the foreground and Ctrl+C stops all of them. In Debug
+# builds their output goes to .logs/<server>.log; Release builds write to
+# the console only.
 #
 # Every setting is read from .env, which is created from .env.example on
 # the first run and never overwritten. The environment wins over .env.
@@ -232,8 +233,9 @@ initialize_dotnet() {
     echo "Installed $(dotnet --version)"
 }
 
-# Starts one built server, with its own settings and log files. The settings are
-# name=value pairs applied to this one process only.
+# Starts one built server. The settings are name=value pairs applied to this
+# one process only. In Debug builds stdout and stderr are merged into a single
+# log file under .logs/; Release builds write to the console.
 start_server() {
     local name="$1" project="$2" label="$3"
     shift 3
@@ -244,15 +246,21 @@ start_server() {
         exit 1
     fi
 
+    local log_file="/dev/null"
+    if [ -n "$log_directory" ]; then
+        log_file="${log_directory}/${name}.log"
+    fi
+
     (
         while [ "$#" -gt 0 ]; do
             export "$1"
             shift
         done
         # The working directory is the project root because the HTTP API reads
-        # its policy document from ./static.
+        # its policy document from ./static. In Debug builds stdout and stderr
+        # are merged into a single log file; Release builds write to the console.
         exec dotnet "$dll"
-    ) >"${log_directory}/${name}.log" 2>"${log_directory}/${name}.error.log" &
+    ) >"${log_file}" 2>&1 &
 
     server_pids+=("$!")
     server_labels+=("$label")
@@ -290,8 +298,11 @@ load_env_file "${project_directory}/.env"
 DATABASE_CONNECTION_STRING="$(resolve_database_connection_string)"
 export DATABASE_CONNECTION_STRING
 
-log_directory="${project_directory}/.run-logs"
-mkdir -p "$log_directory"
+log_directory=""
+if [ "$configuration" = "Debug" ]; then
+    log_directory="${project_directory}/.logs"
+    mkdir -p "$log_directory"
+fi
 
 initialize_dotnet
 
@@ -302,8 +313,8 @@ launcher_server="${LAUNCHER_SERVER:-http://mgo2pc.com}"
 echo ''
 echo 'Starting every server'
 
-start_server gate GateLobbyServer 'gate (5731/tcp)'
-start_server account AccountLobbyServer 'account (5732/tcp)'
+start_server gate-lobby-5731 GateLobbyServer 'gate (5731/tcp)'
+start_server account-lobby-5732 AccountLobbyServer 'account (5732/tcp)'
 
 # One process per gameplay lobby, with the identity and the attributes the
 # compose file gives each container: name|subtype|port.
@@ -321,7 +332,7 @@ lobbies=(
 
 for lobby in "${lobbies[@]}"; do
     IFS='|' read -r lobby_name lobby_subtype lobby_port <<< "$lobby"
-    start_server "lobby-${lobby_port}" GameLobbyServer "${lobby_name} (${lobby_port}/tcp)" \
+    start_server "game-lobby-${lobby_port}" GameLobbyServer "${lobby_name} (${lobby_port}/tcp)" \
         "LOBBY_NAME=${lobby_name}" \
         "LOBBY_SUBTYPE=${lobby_subtype}" \
         "LOBBY_PORT=${lobby_port}" \
@@ -331,7 +342,7 @@ for lobby in "${lobbies[@]}"; do
         'LOBBY_REPLAYS_ONLY=false'
 done
 
-start_server dedicated-host GameplayServer 'dedicated host (5730/udp)' \
+start_server gameplay-5730 GameplayServer 'dedicated host (5730/udp)' \
     'DEDICATED_HOST_PORT=5730' \
     'DEDICATED_HOST_LOBBY_NAME=Free Battle' \
     'P2P_HOST=127.0.0.1'
@@ -361,12 +372,20 @@ done
 
 echo ''
 if [ "$running" -ne "$expected" ]; then
-    echo "error: $running of $expected servers are running; see $log_directory" >&2
+    hint=""
+    if [ -n "$log_directory" ]; then
+        hint="; see $log_directory"
+    fi
+    echo "error: $running of $expected servers are running${hint}" >&2
 fi
 
 echo "Started $running of $expected servers."
 echo "The gate listens on 5731, the account server on 5732 and the HTTP API on $http_port."
-echo "Logs are in $log_directory; press Ctrl+C to stop every server."
+if [ -n "$log_directory" ]; then
+    echo "Logs are in $log_directory; press Ctrl+C to stop every server."
+else
+    echo "Press Ctrl+C to stop every server."
+fi
 
 # Stays in the foreground until the last server exits or the user interrupts it,
 # which is when the servers are stopped.

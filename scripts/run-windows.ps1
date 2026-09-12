@@ -25,8 +25,9 @@
     looked for: the servers bind their own ports, and every one of them is
     configurable through .env.
 
-    The servers run in the foreground and Ctrl+C stops all of them. Their output
-    goes to .run-logs\<server>.log.
+    The servers run in the foreground and Ctrl+C stops all of them. In Debug
+    builds their output goes to .logs\<server>.log; Release builds write to
+    the console only.
 
     Every other setting is read from .env, which is created from .env.example on
     the first run and never overwritten. The process environment wins over .env.
@@ -237,7 +238,9 @@ function Resolve-DatabaseConnectionString {
     return $connectionString
 }
 
-# Starts one built server, with its own settings and log files.
+# Starts one built server. The settings are name=value pairs applied to this
+# one process only. In Debug builds stdout and stderr are merged into a single
+# log file under .logs/; Release builds write to the console.
 function Start-Server([string]$Name, [string]$Project, [string]$Label, [hashtable]$Settings) {
     $assembly = "Mgo2Server.$Project"
     $dll = Join-Path $projectDirectory "src/$Project/bin/$Configuration/net10.0/$assembly.dll"
@@ -255,12 +258,19 @@ function Start-Server([string]$Name, [string]$Project, [string]$Label, [hashtabl
 
     try {
         # The working directory is the project root because the HTTP API reads
-        # its policy document from ./static.
-        $process = Start-Process -FilePath 'dotnet' -NoNewWindow -PassThru `
-            -ArgumentList $dll `
-            -WorkingDirectory $projectDirectory `
-            -RedirectStandardOutput (Join-Path $logDirectory "$Name.log") `
-            -RedirectStandardError (Join-Path $logDirectory "$Name.error.log")
+        # its policy document from ./static. In Debug builds stdout and stderr
+        # are merged into a single log file; Release builds write to the console.
+        if ($logDirectory) {
+            $logPath = Join-Path $logDirectory "$Name.log"
+            $process = Start-Process -FilePath 'cmd' -NoNewWindow -PassThru `
+                -ArgumentList "/c", "dotnet `"$dll`" > `"$logPath`" 2>&1" `
+                -WorkingDirectory $projectDirectory
+        }
+        else {
+            $process = Start-Process -FilePath 'dotnet' -NoNewWindow -PassThru `
+                -ArgumentList $dll `
+                -WorkingDirectory $projectDirectory
+        }
     }
     finally {
         foreach ($name in $savedSettings.Keys) {
@@ -314,8 +324,11 @@ try {
     Import-EnvFile (Join-Path $projectDirectory '.env')
     $env:DATABASE_CONNECTION_STRING = Resolve-DatabaseConnectionString
 
-    $logDirectory = Join-Path $projectDirectory '.run-logs'
-    New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
+    $logDirectory = if ($Configuration -eq 'Debug') {
+        $directory = Join-Path $projectDirectory '.logs'
+        New-Item -ItemType Directory -Force -Path $directory | Out-Null
+        $directory
+    }
 
     Initialize-DotNet
 
@@ -327,8 +340,8 @@ try {
         Write-Host ''
         Write-Host 'Starting every server'
 
-        Start-Server 'gate' 'GateLobbyServer' 'gate (5731/tcp)' @{}
-        Start-Server 'account' 'AccountLobbyServer' 'account (5732/tcp)' @{}
+        Start-Server 'gate-lobby-5731' 'GateLobbyServer' 'gate (5731/tcp)' @{}
+        Start-Server 'account-lobby-5732' 'AccountLobbyServer' 'account (5732/tcp)' @{}
 
         # One process per gameplay lobby, with the identity and the attributes
         # the compose file gives each container.
@@ -345,7 +358,7 @@ try {
         )
 
         foreach ($lobby in $lobbies) {
-            Start-Server "lobby-$($lobby.Port)" 'GameLobbyServer' "$($lobby.Name) ($($lobby.Port)/tcp)" @{
+            Start-Server "game-lobby-$($lobby.Port)" 'GameLobbyServer' "$($lobby.Name) ($($lobby.Port)/tcp)" @{
                 LOBBY_NAME = $lobby.Name
                 LOBBY_SUBTYPE = $lobby.Subtype
                 LOBBY_PORT = $lobby.Port
@@ -356,7 +369,7 @@ try {
             }
         }
 
-        Start-Server 'dedicated-host' 'GameplayServer' 'dedicated host (5730/udp)' @{
+        Start-Server 'gameplay-5730' 'GameplayServer' 'dedicated host (5730/udp)' @{
             DEDICATED_HOST_PORT = '5730'
             DEDICATED_HOST_LOBBY_NAME = 'Free Battle'
             P2P_HOST = '127.0.0.1'
@@ -388,12 +401,18 @@ try {
 
         Write-Host ''
         if ($running -ne $expected) {
-            Write-Host "error: $running of $expected servers are running; see $logDirectory" -ForegroundColor Red
+            $hint = if ($logDirectory) { "; see $logDirectory" } else { '' }
+            Write-Host "error: $running of $expected servers are running$hint" -ForegroundColor Red
         }
 
         Write-Host "Started $running of $expected servers."
         Write-Host "The gate listens on 5731, the account server on 5732 and the HTTP API on $httpPort."
-        Write-Host "Logs are in $logDirectory; press Ctrl+C to stop every server."
+        if ($logDirectory) {
+            Write-Host "Logs are in $logDirectory; press Ctrl+C to stop every server."
+        }
+        else {
+            Write-Host 'Press Ctrl+C to stop every server.'
+        }
 
         # Stays in the foreground until the last server exits or the user
         # interrupts it, which is when the servers are stopped.

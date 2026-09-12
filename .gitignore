@@ -3,7 +3,7 @@ bin/
 obj/
 
 # Output of scripts/run-linux-macos.sh and scripts/run-windows.ps1.
-.run-logs/
+.logs/
 
 # Patch files mirrored from the upstream launcher at runtime.
 static/files/
