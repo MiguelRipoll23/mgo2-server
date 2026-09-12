@@ -112,7 +112,11 @@ app.MapScalarApiReference("/", reference =>
         .EnableDarkMode();
 });
 
-app.MapPublicEndpoints();
+app.MapLoginEndpoints();
+app.MapPolicyEndpoints();
+app.MapCheckVerEndpoints();
+app.MapDataListEdnpoints();
+app.MapFilesEndpoints();
 
 var authenticated = app.MapGroup("/");
 authenticated.MapAccountEndpoints();

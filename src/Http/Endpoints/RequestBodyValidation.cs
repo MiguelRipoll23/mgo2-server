@@ -10,6 +10,9 @@ namespace Mgo2Server.Http.Endpoints;
 /// </summary>
 internal static partial class RequestBodyValidation
 {
+    /// <summary>Content type used for plain-text responses.</summary>
+    public const string PlainTextContentType = "text/plain;charset=UTF-8";
+
     /// <summary>Name reported for a rejected body.</summary>
     private const string ValidationErrorName = "ValidationError";
 
@@ -131,6 +134,27 @@ internal static partial class RequestBodyValidation
         Require(form.Parameters, "p", issues);
 
         return issues;
+    }
+
+    /// <summary>
+    /// Reads the posted form. A request that carries no form at all is reported
+    /// as an empty form, so the field rules answer it with the same rejection as
+    /// a form that is missing its fields.
+    /// </summary>
+    /// <param name="context">Request being handled.</param>
+    /// <param name="cancellationToken">Token that cancels the read.</param>
+    public static async Task<IFormCollection> ReadFormAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await context.Request.ReadFormAsync(cancellationToken);
+        }
+        catch (InvalidOperationException)
+        {
+            return new FormCollection([]);
+        }
     }
 
     /// <summary>Reports a field the request did not carry.</summary>
