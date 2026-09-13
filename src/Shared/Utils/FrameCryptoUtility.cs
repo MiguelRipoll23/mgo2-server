@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using Mgo2Server.Shared.Constants;
 
@@ -64,8 +65,17 @@ public static class FrameCryptoUtility
     /// </summary>
     /// <param name="raw">Wire datagram, modified in place.</param>
     /// <returns>The frame counter read from the unscrambled header.</returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the datagram is shorter than a valid frame.
+    /// </exception>
     public static ushort UnscrambleHeaderOnly(Span<byte> raw)
     {
+        if (raw.Length < UdpCommandConstants.FrameOverhead)
+        {
+            throw new ArgumentException(
+                "Datagram is shorter than a valid frame.", nameof(raw));
+        }
+
         var (firstPosition, secondPosition, firstSwap, secondSwap) = ScramblePositions(raw.Length);
 
         (raw[1], raw[secondSwap]) = (raw[secondSwap], raw[1]);
@@ -197,6 +207,9 @@ public static class FrameCryptoUtility
     /// <param name="length">Datagram length.</param>
     private static (int FirstPosition, int SecondPosition, int FirstSwap, int SecondSwap) ScramblePositions(int length)
     {
+        Debug.Assert(length >= UdpCommandConstants.FrameOverhead,
+            "ScramblePositions is only valid for datagrams that fit a real frame.");
+
         var generator = (uint)length;
         var first = NextRandom(generator);
         var second = NextRandom(first);

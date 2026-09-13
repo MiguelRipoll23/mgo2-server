@@ -28,7 +28,8 @@ public static class StringUtility
         var bytes = new byte[maximumLength];
         for (var index = 0; index < maximumLength; index++)
         {
-            bytes[index] = index < value.Length ? (byte)value[index] : (byte)0;
+            var character = index < value.Length ? value[index] : '\0';
+            bytes[index] = character <= (char)0xff ? (byte)character : (byte)0;
         }
 
         return bytes;
@@ -43,7 +44,8 @@ public static class StringUtility
     {
         for (var index = 0; index < maximumLength; index++)
         {
-            destination[offset + index] = index < value.Length ? (byte)value[index] : (byte)0;
+            var character = index < value.Length ? value[index] : '\0';
+            destination[offset + index] = character <= (char)0xff ? (byte)character : (byte)0;
         }
     }
 

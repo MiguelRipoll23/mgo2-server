@@ -7,7 +7,7 @@ namespace Mgo2Server.Shared.Utils;
 /// order the client writes them in. Reads past the end of the payload are
 /// clamped so a short packet cannot fault a handler.
 /// </summary>
-public struct PacketReader(byte[] buffer)
+public partial struct PacketReader(byte[] buffer)
 {
     private readonly byte[] buffer = buffer;
     private int position;
@@ -57,7 +57,7 @@ public struct PacketReader(byte[] buffer)
     /// <param name="length">Number of bytes to read.</param>
     public byte[] ReadBytes(int length)
     {
-        var count = Math.Min(length, Remaining);
+        var count = Math.Min(Math.Max(0, length), Remaining);
         var slice = buffer.AsSpan(position, count).ToArray();
         Advance(length);
         return slice;
@@ -67,9 +67,19 @@ public struct PacketReader(byte[] buffer)
     /// <param name="maximumLength">Length of the field.</param>
     public string ReadFixedString(int maximumLength)
     {
-        var count = Math.Min(maximumLength, Remaining);
+        var count = Math.Min(Math.Max(0, maximumLength), Remaining);
         var value = StringUtility.ReadFixedString(buffer, position, count);
         Advance(maximumLength);
+        return value;
+    }
+
+    /// <summary>Reads a signed 16-bit value.</summary>
+    public short ReadInt16()
+    {
+        var value = Remaining >= 2
+            ? unchecked((short)BinaryUtility.ReadUInt16BigEndian(buffer, position))
+            : (short)0;
+        Advance(2);
         return value;
     }
 

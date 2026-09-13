@@ -116,4 +116,10 @@ public sealed partial class GameplayServerService : IAsyncDisposable
             await HandleDatagramAsync(received.Buffer, received.RemoteEndPoint);
         }
     }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
 }

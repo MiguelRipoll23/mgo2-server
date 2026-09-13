@@ -18,6 +18,23 @@ public sealed partial class GameplayServerService
     private async Task HandleDatagramAsync(byte[] wire, IPEndPoint remote)
     {
         var remoteAddress = $"{remote.Address}:{remote.Port}";
+
+        try
+        {
+            await HandleDatagramAsyncCore(wire, remote);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Unhandled error processing datagram from {RemoteAddress}",
+                remoteAddress);
+        }
+    }
+
+    private async Task HandleDatagramAsyncCore(byte[] wire, IPEndPoint remote)
+    {
+        var remoteAddress = $"{remote.Address}:{remote.Port}";
         var work = wire.ToArray();
 
         // The digest key classifies the frame before the chain is removed:

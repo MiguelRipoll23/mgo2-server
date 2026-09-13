@@ -82,7 +82,7 @@ public static class FrameBuilderUtility
     /// <returns>The parsed handshake, or <c>null</c> when the body is not a valid handshake.</returns>
     public static HandshakeBody? ParseHandshakeBody(ReadOnlySpan<byte> body)
     {
-        if (body.Length < 0x10)
+        if (body.Length < HandshakeBodySize)
         {
             return null;
         }

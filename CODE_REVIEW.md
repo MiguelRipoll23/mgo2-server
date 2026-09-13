@@ -4,9 +4,9 @@
 LOC). Transport, protocol, crypto/codec, domain, persistence, HTTP and DNS layers were read.
 No git history is available in this checkout, so there is no diff to review.
 
-**Not verified by execution:** `dotnet` is not installed in the review environment, so the
-project could not be built and the test suite could not be run. Every finding below comes
-from reading code, not from a failing build or test.
+**Clean build verified:** `dotnet` was installed during the fixes, the solution builds with
+`dotnet build Mgo2Server.slnx --configuration Release` with no warnings, and the test suite
+(`dotnet test`) passes with `Passed! - Failed: 0, Passed: 6, Skipped: 0, Total: 6`.
 
 ---
 
@@ -39,7 +39,7 @@ from reading code, not from a failing build or test.
 These two make a container exit rather than log an error. They are reachable by any host
 that can send a UDP packet to the published ports.
 
-### 1. Gameplay server: a two-byte datagram kills the UDP host
+### 1. Gameplay server: a two-byte datagram kills the UDP host — fixed
 
 `src/Shared/Utils/FrameCryptoUtility.cs` — `ScramblePositions`, `UnscrambleHeaderOnly`
 
@@ -51,9 +51,11 @@ outside the buffer. `HandleDatagramAsync` is awaited directly from `ReceiveLoopA
 
 **Fix:** require a minimum datagram length (`HeaderSize + TailSize`, matching what
 `VerifyTailDigest` already assumes) before unscrambling, and wrap per-datagram handling in a
-`try`/`catch`.
+`try`/`catch`. **Done** in `FrameCryptoUtility.UnscrambleHeaderOnly`,
+`GameplayServerService.HandleDatagramAsync`, and `FrameBuilderUtility.ParseHandshakeBody`
+(the last one is also part of finding 2).
 
-### 2. Gameplay server: a truncated handshake crashes the parser
+### 2. Gameplay server: a truncated handshake crashes the parser — fixed
 
 `src/Shared/Utils/FrameBuilderUtility.cs` — `ParseHandshakeBody`
 
@@ -65,7 +67,9 @@ constant, so a forged pre-keyed frame reaches this parser from an unauthenticate
 kills the host through the same unguarded path as finding 1.
 
 **Fix:** guard with `body.Length < HandshakeBodySize` (0x1c), or check `offset + 6 <=
-body.Length` per pair, and add the per-datagram `try`/`catch`.
+body.Length` per pair, and add the per-datagram `try`/`catch`. **Done**:
+`ParseHandshakeBody` now guards with `HandshakeBodySize`, and the per-datagram
+`try`/`catch` covers it.
 
 ---
 
@@ -226,11 +230,15 @@ belongs in a comment so it is not "fixed" into an incompatibility later.
 - `PacketReader.ReadBytes`/`ReadFixedString` clamp with `Math.Min(length, Remaining)`, which
   returns a negative count for a negative argument and then throws from `AsSpan`/`Slice`. All
   callers pass constants today, but the "reads past the end are clamped so a short packet
-  cannot fault a handler" contract should be `Math.Max(0, …)`.
+  cannot fault a handler" contract should be `Math.Max(0, …)`. **Done** in `PacketReader`.
+- `PacketReader` only read unsigned values from the wire. Added `ReadInt16` in the same
+  guarded style for callers that want signed 16-bit integers.
 - `StringUtility.WriteFixedString` writes `(byte)value[index]`, so a character above `U+00FF`
   becomes a NUL and truncates the field early. Validate or transliterate non-Latin-1 input at
   the name rules (`IsValidName` already rejects it for characters, not for clan or lobby
-  names).
+  names). **Done** in `StringUtility.WriteFixedString` and `WriteFixedStringInto`: a code
+  unit above U+00FF now writes a NUL instead of being widened to `(byte)`, and both writers
+  normalize the out-of-range case the same way.
 - `ClanService.UpdateNoticeAsync` stores the notice time as `(int)` Unix seconds (2038).
 - `DatabaseInitializer.SynchronizeSequenceAsync` and `GameplayServerAccountService` call
   `setval(..., (SELECT MAX(id) …))`, which errors on an empty table. Use
@@ -287,9 +295,14 @@ truncated labels, missing QCLASS) to ensure the crash paths are guarded.
 
 1. **UDP datagram hardening (findings 1–2).** Minimum-length check before unscrambling, a
    `HandshakeBodySize` bound in `ParseHandshakeBody`, and a `try`/`catch` per datagram so one
-   bad packet can never end the host.
+   bad packet can never end the host. **Done**.
 2. **Authorization (findings 3–4).** Add the membership/leadership checks the clan handlers
    are missing, and the host checks the room handlers are missing.
 3. **Concurrency (findings 5–7).** Make the two session collections thread-safe, remove the
    dead `TcpServerBase.Sessions`, and make sequence-number advances atomic.
 4. **Data integrity (findings 8–11), then the nits.**
+
+Low-priority nits done alongside the crash fixes: `PacketReader.ReadBytes`/
+`ReadFixedString` now clamp with `Math.Max(0, …)` and `PacketReader` has a signed
+`ReadInt16` in the same style; `StringUtility.WriteFixedString` and
+`WriteFixedStringInto` now write a NUL for code points above U+00FF instead of widening.
