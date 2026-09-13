@@ -103,10 +103,11 @@ public sealed class GetCharacterListHandler(
         // Pad to the fixed trailer offset: the grid is fixed regardless of the
         // character count, and the client copies the trailer from its end.
         writer.WritePadding(ListTrailerOffset - writer.Size);
+        writer.WriteUInt8(0);
         writer.WriteUInt8(EntitlementsIndex1Default);
         writer.WriteUInt8(0);
         writer.WriteUInt8(EntitlementsIndex3Default);
-        writer.WritePadding(TrailerSize - 3);
+        writer.WritePadding(TrailerSize - 4);
 
         var payload = writer.Build();
         if (payload.Length != ListPayloadSize)
