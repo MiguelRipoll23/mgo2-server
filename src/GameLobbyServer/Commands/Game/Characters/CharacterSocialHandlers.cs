@@ -97,6 +97,33 @@ public sealed class GetFriendsBlockedListHandler(
             ? await characterService.GetFriendsAndBlockedWithNamesAsync(characterIdentifier, cancellationToken)
             : [];
 
+        // Snapshot the online set once instead of rescanning every entry, and
+        // resolve each lobby one time rather than once per online friend.
+        var onlineByCharacter = new Dictionary<int, TcpSession>();
+        foreach (var candidate in activeGameSessions.List())
+        {
+            if (candidate.CharacterIdentifier is { } candidateCharacter)
+            {
+                onlineByCharacter[candidateCharacter] = candidate;
+            }
+        }
+
+        var lobbies = new Dictionary<int, LobbyResponse>();
+        foreach (var lobbyIdentifier in onlineByCharacter.Values
+            .Where(candidate => candidate.LobbyIdentifier is not null)
+            .Select(candidate => candidate.LobbyIdentifier!.Value)
+            .Distinct())
+        {
+            try
+            {
+                lobbies[lobbyIdentifier] = await lobbyService.FindByIdAsync(lobbyIdentifier, cancellationToken);
+            }
+            catch
+            {
+                // A lobby that vanished mid-list has no name to show.
+            }
+        }
+
         await sessionHelper.SendStartEndPacketAsync(session, CommandConstants.GetFriendsBlockedListStart, cancellationToken);
 
         for (var offset = 0; offset < entries.Count; offset += MaximumPerPacket)
@@ -105,7 +132,7 @@ public sealed class GetFriendsBlockedListHandler(
             var writer = new PacketWriter();
             foreach (var entry in page)
             {
-                await WriteEntryAsync(writer, entry, activeGameSessions, lobbyService, cancellationToken);
+                WriteEntry(writer, entry, onlineByCharacter, lobbies);
             }
 
             await sessionHelper.SendPacketAsync(session, CommandConstants.GetFriendsBlockedListPage, writer.Build(), cancellationToken);
@@ -114,36 +141,26 @@ public sealed class GetFriendsBlockedListHandler(
         await sessionHelper.SendStartEndPacketAsync(session, CommandConstants.GetFriendsBlockedListEnd, cancellationToken);
     }
 
-    private static async Task WriteEntryAsync(
+    private static void WriteEntry(
         PacketWriter writer,
         CharacterFriendEntry entry,
-        ActiveGameSessionsService activeGameSessions,
-        LobbyService lobbyService,
-        CancellationToken cancellationToken)
+        IReadOnlyDictionary<int, TcpSession> onlineByCharacter,
+        IReadOnlyDictionary<int, LobbyResponse> lobbies)
     {
         writer.WriteUInt8(entry.Type);
         writer.WriteUInt32((uint)entry.TargetIdentifier);
         writer.WriteFixedString(entry.TargetName, 16);
 
-        var targetSession = activeGameSessions.List()
-            .FirstOrDefault(candidate => candidate.CharacterIdentifier == entry.TargetIdentifier);
-        var isOnline = targetSession is not null;
+        var isOnline = onlineByCharacter.TryGetValue(entry.TargetIdentifier, out var targetSession);
         writer.WriteUInt8(isOnline ? 1 : 0);
         writer.WritePadding(3);
 
-        if (isOnline && targetSession!.LobbyIdentifier is { } lobbyIdentifier)
+        if (isOnline &&
+            targetSession!.LobbyIdentifier is { } lobbyIdentifier &&
+            lobbies.TryGetValue(lobbyIdentifier, out var lobby))
         {
-            try
-            {
-                var lobby = await lobbyService.FindByIdAsync(lobbyIdentifier, cancellationToken);
-                writer.WriteUInt16(lobby.Identifier);
-                writer.WriteFixedString(lobby.Name, 16);
-            }
-            catch
-            {
-                writer.WriteUInt16(0);
-                writer.WriteFixedString(string.Empty, 16);
-            }
+            writer.WriteUInt16(lobby.Identifier);
+            writer.WriteFixedString(lobby.Name, 16);
         }
         else
         {

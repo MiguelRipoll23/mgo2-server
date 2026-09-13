@@ -34,6 +34,15 @@ public sealed class SessionService(IDbContextFactory<Mgo2DatabaseContext> contex
     {
         await using var context = await CreateContextAsync(cancellationToken);
 
+        // Serialize logins of the same account on its user row. A plain
+        // check-then-insert would let two simultaneous logins create a second
+        // row; the unique index on sessions.user_id is the backstop on a fresh
+        // schema, but this lock also holds on a database created before it.
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        await context.Database.ExecuteSqlAsync(
+            $"SELECT id FROM users WHERE id = {userIdentifier} FOR UPDATE",
+            cancellationToken);
+
         var existing = await context.UserSessions
             .FirstOrDefaultAsync(session => session.UserIdentifier == userIdentifier, cancellationToken);
 
@@ -41,12 +50,14 @@ public sealed class SessionService(IDbContextFactory<Mgo2DatabaseContext> contex
         {
             existing.Token = token;
             await context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return existing;
         }
 
         var created = new UserSession { UserIdentifier = userIdentifier, Token = token };
         context.UserSessions.Add(created);
         await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return created;
     }
 }

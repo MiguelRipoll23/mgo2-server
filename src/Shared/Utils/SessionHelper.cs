@@ -21,13 +21,13 @@ public sealed class SessionHelper(PacketCodecService packetCodec)
         byte[]? payload = null,
         CancellationToken cancellationToken = default)
     {
+        var sequenceOut = session.NextSequenceOut();
         var bytes = packetCodec.EncodePacket(
             commandId,
             payload ?? [],
-            session.SequenceOut,
+            sequenceOut,
             session.LogPrefix);
 
-        session.SequenceOut++;
         await session.WriteAsync(bytes, cancellationToken);
     }
 
@@ -86,13 +86,13 @@ public sealed class SessionHelper(PacketCodecService packetCodec)
         uint errorCode,
         CancellationToken cancellationToken = default)
     {
+        var sequenceOut = session.NextSequenceOut();
         var bytes = packetCodec.EncodeErrorPacket(
             commandId,
             errorCode,
-            session.SequenceOut,
+            sequenceOut,
             session.LogPrefix);
 
-        session.SequenceOut++;
         await session.WriteAsync(bytes, cancellationToken);
     }
 }

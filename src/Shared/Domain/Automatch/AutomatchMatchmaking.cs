@@ -189,10 +189,12 @@ public sealed partial class AutomatchService
             {
                 if (searchers.TryGetValue(characterIdentifier, out var searcher))
                 {
+                    // Retire the searcher as matched but keep the entry: a
+                    // cancel that arrives after the match formed must still be
+                    // able to report TooLate. The reap drops it later, or a new
+                    // search replaces it.
                     searcher.State = AutomatchState.Matched;
                 }
-
-                searchers.Remove(characterIdentifier);
             }
 
             pending.Remove(match);

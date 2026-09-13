@@ -9,13 +9,18 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Clans;
 
 /// <summary>Creates a clan with the caller as its first member.</summary>
 /// <param name="clanService">Service that owns the clans.</param>
+/// <param name="characterService">Service that owns the character records.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class CreateClanHandler(
     ClanService clanService,
+    CharacterService characterService,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <summary>Length of the clan name field.</summary>
     private const int ClanNameLength = 15;
+
+    /// <summary>Prefixes reserved for system clans.</summary>
+    private static readonly string[] ReservedPrefixes = [":#", "GM_", "GM-", "GM.", "GM,"];
 
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
@@ -28,6 +33,21 @@ public sealed class CreateClanHandler(
 
         var reader = new PacketReader(packet.Payload);
         var name = reader.ReadFixedString(ClanNameLength);
+
+        if (!StringUtility.IsValidName(name) ||
+            ReservedPrefixes.Any(prefix => name.StartsWith(prefix, StringComparison.Ordinal)))
+        {
+            await sessionHelper.SendErrorAsync(session, CommandConstants.CreateClanResult, ErrorCodeConstants.ErrorClanNameTaken, cancellationToken);
+            return;
+        }
+
+        // A character can only belong to one clan, and the membership row is the
+        // only place that fact is recorded.
+        if (await characterService.GetClanInformationAsync(characterIdentifier, cancellationToken) is not null)
+        {
+            await sessionHelper.SendErrorAsync(session, CommandConstants.CreateClanResult, ErrorCodeConstants.ResultAlreadyInClan, cancellationToken);
+            return;
+        }
 
         var existing = await clanService.FindByNameAsync(name, cancellationToken);
         if (existing is not null)
@@ -194,12 +214,27 @@ public sealed class TransferClanLeadershipHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (packet.Payload.Length >= 8)
+        if (packet.Payload.Length >= 8 && session.CharacterIdentifier is { } characterIdentifier)
         {
             var reader = new PacketReader(packet.Payload);
             var clanIdentifier = (int)reader.ReadUInt32();
             var newLeaderMemberIdentifier = (int)reader.ReadUInt32();
-            await clanService.SetLeaderAsync(clanIdentifier, newLeaderMemberIdentifier, cancellationToken);
+
+            // Only the current leader may hand the clan over, and only to a
+            // membership row that belongs to that same clan.
+            var clan = await clanService.FindByIdAsync(clanIdentifier, cancellationToken);
+            var callerMember = clan is null
+                ? null
+                : await clanService.GetMemberAsync(clanIdentifier, characterIdentifier, cancellationToken);
+
+            if (clan is not null && callerMember is not null && clan.LeaderIdentifier == callerMember.Identifier)
+            {
+                var members = await clanService.GetMembersAsync(clanIdentifier, cancellationToken);
+                if (members.Any(member => member.Identifier == newLeaderMemberIdentifier))
+                {
+                    await clanService.SetLeaderAsync(clanIdentifier, newLeaderMemberIdentifier, cancellationToken);
+                }
+            }
         }
 
         await sessionHelper.SendPacketAsync(session, CommandConstants.TransferClanLeadershipResult, null, cancellationToken);
@@ -216,12 +251,32 @@ public sealed class SetEmblemEditorHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (packet.Payload.Length >= 8)
+        if (packet.Payload.Length >= 8 && session.CharacterIdentifier is { } characterIdentifier)
         {
             var reader = new PacketReader(packet.Payload);
             var clanIdentifier = (int)reader.ReadUInt32();
             var memberIdentifier = (int)reader.ReadUInt32();
-            await clanService.SetEmblemEditorAsync(clanIdentifier, memberIdentifier, cancellationToken);
+
+            var clan = await clanService.FindByIdAsync(clanIdentifier, cancellationToken);
+            var callerMember = clan is null
+                ? null
+                : await clanService.GetMemberAsync(clanIdentifier, characterIdentifier, cancellationToken);
+
+            if (clan is not null && callerMember is not null && clan.LeaderIdentifier == callerMember.Identifier)
+            {
+                if (memberIdentifier == 0)
+                {
+                    await clanService.SetEmblemEditorAsync(clanIdentifier, null, cancellationToken);
+                }
+                else
+                {
+                    var members = await clanService.GetMembersAsync(clanIdentifier, cancellationToken);
+                    if (members.Any(member => member.Identifier == memberIdentifier))
+                    {
+                        await clanService.SetEmblemEditorAsync(clanIdentifier, memberIdentifier, cancellationToken);
+                    }
+                }
+            }
         }
 
         await sessionHelper.SendPacketAsync(session, CommandConstants.SetEmblemEditorResult, null, cancellationToken);
@@ -238,12 +293,17 @@ public sealed class UpdateClanCommentHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (packet.Payload.Length >= 4)
+        if (packet.Payload.Length >= 4 && session.CharacterIdentifier is { } characterIdentifier)
         {
             var reader = new PacketReader(packet.Payload);
             var clanIdentifier = (int)reader.ReadUInt32();
             var comment = reader.ReadFixedString(128);
-            await clanService.UpdateCommentAsync(clanIdentifier, comment, cancellationToken);
+
+            // Only a member may edit the clan card.
+            if (await clanService.GetMemberAsync(clanIdentifier, characterIdentifier, cancellationToken) is not null)
+            {
+                await clanService.UpdateCommentAsync(clanIdentifier, comment, cancellationToken);
+            }
         }
 
         await sessionHelper.SendPacketAsync(session, CommandConstants.UpdateClanCommentResult, null, cancellationToken);
@@ -260,14 +320,19 @@ public sealed class UpdateClanNoticeHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        var characterIdentifier = session.CharacterIdentifier ?? 0;
-
-        if (packet.Payload.Length >= 4)
+        if (packet.Payload.Length >= 4 && session.CharacterIdentifier is { } characterIdentifier)
         {
             var reader = new PacketReader(packet.Payload);
             var clanIdentifier = (int)reader.ReadUInt32();
             var notice = reader.ReadFixedString(512);
-            await clanService.UpdateNoticeAsync(clanIdentifier, notice, characterIdentifier, cancellationToken);
+
+            // Only a member may write the notice, and the author column records
+            // the membership row, not the character.
+            var member = await clanService.GetMemberAsync(clanIdentifier, characterIdentifier, cancellationToken);
+            if (member is not null)
+            {
+                await clanService.UpdateNoticeAsync(clanIdentifier, notice, member.Identifier, cancellationToken);
+            }
         }
 
         await sessionHelper.SendPacketAsync(session, CommandConstants.UpdateClanNoticeResult, null, cancellationToken);

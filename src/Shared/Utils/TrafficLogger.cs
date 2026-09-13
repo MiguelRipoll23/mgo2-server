@@ -1,3 +1,4 @@
+using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
 
@@ -68,7 +69,11 @@ public static class TrafficLogger
     /// <param name="buffer">Packet bytes.</param>
     public static void LogInboundPacket(ILogger logger, TcpSession session, ReadOnlySpan<byte> buffer)
     {
-        var command = (ushort)((buffer[0] << 8) | buffer[1]);
+        // The wire carries the command exclusive-ORed with the upper half of the
+        // packet key; the raw bytes are already shown, the label is the real one.
+        var command = buffer.Length >= 2
+            ? (ushort)(((buffer[0] << 8) | buffer[1]) ^ (ushort)(CryptoKeyConstants.XorKey >> 16))
+            : (ushort)0;
         logger.LogDebug(
             "[{LogPrefix}] IN 0x{Command} ({Length} bytes): {Bytes}",
             session.LogPrefix,

@@ -34,7 +34,7 @@ public sealed class Clan
 
     /// <summary>Unix timestamp the notice was published at.</summary>
     [Column("notice_time")]
-    public int NoticeTime { get; set; }
+    public long NoticeTime { get; set; }
 
     /// <summary>Membership row of the member that wrote the notice.</summary>
     [Column("notice_writer_id")]

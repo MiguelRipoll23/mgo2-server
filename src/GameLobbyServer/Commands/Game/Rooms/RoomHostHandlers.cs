@@ -139,7 +139,12 @@ public sealed class SetGameHandler(
             ? await gameService.FindByIdAsync(gameIdentifier, cancellationToken)
             : null;
 
-        if (game is not null && packet.Payload.Length >= 1)
+        // Staging the rotation entry is a host operation; a non-host member
+        // must not be able to change the settings the room will play.
+        if (game is not null &&
+            session.CharacterIdentifier is { } characterIdentifier &&
+            game.HostIdentifier == characterIdentifier &&
+            packet.Payload.Length >= 1)
         {
             var index = packet.Payload[0];
             var rotation = ParseRotation(game.Games);
@@ -180,7 +185,12 @@ public sealed class UpdatePingsHandler(
             ? await gameService.FindByIdAsync(gameIdentifier, cancellationToken)
             : null;
 
-        if (game is not null && packet.Payload.Length >= 4)
+        // Only the host reports pings, and it reports them for the room it
+        // hosts; otherwise any member could push arbitrary pings for others.
+        if (game is not null &&
+            session.CharacterIdentifier is { } reporterIdentifier &&
+            game.HostIdentifier == reporterIdentifier &&
+            packet.Payload.Length >= 4)
         {
             var reader = new PacketReader(packet.Payload);
             var hostPing = (int)reader.ReadUInt32();
@@ -267,10 +277,17 @@ public sealed class StartRoundHandler(
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         // Snapshot the roster: everyone in the room now played this round,
-        // which the end-of-round attribution checks consult.
-        if (session.GameIdentifier is { } gameIdentifier)
+        // which the end-of-round attribution checks consult. Only the host may
+        // start a round, so only the host may stamp that snapshot.
+        var game = session.GameIdentifier is { } gameIdentifier
+            ? await gameService.FindByIdAsync(gameIdentifier, cancellationToken)
+            : null;
+
+        if (game is not null &&
+            session.CharacterIdentifier is { } characterIdentifier &&
+            game.HostIdentifier == characterIdentifier)
         {
-            await gameService.MarkRoundPlayersAsync(gameIdentifier, cancellationToken);
+            await gameService.MarkRoundPlayersAsync(game.Identifier, cancellationToken);
         }
 
         // The reply is a result word plus a token that must be zero: the

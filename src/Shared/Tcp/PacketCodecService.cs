@@ -87,6 +87,16 @@ public sealed class PacketCodecService(ILogger<PacketCodecService> logger)
             encodedPayload = payload.ToArray();
         }
 
+        // The length field is 16 bits, so an oversized reply would wrap it and
+        // desynchronize the connection instead of failing. Decode enforces the
+        // same bound on the way in.
+        if (encodedPayload.Length > PacketConstants.MaximumPayloadLength)
+        {
+            throw new InvalidOperationException(
+                $"The encoded payload of command 0x{commandId:x4} is {encodedPayload.Length} bytes, " +
+                $"which exceeds the {PacketConstants.MaximumPayloadLength}-byte protocol limit.");
+        }
+
         var packetBuffer = new byte[PacketConstants.HeaderSize + encodedPayload.Length];
         BinaryUtility.WriteUInt16BigEndian(packetBuffer, 0, commandId);
         BinaryUtility.WriteUInt16BigEndian(packetBuffer, PacketConstants.PayloadLengthOffset, (ushort)encodedPayload.Length);

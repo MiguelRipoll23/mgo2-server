@@ -11,6 +11,7 @@ namespace Mgo2Server.Shared.Domain.Lobbies;
 /// <param name="lobbyService">Service that owns the lobby rows.</param>
 public sealed class LobbyTrackerService(LobbyService lobbyService)
 {
+    private readonly Lock gate = new();
     private readonly Dictionary<int, HashSet<TcpSession>> sessionsByLobby = [];
 
     /// <summary>Records that a session joined a lobby.</summary>
@@ -18,39 +19,63 @@ public sealed class LobbyTrackerService(LobbyService lobbyService)
     /// <param name="lobbyIdentifier">Identifier of the lobby.</param>
     public void JoinLobby(TcpSession session, int lobbyIdentifier)
     {
-        LeaveLobby(session);
-
-        if (!sessionsByLobby.TryGetValue(lobbyIdentifier, out var sessions))
+        lock (gate)
         {
-            sessions = [];
-            sessionsByLobby[lobbyIdentifier] = sessions;
-        }
+            LeaveLobbyCore(session);
 
-        sessions.Add(session);
+            if (!sessionsByLobby.TryGetValue(lobbyIdentifier, out var sessions))
+            {
+                sessions = [];
+                sessionsByLobby[lobbyIdentifier] = sessions;
+            }
+
+            sessions.Add(session);
+        }
     }
 
     /// <summary>Records that a session left whatever lobby it was in.</summary>
     /// <param name="session">Session that left.</param>
     public void LeaveLobby(TcpSession session)
     {
-        foreach (var sessions in sessionsByLobby.Values)
+        lock (gate)
         {
-            sessions.Remove(session);
+            LeaveLobbyCore(session);
         }
     }
 
     /// <summary>Returns how many sessions this process holds in a lobby.</summary>
     /// <param name="lobbyIdentifier">Identifier of the lobby.</param>
-    public int GetPlayerCount(int lobbyIdentifier) =>
-        sessionsByLobby.TryGetValue(lobbyIdentifier, out var sessions) ? sessions.Count : 0;
+    public int GetPlayerCount(int lobbyIdentifier)
+    {
+        lock (gate)
+        {
+            return sessionsByLobby.TryGetValue(lobbyIdentifier, out var sessions) ? sessions.Count : 0;
+        }
+    }
 
     /// <summary>Publishes the player count of every lobby this process serves.</summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task SynchronizeAllLobbyCountsAsync(CancellationToken cancellationToken = default)
     {
-        foreach (var (lobbyIdentifier, sessions) in sessionsByLobby)
+        // Snapshot under the lock, then write outside it: a join or leave that
+        // arrives mid-write must not invalidate the enumeration.
+        List<(int LobbyIdentifier, int Count)> counts;
+        lock (gate)
         {
-            await lobbyService.UpdatePlayerCountAsync(lobbyIdentifier, sessions.Count, cancellationToken);
+            counts = [.. sessionsByLobby.Select(pair => (pair.Key, pair.Value.Count))];
+        }
+
+        foreach (var (lobbyIdentifier, count) in counts)
+        {
+            await lobbyService.UpdatePlayerCountAsync(lobbyIdentifier, count, cancellationToken);
+        }
+    }
+
+    private void LeaveLobbyCore(TcpSession session)
+    {
+        foreach (var sessions in sessionsByLobby.Values)
+        {
+            sessions.Remove(session);
         }
     }
 }

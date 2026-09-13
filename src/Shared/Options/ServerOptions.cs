@@ -32,6 +32,19 @@ public sealed class ServerOptions
     /// <summary>Name of the lobby the gameplay server publishes its match in.</summary>
     public string GameplayLobbyName { get; set; } = "Free Battle";
 
+    /// <summary>Display name of the account the gameplay server logs in with.</summary>
+    public string GameplayServerAccountName { get; set; } = "server";
+
+    /// <summary>
+    /// Password of the gameplay server account. When unset, a random one is
+    /// generated per process, so the account cannot be logged into by anyone
+    /// who knows the default.
+    /// </summary>
+    public string? GameplayServerAccountPassword { get; set; }
+
+    /// <summary>Name of the character the gameplay server plays as.</summary>
+    public string GameplayServerCharacterName { get; set; } = "server";
+
     /// <summary>
     /// Address published to clients in place of each lobby's stored address.
     /// Only set when the listening address is a routable address rather than a

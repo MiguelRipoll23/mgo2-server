@@ -156,6 +156,9 @@ public sealed class RoundReportService(IDbContextFactory<Mgo2DatabaseContext> co
                 grouping.Key.CharacterIdentifier,
                 grouping.Key.Name,
                 LastMet = grouping.Max(row => row.report.CreatedAt),
+                // The highest subtype seen in the room. Taking the subtype of
+                // the most recent encounter instead does not translate, and a
+                // mislabel on a room reused across lobbies is cosmetic.
                 LobbySubtype = grouping.Max(row => row.report.LobbySubtype),
             })
             .Take(limit)

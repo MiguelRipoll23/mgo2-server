@@ -22,7 +22,6 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
     /// <summary>Lower 16 bits of the XOR key, used to peek at the payload length field.</summary>
     private const ushort ExclusiveOrPayloadLengthMask = (ushort)(CryptoKeyConstants.XorKey & 0xffff);
 
-    private readonly Dictionary<string, TcpSession> sessions = [];
     private PacketCodecService? packetCodec;
     private CommandRegistry? commandRegistry;
     private ServerOptions? options;
@@ -56,9 +55,6 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
     /// <summary>Logger of this server.</summary>
     protected ILogger Logger =>
         logger ??= serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger($"Mgo2Server.{LogPrefix}");
-
-    /// <summary>Connections currently accepted by this server.</summary>
-    protected IReadOnlyCollection<TcpSession> Sessions => sessions.Values;
 
     /// <summary>Starts accepting connections. Returns when the listener stops.</summary>
     /// <param name="cancellationToken">Token that stops the server.</param>
@@ -121,10 +117,8 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
             RemoteAddress = remoteAddress,
             Connection = client.GetStream(),
             SequenceIn = 0,
-            SequenceOut = 1,
         };
 
-        sessions[remoteAddress] = session;
         TrafficLogger.LogConnection(Logger, LogPrefix, remoteAddress);
         OnSessionCreated(session);
 
@@ -142,7 +136,6 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
         }
         finally
         {
-            sessions.Remove(remoteAddress);
             OnSessionDestroyed(session);
             TrafficLogger.LogDisconnection(Logger, LogPrefix, remoteAddress);
             client.Dispose();
@@ -151,8 +144,11 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
 
     private async Task RunReadLoopAsync(TcpSession session, CancellationToken cancellationToken)
     {
-        var accumulated = new List<byte>();
+        using var accumulated = new MemoryStream();
         var chunk = new byte[4096];
+        // The read cursor is kept apart from the stream's write cursor, which
+        // Write advances: the bytes before it have already been dispatched.
+        var readOffset = 0;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -162,8 +158,9 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
                 break;
             }
 
-            accumulated.AddRange(chunk.AsSpan(0, bytesRead));
-            if (!await ProcessAccumulatedBytesAsync(session, accumulated, cancellationToken))
+            accumulated.Write(chunk, 0, bytesRead);
+            readOffset = await ProcessAccumulatedBytesAsync(session, accumulated, readOffset, cancellationToken);
+            if (readOffset < 0)
             {
                 break;
             }
@@ -176,28 +173,37 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
     /// </summary>
     /// <param name="session">Connection the bytes belong to.</param>
     /// <param name="accumulated">Buffered bytes, consumed in place.</param>
+    /// <param name="readOffset">Offset the unconsumed bytes start at.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    /// <returns><c>false</c> when the connection should be closed.</returns>
-    private async Task<bool> ProcessAccumulatedBytesAsync(
+    /// <returns>The next read offset, or <c>-1</c> when the connection should be closed.</returns>
+    private async Task<int> ProcessAccumulatedBytesAsync(
         TcpSession session,
-        List<byte> accumulated,
+        MemoryStream accumulated,
+        int readOffset,
         CancellationToken cancellationToken)
     {
-        while (accumulated.Count >= PacketConstants.HeaderSize)
+        while (true)
         {
-            // Peek at the payload length before full decryption.
-            var rawPayloadLength = (ushort)((accumulated[PacketConstants.PayloadLengthOffset] << 8) |
-                accumulated[PacketConstants.PayloadLengthOffset + 1]);
-            var payloadLength = (ushort)(rawPayloadLength ^ ExclusiveOrPayloadLengthMask);
-            var totalPacketLength = PacketConstants.HeaderSize + payloadLength;
-
-            if (accumulated.Count < totalPacketLength)
+            var buffer = accumulated.GetBuffer();
+            var available = (int)accumulated.Length - readOffset;
+            if (available < PacketConstants.HeaderSize)
             {
                 break;
             }
 
-            var packetBytes = accumulated.GetRange(0, totalPacketLength).ToArray();
-            accumulated.RemoveRange(0, totalPacketLength);
+            // Peek at the payload length before full decryption.
+            var rawPayloadLength = (ushort)((buffer[readOffset + PacketConstants.PayloadLengthOffset] << 8) |
+                buffer[readOffset + PacketConstants.PayloadLengthOffset + 1]);
+            var payloadLength = (ushort)(rawPayloadLength ^ ExclusiveOrPayloadLengthMask);
+            var totalPacketLength = PacketConstants.HeaderSize + payloadLength;
+
+            if (available < totalPacketLength)
+            {
+                break;
+            }
+
+            var packetBytes = buffer.AsSpan(readOffset, totalPacketLength).ToArray();
+            readOffset += totalPacketLength;
 
             var packet = PacketCodec.DecodePacket(packetBytes);
             if (packet is null)
@@ -217,11 +223,44 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
 
             if (!await DispatchPacketAsync(session, packet, cancellationToken))
             {
-                return false;
+                return -1;
             }
         }
 
-        return true;
+        return Compact(accumulated, readOffset);
+    }
+
+    /// <summary>
+    /// Drops the consumed prefix of the accumulation buffer once it dominates
+    /// it, so a long-lived connection does not keep growing it.
+    /// </summary>
+    /// <param name="accumulated">Buffer to compact in place.</param>
+    /// <param name="readOffset">Offset the unconsumed bytes start at.</param>
+    /// <returns>The new read offset.</returns>
+    private static int Compact(MemoryStream accumulated, int readOffset)
+    {
+        if (readOffset == 0)
+        {
+            return 0;
+        }
+
+        if (readOffset == accumulated.Length)
+        {
+            accumulated.SetLength(0);
+            return 0;
+        }
+
+        if (readOffset < 64 * 1024)
+        {
+            return readOffset;
+        }
+
+        var buffer = accumulated.GetBuffer();
+        var remaining = (int)accumulated.Length - readOffset;
+        Buffer.BlockCopy(buffer, readOffset, buffer, 0, remaining);
+        accumulated.SetLength(remaining);
+        accumulated.Position = remaining;
+        return 0;
     }
 
     /// <summary>
@@ -254,7 +293,9 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
         var handlerType = CommandRegistry.ResolveHandlerType(ServerType, command);
         if (handlerType is null)
         {
-            Logger.LogWarning("[{LogPrefix}] 0x{Command} no-handler {State}", LogPrefix, FormatCommand(command), FormatSessionState(session));
+            // A client may send commands this server does not implement; that
+            // is ordinary traffic rather than a fault, so it stays at debug.
+            Logger.LogDebug("[{LogPrefix}] 0x{Command} no-handler {State}", LogPrefix, FormatCommand(command), FormatSessionState(session));
             return true;
         }
 
@@ -286,13 +327,13 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     protected async Task SendKeepAliveAsync(TcpSession session, CancellationToken cancellationToken = default)
     {
+        var sequenceOut = session.NextSequenceOut();
         var bytes = PacketCodec.EncodePacket(
             CommandConstants.KeepAlive,
             [],
-            session.SequenceOut,
+            sequenceOut,
             session.LogPrefix);
 
-        session.SequenceOut++;
         await session.WriteAsync(bytes, cancellationToken);
     }
 

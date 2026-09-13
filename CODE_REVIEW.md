@@ -6,7 +6,7 @@ No git history is available in this checkout, so there is no diff to review.
 
 **Clean build verified:** `dotnet` was installed during the fixes, the solution builds with
 `dotnet build Mgo2Server.slnx --configuration Release` with no warnings, and the test suite
-(`dotnet test`) passes with `Passed! - Failed: 0, Passed: 6, Skipped: 0, Total: 6`.
+(`dotnet test`) passes with `Passed! - Failed: 0, Passed: 19, Skipped: 0, Total: 19`.
 
 ---
 
@@ -91,7 +91,10 @@ the wire with no membership or leadership check. Any player in a gameplay lobby 
 `DisbandClanHandler` is the only handler in the family that validates the caller (it walks
 the clans looking for one the caller leads). That is the pattern the others need —
 `ClanService.GetMemberAsync(clanIdentifier, session.CharacterIdentifier)` followed by a
-leader check where the operation requires it.
+leader check where the operation requires it. **Done**: all five handlers resolve the
+caller's membership row; leadership transfer and emblem-editor assignment additionally
+require the caller to be the leader (and the target to be a member of that clan), and the
+notice records the caller's membership row rather than its character identifier.
 
 ### 4. Room mutations are not host-gated
 
@@ -101,9 +104,10 @@ leader check where the operation requires it.
 in the room. Any member can change the staged rotation entry, push arbitrary pings for other
 players, and snapshot the roster (`MarkRoundPlayersAsync`) — which is the attribution check
 that `HostWeaponTalliesHandler` and the round-statistics handlers rely on to decide whose
-statistics count. `QuitGameHandler`, `PassRoundHandler`, `HostInGameInfoHandler` and
-`RateHostHandler` all verify the host, so these three look like oversights rather than a
-deliberate design.
+statistics count.`QuitGameHandler`, `PassRoundHandler`,
+`HostInGameInfoHandler` and `RateHostHandler` all verify the host, so these three look like
+oversights rather than a deliberate design. **Done**: all three now require
+`game.HostIdentifier == session.CharacterIdentifier` before they mutate anything.
 
 ---
 
@@ -126,7 +130,7 @@ The `Sessions` property that exposes the dictionary is never read anywhere in th
 state is simultaneously dead and unsafe.
 
 **Fix:** delete the dictionary and the property, or make it a `ConcurrentDictionary` if a
-future reader is intended.
+future reader is intended. **Done**: both were deleted.
 
 ### 6. `LobbyTrackerService` is read and written concurrently
 
@@ -148,7 +152,9 @@ updating** while the server keeps running.
 **Fix:** guard the tracker with a lock (or use `ConcurrentDictionary` plus an
 `ImmutableHashSet`), and debounce the per-disconnect `Task.Run` — the heartbeat already
 republishes every lobby's count on a timer, so syncing on every disconnect is a DB write
-storm under connect/disconnect churn.
+storm under connect/disconnect churn. **Done**: the tracker is guarded by a `Lock` and
+snapshots the counts under it before writing; the per-disconnect republish goes through a
+one-second debounce timer that coalesces a burst into one write.
 
 ### 7. Session sequence numbers are advanced without synchronization
 
@@ -158,7 +164,9 @@ storm under connect/disconnect churn.
 the *writes*, but the sequence number is read and incremented before the lock is taken, so
 the HTTP-triggered `/flash-news/broadcast` (which writes to every active session) can
 interleave with that session's own handler and emit two packets carrying the same sequence
-number. Use `Interlocked.Increment` and take the value inside the write lock.
+number. Use `Interlocked.Increment` and take the value inside the write lock. **Done**:
+`TcpSession.NextSequenceOut` reserves the number with `Interlocked.Increment`, and every
+writer (`SessionHelper`, `SendKeepAliveAsync`) draws it before encoding.
 
 ---
 
@@ -178,6 +186,11 @@ number. Use `Interlocked.Increment` and take the value inside the write lock.
 for `sessions.user_id`, `clans.name` and `characters.name`; without the index, concurrent
 requests create duplicate rows. The mailbox cap can be exceeded by two simultaneous senders.
 
+**Done**: `clans.name` and `characters.name` already carried unique indexes; `sessions.user_id`
+gained one, registration now catches the lost insert race and re-checks before reporting
+`CONFLICT`, session creation serializes on the account row (`FOR UPDATE`), and mail delivery
+serializes on the recipient's character row so the cap holds under concurrent senders.
+
 ### 9. `EncodePacket` has no payload-length guard
 
 `src/Shared/Tcp/PacketCodecService.cs` — `EncodePacket`
@@ -188,6 +201,8 @@ out, so a reply larger than 65535 bytes silently wraps the length field and desy
 connection instead of failing. No handler reaches that size today (mail bodies are 708 bytes
 and letters are paged one packet each, and the flash-news message is capped at 255 characters
 by `FlashNewsBroadcastRequest`), so this is a defensive gap — add an explicit throw or clamp.
+**Done**: `EncodePacket` throws an `InvalidOperationException` once the encoded payload
+exceeds `PacketConstants.MaximumPayloadLength`, the same bound decode enforces.
 
 ### 10. `AutomatchState.Matched` is unreachable
 
@@ -209,6 +224,10 @@ The state is assigned and the searcher is removed from the dictionary in the sam
 so nothing can ever observe `Matched`. Either keep the entry until the client has been told
 about the match, or drop the assignment — as written it reads like a lost step.
 
+**Done**: the searcher is now retired as `Matched` but kept until the reap drops it, so a
+cancel that arrives after the group formed can still report `TooLate`; the formed-match
+notification still comes from the match itself, not from the searcher state.
+
 ### 11. The Gameplay server account is publicly loginable
 
 `src/GameplayServer/Identity/GameplayServerAccountService.cs`
@@ -217,7 +236,10 @@ The service creates `server` / `server` (MD5) in `users`, and the login endpoint
 so anyone who knows the password can log in as that account and select the character whose
 identifier the peer-to-peer host identity is derived from. The password is also written to
 the log in clear text at `LogInformation`. Read the credentials from configuration, and do
-not log the password.
+not log the password. **Done**: the account name, password and character name come from
+`GAMEPLAY_SERVER_ACCOUNT_NAME` / `GAMEPLAY_SERVER_ACCOUNT_PASSWORD` /
+`GAMEPLAY_SERVER_CHARACTER_NAME`; when no password is configured a random one is generated
+per process, the password is no longer logged, and the protocol-forced MD5 is documented.
 
 Separately, password hashing is unsalted MD5 (`CryptographyService.ComputeMd5Hex`). That is
 forced by the client protocol — the client sends a hash it computed itself — but the reason
@@ -272,12 +294,25 @@ belongs in a comment so it is not "fixed" into an incompatibility later.
   `GetLobbyListHandler` catching it (and `GetGameLobbyInfoHandler` not) makes the failure mode
   inconsistent.
 
+**Done (nits):** the notice time is a `long`, `setval` uses `coalesce(MAX(id), 1)`, the
+round-roster insert is parameterized, the friends list snapshots the session set and resolves
+each lobby once, the accumulation buffer is a `MemoryStream` with a read offset, and
+`BuildHeader`/`BuildTail` assert their fixed sizes. The personal-stats padding, `GetCached`
+(now returns an empty list instead of throwing) and the inbound-log command label were fixed
+too. `RoundReportService.InsertAsync` remains one insert per report frame — each frame is one
+handler call, so there is nothing to batch — and the met-players subtype is still
+`Max(LobbySubtype)`, because the correct "subtype of the most recent encounter" projection
+does not translate to SQL (verified against the model).
+
 ---
 
 ## Test coverage
 
-`tests/Mgo2Server.Tests` holds two files: `PersistenceModelTests` (the EF model maps every
-entity and table) and `DnsMessageCodecTests`. That leaves the highest-risk code untested:
+`tests/Mgo2Server.Tests` now holds four files: `PersistenceModelTests` (the EF model maps
+every entity and table), `DnsMessageCodecTests`, `WireFormatTests` (frame cipher round-trip
+and malformed input, handshake parsing, packet-codec round-trip and the length guard) and
+the original suite. The DNS tests additionally cover compression-pointer cycles, labels that
+run past the datagram and a missing QCLASS. That leaves the following untested:
 
 - `LzssUtility.Decompress` — bit-level, ring buffer, bounded output.
 - `FrameCryptoUtility` — scramble positions, XOR chain, tail digest (findings 1 and 2 are

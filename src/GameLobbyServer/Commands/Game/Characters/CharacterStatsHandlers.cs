@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Interfaces;
@@ -188,6 +189,9 @@ public sealed class GetPersonalStatsHandler(
 
         header.WriteUInt8(0);
         header.WriteUInt32(0);
+        Debug.Assert(
+            header.Size <= CommentOffset,
+            "The personal-stats header grew past the comment offset; adjust the hand-computed layout.");
         header.WritePadding(CommentOffset - header.Size);
         header.WriteFixedString(character.Comment, 128);
         header.WriteUInt8(0);
@@ -212,6 +216,9 @@ public sealed class GetPersonalStatsHandler(
         header.WriteUInt32(0);
         header.WriteUInt32(0);
         header.WriteUInt32(0);
+        Debug.Assert(
+            header.Size <= InfoSize,
+            "The personal-stats header grew past its fixed size; adjust the hand-computed layout.");
         header.WritePadding(InfoSize - header.Size);
         return header.Build();
     }
@@ -292,6 +299,9 @@ public sealed class GetPersonalStatsHandler(
             }
         }
 
+        Debug.Assert(
+            tail.Size <= TailSize,
+            "The personal-stats tail grew past its fixed size; adjust the hand-computed layout.");
         tail.WritePadding(TailSize - tail.Size);
         return tail.Build();
     }

@@ -132,9 +132,11 @@ public sealed class DatabaseInitializer(
         string table,
         CancellationToken cancellationToken)
     {
-        // The table name is a constant of this class, never a value from a caller.
+        // The table name is a constant of this class, never a value from a
+        // caller. The coalesce keeps the statement from failing when the table
+        // is still empty (MAX(id) is null there).
         var statement =
-            $"SELECT setval(pg_get_serial_sequence('{table}', 'id'), (SELECT MAX(id) FROM {table}))";
+            $"SELECT setval(pg_get_serial_sequence('{table}', 'id'), (SELECT coalesce(MAX(id), 1) FROM {table}))";
 
         return context.Database.ExecuteSqlRawAsync(statement, cancellationToken);
     }

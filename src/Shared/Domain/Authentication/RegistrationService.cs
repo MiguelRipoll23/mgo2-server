@@ -50,7 +50,26 @@ public sealed class RegistrationService(
         };
 
         context.Users.Add(user);
-        await context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // Lost the check-then-insert race against another registration.
+            context.ChangeTracker.Clear();
+            var takenByRace = await context.Users
+                .AsNoTracking()
+                .AnyAsync(existing => existing.DisplayName == displayName, cancellationToken);
+
+            if (takenByRace)
+            {
+                throw new ServerException("CONFLICT", "Display name is already taken", 409);
+            }
+
+            throw;
+        }
+
         return new RegistrationResponse(user.Identifier, user.DisplayName);
     }
 }

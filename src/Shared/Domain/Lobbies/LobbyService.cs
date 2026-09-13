@@ -68,10 +68,12 @@ public sealed partial class LobbyService(
     /// <param name="rows">Lobbies to cache.</param>
     public void SetCache(IReadOnlyList<LobbyResponse> rows) => cache = [.. rows];
 
-    /// <summary>Returns the cached lobbies.</summary>
-    /// <exception cref="InvalidOperationException">Thrown when the cache was never loaded.</exception>
-    public IReadOnlyList<LobbyResponse> GetCached() =>
-        cache ?? throw new InvalidOperationException("Lobby cache has not been initialized");
+    /// <summary>
+    /// Returns the cached lobbies, or an empty list when the cache has not been
+    /// loaded yet. Returning empty rather than throwing keeps every caller's
+    /// failure mode the same on a startup-order change.
+    /// </summary>
+    public IReadOnlyList<LobbyResponse> GetCached() => cache ?? [];
 
     /// <summary>
     /// Reloads the cache from the database. Rows are ordered by identifier, not

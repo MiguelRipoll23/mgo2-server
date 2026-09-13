@@ -73,9 +73,17 @@ public sealed class MailService(IDbContextFactory<Mgo2DatabaseContext> contextFa
             return new RecipientOutcome(recipientName, RecipientUnknownFailureCode);
         }
 
+        // Serialize deliveries to the same mailbox on its character row, so two
+        // simultaneous senders cannot both see room and overshoot the cap.
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        await context.Database.ExecuteSqlAsync(
+            $"SELECT id FROM characters WHERE id = {targetIdentifier.Value} FOR UPDATE",
+            cancellationToken);
+
         var size = await MailboxSizeAsync(context, targetIdentifier.Value, cancellationToken);
         if (size >= MailboxMaximum)
         {
+            await transaction.RollbackAsync(cancellationToken);
             return new RecipientOutcome(recipientName, RecipientMailboxFullFailureCode);
         }
 
@@ -90,6 +98,7 @@ public sealed class MailService(IDbContextFactory<Mgo2DatabaseContext> contextFa
         });
 
         await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return new RecipientOutcome(recipientName, null);
     }
 

@@ -127,13 +127,17 @@ public sealed class SetClanEmblemHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (packet.Payload.Length >= 8)
+        if (packet.Payload.Length >= 8 && session.CharacterIdentifier is { } characterIdentifier)
         {
             var reader = new PacketReader(packet.Payload);
             var clanIdentifier = (int)reader.ReadUInt32();
             var emblemLength = (int)reader.ReadUInt32();
 
-            if (emblemLength > 0 && reader.Remaining >= emblemLength)
+            // Publishing an emblem is a clan-member operation; without this an
+            // arbitrary player could overwrite any clan's published emblem.
+            if (emblemLength > 0 &&
+                reader.Remaining >= emblemLength &&
+                await clanService.GetMemberAsync(clanIdentifier, characterIdentifier, cancellationToken) is not null)
             {
                 var emblemBytes = reader.ReadBytes(emblemLength);
                 await clanService.SetEmblemAsync(clanIdentifier, emblemBytes, cancellationToken);

@@ -36,6 +36,43 @@ public sealed class DnsMessageCodecTests
     }
 
     [Fact]
+    public void Rejects_a_compression_pointer_cycle()
+    {
+        // The name at offset 12 is a pointer back to offset 12.
+        var query = new byte[14];
+        query[12] = 0xc0;
+        query[13] = 0x0c;
+
+        Assert.Null(DnsMessageCodec.ParseQuery(query));
+    }
+
+    [Fact]
+    public void Rejects_a_label_that_runs_past_the_datagram()
+    {
+        // A five-byte label with only two bytes left in the datagram.
+        var query = new byte[15];
+        query[12] = 0x05;
+        query[13] = (byte)'a';
+        query[14] = (byte)'b';
+
+        Assert.Null(DnsMessageCodec.ParseQuery(query));
+    }
+
+    [Fact]
+    public void Rejects_a_question_without_a_class()
+    {
+        // Name "a", then only the two QTYPE bytes, no QCLASS.
+        var query = new byte[17];
+        query[12] = 0x01;
+        query[13] = (byte)'a';
+        query[14] = 0x00;
+        query[15] = 0x00;
+        query[16] = 0x01;
+
+        Assert.Null(DnsMessageCodec.ParseQuery(query));
+    }
+
+    [Fact]
     public void Answers_a_query_with_one_address_record()
     {
         var query = BuildQuery(0xbeef, "mgo2pc.com", DnsMessageCodec.AddressRecordType);

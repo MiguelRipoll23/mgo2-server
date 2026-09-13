@@ -9,6 +9,7 @@ namespace Mgo2Server.Shared.Types;
 public sealed class TcpSession
 {
     private readonly SemaphoreSlim writeLock = new(1, 1);
+    private int sequenceOut;
 
     /// <summary>Role of the server that accepted the connection.</summary>
     public required ServerType ServerType { get; init; }
@@ -29,10 +30,18 @@ public sealed class TcpSession
     public uint SequenceIn { get; set; }
 
     /// <summary>
-    /// Sequence number of the next outbound packet. The first packet the server
-    /// sends carries sequence one.
+    /// Sequence number of the most recently reserved outbound packet. The first
+    /// packet the server sends carries sequence one.
     /// </summary>
-    public uint SequenceOut { get; set; } = 1;
+    public uint SequenceOut => (uint)Volatile.Read(ref sequenceOut);
+
+    /// <summary>
+    /// Reserves the next outbound sequence number. The increment is atomic, so
+    /// a broadcast written by the HTTP layer and a reply written by this
+    /// session's own handler can never draw the same value.
+    /// </summary>
+    /// <returns>The sequence number to write into the packet.</returns>
+    public uint NextSequenceOut() => (uint)Interlocked.Increment(ref sequenceOut);
 
     /// <summary>Account the client proved ownership of, when it has.</summary>
     public int? UserIdentifier { get; set; }

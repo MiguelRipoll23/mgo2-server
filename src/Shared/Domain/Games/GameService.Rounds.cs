@@ -78,15 +78,18 @@ public sealed partial class GameService
             return;
         }
 
-        // Both values come from the database as integers, so the statement
-        // cannot carry anything but identifiers.
+        // Parameterize every value. The identifiers come from the database
+        // today, but inlining them would turn a future edit into an injection
+        // point. {0} is the room, {1..} are the characters.
+        var parameters = new List<object> { gameIdentifier };
+        parameters.AddRange(roster.Select(characterIdentifier => (object)characterIdentifier));
         var values = string.Join(
             ", ",
-            roster.Select(characterIdentifier => $"({gameIdentifier}, {characterIdentifier})"));
+            roster.Select((_, index) => "({0}, {" + (index + 1) + "})"));
         var statement = "INSERT INTO game_rounds (game_id, character_id) VALUES " + values +
                         " ON CONFLICT DO NOTHING";
 
-        await context.Database.ExecuteSqlRawAsync(statement, cancellationToken);
+        await context.Database.ExecuteSqlRawAsync(statement, parameters, cancellationToken);
     }
 
     /// <summary>Returns whether a character was in the room when a round started.</summary>

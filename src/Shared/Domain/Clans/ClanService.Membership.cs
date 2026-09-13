@@ -159,7 +159,7 @@ public sealed partial class ClanService
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        var secondsSinceEpoch = (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var secondsSinceEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
         await context.Clans
             .Where(clan => clan.Identifier == clanIdentifier)

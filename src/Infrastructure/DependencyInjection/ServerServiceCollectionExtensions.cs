@@ -46,6 +46,12 @@ public static class ServerServiceCollectionExtensions
                 configuration.ReadText("P2P_HOST") ?? options.PublicHostAddress;
             options.GameplayLobbyName = configuration.ReadText("GAMEPLAY_SERVER_LOBBY_NAME")
                 ?? options.GameplayLobbyName;
+            options.GameplayServerAccountName = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_NAME")
+                ?? options.GameplayServerAccountName;
+            options.GameplayServerAccountPassword = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_PASSWORD")
+                ?? options.GameplayServerAccountPassword;
+            options.GameplayServerCharacterName = configuration.ReadText("GAMEPLAY_SERVER_CHARACTER_NAME")
+                ?? options.GameplayServerCharacterName;
         });
 
         services.Configure<LobbyOptions>(options =>

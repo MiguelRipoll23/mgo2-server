@@ -20,5 +20,12 @@ internal static partial class EntityModelConfiguration
                 .HasForeignKey(user => user.MainCharacterIdentifier)
                 .OnDelete(DeleteBehavior.NoAction);
         });
+
+        modelBuilder.Entity<UserSession>(entity =>
+        {
+            // An account has at most one session row, so the upsert that
+            // replaces it cannot race another login into a duplicate.
+            entity.HasIndex(session => session.UserIdentifier).IsUnique();
+        });
     }
 }
