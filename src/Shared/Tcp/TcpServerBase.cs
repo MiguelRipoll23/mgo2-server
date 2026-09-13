@@ -60,7 +60,11 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
     /// <param name="cancellationToken">Token that stops the server.</param>
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        listener = new TcpListener(IPAddress.Parse(Options.ListeningIpAddress), Port);
+        // Binding every interface keeps a client on this machine working: the
+        // name server answers it with the wildcard address, which routes to
+        // loopback, while the announced private address serves every other
+        // client on the network.
+        listener = new TcpListener(IPAddress.Any, Port);
         listener.Start();
         Logger.LogInformation("[{LogPrefix}] Listening on port {Port}", LogPrefix, Port);
 

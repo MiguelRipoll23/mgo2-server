@@ -9,11 +9,18 @@ public sealed class DnsServerOptions
     /// <summary>Port the name server listens on.</summary>
     public int Port { get; set; } = PortConstants.DnsPort;
 
-    /// <summary>Address the name server binds.</summary>
-    public string ListeningIpAddress { get; set; } = "0.0.0.0";
-
-    /// <summary>Address the locally resolved domains are answered with.</summary>
+    /// <summary>
+    /// Address a query from another machine is answered with for a local
+    /// domain: the private address the clients reach this machine on.
+    /// </summary>
     public string ResolvedIpAddress { get; set; } = "0.0.0.0";
+
+    /// <summary>
+    /// Address a query from this machine is answered with for a local domain.
+    /// The default, the wildcard address, is what a client on this machine
+    /// connects to through the loopback interface.
+    /// </summary>
+    public string LocalResolvedIpAddress { get; set; } = "0.0.0.0";
 
     /// <summary>Upstream name server every other query is forwarded to.</summary>
     public string AlternativeNameServer { get; set; } = "8.8.8.8";
@@ -38,8 +45,9 @@ public sealed class DnsServerOptions
             options.Port = port;
         }
 
-        options.ListeningIpAddress = configuration["LISTENING_IP"] ?? options.ListeningIpAddress;
-        options.ResolvedIpAddress = configuration["LISTENING_IP"] ?? options.ResolvedIpAddress;
+        options.ResolvedIpAddress = configuration["PUBLIC_IP"] ?? options.ResolvedIpAddress;
+        options.LocalResolvedIpAddress =
+            configuration["LOCAL_RESOLVED_IP"] ?? options.LocalResolvedIpAddress;
         options.AlternativeNameServer =
             configuration["ALTERNATIVE_DNS_SERVER"] ?? options.AlternativeNameServer;
 

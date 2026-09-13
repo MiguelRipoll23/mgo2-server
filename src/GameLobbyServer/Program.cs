@@ -28,10 +28,10 @@ var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Ga
 lobbyOptions.Validate();
 
 logger.LogInformation(
-    "Starting gameplay lobby {LobbyName} ({Subtype}) on {ListeningIpAddress}",
+    "Starting gameplay lobby {LobbyName} ({Subtype}), announcing {AnnouncedIpAddress}",
     lobbyOptions.Name,
     lobbyOptions.Subtype,
-    options.ListeningIpAddress);
+    options.AnnouncedIpAddress);
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArguments) =>

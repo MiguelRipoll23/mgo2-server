@@ -1,6 +1,8 @@
+using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.Infrastructure.Persistence;
 
@@ -11,9 +13,11 @@ namespace Mgo2Server.Infrastructure.Persistence;
 /// not seeded; a game lobby server publishes its own row when it starts.
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
+/// <param name="options">Options of the server, which carry the announced address.</param>
 /// <param name="logger">Logger of the initializer.</param>
 public sealed class DatabaseInitializer(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
+    IOptions<ServerOptions> options,
     ILogger<DatabaseInitializer> logger)
 {
     /// <summary>
@@ -80,8 +84,9 @@ public sealed class DatabaseInitializer(
     /// <summary>
     /// Seeds the game types and the permanent endpoints in a single transaction,
     /// so that no other server instance ever sees a half-seeded database. The
-    /// statements are idempotent: they repair a row that was removed without
-    /// touching the rows the game lobby servers registered for themselves.
+    /// statements are idempotent: they repair a row that was removed and refresh
+    /// the address the permanent endpoints are announced at, without touching the
+    /// rows the game lobby servers registered for themselves.
     /// </summary>
     /// <param name="context">Context to seed through.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
@@ -104,13 +109,15 @@ public sealed class DatabaseInitializer(
 
         await SynchronizeSequenceAsync(context, "lobby_game_types", cancellationToken);
 
+        var ipAddress = options.Value.AnnouncedIpAddress;
+
         foreach (var (identifier, type, subtype, name, port) in PermanentLobbies)
         {
             await context.Database.ExecuteSqlAsync(
                 $"""
                  INSERT INTO lobbies (id, type_id, subtype_id, name, ip_address, port, players_count)
-                 VALUES ({identifier}, {type}, {subtype}, {name}, {"0.0.0.0"}, {port}, {0})
-                 ON CONFLICT (id) DO NOTHING
+                 VALUES ({identifier}, {type}, {subtype}, {name}, {ipAddress}, {port}, {0})
+                 ON CONFLICT (id) DO UPDATE SET ip_address = EXCLUDED.ip_address
                  """,
                 cancellationToken);
         }

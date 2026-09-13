@@ -39,7 +39,7 @@ public sealed partial class LobbyService
                 Type = LobbyType.Game,
                 SubtypeIdentifier = gameType.Identifier,
                 Name = lobby.Name,
-                IpAddress = options.ListeningIpAddress,
+                IpAddress = options.AnnouncedIpAddress,
                 Port = lobby.Port,
                 CreatedAt = now,
                 UpdatedAt = now,
@@ -51,7 +51,7 @@ public sealed partial class LobbyService
         registered.Type = LobbyType.Game;
         registered.SubtypeIdentifier = gameType.Identifier;
         registered.Name = lobby.Name;
-        registered.IpAddress = options.ListeningIpAddress;
+        registered.IpAddress = options.AnnouncedIpAddress;
         registered.BeginnerOnly = lobby.BeginnerOnly;
         registered.ExpansionOnly = lobby.ExpansionOnly;
         registered.NoHeadshot = lobby.NoHeadshot;

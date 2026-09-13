@@ -7,10 +7,12 @@ namespace Mgo2Server.Shared.Options;
 public sealed class ServerOptions
 {
     /// <summary>
-    /// Address the server binds to and that the name server resolves local
-    /// domains to.
+    /// Address clients are told to connect to: the private address of this
+    /// machine on the network the game clients share. Leaving it unset answers
+    /// every local domain with the wildcard address, which only reaches a
+    /// client running on the same machine.
     /// </summary>
-    public string ListeningIpAddress { get; set; } = "0.0.0.0";
+    public string? PublicIpAddress { get; set; }
 
     /// <summary>
     /// Interval in minutes between two lobby heartbeats, and between two
@@ -23,9 +25,9 @@ public sealed class ServerOptions
     public int GameplayServerPort { get; set; } = 5730;
 
     /// <summary>
-    /// Address the dedicated host announces to peers. Defaults to the loopback
-    /// address, which is what a peer that is not given a public host is told to
-    /// connect to.
+    /// Address the dedicated host announces to peers. Defaults to the announced
+    /// address of this instance, and to loopback when no public address is
+    /// configured.
     /// </summary>
     public string? PublicHostAddress { get; set; }
 
@@ -47,11 +49,21 @@ public sealed class ServerOptions
 
     /// <summary>
     /// Address published to clients in place of each lobby's stored address.
-    /// Only set when the listening address is a routable address rather than a
+    /// Only set when the public address is a routable address rather than a
     /// wildcard or loopback address.
     /// </summary>
     public string? OverrideIpAddress =>
-        ListeningIpAddress is "0.0.0.0" or "127.0.0.1" or "localhost" ? null : ListeningIpAddress;
+        string.IsNullOrWhiteSpace(PublicIpAddress) ||
+        PublicIpAddress is "0.0.0.0" or "127.0.0.1" or "localhost"
+            ? null
+            : PublicIpAddress;
+
+    /// <summary>
+    /// Address this instance announces to clients and writes to the lobby rows:
+    /// the public address when one is configured, and the wildcard address
+    /// otherwise, which only a client on the same machine can reach.
+    /// </summary>
+    public string AnnouncedIpAddress => OverrideIpAddress ?? "0.0.0.0";
 
     /// <summary>Interval in seconds between two heartbeats of an owned row.</summary>
     public int LobbyHeartbeatIntervalSeconds => LobbiesRefreshIntervalMinutes * 60;

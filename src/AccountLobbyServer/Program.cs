@@ -21,7 +21,7 @@ var runner = host.Services.GetRequiredService<AccountLobbyServerRunner>();
 var options = host.Services.GetRequiredService<IOptions<ServerOptions>>().Value;
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AccountLobbyServer");
 
-logger.LogInformation("Starting the account server on {ListeningIpAddress}", options.ListeningIpAddress);
+logger.LogInformation("Starting the account server, announcing {AnnouncedIpAddress}", options.AnnouncedIpAddress);
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArguments) =>

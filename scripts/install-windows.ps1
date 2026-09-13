@@ -17,7 +17,12 @@
     creates a deployment directory (.\mgo2-server, or MGO2_HOME) and downloads
     compose.yaml and .env.example into it. Everything else is configured in
     .env, which is created from .env.example on the first run and never
-    overwritten.
+    overwritten, except for PUBLIC_IP: the script asks whether only clients on
+    this machine or the clients on the local network should be served and writes
+    the answer there.
+
+    Set MGO2_NETWORK=local or MGO2_NETWORK=private (or PUBLIC_IP) to answer that
+    question without a prompt, which is what an unattended run needs.
 
 .PARAMETER ImagePrefix
     Registry path the images are pulled from, including the trailing slash, for
@@ -60,6 +65,142 @@ function Read-EnvValue([string]$Name, [string]$ProjectDirectory) {
     }
 
     return ($match.Line -replace "^$Name=", '').Trim()
+}
+
+# Reports the private IPv4 address of this machine, or nothing when it cannot be
+# determined. The default route picks the interface the clients on the network
+# reach.
+function Get-PrivateIPv4 {
+    try {
+        $route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop |
+            Sort-Object -Property RouteMetric |
+            Select-Object -First 1
+
+        if ($route) {
+            $address = Get-NetIPAddress -InterfaceIndex $route.InterfaceIndex -AddressFamily IPv4 -ErrorAction Stop |
+                Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+                Select-Object -First 1
+
+            if ($address) {
+                return $address.IPAddress
+            }
+        }
+    }
+    catch {
+        # The NetTCPIP module is unavailable; the caller falls back to asking.
+    }
+
+    return ''
+}
+
+# Answers true for a dotted IPv4 address whose four octets each fit in a byte.
+function Test-IPv4([string]$Value) {
+    if ($Value -notmatch '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$') {
+        return $false
+    }
+
+    foreach ($octet in $Matches[1..4]) {
+        if ([int]$octet -gt 255) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+# Sets a setting of .env, replacing its value and leaving every other setting
+# alone. The file is written as UTF-8 without a byte order mark, so the box
+# drawing characters of its comments survive whatever PowerShell is running this.
+function Set-EnvValue([string]$Name, [string]$Value, [string]$EnvFile) {
+    $written = $false
+
+    $result = @(foreach ($line in (Get-Content -Path $EnvFile)) {
+        if ($line -match "^$Name=") {
+            if (-not $written) {
+                "$Name=$Value"
+                $written = $true
+            }
+        }
+        else {
+            $line
+        }
+    })
+
+    if (-not $written) {
+        $result += "$Name=$Value"
+    }
+
+    [IO.File]::WriteAllLines($EnvFile, $result, [Text.UTF8Encoding]::new($false))
+}
+
+# Reports the address the clients are told to connect to. An empty answer serves
+# only a client on this machine; $null means nothing was decided, so an existing
+# value is kept.
+function Resolve-PublicIP([string]$ProjectDirectory) {
+    if ($null -ne $env:PUBLIC_IP) {
+        return $env:PUBLIC_IP
+    }
+
+    if ($env:MGO2_NETWORK) {
+        switch ($env:MGO2_NETWORK.ToLowerInvariant()) {
+            'local' {
+                return ''
+            }
+            'private' {
+                $detected = Get-PrivateIPv4
+                if ([string]::IsNullOrWhiteSpace($detected)) {
+                    Write-Host 'warning: the private address of this machine could not be detected; set PUBLIC_IP in .env' -ForegroundColor Yellow
+                    return $null
+                }
+                return $detected
+            }
+            'lan' {
+                return (Get-PrivateIPv4)
+            }
+            'network' {
+                return (Get-PrivateIPv4)
+            }
+            default {
+                Write-Host "warning: MGO2_NETWORK='$($env:MGO2_NETWORK)' is neither 'local' nor 'private'; asking instead" -ForegroundColor Yellow
+            }
+        }
+    }
+
+    # A run without an interactive host cannot be asked anything.
+    if (-not [Environment]::UserInteractive) {
+        return $null
+    }
+
+    $current = Read-EnvValue 'PUBLIC_IP' $ProjectDirectory
+    $detected = Get-PrivateIPv4
+    $defaultChoice = if ([string]::IsNullOrWhiteSpace($current)) { '1' } else { '2' }
+    $detectedLabel = if ($detected) { " ($detected)" } else { '' }
+
+    Write-Host ''
+    Write-Host 'Who should be able to play?'
+    Write-Host '  1) Clients on this machine only'
+    Write-Host "  2) Consoles and computers on this network$detectedLabel"
+
+    $choice = Read-Host "Choice [$defaultChoice]"
+    if ([string]::IsNullOrWhiteSpace($choice)) {
+        $choice = $defaultChoice
+    }
+
+    if ($choice -ne '2') {
+        return ''
+    }
+
+    # The address is picked rather than asked for: the detected address is what
+    # the clients have to be told, and an existing value is only kept when no
+    # address can be detected at all.
+    $answer = if ($detected) { $detected } else { $current }
+
+    if (-not (Test-IPv4 $answer)) {
+        Write-Host 'warning: the private address of this machine could not be detected; set PUBLIC_IP in .env' -ForegroundColor Yellow
+        return $null
+    }
+
+    return $answer
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
@@ -124,6 +265,17 @@ try {
         $jwtSecret = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
         (Get-Content $envFile) -replace '^JWT_SECRET=.*', "JWT_SECRET=$jwtSecret" | Set-Content $envFile
         Write-Host 'Created .env from .env.example with a random JWT_SECRET. Review it before exposing the deployment.'
+    }
+
+    # A client that is not on this machine is told to connect to the address of
+    # this machine on the network, so the question is answered before the images
+    # are pulled rather than after a connection that cannot work.
+    $resolvedPublicIp = Resolve-PublicIP $projectDirectory
+    if ($null -ne $resolvedPublicIp) {
+        Set-EnvValue 'PUBLIC_IP' $resolvedPublicIp $envFile
+        if (-not $resolvedPublicIp) {
+            Write-Host 'Only a client on this machine will be able to connect.'
+        }
     }
 
     if ([string]::IsNullOrWhiteSpace($ImagePrefix)) {

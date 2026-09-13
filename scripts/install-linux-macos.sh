@@ -20,7 +20,12 @@
 # The script runs against a clone when it is started from one; otherwise it
 # creates a deployment directory (./mgo2-server, or MGO2_HOME) and downloads
 # compose.yaml and .env.example into it. Everything else is configured in .env,
-# which is created from .env.example on the first run and never overwritten.
+# which is created from .env.example on the first run and never overwritten,
+# except for PUBLIC_IP: the script asks whether only clients on this machine or
+# the clients on the local network should be served and writes the answer there.
+#
+# Set MGO2_NETWORK=local or MGO2_NETWORK=private (or PUBLIC_IP) to answer that
+# question without a prompt, which is what an unattended run needs.
 
 set -euo pipefail
 
@@ -38,6 +43,10 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
                    trailing slash, for example
                    ghcr.io/your-account/your-repository/
 
+  The script asks whether only clients on this machine or the clients on the
+  local network should be served, and writes PUBLIC_IP accordingly. Setting
+  MGO2_NETWORK=local or MGO2_NETWORK=private answers without a prompt.
+
   When it is omitted, MGO2_IMAGE_PREFIX is used: the setting of .env, or the
   environment variable, or the registry the images are published to by default.
 
@@ -52,6 +61,138 @@ read_env_value() {
     local name="$1"
     [ -f "${project_directory}/.env" ] || return 0
     sed -n "s/^${name}=//p" "${project_directory}/.env" | tail -n 1 | tr -d '\r'
+}
+
+# Reports the private IPv4 address of this machine, or nothing when it cannot be
+# determined. The route lookup picks the interface the default route uses, which
+# is the one the clients on the network reach.
+detect_private_ipv4() {
+    local address=''
+
+    if command -v ip >/dev/null 2>&1; then
+        address="$(ip -4 route get 1.1.1.1 2>/dev/null \
+            | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }' || true)"
+    fi
+
+    if [ -z "$address" ] && command -v hostname >/dev/null 2>&1; then
+        address="$(hostname -I 2>/dev/null | awk '{ print $1 }' || true)"
+    fi
+
+    if [ -z "$address" ] && [ "$(uname -s 2>/dev/null || true)" = 'Darwin' ] &&
+        command -v ipconfig >/dev/null 2>&1; then
+        address="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
+    fi
+
+    # A tool that was not recognised can print anything, so only a well formed
+    # address is reported.
+    if ! is_ipv4 "$address"; then
+        address=''
+    fi
+
+    printf '%s' "$address"
+}
+
+# Answers true for a dotted IPv4 address whose four octets each fit in a byte.
+is_ipv4() {
+    [ -n "$1" ] || return 1
+
+    printf '%s' "$1" | awk -F. '
+        NF != 4 { exit 1 }
+        { for (i = 1; i <= 4; i++) if ($i !~ /^[0-9]{1,3}$/ || $i > 255) exit 1 }
+    '
+}
+
+# Sets a setting of .env, replacing its value or appending it when the key is
+# absent, and leaves every other setting alone.
+set_env_value() {
+    local name="$1" value="$2" env_file="$3"
+
+    if grep -q "^${name}=" "$env_file"; then
+        sed -i.bak "s|^${name}=.*|${name}=${value}|" "$env_file"
+        rm -f "${env_file}.bak"
+    else
+        printf '%s=%s\n' "$name" "$value" >> "$env_file"
+    fi
+}
+
+# Reports the address the clients are told to connect to. An empty answer serves
+# only a client on this machine; the sentinel means nothing was decided, so an
+# existing value is kept.
+resolve_public_ip() {
+    local unchanged='__unchanged__'
+
+    # The environment decides without asking, which is what a piped or otherwise
+    # unattended run needs.
+    if [ -n "${PUBLIC_IP+x}" ]; then
+        printf '%s' "$PUBLIC_IP"
+        return 0
+    fi
+
+    if [ -n "${MGO2_NETWORK+x}" ]; then
+        case "$MGO2_NETWORK" in
+            local)
+                printf '%s' ''
+                return 0
+                ;;
+            private|lan|network)
+                local detected
+                detected="$(detect_private_ipv4)"
+                if [ -z "$detected" ]; then
+                    echo 'warning: the private address of this machine could not be detected; set PUBLIC_IP in .env' >&2
+                    printf '%s' "$unchanged"
+                    return 0
+                fi
+                printf '%s' "$detected"
+                return 0
+                ;;
+            *)
+                echo "warning: MGO2_NETWORK='$MGO2_NETWORK' is neither 'local' nor 'private'; asking instead" >&2
+                ;;
+        esac
+    fi
+
+    # A run without a terminal cannot be asked anything. Actually opening the
+    # terminal is what proves there is one: the permission test alone passes on a
+    # machine whose /dev/tty exists but cannot be opened.
+    if ! { : < /dev/tty; } 2>/dev/null; then
+        printf '%s' "$unchanged"
+        return 0
+    fi
+
+    local current detected default_choice choice answer
+    current="$(read_env_value PUBLIC_IP)"
+    detected="$(detect_private_ipv4)"
+    if [ -n "$current" ]; then
+        default_choice=2
+    else
+        default_choice=1
+    fi
+
+    printf '\nWho should be able to play?\n' > /dev/tty
+    printf '  1) Clients on this machine only\n' > /dev/tty
+    printf '  2) Consoles and computers on this network%s\n' "${detected:+ (${detected})}" > /dev/tty
+
+    choice=''
+    read -r -p "Choice [${default_choice}]: " choice < /dev/tty || choice=''
+    choice="${choice:-$default_choice}"
+
+    if [ "$choice" != '2' ]; then
+        printf '%s' ''
+        return 0
+    fi
+
+    # The address is picked rather than asked for: the detected address is what
+    # the clients have to be told, and an existing value is only kept when no
+    # address can be detected at all.
+    answer="${detected:-$current}"
+
+    if ! is_ipv4 "$answer"; then
+        echo 'warning: the private address of this machine could not be detected; set PUBLIC_IP in .env' >&2
+        printf '%s' "$unchanged"
+        return 0
+    fi
+
+    printf '%s' "$answer"
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
@@ -130,6 +271,17 @@ if [ ! -f .env ]; then
     sed -i.bak "s/^JWT_SECRET=.*/JWT_SECRET=${jwt_secret}/" .env
     rm -f .env.bak
     echo "Created .env from .env.example with a random JWT_SECRET. Review it before exposing the deployment."
+fi
+
+# A client that is not on this machine is told to connect to the address of this
+# machine on the network, so the question is answered before the images are
+# pulled rather than after a connection that cannot work.
+resolved_public_ip="$(resolve_public_ip)"
+if [ "$resolved_public_ip" != '__unchanged__' ]; then
+    set_env_value PUBLIC_IP "$resolved_public_ip" .env
+    if [ -z "$resolved_public_ip" ]; then
+        echo 'Only a client on this machine will be able to connect.'
+    fi
 fi
 
 image_prefix="$(normalise_prefix "${1:-${MGO2_IMAGE_PREFIX:-$(read_env_value MGO2_IMAGE_PREFIX)}}")"

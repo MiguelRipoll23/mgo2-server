@@ -21,7 +21,7 @@ var runner = host.Services.GetRequiredService<GateLobbyServerRunner>();
 var options = host.Services.GetRequiredService<IOptions<ServerOptions>>().Value;
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("GateLobbyServer");
 
-logger.LogInformation("Starting the gate on {ListeningIpAddress}", options.ListeningIpAddress);
+logger.LogInformation("Starting the gate, announcing {AnnouncedIpAddress}", options.AnnouncedIpAddress);
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArguments) =>
