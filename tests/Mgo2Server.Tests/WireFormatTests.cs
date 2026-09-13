@@ -133,3 +133,61 @@ public sealed class PacketCodecServiceTests
             () => Codec.EncodePacket(PlainCommand, oversized, sequenceOut: 1));
     }
 }
+
+/// <summary>
+/// Guards the reader contract that a short or negative read length cannot
+/// fault a handler, and the Latin-1 writer that drops characters it cannot
+/// encode rather than widening them into a wrong byte.
+/// </summary>
+public sealed class PacketReaderUtilityTests
+{
+    [Fact]
+    public void ReadBytes_clamps_a_negative_length_to_nothing()
+    {
+        var reader = new PacketReader([1, 2, 3, 4]);
+
+        Assert.Empty(reader.ReadBytes(-5));
+    }
+
+    [Fact]
+    public void ReadBytes_clamps_to_the_remaining_bytes()
+    {
+        var reader = new PacketReader([1, 2, 3, 4]);
+
+        Assert.Equal([1, 2, 3, 4], reader.ReadBytes(99));
+    }
+
+    [Fact]
+    public void ReadFixedString_clamps_to_the_remaining_bytes()
+    {
+        var reader = new PacketReader([(byte)'a', (byte)'b']);
+
+        Assert.Equal("ab", reader.ReadFixedString(10));
+    }
+
+    [Fact]
+    public void ReadInt16_reads_a_signed_value()
+    {
+        var reader = new PacketReader([0xff, 0xfe]);
+
+        Assert.Equal((short)-2, reader.ReadInt16());
+    }
+
+    [Fact]
+    public void WriteFixedString_writes_nul_for_a_character_above_latin1()
+    {
+        var bytes = StringUtility.WriteFixedString("a\u0100b", 4);
+
+        Assert.Equal([(byte)'a', (byte)0, (byte)'b', (byte)0], bytes);
+    }
+
+    [Fact]
+    public void WriteFixedStringInto_normalizes_a_character_above_latin1()
+    {
+        var destination = new byte[4];
+
+        StringUtility.WriteFixedStringInto(destination, 0, "a\u0100b", 4);
+
+        Assert.Equal([(byte)'a', (byte)0, (byte)'b', (byte)0], destination);
+    }
+}

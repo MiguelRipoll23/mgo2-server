@@ -293,9 +293,7 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
         var handlerType = CommandRegistry.ResolveHandlerType(ServerType, command);
         if (handlerType is null)
         {
-            // A client may send commands this server does not implement; that
-            // is ordinary traffic rather than a fault, so it stays at debug.
-            Logger.LogDebug("[{LogPrefix}] 0x{Command} no-handler {State}", LogPrefix, FormatCommand(command), FormatSessionState(session));
+            Logger.LogWarning("[{LogPrefix}] 0x{Command} no-handler {State}", LogPrefix, FormatCommand(command), FormatSessionState(session));
             return true;
         }
 

@@ -6,7 +6,7 @@ No git history is available in this checkout, so there is no diff to review.
 
 **Clean build verified:** `dotnet` was installed during the fixes, the solution builds with
 `dotnet build Mgo2Server.slnx --configuration Release` with no warnings, and the test suite
-(`dotnet test`) passes with `Passed! - Failed: 0, Passed: 19, Skipped: 0, Total: 19`.
+(`dotnet test`) passes with `Passed! - Failed: 0, Passed: 25, Skipped: 0, Total: 25`.
 
 ---
 
@@ -310,8 +310,8 @@ does not translate to SQL (verified against the model).
 
 `tests/Mgo2Server.Tests` now holds four files: `PersistenceModelTests` (the EF model maps
 every entity and table), `DnsMessageCodecTests`, `WireFormatTests` (frame cipher round-trip
-and malformed input, handshake parsing, packet-codec round-trip and the length guard) and
-the original suite. The DNS tests additionally cover compression-pointer cycles, labels that
+and malformed input, handshake parsing, packet-codec round-trip and the length guard, plus
+the reader clamp/signed-read and Latin-1 writer contracts) and the original suite. The DNS tests additionally cover compression-pointer cycles, labels that
 run past the datagram and a missing QCLASS. That leaves the following untested:
 
 - `LzssUtility.Decompress` — bit-level, ring buffer, bounded output.
