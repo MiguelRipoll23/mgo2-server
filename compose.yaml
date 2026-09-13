@@ -259,6 +259,11 @@ services:
     environment:
       HTTP_PORT: "80"
       LAUNCHER_SERVER: http://mgo2pc.com
+    # A mounted volume at the Data Protection key ring silences the framework's
+    # "keys may not be persisted" warning and keeps protected payloads valid
+    # across restarts.
+    volumes:
+      - http-keys:/root/.aspnet/DataProtection-Keys
     ports:
       - "80:80/tcp"
 
@@ -280,4 +285,5 @@ services:
       - "53:53/udp"
 
 volumes:
+  http-keys:
   postgres-data:

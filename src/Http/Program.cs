@@ -18,11 +18,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.AddServerLogging(builder.Configuration);
 
+// The API issues no Data Protection payloads, so the framework's advisory that
+// the Linux key ring is unencrypted is noise. The floor stays at Error, so a
+// genuine key-ring failure is still reported.
+builder.Logging.AddFilter("Microsoft.AspNetCore.DataProtection", LogLevel.Error);
+
 var httpPort = int.TryParse(builder.Configuration["HTTP_PORT"], out var configuredPort)
     ? configuredPort
     : PortConstants.HttpPort;
 
-builder.WebHost.UseUrls($"http://0.0.0.0:{httpPort}");
+// Bind Kestrel directly. The image clears the base image's inherited
+// ASPNETCORE_HTTP_PORTS, so no server URL is generated for the host to override
+// and the app owns the binding outright.
+builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(httpPort));
 
 var httpApiOptions = new HttpApiOptions
 {
