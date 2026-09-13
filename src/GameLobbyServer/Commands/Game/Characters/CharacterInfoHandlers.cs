@@ -19,11 +19,15 @@ public sealed class GetCharacterInfoHandler(
     UserService userService,
     SessionHelper sessionHelper) : ICommandHandler
 {
-    /// <summary>Fixed grid the client's parser consumes.</summary>
-    private const int InfoPayloadSize = 0x142;
+    /// <summary>Offset of the trailing feature byte, one past the fixed grid.</summary>
+    private const int FeatureByteOffset = 0x242;
 
-    /// <summary>Number of identifiers in each friend and blocked array.</summary>
-    private const int MaximumListIdentifiers = 32;
+    /// <summary>
+    /// Number of identifiers in each friend and blocked array. The client reads
+    /// 64 (its loops compare against 0x40), so each array is 256 bytes: a short
+    /// payload shifts the feature byte into the friend grid.
+    /// </summary>
+    private const int MaximumListIdentifiers = 64;
 
     /// <summary>The four dead 16-bit constants that follow the name.</summary>
     private static readonly byte[] CharacterInfoFixedBytes =
@@ -168,9 +172,10 @@ public sealed class GetCharacterInfoHandler(
             writer.WriteUInt32((uint)(index < blocked.Count ? blocked[index] : 0));
         }
 
-        writer.WritePadding(InfoPayloadSize - writer.Size);
-        // One byte past the grid: the parser reads its four low bits as
-        // separate feature flags, and the expansion content is gated on them.
+        // Reserved tail the client skips over: a u8, a 16-byte string and two u32s.
+        writer.WritePadding(FeatureByteOffset - writer.Size);
+        // The parser reads this byte's four low bits as separate feature flags
+        // and greys out the expansion maps and modes when they are clear.
         writer.WriteUInt8(FeatureFlags.ExpansionByte);
         return writer.Build();
     }
