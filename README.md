@@ -22,12 +22,7 @@ Windows:
 irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/install-windows.ps1 | iex
 ```
 
-Then set `PUBLIC_IP` in `.env` to the private address of the machine running the
-deployment, and point the DNS of the client at that address: the `Metal Gear
-Online` tab in RPCS3, or the network settings of a console. A client running on
-the same machine can use `127.0.0.1`. Docker Desktop for Windows and macOS only
-honours the host network the containers use once Settings -> Resources -> Network
--> "Enable host networking" is turned on.
+Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to `0.0.0.0` or your private IP.
 
 ### Project layout
 
