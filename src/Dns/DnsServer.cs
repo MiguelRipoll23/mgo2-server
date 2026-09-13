@@ -69,7 +69,9 @@ public sealed class DnsServer(DnsServerOptions options, ILogger<DnsServer> logge
             }
 
             if (IsLocalDomain(query.Domain) &&
-                query.QueryType is DnsMessageCodec.AddressRecordType or DnsMessageCodec.AnyRecordType)
+                query.QueryType is DnsMessageCodec.AddressRecordType
+                    or DnsMessageCodec.IPv6RecordType
+                    or DnsMessageCodec.AnyRecordType)
             {
                 // A client on this machine reaches the server through loopback,
                 // so it is answered with the loopback address; every other
@@ -79,12 +81,21 @@ public sealed class DnsServer(DnsServerOptions options, ILogger<DnsServer> logge
                     ? options.LocalResolvedIpAddress
                     : options.ResolvedIpAddress;
 
-                logger.LogInformation(
+                // The question may be for an IPv6 address record even though
+                // the deployment only has an IPv4 address to give; answering
+                // it with the IPv6 twin of the resolved address keeps the
+                // client from being handed the domain's upstream records.
+                var queryType = query.QueryType is DnsMessageCodec.AnyRecordType
+                    ? DnsMessageCodec.AddressRecordType
+                    : query.QueryType;
+                logger.LogInformation(
                     "Overriding {Domain} locally to {Address}",
                     query.Domain,
                     resolvedAddress);
-
-                var response = DnsMessageCodec.BuildAddressResponse(received.Buffer, resolvedAddress);
+                var response = DnsMessageCodec.BuildAddressResponse(
+                    received.Buffer,
+                    resolvedAddress,
+                    queryType);
                 if (response.Length > 0)
                 {
                     await socket.SendAsync(response, received.RemoteEndPoint, cancellationToken);

@@ -16,6 +16,9 @@ public static class DnsMessageCodec
     /// <summary>Record type of an address record.</summary>
     public const int AddressRecordType = 1;
 
+    /// <summary>Record type of an IPv6 address record.</summary>
+    public const int IPv6RecordType = 28;
+
     /// <summary>Record type that matches every record.</summary>
     public const int AnyRecordType = 255;
 
@@ -56,10 +59,27 @@ public static class DnsMessageCodec
     /// answering with the resolved address.
     /// </summary>
     /// <param name="query">Query datagram to answer.</param>
-    /// <param name="ipAddress">Address to answer with, in dotted-quad form.</param>
-    public static byte[] BuildAddressResponse(byte[] query, string ipAddress)
+    /// <param name="ipAddress">Address to answer with, in dotted-quad form for
+    /// an address record and in colon-separated hexadecimal groups for an IPv6
+    /// address record.</param>
+    /// <param name="queryType">Type of record to answer with, an address record
+    /// unless an IPv6 address record is requested.</param>
+    public static byte[] BuildAddressResponse(
+        byte[] query,
+        string ipAddress,
+        int queryType = AddressRecordType)
     {
-        var parts = ipAddress.Split('.').Select(byte.Parse).ToArray();
+        var isIpv6 = queryType == IPv6RecordType;
+
+        // An IPv6 address is sixteen bytes split into eight groups of two,
+        // written as groups of hexadecimal digits separated by colons.
+        var parts = isIpv6
+            ? ipAddress.Split(':')
+                .Where(group => group.Length > 0)
+                .Select(ParseHexGroup)
+                .SelectMany(group => new byte[] { (byte)(group >> 8), (byte)group })
+                .ToArray()
+            : ipAddress.Split('.').Select(byte.Parse).ToArray();
 
         // Walk past the question name, then past its type and class.
         var offset = QuestionOffset;
@@ -79,7 +99,7 @@ public static class DnsMessageCodec
             return Array.Empty<byte>();
         }
 
-        var response = new byte[QuestionOffset + questionLength + 16];
+        var response = new byte[QuestionOffset + questionLength + (isIpv6 ? 28 : 16)];
 
         response[0] = query[0];
         response[1] = query[1]; // Transaction identifier, echoed.
@@ -90,11 +110,10 @@ public static class DnsMessageCodec
 
         Array.Copy(query, QuestionOffset, response, QuestionOffset, questionLength);
 
-        var cursor = QuestionOffset + questionLength;
-        response[cursor++] = 0xc0;
+        var cursor = QuestionOffset + questionLength;        response[cursor++] = 0xc0;
         response[cursor++] = 0x0c; // Name pointer back to the question.
         response[cursor++] = 0x00;
-        response[cursor++] = 0x01; // Type: address.
+        response[cursor++] = (byte)queryType; // Type: address.
         response[cursor++] = 0x00;
         response[cursor++] = 0x01; // Class: internet.
         response[cursor++] = (byte)(TimeToLiveSeconds >> 24);
@@ -102,14 +121,24 @@ public static class DnsMessageCodec
         response[cursor++] = (byte)(TimeToLiveSeconds >> 8);
         response[cursor++] = unchecked((byte)TimeToLiveSeconds);
         response[cursor++] = 0x00;
-        response[cursor++] = 0x04; // Length of the address.
-
-        foreach (var part in parts)
+        response[cursor++] = (byte)parts.Length; // Length of the address.
+        foreach (var part in parts)
         {
             response[cursor++] = part;
         }
+        return response;
+    }
 
-        return response;
+    /// <summary>Reads the value of one hexadecimal group of an IPv6 address.</summary>
+    /// <param name="group">Group to read, one to four hexadecimal digits.</param>
+    private static ushort ParseHexGroup(string group)
+    {
+        var value = 0;
+        foreach (var digit in group)
+        {
+            value = (value << 4) + (digit is >= '0' and <= '9' ? digit - '0' : (digit | 0x20) - 'a' + 10);
+        }
+        return (ushort)value;
     }
 
     /// <summary>Reads a domain name, following compression pointers.</summary>
