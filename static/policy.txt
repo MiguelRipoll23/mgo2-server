@@ -1,1 +1,1 @@
-Connected to MiguelRipoll23\mgo2-server!
+Connected to MiguelRipoll23\mgo2-server

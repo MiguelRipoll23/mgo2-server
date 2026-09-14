@@ -33,7 +33,7 @@ public sealed class PolicyService(
             : UpstreamUnavailableMessage;
 
         var localPolicy = await ReadLocalPolicyAsync(cancellationToken);
-        return $"{localPolicy.TrimEnd()}\n{original}\n";
+        return $"{localPolicy.TrimEnd()}\n\n{original}\n";
     }
 
     private async Task<string?> FetchUpstreamPolicyAsync(HttpRequest request, CancellationToken cancellationToken)
