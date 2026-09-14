@@ -10,31 +10,16 @@ public sealed class DnsServerOptions
     public int Port { get; set; } = PortConstants.DnsPort;
 
     /// <summary>
-    /// Address a query from another machine is answered with for a local
-    /// domain: the private address the clients reach this machine on.
+    /// Address a local domain is answered with: the private address the clients
+    /// reach this machine on.
     /// </summary>
     public string ResolvedIpAddress { get; set; } = "0.0.0.0";
 
     /// <summary>
-    /// Address an IPv6 address record for a local domain is answered with when
-    /// the query comes from another machine. It defaults to the IPv6 twin of
-    /// <see cref="ResolvedIpAddress"/>.
+    /// Address an IPv6 address record for a local domain is answered with. It
+    /// defaults to the IPv6 twin of <see cref="ResolvedIpAddress"/>.
     /// </summary>
     public string ResolvedIpv6Address { get; set; } = "::";
-
-    /// <summary>
-    /// Address a query from this machine is answered with for a local domain.
-    /// The default, the wildcard address, is what a client on this machine
-    /// connects to through the loopback interface.
-    /// </summary>
-    public string LocalResolvedIpAddress { get; set; } = "0.0.0.0";
-
-    /// <summary>
-    /// Address an IPv6 address record for a local domain is answered with when
-    /// the query comes from this machine. It defaults to the IPv6 twin of
-    /// <see cref="LocalResolvedIpAddress"/>.
-    /// </summary>
-    public string LocalResolvedIpv6Address { get; set; } = "::";
 
     /// <summary>Upstream name server every other query is forwarded to.</summary>
     public string AlternativeNameServer { get; set; } = "8.8.8.8";
@@ -59,32 +44,22 @@ public sealed class DnsServerOptions
             options.Port = port;
         }
 
-        options.ResolvedIpAddress = configuration["PUBLIC_IP"] ?? options.ResolvedIpAddress;
-        options.LocalResolvedIpAddress =
-            configuration["LOCAL_RESOLVED_IP"] ?? options.LocalResolvedIpAddress;
+        var advertisedAddress = configuration["ADVERTISED_ADDRESS"];
+        if (!string.IsNullOrWhiteSpace(advertisedAddress))
+        {
+            options.ResolvedIpAddress = advertisedAddress.Trim();
+        }
 
         // An IPv6 question is answered with the twin of the address the IPv4
         // questions are answered with: the wildcard address when the wildcard
         // is resolved, and the IPv4 address in its IPv6-mapped form otherwise.
-        // Either one is overridden by its own variable when it is set.
-        options.ResolvedIpv6Address =
-            configuration["PUBLIC_IPV6"] ?? options.ResolvedIpv6Address;
-        options.LocalResolvedIpv6Address =
-            configuration["LOCAL_RESOLVED_IPV6"] ?? options.LocalResolvedIpv6Address;
-
-        if (configuration["PUBLIC_IPV6"] is null)
-        {
-            options.ResolvedIpv6Address = options.ResolvedIpAddress is "0.0.0.0"
+        var advertisedIpv6 = configuration["ADVERTISED_ADDRESS_IPV6"];
+        options.ResolvedIpv6Address = !string.IsNullOrWhiteSpace(advertisedIpv6)
+            ? advertisedIpv6.Trim()
+            : options.ResolvedIpAddress is "0.0.0.0"
                 ? "::"
                 : MapToIPv6Twin(options.ResolvedIpAddress);
-        }
 
-        if (configuration["LOCAL_RESOLVED_IPV6"] is null)
-        {
-            options.LocalResolvedIpv6Address = options.LocalResolvedIpAddress is "0.0.0.0"
-                ? "::"
-                : MapToIPv6Twin(options.LocalResolvedIpAddress);
-        }
         options.AlternativeNameServer =
             configuration["ALTERNATIVE_DNS_SERVER"] ?? options.AlternativeNameServer;
 

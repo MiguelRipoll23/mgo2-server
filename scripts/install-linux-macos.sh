@@ -21,11 +21,12 @@
 # creates a deployment directory (./mgo2-server, or MGO2_HOME) and downloads
 # compose.yaml and .env.example into it. Everything else is configured in .env,
 # which is created from .env.example on the first run and never overwritten,
-# except for PUBLIC_IP: the script asks whether only clients on this machine or
-# the clients on the local network should be served and writes the answer there.
+# except for ADVERTISED_ADDRESS: the script detects the private address of this
+# machine and writes it there so clients on the network can reach the published
+# ports.
 #
-# Set MGO2_NETWORK=local or MGO2_NETWORK=private (or PUBLIC_IP) to answer that
-# question without a prompt, which is what an unattended run needs.
+# Set ADVERTISED_ADDRESS to skip detection. Set MGO2_LOG_LEVEL to answer the
+# log-level question without a prompt.
 
 set -euo pipefail
 
@@ -43,12 +44,11 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
                    trailing slash, for example
                    ghcr.io/your-account/your-repository/
 
-  The script asks whether only clients on this machine or the clients on the
-  local network should be served, and writes PUBLIC_IP accordingly. Setting
-  MGO2_NETWORK=local or MGO2_NETWORK=private answers without a prompt.
+  The script detects the private address of this machine and writes
+  ADVERTISED_ADDRESS. Setting ADVERTISED_ADDRESS answers without detection.
 
   It also asks which log level the servers run at (Debug, Information, Warning
-  or Error) and writes LOG_LEVEL, defaulting to Debug. Setting MGO2_LOG_LEVEL
+  or Error) and writes LOG_LEVEL, defaulting to Warning. Setting MGO2_LOG_LEVEL
   answers without a prompt.
 
   When it is omitted, MGO2_IMAGE_PREFIX is used: the setting of .env, or the
@@ -115,6 +115,26 @@ normalise_log_level() {
     esac
 }
 
+# Maps a log level to its menu number.
+log_level_choice() {
+    case "$(normalise_log_level "$1")" in
+        Debug) printf '%s' '1' ;;
+        Information) printf '%s' '2' ;;
+        Warning) printf '%s' '3' ;;
+        Error) printf '%s' '4' ;;
+    esac
+}
+
+# Maps a menu number to its log level.
+choice_log_level() {
+    case "$1" in
+        1) printf '%s' 'Debug' ;;
+        2) printf '%s' 'Information' ;;
+        3) printf '%s' 'Warning' ;;
+        4) printf '%s' 'Error' ;;
+    esac
+}
+
 # Answers true for a dotted IPv4 address whose four octets each fit in a byte.
 is_ipv4() {
     [ -n "$1" ] || return 1
@@ -138,92 +158,39 @@ set_env_value() {
     fi
 }
 
-# Reports the address the clients are told to connect to. An empty answer serves
-# only a client on this machine; the sentinel means nothing was decided, so an
-# existing value is kept.
-resolve_public_ip() {
-    local unchanged='__unchanged__'
-
-    # The environment decides without asking, which is what a piped or otherwise
-    # unattended run needs.
-    if [ -n "${PUBLIC_IP+x}" ]; then
-        printf '%s' "$PUBLIC_IP"
+# Reports the private address clients are told to connect to. An empty answer
+# means nothing was decided, so an existing value is kept.
+resolve_advertised_ip() {
+    # The environment decides without detection, which is what a piped or
+    # otherwise unattended run needs.
+    if [ -n "${ADVERTISED_ADDRESS+x}" ]; then
+        printf '%s' "$ADVERTISED_ADDRESS"
         return 0
     fi
 
-    if [ -n "${MGO2_NETWORK+x}" ]; then
-        case "$MGO2_NETWORK" in
-            local)
-                printf '%s' ''
-                return 0
-                ;;
-            private|lan|network)
-                local detected
-                detected="$(detect_private_ipv4)"
-                if [ -z "$detected" ]; then
-                    echo 'warning: the private address of this machine could not be detected; set PUBLIC_IP in .env' >&2
-                    printf '%s' "$unchanged"
-                    return 0
-                fi
-                printf '%s' "$detected"
-                return 0
-                ;;
-            *)
-                echo "warning: MGO2_NETWORK='$MGO2_NETWORK' is neither 'local' nor 'private'; asking instead" >&2
-                ;;
-        esac
-    fi
+    local current detected
+    current="$(read_env_value ADVERTISED_ADDRESS)"
 
-    # A run without a terminal cannot be asked anything. Actually opening the
-    # terminal is what proves there is one: the permission test alone passes on a
-    # machine whose /dev/tty exists but cannot be opened.
-    if ! { : < /dev/tty; } 2>/dev/null; then
-        printf '%s' "$unchanged"
-        return 0
-    fi
-
-    local current detected default_choice choice answer
-    current="$(read_env_value PUBLIC_IP)"
     detected="$(detect_private_ipv4)"
-    if [ -n "$current" ]; then
-        default_choice=2
-    else
-        default_choice=1
-    fi
-
-    printf '\nWho should be able to play?\n' > /dev/tty
-    printf '  1) Clients on this machine only\n' > /dev/tty
-    printf '  2) Consoles and computers on this network%s\n' "${detected:+ (${detected})}" > /dev/tty
-
-    choice=''
-    read -r -p "Choice [${default_choice}]: " choice < /dev/tty || choice=''
-    choice="${choice:-$default_choice}"
-
-    if [ "$choice" != '2' ]; then
-        printf '%s' ''
+    if [ -n "$detected" ]; then
+        printf '%s' "$detected"
         return 0
     fi
 
-    # The address is picked rather than asked for: the detected address is what
-    # the clients have to be told, and an existing value is only kept when no
-    # address can be detected at all.
-    answer="${detected:-$current}"
-
-    if ! is_ipv4 "$answer"; then
-        echo 'warning: the private address of this machine could not be detected; set PUBLIC_IP in .env' >&2
-        printf '%s' "$unchanged"
+    if is_ipv4 "$current"; then
+        printf '%s' "$current"
         return 0
     fi
 
-    printf '%s' "$answer"
+    echo 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in .env' >&2
+    printf '%s' ''
 }
 
 # Reports the log level the servers run at. Every container writes its log to
 # its standard output, so the answer is what the level of 'docker compose logs'
-# is set to. Debug is the default, because a deployment whose logs are missing
-# detail is the harder one to support; MGO2_LOG_LEVEL answers without a prompt.
+# is set to. Warning is the default; MGO2_LOG_LEVEL answers without a prompt.
 resolve_log_level() {
-    local current default_choice choice
+    local current default_choice choice selected
 
     current="$(read_env_value LOG_LEVEL)"
 
@@ -233,41 +200,50 @@ resolve_log_level() {
         if is_log_level "$MGO2_LOG_LEVEL"; then
             normalise_log_level "$MGO2_LOG_LEVEL"
         else
-            echo "warning: MGO2_LOG_LEVEL='$MGO2_LOG_LEVEL' is not a log level; using Debug" >&2
-            printf '%s' 'Debug'
+            echo "warning: MGO2_LOG_LEVEL='$MGO2_LOG_LEVEL' is not a log level; using Warning" >&2
+            printf '%s' 'Warning'
         fi
         return 0
     fi
 
     # A level that is already configured stays the default, so running the
     # script again to install an update does not silently rescale the logs;
-    # a fresh deployment starts at Debug.
+    # a fresh deployment starts at Warning.
     if is_log_level "$current"; then
-        default_choice="$(normalise_log_level "$current")"
+        default_choice="$(log_level_choice "$current")"
     else
-        default_choice='Debug'
+        default_choice='3'
     fi
 
     # A run without a terminal cannot be asked anything, so the default is what
     # such a run gets.
     if ! { : < /dev/tty; } 2>/dev/null; then
-        printf '%s' "$default_choice"
+        choice_log_level "$default_choice"
         return 0
     fi
 
     printf '\nWhich log level should the servers use?\n' > /dev/tty
-    printf '  Debug, Information, Warning or Error (later levels log less)\n' > /dev/tty
+    for number_level in '1:Debug' '2:Information' '3:Warning' '4:Error'; do
+        number="${number_level%%:*}"
+        level="${number_level#*:}"
+        if [ "$default_choice" = "$number" ]; then
+            printf '  %s) %s (default)\n' "$number" "$level" > /dev/tty
+        else
+            printf '  %s) %s\n' "$number" "$level" > /dev/tty
+        fi
+    done
 
     choice=''
-    read -r -p "Log level [${default_choice}]: " choice < /dev/tty || choice=''
+    read -r -p "Choice [${default_choice}]: " choice < /dev/tty || choice=''
     choice="${choice:-$default_choice}"
 
-    if ! is_log_level "$choice"; then
-        echo "warning: '$choice' is not a log level; using ${default_choice}" >&2
-        choice="$default_choice"
+    selected="$(choice_log_level "$choice")"
+    if [ -z "$selected" ]; then
+        echo "warning: '$choice' is not a log level; using $(choice_log_level "$default_choice")" >&2
+        selected="$(choice_log_level "$default_choice")"
     fi
 
-    normalise_log_level "$choice"
+    printf '%s' "$selected"
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
@@ -348,22 +324,15 @@ if [ ! -f .env ]; then
     echo "Created .env from .env.example with a random JWT_SECRET. Review it before exposing the deployment."
 fi
 
-# A client that is not on this machine is told to connect to the address of this
-# machine on the network, so the question is answered before the images are
-# pulled rather than after a connection that cannot work.
-resolved_public_ip="$(resolve_public_ip)"
-if [ "$resolved_public_ip" != '__unchanged__' ]; then
-    set_env_value PUBLIC_IP "$resolved_public_ip" .env
-    if [ -z "$resolved_public_ip" ]; then
-        echo 'Only a client on this machine will be able to connect.'
-    fi
+resolved_advertised_ip="$(resolve_advertised_ip)"
+if [ -n "$resolved_advertised_ip" ]; then
+    set_env_value ADVERTISED_ADDRESS "$resolved_advertised_ip" .env
 fi
 
 # The level decides what a container writes to its standard output, so it is
 # answered and written before the images are pulled.
 resolved_log_level="$(resolve_log_level)"
 set_env_value LOG_LEVEL "$resolved_log_level" .env
-echo "The servers log at ${resolved_log_level}."
 
 image_prefix="$(normalise_prefix "${1:-${MGO2_IMAGE_PREFIX:-$(read_env_value MGO2_IMAGE_PREFIX)}}")"
 image_prefix="${image_prefix:-$(normalise_prefix "${default_image_prefix}")}"
@@ -398,7 +367,14 @@ if [ "${running}" != "${expected}" ]; then
     exit 1
 fi
 
+account_host="$(read_env_value ADVERTISED_ADDRESS)"
+if [ -z "$account_host" ] || [ "$account_host" = '0.0.0.0' ]; then
+    account_host="$(detect_private_ipv4)"
+fi
+
 echo
 echo "Installed ${running} containers."
-echo "The gate listens on 5731, the account server on 5732 and the HTTP API on 80."
+if [ -n "$account_host" ]; then
+    echo "To create an account, go to http://${account_host}"
+fi
 echo "Run this script again to install the update; stop the deployment with: docker compose down"

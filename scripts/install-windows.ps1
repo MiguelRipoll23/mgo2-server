@@ -17,16 +17,12 @@
     creates a deployment directory (.\mgo2-server, or MGO2_HOME) and downloads
     compose.yaml and .env.example into it. Everything else is configured in
     .env, which is created from .env.example on the first run and never
-    overwritten, except for PUBLIC_IP: the script asks whether only clients on
-    this machine or the clients on the local network should be served and writes
-    the answer there.
+    overwritten, except for ADVERTISED_ADDRESS: the script detects the private
+    address of this machine and writes it there so clients on the network can
+    reach the published ports.
 
-    Set MGO2_NETWORK=local or MGO2_NETWORK=private (or PUBLIC_IP) to answer that
-    question without a prompt, which is what an unattended run needs.
-
-    The script also asks which log level the servers run at (Debug, Information,
-    Warning or Error) and writes LOG_LEVEL, defaulting to Debug. Set
-    MGO2_LOG_LEVEL to answer that question without a prompt.
+    Set ADVERTISED_ADDRESS to skip detection. Set MGO2_LOG_LEVEL to answer the
+    log-level question without a prompt.
 
 .PARAMETER ImagePrefix
     Registry path the images are pulled from, including the trailing slash, for
@@ -91,7 +87,7 @@ function Get-PrivateIPv4 {
         }
     }
     catch {
-        # The NetTCPIP module is unavailable; the caller falls back to asking.
+        # The NetTCPIP module is unavailable; the caller falls back.
     }
 
     return ''
@@ -102,8 +98,7 @@ function Test-LogLevel([string]$Value) {
     return $Value -imatch '^(debug|information|warning|error)$'
 }
 
-# Spells a log level the one way the servers document it, so .env holds a value
-# that reads the same however it was typed.
+# Spells a log level the one way the servers document it.
 function Get-NormalisedLogLevel([string]$Value) {
     switch ($Value.ToLowerInvariant()) {
         'debug' { return 'Debug' }
@@ -112,7 +107,29 @@ function Get-NormalisedLogLevel([string]$Value) {
         'error' { return 'Error' }
     }
 
-    return 'Debug'
+    return 'Warning'
+}
+
+# Maps a log level to its menu number.
+function Get-LogLevelChoice([string]$Value) {
+    switch (Get-NormalisedLogLevel $Value) {
+        'Debug' { return '1' }
+        'Information' { return '2' }
+        'Warning' { return '3' }
+        'Error' { return '4' }
+    }
+    return ''
+}
+
+# Maps a menu number to its log level.
+function Get-ChoiceLogLevel([string]$Value) {
+    switch ($Value) {
+        '1' { return 'Debug' }
+        '2' { return 'Information' }
+        '3' { return 'Warning' }
+        '4' { return 'Error' }
+    }
+    return ''
 }
 
 # Answers true for a dotted IPv4 address whose four octets each fit in a byte.
@@ -130,9 +147,7 @@ function Test-IPv4([string]$Value) {
     return $true
 }
 
-# Sets a setting of .env, replacing its value and leaving every other setting
-# alone. The file is written as UTF-8 without a byte order mark, so the box
-# drawing characters of its comments survive whatever PowerShell is running this.
+# Sets a setting of .env, replacing its value and leaving every other setting alone.
 function Set-EnvValue([string]$Name, [string]$Value, [string]$EnvFile) {
     $written = $false
 
@@ -155,117 +170,76 @@ function Set-EnvValue([string]$Name, [string]$Value, [string]$EnvFile) {
     [IO.File]::WriteAllLines($EnvFile, $result, [Text.UTF8Encoding]::new($false))
 }
 
-# Reports the address the clients are told to connect to. An empty answer serves
-# only a client on this machine; $null means nothing was decided, so an existing
-# value is kept.
-function Resolve-PublicIP([string]$ProjectDirectory) {
-    if ($null -ne $env:PUBLIC_IP) {
-        return $env:PUBLIC_IP
+# Reports the private address clients are told to connect to. An empty answer
+# means nothing was decided, so an existing value is kept.
+function Resolve-AdvertisedIP([string]$ProjectDirectory) {
+    if ($null -ne $env:ADVERTISED_ADDRESS) {
+        return $env:ADVERTISED_ADDRESS
     }
 
-    if ($env:MGO2_NETWORK) {
-        switch ($env:MGO2_NETWORK.ToLowerInvariant()) {
-            'local' {
-                return ''
-            }
-            'private' {
-                $detected = Get-PrivateIPv4
-                if ([string]::IsNullOrWhiteSpace($detected)) {
-                    Write-Host 'warning: the private address of this machine could not be detected; set PUBLIC_IP in .env' -ForegroundColor Yellow
-                    return $null
-                }
-                return $detected
-            }
-            'lan' {
-                return (Get-PrivateIPv4)
-            }
-            'network' {
-                return (Get-PrivateIPv4)
-            }
-            default {
-                Write-Host "warning: MGO2_NETWORK='$($env:MGO2_NETWORK)' is neither 'local' nor 'private'; asking instead" -ForegroundColor Yellow
-            }
-        }
-    }
+    $current = Read-EnvValue 'ADVERTISED_ADDRESS' $ProjectDirectory
 
-    # A run without an interactive host cannot be asked anything.
-    if (-not [Environment]::UserInteractive) {
-        return $null
-    }
-
-    $current = Read-EnvValue 'PUBLIC_IP' $ProjectDirectory
     $detected = Get-PrivateIPv4
-    $defaultChoice = if ([string]::IsNullOrWhiteSpace($current)) { '1' } else { '2' }
-    $detectedLabel = if ($detected) { " ($detected)" } else { '' }
-
-    Write-Host ''
-    Write-Host 'Who should be able to play?'
-    Write-Host '  1) Clients on this machine only'
-    Write-Host "  2) Consoles and computers on this network$detectedLabel"
-
-    $choice = Read-Host "Choice [$defaultChoice]"
-    if ([string]::IsNullOrWhiteSpace($choice)) {
-        $choice = $defaultChoice
+    if (-not [string]::IsNullOrWhiteSpace($detected)) {
+        return $detected
     }
 
-    if ($choice -ne '2') {
-        return ''
+    if (Test-IPv4 $current) {
+        return $current
     }
 
-    # The address is picked rather than asked for: the detected address is what
-    # the clients have to be told, and an existing value is only kept when no
-    # address can be detected at all.
-    $answer = if ($detected) { $detected } else { $current }
-
-    if (-not (Test-IPv4 $answer)) {
-        Write-Host 'warning: the private address of this machine could not be detected; set PUBLIC_IP in .env' -ForegroundColor Yellow
-        return $null
-    }
-
-    return $answer
+    Write-Host 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in .env' -ForegroundColor Yellow
+    return ''
 }
 
 # Reports the log level the servers run at. Every container writes its log to
 # its standard output, so the answer is what the level of 'docker compose logs'
-# is set to. Debug is the default, because a deployment whose logs are missing
-# detail is the harder one to support; MGO2_LOG_LEVEL answers without a prompt.
+# is set to. Warning is the default; MGO2_LOG_LEVEL answers without a prompt.
 function Resolve-LogLevel([string]$ProjectDirectory) {
     if ($env:MGO2_LOG_LEVEL) {
         if (Test-LogLevel $env:MGO2_LOG_LEVEL) {
             return (Get-NormalisedLogLevel $env:MGO2_LOG_LEVEL)
         }
 
-        Write-Host "warning: MGO2_LOG_LEVEL='$($env:MGO2_LOG_LEVEL)' is not a log level; using Debug" -ForegroundColor Yellow
-        return 'Debug'
+        Write-Host "warning: MGO2_LOG_LEVEL='$($env:MGO2_LOG_LEVEL)' is not a log level; using Warning" -ForegroundColor Yellow
+        return 'Warning'
     }
 
     # A level that is already configured stays the default, so running the
     # script again to install an update does not silently rescale the logs; a
-    # fresh deployment starts at Debug.
+    # fresh deployment starts at Warning.
     $current = Read-EnvValue 'LOG_LEVEL' $ProjectDirectory
-    $defaultChoice = if (Test-LogLevel $current) { Get-NormalisedLogLevel $current } else { 'Debug' }
+    $defaultChoice = if (Test-LogLevel $current) { Get-LogLevelChoice $current } else { '3' }
 
     # A run without an interactive host cannot be asked anything, so the default
     # is what such a run gets.
     if (-not [Environment]::UserInteractive) {
-        return $defaultChoice
+        return (Get-ChoiceLogLevel $defaultChoice)
     }
 
     Write-Host ''
     Write-Host 'Which log level should the servers use?'
-    Write-Host '  Debug, Information, Warning or Error (later levels log less)'
+    foreach ($entry in @(@{ N = '1'; L = 'Debug' }, @{ N = '2'; L = 'Information' }, @{ N = '3'; L = 'Warning' }, @{ N = '4'; L = 'Error' })) {
+        if ($defaultChoice -eq $entry.N) {
+            Write-Host "  $($entry.N)) $($entry.L) (default)"
+        }
+        else {
+            Write-Host "  $($entry.N)) $($entry.L)"
+        }
+    }
 
-    $choice = Read-Host "Log level [$defaultChoice]"
+    $choice = Read-Host "Choice [$defaultChoice]"
     if ([string]::IsNullOrWhiteSpace($choice)) {
         $choice = $defaultChoice
     }
 
-    if (-not (Test-LogLevel $choice)) {
-        Write-Host "warning: '$choice' is not a log level; using $defaultChoice" -ForegroundColor Yellow
-        $choice = $defaultChoice
+    $selected = Get-ChoiceLogLevel $choice
+    if ([string]::IsNullOrWhiteSpace($selected)) {
+        Write-Host "warning: '$choice' is not a log level; using $(Get-ChoiceLogLevel $defaultChoice)" -ForegroundColor Yellow
+        $selected = Get-ChoiceLogLevel $defaultChoice
     }
 
-    return (Get-NormalisedLogLevel $choice)
+    return $selected
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
@@ -332,22 +306,15 @@ try {
         Write-Host 'Created .env from .env.example with a random JWT_SECRET. Review it before exposing the deployment.'
     }
 
-    # A client that is not on this machine is told to connect to the address of
-    # this machine on the network, so the question is answered before the images
-    # are pulled rather than after a connection that cannot work.
-    $resolvedPublicIp = Resolve-PublicIP $projectDirectory
-    if ($null -ne $resolvedPublicIp) {
-        Set-EnvValue 'PUBLIC_IP' $resolvedPublicIp $envFile
-        if (-not $resolvedPublicIp) {
-            Write-Host 'Only a client on this machine will be able to connect.'
-        }
+    $resolvedAdvertisedIp = Resolve-AdvertisedIP $projectDirectory
+    if (-not [string]::IsNullOrWhiteSpace($resolvedAdvertisedIp)) {
+        Set-EnvValue 'ADVERTISED_ADDRESS' $resolvedAdvertisedIp $envFile
     }
 
     # The level decides what a container writes to its standard output, so it is
     # answered and written before the images are pulled.
     $resolvedLogLevel = Resolve-LogLevel $projectDirectory
     Set-EnvValue 'LOG_LEVEL' $resolvedLogLevel $envFile
-    Write-Host "The servers log at $resolvedLogLevel."
 
     if ([string]::IsNullOrWhiteSpace($ImagePrefix)) {
         $ImagePrefix = if ($env:MGO2_IMAGE_PREFIX) { $env:MGO2_IMAGE_PREFIX } else { Read-EnvValue 'MGO2_IMAGE_PREFIX' $projectDirectory }
@@ -390,9 +357,16 @@ try {
         exit 1
     }
 
+    $accountHost = Read-EnvValue 'ADVERTISED_ADDRESS' $projectDirectory
+    if ([string]::IsNullOrWhiteSpace($accountHost) -or $accountHost -eq '0.0.0.0') {
+        $accountHost = Get-PrivateIPv4
+    }
+
     Write-Host ''
     Write-Host "Installed $running containers."
-    Write-Host 'The gate listens on 5731, the account server on 5732 and the HTTP API on 80.'
+    if (-not [string]::IsNullOrWhiteSpace($accountHost)) {
+        Write-Host "To create an account, go to http://$accountHost"
+    }
     Write-Host 'Run this script again to install the update; stop the deployment with: docker compose down'
 }
 finally {

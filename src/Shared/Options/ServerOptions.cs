@@ -7,12 +7,11 @@ namespace Mgo2Server.Shared.Options;
 public sealed class ServerOptions
 {
     /// <summary>
-    /// Address clients are told to connect to: the private address of this
-    /// machine on the network the game clients share. Leaving it unset answers
-    /// every local domain with the wildcard address, which only reaches a
-    /// client running on the same machine.
+    /// Private address of this machine on the network the game clients share.
+    /// Leaving it unset answers every local domain with the wildcard address,
+    /// which only reaches a client running on the same machine.
     /// </summary>
-    public string? PublicIpAddress { get; set; }
+    public string? AdvertisedAddress { get; set; }
 
     /// <summary>
     /// Interval in minutes between two lobby heartbeats, and between two
@@ -25,8 +24,8 @@ public sealed class ServerOptions
     public int GameplayServerPort { get; set; } = 5730;
 
     /// <summary>
-    /// Address the dedicated host announces to peers. Defaults to the announced
-    /// address of this instance, and to loopback when no public address is
+    /// Address the dedicated host announces to peers. Defaults to the advertised
+    /// address of this instance, and to loopback when no advertised address is
     /// configured.
     /// </summary>
     public string? PublicHostAddress { get; set; }
@@ -49,18 +48,18 @@ public sealed class ServerOptions
 
     /// <summary>
     /// Address published to clients in place of each lobby's stored address.
-    /// Only set when the public address is a routable address rather than a
+    /// Only set when the advertised address is a routable address rather than a
     /// wildcard or loopback address.
     /// </summary>
     public string? OverrideIpAddress =>
-        string.IsNullOrWhiteSpace(PublicIpAddress) ||
-        PublicIpAddress is "0.0.0.0" or "127.0.0.1" or "localhost"
+        string.IsNullOrWhiteSpace(AdvertisedAddress) ||
+        AdvertisedAddress is "0.0.0.0" or "127.0.0.1" or "localhost"
             ? null
-            : PublicIpAddress;
+            : AdvertisedAddress;
 
     /// <summary>
     /// Address this instance announces to clients and writes to the lobby rows:
-    /// the public address when one is configured, and the wildcard address
+    /// the advertised address when one is configured, and the wildcard address
     /// otherwise, which only a client on the same machine can reach.
     /// </summary>
     public string AnnouncedIpAddress => OverrideIpAddress ?? "0.0.0.0";

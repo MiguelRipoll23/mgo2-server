@@ -60,10 +60,6 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
     /// <param name="cancellationToken">Token that stops the server.</param>
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        // Binding every interface keeps a client on this machine working: the
-        // name server answers it with the wildcard address, which routes to
-        // loopback, while the announced private address serves every other
-        // client on the network.
         listener = new TcpListener(IPAddress.Any, Port);
         listener.Start();
         Logger.LogInformation("[{LogPrefix}] Listening on port {Port}", LogPrefix, Port);
@@ -298,6 +294,13 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
         if (handlerType is null)
         {
             Logger.LogWarning("[{LogPrefix}] 0x{Command} no-handler {State}", LogPrefix, FormatCommand(command), FormatSessionState(session));
+            var sequenceOut = session.NextSequenceOut();
+            var bytes = PacketCodec.EncodeErrorPacket(
+                command,
+                ErrorCodeConstants.ErrorGeneral,
+                sequenceOut,
+                session.LogPrefix);
+            await session.WriteAsync(bytes, cancellationToken);
             return true;
         }
 

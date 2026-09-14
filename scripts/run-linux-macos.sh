@@ -336,7 +336,7 @@ done
 start_server gameplay-5730 GameplayServer 'Gameplay server (5730/udp)' \
     'GAMEPLAY_SERVER_PORT=5730' \
     'GAMEPLAY_SERVER_LOBBY_NAME=Free Battle' \
-    "P2P_HOST=${PUBLIC_IP:-127.0.0.1}"
+    "P2P_HOST=${ADVERTISED_ADDRESS:-127.0.0.1}"
 
 start_server http Http "HTTP API (${http_port}/tcp)" \
     "HTTP_PORT=${http_port}" \

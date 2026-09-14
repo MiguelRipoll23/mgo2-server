@@ -69,7 +69,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         socket = new UdpClient(new IPEndPoint(IPAddress.Any, port));
         sessions.Start();
         matchService.Start();
-        logger.LogInformation("Listening on {Address}:{Port}", options.AnnouncedIpAddress, port);
+        logger.LogInformation("Listening on port {Port}", port);
 
         await ReceiveLoopAsync(cancellationToken);
     }
@@ -86,7 +86,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private async Task RegisterConnectionAsync(CancellationToken cancellationToken)
     {
         // The wildcard address cannot be connected to, so a server that was
-        // not given a public address falls back to loopback.
+        // not given an advertised address falls back to loopback.
         var advertisedHost = options.PublicHostAddress
             ?? (options.AnnouncedIpAddress is "0.0.0.0" ? "127.0.0.1" : options.AnnouncedIpAddress);
         await gameService.SaveConnectionInformationAsync(

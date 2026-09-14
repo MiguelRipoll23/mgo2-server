@@ -370,7 +370,7 @@ try {
         Start-Server 'gameplay-5730' 'GameplayServer' 'Gameplay server (5730/udp)' @{
             GAMEPLAY_SERVER_PORT = '5730'
             GAMEPLAY_SERVER_LOBBY_NAME = 'Free Battle'
-            P2P_HOST = if ($env:PUBLIC_IP) { $env:PUBLIC_IP } else { '127.0.0.1' }
+            P2P_HOST = if ($env:ADVERTISED_ADDRESS) { $env:ADVERTISED_ADDRESS } else { '127.0.0.1' }
         }
 
         Start-Server 'http' 'Http' "HTTP API ($httpPort/tcp)" @{

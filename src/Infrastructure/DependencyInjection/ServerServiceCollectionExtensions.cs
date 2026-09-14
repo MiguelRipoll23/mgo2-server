@@ -34,8 +34,8 @@ public static class ServerServiceCollectionExtensions
     {
         services.Configure<ServerOptions>(options =>
         {
-            options.PublicIpAddress =
-                configuration.ReadText("PUBLIC_IP") ?? options.PublicIpAddress;
+            options.AdvertisedAddress =
+                configuration.ReadText("ADVERTISED_ADDRESS") ?? options.AdvertisedAddress;
             options.LobbiesRefreshIntervalMinutes = configuration.ReadNumber(
                 "LOBBIES_REFRESH_INTERVAL_MINUTES",
                 options.LobbiesRefreshIntervalMinutes);
