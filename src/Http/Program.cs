@@ -50,6 +50,7 @@ builder.Services.AddServerServices(builder.Configuration);
 
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<PolicyService>();
+builder.Services.AddSingleton<HelpService>();
 builder.Services.AddSingleton<VersionService>();
 builder.Services.AddSingleton<FilesService>();
 builder.Services.AddSingleton<FlashNewsService>();

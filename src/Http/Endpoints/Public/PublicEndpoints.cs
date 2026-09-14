@@ -12,6 +12,7 @@ internal static class PublicEndpoints
         group.MapLoginEndpoints();
         group.MapAccountEndpoints();
         group.MapPolicyEndpoints();
+        group.MapHelpEndpoints();
         group.MapCheckVerEndpoints();
         group.MapDataListEdnpoints();
         group.MapFilesEndpoints();
