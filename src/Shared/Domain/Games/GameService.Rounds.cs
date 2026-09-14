@@ -24,9 +24,10 @@ public sealed partial class GameService
     }
 
     /// <summary>
-    /// Stores the host's latency report: its own ping on the room row, which the
-    /// browser shows, and each player's ping on their roster row, which the
-    /// player list shows.
+    /// Stores the host's latency report: the median of all players' pings on the
+    /// game row (which the browser shows), and each player's ping on their roster
+    /// row (which the player list shows). The game's updated_at is refreshed so
+    /// player-hosted games are not cleaned up while the host is still active.
     /// </summary>
     /// <param name="gameIdentifier">Identifier of the room.</param>
     /// <param name="hostPing">Ping reported for the host.</param>
@@ -38,10 +39,23 @@ public sealed partial class GameService
         IReadOnlyDictionary<int, int> playerPings,
         CancellationToken cancellationToken = default)
     {
+        var allPings = new List<int> { hostPing };
+        foreach (var ping in playerPings.Values)
+        {
+            allPings.Add(ping);
+        }
+
+        var medianPing = CalculateMedian(allPings);
+        var now = DateTimeOffset.UtcNow;
+
         await using var context = await CreateContextAsync(cancellationToken);
         await context.Games
             .Where(game => game.Identifier == gameIdentifier)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(game => game.Ping, hostPing), cancellationToken);
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(game => game.Ping, medianPing)
+                    .SetProperty(game => game.UpdatedAt, now),
+                cancellationToken);
 
         foreach (var (characterIdentifier, ping) in playerPings)
         {
@@ -55,6 +69,23 @@ public sealed partial class GameService
                 .Where(player => player.GameIdentifier == gameIdentifier && player.CharacterIdentifier == characterIdentifier)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(player => player.Ping, clampedPing), cancellationToken);
         }
+    }
+
+    private static int CalculateMedian(List<int> values)
+    {
+        values.Sort();
+        var count = values.Count;
+        if (count == 0)
+        {
+            return 0;
+        }
+
+        if (count % 2 == 1)
+        {
+            return values[count / 2];
+        }
+
+        return (values[(count / 2) - 1] + values[count / 2]) / 2;
     }
 
     /// <summary>

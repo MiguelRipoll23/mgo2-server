@@ -30,6 +30,7 @@ public sealed class GameLobbyServerRunner(
     private LobbyCacheRefreshService? refresh;
     private LobbyHeartbeatService? heartbeat;
     private LobbyCleanupService? cleanup;
+    private GameCleanupService? gameCleanup;
 
     /// <summary>Initializes the database, registers this instance's lobby and starts it.</summary>
     /// <param name="cancellationToken">Token that stops the listener.</param>
@@ -55,9 +56,11 @@ public sealed class GameLobbyServerRunner(
         refresh = serviceProvider.GetRequiredService<LobbyCacheRefreshService>();
         heartbeat = serviceProvider.GetRequiredService<LobbyHeartbeatService>();
         cleanup = serviceProvider.GetRequiredService<LobbyCleanupService>();
+        gameCleanup = serviceProvider.GetRequiredService<GameCleanupService>();
         refresh.Start();
         heartbeat.StartFor(lobby.Identifier);
         cleanup.Start();
+        gameCleanup.Start();
 
         server = new GameplayLobbyServer(serviceProvider, lobby.Port, lobby.Name, lobby.Identifier);
         await server.StartAsync(cancellationToken);
@@ -85,6 +88,12 @@ public sealed class GameLobbyServerRunner(
         {
             await cleanup.StopAsync();
             cleanup = null;
+        }
+
+        if (gameCleanup is not null)
+        {
+            await gameCleanup.StopAsync();
+            gameCleanup = null;
         }
     }
 }

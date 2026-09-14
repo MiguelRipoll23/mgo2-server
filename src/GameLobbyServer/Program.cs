@@ -16,6 +16,7 @@ builder.Services.AddServerServices(builder.Configuration);
 builder.Services.AddCommandHandlers();
 builder.Services.AddSingleton<LobbyHeartbeatService>();
 builder.Services.AddSingleton<LobbyCleanupService>();
+builder.Services.AddSingleton<GameCleanupService>();
 builder.Services.AddSingleton<GameLobbyServerRunner>();
 
 var host = builder.Build();
