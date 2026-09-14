@@ -10,8 +10,8 @@ namespace Mgo2Server.Infrastructure.DependencyInjection;
 /// <summary>
 /// Configures Serilog logging for every server: events go to the console and,
 /// when LOG_DIRECTORY is set, to a rolling file under that directory. The
-/// minimum level defaults to Debug so UDP/TCP packet hex dumps are visible;
-/// set LOG_LEVEL to override (Information, Warning, Error).
+/// minimum level defaults to Warning; set LOG_LEVEL to override
+/// (Debug, Information, Warning, Error). The run scripts export LOG_LEVEL=Debug.
 /// </summary>
 public static class LoggingServiceCollectionExtensions
 {
@@ -22,7 +22,7 @@ public static class LoggingServiceCollectionExtensions
     public const string LogDirectorySettingName = "LOG_DIRECTORY";
 
     /// <summary>Path template used for the rolling file sink.</summary>
-    private const string FilePathTemplate = "log-.txt";
+    private const string FilePathTemplate = "log.txt";
 
     /// <summary>Output template shared by the console and file sinks.</summary>
     private const string OutputTemplate =
@@ -32,7 +32,7 @@ public static class LoggingServiceCollectionExtensions
     /// Shared level switch that the configuration system can update at runtime
     /// so the log level takes effect without restarting the process.
     /// </summary>
-    public static LoggingLevelSwitch LevelSwitch { get; } = new(LogEventLevel.Debug);
+    public static LoggingLevelSwitch LevelSwitch { get; } = new(LogEventLevel.Warning);
 
     /// <summary>
     /// Applies Serilog logging with the configured minimum level. Log events go
@@ -47,12 +47,12 @@ public static class LoggingServiceCollectionExtensions
         this ILoggingBuilder logging,
         IConfiguration configuration)
     {
-        logging.SetMinimumLevel(LogLevel.Debug);
+        logging.SetMinimumLevel(LogLevel.Warning);
 
         var loggerConfig = new LoggerConfiguration()
             .MinimumLevel.ControlledBy(LevelSwitch)
             .Enrich.FromLogContext()
-            .WriteTo.File(path: "logs/log-.txt", outputTemplate: OutputTemplate);
+            .WriteTo.File(path: ".logs/log.txt", outputTemplate: OutputTemplate);
 
         var logDirectory = configuration[LogDirectorySettingName];
         if (!string.IsNullOrWhiteSpace(logDirectory)

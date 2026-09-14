@@ -25,9 +25,9 @@
     looked for: the servers bind their own ports, and every one of them is
     configurable through .env.
 
-    The servers run in the foreground and Ctrl+C stops all of them. In Debug
-    builds their output goes to .logs\<server>.log; Release builds write to
-    the console only.
+    The servers run in the foreground and Ctrl+C stops all of them. Their log
+    level is set to Debug so packet hex dumps are visible. Log files are written
+    to .logs\ with daily rotation (7-day retention).
 
     Every other setting is read from .env, which is created from .env.example on
     the first run and never overwritten. The process environment wins over .env.
@@ -260,6 +260,7 @@ function Start-Server([string]$Name, [string]$Project, [string]$Label, [hashtabl
     # Always pass LOG_DIRECTORY so Serilog writes to disk regardless of
     # build configuration. The app no longer relies on shell redirection.
     $envOverrides['LOG_DIRECTORY'] = $logDirectory
+    $envOverrides['LOG_LEVEL'] = 'Debug'
 
     $savedSettings = @{}
     foreach ($name in $envOverrides.Keys) {

@@ -22,9 +22,9 @@
 # binaries themselves are built by scripts/build-linux-macos.sh, which this
 # script refuses to start without.
 #
-# The servers run in the foreground and Ctrl+C stops all of them. In Debug
-# builds their output goes to .logs/<server>.log; Release builds write to
-# the console only.
+# The servers run in the foreground and Ctrl+C stops all of them. Their log
+# level is set to Debug so packet hex dumps are visible. Log files are written
+# to .logs/ with daily rotation (7-day retention).
 #
 # Every setting is read from .env, which is created from .env.example on
 # the first run and never overwritten. The environment wins over .env.
@@ -252,6 +252,7 @@ start_server() {
             shift
         done
         export LOG_DIRECTORY="$log_directory"
+        export LOG_LEVEL=Debug
         exec dotnet "$dll"
     ) &
 
