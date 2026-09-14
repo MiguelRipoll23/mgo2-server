@@ -1,0 +1,96 @@
+using System.Buffers.Binary;
+using Mgo2Server.AccountLobbyServer.Commands;
+using Mgo2Server.Shared.Persistence.Entities;
+
+namespace Mgo2Server.Tests;
+
+/// <summary>
+/// Guards the 0x3049 grid. Every size here comes from the client's own parser, so
+/// a change silently moves the entitlement trailer out of the thirty-two bytes the
+/// client copies to its session, which is what leaves an account without
+/// expansion packs.
+/// </summary>
+public sealed class CharacterListPayloadTests
+{
+    /// <summary>Offset of the expansion bitmask inside the trailer.</summary>
+    private const int ExpansionIndex = 1;
+
+    /// <summary>Offset of the codec pack unlock inside the trailer.</summary>
+    private const int CodecIndex = 3;
+
+    /// <summary>Expansion bitmask: GENE (0x01), MEME (0x02) and SCENE (0x04).</summary>
+    private const byte AllExpansions = 0x07;
+
+    /// <summary>Codec voice pack unlock.</summary>
+    private const byte CodecPacks = 0x03;
+
+    [Fact]
+    public void Build_writes_the_grid_the_client_parses()
+    {
+        var payload = CharacterListPayloadBuilder.Build(characterSlots: 3, entries: []);
+
+        Assert.Equal(0x1a3, payload.Length);
+        Assert.Equal(0x183, CharacterListPayloadBuilder.TrailerOffset);
+        // A non-zero result word makes the client skip the list entirely.
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32BigEndian(payload));
+        Assert.Equal(3, payload[4]);
+        Assert.Equal(0, payload[5]);
+        Assert.Equal(
+            CharacterListPayloadBuilder.TrailerOffset + CharacterListPayloadBuilder.TrailerSize,
+            payload.Length);
+    }
+
+    [Fact]
+    public void Build_places_the_entitlements_where_the_client_reads_them()
+    {
+        var payload = CharacterListPayloadBuilder.Build(characterSlots: 8, entries: []);
+        var trailer = payload.AsSpan(CharacterListPayloadBuilder.TrailerOffset);
+
+        Assert.Equal(CharacterListPayloadBuilder.TrailerSize, trailer.Length);
+        Assert.Equal(AllExpansions, trailer[ExpansionIndex]);
+        Assert.Equal(CodecPacks, trailer[CodecIndex]);
+        // The remaining bytes are reserved: the client keeps them in its session
+        // but no reader in the image consumes them.
+        Assert.Equal(0, trailer[0]);
+        Assert.Equal(0, trailer[2]);
+        Assert.All(trailer[4..].ToArray(), value => Assert.Equal(0, value));
+    }
+
+    [Fact]
+    public void Build_serves_seven_entries_and_drops_the_rest()
+    {
+        var entries = Enumerable.Range(1, 9)
+            .Select(identifier => new CharacterListPayloadBuilder.Entry(
+                new Character { Identifier = identifier, Name = $"CHAR{identifier}" },
+                Appearance: null,
+                IsMain: identifier == 1))
+            .ToList();
+
+        var payload = CharacterListPayloadBuilder.Build(characterSlots: 9, entries);
+
+        Assert.Equal(0x1a3, payload.Length);
+        // Slot byte, then the identifier, then the sixteenth byte name field.
+        Assert.Equal(7, payload[5]);
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32BigEndian(payload.AsSpan(0x17 + 1)));
+        Assert.Equal(7u, BinaryPrimitives.ReadUInt32BigEndian(payload.AsSpan(0x17 + (6 * 52) + 1)));
+        Assert.Equal(0, payload[0x17]);
+        Assert.Equal(6, payload[0x17 + (6 * 52)]);
+        // The main character is starred, as the client's main slot search expects.
+        Assert.Equal((byte)'*', payload[0x17 + 5]);
+    }
+
+    [Fact]
+    public void Build_star_keeps_the_main_name_inside_its_field()
+    {
+        var entry = new CharacterListPayloadBuilder.Entry(
+            new Character { Identifier = 1, Name = "SIXTEEN_CHAR_NAME" },
+            Appearance: null,
+            IsMain: true);
+
+        var payload = CharacterListPayloadBuilder.Build(characterSlots: 1, [entry]);
+
+        var name = System.Text.Encoding.Latin1.GetString(payload.AsSpan(0x17 + 5, 16));
+
+        Assert.Equal("*SIXTEEN_CHAR_NA", name);
+    }
+}
