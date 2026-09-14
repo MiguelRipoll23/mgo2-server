@@ -5,11 +5,5 @@ obj/
 # Output of scripts/run-linux-macos.sh and scripts/run-windows.ps1.
 .logs/
 
-# Patch files mirrored from the upstream launcher at runtime.
-static/files/
-*.user
-.vs/
-.idea/
-
 # Python bytecode left behind by the analysis scripts in tools/.
 __pycache__/
