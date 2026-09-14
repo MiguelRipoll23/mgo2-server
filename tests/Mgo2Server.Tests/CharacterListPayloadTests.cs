@@ -29,8 +29,11 @@ public sealed class CharacterListPayloadTests
     {
         var payload = CharacterListPayloadBuilder.Build(characterSlots: 3, entries: []);
 
-        Assert.Equal(0x1a3, payload.Length);
-        Assert.Equal(0x183, CharacterListPayloadBuilder.TrailerOffset);
+        // Eight entries of fifty-two bytes plus the header and the trailer. The
+        // client's loop compares its destination offset against 0x1a4 before it
+        // advances by 0x3c, so it fills the eighth record as well.
+        Assert.Equal(0x1d7, payload.Length);
+        Assert.Equal(0x1b7, CharacterListPayloadBuilder.TrailerOffset);
         // A non-zero result word makes the client skip the list entirely.
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32BigEndian(payload));
         Assert.Equal(3, payload[4]);
@@ -57,24 +60,27 @@ public sealed class CharacterListPayloadTests
     }
 
     [Fact]
-    public void Build_serves_seven_entries_and_drops_the_rest()
+    public void Build_serves_eight_entries_and_drops_the_rest()
     {
-        var entries = Enumerable.Range(1, 9)
+        var entries = Enumerable.Range(1, 10)
             .Select(identifier => new CharacterListPayloadBuilder.Entry(
                 new Character { Identifier = identifier, Name = $"CHAR{identifier}" },
                 Appearance: null,
                 IsMain: identifier == 1))
             .ToList();
 
-        var payload = CharacterListPayloadBuilder.Build(characterSlots: 9, entries);
+        var payload = CharacterListPayloadBuilder.Build(characterSlots: 10, entries);
 
-        Assert.Equal(0x1a3, payload.Length);
+        Assert.Equal(0x1d7, payload.Length);
         // Slot byte, then the identifier, then the sixteenth byte name field.
-        Assert.Equal(7, payload[5]);
+        Assert.Equal(8, payload[5]);
         Assert.Equal(1u, BinaryPrimitives.ReadUInt32BigEndian(payload.AsSpan(0x17 + 1)));
-        Assert.Equal(7u, BinaryPrimitives.ReadUInt32BigEndian(payload.AsSpan(0x17 + (6 * 52) + 1)));
+        Assert.Equal(8u, BinaryPrimitives.ReadUInt32BigEndian(payload.AsSpan(0x17 + (7 * 52) + 1)));
         Assert.Equal(0, payload[0x17]);
-        Assert.Equal(6, payload[0x17 + (6 * 52)]);
+        Assert.Equal(7, payload[0x17 + (7 * 52)]);
+        Assert.Equal(8, CharacterListPayloadBuilder.SlotCount);
+        // Everything past the eighth entry is padding up to the trailer.
+        Assert.Equal(0, payload[0x17 + (8 * 52)]);
         // The main character is starred, as the client's main slot search expects.
         Assert.Equal((byte)'*', payload[0x17 + 5]);
     }

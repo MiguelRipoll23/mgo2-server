@@ -70,8 +70,8 @@ public sealed class GetCharacterListHandler(
         int? mainCharacterIdentifier,
         CancellationToken cancellationToken)
     {
-        // TODO: characters past the seventh are dropped without a trace. The client
-        // grid cannot carry them (its parser fills seven records), so an account
+        // TODO: characters past the eighth are dropped without a trace. The client
+        // grid cannot carry them (its parser fills eight records), so an account
         // whose User.Slots is raised past that silently loses the selection of the
         // extra characters. Either cap Slots at CharacterListPayloadBuilder.SlotCount
         // or report the overflow here.

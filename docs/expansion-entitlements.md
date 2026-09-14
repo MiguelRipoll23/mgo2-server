@@ -83,8 +83,8 @@ the session struct returned by `FUN_00f02ae8`, i.e. `session + 0x15508`.
 | `0x05` | 1 | character count | `struct + 0x01` |
 | `0x06` | 1 | main slot index | `struct + 0x02` |
 | `0x07` | 16 | main character name | `struct + 0x20c` |
-| `0x17` | 7 × 52 | character entries | `struct + 0x04`, stride `0x3c` in memory |
-| `0x183` | 32 | entitlement trailer | `struct + 0x1e4` |
+| `0x17` | 8 × 52 | character entries | `struct + 0x04`, stride `0x3c` in memory |
+| `0x1b7` | 32 | entitlement trailer | `struct + 0x1e4` |
 
 The entry loop is the key detail:
 
@@ -92,7 +92,7 @@ The entry loop is the key detail:
 0x00f032e8: li      r24, 0
 0x00f032ec: add     r28, r26, r24        ; destination = struct + 4 + r24
 ...
-0x00f03604: cmpwi   cr7, r24, 0x1a4      ; 0x1a4 = 7 * 0x3c
+0x00f03604: cmpwi   cr7, r24, 0x1a4      ; 0x1a4 = 7 * 0x3c, compared *before* the step
 0x00f03608: addi    r24, r24, 0x3c       ; memory stride is 60, the stream stride is 52
 0x00f0360c: bne     cr7, 0xf032ec
 0x00f03610: addi    r4, r27, 0x1e4       ; trailer -> struct + 0x1e4
@@ -100,10 +100,16 @@ The entry loop is the key detail:
 0x00f03620: bl      0xf2e5c0             ; read bytes
 ```
 
-So the grid holds **seven** entries, and the trailer of the stream starts at
-`23 + 7 * 52 = 387` (`0x183`), for a total payload of `419` (`0x1a3`) bytes. The client's
-session array is eight records wide (its `memset` at `0x00f03240` clears `0x1e0` bytes) and its
-main-slot search walks eight records, but only seven are ever filled from the packet.
+The order of those two instructions is what settles the entry count: the bound is compared
+**before** `0x3c` is added, so the comparison runs on the offset of the record the iteration is
+about to fill. `r24` therefore takes the values `0, 0x3c, 0x78, 0xb4, 0xf0, 0x12c, 0x168, 0x1a4`
+and the body runs for each of them - **eight** entries, not seven. Two other details of the same
+handler agree: the `memset` at `0x00f03240` clears `0x1e0` bytes (`0x1e0 = 8 * 60`, the eight
+sixty-byte session records) and the trailer the loop then reads lands at `struct + 0x1e4`,
+exactly one sixty-byte record past the last one it filled.
+
+So the grid holds **eight** entries and the trailer of the stream starts at
+`23 + 8 * 52 = 439` (`0x1b7`), for a total payload of `471` (`0x1d7`) bytes.
 
 ### 2.2 Entry layout
 
@@ -179,16 +185,19 @@ Disassembly reveals the full extent of features activated by this bitmask:
 ## 4. Root Cause and Fix
 
 ### Bug
-The client reads its entitlement word from stream offset `387` (`0x183`), but the server used to
-pad the grid to **eight** slots, which pushed its trailer to offset `439` (`0x1b7`):
+The seven-entry reading of the parser loop put the trailer at stream offset `387` (`0x183`) and
+the reply was cut to that layout:
 
 ```csharp
 // Previous code:
-private const int ListSlots = 8;                                        // -> trailer at 23 + 8 * 52 = 439
-private const int ListPayloadSize = 0x1d7;                              // 471 bytes
+private const int SlotCount = 7;                                        // -> trailer at 23 + 7 * 52 = 387
+private const int PayloadSize = 0x1a3;                                  // 419 bytes
 ```
 
-The client therefore read its 32-byte trailer out of the eighth slot region, which is padding:
+The client walks eight entries, so it consumed the bytes at `0x183` as the **eighth character
+entry** (an entry whose name is the sixteen zero bytes that follow the trailer's first two bytes)
+and read the 32-byte trailer it actually wants from stream offset `439` (`0x1b7`) - past the end
+of the 419-byte payload, where the receive buffer still holds zeroes:
 
 1. `trailer[1]` (`0x1e5`) arrived as `0x00`, so the game client saw **0 expansion packs**, and
    every gate listed in section 3 stayed closed.
@@ -200,9 +209,9 @@ describes the grid the client actually walks and writes the entitlements at thei
 indices:
 
 ```csharp
-public const int SlotCount = 7;                                       // client loop bound: 0x1a4 / 0x3c
-public const int TrailerOffset = HeaderSize + (SlotCount * EntrySize); // 0x183
-public const int PayloadSize = TrailerOffset + TrailerSize;            // 0x1a3
+public const int SlotCount = 8;                                       // 0x1a4 / 0x3c + 1 records
+public const int TrailerOffset = HeaderSize + (SlotCount * EntrySize); // 0x1b7
+public const int PayloadSize = TrailerOffset + TrailerSize;            // 0x1d7
 
 private static void WriteTrailer(PacketWriter writer)
 {

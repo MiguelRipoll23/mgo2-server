@@ -6,7 +6,7 @@ namespace Mgo2Server.AccountLobbyServer.Commands;
 /// <summary>
 /// Builds the fixed-grid payload of the character list reply (0x3049). Every size
 /// below is the client's own, taken from the inline parser at 0x00f031ec of
-/// MGO2.ELF: a header, seven fifty-two byte entries and the thirty-two byte
+/// MGO2.ELF: a header, eight fifty-two byte entries and the thirty-two byte
 /// entitlement trailer the client copies onto session + 0x1e4.
 /// </summary>
 public static class CharacterListPayloadBuilder
@@ -16,21 +16,24 @@ public static class CharacterListPayloadBuilder
 
     /// <summary>
     /// Number of entries the client parses. Its loop compares the destination
-    /// offset against 0x1a4 and advances it by 0x3c per entry, so the grid carries
-    /// seven entries even though the session array behind it is eight wide.
+    /// offset against 0x1a4 and *then* advances it by 0x3c, so the comparison runs
+    /// on the offset of the entry it is about to fill: the entry at 0x1a4 is still
+    /// parsed and the loop only exits on the next pass. Zero to 0x1a4 in steps of
+    /// 0x3c is eight entries, which is also the size of the session array the
+    /// parser clears (0x1e0 bytes = eight sixty byte records).
     /// </summary>
-    public const int SlotCount = 7;
+    public const int SlotCount = 8;
 
     /// <summary>Size of one entry, which the client unpacks into a sixty byte record.</summary>
     public const int EntrySize = 52;
 
-    /// <summary>Offset of the entitlement trailer (0x183).</summary>
+    /// <summary>Offset of the entitlement trailer (0x1b7).</summary>
     public const int TrailerOffset = HeaderSize + (SlotCount * EntrySize);
 
     /// <summary>Size of the entitlement trailer.</summary>
     public const int TrailerSize = 32;
 
-    /// <summary>Total size of the reply (0x1a3).</summary>
+    /// <summary>Total size of the reply (0x1d7).</summary>
     public const int PayloadSize = TrailerOffset + TrailerSize;
 
     /// <summary>Field length of a character name.</summary>
