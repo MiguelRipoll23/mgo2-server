@@ -16,11 +16,12 @@ internal static class HelpEndpoints
     }
 
     private static async Task<IResult> GetHelpAsync(
+        HttpRequest request,
         HelpService helpService,
         string path,
         CancellationToken cancellationToken)
     {
-        var body = await helpService.GetHelpTextAsync(path, cancellationToken);
+        var body = await helpService.GetHelpTextAsync(path, request, cancellationToken);
         if (string.IsNullOrEmpty(body))
         {
             return Results.NotFound();

@@ -19,16 +19,14 @@ public sealed class PolicyService(
     /// <summary>Text returned when the upstream document is unavailable.</summary>
     private const string UpstreamUnavailableMessage = "Request has timed out.";
 
-    /// <summary>User agent every upstream launcher request is made with, so the launcher tells the client from a generic crawler.</summary>
-    public const string UpstreamUserAgent = "Mozilla/5.0 (PLAYSTATION 3; 1.00)";
-
     private readonly HttpApiOptions options = options.Value;
 
     /// <summary>Returns the policy document the client is shown.</summary>
+    /// <param name="request">Original client request whose headers are forwarded upstream.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<string> GetPolicyAsync(CancellationToken cancellationToken = default)
+    public async Task<string> GetPolicyAsync(HttpRequest request, CancellationToken cancellationToken = default)
     {
-        var upstreamPolicy = await FetchUpstreamPolicyAsync(cancellationToken);
+        var upstreamPolicy = await FetchUpstreamPolicyAsync(request, cancellationToken);
 
         var original = !string.IsNullOrWhiteSpace(upstreamPolicy)
             ? upstreamPolicy.TrimEnd()
@@ -38,12 +36,19 @@ public sealed class PolicyService(
         return $"{localPolicy.TrimEnd()}\n{original}\n";
     }
 
-    private async Task<string?> FetchUpstreamPolicyAsync(CancellationToken cancellationToken)
+    private async Task<string?> FetchUpstreamPolicyAsync(HttpRequest request, CancellationToken cancellationToken)
     {
         try
         {
             var client = CreateUpstreamClient();
-            using var response = await client.GetAsync("/jp/mgo2/policy/policy.txt", cancellationToken);
+            using var upstreamRequest = new HttpRequestMessage(HttpMethod.Get, "/jp/mgo2/policy/policy.txt");
+
+            foreach (var header in request.Headers)
+            {
+                upstreamRequest.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }
+
+            using var response = await client.SendAsync(upstreamRequest, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
                 return await response.Content.ReadAsStringAsync(cancellationToken);
@@ -79,7 +84,6 @@ public sealed class PolicyService(
         var client = httpClientFactory.CreateClient(nameof(PolicyService));
         client.BaseAddress = new Uri(options.LauncherServer);
         client.Timeout = TimeSpan.FromMilliseconds(options.UpstreamFetchTimeoutMilliseconds);
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(UpstreamUserAgent);
         return client;
     }
 }

@@ -26,8 +26,9 @@ public sealed class HelpService(
     /// request is made.
     /// </summary>
     /// <param name="filePath">Path of the help file below the help route.</param>
+    /// <param name="request">Original client request whose headers are forwarded upstream.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<string> GetHelpTextAsync(string filePath, CancellationToken cancellationToken = default)
+    public async Task<string> GetHelpTextAsync(string filePath, HttpRequest request, CancellationToken cancellationToken = default)
     {
         var escaped = EscapesHelpDirectory(filePath);
         if (escaped)
@@ -39,7 +40,14 @@ public sealed class HelpService(
         try
         {
             var client = CreateUpstreamClient();
-            using var response = await client.GetAsync($"/jp/mgo2/help/{filePath}", cancellationToken);
+            using var upstreamRequest = new HttpRequestMessage(HttpMethod.Get, $"/jp/mgo2/help/{filePath}");
+
+            foreach (var header in request.Headers)
+            {
+                upstreamRequest.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }
+
+            using var response = await client.SendAsync(upstreamRequest, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
                 return await response.Content.ReadAsStringAsync(cancellationToken);
