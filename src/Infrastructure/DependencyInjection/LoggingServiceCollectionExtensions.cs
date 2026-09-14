@@ -10,8 +10,11 @@ namespace Mgo2Server.Infrastructure.DependencyInjection;
 /// <summary>
 /// Configures Serilog logging for every server: events go to the console and,
 /// when LOG_DIRECTORY is set, to a rolling file under that directory. The
-/// minimum level defaults to Warning; set LOG_LEVEL to override
-/// (Debug, Information, Warning, Error). The run scripts export LOG_LEVEL=Debug.
+/// console sink is what puts a container's log on its standard output, where
+/// 'docker compose logs' reads it. The minimum level defaults to Warning; set
+/// LOG_LEVEL to override (Debug, Information, Warning, Error). The install
+/// scripts ask for the level and default to Debug, and the run scripts export
+/// LOG_LEVEL=Debug outright.
 /// </summary>
 public static class LoggingServiceCollectionExtensions
 {
@@ -20,6 +23,9 @@ public static class LoggingServiceCollectionExtensions
 
     /// <summary>Name of the setting that sets the log directory.</summary>
     public const string LogDirectorySettingName = "LOG_DIRECTORY";
+
+    /// <summary>Level applied when LOG_LEVEL is unset or names no level.</summary>
+    private const LogLevel DefaultLevel = LogLevel.Warning;
 
     /// <summary>Path template used for the rolling file sink.</summary>
     private const string FilePathTemplate = "log.txt";
@@ -47,11 +53,20 @@ public static class LoggingServiceCollectionExtensions
         this ILoggingBuilder logging,
         IConfiguration configuration)
     {
-        logging.SetMinimumLevel(LogLevel.Warning);
+        var level = ResolveLevel(configuration);
+
+        // Serilog is the only output. The providers the host wires by default
+        // are dropped, so a container's log is exactly what Serilog writes and
+        // no event is written twice.
+        logging.ClearProviders();
+        logging.SetMinimumLevel(level);
+
+        LevelSwitch.MinimumLevel = ToEventLevel(level);
 
         var loggerConfig = new LoggerConfiguration()
             .MinimumLevel.ControlledBy(LevelSwitch)
             .Enrich.FromLogContext()
+            .WriteTo.Console(outputTemplate: OutputTemplate)
             .WriteTo.File(path: ".logs/log.txt", outputTemplate: OutputTemplate);
 
         var logDirectory = configuration[LogDirectorySettingName];
@@ -77,4 +92,31 @@ public static class LoggingServiceCollectionExtensions
 
         return logging;
     }
+
+    /// <summary>
+    /// Reads LOG_LEVEL, falling back to the documented default when it is unset
+    /// or does not name a level the logging framework knows.
+    /// </summary>
+    private static LogLevel ResolveLevel(IConfiguration configuration)
+    {
+        var configured = configuration[LogLevelSettingName];
+
+        return Enum.TryParse<LogLevel>(configured, ignoreCase: true, out var level)
+            ? level
+            : DefaultLevel;
+    }
+
+    /// <summary>Maps a logging level onto the equivalent Serilog level.</summary>
+    private static LogEventLevel ToEventLevel(LogLevel level) => level switch
+    {
+        LogLevel.Trace => LogEventLevel.Verbose,
+        LogLevel.Debug => LogEventLevel.Debug,
+        LogLevel.Information => LogEventLevel.Information,
+        LogLevel.Warning => LogEventLevel.Warning,
+        LogLevel.Error => LogEventLevel.Error,
+        LogLevel.Critical => LogEventLevel.Fatal,
+        // Serilog has no "off" level; fatal is the quietest level it has.
+        LogLevel.None => LogEventLevel.Fatal,
+        _ => LogEventLevel.Warning,
+    };
 }

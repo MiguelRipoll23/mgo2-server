@@ -47,6 +47,10 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
   local network should be served, and writes PUBLIC_IP accordingly. Setting
   MGO2_NETWORK=local or MGO2_NETWORK=private answers without a prompt.
 
+  It also asks which log level the servers run at (Debug, Information, Warning
+  or Error) and writes LOG_LEVEL, defaulting to Debug. Setting MGO2_LOG_LEVEL
+  answers without a prompt.
+
   When it is omitted, MGO2_IMAGE_PREFIX is used: the setting of .env, or the
   environment variable, or the registry the images are published to by default.
 
@@ -90,6 +94,25 @@ detect_private_ipv4() {
     fi
 
     printf '%s' "$address"
+}
+
+# Answers true for one of the log levels the servers know how to parse.
+is_log_level() {
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        debug|information|warning|error) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Spells a log level the one way the servers document it, so .env holds a value
+# that reads the same however it was typed.
+normalise_log_level() {
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        debug) printf '%s' 'Debug' ;;
+        information) printf '%s' 'Information' ;;
+        warning) printf '%s' 'Warning' ;;
+        error) printf '%s' 'Error' ;;
+    esac
 }
 
 # Answers true for a dotted IPv4 address whose four octets each fit in a byte.
@@ -195,6 +218,58 @@ resolve_public_ip() {
     printf '%s' "$answer"
 }
 
+# Reports the log level the servers run at. Every container writes its log to
+# its standard output, so the answer is what the level of 'docker compose logs'
+# is set to. Debug is the default, because a deployment whose logs are missing
+# detail is the harder one to support; MGO2_LOG_LEVEL answers without a prompt.
+resolve_log_level() {
+    local current default_choice choice
+
+    current="$(read_env_value LOG_LEVEL)"
+
+    # The environment decides without asking, which is what a piped or otherwise
+    # unattended run needs.
+    if [ -n "${MGO2_LOG_LEVEL+x}" ]; then
+        if is_log_level "$MGO2_LOG_LEVEL"; then
+            normalise_log_level "$MGO2_LOG_LEVEL"
+        else
+            echo "warning: MGO2_LOG_LEVEL='$MGO2_LOG_LEVEL' is not a log level; using Debug" >&2
+            printf '%s' 'Debug'
+        fi
+        return 0
+    fi
+
+    # A level that is already configured stays the default, so running the
+    # script again to install an update does not silently rescale the logs;
+    # a fresh deployment starts at Debug.
+    if is_log_level "$current"; then
+        default_choice="$(normalise_log_level "$current")"
+    else
+        default_choice='Debug'
+    fi
+
+    # A run without a terminal cannot be asked anything, so the default is what
+    # such a run gets.
+    if ! { : < /dev/tty; } 2>/dev/null; then
+        printf '%s' "$default_choice"
+        return 0
+    fi
+
+    printf '\nWhich log level should the servers use?\n' > /dev/tty
+    printf '  Debug, Information, Warning or Error (later levels log less)\n' > /dev/tty
+
+    choice=''
+    read -r -p "Log level [${default_choice}]: " choice < /dev/tty || choice=''
+    choice="${choice:-$default_choice}"
+
+    if ! is_log_level "$choice"; then
+        echo "warning: '$choice' is not a log level; using ${default_choice}" >&2
+        choice="$default_choice"
+    fi
+
+    normalise_log_level "$choice"
+}
+
 # Adds the trailing slash the compose file expects, and nothing when empty.
 normalise_prefix() {
     local value="$1"
@@ -283,6 +358,12 @@ if [ "$resolved_public_ip" != '__unchanged__' ]; then
         echo 'Only a client on this machine will be able to connect.'
     fi
 fi
+
+# The level decides what a container writes to its standard output, so it is
+# answered and written before the images are pulled.
+resolved_log_level="$(resolve_log_level)"
+set_env_value LOG_LEVEL "$resolved_log_level" .env
+echo "The servers log at ${resolved_log_level}."
 
 image_prefix="$(normalise_prefix "${1:-${MGO2_IMAGE_PREFIX:-$(read_env_value MGO2_IMAGE_PREFIX)}}")"
 image_prefix="${image_prefix:-$(normalise_prefix "${default_image_prefix}")}"

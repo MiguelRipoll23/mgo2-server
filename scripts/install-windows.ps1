@@ -24,6 +24,10 @@
     Set MGO2_NETWORK=local or MGO2_NETWORK=private (or PUBLIC_IP) to answer that
     question without a prompt, which is what an unattended run needs.
 
+    The script also asks which log level the servers run at (Debug, Information,
+    Warning or Error) and writes LOG_LEVEL, defaulting to Debug. Set
+    MGO2_LOG_LEVEL to answer that question without a prompt.
+
 .PARAMETER ImagePrefix
     Registry path the images are pulled from, including the trailing slash, for
     example ghcr.io/your-account/your-repository/. When it is omitted,
@@ -91,6 +95,24 @@ function Get-PrivateIPv4 {
     }
 
     return ''
+}
+
+# Answers true for one of the log levels the servers know how to parse.
+function Test-LogLevel([string]$Value) {
+    return $Value -imatch '^(debug|information|warning|error)$'
+}
+
+# Spells a log level the one way the servers document it, so .env holds a value
+# that reads the same however it was typed.
+function Get-NormalisedLogLevel([string]$Value) {
+    switch ($Value.ToLowerInvariant()) {
+        'debug' { return 'Debug' }
+        'information' { return 'Information' }
+        'warning' { return 'Warning' }
+        'error' { return 'Error' }
+    }
+
+    return 'Debug'
 }
 
 # Answers true for a dotted IPv4 address whose four octets each fit in a byte.
@@ -203,6 +225,49 @@ function Resolve-PublicIP([string]$ProjectDirectory) {
     return $answer
 }
 
+# Reports the log level the servers run at. Every container writes its log to
+# its standard output, so the answer is what the level of 'docker compose logs'
+# is set to. Debug is the default, because a deployment whose logs are missing
+# detail is the harder one to support; MGO2_LOG_LEVEL answers without a prompt.
+function Resolve-LogLevel([string]$ProjectDirectory) {
+    if ($env:MGO2_LOG_LEVEL) {
+        if (Test-LogLevel $env:MGO2_LOG_LEVEL) {
+            return (Get-NormalisedLogLevel $env:MGO2_LOG_LEVEL)
+        }
+
+        Write-Host "warning: MGO2_LOG_LEVEL='$($env:MGO2_LOG_LEVEL)' is not a log level; using Debug" -ForegroundColor Yellow
+        return 'Debug'
+    }
+
+    # A level that is already configured stays the default, so running the
+    # script again to install an update does not silently rescale the logs; a
+    # fresh deployment starts at Debug.
+    $current = Read-EnvValue 'LOG_LEVEL' $ProjectDirectory
+    $defaultChoice = if (Test-LogLevel $current) { Get-NormalisedLogLevel $current } else { 'Debug' }
+
+    # A run without an interactive host cannot be asked anything, so the default
+    # is what such a run gets.
+    if (-not [Environment]::UserInteractive) {
+        return $defaultChoice
+    }
+
+    Write-Host ''
+    Write-Host 'Which log level should the servers use?'
+    Write-Host '  Debug, Information, Warning or Error (later levels log less)'
+
+    $choice = Read-Host "Log level [$defaultChoice]"
+    if ([string]::IsNullOrWhiteSpace($choice)) {
+        $choice = $defaultChoice
+    }
+
+    if (-not (Test-LogLevel $choice)) {
+        Write-Host "warning: '$choice' is not a log level; using $defaultChoice" -ForegroundColor Yellow
+        $choice = $defaultChoice
+    }
+
+    return (Get-NormalisedLogLevel $choice)
+}
+
 # Adds the trailing slash the compose file expects, and nothing when empty.
 function Get-NormalisedPrefix([string]$Value) {
     if ([string]::IsNullOrWhiteSpace($Value)) {
@@ -277,6 +342,12 @@ try {
             Write-Host 'Only a client on this machine will be able to connect.'
         }
     }
+
+    # The level decides what a container writes to its standard output, so it is
+    # answered and written before the images are pulled.
+    $resolvedLogLevel = Resolve-LogLevel $projectDirectory
+    Set-EnvValue 'LOG_LEVEL' $resolvedLogLevel $envFile
+    Write-Host "The servers log at $resolvedLogLevel."
 
     if ([string]::IsNullOrWhiteSpace($ImagePrefix)) {
         $ImagePrefix = if ($env:MGO2_IMAGE_PREFIX) { $env:MGO2_IMAGE_PREFIX } else { Read-EnvValue 'MGO2_IMAGE_PREFIX' $projectDirectory }
