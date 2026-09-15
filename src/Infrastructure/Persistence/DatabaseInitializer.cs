@@ -154,8 +154,8 @@ public sealed class DatabaseInitializer(
     /// <summary>
     /// Seeds the game types in a single transaction, so that no other server
     /// instance ever sees a half-seeded database. The statements are idempotent:
-    /// they repair a row that was removed, without touching the lobby rows the
-    /// lobby servers registered for themselves.
+    /// they recreate a row that was removed and repair one whose name changed,
+    /// without touching the lobby rows the lobby servers registered for themselves.
     /// </summary>
     /// <param name="context">Context to seed through.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
@@ -171,7 +171,7 @@ public sealed class DatabaseInitializer(
                 $"""
                  INSERT INTO lobby_game_types (id, game_id, name)
                  VALUES ({identifier}, {gameIdentifier}, {name})
-                 ON CONFLICT (id) DO NOTHING
+                 ON CONFLICT (id) DO UPDATE SET game_id = EXCLUDED.game_id, name = EXCLUDED.name
                  """,
                 cancellationToken);
         }
