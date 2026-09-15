@@ -5,8 +5,9 @@
 .DESCRIPTION
     Runs the gate, the account server, one gameplay lobby per process (Free
     Battle, Replays, Survival, Basic Training, Combat Training, Survival Hosts,
-    Automatching, Registration, Tournament), a gameplay server, the HTTP API and
-    the name server: the same servers compose.yaml starts, minus PostgreSQL.
+    Automatching, Registration, Tournament), a gameplay server, the HTTP API, the
+    name server and the port-check responder: the same servers compose.yaml
+    starts, minus PostgreSQL.
 
     PostgreSQL is not started by this script. The servers connect to the remote
     database of DATABASE_CONNECTION_STRING, which must be set in .env or in the
@@ -332,6 +333,7 @@ try {
 
     $httpPort = if ($env:HTTP_PORT) { $env:HTTP_PORT } else { '80' }
     $dnsPort = if ($env:DNS_PORT) { $env:DNS_PORT } else { '53' }
+    $stunPort = if ($env:STUN_PORT) { $env:STUN_PORT } else { '3478' }
     $launcherServer = if ($env:LAUNCHER_SERVER) { $env:LAUNCHER_SERVER } else { 'http://mgo2pc.com' }
 
     try {
@@ -380,6 +382,14 @@ try {
 
         Start-Server 'dns' 'Dns' "DNS ($dnsPort/udp)" @{
             DNS_PORT = $dnsPort
+        }
+
+        # The port-check responder serves the port the console dials and the one
+        # after it. Its second address, which answers a request to change the
+        # address, is the STUN_SECONDARY_ADDRESS of .env; without one it logs a
+        # warning and can only move the port.
+        Start-Server 'stun' 'Stun' "Port check ($stunPort/udp)" @{
+            STUN_PORT = $stunPort
         }
 
         # Give the processes a moment to fail fast before the state is reported.

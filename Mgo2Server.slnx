@@ -24,6 +24,9 @@
   <Folder Name="/src/Shared/">
     <Project Path="src/Shared/Mgo2Server.Shared.csproj" />
   </Folder>
+  <Folder Name="/src/Stun/">
+    <Project Path="src/Stun/Mgo2Server.Stun.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Mgo2Server.Tests/Mgo2Server.Tests.csproj" />
   </Folder>

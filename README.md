@@ -2,8 +2,8 @@
 
 A server implementation for Metal Gear Online 2, written in C# on .NET 10.
 It provides the gate, account and gameplay lobby TCP servers, the UDP peer-to-peer
-gameplay host, an HTTP API, a name server for domain redirection and a
-PostgreSQL-backed persistence layer.
+gameplay host, an HTTP API, a name server for domain redirection, a port-check
+responder for NAT discovery and a PostgreSQL-backed persistence layer.
 
 ## Quick start
 
@@ -23,6 +23,12 @@ irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/in
 ```
 
 Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to your private IP (the value of `ADVERTISED_ADDRESS`).
+
+The port-check responder is the one container that runs with host networking. The
+console classifies its own NAT type from the address and port an answer arrives
+from, and Docker's UDP proxy rewrites both, so it must serve them straight from the
+host (see `STUN_SECONDARY_ADDRESS` in `.env.example`). Docker Desktop on Windows and
+macOS needs its host-networking setting enabled for that container to start.
 
 ### Project layout
 
@@ -45,7 +51,8 @@ src/
 ├── GameLobbyServer/
 ├── GameplayServer/
 ├── Http/
-└── Dns/
+├── Dns/
+└── Stun/                # Port-check responder (STUN)
 ```
 
 ### Container images
@@ -62,6 +69,7 @@ using `docker/Dockerfile` with the project and its assembly as build arguments:
 | `mgo2-gameplay-server`       | `src/GameplayServer`                 |
 | `mgo2-http`                  | `src/Http`                           |
 | `mgo2-dns`                   | `src/Dns`                            |
+| `mgo2-stun`                  | `src/Stun`                           |
 
 A push to `main` publishes `latest` and the branch tag; a `v*` tag publishes the
 version. Pull requests only run the tests.
@@ -75,6 +83,7 @@ dotnet run --project src/GateLobbyServer     # Run the gate
 dotnet run --project src/AccountLobbyServer  # Run the account server
 dotnet run --project src/GameLobbyServer     # Run one gameplay lobby
 dotnet run --project src/GameplayServer      # Run a gameplay server
+dotnet run --project src/Stun                # Run the port-check responder
 ```
 
 The scripts of `scripts/` split building from running: `build-linux-macos.sh`

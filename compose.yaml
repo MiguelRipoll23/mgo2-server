@@ -1,6 +1,7 @@
 # Every role runs as its own container built from its own project, so a gate,
-# an account server, a gameplay lobby, a gameplay server, the HTTP API or the
-# name server can be restarted, scaled or replaced independently.
+# an account server, a gameplay lobby, a gameplay server, the HTTP API, the name
+# server or the port-check responder can be restarted, scaled or replaced
+# independently.
 #
 # Every setting is a single upper-case environment variable. The images are the
 # same ones the CI workflow publishes to ghcr.io, so a deployment may build them
@@ -20,7 +21,7 @@
 #   5734 Replays       5737 Basic Training     5741 Registration
 #   5738 Combat Training  5739 Survival Hosts  5742 Tournament
 #   5731 gate          5732 account            5730 Gameplay Host (UDP)
-#     80 HTTP API        53 Name server (UDP)
+#     80 HTTP API        53 Name server (UDP)    3478 Port check (UDP)
 
 name: mgo2
 
@@ -282,6 +283,33 @@ services:
     restart: unless-stopped
     ports:
       - "53:53/udp"
+
+  # Port-check responder. It answers the NAT discovery the console runs before it
+  # will let a player into a lobby, on the port the console dials and the one after
+  # it. It needs no database, and it needs the source address and port of its
+  # answers left alone.
+  mgo2-stun:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        PROJECT: src/Stun/Mgo2Server.Stun.csproj
+        ASSEMBLY: Mgo2Server.Stun
+    image: ${MGO2_IMAGE_PREFIX:-}mgo2-stun:${MGO2_IMAGE_TAG:-latest}
+    container_name: mgo2-stun
+    env_file:
+      - .env
+    restart: unless-stopped
+    # Host networking, not published ports. Docker's UDP proxy rewrites the source
+    # port of a reply, and the console identifies which address and port answered
+    # it -- that is the entire mechanism by which it classifies its NAT. Behind the
+    # proxy every answer appears to arrive from a random port and discovery never
+    # concludes, so the responder serves 3478 and 3479/udp straight from the host.
+    # Docker Desktop needs its host-networking setting enabled for this container
+    # on Windows and macOS.
+    network_mode: host
+    environment:
+      STUN_PORT: "3478"
 
 volumes:
   http-keys:

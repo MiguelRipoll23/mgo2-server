@@ -4,8 +4,9 @@
 #
 # Runs the gate, the account server, one gameplay lobby per process (Free
 # Battle, Replays, Survival, Basic Training, Combat Training, Survival Hosts,
-# Automatching, Registration, Tournament), a gameplay server, the HTTP API and
-# the name server: the same servers compose.yaml starts, minus PostgreSQL.
+# Automatching, Registration, Tournament), a gameplay server, the HTTP API, the
+# name server and the port-check responder: the same servers compose.yaml starts,
+# minus PostgreSQL.
 #
 # PostgreSQL is not started by this script. The servers connect to the remote
 # database of DATABASE_CONNECTION_STRING, which must be set in .env or in the
@@ -299,6 +300,7 @@ initialize_dotnet
 
 http_port="${HTTP_PORT:-80}"
 dns_port="${DNS_PORT:-53}"
+stun_port="${STUN_PORT:-3478}"
 launcher_server="${LAUNCHER_SERVER:-http://mgo2pc.com}"
 
 echo ''
@@ -344,6 +346,13 @@ start_server http Http "HTTP API (${http_port}/tcp)" \
 
 start_server dns Dns "DNS (${dns_port}/udp)" \
     "DNS_PORT=${dns_port}"
+
+# The port-check responder serves the port the console dials and the one after it.
+# Its second address, which answers a request to change the address, is the
+# STUN_SECONDARY_ADDRESS of .env; without one it logs a warning and can only move
+# the port.
+start_server stun Stun "Port check (${stun_port}/udp)" \
+    "STUN_PORT=${stun_port}"
 
 # Give the processes a moment to fail fast before the state is reported.
 sleep 3

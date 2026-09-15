@@ -77,6 +77,9 @@ jobs:
           - image: mgo2-dns
             project: src/Dns/Mgo2Server.Dns.csproj
             assembly: Mgo2Server.Dns
+          - image: mgo2-stun
+            project: src/Stun/Mgo2Server.Stun.csproj
+            assembly: Mgo2Server.Stun
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7

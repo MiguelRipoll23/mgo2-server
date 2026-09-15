@@ -3,8 +3,8 @@
 # Installs the whole deployment from the published container images: the gate,
 # the account server, one gameplay lobby per container (Free Battle, Replays,
 # Survival, Basic Training, Combat Training, Survival Hosts, Automatching,
-# Registration, Tournament), a gameplay server, the HTTP API, the name server and
-# PostgreSQL.
+# Registration, Tournament), a gameplay server, the HTTP API, the name server, the
+# port-check responder and PostgreSQL.
 #
 # Linux and macOS. Windows runs scripts/install-windows.ps1 instead.
 #
@@ -55,8 +55,9 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
   environment variable, or the registry the images are published to by default.
 
   The script pulls the images of every container (the gate, the account server,
-  the nine gameplay lobbies, a gameplay server, the HTTP API, the name server and
-  PostgreSQL) and installs them. Running it again installs the update.
+  the nine gameplay lobbies, a gameplay server, the HTTP API, the name server, the
+  port-check responder and PostgreSQL) and installs them. Running it again
+  installs the update.
 TEXT
 }
 
