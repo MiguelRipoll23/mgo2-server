@@ -233,3 +233,73 @@ The header byte at offset `0x06` is the slot index the client searches the entri
 scans the eight records for a matching slot byte). Because the account's main character is
 served first and the server writes each entry's slot byte as its position in the list, the main
 slot index is always `0`.
+
+---
+
+## 5. The Game-Lobby Content Mask (`0x4101`, `GetCharacterInfoResult`)
+
+The expansion word above only opens the lobby gate. The **create-game map and rule rows are
+gated a second time** by a field of the game-lobby reply `0x4101`, and every row that field
+leaves clear is greyed out and titled with the shipped `????` translation slot.
+
+### 5.1 Stream layout the parser consumes
+
+The client parses `0x4101` in `FUN_00f08a18` (reached from the dispatcher `FUN_00f0494c`), and a
+run of length-prefixed reads after the two identifier grids lands in the session:
+
+| Stream offset | Size | Field | Client destination |
+|---|---|---|---|
+| `0x229` | 1 | tail byte | `struct + 0x4179` |
+| `0x22a` | 16 | **content availability mask** | `struct + 0x29010` |
+| `0x23a` | 4 | reserved | `struct + 0x417c` |
+| `0x23e` | 4 | reserved | `struct + 0x224` |
+| `0x242` | 1 | feature byte | four flags at `struct + 0x4184..0x4187` |
+
+The mask reader is `FUN_00f04238(base, index)`, a bit probe that clears its result for an index
+above `0x37`:
+
+```assembly
+0x00f04238: cmpwi   cr7, r3, 0            ; base == 0 -> 0
+0x00f0423c: cmplwi  cr6, r4, 0x37         ; index > 0x37 -> 0
+0x00f0425c: addis   r9, r9, 3             ; r9 = index / 8 + 0x30000
+0x00f04264: addi    r9, r9, -0x6ff0      ;   + 0x29010, the mask base
+0x00f04270: lbzx    r0, r11, r9           ; mask[index / 8]
+0x00f04274: sraw    r0, r0, r10           ;   >> (index % 8)
+0x00f04278: clrlwi  r0, r0, 0x1f          ;   & 1
+```
+
+So the sixteen bytes are a little-endian bit field whose bits `0` through `55` each stand for one
+selectable map or rule, and the remaining nine bytes are never tested. The map-id table at
+`0x0099fc60` shows the indirection, e.g. map `7` → bit `0`, map `6` → bit `0xa`, map `0xd` →
+bit `8`, map `0x10` → bit `0xc`.
+
+### 5.2 Effect of a clear bit
+
+`0x009b60b0` is the archetype: a map row keeps its real name only when the expansion word owns
+the pack **and** the mask bit is set, and falls back to the `????` slot otherwise:
+
+```assembly
+0x009b60c0: bl      0xf04238               ; FUN_00f04238(session, 0x11)
+0x009b60c8: extsb   r3, r3
+0x009b60cc: cmpwi   cr7, r3, 0
+0x009b60d0: beq     cr7, 0x9b60e4
+0x009b60d8: li      r3, 0x28b              ; real name
+0x009b60e4: li      r3, 0x28a              ; "????"
+```
+
+### 5.3 Fix
+
+`CharacterInfoHandlers.BuildCharacterInfoPayload` now writes the mask at its real trailer index
+instead of leaving it as padding:
+
+```csharp
+private const int ContentMaskOffset = 0x22a; // after the friend and blocked grids
+
+writer.WritePadding(ContentMaskOffset - writer.Size); // stream offset 0x229: tail byte
+writer.WriteBytes(FeatureFlags.ContentMask);          // 0x22a: sixteen bytes
+writer.WritePadding(FeatureByteOffset - writer.Size); // 0x23a: two reserved words
+writer.WriteUInt8(FeatureFlags.ExpansionByte);        // 0x242: feature byte
+```
+
+`FeatureFlags.ContentMask` sets bits `0` through `55`, so every mask-gated map, rule and
+character is offered. Narrow it to a subset when only part of the catalogue should be unlocked.

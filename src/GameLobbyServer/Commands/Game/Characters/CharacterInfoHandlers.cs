@@ -19,6 +19,12 @@ public sealed class GetCharacterInfoHandler(
     UserService userService,
     SessionHelper sessionHelper) : ICommandHandler
 {
+    /// <summary>
+    /// Offset of the sixteen-byte map and rule availability mask, one past the
+    /// tail byte that follows the friend and blocked grids.
+    /// </summary>
+    private const int ContentMaskOffset = 0x22a;
+
     /// <summary>Offset of the trailing feature byte, one past the fixed grid.</summary>
     private const int FeatureByteOffset = 0x242;
 
@@ -172,7 +178,10 @@ public sealed class GetCharacterInfoHandler(
             writer.WriteUInt32((uint)(index < blocked.Count ? blocked[index] : 0));
         }
 
-        // Reserved tail the client skips over: a u8, a 16-byte string and two u32s.
+        // Tail the client reads past the two grids: a u8, the map and rule
+        // availability mask, two reserved u32s and the feature byte.
+        writer.WritePadding(ContentMaskOffset - writer.Size);
+        writer.WriteBytes(FeatureFlags.ContentMask);
         writer.WritePadding(FeatureByteOffset - writer.Size);
         // The parser reads this byte's four low bits as separate feature flags
         // and greys out the expansion maps and modes when they are clear.
@@ -186,6 +195,20 @@ public static class FeatureFlags
 {
     /// <summary>Lets the client offer expansion content such as Team Sneaking.</summary>
     public const int ExpansionByte = 0x0f;
+
+    /// <summary>
+    /// Map, rule and expansion availability mask. The client reads it as a bit
+    /// field in which bit 0 through bit 55 each stand for one selectable map or
+    /// rule, and it offers the real row for a set bit and a greyed row whose
+    /// name is the shipped <c>????</c> translation for a clear one. Every bit is
+    /// set so the whole catalogue is offered; the trailing nine bytes are past
+    /// the highest bit the client ever tests.
+    /// </summary>
+    public static readonly byte[] ContentMask =
+    [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
 }
 
 /// <summary>Serves the personal-information screen data for the session character.</summary>
