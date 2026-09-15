@@ -114,8 +114,9 @@ app.UseAuthorization();
 app.MapOpenApi("/.well-known/openapi");
 app.MapOpenApi("/.well-known/openapi.json");
 
-// The API reference is served at the root of the API.
-app.MapScalarApiReference("/", reference =>
+// The API reference lives below the API itself, leaving the root for the
+// registration page served from the static directory.
+app.MapScalarApiReference("/api", reference =>
 {
     reference
         .WithTitle("MGO2 HTTP API")

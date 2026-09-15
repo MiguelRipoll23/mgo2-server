@@ -9,8 +9,12 @@ public sealed class HttpApiOptions
     /// <summary>Upstream launcher the policy document and the patch files are mirrored from.</summary>
     public string LauncherServer { get; set; } = "http://mgo2pc.com";
 
-    /// <summary>Directory holding the policy file and the mirrored patch files.</summary>
-    public string StaticDirectory { get; set; } = "./static";
+    /// <summary>
+    /// Directory holding the policy file, the mirrored patch files and the home
+    /// page. Resolved from the application base so it is found whether the API
+    /// runs from a publish folder (Docker) or a build output (the run scripts).
+    /// </summary>
+    public string StaticDirectory { get; set; } = Path.Combine(AppContext.BaseDirectory, "Static");
 
     /// <summary>File name of the policy document inside <see cref="StaticDirectory"/>.</summary>
     public string LocalPolicyFileName { get; set; } = "policy.txt";

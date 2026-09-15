@@ -42,9 +42,5 @@ ENV ASPNETCORE_HTTP_PORTS=
 WORKDIR /app
 COPY --from=build /app ./
 
-# Ships the policy document the HTTP API serves, so every image carries its own
-# static content and a deployment needs no checkout on the host.
-COPY static/ static/
-
 # exec keeps the process as PID 1 so the container stops on SIGTERM.
 ENTRYPOINT ["sh", "-c", "exec dotnet \"$MGO2_SERVER_ASSEMBLY\".dll"]

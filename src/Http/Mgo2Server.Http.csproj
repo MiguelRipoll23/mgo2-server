@@ -19,4 +19,8 @@
     <ProjectReference Include="..\Infrastructure\Mgo2Server.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Static\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
