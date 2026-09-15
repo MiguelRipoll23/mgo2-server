@@ -5,80 +5,55 @@ using Microsoft.Extensions.Options;
 namespace Mgo2Server.Http.Services;
 
 /// <summary>
-/// Serves the game client's help/tip text files from the upstream launcher.
+/// Serves the game client's help/tip text files from the static directory.
 /// The client requests paths such as <c>/jp/mgo2/help/2_6.txt</c> after the
 /// character-list packet is processed, and these must resolve so the tip
-/// screens are not shown as broken downloads.
+/// screens are not shown as broken downloads. A file that is not part of the
+/// static content is answered with a notice instead of an error.
 /// </summary>
-/// <param name="httpClientFactory">Factory the upstream requests are made with.</param>
 /// <param name="options">Options of the HTTP API.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class HelpService(
-    IHttpClientFactory httpClientFactory,
     IOptions<HttpApiOptions> options,
     ILogger<HelpService> logger)
 {
+    /// <summary>Body used when the requested help file is not available.</summary>
+    public const string ContentNotAvailable = "Content not available";
+
     private readonly HttpApiOptions options = options.Value;
 
     /// <summary>
-    /// Returns the help file content for the given path below the help route.
-    /// The path is validated against directory traversal before the upstream
-    /// request is made.
+    /// Returns the help file content for the given path below the help route,
+    /// or a notice that the content is not available.
     /// </summary>
     /// <param name="filePath">Path of the help file below the help route.</param>
-    /// <param name="request">Original client request whose headers are forwarded upstream.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<string> GetHelpTextAsync(string filePath, HttpRequest request, CancellationToken cancellationToken = default)
+    public string GetHelpText(string filePath)
     {
-        var escaped = EscapesHelpDirectory(filePath);
-        if (escaped)
+        var localPath = ResolveLocalPath(filePath);
+        if (localPath is null)
         {
             logger.LogWarning("Help file request for {FilePath} escapes the help directory", filePath);
-            return string.Empty;
+            return ContentNotAvailable;
         }
 
-        try
+        if (!File.Exists(localPath))
         {
-            var client = CreateUpstreamClient();
-            using var upstreamRequest = new HttpRequestMessage(HttpMethod.Get, $"/jp/mgo2/help/{filePath}");
-
-            foreach (var header in request.Headers)
-            {
-                upstreamRequest.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
-            }
-
-            using var response = await client.SendAsync(upstreamRequest, cancellationToken);
-            if (response.IsSuccessStatusCode)
-            {
-                return await response.Content.ReadAsStringAsync(cancellationToken);
-            }
-
-            logger.LogInformation(
-                "Upstream help request for {FilePath} failed with status {StatusCode}",
-                filePath,
-                (int)response.StatusCode);
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
-        {
-            logger.LogInformation(exception, "Upstream help request for {FilePath} failed", filePath);
+            logger.LogInformation("Help file request for {FilePath} is not available", filePath);
+            return ContentNotAvailable;
         }
 
-        return string.Empty;
+        return File.ReadAllText(localPath);
     }
 
-    /// <summary>Reports whether the path climbs out of the help directory.</summary>
-    /// <param name="filePath">Path of the help file.</param>
-    private static bool EscapesHelpDirectory(string filePath)
+    /// <summary>Maps a request path to a location inside the help directory.</summary>
+    /// <param name="filePath">Path of the file below the help route.</param>
+    /// <returns>The resolved path, or <c>null</c> when it escapes the help directory.</returns>
+    private string? ResolveLocalPath(string filePath)
     {
-        return filePath.Split('/', '\\').Any(segment => segment == "..");
-    }
-
-    /// <summary>Builds the client the upstream launcher is reached with.</summary>
-    public HttpClient CreateUpstreamClient()
-    {
-        var client = httpClientFactory.CreateClient(nameof(HelpService));
-        client.BaseAddress = new Uri(options.LauncherServer);
-        client.Timeout = TimeSpan.FromMilliseconds(options.UpstreamFetchTimeoutMilliseconds);
-        return client;
+        var root = Path.GetFullPath(options.LocalHelpPath);
+        var candidate = Path.GetFullPath(Path.Combine(root, filePath));
+        return candidate.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            ? candidate
+            : null;
     }
 }

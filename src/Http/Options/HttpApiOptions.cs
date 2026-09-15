@@ -22,6 +22,9 @@ public sealed class HttpApiOptions
     /// <summary>Subdirectory of <see cref="StaticDirectory"/> the patch files are cached in.</summary>
     public string LocalFilesDirectoryName { get; set; } = "files";
 
+    /// <summary>Subdirectory of <see cref="StaticDirectory"/> the help files are stored in.</summary>
+    public string LocalHelpDirectoryName { get; set; } = "help";
+
     /// <summary>How long an upstream fetch may take before it is abandoned.</summary>
     public int UpstreamFetchTimeoutMilliseconds { get; set; } = 3000;
 
@@ -33,4 +36,7 @@ public sealed class HttpApiOptions
 
     /// <summary>Path of the cache directory inside <see cref="StaticDirectory"/>.</summary>
     public string LocalFilesPath => Path.Combine(StaticDirectory, LocalFilesDirectoryName);
+
+    /// <summary>Path of the help directory inside <see cref="StaticDirectory"/>.</summary>
+    public string LocalHelpPath => Path.Combine(StaticDirectory, LocalHelpDirectoryName);
 }

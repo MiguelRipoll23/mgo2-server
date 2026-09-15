@@ -15,18 +15,9 @@ internal static class HelpEndpoints
             .WithDescription("Returns a help/tip text file requested by the game client");
     }
 
-    private static async Task<IResult> GetHelpAsync(
-        HttpRequest request,
-        HelpService helpService,
-        string path,
-        CancellationToken cancellationToken)
+    private static IResult GetHelpAsync(HelpService helpService, string path)
     {
-        var body = await helpService.GetHelpTextAsync(path, request, cancellationToken);
-        if (string.IsNullOrEmpty(body))
-        {
-            return Results.NotFound();
-        }
-
+        var body = helpService.GetHelpText(path);
         return Results.Text(body, "text/plain; charset=utf-8");
     }
 }
