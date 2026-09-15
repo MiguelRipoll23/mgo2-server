@@ -139,7 +139,7 @@ services:
     container_name: mgo2-replays
     environment:
       LOBBY_NAME: Replays
-      LOBBY_SUBTYPE: TRAINING
+      LOBBY_SUBTYPE: BASIC TRAINING
       LOBBY_PORT: "5734"
       LOBBY_BEGINNER_ONLY: "false"
       LOBBY_EXPANSION_ONLY: "false"
@@ -167,7 +167,7 @@ services:
     container_name: mgo2-basic-training
     environment:
       LOBBY_NAME: Basic Training
-      LOBBY_SUBTYPE: TRAINING
+      LOBBY_SUBTYPE: BASIC TRAINING
       LOBBY_PORT: "5737"
       LOBBY_BEGINNER_ONLY: "false"
       LOBBY_EXPANSION_ONLY: "false"
@@ -181,7 +181,7 @@ services:
     container_name: mgo2-combat-training
     environment:
       LOBBY_NAME: Combat Training
-      LOBBY_SUBTYPE: TRAINING
+      LOBBY_SUBTYPE: COMBAT TRAINING
       LOBBY_PORT: "5738"
       LOBBY_BEGINNER_ONLY: "false"
       LOBBY_EXPANSION_ONLY: "false"

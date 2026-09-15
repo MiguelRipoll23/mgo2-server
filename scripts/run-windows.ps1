@@ -369,10 +369,10 @@ try {
         # the compose file gives each container.
         $lobbies = @(
             @{ Name = 'Free Battle'; Subtype = 'FREE BATTLE'; Port = '5733' }
-            @{ Name = 'Replays'; Subtype = 'TRAINING'; Port = '5734' }
+            @{ Name = 'Replays'; Subtype = 'BASIC TRAINING'; Port = '5734' }
             @{ Name = 'Survival'; Subtype = 'SURVIVAL'; Port = '5735' }
-            @{ Name = 'Basic Training'; Subtype = 'TRAINING'; Port = '5737' }
-            @{ Name = 'Combat Training'; Subtype = 'TRAINING'; Port = '5738' }
+            @{ Name = 'Basic Training'; Subtype = 'BASIC TRAINING'; Port = '5737' }
+            @{ Name = 'Combat Training'; Subtype = 'COMBAT TRAINING'; Port = '5738' }
             @{ Name = 'Survival Hosts'; Subtype = 'UNKNOWN'; Port = '5739' }
             @{ Name = 'Automatching'; Subtype = 'AUTOMATCHING'; Port = '5740' }
             @{ Name = 'Registration'; Subtype = 'TOURNAMENT REGISTRATION'; Port = '5741' }

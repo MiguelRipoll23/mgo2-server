@@ -27,10 +27,10 @@ public static class LobbySubtypeConstants
     public const int Survival = 4;
 
     /// <summary>
-    /// Training, which the client also calls "Basic". Its sessions report nothing at
-    /// all, so the only measurement of time spent in one is presence.
+    /// Basic training. Its sessions report nothing at all, so the only measurement
+    /// of time spent in one is presence.
     /// </summary>
-    public const int Training = 7;
+    public const int BasicTraining = 7;
 
     /// <summary>
     /// Combat training. This is the lobby the instructor flow runs in: its host is the

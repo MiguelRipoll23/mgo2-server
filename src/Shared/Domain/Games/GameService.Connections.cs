@@ -152,7 +152,7 @@ public sealed partial class GameService
                  INSERT INTO character_training_times AS totals
                      (character_id, training_mode_seconds, instructor_seconds, student_seconds)
                  SELECT player.character_id,
-                     CASE WHEN lobby.subtype_id = {LobbySubtypeConstants.Training}
+                     CASE WHEN lobby.subtype_id = {LobbySubtypeConstants.BasicTraining}
                          THEN presence.seconds ELSE 0 END,
                      CASE WHEN lobby.subtype_id = {LobbySubtypeConstants.CombatTraining}
                              AND room.host_id = player.character_id
@@ -167,7 +167,7 @@ public sealed partial class GameService
                      SELECT greatest(0,
                          floor(extract(epoch from (now() - player.joined_at))))::bigint AS seconds
                  ) AS presence
-                 WHERE lobby.subtype_id IN ({LobbySubtypeConstants.Training},
+                 WHERE lobby.subtype_id IN ({LobbySubtypeConstants.BasicTraining},
                          {LobbySubtypeConstants.CombatTraining})
                      AND player.game_id = {gameIdentifier}
                      AND ({characterIdentifier} = 0

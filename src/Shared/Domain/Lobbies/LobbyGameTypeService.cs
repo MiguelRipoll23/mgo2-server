@@ -7,8 +7,9 @@ namespace Mgo2Server.Shared.Domain.Lobbies;
 /// <summary>
 /// Resolves the game type of a lobby from the text carried by the environment.
 /// The lookup table is the source of truth, so the accepted text is the name of
-/// a row of <c>lobby_game_types</c>: <c>TRAINING</c> selects the training game
-/// type, which carries identifier seven.
+/// a row of <c>lobby_game_types</c>: <c>BASIC TRAINING</c> selects the basic
+/// training game type and <c>COMBAT TRAINING</c> the combat training one, which
+/// carry identifiers seven and eight.
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 public sealed class LobbyGameTypeService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)

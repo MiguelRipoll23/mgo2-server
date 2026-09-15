@@ -38,7 +38,7 @@ public sealed class DatabaseInitializer(
         (4, 4, "Survival"),
         (5, 5, "Unknown"),
         (6, 6, "Unknown"),
-        (7, 7, "Training"),
+        (7, 7, "Basic Training"),
         (8, 8, "Combat Training"),
         (10, 10, "Tournament Registration"),
     ];

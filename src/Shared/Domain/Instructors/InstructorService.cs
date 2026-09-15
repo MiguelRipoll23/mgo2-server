@@ -235,7 +235,7 @@ public sealed class InstructorService(
         var playSeconds = await context.RoundReports
             .AsNoTracking()
             .Where(report => report.TargetCharacterIdentifier == characterIdentifier &&
-                report.LobbySubtype != LobbySubtypeConstants.Training &&
+                report.LobbySubtype != LobbySubtypeConstants.BasicTraining &&
                 report.LobbySubtype != LobbySubtypeConstants.CombatTraining)
             .SumAsync(report => (long?)report.Seconds, cancellationToken) ?? 0;
 

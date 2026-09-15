@@ -17,7 +17,8 @@ public sealed class LobbyOptions
     /// Game type of the lobby, written as text: the name of a row of the
     /// <c>lobby_game_types</c> table, matched without regard to case and with
     /// spaces, underscores and hyphens treated alike. Freed battle is
-    /// <c>FREE BATTLE</c> and training is <c>TRAINING</c>.
+    /// <c>FREE BATTLE</c>, basic training is <c>BASIC TRAINING</c> and combat
+    /// training is <c>COMBAT TRAINING</c>.
     /// </summary>
     public string Subtype { get; set; } = string.Empty;
 

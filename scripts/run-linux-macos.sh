@@ -332,10 +332,10 @@ start_server account-lobby-5732 AccountLobbyServer 'Account (5732/tcp)' \
 # compose file gives each container: name|subtype|port.
 lobbies=(
     'Free Battle|FREE BATTLE|5733'
-    'Replays|TRAINING|5734'
+    'Replays|BASIC TRAINING|5734'
     'Survival|SURVIVAL|5735'
-    'Basic Training|TRAINING|5737'
-    'Combat Training|TRAINING|5738'
+    'Basic Training|BASIC TRAINING|5737'
+    'Combat Training|COMBAT TRAINING|5738'
     'Survival Hosts|UNKNOWN|5739'
     'Automatching|AUTOMATCHING|5740'
     'Registration|TOURNAMENT REGISTRATION|5741'
