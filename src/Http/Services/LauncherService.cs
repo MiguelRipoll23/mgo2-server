@@ -16,10 +16,10 @@ namespace Mgo2Server.Http.Services;
 /// <param name="httpClientFactory">Factory the upstream requests are made with.</param>
 /// <param name="options">Options of the HTTP API.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class FilesService(
+public sealed class LauncherService(
     IHttpClientFactory httpClientFactory,
     IOptions<HttpApiOptions> options,
-    ILogger<FilesService> logger)
+    ILogger<LauncherService> logger)
 {
     private readonly HttpApiOptions options = options.Value;
 
@@ -320,7 +320,7 @@ public sealed class FilesService(
     /// <returns>The resolved path, or <c>null</c> when it escapes the cache directory.</returns>
     private string? ResolveLocalPath(string filePath)
     {
-        var root = Path.GetFullPath(options.LocalFilesPath);
+        var root = Path.GetFullPath(options.LocalLauncherPath);
         var candidate = Path.GetFullPath(Path.Combine(root, filePath));
         return candidate.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal)
             ? candidate
@@ -336,7 +336,7 @@ public sealed class FilesService(
 
     private HttpClient CreateUpstreamClient()
     {
-        var client = httpClientFactory.CreateClient(nameof(FilesService));
+        var client = httpClientFactory.CreateClient(nameof(LauncherService));
         client.BaseAddress = new Uri(options.LauncherServer);
         client.Timeout = TimeSpan.FromMilliseconds(options.UpstreamFetchTimeoutMilliseconds);
         return client;

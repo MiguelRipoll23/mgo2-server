@@ -6,7 +6,7 @@ namespace Mgo2Server.Http.Options;
 /// </summary>
 public sealed class HttpApiOptions
 {
-    /// <summary>Upstream launcher the policy document and the patch files are mirrored from.</summary>
+    /// <summary>Upstream launcher the patch files are mirrored from.</summary>
     public string LauncherServer { get; set; } = "http://mgo2pc.com";
 
     /// <summary>
@@ -20,7 +20,7 @@ public sealed class HttpApiOptions
     public string LocalPolicyFileName { get; set; } = "policy.txt";
 
     /// <summary>Subdirectory of <see cref="StaticDirectory"/> the patch files are cached in.</summary>
-    public string LocalFilesDirectoryName { get; set; } = "files";
+    public string LocalLauncherDirectoryName { get; set; } = "files";
 
     /// <summary>Subdirectory of <see cref="StaticDirectory"/> the help files are stored in.</summary>
     public string LocalHelpDirectoryName { get; set; } = "help";
@@ -34,8 +34,8 @@ public sealed class HttpApiOptions
     /// <summary>Path of the policy document inside <see cref="StaticDirectory"/>.</summary>
     public string LocalPolicyPath => Path.Combine(StaticDirectory, LocalPolicyFileName);
 
-    /// <summary>Path of the cache directory inside <see cref="StaticDirectory"/>.</summary>
-    public string LocalFilesPath => Path.Combine(StaticDirectory, LocalFilesDirectoryName);
+    /// <summary>Path of the launcher cache directory inside <see cref="StaticDirectory"/>.</summary>
+    public string LocalLauncherPath => Path.Combine(StaticDirectory, LocalLauncherDirectoryName);
 
     /// <summary>Path of the help directory inside <see cref="StaticDirectory"/>.</summary>
     public string LocalHelpPath => Path.Combine(StaticDirectory, LocalHelpDirectoryName);

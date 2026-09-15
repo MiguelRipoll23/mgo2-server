@@ -3,11 +3,11 @@ using Mgo2Server.Http.Services;
 namespace Mgo2Server.Http.Endpoints.Public;
 
 /// <summary>The patch file download endpoints.</summary>
-internal static class FilesEndpoints
+internal static class LauncherEndpoints
 {
-    /// <summary>Maps the file endpoints.</summary>
+    /// <summary>Maps the launcher endpoints.</summary>
     /// <param name="group">Group the endpoint is added to.</param>
-    public static void MapFilesEndpoints(this RouteGroupBuilder group)
+    public static void MapLauncherEndpoints(this RouteGroupBuilder group)
     {
         // The patch files are mirrored straight from the launcher, so they have
         // no request or response contract of their own and stay out of the API
@@ -17,11 +17,11 @@ internal static class FilesEndpoints
     }
 
     private static Task<IResult> GetFileAsync(
-        FilesService filesService,
+        LauncherService launcherService,
         HttpContext context,
         string path,
         CancellationToken cancellationToken) =>
-        filesService.GetFileAsync(
+        launcherService.GetFileAsync(
             path,
             HttpMethods.IsHead(context.Request.Method),
             context.Request.Headers.Range.Count > 0 ? context.Request.Headers.Range.ToString() : null,
