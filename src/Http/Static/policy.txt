@@ -1,1 +1,6 @@
-Connected to MiguelRipoll23\mgo2-server
+Welcome to OpenMGO!
+
+Just like the official server, there’s no ban
+policy at all.
+
+Have fun!
