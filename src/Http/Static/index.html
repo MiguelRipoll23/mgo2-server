@@ -1,163 +1,168 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MGO2 Server — Account Registration</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            mgo: {
-              400: '#ffd94a',
-              500: '#e8b923',
-              600: '#c99e1b',
-            }
-          }
-        }
-      }
-    };
-  </script>
-</head>
-<body class="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,rgba(233,185,35,0.12),transparent_55%),radial-gradient(ellipse_at_bottom_right,rgba(30,64,175,0.18),transparent_60%)] text-slate-100 antialiased flex flex-col">
-
-  <main class="flex-1 flex items-center justify-center px-4 py-12">
-    <div class="w-full max-w-md">
-      <div class="text-center mb-8">
-        <p class="inline-flex items-center gap-2 rounded-full border border-mgo-500/40 bg-mgo-500/10 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-mgo-400">
-          <span class="h-1.5 w-1.5 rounded-full bg-mgo-400 animate-pulse"></span>
-          Metal Gear Online 2
-        </p>
-        <h1 class="mt-4 text-3xl font-extrabold tracking-tight sm:text-4xl">Join the battlefield</h1>
-        <p class="mt-2 text-sm text-slate-400">Create your account to start playing on this server.</p>
-      </div>
-
-      <div id="status" class="mb-4 hidden">
-        <p id="status-text" class="rounded-lg px-4 py-3 text-sm font-medium"></p>
-      </div>
-
-      <form id="register-form" class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl backdrop-blur sm:p-8" novalidate>
-        <div class="space-y-5">
-          <div>
-            <label for="username" class="block text-sm font-medium text-slate-300">Username</label>
-            <input
-              type="text"
-              id="username"
-              name="username"
-              autocomplete="username"
-              placeholder="FoxHound45"
-              required
-              minlength="3"
-              maxlength="32"
-              pattern="[A-Za-z0-9_-]+"
-              title="3 to 32 characters. Letters, digits, underscores and hyphens only."
-              class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-            >
-            <p class="mt-1.5 text-xs text-slate-500">3–32 characters: letters, digits, <code class="text-slate-400">_</code> and <code class="text-slate-400">-</code>.</p>
-          </div>
-
-          <div>
-            <label for="password" class="block text-sm font-medium text-slate-300">Password</label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              autocomplete="new-password"
-              placeholder="••••••••"
-              required
-              minlength="6"
-              maxlength="128"
-              class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-            >
-            <p class="mt-1.5 text-xs text-slate-500">At least 6 characters.</p>
-          </div>
-
-          <button
-            type="submit"
-            class="w-full rounded-lg bg-mgo-500 px-4 py-3 text-sm font-bold uppercase tracking-widest text-slate-950 transition hover:bg-mgo-400 focus:outline-none focus:ring-2 focus:ring-mgo-400 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Create account
-          </button>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenMGO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              mgo: {
+                400: "#7dd3fc",
+                500: "#38bdf8",
+                600: "#0ea5e9",
+              },
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,rgba(56,189,248,0.12),transparent_55%),radial-gradient(ellipse_at_bottom_right,rgba(30,64,175,0.18),transparent_60%)] text-slate-100 antialiased flex flex-col"
+  >
+    <main class="flex-1 flex items-center justify-center px-4 py-12">
+      <div class="w-full max-w-md">
+        <div class="text-center mb-8">
+          <h1 class="mt-4 text-3xl font-extrabold tracking-tight sm:text-4xl">
+            Welcome to <span class="text-sky-400">Open</span>MGO
+          </h1>
+          <p class="mt-2 text-sm text-slate-400">
+            Create your account to start playing on this server
+          </p>
         </div>
-      </form>
 
-      <p class="mt-6 text-center text-xs text-slate-500">
-        Explore the server API on the
-        <a href="/api" class="font-semibold text-mgo-400 underline decoration-mgo-500/40 underline-offset-2 transition hover:text-mgo-500">API reference&nbsp;page</a>.
-      </p>
-    </div>
-  </main>
+        <div id="status" class="mb-4 hidden">
+          <p
+            id="status-text"
+            class="rounded-lg px-4 py-3 text-sm font-medium"
+          ></p>
+        </div>
 
-  <footer class="px-4 pb-6 text-center text-xs text-slate-600">
-    MGO2 private server — not affiliated with Konami.
-  </footer>
+        <form
+          id="register-form"
+          class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl backdrop-blur sm:p-8"
+        >
+          <div class="space-y-5">
+            <div>
+              <label
+                for="username"
+                class="block text-sm font-medium text-slate-300"
+                >Username</label
+              >
+              <input
+                type="text"
+                id="username"
+                name="username"
+                autocomplete="username"
+                required
+                minlength="1"
+                maxlength="16"
+                pattern="[A-Za-z0-9_-]+"
+                title="1 to 16 characters. Letters, digits, underscores and hyphens only."
+                class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
+              />
+            </div>
 
-  <script>
-    const form = document.getElementById('register-form');
-    const status = document.getElementById('status');
-    const statusText = document.getElementById('status-text');
+            <div>
+              <label
+                for="password"
+                class="block text-sm font-medium text-slate-300"
+                >Password</label
+              >
+              <input
+                type="password"
+                id="password"
+                name="password"
+                autocomplete="new-password"
+                required
+                minlength="6"
+                maxlength="128"
+                class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
+              />
+              <p class="mt-1.5 text-xs text-slate-500">
+                Use a unique password that you don't use anywhere else.
+              </p>
+            </div>
 
-    function showStatus(kind, message) {
-      statusText.textContent = message;
-      statusText.className = kind === 'error'
-        ? 'rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-300'
-        : 'rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300';
-      status.classList.remove('hidden');
-    }
+            <button
+              type="submit"
+              class="w-full rounded-lg bg-mgo-500 px-4 py-3 text-sm font-bold uppercase tracking-widest text-slate-950 transition hover:bg-mgo-400 focus:outline-none focus:ring-2 focus:ring-mgo-400 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Create account
+            </button>
+          </div>
+        </form>
+      </div>
+    </main>
 
-    function clearStatus() {
-      status.classList.add('hidden');
-      statusText.textContent = '';
-    }
+    <script>
+      const form = document.getElementById("register-form");
+      const status = document.getElementById("status");
+      const statusText = document.getElementById("status-text");
 
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      clearStatus();
-
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
-
-      const pattern = /^[A-Za-z0-9_-]+$/;
-      if (username.length < 3 || username.length > 32 || !pattern.test(username)) {
-        showStatus('error', 'Username must be 3–32 characters: letters, digits, _ and - only.');
-        return;
+      function showStatus(kind, message) {
+        statusText.textContent = message;
+        statusText.className =
+          kind === "error"
+            ? "rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-300"
+            : "rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300";
+        status.classList.remove("hidden");
       }
-      if (password.length < 6 || password.length > 128) {
-        showStatus('error', 'Password must be between 6 and 128 characters.');
-        return;
-      }
 
-      form.querySelector('button[type="submit"]').disabled = true;
-      statusText.textContent = 'Creating account…';
-      status.classList.remove('hidden');
-      statusText.className = 'rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm font-medium text-slate-300';
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        status.classList.add("hidden");
 
-      try {
-        const response = await fetch('/account/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ displayName: username, password })
-        });
-
-        const data = await response.json().catch(() => null);
-
-        if (response.ok) {
-          showStatus('success', 'Account created. Welcome, ' + (data && data.displayName ? data.displayName : username) + '!');
-          form.reset();
-        } else {
-          const message = (data && data.error && data.error.message)
-            || (data && data.message)
-            || 'Registration failed. Please try again.';
-          showStatus('error', message);
+        if (!form.checkValidity()) {
+          form.reportValidity();
+          return;
         }
-      } catch (error) {
-        showStatus('error', 'Could not reach the server. Is it running?');
-      } finally {
-        form.querySelector('button[type="submit"]').disabled = false;
-      }
-    });
-  </script>
-</body>
+
+        const username = document.getElementById("username").value.trim();
+        const password = document.getElementById("password").value;
+        const submitButton = form.querySelector('button[type="submit"]');
+
+        submitButton.disabled = true;
+        statusText.textContent = "Creating account…";
+        status.classList.remove("hidden");
+        statusText.className =
+          "rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm font-medium text-slate-300";
+
+        try {
+          const response = await fetch("/account/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ displayName: username, password }),
+          });
+
+          const data = await response.json().catch(() => null);
+
+          if (response.ok) {
+            showStatus(
+              "success",
+              "Account created. Welcome, " +
+                (data && data.displayName ? data.displayName : username) +
+                "!",
+            );
+            form.reset();
+          } else {
+            const message =
+              (data && data.error && data.error.message) ||
+              (data && data.message) ||
+              "Registration failed. Please try again.";
+
+            showStatus("error", message);
+          }
+        } catch (error) {
+          showStatus("error", "Could not reach the server. Is it running?");
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
 </html>
