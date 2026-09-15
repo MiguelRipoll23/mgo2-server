@@ -100,8 +100,20 @@ public static class CharacterPayloadBuilder
         0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
     ];
 
-    /// <summary>Trailing bytes of the personal-information payload.</summary>
-    private static readonly byte[] PersonalInfoTrailer = [0x00, 0xa7, 0x00, 0x0d];
+    /// <summary>
+    /// The final field of the personal-information payload: the character id of the
+    /// instructor this character saved, or zero for none.
+    /// <para>
+    /// A nonzero value is announced to every peer and suppresses the
+    /// save-instructor prompt, so it is the saved instructor's character id and
+    /// nothing else. It used to be the fixed word <c>00 A7 00 0D</c>, copied from
+    /// another server byte for byte, which told every character we served that they
+    /// already had an instructor — and so suppressed the prompt for every one of
+    /// them. Whatever that word meant, it was one captured character's saved
+    /// instructor, not a constant.
+    /// </para>
+    /// </summary>
+    public const int NoSavedInstructor = 0;
 
     /// <summary>Builds the personal-information payload.</summary>
     /// <param name="character">Character the payload describes, or <c>null</c>.</param>
@@ -109,12 +121,14 @@ public static class CharacterPayloadBuilder
     /// <param name="skills">Equipped skills of the character, when it has any.</param>
     /// <param name="clan">Clan of the character, when it belongs to one.</param>
     /// <param name="characterIdentifier">Identifier of the character.</param>
+    /// <param name="savedInstructorIdentifier">Character id of the saved instructor, or <see cref="NoSavedInstructor"/>.</param>
     public static byte[] BuildPersonalInfoPayload(
         Character? character,
         CharacterAppearance? appearance,
         CharacterEquippedSkill? skills,
         CharacterClanInformation? clan,
-        int characterIdentifier)
+        int characterIdentifier,
+        int savedInstructorIdentifier = NoSavedInstructor)
     {
         var writer = new PacketWriter();
 
@@ -188,7 +202,7 @@ public static class CharacterPayloadBuilder
         writer.WriteUInt8(character?.Rank ?? 0);
         // Clan emblem flag: three when the clan published an emblem.
         writer.WriteUInt8(clan?.HasEmblem == true ? 3 : 0);
-        writer.WriteBytes(PersonalInfoTrailer);
+        writer.WriteUInt32((uint)savedInstructorIdentifier);
         return writer.Build();
     }
 

@@ -4,6 +4,7 @@ using Mgo2Server.Shared.Domain.Automatch;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Clans;
 using Mgo2Server.Shared.Domain.Games;
+using Mgo2Server.Shared.Domain.Instructors;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Domain.Mail;
 using Mgo2Server.Shared.Domain.News;
@@ -105,6 +106,7 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<CharacterService>();
         services.AddSingleton<CharacterStatisticsService>();
         services.AddSingleton<CharacterTitleService>();
+        services.AddSingleton<InstructorService>();
         services.AddSingleton<GameService>();
         services.AddSingleton<RoundReportService>();
         services.AddSingleton<ClanService>();

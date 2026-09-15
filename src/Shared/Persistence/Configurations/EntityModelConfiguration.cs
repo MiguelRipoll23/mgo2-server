@@ -20,6 +20,7 @@ internal static partial class EntityModelConfiguration
         ConfigureClans(modelBuilder);
         ConfigureMail(modelBuilder);
         ConfigureMatchHistory(modelBuilder);
+        ConfigureInstructors(modelBuilder);
         ColumnDefaultConfiguration.Apply(modelBuilder);
     }
 }

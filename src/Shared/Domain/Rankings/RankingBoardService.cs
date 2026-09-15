@@ -50,6 +50,8 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
             RankingKeys.Activeness => await PlayerActivenessBoardAsync(context, currentMonth, cancellationToken),
             RankingKeys.GradePoint => await PlayerGradePointBoardAsync(context, cancellationToken),
             RankingKeys.HostRating => await HostRatingBoardAsync(context, currentMonth, cancellationToken),
+            RankingKeys.InstructorRating =>
+                await InstructorRatingBoardAsync(context, currentMonth, cancellationToken),
             _ => [],
         };
     }
@@ -187,6 +189,50 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
             from review in reviews
             join character in context.Characters.AsNoTracking().Where(character => character.Active != 0)
                 on review.HostCharacterIdentifier equals character.Identifier
+            group review by new { character.Identifier, character.Name }
+            into grouped
+            select new
+            {
+                grouped.Key.Identifier,
+                grouped.Key.Name,
+                Average = grouped.Average(review => (double)review.Rating),
+            })
+            .ToListAsync(cancellationToken);
+
+        return
+        [
+            .. rows.Select(row => new RankingBoardRow(
+                row.Identifier,
+                row.Name,
+                (long)Math.Round(row.Average * FixedPointScale))),
+        ];
+    }
+
+    /// <summary>
+    /// Instructor rating: the average of the star ratings a character's students gave
+    /// them, carried as 8.8 fixed point like the host board beside it.
+    /// <para>
+    /// Sourced from the reviews rather than from the saved relationships, which hold
+    /// one current-state row per student and would therefore lose every review a
+    /// student later replaced by re-graduating.
+    /// </para>
+    /// </summary>
+    private static async Task<List<RankingBoardRow>> InstructorRatingBoardAsync(
+        Mgo2DatabaseContext context,
+        bool currentMonth,
+        CancellationToken cancellationToken)
+    {
+        var reviews = context.InstructorReviews.AsNoTracking().AsQueryable();
+        if (currentMonth)
+        {
+            var since = CurrentMonthStartOffset();
+            reviews = reviews.Where(review => review.ReviewedAt >= since);
+        }
+
+        var rows = await (
+            from review in reviews
+            join character in context.Characters.AsNoTracking().Where(character => character.Active != 0)
+                on review.InstructorCharacterIdentifier equals character.Identifier
             group review by new { character.Identifier, character.Name }
             into grouped
             select new

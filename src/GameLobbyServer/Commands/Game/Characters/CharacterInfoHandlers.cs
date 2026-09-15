@@ -1,5 +1,6 @@
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
+using Mgo2Server.Shared.Domain.Instructors;
 using Mgo2Server.Shared.Domain.Users;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Types;
@@ -15,12 +16,14 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 /// <param name="characterService">Service that owns the character records.</param>
 /// <param name="userService">Service that owns the accounts.</param>
 /// <param name="titleService">Service that latches the titles the character has earned.</param>
+/// <param name="instructorService">Service that owns the saved instructor, which the payload announces.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class GetCharacterInfoHandler(
     CharacterService characterService,
     UserService userService,
     CharacterTitleService titleService,
+    InstructorService instructorService,
     SessionHelper sessionHelper,
     ILogger<GetCharacterInfoHandler> logger) : ICommandHandler
 {
@@ -172,6 +175,7 @@ public sealed class GetCharacterInfoHandler(
         var appearance = await characterService.GetAppearanceAsync(characterIdentifier, cancellationToken);
         var skills = await characterService.GetEquippedSkillsAsync(characterIdentifier, cancellationToken);
         var clan = await characterService.GetClanInformationAsync(characterIdentifier, cancellationToken);
+        var instructor = await instructorService.FindInstructorAsync(characterIdentifier, cancellationToken);
 
         await sessionHelper.SendPacketAsync(
             session,
@@ -181,7 +185,8 @@ public sealed class GetCharacterInfoHandler(
                 appearance,
                 skills,
                 clan,
-                characterIdentifier),
+                characterIdentifier,
+                instructor?.InstructorCharacterIdentifier ?? CharacterPayloadBuilder.NoSavedInstructor),
             cancellationToken);
     }
 
@@ -249,9 +254,11 @@ public static class FeatureFlags
 
 /// <summary>Serves the personal-information screen data for the session character.</summary>
 /// <param name="characterService">Service that owns the character records.</param>
+/// <param name="instructorService">Service that owns the saved instructor, which the payload announces.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class GetPersonalInfoHandler(
     CharacterService characterService,
+    InstructorService instructorService,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
@@ -267,6 +274,7 @@ public sealed class GetPersonalInfoHandler(
         var appearance = await characterService.GetAppearanceAsync(characterIdentifier, cancellationToken);
         var skills = await characterService.GetEquippedSkillsAsync(characterIdentifier, cancellationToken);
         var clan = await characterService.GetClanInformationAsync(characterIdentifier, cancellationToken);
+        var instructor = await instructorService.FindInstructorAsync(characterIdentifier, cancellationToken);
 
         await sessionHelper.SendPacketAsync(
             session,
@@ -276,7 +284,8 @@ public sealed class GetPersonalInfoHandler(
                 appearance,
                 skills,
                 clan,
-                characterIdentifier),
+                characterIdentifier,
+                instructor?.InstructorCharacterIdentifier ?? CharacterPayloadBuilder.NoSavedInstructor),
             cancellationToken);
     }
 }

@@ -50,9 +50,22 @@ public sealed partial class GameService
             .Distinct()
             .ToListAsync(cancellationToken);
 
+        // The rosters go with the rooms, so the presence they hold is credited
+        // first. A reaped room is a crashed session rather than one that ended, and
+        // its interval is the only record left of it.
+        var gameIdentifiers = await context.Games
+            .Where(game => game.UpdatedAt < cutoff)
+            .Select(game => game.Identifier)
+            .ToListAsync(cancellationToken);
+
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        await CreditTrainingTimeAsync(context, gameIdentifiers, 0, cancellationToken);
+
         var removed = await context.Games
             .Where(game => game.UpdatedAt < cutoff)
             .ExecuteDeleteAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
 
         foreach (var lobbyIdentifier in lobbyIdentifiers)
         {

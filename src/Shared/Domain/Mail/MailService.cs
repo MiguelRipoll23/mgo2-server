@@ -127,6 +127,41 @@ public sealed class MailService(IDbContextFactory<Mgo2DatabaseContext> contextFa
         await context.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Delivers a letter the system sends, so it reaches the recipient's mailbox
+    /// with no counterparty and is listed under the announcements.
+    /// <para>
+    /// Deliberately not subject to the mailbox cap and not addressed by name: the
+    /// sender is the service itself, and a letter the player cannot receive is
+    /// worse than one that pushes their oldest out of view.
+    /// </para>
+    /// </summary>
+    /// <param name="recipientCharacterIdentifier">Character the letter is addressed to.</param>
+    /// <param name="senderName">Name the inbox shows as the sender.</param>
+    /// <param name="subject">Subject line of the letter.</param>
+    /// <param name="body">Body of the letter.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task SendSystemMailAsync(
+        int recipientCharacterIdentifier,
+        string senderName,
+        string subject,
+        string body,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await CreateContextAsync(cancellationToken);
+        context.MailMessages.Add(new MailMessage
+        {
+            SenderCharacterIdentifier = null,
+            RecipientCharacterIdentifier = recipientCharacterIdentifier,
+            SenderName = senderName,
+            RecipientName = string.Empty,
+            Subject = subject,
+            Body = body,
+        });
+
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
     /// <summary>Returns the undeleted inbox size of a character.</summary>
     /// <param name="characterIdentifier">Character whose mailbox is measured.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>

@@ -28,6 +28,17 @@ public sealed record LobbySummary(int Identifier, int SubtypeIdentifier, string 
 public readonly record struct HostRatingSummary(int RatingSum, int Votes);
 
 /// <summary>
+/// Presence-accumulated seconds a character spent in the training lobbies, split
+/// the three ways the stats tail reports them. Owned here because it is measured
+/// from the roster: the interval between joining a room and leaving it is the
+/// whole measurement, since a training session reports nothing at all.
+/// </summary>
+/// <param name="TrainingMode">Seconds spent in a training lobby.</param>
+/// <param name="Instructor">Seconds spent hosting a combat training session.</param>
+/// <param name="Student">Seconds spent as a student in one.</param>
+public readonly record struct TrainingSeconds(long TrainingMode, long Instructor, long Student);
+
+/// <summary>
 /// Owns the game rooms: their roster, the peer-to-peer endpoints of their
 /// players, the round snapshots used for stat attribution and the host ratings.
 /// The connection, round and rating operations live in the other halves of this
@@ -135,9 +146,18 @@ public sealed partial class GameService(
             .Select(game => (int?)game.LobbyIdentifier)
             .FirstOrDefaultAsync(cancellationToken);
 
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        // The roster goes with the room, so everyone still on it is credited first:
+        // a room torn down with players in it — the host quitting, most often — is
+        // exactly the case a presence counter is for.
+        await CreditTrainingTimeAsync(context, [gameIdentifier], 0, cancellationToken);
+
         await context.Games
             .Where(game => game.Identifier == gameIdentifier)
             .ExecuteDeleteAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
 
         if (lobbyIdentifier is { } lobby)
         {
@@ -151,9 +171,18 @@ public sealed partial class GameService(
     public async Task ClearLobbyGamesAsync(int lobbyIdentifier, CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        // Read the roster's rooms before they go: the presence they hold is the only
+        // reason this pass exists.
+        var gameIdentifiers = await GameIdentifiersOfLobbyAsync(context, lobbyIdentifier, cancellationToken);
+        await CreditTrainingTimeAsync(context, gameIdentifiers, 0, cancellationToken);
+
         await context.Games
             .Where(game => game.LobbyIdentifier == lobbyIdentifier)
             .ExecuteDeleteAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
 
         await ReportLobbyMatchesAsync(lobbyIdentifier, cancellationToken);
     }

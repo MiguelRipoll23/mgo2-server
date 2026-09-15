@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Games;
+using Mgo2Server.Shared.Domain.Instructors;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
@@ -266,33 +267,47 @@ public sealed class HostSkillExperienceHandler(
     }
 }
 
-/// <summary>Advances the round, snapshotting the roster that played it.</summary>
+/// <summary>
+/// Advances the round, snapshotting the roster that played it — except in a
+/// combat training session, where the same command id sent by a student is the
+/// instructor review that ends their graduation instead.
+/// </summary>
 /// <param name="gameService">Service that owns the rooms.</param>
+/// <param name="instructorService">Service that records the graduation.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
+/// <param name="logger">Logger of this handler.</param>
 public sealed class StartRoundHandler(
     GameService gameService,
-    SessionHelper sessionHelper) : ICommandHandler
+    InstructorService instructorService,
+    SessionHelper sessionHelper,
+    ILogger<StartRoundHandler> logger) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        // Snapshot the roster: everyone in the room now played this round,
-        // which the end-of-round attribution checks consult. Only the host may
-        // start a round, so only the host may stamp that snapshot.
         var game = session.GameIdentifier is { } gameIdentifier
             ? await gameService.FindByIdAsync(gameIdentifier, cancellationToken)
             : null;
 
-        if (game is not null &&
-            session.CharacterIdentifier is { } characterIdentifier &&
-            game.HostIdentifier == characterIdentifier)
+        if (game is not null && session.CharacterIdentifier is { } characterIdentifier)
         {
-            await gameService.MarkRoundPlayersAsync(game.Identifier, cancellationToken);
+            if (game.HostIdentifier == characterIdentifier)
+            {
+                // Snapshot the roster: everyone in the room now played this round,
+                // which the end-of-round attribution checks consult. Only the host
+                // may start a round, so only the host may stamp that snapshot.
+                await gameService.MarkRoundPlayersAsync(game.Identifier, cancellationToken);
+            }
+            else if (await IsCombatTrainingAsync(game, cancellationToken))
+            {
+                await GradeInstructorAsync(game, characterIdentifier, packet, cancellationToken);
+            }
         }
 
         // The reply is a result word plus a token that must be zero: the
         // client republishes a nonzero token to every peer, where it gates the
-        // instructor-recognition prompt.
+        // instructor-recognition prompt. A review is answered exactly as a round
+        // start is, for exactly that reason.
         var writer = new PacketWriter();
         writer.WriteUInt32(ErrorCodeConstants.ResultNone);
         writer.WriteUInt32(0);
@@ -303,5 +318,65 @@ public sealed class StartRoundHandler(
             : CommandConstants.StartRoundResult;
 
         await sessionHelper.SendPacketAsync(session, replyCommand, writer.Build(), cancellationToken);
+    }
+
+    /// <summary>Whether the room sits in a combat training lobby, the one lobby the flow runs in.</summary>
+    /// <param name="game">Room the command named.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task<bool> IsCombatTrainingAsync(
+        Mgo2Server.Shared.Persistence.Entities.Game game,
+        CancellationToken cancellationToken)
+    {
+        var lobby = await gameService.FindLobbyAsync(game.LobbyIdentifier, cancellationToken);
+        return lobby?.SubtypeIdentifier == LobbySubtypeConstants.CombatTraining;
+    }
+
+    /// <summary>
+    /// Records a student's review of the session's instructor.
+    /// <para>
+    /// The distinction from a round start is deliberately narrow: only a combat
+    /// training lobby, and only from someone who is not the room's host. The client
+    /// builds both packets from one caller, so this id may legitimately do both jobs
+    /// and anything else has to fall through to the round-start path.
+    /// </para>
+    /// <para>
+    /// The rating is always recorded; the relationship, and therefore the skill and
+    /// its announcement, follow only from a recognition. The announcement itself is
+    /// not sent here — see <c>HostUpdateStatsHandler</c>.
+    /// </para>
+    /// </summary>
+    /// <param name="game">Room the review was cast in.</param>
+    /// <param name="studentIdentifier">Character that cast the review.</param>
+    /// <param name="packet">Request carrying the rating and the answer byte.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task GradeInstructorAsync(
+        Mgo2Server.Shared.Persistence.Entities.Game game,
+        int studentIdentifier,
+        Packet packet,
+        CancellationToken cancellationToken)
+    {
+        var reader = new PacketReader(packet.Payload);
+        var rating = reader.Remaining >= 4 ? unchecked((int)reader.ReadUInt32()) : 0;
+        var answer = reader.Remaining >= 1 ? reader.ReadUInt8() : InstructorGraduationUtils.NoAnswer;
+        var recognised = InstructorGraduationUtils.IsRecognised(answer);
+
+        var graduation = await instructorService.RecordGraduationAsync(
+            studentIdentifier,
+            game.HostIdentifier,
+            rating,
+            recognised,
+            answer,
+            cancellationToken);
+
+        logger.LogInformation(
+            "Character {StudentIdentifier} reviewed character {InstructorIdentifier}: rating {Rating}, answer 0x{Answer} ({AnswerMeaning}); {Outcome}",
+            studentIdentifier,
+            game.HostIdentifier,
+            rating,
+            answer.ToString("x2"),
+            recognised ? "recognised" : "not recognised",
+            recognised
+                ? $"generation {graduation.Generation}, the skill follows on the statistics report"
+                : "rating recorded only");
     }
 }

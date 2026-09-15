@@ -81,6 +81,15 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
     /// <summary>Titles a character has latched.</summary>
     public DbSet<CharacterTitle> CharacterTitles => Set<CharacterTitle>();
 
+    /// <summary>Instructor reviews cast by students.</summary>
+    public DbSet<InstructorReview> InstructorReviews => Set<InstructorReview>();
+
+    /// <summary>The instructor each character has saved.</summary>
+    public DbSet<CharacterInstructor> CharacterInstructors => Set<CharacterInstructor>();
+
+    /// <summary>Presence-accumulated training seconds of a character.</summary>
+    public DbSet<TrainingTime> TrainingTimes => Set<TrainingTime>();
+
     /// <summary>Saved gear sets.</summary>
     public DbSet<CharacterGearSet> CharacterGearSets => Set<CharacterGearSet>();
 

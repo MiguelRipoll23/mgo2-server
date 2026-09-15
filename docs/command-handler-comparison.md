@@ -151,6 +151,7 @@ mattered; this table says what the port actually did.
 | 3.8 | Connect never refuses | **Ported.** `0x4100` answers nothing when the session has no usable character. |
 | 3.9 | No automatch policy seam | **Ported.** `AutomatchOptions` (enabled, windows, tick) and an `AUTOMATCH_NOT_OPEN` refusal; the live ticker is `AutomatchTickerService`. |
 | 3.10 | Per-account entitlements | **Not ported — intentional.** The unlock-all policy is the whole point of the fork and is documented in `docs/expansion-entitlements.md`. |
+| 3.12 | No instructor subsystem | **Ported.** Graduation, the saved instructor, the award letter, the score gauge, students trained, training seconds and the instructor ranking board; see §3.12. |
 
 Two items in §4 are likewise deliberate and stay as they are: the unlock-all content
 mask, and the general error packet sent for an unhandled opcode.
@@ -171,9 +172,9 @@ precomputed. Where this server has no source the board is **empty rather than ze
 while a column of zeroes would look identical on screen while claiming something was
 measured. Concretely:
 
-* `skey 5` (instructor rating) is empty: there is no instructor-review table. The reference
-  holds the same board empty for the same reason it holds `skey 4` empty; this server does
-  have `host_reviews`, so `skey 4` is real.
+* `skey 5` (instructor rating) reads `instructor_reviews`, the same source the reference
+  uses; see §3.12. It was empty in the first cut of this port, before the instructor
+  subsystem existed.
 * `skey 0` reads the per-mode statistics blob (`stats_dm` … `stats_scap`), which yields a
   lifetime score per mode. This server does not store a per-round score, so the MONTH half
   of the toggle is ignored on this board. `skey 2` (activeness) and `skey 4` (host rating)
@@ -187,6 +188,69 @@ period-20 keystream. `N` is the number of rows actually serialised, never what t
 asked for, and the window is clamped to 100. A name that fills all sixteen bytes is
 clamped to fifteen characters so the field keeps a NUL, because the client reads it with
 `strlen` into a buffer it never clears.
+
+### 3.12 The instructor subsystem, as implemented here
+
+This was the largest gap the first comparison missed entirely: the reference runs a whole
+instructor career and this server had none of it. What is now implemented:
+
+**Becoming an instructor.** A combat training session (lobby subtype **8** — the subtype is
+the behaviour, the name is not) is hosted by the instructor and joined by students. When it
+ends, the student sends `0x43c8` — the same id a host uses to start a round — carrying
+`{u32 rating, u8 answer}`. In a subtype-8 lobby, from someone who is not the host, that is a
+review rather than a round start, and it is recorded in `instructor_reviews`.
+
+The answer byte decides the rest. Only an exact `0x01` is a recognition; `0x00` is a declined
+prompt and `0x21` is a prompt never shown. The tempting `(answer & 0x20) == 0` shorthand reads
+a *declined* prompt as an acceptance and would permanently name an instructor the player
+refused — `InstructorGraduationUtils.IsRecognised` is the only test, and `InstructorTests`
+pins all three values.
+
+A recognition writes the relationship into `characters_instructors`, one row per student
+with the instructor's name, a generation one past the instructor's own, and the rating.
+Every review is stored whether or not it was recognised, so a rating without recognition is
+not lost and the score gauge has a source.
+
+**The award and the letter.** The skill is *not* granted by the graduation. It rides the
+end-of-round statistics report (`0x4390`) instead, because the host reports every player as
+they leave — combat training included — so the award is a consequence of the session ending
+and one that is missed is picked up by the next report. Eligibility is Konami's documented
+rule: **level 3 or above and 20 or more hours of gameplay**, enforced against this server's
+own level table and the round reports. On a pass the relationship latches and the
+announcement letter is delivered to the student's mailbox, reproduced verbatim from the
+original — Konami URL included.
+
+> **The skill is already held.** Every character is served the whole skill catalogue at its
+> maximum level, deliberately, so granting skill 17 changes nothing the client displays. The
+> latch therefore guards the *letter*, not the skill: without it every later report would
+deliver another copy. `InstructorService.AwardPendingInstructorSkillAsync` claims the latch
+with a conditional update before delivering, so two reports in flight send one letter.
+
+**The readings.**
+
+| Where | What |
+|---|---|
+| `0x4122` last field | the saved instructor's character id, or zero. This was the fixed word `00 A7 00 0D` copied from another server, which announced "I already have an instructor" for *every* character and so suppressed the recognition prompt for all of them. |
+| `0x4103` instructor block | the instructor's name (16 bytes) and the generation |
+| `0x4103` rating block, entries 5/6 | host rating numerator and denominator |
+| `0x4103` after the clan emblem flag | instructor score numerator and denominator |
+| `0x4107` slot 36 | distinct students graduated, both periods |
+| `0x4107` slots 46/47/48 | training, instructor and student seconds — cumulative only |
+| rankings `skey 5` | average instructor rating as 8.8 fixed point |
+
+**Presence.** Training sessions report nothing at all — the client sends no end-of-round
+frame for one — so the training totals are the only measurement that exists for them, and
+they are the interval between joining a room and leaving it. `GameService` credits them on
+every path that ends presence: a player leaving, a room being torn down (the host quitting),
+and a whole lobby going away. The credit shares a transaction with the removal, because the
+roster row's join time is the only record of the interval. Only subtypes 7 and 8 create a
+row; every other lobby's play time comes from the round reports instead.
+
+**What is still missing here.** `0x4103`'s title-unlock mask (rating-block entry 3) and the
+worn-title byte after the comment are left at zero: titles exist (`CharacterTitleService`)
+and the worn rank is already written into `0x4122`, but the mask is an awards concern and
+was not part of this pass. The medal bits stay zero too, which is deliberate — the client
+mints medals from those words, so anything we cannot measure honestly must be zero.
 
 ---
 
@@ -469,5 +533,10 @@ resolution so the reasoning stays attached to the change.
    effect on the create-game screen.
 6. **Verify the ranking boards against a live client.** The wire format is settled (and
    covered by `RankingTests`), but the `skey` meanings are inferred on both servers, and no
-   capture of a real Konami ranking response exists to check them against. The empty
-   instructor board on `skey 5` is the one to watch.
+   capture of a real Konami ranking response exists to check them against.
+7. **Run a combat training session end to end.** The instructor flow is untested against a
+   client: the subtype-8 branch in `0x43c8`, the saved-instructor field in `0x4122` (which
+   must now let the recognition prompt actually appear, where the old constant suppressed
+   it for everyone), and the award letter all need one live graduation to confirm. Publish a
+   lobby with `LOBBY_SUBTYPE=8` — the seeded row is named "Combat Training" — and watch for
+   the prompt.

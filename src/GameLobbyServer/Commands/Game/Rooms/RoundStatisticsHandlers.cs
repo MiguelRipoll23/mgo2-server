@@ -2,6 +2,7 @@ using System.Text.Json;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Games;
+using Mgo2Server.Shared.Domain.Instructors;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
@@ -26,15 +27,34 @@ public sealed class UpdateStatsHandler(
 
 /// <summary>Stores the statistics the host reports for one player.</summary>
 /// <param name="roundStatisticsProcessor">Processor that applies the round.</param>
+/// <param name="instructorService">Service that awards a pending instructor graduation.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
+/// <param name="logger">Logger of this handler.</param>
 public sealed class HostUpdateStatsHandler(
     RoundStatisticsProcessor roundStatisticsProcessor,
-    SessionHelper sessionHelper) : ICommandHandler
+    InstructorService instructorService,
+    SessionHelper sessionHelper,
+    ILogger<HostUpdateStatsHandler> logger) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        await roundStatisticsProcessor.ProcessAsync(session, packet, cancellationToken);
+        var targetIdentifier = await roundStatisticsProcessor.ProcessAsync(session, packet, cancellationToken);
+
+        // The host reports every player as they leave, combat training included, so
+        // the instructor award rides the session ending rather than the graduation
+        // packet. An award that misses here is picked up by the next report instead
+        // of being lost, and the award itself is latched, so a repeat is harmless.
+        // The letter beats the student's mailbox fetch: leaving sends this report
+        // first and the fetch a few seconds later.
+        if (targetIdentifier > 0 &&
+            await instructorService.AwardPendingInstructorSkillAsync(targetIdentifier, cancellationToken))
+        {
+            logger.LogInformation(
+                "Character {TargetIdentifier} awarded the instructor skill and its announcement",
+                targetIdentifier);
+        }
+
         await sessionHelper.SendResultAsync(session, CommandConstants.HostUpdateStatsResult, ErrorCodeConstants.ResultNone, cancellationToken);
     }
 }
@@ -46,10 +66,9 @@ public sealed class HostUpdateStatsHandler(
 /// </summary>
 /// <param name="gameService">Service that owns the rooms.</param>
 /// <param name="characterService">Service that owns the character records.</param>
-/// <param name="statisticsService">Service that owns the lifetime statistics.</param>
-/// <param name="roundReportService">Service that owns the round reports.</param>
-/// <param name="titleService">Service that latches the titles a round earns.</param>
-/// <param name="logger">Logger of this processor.</param>
+/// <param name="statisticsService">Service that owns the lifetime statistics.</param>    /// <param name="roundReportService">Service that owns the round reports.</param>
+    /// <param name="titleService">Service that latches the titles a round earns.</param>
+    /// <param name="logger">Logger of this processor.</param>
 public sealed class RoundStatisticsProcessor(
     GameService gameService,
     CharacterService characterService,
@@ -80,17 +99,18 @@ public sealed class RoundStatisticsProcessor(
     /// <param name="session">Connection the report arrived on.</param>
     /// <param name="packet">Report to process.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task ProcessAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
+    /// <returns>The character the report described, or zero when nothing was applied.</returns>
+    public async Task<int> ProcessAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         if (session.CharacterIdentifier is not { } reporterIdentifier)
         {
-            return;
+            return 0;
         }
 
         var payload = packet.Payload;
         if (payload.Length < ExperienceOffset + 4)
         {
-            return;
+            return 0;
         }
 
         short ReadInt16(int offset) =>
@@ -125,7 +145,7 @@ public sealed class RoundStatisticsProcessor(
                 "Room {GameIdentifier}: a statistics report named character {TargetIdentifier}, who neither is in the room nor played the round; dropped",
                 game.Identifier,
                 targetIdentifier);
-            return;
+            return 0;
         }
 
         var gameMode = ResolveGameMode(game);
@@ -163,6 +183,8 @@ public sealed class RoundStatisticsProcessor(
                 targetIdentifier,
                 string.Join(',', unlocked));
         }
+
+        return (int)targetIdentifier;
     }
 
     private async Task<int> ResolveLobbySubtypeAsync(
