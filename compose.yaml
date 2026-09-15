@@ -33,6 +33,11 @@ x-database: &database
     postgres:
       condition: service_healthy
   restart: unless-stopped
+  # Lets a container reach the Grafana Alloy running on the host, which is where
+  # the OpenTelemetry exporter sends the metrics (OTEL_HOST). Docker Desktop
+  # resolves this name on its own; the mapping makes it resolve on Linux too.
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
 
 x-gate-lobby-server: &gate-lobby-server
   <<: *database

@@ -41,8 +41,24 @@ public sealed partial class GameService
         var cutoff = DateTimeOffset.UtcNow - staleAfter;
 
         await using var context = await CreateContextAsync(cancellationToken);
-        return await context.Games
+
+        // The lobbies of the games that are about to go are read first, so the
+        // new total of each one is published after the delete.
+        var lobbyIdentifiers = await context.Games
+            .Where(game => game.UpdatedAt < cutoff)
+            .Select(game => game.LobbyIdentifier)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var removed = await context.Games
             .Where(game => game.UpdatedAt < cutoff)
             .ExecuteDeleteAsync(cancellationToken);
+
+        foreach (var lobbyIdentifier in lobbyIdentifiers)
+        {
+            await ReportLobbyMatchesAsync(lobbyIdentifier, cancellationToken);
+        }
+
+        return removed;
     }
 }

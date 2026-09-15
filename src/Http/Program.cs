@@ -9,6 +9,7 @@ using Mgo2Server.Http.Services;
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.News;
+using Mgo2Server.Shared.Telemetry;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.OpenApi;
@@ -47,6 +48,7 @@ if (string.IsNullOrEmpty(httpApiOptions.JwtSecret))
 
 builder.Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(httpApiOptions));
 builder.Services.AddServerServices(builder.Configuration);
+builder.Services.AddServerTelemetry(builder.Configuration);
 
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<PolicyService>();
@@ -126,6 +128,12 @@ app.MapScalarApiReference("/api", reference =>
 
 app.MapPublicEndpoints();
 app.MapAuthenticatedEndpoints();
+
+// The API is where accounts are created, so it publishes the account total. The
+// provider is built here because the API is the only entry point that starts
+// its host; the console servers activate it explicitly.
+app.Services.ActivateServerTelemetry();
+await app.Services.GetRequiredService<ServerMetricsService>().ReportTotalUsersAsync();
 
 app.Logger.LogInformation("HTTP API listening on port {Port}", httpPort);
 

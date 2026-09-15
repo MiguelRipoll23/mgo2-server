@@ -1,12 +1,16 @@
 using Mgo2Server.Shared.Persistence;
 using Mgo2Server.Shared.Persistence.Entities;
+using Mgo2Server.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mgo2Server.Shared.Domain.Users;
 
 /// <summary>Owns the account records.</summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
-public sealed class UserService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
+/// <param name="metricsService">Service the new account total is reported to.</param>
+public sealed class UserService(
+    IDbContextFactory<Mgo2DatabaseContext> contextFactory,
+    ServerMetricsService metricsService)
     : DomainService(contextFactory)
 {
     /// <summary>Finds an account by its login name.</summary>
@@ -46,6 +50,10 @@ public sealed class UserService(IDbContextFactory<Mgo2DatabaseContext> contextFa
         var created = new User { DisplayName = displayName, Password = passwordHash };
         context.Users.Add(created);
         await context.SaveChangesAsync(cancellationToken);
+
+        // The account count changed, so the new total is published rather than
+        // polled for on a timer.
+        await metricsService.ReportTotalUsersAsync(cancellationToken);
         return created;
     }
 

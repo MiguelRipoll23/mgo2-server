@@ -30,6 +30,11 @@
     level is set to Debug so packet hex dumps are visible. Log files are written
     to .logs\ with daily rotation (7-day retention).
 
+    Telemetry is always on: every server sends its OpenTelemetry metrics over
+    gRPC to a collector on port 4317, and the OTEL_* settings of .env are
+    overridden so the scripts behave the same however the deployment was
+    installed.
+
     Every other setting is read from .env, which is created from .env.example on
     the first run and never overwritten. The process environment wins over .env.
 
@@ -324,6 +329,15 @@ try {
     }
 
     Import-EnvFile (Join-Path $projectDirectory '.env')
+
+    # The run scripts always enable the telemetry integration, so every server
+    # exports its metrics and nothing has to be configured to develop against
+    # them. The collector is expected on the host, which is where these
+    # processes run.
+    $env:OTEL_ENABLED = 'true'
+    $env:OTEL_PORT = '4317'
+    $env:OTEL_HOST = 'localhost'
+
     $env:DATABASE_CONNECTION_STRING = Resolve-DatabaseConnectionString
 
     $logDirectory = Join-Path $projectDirectory '.logs'

@@ -2,6 +2,7 @@ using Mgo2Server.Shared.Domain;
 using Mgo2Server.Shared.Errors;
 using Mgo2Server.Shared.Persistence;
 using Mgo2Server.Shared.Persistence.Entities;
+using Mgo2Server.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mgo2Server.Shared.Domain.Authentication;
@@ -20,7 +21,8 @@ public sealed record RegistrationResponse(int Identifier, string DisplayName);
 /// <param name="cryptographyService">Service that hashes passwords.</param>
 public sealed class RegistrationService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
-    CryptographyService cryptographyService) : DomainService(contextFactory)
+    CryptographyService cryptographyService,
+    ServerMetricsService metricsService) : DomainService(contextFactory)
 {
     /// <summary>Registers a new account.</summary>
     /// <param name="displayName">Display name of the account.</param>
@@ -69,6 +71,10 @@ public sealed class RegistrationService(
 
             throw;
         }
+
+        // The account count changed, so the new total is published here rather
+        // than polled for on a timer.
+        await metricsService.ReportTotalUsersAsync(cancellationToken);
 
         return new RegistrationResponse(user.Identifier, user.DisplayName);
     }

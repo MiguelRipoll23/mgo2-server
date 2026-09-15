@@ -51,6 +51,12 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
   or Error) and writes LOG_LEVEL, defaulting to Warning. Setting MGO2_LOG_LEVEL
   answers without a prompt.
 
+  It asks whether the servers should send telemetry over OpenTelemetry and
+  writes OTEL_ENABLED and OTEL_PORT, defaulting to yes and to port 4317;
+  MGO2_TELEMETRY answers the question without a prompt. The collector the metrics
+  are sent to is the operator's change: nothing of it is touched or checked
+  here. When telemetry is off no OpenTelemetry integration is configured.
+
   When it is omitted, MGO2_IMAGE_PREFIX is used: the setting of .env, or the
   environment variable, or the registry the images are published to by default.
 
@@ -134,6 +140,100 @@ choice_log_level() {
         3) printf '%s' 'Warning' ;;
         4) printf '%s' 'Error' ;;
     esac
+}
+
+# Answers true for a yes/no answer.
+is_yes_no() {
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        y|yes|true|1|n|no|false|0) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Spells a yes/no answer the one way .env stores it.
+normalise_yes_no() {
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        y|yes|true|1) printf '%s' 'true' ;;
+        *) printf '%s' 'false' ;;
+    esac
+}
+
+# Answers true for a whole number that is a usable port.
+is_port() {
+    case "$1" in
+        '' | *[!0-9]*) return 1 ;;
+    esac
+
+    [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+# Reports whether the servers should send telemetry. Yes is the default, so an
+# unattended run installs with it on; MGO2_TELEMETRY answers without a prompt.
+resolve_telemetry() {
+    local current default answer
+
+    current="$(read_env_value OTEL_ENABLED)"
+
+    # The environment decides without asking, which is what a piped or otherwise
+    # unattended run needs.
+    if [ -n "${MGO2_TELEMETRY+x}" ]; then
+        if is_yes_no "$MGO2_TELEMETRY"; then
+            normalise_yes_no "$MGO2_TELEMETRY"
+        else
+            echo "warning: MGO2_TELEMETRY='$MGO2_TELEMETRY' is not a yes or no; using yes" >&2
+            printf '%s' 'true'
+        fi
+        return 0
+    fi
+
+    # A deployment that was installed with telemetry off stays off by default, so
+    # running the script again to install an update does not silently turn it on;
+    # a fresh deployment starts with it on.
+    if [ "$current" = 'false' ]; then
+        default='no'
+    else
+        default='yes'
+    fi
+
+    # A run without a terminal cannot be asked anything, so the default is what
+    # such a run gets.
+    if ! { : < /dev/tty; } 2>/dev/null; then
+        normalise_yes_no "$default"
+        return 0
+    fi
+
+    printf '\nShould the servers send telemetry over OpenTelemetry?\n' > /dev/tty
+    printf '  yes) Export metrics over gRPC (default)\n' > /dev/tty
+    printf '  no)  Do not configure OpenTelemetry\n' > /dev/tty
+
+    read -r -p "Send telemetry? [${default}] " answer < /dev/tty || answer=''
+    answer="${answer:-$default}"
+
+    if ! is_yes_no "$answer"; then
+        echo "warning: '$answer' is not a yes or no; using ${default}" >&2
+        answer="$default"
+    fi
+
+    normalise_yes_no "$answer"
+}
+
+# Reports the port the OTLP/gRPC collector the metrics are sent to listens on. 4317 is
+# the default; OTEL_PORT in the environment or in .env answers without a prompt.
+resolve_otel_port() {
+    local current
+
+    if [ -n "${OTEL_PORT:-}" ] && is_port "$OTEL_PORT"; then
+        printf '%s' "$OTEL_PORT"
+        return 0
+    fi
+
+    current="$(read_env_value OTEL_PORT)"
+    if is_port "$current"; then
+        printf '%s' "$current"
+        return 0
+    fi
+
+    printf '%s' '4317'
 }
 
 # Answers true for a dotted IPv4 address whose four octets each fit in a byte.
@@ -334,6 +434,23 @@ fi
 # answered and written before the images are pulled.
 resolved_log_level="$(resolve_log_level)"
 set_env_value LOG_LEVEL "$resolved_log_level" .env
+
+# Whether the servers send telemetry is answered and written before the images
+# are pulled. Pointing the collector at the chosen port is the operator's
+# change: nothing about the collector is touched here.
+resolved_telemetry="$(resolve_telemetry)"
+if [ "$resolved_telemetry" = 'true' ]; then
+    resolved_otel_port="$(resolve_otel_port)"
+    set_env_value OTEL_ENABLED true .env
+    set_env_value OTEL_PORT "$resolved_otel_port" .env
+    echo
+    echo "OpenTelemetry is enabled: the servers send their metrics over gRPC on port ${resolved_otel_port}."
+    echo "Set OTEL_PORT to change the port; the collector has to listen on the same one."
+else
+    set_env_value OTEL_ENABLED false .env
+    echo
+    echo 'OpenTelemetry is disabled: no OpenTelemetry integration is configured.'
+fi
 
 image_prefix="$(normalise_prefix "${1:-${MGO2_IMAGE_PREFIX:-$(read_env_value MGO2_IMAGE_PREFIX)}}")"
 image_prefix="${image_prefix:-$(normalise_prefix "${default_image_prefix}")}"

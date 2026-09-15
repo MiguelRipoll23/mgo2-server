@@ -1,5 +1,6 @@
 using Mgo2Server.Shared.Persistence;
 using Mgo2Server.Shared.Persistence.Entities;
+using Mgo2Server.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mgo2Server.Shared.Domain.Games;
@@ -33,7 +34,10 @@ public readonly record struct HostRatingSummary(int RatingSum, int Votes);
 /// class.
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
-public sealed partial class GameService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
+/// <param name="metricsService">Service the new match total is reported to.</param>
+public sealed partial class GameService(
+    IDbContextFactory<Mgo2DatabaseContext> contextFactory,
+    ServerMetricsService metricsService)
     : DomainService(contextFactory)
 {
     /// <summary>Lowest rating the client's star picker sends.</summary>
@@ -86,6 +90,10 @@ public sealed partial class GameService(IDbContextFactory<Mgo2DatabaseContext> c
         configure(game);
         context.Games.Add(game);
         await context.SaveChangesAsync(cancellationToken);
+
+        // The match count of the lobby changed, so its new total is published
+        // rather than polled for on a timer.
+        await ReportLobbyMatchesAsync(game.LobbyIdentifier, cancellationToken);
         return game;
     }
 
@@ -119,9 +127,22 @@ public sealed partial class GameService(IDbContextFactory<Mgo2DatabaseContext> c
     public async Task DeleteAsync(int gameIdentifier, CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
+
+        // The lobby is read first, because the total it is reported under cannot
+        // be known once the row is gone.
+        var lobbyIdentifier = await context.Games
+            .Where(game => game.Identifier == gameIdentifier)
+            .Select(game => (int?)game.LobbyIdentifier)
+            .FirstOrDefaultAsync(cancellationToken);
+
         await context.Games
             .Where(game => game.Identifier == gameIdentifier)
             .ExecuteDeleteAsync(cancellationToken);
+
+        if (lobbyIdentifier is { } lobby)
+        {
+            await ReportLobbyMatchesAsync(lobby, cancellationToken);
+        }
     }
 
     /// <summary>Deletes every room of a lobby.</summary>
@@ -133,6 +154,20 @@ public sealed partial class GameService(IDbContextFactory<Mgo2DatabaseContext> c
         await context.Games
             .Where(game => game.LobbyIdentifier == lobbyIdentifier)
             .ExecuteDeleteAsync(cancellationToken);
+
+        await ReportLobbyMatchesAsync(lobbyIdentifier, cancellationToken);
+    }
+
+    /// <summary>
+    /// Counts the matches of one lobby and publishes the new total, labelled with
+    /// the lobby so a dashboard can filter the metric by lobby.
+    /// </summary>
+    /// <param name="lobbyIdentifier">Identifier of the lobby.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task ReportLobbyMatchesAsync(int lobbyIdentifier, CancellationToken cancellationToken)
+    {
+        var lobby = await FindLobbyAsync(lobbyIdentifier, cancellationToken);
+        await metricsService.ReportTotalMatchesAsync(lobbyIdentifier, lobby?.Name, cancellationToken);
     }
 
     /// <summary>Returns the lobby summary behind an identifier.</summary>

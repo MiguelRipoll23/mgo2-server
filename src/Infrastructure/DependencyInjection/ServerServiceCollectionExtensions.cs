@@ -11,6 +11,7 @@ using Mgo2Server.Shared.Domain.Users;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence;
 using Mgo2Server.Shared.Tcp;
+using Mgo2Server.Shared.Telemetry;
 using Mgo2Server.Shared.Utils;
 using Mgo2Server.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -85,6 +86,11 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<MailService>();
         services.AddSingleton<RegistrationService>();
         services.AddSingleton<AutomatchService>();
+
+        // Registered whether or not a collector is configured, because the
+        // services that publish totals take it as a dependency; without a
+        // listener the instruments are silent and no query is made.
+        services.AddSingleton<ServerMetricsService>();
 
         services.AddSingleton<PacketCodecService>();
         services.AddSingleton<SessionHelper>();

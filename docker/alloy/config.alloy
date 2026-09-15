@@ -1,0 +1,34 @@
+// Grafana Alloy configuration that collects the metrics of the MGO2 servers.
+//
+// The servers export their metrics over OpenTelemetry, using OTLP/gRPC. This
+// receives them and forwards them to a Prometheus-compatible remote-write
+// endpoint, which defaults to a Prometheus listening locally and can be pointed
+// elsewhere with ALLOY_REMOTE_WRITE_URL.
+//
+// An operator adds this to the Grafana Alloy that is installed and running on
+// the host. Nothing writes it automatically: keeping the receiver and the
+// OTEL_PORT of the deployment on the same port is the operator's change. Check
+// it with 'alloy validate config.alloy' before running Alloy with it.
+//
+// ── MGO2 server metrics ──────────────────────────────────────────────────────
+
+otelcol.receiver.otlp "mgo2_server" {
+  grpc {
+    // Has to match OTEL_PORT of the deployment.
+    endpoint = "0.0.0.0:4317"
+  }
+
+  output {
+    metrics = [otelcol.exporter.prometheus.mgo2_server.input]
+  }
+}
+
+otelcol.exporter.prometheus "mgo2_server" {
+  forward_to = [prometheus.remote_write.mgo2_server.receiver]
+}
+
+prometheus.remote_write "mgo2_server" {
+  endpoint {
+    url = coalesce(sys.env("ALLOY_REMOTE_WRITE_URL"), "http://localhost:9090/api/v1/write")
+  }
+}

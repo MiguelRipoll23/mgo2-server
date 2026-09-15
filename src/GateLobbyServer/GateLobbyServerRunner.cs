@@ -4,6 +4,7 @@ using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence.Entities;
 using Mgo2Server.Shared.Tcp;
+using Mgo2Server.Shared.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -43,6 +44,13 @@ public sealed class GateLobbyServerRunner(
             "Registered the gate as {LobbyIdentifier} on port {Port}",
             lobby.Identifier,
             lobby.Port);
+
+        // The console host never starts the meter provider on its own, so it is
+        // activated here and the totals of this lobby are published once, before
+        // any change can happen. The gate tracks no players of its own.
+        serviceProvider.ActivateServerTelemetry();
+        await serviceProvider.GetRequiredService<ServerMetricsService>()
+            .ReportLobbyTotalsAsync(lobby.Identifier, 0, cancellationToken);
 
         // The gate serves the lobby list, so its own row has to be in the cache
         // before the listener starts.

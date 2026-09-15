@@ -104,6 +104,18 @@ scripts/build-linux-macos.sh             # Build every project
 scripts/run-linux-macos.sh               # Run the whole deployment
 ```
 
+### Telemetry
+
+The servers support OpenTelemetry: they export their metrics over OTLP/gRPC to
+a collector that listens on port 4317.
+
+The install scripts ask whether the deployment should send telemetry and
+default to yes. When it is on, they write `OTEL_ENABLED=true` and `OTEL_PORT`
+into `.env`; when it is off, no OpenTelemetry integration is configured. They
+never touch the collector: `docker/alloy/config.alloy` is the Grafana Alloy
+receiver to add to the Alloy running on the host by hand, and its port has to
+match `OTEL_PORT`. The run scripts always enable telemetry on port 4317.
+
 ## Acknowledgements
 
 Protocol research and reverse engineering that made this project possible:

@@ -22,7 +22,12 @@
     reach the published ports.
 
     Set ADVERTISED_ADDRESS to skip detection. Set MGO2_LOG_LEVEL to answer the
-    log-level question without a prompt.
+    log-level question without a prompt, and MGO2_TELEMETRY to answer the
+    telemetry question without a prompt. Telemetry defaults to yes: the servers
+    then send their metrics over gRPC on port 4317, which OTEL_PORT changes. The
+    collector the metrics are sent to is the operator's change: nothing of it is
+    touched or checked here. With telemetry off no OpenTelemetry integration is
+    configured.
 
 .PARAMETER ImagePrefix
     Registry path the images are pulled from, including the trailing slash, for
@@ -242,6 +247,86 @@ function Resolve-LogLevel([string]$ProjectDirectory) {
     return $selected
 }
 
+# Answers true for a yes/no answer.
+function Test-YesNo([string]$Value) {
+    return $Value -imatch '^(y|yes|true|1|n|no|false|0)$'
+}
+
+# Spells a yes/no answer the one way .env stores it.
+function Get-NormalisedYesNo([string]$Value) {
+    if ($Value -imatch '^(y|yes|true|1)$') {
+        return 'true'
+    }
+
+    return 'false'
+}
+
+# Answers true for a whole number that is a usable port.
+function Test-Port([string]$Value) {
+    if ($Value -notmatch '^\d{1,5}$') {
+        return $false
+    }
+
+    return [int]$Value -ge 1 -and [int]$Value -le 65535
+}
+
+# Reports whether the servers should send telemetry. Yes is the default, so an
+# unattended run installs with it on; MGO2_TELEMETRY answers without a prompt.
+function Resolve-Telemetry([string]$ProjectDirectory) {
+    if ($env:MGO2_TELEMETRY) {
+        if (Test-YesNo $env:MGO2_TELEMETRY) {
+            return (Get-NormalisedYesNo $env:MGO2_TELEMETRY)
+        }
+
+        Write-Host "warning: MGO2_TELEMETRY='$($env:MGO2_TELEMETRY)' is not a yes or no; using yes" -ForegroundColor Yellow
+        return 'true'
+    }
+
+    # A deployment that was installed with telemetry off stays off by default,
+    # so running the script again to install an update does not silently turn it
+    # on; a fresh deployment starts with it on.
+    $current = Read-EnvValue 'OTEL_ENABLED' $ProjectDirectory
+    $defaultChoice = if ($current -eq 'false') { 'no' } else { 'yes' }
+
+    # A run without an interactive host cannot be asked anything, so the default
+    # is what such a run gets.
+    if (-not [Environment]::UserInteractive) {
+        return (Get-NormalisedYesNo $defaultChoice)
+    }
+
+    Write-Host ''
+    Write-Host 'Should the servers send telemetry over OpenTelemetry?'
+    Write-Host '  yes) Export metrics over gRPC (default)'
+    Write-Host '  no)  Do not configure OpenTelemetry'
+
+    $answer = Read-Host "Send telemetry? [$defaultChoice]"
+    if ([string]::IsNullOrWhiteSpace($answer)) {
+        $answer = $defaultChoice
+    }
+
+    if (-not (Test-YesNo $answer)) {
+        Write-Host "warning: '$answer' is not a yes or no; using $defaultChoice" -ForegroundColor Yellow
+        $answer = $defaultChoice
+    }
+
+    return (Get-NormalisedYesNo $answer)
+}
+
+# Reports the port the OTLP/gRPC collector the metrics are sent to listens on. 4317 is
+# the default; OTEL_PORT in the environment or in .env answers without a prompt.
+function Resolve-OtelPort([string]$ProjectDirectory) {
+    if ($env:OTEL_PORT -and (Test-Port $env:OTEL_PORT)) {
+        return $env:OTEL_PORT
+    }
+
+    $current = Read-EnvValue 'OTEL_PORT' $ProjectDirectory
+    if (Test-Port $current) {
+        return $current
+    }
+
+    return '4317'
+}
+
 # Adds the trailing slash the compose file expects, and nothing when empty.
 function Get-NormalisedPrefix([string]$Value) {
     if ([string]::IsNullOrWhiteSpace($Value)) {
@@ -315,6 +400,24 @@ try {
     # answered and written before the images are pulled.
     $resolvedLogLevel = Resolve-LogLevel $projectDirectory
     Set-EnvValue 'LOG_LEVEL' $resolvedLogLevel $envFile
+
+    # Whether the servers send telemetry is answered and written before the
+    # images are pulled. Pointing the collector at the chosen port is the
+    # operator's change: nothing about the collector is touched here.
+    $resolvedTelemetry = Resolve-Telemetry $projectDirectory
+    if ($resolvedTelemetry -eq 'true') {
+        $resolvedOtelPort = Resolve-OtelPort $projectDirectory
+        Set-EnvValue 'OTEL_ENABLED' 'true' $envFile
+        Set-EnvValue 'OTEL_PORT' $resolvedOtelPort $envFile
+        Write-Host ''
+        Write-Host "OpenTelemetry is enabled: the servers send their metrics over gRPC on port $resolvedOtelPort."
+        Write-Host 'Set OTEL_PORT to change the port; the collector has to listen on the same one.'
+    }
+    else {
+        Set-EnvValue 'OTEL_ENABLED' 'false' $envFile
+        Write-Host ''
+        Write-Host 'OpenTelemetry is disabled: no OpenTelemetry integration is configured.'
+    }
 
     if ([string]::IsNullOrWhiteSpace($ImagePrefix)) {
         $ImagePrefix = if ($env:MGO2_IMAGE_PREFIX) { $env:MGO2_IMAGE_PREFIX } else { Read-EnvValue 'MGO2_IMAGE_PREFIX' $projectDirectory }
