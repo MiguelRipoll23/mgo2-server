@@ -7,14 +7,18 @@ namespace Mgo2Server.Shared.Domain.Clans;
 /// <summary>A clan list row joined with its leader's character name.</summary>
 /// <param name="ClanIdentifier">Identifier of the clan.</param>
 /// <param name="ClanName">Name of the clan.</param>
+/// <param name="MemberCount">Number of members, which the list row carries.</param>
 /// <param name="LeaderCharacterIdentifier">Character that leads the clan, or zero.</param>
 /// <param name="LeaderCharacterName">Name of the leader, or empty.</param>
+/// <param name="CreationTime">Unix timestamp the clan was created at.</param>
 /// <param name="HasEmblem">Whether the clan published an emblem.</param>
 public sealed record ClanListEntry(
     int ClanIdentifier,
     string ClanName,
+    int MemberCount,
     int LeaderCharacterIdentifier,
     string LeaderCharacterName,
+    int CreationTime,
     bool HasEmblem);
 
 /// <summary>Full details of one clan, as shown on its card.</summary>
@@ -70,6 +74,14 @@ public sealed record ClanApplicant(int CharacterIdentifier, string Name, DateTim
 public sealed partial class ClanService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
     : DomainService(contextFactory)
 {
+    /// <summary>Counts the clans, which the list header reports as the total.</summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task<int> CountAsync(CancellationToken cancellationToken = default)
+    {
+        await using var context = await CreateContextAsync(cancellationToken);
+        return await context.Clans.CountAsync(cancellationToken);
+    }
+
     /// <summary>Lists clans, oldest first.</summary>
     /// <param name="offset">Number of rows to skip.</param>
     /// <param name="limit">Maximum number of rows to return.</param>

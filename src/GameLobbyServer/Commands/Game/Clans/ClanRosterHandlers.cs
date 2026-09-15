@@ -211,14 +211,41 @@ public sealed class GetClanApplicantsHandler(
     }
 }
 
-/// <summary>Answers the clan-statistics request with two empty packets.</summary>
+/// <summary>
+/// Answers the clan-statistics request. No clan statistics are stored, so both
+/// packets are zeroed — but they are the size and shape the client parses, which
+/// matters more than the values: a reply with no payload at all fails the packet,
+/// and the screen then reports a stall rather than empty statistics.
+/// </summary>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class GetClanStatsHandler(SessionHelper sessionHelper) : ICommandHandler
 {
+    /// <summary>Size of the per-mode statistics grid: a result word, a page word, then 8 × 18 u32.</summary>
+    private const int StatisticsGridSize = 584;
+
+    /// <summary>Size of the trailing blocks packet: a result word, then 2 × 72 u32.</summary>
+    private const int StatisticsBlocksSize = 580;
+
+    /// <summary>
+    /// Page selector of the grid. Only two and three are accepted: any other value
+    /// fails the whole packet and discards the grid, which renders as "no records"
+    /// rather than as zeroed statistics. Two goes first because receiving it
+    /// zeroes all four page slots.
+    /// </summary>
+    private const uint StatisticsPage = 2;
+
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        await sessionHelper.SendPacketAsync(session, CommandConstants.GetClanStatsResult, null, cancellationToken);
-        await sessionHelper.SendPacketAsync(session, CommandConstants.GetClanStatsDetail, null, cancellationToken);
+        var grid = new PacketWriter();
+        grid.WriteUInt32(ErrorCodeConstants.ResultNone);
+        grid.WriteUInt32(StatisticsPage);
+        grid.WritePadding(StatisticsGridSize - 2 * sizeof(uint));
+        await sessionHelper.SendPacketAsync(session, CommandConstants.GetClanStatsResult, grid.Build(), cancellationToken);
+
+        var blocks = new PacketWriter();
+        blocks.WriteUInt32(ErrorCodeConstants.ResultNone);
+        blocks.WritePadding(StatisticsBlocksSize - sizeof(uint));
+        await sessionHelper.SendPacketAsync(session, CommandConstants.GetClanStatsDetail, blocks.Build(), cancellationToken);
     }
 }

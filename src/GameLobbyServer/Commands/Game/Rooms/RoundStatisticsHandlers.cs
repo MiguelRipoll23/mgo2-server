@@ -48,12 +48,14 @@ public sealed class HostUpdateStatsHandler(
 /// <param name="characterService">Service that owns the character records.</param>
 /// <param name="statisticsService">Service that owns the lifetime statistics.</param>
 /// <param name="roundReportService">Service that owns the round reports.</param>
+/// <param name="titleService">Service that latches the titles a round earns.</param>
 /// <param name="logger">Logger of this processor.</param>
 public sealed class RoundStatisticsProcessor(
     GameService gameService,
     CharacterService characterService,
     CharacterStatisticsService statisticsService,
     RoundReportService roundReportService,
+    CharacterTitleService titleService,
     ILogger<RoundStatisticsProcessor> logger)
 {
     /// <summary>Offset of the target character identifier.</summary>
@@ -148,10 +150,18 @@ public sealed class RoundStatisticsProcessor(
         await statisticsService.ApplyRoundStatisticsAsync((int)targetIdentifier, round, cancellationToken);
         await characterService.AddExperienceAsync((int)targetIdentifier, round.Experience, round.Aborted, cancellationToken);
 
-        var updated = await statisticsService.FindByCharacterIdentifierAsync((int)targetIdentifier, cancellationToken);
-        if (updated is not null)
+        // Titles are evaluated after the statistics and the experience have
+        // landed, because both feed the requirements. Evaluating here rather than
+        // deriving the rank on read is what keeps a title once the ratio behind it
+        // falls, and it is also where the player is told about it: the client
+        // shows the badge, not an announcement.
+        var unlocked = await titleService.EvaluateAsync((int)targetIdentifier, cancellationToken: cancellationToken);
+        if (unlocked.Count > 0)
         {
-            await characterService.UpdateRankAsync((int)targetIdentifier, updated, cancellationToken: cancellationToken);
+            logger.LogInformation(
+                "Character {TargetIdentifier} unlocked title {Titles} at the end of the round",
+                targetIdentifier,
+                string.Join(',', unlocked));
         }
     }
 

@@ -34,19 +34,28 @@ public sealed class StartAutomatchHandler(
             return;
         }
 
+        // Answering zero from here is a commitment rather than an
+        // acknowledgement: it sets the client's loaded flag and arms its push
+        // channel, after which it sends nothing at all and waits for us. So a zero
+        // goes out only when the matchmaker is actually going to look at this
+        // player, and a closed schedule is refused with the sentence the game ships
+        // for it instead of a stopwatch with no explanation.
+        if (!automatchService.IsOpen(DateTimeOffset.UtcNow))
+        {
+            await sessionHelper.SendResultAsync(session, CommandConstants.StartAutomatchResult, ErrorCodeConstants.ResultAutomatchNotOpen, cancellationToken);
+            return;
+        }
+
         var character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken);
         automatchService.Enqueue(characterIdentifier, rule, character?.Experience ?? 0, true);
 
-        // The starting band is the searcher's own window, and the shortfall is
-        // the requirement minus one because they can always reach themselves.
-        var searcher = automatchService.Find(characterIdentifier);
-        var band = searcher is not null ? automatchService.Band(searcher) : 1;
-        var needed = Math.Max(0, automatchService.PlayersNeededOnArrival() - 1);
-
+        // The starting band is the searcher's own window, and the shortfall is the
+        // bare requirement: the searcher has found nobody yet and counts
+        // themselves, which is the figure a lone searcher sees.
         var writer = new PacketWriter();
         writer.WriteUInt32(ErrorCodeConstants.ResultNone);
-        writer.WriteUInt8(band);
-        writer.WriteUInt8(needed);
+        writer.WriteUInt8(automatchService.BandOnArrival());
+        writer.WriteUInt8(automatchService.PlayersNeededOnArrival());
         await sessionHelper.SendPacketAsync(session, CommandConstants.StartAutomatchResult, writer.Build(), cancellationToken);
     }
 }
@@ -89,6 +98,58 @@ public static class AutomatchPushWriter
 
     /// <summary>Highest column value the client's bar can render.</summary>
     private const int MaximumColumn = 15;
+
+    /// <summary>Builds the search panel payload.</summary>
+    /// <param name="matchmaking">Population searching, by level.</param>
+    /// <param name="inGame">Population playing, by level.</param>
+    /// <param name="band">Level half-width shown to the searcher.</param>
+    /// <param name="playersNeeded">Players the searcher still needs.</param>
+    public static byte[] BuildSearchPanel(
+        IReadOnlyList<int> matchmaking,
+        IReadOnlyList<int> inGame,
+        int band,
+        int playersNeeded)
+    {
+        var writer = new PacketWriter();
+        WriteSearchPanel(writer, matchmaking, inGame, band, playersNeeded);
+        return writer.Build();
+    }
+
+    /// <summary>Builds the formed-match push.</summary>
+    /// <param name="hostCharacterIdentifier">Character elected to create the room.</param>
+    /// <param name="lobbyIdentifier">Lobby the match forms in.</param>
+    /// <param name="lobbySubtype">Game type of the lobby.</param>
+    /// <param name="rule">Rule of rotation entry zero.</param>
+    /// <param name="settings">Settings block handed to the host.</param>
+    public static byte[] BuildMatchFound(
+        int hostCharacterIdentifier,
+        int lobbyIdentifier,
+        int lobbySubtype,
+        int rule,
+        byte[] settings)
+    {
+        var writer = new PacketWriter();
+        WriteMatchFound(writer, hostCharacterIdentifier, lobbyIdentifier, lobbySubtype, rule, settings);
+        return writer.Build();
+    }
+
+    /// <summary>Builds the push that releases a formed group with its room.</summary>
+    /// <param name="gameIdentifier">Identifier of the created room.</param>
+    public static byte[] BuildMatchGame(int gameIdentifier)
+    {
+        var writer = new PacketWriter();
+        WriteMatchGame(writer, gameIdentifier);
+        return writer.Build();
+    }
+
+    /// <summary>Builds the push that tells a group its host never created the room.</summary>
+    /// <param name="detail">Detail code carried with the failure.</param>
+    public static byte[] BuildMatchFailed(int detail)
+    {
+        var writer = new PacketWriter();
+        WriteMatchFailed(writer, detail);
+        return writer.Build();
+    }
 
     /// <summary>
     /// Writes the search panel: a population histogram by player level, plus

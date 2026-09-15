@@ -76,6 +76,23 @@ public static class ErrorCodeConstants
     /// <summary>Official mail "Unable to locate designated mail"(-800).</summary>
     public const uint ResultMailNotFound = 0xfffffce0;
 
+    /// <summary>
+    /// Official LOBBY_ENTRY_REFUSED(-404): "You cannot login to this lobby". Sent
+    /// unmasked, because it is the client's own code and it compares against the
+    /// literal; the client's beginner check raises the same dialog with the same
+    /// code itself, so a refusal from the server is indistinguishable from the one
+    /// it would have made.
+    /// </summary>
+    public const uint ResultLobbyEntryRefused = 0xfffffe6c;
+
+    /// <summary>
+    /// Official CHARACTER_CANNOT_DELETE_YET(-268): "A fixed amount of time must
+    /// pass in order to delete a character". Unmasked for the same reason as
+    /// <see cref="ResultLobbyEntryRefused"/>: a masked code matches nothing in the
+    /// client's table and falls through to the generic sentence.
+    /// </summary>
+    public const uint ResultCharacterCannotDeleteYet = 0xfffffef4;
+
     /// <summary>Official AUTOMATCH_CANNOT_START(-950).</summary>
     public const uint ResultAutomatchCannotStart = 0xfffffc4a;
 

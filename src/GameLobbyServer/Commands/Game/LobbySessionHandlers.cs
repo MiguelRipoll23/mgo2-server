@@ -4,9 +4,11 @@ using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Interfaces;
+using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game;
 
@@ -18,16 +20,26 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game;
 /// <param name="characterService">Service that owns the character records.</param>
 /// <param name="lobbyTrackerService">Service that tracks the lobby population.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
+/// <param name="lobbyOptions">Attributes of the lobby this process serves.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class GameCheckSessionHandler(
     SessionService sessionService,
     CharacterService characterService,
     LobbyTrackerService lobbyTrackerService,
     SessionHelper sessionHelper,
+    IOptions<LobbyOptions> lobbyOptions,
     ILogger<GameCheckSessionHandler> logger) : ICommandHandler
 {
     /// <summary>Length of the session field the client derives from its login token.</summary>
     private const int SessionFieldLength = 16;
+
+    /// <summary>
+    /// Highest level a beginners-only lobby accepts. The client has the whole
+    /// mechanism for this — it matches a lobby id against the gate list's
+    /// restriction bit and raises dialog 2355 when the profile is zero — and it
+    /// does not fire, so the refusal is made here, where it cannot be ignored.
+    /// </summary>
+    private const int BeginnerMaximumLevel = 3;
 
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
@@ -63,6 +75,33 @@ public sealed class GameCheckSessionHandler(
                 storedSession.UserIdentifier,
                 claimedCharacterIdentifier);
             await sessionHelper.SendResultAsync(session, CommandConstants.GameCheckSessionResult, ErrorCodeConstants.ResultLobbyLoginAgain, cancellationToken);
+            return;
+        }
+
+        // A suspended character is filtered out of the account's character list,
+        // but its identifier still resolves, so the lobby is where the door has to
+        // be shut rather than the list.
+        if (character.Active != 1)
+        {
+            logger.LogInformation(
+                "In-lobby session check: character {CharacterIdentifier} is suspended; refused",
+                claimedCharacterIdentifier);
+            await sessionHelper.SendResultAsync(session, CommandConstants.GameCheckSessionResult, ErrorCodeConstants.ResultLobbyLoginAgain, cancellationToken);
+            return;
+        }
+
+        // Level is the number of thresholds the experience total has cleared, and
+        // "a beginner" is operator policy rather than protocol: the game has no
+        // opinion about who counts as one, only that a lobby can be marked and an
+        // entry can be refused.
+        if (lobbyOptions.Value.BeginnerOnly &&
+            CharacterService.CalculateLevel(character.Experience) > BeginnerMaximumLevel)
+        {
+            logger.LogInformation(
+                "In-lobby session check: character {CharacterIdentifier} is level {Level}, past the ceiling of the beginners-only lobby; refused",
+                claimedCharacterIdentifier,
+                CharacterService.CalculateLevel(character.Experience));
+            await sessionHelper.SendResultAsync(session, CommandConstants.GameCheckSessionResult, ErrorCodeConstants.ResultLobbyEntryRefused, cancellationToken);
             return;
         }
 

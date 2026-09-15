@@ -7,6 +7,7 @@ using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Domain.Mail;
 using Mgo2Server.Shared.Domain.News;
+using Mgo2Server.Shared.Domain.Rankings;
 using Mgo2Server.Shared.Domain.Users;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence;
@@ -66,6 +67,29 @@ public static class ServerServiceCollectionExtensions
             options.ReplaysOnly = configuration.ReadFlag("LOBBY_REPLAYS_ONLY", options.ReplaysOnly);
         });
 
+        services.Configure<AutomatchOptions>(options =>
+        {
+            options.Enabled = configuration.ReadFlag("AUTOMATCH_ENABLED", options.Enabled);
+            options.Windows = configuration.ReadText("AUTOMATCH_WINDOWS") ?? options.Windows;
+            options.TimeZone = configuration.ReadText("AUTOMATCH_TIMEZONE") ?? options.TimeZone;
+            options.TickSeconds = configuration.ReadNumber("AUTOMATCH_TICK_SECONDS", options.TickSeconds);
+            options.MinimumPlayers = configuration.ReadNumber("AUTOMATCH_MIN_PLAYERS", options.MinimumPlayers);
+            options.MinimumPlayersAtStart = configuration.ReadNumber(
+                "AUTOMATCH_MIN_PLAYERS_START",
+                options.MinimumPlayersAtStart);
+            options.MinimumPlayersStepSeconds = configuration.ReadNumber(
+                "AUTOMATCH_MIN_PLAYERS_STEP_SECONDS",
+                options.MinimumPlayersStepSeconds);
+            options.BandAtStart = configuration.ReadNumber("AUTOMATCH_BAND_START", options.BandAtStart);
+            options.BandStepSeconds = configuration.ReadNumber(
+                "AUTOMATCH_BAND_STEP_SECONDS",
+                options.BandStepSeconds);
+            options.BandMaximum = configuration.ReadNumber("AUTOMATCH_BAND_MAX", options.BandMaximum);
+            options.ModeRelaxSeconds = configuration.ReadNumber(
+                "AUTOMATCH_MODE_RELAX_SECONDS",
+                options.ModeRelaxSeconds);
+        });
+
         services.AddDbContextFactory<Mgo2DatabaseContext>(options =>
             options.UseNpgsql(ResolveDatabaseConnectionString(configuration)));
 
@@ -80,12 +104,16 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<LobbyTrackerService>();
         services.AddSingleton<CharacterService>();
         services.AddSingleton<CharacterStatisticsService>();
+        services.AddSingleton<CharacterTitleService>();
         services.AddSingleton<GameService>();
         services.AddSingleton<RoundReportService>();
         services.AddSingleton<ClanService>();
         services.AddSingleton<MailService>();
         services.AddSingleton<RegistrationService>();
         services.AddSingleton<AutomatchService>();
+        services.AddSingleton<AutomatchHooksService>();
+        services.AddSingleton<RankingBoardService>();
+        services.AddSingleton<RankingService>();
 
         // Registered whether or not a collector is configured, because the
         // services that publish totals take it as a dependency; without a

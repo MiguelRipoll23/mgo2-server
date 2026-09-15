@@ -293,7 +293,16 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
         var handlerType = CommandRegistry.ResolveHandlerType(ServerType, command);
         if (handlerType is null)
         {
-            Logger.LogWarning("[{LogPrefix}] 0x{Command} no-handler {State}", LogPrefix, FormatCommand(command), FormatSessionState(session));
+            // Answered with a general error, deliberately: a command nobody handles
+            // is a wiring gap, and telling the client so is what keeps it from
+            // waiting on a reply that is never coming. The payload hex goes in the
+            // log because it is the only record of what was asked for.
+            Logger.LogWarning(
+                "[{LogPrefix}] 0x{Command} no-handler {State} payload={Payload}",
+                LogPrefix,
+                FormatCommand(command),
+                FormatSessionState(session),
+                FormatPayload(packet.Payload));
             var sequenceOut = session.NextSequenceOut();
             var bytes = PacketCodec.EncodeErrorPacket(
                 command,
@@ -315,13 +324,18 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
         }
         catch (Exception exception)
         {
-            Logger.LogDebug(
-                "[{LogPrefix}] 0x{Command} failed reason={Reason} {State}",
+            // A handler that throws answers nothing, and an unanswered command is
+            // this client's most expensive failure: the screen stalls and then
+            // fails with FFFFFF60. The command and the payload are the only
+            // evidence that names it, so both are logged; the connection is kept,
+            // because tearing it down hides which command died.
+            Logger.LogError(
+                exception,
+                "[{LogPrefix}] 0x{Command} handler failed {State} payload={Payload}",
                 LogPrefix,
                 FormatCommand(command),
-                exception.Message,
-                FormatSessionState(session));
-            throw;
+                FormatSessionState(session),
+                FormatPayload(packet.Payload));
         }
 
         return true;
@@ -343,6 +357,20 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
     }
 
     private static string FormatCommand(ushort command) => command.ToString("x4");
+
+    /// <summary>Formats a payload as hex, cut short so a large frame cannot flood the log.</summary>
+    /// <param name="payload">Payload to format.</param>
+    private static string FormatPayload(byte[] payload)
+    {
+        const int MaximumBytes = 64;
+        if (payload.Length == 0)
+        {
+            return "-";
+        }
+
+        var hex = Convert.ToHexString(payload.AsSpan(0, Math.Min(MaximumBytes, payload.Length)));
+        return payload.Length <= MaximumBytes ? hex : $"{hex}..({payload.Length} bytes)";
+    }
 
     private static string FormatSessionState(TcpSession session) =>
         $"auth={(session.UserIdentifier is null ? "missing" : "ok")} " +

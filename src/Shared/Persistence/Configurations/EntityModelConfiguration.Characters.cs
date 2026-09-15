@@ -71,6 +71,16 @@ internal static partial class EntityModelConfiguration
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<CharacterTitle>(entity =>
+        {
+            // A title latches once, so a character holds at most one row per rank.
+            entity.HasIndex(title => new { title.CharacterIdentifier, title.Rank }).IsUnique();
+            entity.HasOne(title => title.Character)
+                .WithMany()
+                .HasForeignKey(title => title.CharacterIdentifier)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<CharacterGearSet>(entity =>
         {
             entity.HasOne(gearSet => gearSet.Character)

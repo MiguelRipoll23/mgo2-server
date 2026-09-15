@@ -6,30 +6,71 @@ using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Clans;
 
-/// <summary>Lists the clans on the clan-select screen.</summary>
+/// <summary>Lists the clans on the clan-select screen, one window per request.</summary>
 /// <param name="clanService">Service that owns the clans.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class GetClanListHandler(
     ClanService clanService,
     SessionHelper sessionHelper) : ICommandHandler
 {
+    /// <summary>Length of the paging request: a kind byte, a signed amount, a trailing byte.</summary>
+    private const int RequestSize = 6;
+
+    /// <summary>
+    /// Size of the window the client asks for, which is the size of its own array
+    /// of rows. The request's amount is a one-based entry index rather than a page
+    /// number: after being shown one entry the client asks for entry 101.
+    /// </summary>
+    private const int PageEntries = 100;
+
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        var clans = await clanService.FindAllWithLeaderAsync(cancellationToken: cancellationToken);
-
-        await sessionHelper.SendStartEndPacketAsync(session, CommandConstants.GetClanListStart, cancellationToken);
-
-        for (var offset = 0; offset < clans.Count; offset += ClanEntryWriter.MaximumPerPacket)
+        // The kind byte selects which arm of the client's paging produced the
+        // request and the trailing byte is unused; the signed amount is the entry
+        // the window is to start at. A request shorter than the three fields is a
+        // first fetch.
+        var start = 1;
+        if (packet.Payload.Length >= RequestSize)
         {
-            var page = clans.Skip(offset).Take(ClanEntryWriter.MaximumPerPacket).ToList();
+            var reader = new PacketReader(packet.Payload);
+            reader.Skip(1);
+            start = (int)reader.ReadUInt32();
+            reader.Skip(1);
+        }
+
+        var total = await clanService.CountAsync(cancellationToken);
+
+        // The client pages optimistically — it asks for the next hundred without
+        // knowing whether they exist — so the window is clamped to the last
+        // populated page. Honouring 101 literally answers "no clans, starting at
+        // 101, one in total", which the screen renders as a page counter running
+        // backwards and then corrupts the list on the next scroll.
+        var lastPageStart = total == 0 ? 0 : ((total - 1) / PageEntries) * PageEntries;
+        var offset = Math.Min(Math.Max(0, start - 1), lastPageStart);
+
+        var clans = await clanService.FindAllWithLeaderAsync(offset, PageEntries, cancellationToken);
+
+        // The header's two words are the offset and then the total, in that order:
+        // they are what the client's page indicator is computed from.
+        var header = new PacketWriter();
+        header.WriteUInt32(ErrorCodeConstants.ResultNone);
+        header.WriteUInt32((uint)offset);
+        header.WriteUInt32((uint)total);
+        await sessionHelper.SendPacketAsync(session, CommandConstants.GetClanListStart, header.Build(), cancellationToken);
+
+        for (var page = 0; page < clans.Count; page += ClanEntryWriter.MaximumPerPacket)
+        {
             var writer = new PacketWriter();
-            foreach (var clan in page)
+            foreach (var clan in clans.Skip(page).Take(ClanEntryWriter.MaximumPerPacket))
             {
                 ClanEntryWriter.WriteClanListEntry(writer, clan);
             }
 
-            await sessionHelper.SendPacketAsync(session, CommandConstants.GetClanListPage, writer.Build(), cancellationToken);
+            if (writer.Size > 0)
+            {
+                await sessionHelper.SendPacketAsync(session, CommandConstants.GetClanListPage, writer.Build(), cancellationToken);
+            }
         }
 
         await sessionHelper.SendStartEndPacketAsync(session, CommandConstants.GetClanListEnd, cancellationToken);

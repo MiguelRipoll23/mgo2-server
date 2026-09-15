@@ -1,3 +1,6 @@
+using Mgo2Server.Shared.Options;
+using Microsoft.Extensions.Options;
+
 namespace Mgo2Server.Shared.Domain.Automatch;
 
 /// <summary>Outcome of cancelling a search.</summary>
@@ -13,19 +16,46 @@ public enum AutomatchCancelOutcome
 /// <summary>
 /// The automatch queue and the matchmaking policy that drains it. The queue is
 /// per process and single-threaded by the tick, so a plain lock guards it. The
-/// policy that drains the queue lives in the matchmaking half of this class.
+/// policy that drains the queue lives in the matchmaking half of this class, and
+/// the settings it is built from arrive from the environment.
 /// </summary>
-public sealed partial class AutomatchService
+/// <param name="options">Operator policy for automatching.</param>
+public sealed partial class AutomatchService(IOptions<AutomatchOptions> options)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<int, Searcher> searchers = [];
     private readonly List<PendingMatch> pending = [];
     private readonly List<PendingMatch> formed = [];
+    private readonly List<PendingMatch> released = [];
     private readonly List<PendingMatch> failed = [];
-    private readonly AutomatchPolicy policy = new();
+    private readonly AutomatchOptions settings = options.Value;
+    private readonly AutomatchPolicy policy = options.Value.ToPolicy();
+    private readonly List<AutomatchWindow> windows = AutomatchWindowUtils.Parse(options.Value.Windows);
+    private readonly TimeZoneInfo zone = AutomatchWindowUtils.ResolveZone(options.Value.TimeZone);
     private IAutomatchHooks? hooks;
     private int lobbyIdentifier;
     private int gameNumber;
+
+    /// <summary>
+    /// Whether automatching is open at a moment: enabled, and inside one of the
+    /// configured windows when any are configured.
+    /// </summary>
+    /// <param name="when">Moment to test.</param>
+    public bool IsOpen(DateTimeOffset when)
+    {
+        if (!settings.Enabled)
+        {
+            return false;
+        }
+
+        if (windows.Count == 0)
+        {
+            return true;
+        }
+
+        var local = TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(when, zone).DateTime);
+        return windows.Exists(window => window.Contains(local));
+    }
 
     /// <summary>Binds the queue to the lobby and the game layer it forms matches in.</summary>
     /// <param name="lobbyIdentifier">Identifier of the lobby this queue serves.</param>
@@ -126,6 +156,9 @@ public sealed partial class AutomatchService
     /// <summary>How many players a group needs the moment a searcher arrives.</summary>
     public int PlayersNeededOnArrival() => Math.Max(0, policy.RequiredPlayersAfter(TimeSpan.Zero));
 
+    /// <summary>The level half-width a searcher is given the moment they arrive, before waiting widens it.</summary>
+    public int BandOnArrival() => policy.BandAfter(TimeSpan.Zero);
+
     /// <summary>This searcher's half-width right now, which is also what is sent to them.</summary>
     /// <param name="searcher">Searcher to measure.</param>
     public int Band(Searcher searcher) => policy.BandAfter(searcher.Waited);
@@ -149,6 +182,55 @@ public sealed partial class AutomatchService
         }
     }
 
+    /// <summary>
+    /// Builds the search panel of every searcher still searching: the population
+    /// they could actually be matched with, counted per level, plus their own band
+    /// and shortfall.
+    /// <para>
+    /// The count excludes the recipient and counts only searchers they could be
+    /// matched with right now, using the same rule the grouping uses — so the graph
+    /// fills out on its own as the mode relaxation opens, and the column count can
+    /// never drift from the matching rule.
+    /// </para>
+    /// </summary>
+    /// <param name="columns">Number of columns, which is the client's own bar count.</param>
+    public List<SearcherPanel> BuildSearchPanels(int columns)
+    {
+        lock (gate)
+        {
+            var panels = new List<SearcherPanel>(searchers.Count);
+            foreach (var searcher in searchers.Values)
+            {
+                if (searcher.State != AutomatchState.Searching || !searcher.Active)
+                {
+                    continue;
+                }
+
+                var counts = new int[columns];
+                foreach (var other in searchers.Values)
+                {
+                    if (ReferenceEquals(other, searcher) ||
+                        other.State != AutomatchState.Searching ||
+                        !other.Active ||
+                        !ModesCompatible(searcher, other))
+                    {
+                        continue;
+                    }
+
+                    counts[Math.Clamp(other.Level, 0, columns - 1)]++;
+                }
+
+                panels.Add(new SearcherPanel(
+                    searcher.CharacterIdentifier,
+                    counts,
+                    policy.BandAfter(searcher.Waited),
+                    PlayersNeeded(searcher)));
+            }
+
+            return panels;
+        }
+    }
+
     /// <summary>Drains the matches formed by the last tick.</summary>
     public List<PendingMatch> TakeFormedMatches()
     {
@@ -156,6 +238,17 @@ public sealed partial class AutomatchService
         {
             var drained = formed.ToList();
             formed.Clear();
+            return drained;
+        }
+    }
+
+    /// <summary>Drains the matches whose game exists and whose members have to be told about it.</summary>
+    public List<PendingMatch> TakeReleasedMatches()
+    {
+        lock (gate)
+        {
+            var drained = released.ToList();
+            released.Clear();
             return drained;
         }
     }

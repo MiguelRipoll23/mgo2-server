@@ -25,6 +25,7 @@ public sealed class PersistenceModelTests
         "characters_hostsettings",
         "characters_sets_gear",
         "characters_sets_skills",
+        "characters_titles",
         "clan_applications",
         "clans",
         "clans_members",

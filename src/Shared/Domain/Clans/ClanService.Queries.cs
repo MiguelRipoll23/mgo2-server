@@ -43,6 +43,8 @@ public sealed partial class ClanService
                 clan.Identifier,
                 clan.Name,
                 clan.Emblem,
+                clan.CreatedAt,
+                MemberCount = clan.Members.Count,
                 LeaderCharacterIdentifier = clan.Leader != null ? clan.Leader.CharacterIdentifier : 0,
                 LeaderCharacterName = clan.Leader != null && clan.Leader.Character != null
                     ? clan.Leader.Character.Name
@@ -53,8 +55,12 @@ public sealed partial class ClanService
         return [.. rows.Select(row => new ClanListEntry(
             row.Identifier,
             row.Name,
+            row.MemberCount,
             row.LeaderCharacterIdentifier,
             row.LeaderCharacterName,
+            row.CreatedAt is { } createdAt
+                ? (int)new DateTimeOffset(DateTime.SpecifyKind(createdAt, DateTimeKind.Utc)).ToUnixTimeSeconds()
+                : 0,
             row.Emblem != null))];
     }
 

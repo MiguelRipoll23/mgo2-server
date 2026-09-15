@@ -62,7 +62,10 @@ public sealed class DeleteCharacterHandler(
             logger.LogInformation(
                 "[tcp][account] 0x3105 character {CharacterIdentifier} is too young to delete",
                 characterToDelete.Identifier);
-            await sessionHelper.SendErrorAsync(session, 0x3106, ErrorCodeConstants.ErrorCharacterCannotDeleteYet, cancellationToken);
+            // The official code, sent unmasked: the client compares it against a
+            // literal, and its own pre-check raises the same dialog with the same
+            // value, so this backstop reads exactly like the refusal it makes.
+            await sessionHelper.SendResultAsync(session, 0x3106, ErrorCodeConstants.ResultCharacterCannotDeleteYet, cancellationToken);
             return;
         }
 

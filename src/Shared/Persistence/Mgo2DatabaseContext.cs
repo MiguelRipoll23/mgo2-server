@@ -78,6 +78,9 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
     /// <summary>Equipped skills.</summary>
     public DbSet<CharacterEquippedSkill> CharacterEquippedSkills => Set<CharacterEquippedSkill>();
 
+    /// <summary>Titles a character has latched.</summary>
+    public DbSet<CharacterTitle> CharacterTitles => Set<CharacterTitle>();
+
     /// <summary>Saved gear sets.</summary>
     public DbSet<CharacterGearSet> CharacterGearSets => Set<CharacterGearSet>();
 

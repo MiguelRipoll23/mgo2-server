@@ -198,6 +198,10 @@ public sealed partial class AutomatchService
             }
 
             pending.Remove(match);
+            // Handed to the tick rather than pushed from here: the members have to
+            // be told the game exists, and only the layer that holds the sessions
+            // can reach them.
+            released.Add(match);
         }
     }
 

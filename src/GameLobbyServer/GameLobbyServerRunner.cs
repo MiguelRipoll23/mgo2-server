@@ -2,6 +2,7 @@ using Mgo2Server.GameLobbyServer.Commands;
 using Mgo2Server.GameLobbyServer.Maintenance;
 using Mgo2Server.GameLobbyServer.Servers;
 using Mgo2Server.Infrastructure.Persistence;
+using Mgo2Server.Shared.Domain.Automatch;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Tcp;
@@ -32,6 +33,7 @@ public sealed class GameLobbyServerRunner(
     private LobbyHeartbeatService? heartbeat;
     private LobbyCleanupService? cleanup;
     private GameCleanupService? gameCleanup;
+    private AutomatchTickerService? automatch;
 
     /// <summary>Initializes the database, registers this instance's lobby and starts it.</summary>
     /// <param name="cancellationToken">Token that stops the listener.</param>
@@ -65,14 +67,24 @@ public sealed class GameLobbyServerRunner(
         // just registered has to be in it before the listener starts.
         await lobbyService.LoadCacheAsync(cancellationToken);
 
+        // The matchmaker is bound to the lobby this instance registered before it
+        // is started: it asks the game layer about rooms in that lobby, and it
+        // pushes only to sessions that are in it.
+        var automatchService = serviceProvider.GetRequiredService<AutomatchService>();
+        automatchService.SetLobby(
+            lobby.Identifier,
+            serviceProvider.GetRequiredService<AutomatchHooksService>());
+
         refresh = serviceProvider.GetRequiredService<LobbyCacheRefreshService>();
         heartbeat = serviceProvider.GetRequiredService<LobbyHeartbeatService>();
         cleanup = serviceProvider.GetRequiredService<LobbyCleanupService>();
         gameCleanup = serviceProvider.GetRequiredService<GameCleanupService>();
+        automatch = serviceProvider.GetRequiredService<AutomatchTickerService>();
         refresh.Start();
         heartbeat.StartFor(lobby.Identifier);
         cleanup.Start();
         gameCleanup.Start();
+        automatch.StartFor(lobby.Identifier, lobby.SubtypeIdentifier);
 
         server = new GameplayLobbyServer(serviceProvider, lobby.Port, lobby.Name, lobby.Identifier);
         await server.StartAsync(cancellationToken);
@@ -106,6 +118,12 @@ public sealed class GameLobbyServerRunner(
         {
             await gameCleanup.StopAsync();
             gameCleanup = null;
+        }
+
+        if (automatch is not null)
+        {
+            await automatch.StopAsync();
+            automatch = null;
         }
     }
 }

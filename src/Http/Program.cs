@@ -56,6 +56,7 @@ builder.Services.AddSingleton<HelpService>();
 builder.Services.AddSingleton<VersionService>();
 builder.Services.AddSingleton<FilesService>();
 builder.Services.AddSingleton<FlashNewsService>();
+builder.Services.AddSingleton<RankingResponseService>();
 
 // The API registers a single scheme, and a single registered scheme is also the
 // default one, so the handler runs for the anonymous routes as well. It answers

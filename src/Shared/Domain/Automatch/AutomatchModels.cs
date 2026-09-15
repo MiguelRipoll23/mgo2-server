@@ -168,6 +168,20 @@ public sealed class AutomatchPolicy(
         waited.TotalMilliseconds >= ModeRelaxMilliseconds;
 }
 
+/// <summary>
+/// The search panel one searcher is shown: the population they could be matched
+/// with, counted per level, plus their own band and shortfall.
+/// </summary>
+/// <param name="CharacterIdentifier">Character the panel belongs to.</param>
+/// <param name="MatchmakingByLevel">Reachable searchers per level, excluding the recipient.</param>
+/// <param name="Band">Level half-width the recipient's own gauge is drawn with.</param>
+/// <param name="PlayersNeeded">Players the recipient still needs.</param>
+public sealed record SearcherPanel(
+    int CharacterIdentifier,
+    int[] MatchmakingByLevel,
+    int Band,
+    int PlayersNeeded);
+
 /// <summary>Callbacks the automatch queue needs into the game layer.</summary>
 public interface IAutomatchHooks
 {

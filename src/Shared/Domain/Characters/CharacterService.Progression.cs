@@ -51,19 +51,19 @@ public sealed partial class CharacterService
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    /// <summary>Recalculates and stores the animal rank of a character.</summary>
+    /// <summary>
+    /// Stores the rank a character wears. The value comes from the title service,
+    /// which latches it: a rank that was earned is never taken away by a later bad
+    /// week, so this is not a recomputation of anything.
+    /// </summary>
     /// <param name="characterIdentifier">Identifier of the character.</param>
-    /// <param name="statistics">Statistics the rank is derived from.</param>
-    /// <param name="daysSinceLastLogin">Days since the character last logged in.</param>
+    /// <param name="rank">Rank identifier to store.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task UpdateRankAsync(
+    public async Task SetRankAsync(
         int characterIdentifier,
-        CharacterStatistics statistics,
-        int daysSinceLastLogin = 0,
+        int rank,
         CancellationToken cancellationToken = default)
     {
-        var rank = AnimalRankService.CalculateRank(statistics, daysSinceLastLogin);
-
         await using var context = await CreateContextAsync(cancellationToken);
         await context.Characters
             .Where(character => character.Identifier == characterIdentifier)

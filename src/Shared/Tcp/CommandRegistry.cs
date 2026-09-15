@@ -18,14 +18,32 @@ public sealed class CommandRegistry
     /// <typeparam name="THandler">Handler type to register.</typeparam>
     public void Register<THandler>(ServerType serverType, ushort commandId)
         where THandler : class, ICommandHandler =>
-        handlers[(serverType, commandId)] = typeof(THandler);
+        Register(serverType, commandId, typeof(THandler));
 
-    /// <summary>Registers the handler type of a command.</summary>
+    /// <summary>
+    /// Registers the handler type of a command.
+    /// <para>
+    /// A command has exactly one handler, so registering a second one is refused
+    /// rather than resolved: overwriting silently leaves whichever handler was
+    /// declared last in charge, and the loser is dead code that still reads as
+    /// maintained. Both names are reported so the pair is visible in the exception.
+    /// </para>
+    /// </summary>
     /// <param name="serverType">Role of the server the command belongs to.</param>
     /// <param name="commandId">Command identifier.</param>
     /// <param name="handlerType">Handler type to register.</param>
-    public void Register(ServerType serverType, ushort commandId, Type handlerType) =>
+    /// <exception cref="InvalidOperationException">Thrown when another handler already serves the command.</exception>
+    public void Register(ServerType serverType, ushort commandId, Type handlerType)
+    {
+        if (handlers.TryGetValue((serverType, commandId), out var existing) && existing != handlerType)
+        {
+            throw new InvalidOperationException(
+                $"Command 0x{commandId:x4} on {serverType} is registered twice: " +
+                $"{existing.Name} and {handlerType.Name}. One of the two is unreachable.");
+        }
+
         handlers[(serverType, commandId)] = handlerType;
+    }
 
     /// <summary>Returns whether a command has a handler.</summary>
     /// <param name="serverType">Role of the server the command belongs to.</param>
