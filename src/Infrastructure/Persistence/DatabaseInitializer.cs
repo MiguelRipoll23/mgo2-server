@@ -1,5 +1,8 @@
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.Infrastructure.Persistence;
@@ -57,6 +60,7 @@ public sealed class DatabaseInitializer(
         try
         {
             await context.Database.EnsureCreatedAsync(cancellationToken);
+            await CreateMissingTablesAsync(context, cancellationToken);
             await SeedAsync(context, cancellationToken);
         }
         finally
@@ -64,6 +68,86 @@ public sealed class DatabaseInitializer(
             await ReleaseInitializationLockAsync(context, cancellationToken);
             await context.Database.CloseConnectionAsync();
         }
+    }
+
+    /// <summary>
+    /// Creates the mapped tables a pre-existing database is still missing.
+    /// <para>
+    /// <see cref="Database.EnsureCreatedAsync"/> builds the whole schema only on an
+    /// empty database and does nothing otherwise, so a deployment that predates a
+    /// commit adding tables never receives them: the first query against one fails
+    /// with a missing relation, and a handler that dies mid-burst leaves the client
+    /// waiting on a reply that never comes. This repairs that gap: the tables the
+    /// model maps are compared against the database, and the missing ones are
+    /// created with the DDL the migrations generator would emit, inside the same
+    /// initialisation lock and one transaction.
+    /// </para>
+    /// </summary>
+    /// <param name="context">Context whose model and connection are used.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task CreateMissingTablesAsync(
+        Mgo2DatabaseContext context,
+        CancellationToken cancellationToken)
+    {
+        var existingTables = await context.Database
+            .SqlQuery<string>($"SELECT tablename AS \"Value\" FROM pg_tables WHERE schemaname = 'public'")
+            .ToListAsync(cancellationToken);
+
+        var mappedTables = context.Model
+            .GetEntityTypes()
+            .Select(entity => entity.GetTableName())
+            .Where(name => name is not null)
+            .OfType<string>()
+            .Distinct()
+            .ToList();
+
+        var missingTables = mappedTables
+            .Except(existingTables)
+            .ToHashSet();
+        if (missingTables.Count == 0)
+        {
+            return;
+        }
+
+        // A null source model makes the differ emit the full-create operations:
+        // create table, primary keys, foreign keys and indexes, in dependency
+        // order. The design-time model is required here: the differ reads
+        // annotations the read-optimized model does not carry. Only the
+        // operations touching a missing table are kept, so an existing table is
+        // never altered here.
+        var operations = context.GetService<IMigrationsModelDiffer>()
+            .GetDifferences(
+                null,
+                context.GetService<IDesignTimeModel>().Model.GetRelationalModel())
+            .Where(operation => operation switch
+            {
+                CreateTableOperation table => missingTables.Contains(table.Name),
+                CreateIndexOperation index => missingTables.Contains(index.Table),
+                _ => false,
+            })
+            .ToList();
+        if (operations.Count == 0)
+        {
+            logger.LogWarning(
+                "The database is missing tables {Tables}, but the model yielded no create operations; skipping repair",
+                string.Join(", ", missingTables.OrderBy(name => name)));
+            return;
+        }
+
+        var commands = context.GetService<IMigrationsSqlGenerator>()
+            .Generate(operations, context.Model)
+            .ToList();
+
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        foreach (var command in commands)
+        {
+            await context.Database.ExecuteSqlRawAsync(command.CommandText, cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        logger.LogInformation(
+            "Created missing tables {Tables}",
+            string.Join(", ", missingTables.OrderBy(name => name)));
     }
 
     /// <summary>
