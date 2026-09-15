@@ -1,10 +1,12 @@
 namespace Mgo2Server.Shared.Options;
 
 /// <summary>
-/// Identity and attributes a game lobby server publishes for the one gameplay
-/// lobby it hosts. Every value comes from the environment, so a lobby exists
-/// because a container was started for it rather than because a row was
-/// seeded into the database beforehand.
+/// Identity and attributes a lobby server publishes for the one lobby it hosts.
+/// Every value comes from the environment, so a lobby exists because a
+/// container was started for it rather than because a row was seeded into the
+/// database beforehand. The gate and the account server are lobbies of the same
+/// kind: they publish the permanent endpoint they serve and leave the subtype,
+/// which only a gameplay lobby has, unset.
 /// </summary>
 public sealed class LobbyOptions
 {
@@ -41,8 +43,13 @@ public sealed class LobbyOptions
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Name);
 
     /// <summary>Rejects a configuration that cannot be published.</summary>
+    /// <param name="isGameLobby">
+    /// Whether the configuration describes a gameplay lobby. Only a gameplay
+    /// lobby selects a game type; the gate and the account server are permanent
+    /// endpoints, so they leave <c>LOBBY_SUBTYPE</c> unset.
+    /// </param>
     /// <exception cref="InvalidOperationException">Thrown when the configuration is incomplete.</exception>
-    public void Validate()
+    public void Validate(bool isGameLobby = true)
     {
         if (string.IsNullOrWhiteSpace(Name))
         {
@@ -57,7 +64,7 @@ public sealed class LobbyOptions
                 $"list carries it in a fixed-width field. Received '{Name}'.");
         }
 
-        if (string.IsNullOrWhiteSpace(Subtype))
+        if (isGameLobby && string.IsNullOrWhiteSpace(Subtype))
         {
             throw new InvalidOperationException(
                 "LOBBY_SUBTYPE is required: it selects the game type of the lobby from the " +

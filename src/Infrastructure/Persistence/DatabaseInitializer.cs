@@ -1,23 +1,19 @@
-using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.Infrastructure.Persistence;
 
 /// <summary>
 /// Creates the schema and seeds the rows a fresh database needs to accept a
-/// client at all: the game types a lobby can be configured with and the two
-/// permanent endpoints, the gate and the account server. Gameplay lobbies are
-/// not seeded; a game lobby server publishes its own row when it starts.
+/// client at all: the game types a lobby can be configured with. No lobby is
+/// seeded; every lobby server publishes its own row from the environment when it
+/// starts, whether it hosts a gameplay lobby or a permanent endpoint.
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
-/// <param name="options">Options of the server, which carry the announced address.</param>
 /// <param name="logger">Logger of the initializer.</param>
 public sealed class DatabaseInitializer(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
-    IOptions<ServerOptions> options,
     ILogger<DatabaseInitializer> logger)
 {
     /// <summary>
@@ -46,19 +42,7 @@ public sealed class DatabaseInitializer(
         (10, 10, "Tournament Registration"),
     ];
 
-    /// <summary>
-    /// The permanent endpoints. The client expects the list index and the lobby
-    /// type to coincide and rows are ordered by identifier, so the gate is the
-    /// first row and the account server the second; every gameplay lobby that a
-    /// server registers afterwards takes a higher identifier.
-    /// </summary>
-    private static readonly (int Identifier, int Type, int Subtype, string Name, int Port)[] PermanentLobbies =
-    [
-        (1, 0, 0, "GATE", 5731),
-        (2, 1, 0, "ACCOUNT", 5732),
-    ];
-
-    /// <summary>Creates the schema and seeds the rows a fresh database needs.</summary>
+    /// <summary>Creates the schema and seeds the game types a fresh database needs.</summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -82,17 +66,16 @@ public sealed class DatabaseInitializer(
     }
 
     /// <summary>
-    /// Seeds the game types and the permanent endpoints in a single transaction,
-    /// so that no other server instance ever sees a half-seeded database. The
-    /// statements are idempotent: they repair a row that was removed and refresh
-    /// the address the permanent endpoints are announced at, without touching the
-    /// rows the game lobby servers registered for themselves.
+    /// Seeds the game types in a single transaction, so that no other server
+    /// instance ever sees a half-seeded database. The statements are idempotent:
+    /// they repair a row that was removed, without touching the lobby rows the
+    /// lobby servers registered for themselves.
     /// </summary>
     /// <param name="context">Context to seed through.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     private async Task SeedAsync(Mgo2DatabaseContext context, CancellationToken cancellationToken)
     {
-        logger.LogInformation("Seeding game types and the permanent lobbies");
+        logger.LogInformation("Seeding the lobby game types");
 
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
@@ -108,21 +91,6 @@ public sealed class DatabaseInitializer(
         }
 
         await SynchronizeSequenceAsync(context, "lobby_game_types", cancellationToken);
-
-        var ipAddress = options.Value.AnnouncedIpAddress;
-
-        foreach (var (identifier, type, subtype, name, port) in PermanentLobbies)
-        {
-            await context.Database.ExecuteSqlAsync(
-                $"""
-                 INSERT INTO lobbies (id, type_id, subtype_id, name, ip_address, port, players_count)
-                 VALUES ({identifier}, {type}, {subtype}, {name}, {ipAddress}, {port}, {0})
-                 ON CONFLICT (id) DO UPDATE SET ip_address = EXCLUDED.ip_address
-                 """,
-                cancellationToken);
-        }
-
-        await SynchronizeSequenceAsync(context, "lobbies", cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
     }

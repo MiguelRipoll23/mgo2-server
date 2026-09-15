@@ -306,8 +306,14 @@ launcher_server="${LAUNCHER_SERVER:-http://mgo2pc.com}"
 echo ''
 echo 'Starting every server'
 
-start_server gate-lobby-5731 GateLobbyServer 'Gate (5731/tcp)'
-start_server account-lobby-5732 AccountLobbyServer 'Account (5732/tcp)'
+# The gate and the account server are permanent endpoints of their own, with the
+# identity and the port the compose file gives their containers.
+start_server gate-lobby-5731 GateLobbyServer 'Gate (5731/tcp)' \
+    'LOBBY_NAME=GATE' \
+    'LOBBY_PORT=5731'
+start_server account-lobby-5732 AccountLobbyServer 'Account (5732/tcp)' \
+    'LOBBY_NAME=ACCOUNT' \
+    'LOBBY_PORT=5732'
 
 # One process per gameplay lobby, with the identity and the attributes the
 # compose file gives each container: name|subtype|port.

@@ -1,27 +1,34 @@
 using Mgo2Server.AccountLobbyServer.Commands;
 using Mgo2Server.Infrastructure.Persistence;
 using Mgo2Server.Shared.Domain.Lobbies;
+using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence.Entities;
 using Mgo2Server.Shared.Tcp;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.AccountLobbyServer;
 
 /// <summary>
 /// Starts the account server this process serves. Character creation,
 /// selection and deletion are its own process, so it can be restarted without
-/// disturbing the gameplay lobbies.
+/// disturbing the gameplay lobbies. Its lobby row is described by the
+/// environment rather than by a seeded row, so the server publishes the row when
+/// it starts, exactly like a game lobby server.
 /// </summary>
 /// <param name="serviceProvider">Container the services come from.</param>
+/// <param name="lobbyOptions">Identity of the endpoint this process serves.</param>
 /// <param name="logger">Logger of the runner.</param>
 public sealed class AccountLobbyServerRunner(
     IServiceProvider serviceProvider,
+    IOptions<LobbyOptions> lobbyOptions,
     ILogger<AccountLobbyServerRunner> logger)
 {
+    private readonly LobbyOptions lobbyOptions = lobbyOptions.Value;
     private AccountServer? server;
 
-    /// <summary>Initializes the database and starts the account listener.</summary>
+    /// <summary>Initializes the database, registers the account server and starts its listener.</summary>
     /// <param name="cancellationToken">Token that stops the listener.</param>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -30,14 +37,17 @@ public sealed class AccountLobbyServerRunner(
         await serviceProvider.GetRequiredService<DatabaseInitializer>().InitializeAsync(cancellationToken);
 
         var lobbyService = serviceProvider.GetRequiredService<LobbyService>();
-        await lobbyService.LoadCacheAsync(cancellationToken);
+        var lobby = await lobbyService.RegisterEndpointLobbyAsync(
+            LobbyType.Account,
+            lobbyOptions,
+            cancellationToken);
 
-        // The port lives in the lobby row of type account, so it is known only
-        // once the cache has been loaded.
-        var port = lobbyService.GetCached().First(lobby => lobby.Type == LobbyType.Account).Port;
-        logger.LogInformation("Hosting the account server on port {Port}", port);
+        logger.LogInformation(
+            "Registered the account server as {LobbyIdentifier} on port {Port}",
+            lobby.Identifier,
+            lobby.Port);
 
-        server = new AccountServer(serviceProvider, port);
+        server = new AccountServer(serviceProvider, lobby.Port);
         await server.StartAsync(cancellationToken);
     }
 

@@ -18,10 +18,19 @@ builder.Services.AddSingleton<GateLobbyServerRunner>();
 var host = builder.Build();
 
 var runner = host.Services.GetRequiredService<GateLobbyServerRunner>();
+var lobbyOptions = host.Services.GetRequiredService<IOptions<LobbyOptions>>().Value;
 var options = host.Services.GetRequiredService<IOptions<ServerOptions>>().Value;
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("GateLobbyServer");
 
-logger.LogInformation("Starting the gate, announcing {AnnouncedIpAddress}", options.AnnouncedIpAddress);
+// The gate is a permanent endpoint rather than a gameplay lobby, so it needs no
+// game type: LOBBY_NAME and LOBBY_PORT name the row it publishes.
+lobbyOptions.Validate(isGameLobby: false);
+
+logger.LogInformation(
+    "Starting lobby {LobbyName} on port {Port}, announcing {AnnouncedIpAddress}",
+    lobbyOptions.Name,
+    lobbyOptions.Port,
+    options.AnnouncedIpAddress);
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArguments) =>

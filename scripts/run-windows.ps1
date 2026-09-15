@@ -340,8 +340,16 @@ try {
         Write-Host ''
         Write-Host 'Starting every server'
 
-        Start-Server 'gate-lobby-5731' 'GateLobbyServer' 'Gate (5731/tcp)' @{}
-        Start-Server 'account-lobby-5732' 'AccountLobbyServer' 'Account (5732/tcp)' @{}
+        # The gate and the account server are permanent endpoints of their own,
+        # with the identity and the port the compose file gives their containers.
+        Start-Server 'gate-lobby-5731' 'GateLobbyServer' 'Gate (5731/tcp)' @{
+            LOBBY_NAME = 'GATE'
+            LOBBY_PORT = '5731'
+        }
+        Start-Server 'account-lobby-5732' 'AccountLobbyServer' 'Account (5732/tcp)' @{
+            LOBBY_NAME = 'ACCOUNT'
+            LOBBY_PORT = '5732'
+        }
 
         # One process per gameplay lobby, with the identity and the attributes
         # the compose file gives each container.

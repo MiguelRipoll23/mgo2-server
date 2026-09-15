@@ -76,11 +76,13 @@ public sealed partial class LobbyService(
     public IReadOnlyList<LobbyResponse> GetCached() => cache ?? [];
 
     /// <summary>
-    /// Reloads the cache from the database. Rows are ordered by identifier, not
-    /// by name, because the client expects the list index and the lobby type to
-    /// coincide. A gameplay lobby is cached only while its heartbeat is recent,
-    /// so a lobby whose server stopped stops being served; the gate and the
-    /// account server are permanent and always cached.
+    /// Reloads the cache from the database. Rows are ordered by type before
+    /// identifier, because the client expects the first two list entries to be
+    /// the permanent endpoints: the gate first and the account server second,
+    /// however the identifiers of those rows were generated, followed by the
+    /// gameplay lobbies. A gameplay lobby is cached only while its heartbeat is
+    /// recent, so a lobby whose server stopped stops being served; the gate and
+    /// the account server are permanent and always cached.
     /// </summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task LoadCacheAsync(CancellationToken cancellationToken = default)
@@ -91,7 +93,8 @@ public sealed partial class LobbyService(
         var rows = await context.Lobbies
             .AsNoTracking()
             .Where(lobby => lobby.Type != LobbyType.Game || lobby.UpdatedAt > cutoff)
-            .OrderBy(lobby => lobby.Identifier)
+            .OrderBy(lobby => lobby.Type)
+            .ThenBy(lobby => lobby.Identifier)
             .ToListAsync(cancellationToken);
 
         cache = [.. rows.Select(lobby => ToResponse(lobby, null))];

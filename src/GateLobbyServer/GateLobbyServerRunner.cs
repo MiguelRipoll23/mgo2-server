@@ -1,27 +1,34 @@
 using Mgo2Server.GateLobbyServer.Commands;
 using Mgo2Server.Infrastructure.Persistence;
 using Mgo2Server.Shared.Domain.Lobbies;
+using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence.Entities;
 using Mgo2Server.Shared.Tcp;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GateLobbyServer;
 
 /// <summary>
 /// Starts the gate this process serves. The gate is the first connection point
 /// of the game, so it runs as its own process and can be restarted on its own.
+/// Its lobby row is described by the environment rather than by a seeded row, so
+/// the server publishes the row when it starts, exactly like a game lobby server.
 /// </summary>
 /// <param name="serviceProvider">Container the services come from.</param>
+/// <param name="lobbyOptions">Identity of the endpoint this process serves.</param>
 /// <param name="logger">Logger of the runner.</param>
 public sealed class GateLobbyServerRunner(
     IServiceProvider serviceProvider,
+    IOptions<LobbyOptions> lobbyOptions,
     ILogger<GateLobbyServerRunner> logger)
 {
+    private readonly LobbyOptions lobbyOptions = lobbyOptions.Value;
     private GateServer? server;
     private LobbyCacheRefreshService? refresh;
 
-    /// <summary>Initializes the database and starts the gate listener.</summary>
+    /// <summary>Initializes the database, registers the gate and starts its listener.</summary>
     /// <param name="cancellationToken">Token that stops the listener.</param>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -30,19 +37,23 @@ public sealed class GateLobbyServerRunner(
         await serviceProvider.GetRequiredService<DatabaseInitializer>().InitializeAsync(cancellationToken);
 
         var lobbyService = serviceProvider.GetRequiredService<LobbyService>();
-        await lobbyService.LoadCacheAsync(cancellationToken);
+        var lobby = await lobbyService.RegisterEndpointLobbyAsync(LobbyType.Gate, lobbyOptions, cancellationToken);
 
-        // The port lives in the lobby row of type gate, so it is known only
-        // once the cache has been loaded.
-        var port = lobbyService.GetCached().First(lobby => lobby.Type == LobbyType.Gate).Port;
-        logger.LogInformation("Hosting the gate on port {Port}", port);
+        logger.LogInformation(
+            "Registered the gate as {LobbyIdentifier} on port {Port}",
+            lobby.Identifier,
+            lobby.Port);
+
+        // The gate serves the lobby list, so its own row has to be in the cache
+        // before the listener starts.
+        await lobbyService.LoadCacheAsync(cancellationToken);
 
         // Gameplay lobbies register and expire while the gate runs, so the list
         // it serves has to be rebuilt instead of being fixed at startup.
         refresh = serviceProvider.GetRequiredService<LobbyCacheRefreshService>();
         refresh.Start();
 
-        server = new GateServer(serviceProvider, port);
+        server = new GateServer(serviceProvider, lobby.Port);
         await server.StartAsync(cancellationToken);
     }
 

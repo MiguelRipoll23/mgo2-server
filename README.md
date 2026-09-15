@@ -89,6 +89,11 @@ dotnet run --project src/GameplayServer      # Run a gameplay server
 dotnet run --project src/Stun                # Run the port-check responder
 ```
 
+Every lobby server publishes the lobby it hosts, so it takes its identity from
+the environment: the gate runs with `LOBBY_NAME=GATE LOBBY_PORT=5731`, the
+account server with `LOBBY_NAME=ACCOUNT LOBBY_PORT=5732`, and a gameplay lobby
+adds the `LOBBY_SUBTYPE` that selects its game type.
+
 The scripts of `scripts/` split building from running: `build-linux-macos.sh`
 and `build-windows.ps1` build every project, and `run-linux-macos.sh` and
 `run-windows.ps1` start the whole deployment from the built binaries against

@@ -5,12 +5,19 @@ using Microsoft.EntityFrameworkCore;
 namespace Mgo2Server.Shared.Domain.Lobbies;
 
 /// <summary>
-/// The lifecycle half of the lobby service: the row a game lobby server
-/// registers for itself, the heartbeat that keeps it alive and the cleanup that
-/// removes the rows of the servers that stopped.
+/// The lifecycle half of the lobby service: the row a lobby server registers
+/// for itself, the heartbeat that keeps a gameplay lobby alive and the cleanup
+/// that removes the rows of the servers that stopped.
 /// </summary>
 public sealed partial class LobbyService
 {
+    /// <summary>
+    /// Game type of a lobby that has none. The gate and the account server are
+    /// permanent endpoints rather than gameplay lobbies, so they are published
+    /// with the "None" game type the initializer seeds.
+    /// </summary>
+    private const int NoGameTypeIdentifier = 0;
+
     /// <summary>
     /// Registers the gameplay lobby this instance hosts. The row is keyed by
     /// port, so restarting a container refreshes its own row instead of
@@ -56,6 +63,63 @@ public sealed partial class LobbyService
         registered.ExpansionOnly = lobby.ExpansionOnly;
         registered.NoHeadshot = lobby.NoHeadshot;
         registered.ReplaysOnly = lobby.ReplaysOnly;
+        registered.UpdatedAt = now;
+
+        await context.SaveChangesAsync(cancellationToken);
+
+        return ToResponse(registered, null);
+    }
+
+    /// <summary>
+    /// Registers the permanent endpoint this instance serves, the gate or the
+    /// account server. The row is keyed by type, so a deployment publishes one
+    /// row per endpoint and restarting a container refreshes its own row instead
+    /// of accumulating one per start. The row is never stale, so it is served for
+    /// as long as it exists.
+    /// </summary>
+    /// <param name="type">Endpoint to publish: the gate or the account server.</param>
+    /// <param name="lobby">Identity of the endpoint, from the environment.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the type or the configuration is invalid.</exception>
+    public async Task<LobbyResponse> RegisterEndpointLobbyAsync(
+        LobbyType type,
+        LobbyOptions lobby,
+        CancellationToken cancellationToken = default)
+    {
+        if (type is not (LobbyType.Gate or LobbyType.Account))
+        {
+            throw new InvalidOperationException(
+                $"The gate and the account server are the permanent endpoints; '{type}' is not one of them.");
+        }
+
+        lobby.Validate(isGameLobby: false);
+
+        await using var context = await CreateContextAsync(cancellationToken);
+        var registered = await context.Lobbies
+            .FirstOrDefaultAsync(row => row.Type == type, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+
+        if (registered is null)
+        {
+            registered = new Lobby
+            {
+                Type = type,
+                SubtypeIdentifier = NoGameTypeIdentifier,
+                Name = lobby.Name,
+                IpAddress = options.AnnouncedIpAddress,
+                Port = lobby.Port,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+
+            context.Lobbies.Add(registered);
+        }
+
+        registered.Type = type;
+        registered.SubtypeIdentifier = NoGameTypeIdentifier;
+        registered.Name = lobby.Name;
+        registered.IpAddress = options.AnnouncedIpAddress;
+        registered.Port = lobby.Port;
         registered.UpdatedAt = now;
 
         await context.SaveChangesAsync(cancellationToken);

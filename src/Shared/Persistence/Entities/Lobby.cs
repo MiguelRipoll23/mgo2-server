@@ -17,9 +17,11 @@ public enum LobbyType
 }
 
 /// <summary>
-/// A listening endpoint published to clients. The client expects the list index
-/// and the lobby type to coincide (index zero is the gate, one the account,
-/// two the first gameplay lobby), so rows are ordered by identifier.
+/// A listening endpoint published to clients. The client expects the first two
+/// list entries to be the permanent endpoints (index zero is the gate, one the
+/// account, two the first gameplay lobby), so rows are ordered by type before
+/// identifier: every server publishes its own row, and the gate and the account
+/// server must not depend on the order their rows were created in.
 /// </summary>
 [Table("lobbies")]
 public sealed class Lobby
