@@ -24,12 +24,14 @@ irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/in
 
 Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to your private IP (the value of `ADVERTISED_ADDRESS`).
 
-The port-check responder answers on 3478/udp and 3479/udp. It reports the address
-and port the console appears as, and on Linux the published ports carry that through
-unchanged. Inside a container it owns one address, so it can move the port but not
-the address; `STUN_SECONDARY_ADDRESS` in `.env.example` needs a responder that owns
-two host addresses, which means `network_mode: host` on that one service or running
-it from `scripts/run-linux-macos.sh` or `run-windows.ps1` outside Docker.
+The port-check responder answers on 3478/udp and 3479/udp and names
+`ADVERTISED_ADDRESS` in its answers, the address the console dials, so like the name
+server it does not have to own that address: the published ports hand the datagrams
+over and on Linux they also carry the console's own address and port through
+unchanged, which is what it is told it appears as. The second address is the one
+thing the port mapping cannot carry, because a reply leaving the container leaves
+from the host's primary address; `STUN_SECONDARY_ADDRESS` in `.env.example` needs
+`network_mode: host` on that one service, or the responder run outside Docker.
 
 ### Project layout
 

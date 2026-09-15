@@ -46,9 +46,33 @@ public sealed class StunServer(StunServerOptions options, ILogger<StunServer> lo
         var layout = StunSocketLayout.From(options);
         var sockets = OpenSockets(layout);
 
-        logger.LogInformation(
-            "Listening on {EndPoints}",
-            string.Join(", ", layout.ListeningEndPoints.Select(endPoint => endPoint.ToString())));
+        if (layout.ServesTwoAddresses)
+        {
+            logger.LogInformation(
+                "Listening on {EndPoints}",
+                string.Join(", ", layout.ListeningEndPoints.Select(endPoint => endPoint.ToString())));
+        }
+        else
+        {
+            // The wildcard address is bound, so the responder receives on every
+            // interface and the configured address is only what it names. That is
+            // the shape of a container behind a port mapping, which hands datagrams
+            // over on the container's own address.
+            logger.LogInformation(
+                "Listening on port {Port} and {AlternatePort} of every interface, naming {PrimaryAddress} as " +
+                "the address the console dials",
+                layout.Port,
+                layout.AlternatePort,
+                layout.PrimaryAddress);
+        }
+
+        if (layout.PrimaryAddress.Equals(IPAddress.Any))
+        {
+            logger.LogWarning(
+                "The served address is the wildcard address, so answers name {PrimaryAddress}; set " +
+                "STUN_PRIMARY_ADDRESS, or ADVERTISED_ADDRESS, to the address the console dials",
+                options.PrimaryAddress);
+        }
 
         if (!layout.ServesTwoAddresses)
         {

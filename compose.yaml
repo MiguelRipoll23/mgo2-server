@@ -287,7 +287,8 @@ services:
   # Port-check responder. It answers the NAT discovery the console runs before it
   # will let a player into a lobby, on the port the console dials and the one after
   # it, which is where an answer to a request to change the port is sent from. It
-  # needs no database.
+  # needs no database, binds every interface and names ADVERTISED_ADDRESS in its
+  # answers the way the name server does, so it does not have to own that address.
   mgo2-stun:
     build:
       context: .

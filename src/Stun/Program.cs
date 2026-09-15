@@ -25,11 +25,8 @@ using var loggerFactory = LoggerFactory.Create(logging =>
 var options = StunServerOptions.FromConfiguration(configuration);
 var logger = loggerFactory.CreateLogger<StunServer>();
 
-logger.LogInformation(
-    "Starting the port-check responder: address {PrimaryAddress}, port {Port}{SecondaryAddress}",
-    options.PrimaryAddress,
-    options.Port,
-    options.SecondaryAddress is null ? string.Empty : $" and {options.SecondaryAddress}");
+// The addresses and ports it ends up serving are logged by the server itself.
+logger.LogInformation("Starting the port-check responder");
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArguments) =>
