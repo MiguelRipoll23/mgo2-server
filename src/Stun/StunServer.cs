@@ -28,9 +28,11 @@ namespace Mgo2Server.Stun;
 /// what makes peer to peer work; STUN_SECONDARY_ADDRESS is how one is supplied.
 /// </para>
 /// <para>
-/// The responder must own the socket the console's answer arrives on, so it has to
-/// run where the console can reach it directly. Behind a NAT or a proxy that
-/// rewrites the source address or port of a reply, discovery cannot conclude.
+/// The console identifies the responder by the address and the port an answer came
+/// from, so anything that rewrites the source of a reply, or that hands a request
+/// over from a port of its own, makes the mapped address the console is given
+/// wrong. Answering from a second address means owning both, which only works where
+/// the responder has addresses of the machine to itself.
 /// </para>
 /// </remarks>
 /// <param name="options">Options of this instance.</param>
@@ -53,7 +55,7 @@ public sealed class StunServer(StunServerOptions options, ILogger<StunServer> lo
             logger.LogWarning(
                 "Serving one address only: a request to change the address is answered from port {AlternatePort} " +
                 "of the same address, which cannot tell a full-cone NAT from a restricted-cone one. " +
-                "Set STUN_SECONDARY_ADDRESS to a second address of this machine for peer to peer to work",
+                "Give the responder a second address of its own (STUN_SECONDARY_ADDRESS) for peer to peer to work",
                 layout.AlternatePort);
 
             if (options.SecondaryAddress is not null)

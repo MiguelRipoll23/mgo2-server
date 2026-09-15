@@ -24,11 +24,12 @@ irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/in
 
 Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to your private IP (the value of `ADVERTISED_ADDRESS`).
 
-The port-check responder is the one container that runs with host networking. The
-console classifies its own NAT type from the address and port an answer arrives
-from, and Docker's UDP proxy rewrites both, so it must serve them straight from the
-host (see `STUN_SECONDARY_ADDRESS` in `.env.example`). Docker Desktop on Windows and
-macOS needs its host-networking setting enabled for that container to start.
+The port-check responder answers on 3478/udp and 3479/udp. It reports the address
+and port the console appears as, and on Linux the published ports carry that through
+unchanged. Inside a container it owns one address, so it can move the port but not
+the address; `STUN_SECONDARY_ADDRESS` in `.env.example` needs a responder that owns
+two host addresses, which means `network_mode: host` on that one service or running
+it from `scripts/run-linux-macos.sh` or `run-windows.ps1` outside Docker.
 
 ### Project layout
 
