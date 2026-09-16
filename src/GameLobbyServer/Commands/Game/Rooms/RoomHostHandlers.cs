@@ -312,12 +312,16 @@ public sealed class StartRoundHandler(
         writer.WriteUInt32(ErrorCodeConstants.ResultNone);
         writer.WriteUInt32(0);
 
-        // 0x43c9, the only reply the client parses. This used to answer 0x43cb when the
-        // request arrived on 0x43ca, on the theory that each build parses one of the two
-        // pairings — but neither id exists in the client: the ELF has no builder and no
-        // parser for either, and the handler bound to 0x43ca was a misnumbering of this
-        // command. 0x43ca is no longer registered, so the branch was unreachable.
-        await sessionHelper.SendPacketAsync(session, CommandConstants.StartRoundResult, writer.Build(), cancellationToken);
+        // Two client builds, two id pairings, each request answered on exactly the
+        // id its own build parses: 0x43c8 -> 0x43c9 (the 1.36 build) and
+        // 0x43ca -> 0x43cb (this repo's MGO2.ELF, whose 0x43ca builder at 0xF0E260
+        // is completed by the 0x43cb waiter). Never both: the client completes the
+        // request slot on the first reply and treats a second as unexpected.
+        var replyCommand = packet.Header.Command == CommandConstants.StartRoundAlias
+            ? CommandConstants.StartRoundAliasResult
+            : CommandConstants.StartRoundResult;
+
+        await sessionHelper.SendPacketAsync(session, replyCommand, writer.Build(), cancellationToken);
     }
 
     /// <summary>Whether the room sits in a combat training lobby, the one lobby the flow runs in.</summary>

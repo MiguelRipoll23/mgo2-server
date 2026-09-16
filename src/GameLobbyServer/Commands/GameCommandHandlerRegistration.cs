@@ -183,6 +183,7 @@ public static class GameCommandHandlerRegistration
         registry.Register<PutClientSettingHandler>(ServerType.GameplayLobby, CommandConstants.PutClientSetting);
         registry.Register<HostSkillExperienceHandler>(ServerType.GameplayLobby, CommandConstants.HostSkillExperience);
         registry.Register<StartRoundHandler>(ServerType.GameplayLobby, CommandConstants.StartRound);
+        registry.Register<StartRoundHandler>(ServerType.GameplayLobby, CommandConstants.StartRoundAlias);
         registry.Register<HostUpdateStatsHandler>(ServerType.GameplayLobby, CommandConstants.HostUpdateStats);
         registry.Register<HostWeaponTalliesHandler>(ServerType.GameplayLobby, CommandConstants.HostWeaponTallies);
         registry.Register<StartAutomatchHandler>(ServerType.GameplayLobby, CommandConstants.StartAutomatch);

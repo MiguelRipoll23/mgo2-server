@@ -143,6 +143,12 @@ public static partial class CommandConstants
     /// <summary>Carries the result of starting a round.</summary>
     public const ushort StartRoundResult = 0x43c9;
 
+    /// <summary>Starts a round on the build that numbers the request 0x43ca.</summary>
+    public const ushort StartRoundAlias = 0x43ca;
+
+    /// <summary>Carries the result of the 0x43ca start-round request.</summary>
+    public const ushort StartRoundAliasResult = 0x43cb;
+
     // Automatching (0x43ex) -------------------------------------------------
 
     /// <summary>Starts an automatch search.</summary>
