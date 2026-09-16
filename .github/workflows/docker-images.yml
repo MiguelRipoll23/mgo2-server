@@ -1,8 +1,8 @@
 # Builds and publishes one container image per standalone server project. Every
 # role is its own executable, so every role gets its own image and its own
-# container; there is no combined image. The mgo2-migrate image is the one
-# exception: it carries the migration bundle rather than a server, and the
-# deployment runs it once before the servers start.
+# container; there is no combined image. The mgo2-postgres image is the custom
+# PostgreSQL image that also carries the migration bundle and applies the schema
+# on startup, before any server connects.
 name: Docker images
 
 on:
@@ -89,10 +89,10 @@ jobs:
             project: src/Stun/Mgo2Server.Stun.csproj
             assembly: Mgo2Server.Stun
             target: runtime
-          # The migration job. It is built from the bundle stage and needs no
+          # The postgres image. It is built from the postgres stage and needs no
           # project or assembly argument, so it passes none.
-          - image: mgo2-migrate
-            target: migrate
+          - image: mgo2-postgres
+            target: postgres
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7

@@ -39,15 +39,38 @@ RUN dotnet ef migrations bundle \
     --configuration Release \
     --output /bundle/efbundle
 
+# .NET runtime stage. Provides the runtime for the migration bundle; the postgres
+# and migrate stages copy from here rather than installing the runtime themselves.
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS dotnet-runtime
+
+# Custom PostgreSQL stage. Combines the official postgres:18 image with the
+# migration bundle so schema changes are applied inside the postgres container
+# before it starts accepting connections. No separate migration job is needed.
+FROM postgres:18 AS postgres
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=dotnet-runtime /usr/share/dotnet /usr/share/dotnet
+RUN ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet
+
+WORKDIR /bundle
+COPY --from=bundle /bundle/efbundle ./
+COPY docker/entrypoint-postgres.sh /usr/local/bin/entrypoint-postgres.sh
+COPY docker/healthcheck-postgres.sh /usr/local/bin/healthcheck-postgres.sh
+
+# The custom entrypoint replaces the stock one: it runs the migration bundle
+# against a temporary instance before starting the real one as PID 1.
+ENTRYPOINT ["/usr/local/bin/entrypoint-postgres.sh"]
+CMD ["postgres"]
+
 # Migration job stage. Runs the bundle once per deployment and exits, before any
 # server opens a connection; the services wait for it with the
-# service_completed_successfully condition.
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS migrate
+# service_completed_successfully condition. Kept for backward compatibility or
+# for cases where a separate migration job is preferred.
+FROM dotnet-runtime AS migrate
 
-# Npgsql probes GSSAPI when a connection asks for Kerberos-integrated
-# security; the native library ships in libgssapi-krb5-2, without which the
-# runtime prints "Error: libgssapi_krb5.so.2: cannot open shared object file"
-# on the first database connection. The bundle opens one like any other client.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
     && rm -rf /var/lib/apt/lists/*

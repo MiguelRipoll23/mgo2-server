@@ -16,7 +16,7 @@ the same machine without sharing an IP with the server — see the host section 
 docker compose up -d
 ```
 
-Brings up postgres, the migrations, the three lobby servers (gate, account, game), the web service,
+Brings up postgres (which applies schema migrations on startup), the three lobby servers (gate, account, game), the web service,
 and the HTTP/HTTPS/STUN probes.
 
 ### Which client build — `MGO2SERVER_CLIENT_VERSION`

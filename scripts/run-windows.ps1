@@ -347,8 +347,8 @@ try {
 
     # The servers never touch the schema, so the migrations are applied here,
     # which is the way `dotnet ef database update` is meant to be used during
-    # development. The container deployment has the mgo2-migrate job do the same
-    # thing before any server starts.
+    # development. The container deployment has the postgres container apply the
+    # migrations on startup, before any server connects.
     Write-Host 'Applying the database migrations'
     Push-Location $projectDirectory
     try {

@@ -313,8 +313,8 @@ initialize_dotnet
 
 # The servers never touch the schema, so the migrations are applied here, which
 # is the way `dotnet ef database update` is meant to be used during development.
-# The container deployment has the mgo2-migrate job do the same thing before any
-# server starts.
+# The container deployment has the postgres container apply the migrations on
+# startup, before any server connects.
 echo 'Applying the database migrations'
 (
     cd "$project_directory"

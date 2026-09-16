@@ -14,8 +14,8 @@
 * The schema is owned by the Entity Framework migrations in `src/Shared/Persistence/Migrations`.
 * Never create, alter or repair a table at runtime. Change the model and add a migration
   instead, and commit the generated files in the same change.
-* No server applies migrations either. The deployment runs the one-shot `mgo2-migrate` job,
-  which carries a migration bundle, before any server starts; a local run applies them with
+* No server applies migrations either. The postgres container runs a migration bundle
+  on startup, before it accepts connections; a local run applies them with
   `dotnet ef database update`.
 * Run `dotnet tool restore` once per clone, then `dotnet ef migrations add <Name>` from the
   repository root.

@@ -473,9 +473,8 @@ echo
 echo "Removing old images left behind by the update"
 docker image prune --force
 
-# The migration job applies the schema and exits, so it is counted out: only the
-# servers are expected to be running once the deployment is up.
-expected="$(docker compose config --services | grep -vx 'mgo2-migrate' | wc -l | tr -d ' ')"
+# Every service is expected to be running once the deployment is up.
+expected="$(docker compose config --services | wc -l | tr -d ' ')"
 running="$(docker compose ps --status running --services | wc -l | tr -d ' ')"
 
 echo

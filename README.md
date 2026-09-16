@@ -66,6 +66,7 @@ using `docker/Dockerfile` with the project and its assembly as build arguments:
 
 | Image                        | Project                              |
 | ---------------------------- | ------------------------------------ |
+| `mgo2-postgres`              | custom image; carries the migration bundle |
 | `mgo2-gate-lobby-server`     | `src/GateLobbyServer`                |
 | `mgo2-account-lobby-server`  | `src/AccountLobbyServer`             |
 | `mgo2-game-lobby-server`     | `src/GameLobbyServer`                |
@@ -74,8 +75,10 @@ using `docker/Dockerfile` with the project and its assembly as build arguments:
 | `mgo2-dns`                   | `src/Dns`                            |
 | `mgo2-stun`                  | `src/Stun`                           |
 
-A push to `main` publishes `latest` and the branch tag; a `v*` tag publishes the
-version. Pull requests only run the tests.
+The `mgo2-postgres` image is the official PostgreSQL image extended with the
+Entity Framework migration bundle; it applies the schema migrations on startup,
+before it accepts connections. A push to `main` publishes `latest` and the
+branch tag; a `v*` tag publishes the version. Pull requests only run the tests.
 
 ## Development
 
@@ -112,9 +115,9 @@ a collector that listens on port 4317.
 The install scripts ask whether the deployment should send telemetry and
 default to yes. When it is on, they write `OTEL_ENABLED=true` and `OTEL_PORT`
 into `.env`; when it is off, no OpenTelemetry integration is configured. They
-never touch the collector: `docker/alloy/config.alloy` is the Grafana Alloy
-receiver to add to the Alloy running on the host by hand, and its port has to
-match `OTEL_PORT`. The run scripts always enable telemetry on port 4317.
+never touch the collector; the Alloy receiver running on the host is configured
+by hand, and its port has to match `OTEL_PORT`. The run scripts always enable
+telemetry on port 4317.
 
 ## Acknowledgements
 
