@@ -30,6 +30,8 @@ COPY Directory.Build.props ./
 COPY .config/ .config/
 COPY src/ src/
 
+RUN dotnet restore src/Shared/Mgo2Server.Shared.csproj
+
 RUN dotnet tool restore
 
 RUN dotnet ef migrations bundle \
