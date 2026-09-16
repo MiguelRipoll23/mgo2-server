@@ -22,6 +22,25 @@ Windows:
 irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/install-windows.ps1 | iex
 ```
 
+The uninstall scripts remove everything the install put in place: every
+container, image, volume and network of the deployment, and the configuration
+(`.env`, and the whole downloaded deployment directory when a piped script
+installed it). They ask before removing anything; `--yes` (Linux/macOS),
+`-Yes` (Windows) or `MGO2_ASSUME_YES=1` answers for you. Docker itself is not
+removed.
+
+Linux and macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/uninstall-linux-macos.sh | bash -s -- --yes
+```
+
+Windows:
+
+```powershell
+irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/uninstall-windows.ps1 | iex
+```
+
 Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to your private IP (the value of `ADVERTISED_ADDRESS`).
 
 The port-check responder answers on 3478/udp and 3479/udp and names
