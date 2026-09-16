@@ -253,7 +253,7 @@ run of length-prefixed reads after the two identifier grids lands in the session
 | `0x22a` | 16 | **content availability mask** | `struct + 0x29010` |
 | `0x23a` | 4 | reserved | `struct + 0x417c` |
 | `0x23e` | 4 | reserved | `struct + 0x224` |
-| `0x242` | 1 | feature byte | four flags at `struct + 0x4184..0x4187` |
+| `0x242` | 1 | feature byte | four flags at `struct + 0x4184..0x4187` — bits 2 and 3 also arm the welcome tip modals, see [TIPS.md](TIPS.md) |
 
 The mask reader is `FUN_00f04238(base, index)`, a bit probe that clears its result for an index
 above `0x37`:

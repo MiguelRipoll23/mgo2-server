@@ -234,8 +234,19 @@ public sealed class GetCharacterInfoHandler(
 /// <summary>Feature bits the client reads one byte past the character grid.</summary>
 public static class FeatureFlags
 {
-    /// <summary>Lets the client offer expansion content such as Team Sneaking.</summary>
-    public const int ExpansionByte = 0x0f;
+    /// <summary>
+    /// Lets the client offer expansion content such as Team Sneaking without
+    /// triggering the post-login tip modals. The low nibble splits into four
+    /// flags (bit 0 <c>0x4184</c>, bit 1 <c>0x4185</c>, bit 2 <c>0x4187</c>,
+    /// bit 3 <c>0x4186</c> in the splitter at <c>0xf06450</c>); bits 2 and 3
+    /// each gate a one-time "welcome" help document that the main-menu state
+    /// machine opens as soon as the character info is parsed: bit 2 opens help
+    /// document 13 (<c>2_13.txt</c>, gate <c>0x98e208</c>) and bit 3 opens
+    /// document 6 (<c>2_6.txt</c>, gate <c>0x98e2b0</c>). Clearing both bits
+    /// keeps the map and rule catalogue fully unlocked (that is bit 0) while
+    /// suppressing both modals, which is what the official servers did.
+    /// </summary>
+    public const int ExpansionByte = 0x03;
 
     /// <summary>
     /// Map, rule and expansion availability mask. The client reads it as a bit

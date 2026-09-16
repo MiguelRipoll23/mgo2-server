@@ -440,7 +440,9 @@ such constants to drift apart.
 * `CharacterListPayloadBuilder` writes `0x07` at the `0x3049` trailer's index 1 (GENE +
   MEME + SCENE) and `0x03` at index 3 (codec packs).
 * `FeatureFlags.ContentMask` sets bits 0–55 of the `0x4101` content-availability mask, so
-  every mask-gated map, rule and character is offered, and `ExpansionByte = 0x0f`.
+  every mask-gated map, rule and character is offered, and `ExpansionByte = 0x03` — bits 0 and 1
+  only, because bits 2 and 3 trigger the one-time welcome tip modals (help `2_13`/`2_6`) on the
+  main menu.
 * `PersonalInfoHandlers` unlocks all thirty-two face-paint colours; `GearCatalogue` serves
   the full catalogue with nothing highlighted as locked; skills are served at maximum level
   (§3.1).
