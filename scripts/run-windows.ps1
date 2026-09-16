@@ -345,6 +345,23 @@ try {
 
     Initialize-DotNet
 
+    # The servers never touch the schema, so the migrations are applied here,
+    # which is the way `dotnet ef database update` is meant to be used during
+    # development. The container deployment has the mgo2-migrate job do the same
+    # thing before any server starts.
+    Write-Host 'Applying the database migrations'
+    Push-Location $projectDirectory
+    try {
+        dotnet tool restore
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        dotnet ef database update --project src/Shared/Mgo2Server.Shared.csproj
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+    finally {
+        Pop-Location
+    }
+
     $httpPort = if ($env:HTTP_PORT) { $env:HTTP_PORT } else { '80' }
     $dnsPort = if ($env:DNS_PORT) { $env:DNS_PORT } else { '53' }
     $stunPort = if ($env:STUN_PORT) { $env:STUN_PORT } else { '3478' }

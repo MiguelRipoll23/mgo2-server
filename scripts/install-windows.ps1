@@ -449,7 +449,9 @@ try {
     Write-Host 'Removing old images left behind by the update'
     & docker image prune --force
 
-    $expected = @(docker compose config --services).Count
+    # The migration job applies the schema and exits, so it is counted out: only
+    # the servers are expected to be running once the deployment is up.
+    $expected = @(docker compose config --services | Where-Object { $_.Trim() -ne 'mgo2-migrate' }).Count
     $running = @(docker compose ps --status running --services).Count
 
     Write-Host ''

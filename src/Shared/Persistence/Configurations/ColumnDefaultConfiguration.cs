@@ -140,12 +140,12 @@ internal static class ColumnDefaultConfiguration
         ApplyDefault<RoundReport>(modelBuilder, false, nameof(RoundReport.Aborted));
         ApplyNow<RoundReport>(modelBuilder, nameof(RoundReport.CreatedAt));
 
-        ApplyDefault<WeaponTally>(
+        ApplyDefault<RoundWeaponStat>(
             modelBuilder,
             (short)0,
-            nameof(WeaponTally.ValueA),
-            nameof(WeaponTally.ValueB),
-            nameof(WeaponTally.ValueC));
+            nameof(RoundWeaponStat.ValueA),
+            nameof(RoundWeaponStat.ValueB),
+            nameof(RoundWeaponStat.ValueC));
     }
 
     private static void ConfigureMailAndNews(ModelBuilder modelBuilder)

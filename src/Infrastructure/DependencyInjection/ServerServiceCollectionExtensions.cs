@@ -15,7 +15,6 @@ using Mgo2Server.Shared.Persistence;
 using Mgo2Server.Shared.Tcp;
 using Mgo2Server.Shared.Telemetry;
 using Mgo2Server.Shared.Utils;
-using Mgo2Server.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -126,7 +125,6 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<SessionHelper>();
         services.AddSingleton<CommandRegistry>();
         services.AddSingleton<ActiveGameSessionsService>();
-        services.AddSingleton<DatabaseInitializer>();
 
         return services;
     }

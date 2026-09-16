@@ -66,8 +66,8 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
     /// <summary>Round reports behind the match history.</summary>
     public DbSet<RoundReport> RoundReports => Set<RoundReport>();
 
-    /// <summary>End-of-round weapon tallies.</summary>
-    public DbSet<WeaponTally> WeaponTallies => Set<WeaponTally>();
+    /// <summary>End-of-round weapon statistics.</summary>
+    public DbSet<RoundWeaponStat> RoundWeaponStats => Set<RoundWeaponStat>();
 
     /// <summary>Character friends and blocked entries.</summary>
     public DbSet<CharacterFriend> CharacterFriends => Set<CharacterFriend>();

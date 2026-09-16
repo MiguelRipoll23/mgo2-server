@@ -311,6 +311,17 @@ mkdir -p "$log_directory"
 
 initialize_dotnet
 
+# The servers never touch the schema, so the migrations are applied here, which
+# is the way `dotnet ef database update` is meant to be used during development.
+# The container deployment has the mgo2-migrate job do the same thing before any
+# server starts.
+echo 'Applying the database migrations'
+(
+    cd "$project_directory"
+    dotnet tool restore
+    dotnet ef database update --project src/Shared/Mgo2Server.Shared.csproj
+)
+
 http_port="${HTTP_PORT:-80}"
 dns_port="${DNS_PORT:-53}"
 stun_port="${STUN_PORT:-3478}"

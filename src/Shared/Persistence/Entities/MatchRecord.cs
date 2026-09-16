@@ -108,9 +108,9 @@ public sealed class RoundReport
     public Character? Target { get; set; }
 }
 
-/// <summary>End-of-round weapon tallies; stored only, nothing derives from them yet.</summary>
-[Table("weapon_tallies")]
-public sealed class WeaponTally
+/// <summary>End-of-round per-weapon statistics; stored only, nothing derives from them yet.</summary>
+[Table("round_weapon_stats")]
+public sealed class RoundWeaponStat
 {
     /// <summary>Identifier of the row.</summary>
     [Key]
@@ -118,11 +118,11 @@ public sealed class WeaponTally
     [Column("id")]
     public int Identifier { get; set; }
 
-    /// <summary>Room the tally belongs to.</summary>
+    /// <summary>Room the statistic belongs to.</summary>
     [Column("game_id")]
     public int GameIdentifier { get; set; }
 
-    /// <summary>Character the tally belongs to.</summary>
+    /// <summary>Character the statistic belongs to.</summary>
     [Column("character_id")]
     public int CharacterIdentifier { get; set; }
 
@@ -130,23 +130,23 @@ public sealed class WeaponTally
     [Column("weapon_id")]
     public short WeaponIdentifier { get; set; }
 
-    /// <summary>First tallied value.</summary>
+    /// <summary>Kills credited to the weapon.</summary>
     [Column("value_a")]
     public short ValueA { get; set; }
 
-    /// <summary>Second tallied value.</summary>
+    /// <summary>Headshots the weapon ended kills or faints with.</summary>
     [Column("value_b")]
     public short ValueB { get; set; }
 
-    /// <summary>Third tallied value.</summary>
+    /// <summary>Faints the weapon caused.</summary>
     [Column("value_c")]
     public short ValueC { get; set; }
 
-    /// <summary>Room the tally belongs to.</summary>
+    /// <summary>Room the statistic belongs to.</summary>
     [ForeignKey(nameof(GameIdentifier))]
     public Game? Game { get; set; }
 
-    /// <summary>Character the tally belongs to.</summary>
+    /// <summary>Character the statistic belongs to.</summary>
     [ForeignKey(nameof(CharacterIdentifier))]
     public Character? Character { get; set; }
 }

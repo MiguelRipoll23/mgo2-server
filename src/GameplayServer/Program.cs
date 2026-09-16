@@ -3,7 +3,6 @@ using Mgo2Server.GameplayServer.Commands;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Infrastructure.DependencyInjection;
-using Mgo2Server.Infrastructure.Persistence;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Udp;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,8 +29,6 @@ var host = builder.Build();
 
 var registry = host.Services.GetRequiredService<PeerCommandRegistry>();
 PeerCommandHandlerRegistration.RegisterCommandHandlers(registry);
-
-await host.Services.GetRequiredService<DatabaseInitializer>().InitializeAsync();
 
 var GameplayServer = host.Services.GetRequiredService<GameplayServerService>();
 var options = host.Services.GetRequiredService<IOptions<ServerOptions>>().Value;

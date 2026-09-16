@@ -32,6 +32,10 @@ x-database: &database
   depends_on:
     postgres:
       condition: service_healthy
+    # The schema is applied once per deployment by the migration job, so every
+    # database-backed server starts against a schema that is already up to date.
+    mgo2-migrate:
+      condition: service_completed_successfully
   restart: unless-stopped
   # Lets a container reach the Grafana Alloy running on the host, which is where
   # the OpenTelemetry exporter sends the metrics (OTEL_HOST). Docker Desktop
@@ -95,6 +99,25 @@ services:
       timeout: 5s
       retries: 20
     restart: unless-stopped
+
+  # Applies the schema, then exits. A migration bundle is the artifact Entity
+  # Framework is meant to be deployed with: it carries the migrations without the
+  # SDK, the tools or the source tree, and it is the only thing in the deployment
+  # that is allowed to change the schema. Leaving restart at "no" keeps a failed
+  # migration from looping, so the error is what the operator sees.
+  mgo2-migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: migrate
+    image: ${MGO2_IMAGE_PREFIX:-}mgo2-migrate:${MGO2_IMAGE_TAG:-latest}
+    container_name: mgo2-migrate
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   # First connection point of the game: the lobby list and the news. It is a
   # permanent endpoint, so it needs no game type.

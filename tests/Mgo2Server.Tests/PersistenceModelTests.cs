@@ -31,10 +31,10 @@ public sealed class PersistenceModelTests
         "clan_applications",
         "clans",
         "clans_members",
+        "game_master_mail",
         "game_players",
         "game_rounds",
         "games",
-        "gm_mail",
         "host_reviews",
         "instructor_reviews",
         "lobbies",
@@ -42,9 +42,9 @@ public sealed class PersistenceModelTests
         "mail",
         "news",
         "round_reports",
+        "round_weapon_stats",
         "sessions",
         "users",
-        "weapon_tallies",
     ];
 
     [Fact]
@@ -73,6 +73,22 @@ public sealed class PersistenceModelTests
             .ToList();
 
         Assert.Equal(ExpectedTables.OrderBy(name => name), tables.OrderBy(name => name));
+    }
+
+    /// <summary>
+    /// Guards the migrations. The schema is only ever changed by a migration, so a
+    /// model edit that was never scaffolded would otherwise reach production as a
+    /// missing column on a live database.
+    /// </summary>
+    [Fact]
+    public void Every_model_change_is_captured_in_a_migration()
+    {
+        using var context = CreateContext();
+
+        Assert.False(
+            context.Database.HasPendingModelChanges(),
+            "The model has changes that no migration captures. Run " +
+            "'dotnet ef migrations add <Name>' and commit the generated files.");
     }
 
     private static Mgo2DatabaseContext CreateContext()

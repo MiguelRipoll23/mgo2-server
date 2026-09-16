@@ -1,5 +1,4 @@
 using Mgo2Server.GateLobbyServer.Commands;
-using Mgo2Server.Infrastructure.Persistence;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence.Entities;
@@ -29,13 +28,15 @@ public sealed class GateLobbyServerRunner(
     private GateServer? server;
     private LobbyCacheRefreshService? refresh;
 
-    /// <summary>Initializes the database, registers the gate and starts its listener.</summary>
+    /// <summary>
+    /// Registers the gate and starts its listener. The schema is not this
+    /// process's business: the deployment applies the migrations before any
+    /// server starts.
+    /// </summary>
     /// <param name="cancellationToken">Token that stops the listener.</param>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         GateCommandHandlerRegistration.RegisterCommandHandlers(serviceProvider.GetRequiredService<CommandRegistry>());
-
-        await serviceProvider.GetRequiredService<DatabaseInitializer>().InitializeAsync(cancellationToken);
 
         var lobbyService = serviceProvider.GetRequiredService<LobbyService>();
         var lobby = await lobbyService.RegisterEndpointLobbyAsync(LobbyType.Gate, lobbyOptions, cancellationToken);

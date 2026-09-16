@@ -79,7 +79,7 @@ public sealed class MailMessage
 /// letters, so there is no delivery row; this table is an administrative inbox
 /// that is never served to a game client.
 /// </summary>
-[Table("gm_mail")]
+[Table("game_master_mail")]
 public sealed class GameMasterMail
 {
     /// <summary>Identifier of the message.</summary>

@@ -38,15 +38,15 @@ internal static partial class EntityModelConfiguration
                 .OnDelete(DeleteBehavior.NoAction);
         });
 
-        modelBuilder.Entity<WeaponTally>(entity =>
+        modelBuilder.Entity<RoundWeaponStat>(entity =>
         {
-            entity.HasOne(tally => tally.Game)
+            entity.HasOne(stat => stat.Game)
                 .WithMany()
-                .HasForeignKey(tally => tally.GameIdentifier)
+                .HasForeignKey(stat => stat.GameIdentifier)
                 .OnDelete(DeleteBehavior.Cascade);
-            entity.HasOne(tally => tally.Character)
+            entity.HasOne(stat => stat.Character)
                 .WithMany()
-                .HasForeignKey(tally => tally.CharacterIdentifier)
+                .HasForeignKey(stat => stat.CharacterIdentifier)
                 .OnDelete(DeleteBehavior.NoAction);
         });
     }

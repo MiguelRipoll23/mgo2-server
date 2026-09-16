@@ -67,7 +67,7 @@ public sealed class Lobby
     public bool ExpansionOnly { get; set; }
 
     /// <summary>Whether the lobby disables headshots.</summary>
-    [Column("no_headshot")]
+    [Column("no_headshots")]
     public bool NoHeadshot { get; set; }
 
     /// <summary>Whether the lobby only accepts replays.</summary>
@@ -95,9 +95,14 @@ public sealed class Lobby
 [Table("lobby_game_types")]
 public sealed class LobbyGameType
 {
-    /// <summary>Identifier of the game type; equals the wire-format game identifier.</summary>
+    /// <summary>
+    /// Identifier of the game type; equals the wire-format game identifier. The
+    /// value is part of the protocol, so it is assigned rather than generated:
+    /// a generated identifier would not be a game identifier at all, and the
+    /// client matches on it.
+    /// </summary>
     [Key]
-    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [DatabaseGenerated(DatabaseGeneratedOption.None)]
     [Column("id")]
     public int Identifier { get; set; }
 

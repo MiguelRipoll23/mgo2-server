@@ -1,6 +1,8 @@
 # Builds and publishes one container image per standalone server project. Every
 # role is its own executable, so every role gets its own image and its own
-# container; there is no combined image.
+# container; there is no combined image. The mgo2-migrate image is the one
+# exception: it carries the migration bundle rather than a server, and the
+# deployment runs it once before the servers start.
 name: Docker images
 
 on:
@@ -62,24 +64,35 @@ jobs:
           - image: mgo2-gate-lobby-server
             project: src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj
             assembly: Mgo2Server.GateLobbyServer
+            target: runtime
           - image: mgo2-account-lobby-server
             project: src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj
             assembly: Mgo2Server.AccountLobbyServer
+            target: runtime
           - image: mgo2-game-lobby-server
             project: src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj
             assembly: Mgo2Server.GameLobbyServer
+            target: runtime
           - image: mgo2-gameplay-server
             project: src/GameplayServer/Mgo2Server.GameplayServer.csproj
             assembly: Mgo2Server.GameplayServer
+            target: runtime
           - image: mgo2-http
             project: src/Http/Mgo2Server.Http.csproj
             assembly: Mgo2Server.Http
+            target: runtime
           - image: mgo2-dns
             project: src/Dns/Mgo2Server.Dns.csproj
             assembly: Mgo2Server.Dns
+            target: runtime
           - image: mgo2-stun
             project: src/Stun/Mgo2Server.Stun.csproj
             assembly: Mgo2Server.Stun
+            target: runtime
+          # The migration job. It is built from the bundle stage and needs no
+          # project or assembly argument, so it passes none.
+          - image: mgo2-migrate
+            target: migrate
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7
@@ -115,6 +128,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
+          target: ${{ matrix.target }}
           push: true
           platforms: linux/amd64,linux/arm64/v8
           tags: ${{ steps.metadata.outputs.tags }}

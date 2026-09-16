@@ -1,7 +1,6 @@
 using Mgo2Server.GameLobbyServer.Commands;
 using Mgo2Server.GameLobbyServer.Maintenance;
 using Mgo2Server.GameLobbyServer.Servers;
-using Mgo2Server.Infrastructure.Persistence;
 using Mgo2Server.Shared.Domain.Automatch;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Options;
@@ -35,13 +34,15 @@ public sealed class GameLobbyServerRunner(
     private GameCleanupService? gameCleanup;
     private AutomatchTickerService? automatch;
 
-    /// <summary>Initializes the database, registers this instance's lobby and starts it.</summary>
+    /// <summary>
+    /// Registers this instance's lobby and starts it. The schema is not this
+    /// process's business: the deployment applies the migrations before any
+    /// server starts.
+    /// </summary>
     /// <param name="cancellationToken">Token that stops the listener.</param>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         GameCommandHandlerRegistration.RegisterCommandHandlers(serviceProvider.GetRequiredService<CommandRegistry>());
-
-        await serviceProvider.GetRequiredService<DatabaseInitializer>().InitializeAsync(cancellationToken);
 
         var lobbyService = serviceProvider.GetRequiredService<LobbyService>();
         var lobby = await lobbyService.RegisterGameLobbyAsync(lobbyOptions, cancellationToken);

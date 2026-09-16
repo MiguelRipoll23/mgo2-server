@@ -94,7 +94,7 @@ public sealed class RoundReportService(IDbContextFactory<Mgo2DatabaseContext> co
         await using var context = await CreateContextAsync(cancellationToken);
         foreach (var tally in tallies)
         {
-            context.WeaponTallies.Add(new WeaponTally
+            context.RoundWeaponStats.Add(new RoundWeaponStat
             {
                 GameIdentifier = tally.GameIdentifier,
                 CharacterIdentifier = tally.CharacterIdentifier,
