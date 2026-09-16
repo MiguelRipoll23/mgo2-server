@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The client half of the coordination protocol; the contracts themselves
+         come with the shared assembly. -->
+    <PackageReference Include="Grpc.Net.Client" Version="2.83.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Shared\Mgo2Server.Shared.csproj" />
     <ProjectReference Include="..\Infrastructure\Mgo2Server.Infrastructure.csproj" />
   </ItemGroup>

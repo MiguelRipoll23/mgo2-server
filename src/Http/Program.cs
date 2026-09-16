@@ -1,4 +1,6 @@
 using Mgo2Server.Http.Authentication;
+using Mgo2Server.Http.Coordination;
+using Mgo2Server.Http.Discord;
 using Mgo2Server.Http.Endpoints;
 using Mgo2Server.Http.Endpoints.Authenticated;
 using Mgo2Server.Http.Endpoints.Public;
@@ -8,10 +10,10 @@ using Mgo2Server.Http.Options;
 using Mgo2Server.Http.Services;
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.Shared.Constants;
-using Mgo2Server.Shared.Domain.News;
 using Mgo2Server.Shared.Telemetry;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 
@@ -28,10 +30,25 @@ var httpPort = int.TryParse(builder.Configuration["HTTP_PORT"], out var configur
     ? configuredPort
     : PortConstants.HttpPort;
 
+var internalGrpcPort = int.TryParse(builder.Configuration["INTERNAL_GRPC_PORT"], out var configuredGrpcPort)
+    ? configuredGrpcPort
+    : PortConstants.InternalGrpcPort;
+
 // Bind Kestrel directly. The image clears the base image's inherited
 // ASPNETCORE_HTTP_PORTS, so no server URL is generated for the host to override
 // and the app owns the binding outright.
-builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(httpPort));
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenAnyIP(httpPort);
+
+    // The coordination endpoint speaks HTTP/2 without TLS. It is reached by the
+    // gameplay lobbies over the internal network of the deployment and never by
+    // a game client, so it is a port of its own rather than a scheme of the
+    // public one, which the console's HTTP client cannot speak over HTTP/2.
+    options.ListenAnyIP(
+        internalGrpcPort,
+        listen => listen.Protocols = HttpProtocols.Http2);
+});
 
 var httpApiOptions = new HttpApiOptions
 {
@@ -46,7 +63,20 @@ if (string.IsNullOrEmpty(httpApiOptions.JwtSecret))
     throw new InvalidOperationException("JWT_SECRET environment variable is required");
 }
 
+var discordOptions = new DiscordOptions
+{
+    Enabled = bool.TryParse(builder.Configuration["DISCORD_ENABLED"], out var discordEnabled) && discordEnabled,
+    BotToken = builder.Configuration["DISCORD_BOT_TOKEN"] ?? string.Empty,
+    ApplicationIdentifier = builder.Configuration["DISCORD_APPLICATION_ID"] ?? string.Empty,
+    ApplicationPublicKey = builder.Configuration["DISCORD_PUBLIC_KEY"] ?? string.Empty,
+    GuildIdentifier = builder.Configuration["DISCORD_GUILD_ID"] ?? string.Empty,
+    PlayerCountChannelIdentifier = builder.Configuration["DISCORD_PLAYER_COUNT_CHANNEL_ID"] ?? string.Empty,
+    ModeratorRoleIdentifier = builder.Configuration["DISCORD_MODERATOR_ROLE_ID"] ?? string.Empty,
+    ManagerRoleIdentifier = builder.Configuration["DISCORD_MANAGER_ROLE_ID"] ?? string.Empty,
+};
+
 builder.Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(httpApiOptions));
+builder.Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(discordOptions));
 builder.Services.AddServerServices(builder.Configuration);
 builder.Services.AddServerTelemetry(builder.Configuration);
 
@@ -55,8 +85,26 @@ builder.Services.AddSingleton<PolicyService>();
 builder.Services.AddSingleton<HelpService>();
 builder.Services.AddSingleton<VersionService>();
 builder.Services.AddSingleton<LauncherService>();
-builder.Services.AddSingleton<FlashNewsService>();
 builder.Services.AddSingleton<RankingResponseService>();
+
+// The coordination the HTTP API owns: the streams of the gameplay lobbies, the
+// global player count they feed and the flash news that is relayed back down
+// the same streams.
+builder.Services.AddGrpc();
+builder.Services.AddSingleton<LobbyPresenceService>();
+builder.Services.AddSingleton<LobbyConnectionRegistryService>();
+builder.Services.AddSingleton<PlayerPresenceNotificationService>();
+builder.Services.AddSingleton<FlashNewsDispatcherService>();
+
+// Discord is optional and only ever observes and relays: it is switched off by
+// configuration, and every failure of it is logged and absorbed by the service
+// that made the call.
+builder.Services.AddSingleton<DiscordRestClientService>();
+builder.Services.AddSingleton<DiscordPlayerCountService>();
+builder.Services.AddSingleton<DiscordInteractionService>();
+builder.Services.AddSingleton<IPlayerPresenceObserver>(
+    provider => provider.GetRequiredService<DiscordPlayerCountService>());
+builder.Services.AddHostedService<DiscordIntegrationService>();
 
 // The API registers a single scheme, and a single registered scheme is also the
 // default one, so the handler runs for the anonymous routes as well. It answers
@@ -129,6 +177,7 @@ app.MapScalarApiReference("/api", reference =>
 
 app.MapPublicEndpoints();
 app.MapAuthenticatedEndpoints();
+app.MapGrpcService<LobbyCoordinationGrpcService>();
 
 // The API is where accounts are created, so it publishes the account total. The
 // provider is built here because the API is the only entry point that starts
@@ -136,6 +185,9 @@ app.MapAuthenticatedEndpoints();
 app.Services.ActivateServerTelemetry();
 await app.Services.GetRequiredService<ServerMetricsService>().ReportTotalUsersAsync();
 
-app.Logger.LogInformation("HTTP API listening on port {Port}", httpPort);
+app.Logger.LogInformation(
+    "HTTP API listening on port {Port}, coordinating the game lobbies on port {GrpcPort}",
+    httpPort,
+    internalGrpcPort);
 
 await app.RunAsync();

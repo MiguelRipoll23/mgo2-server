@@ -300,6 +300,10 @@ export OTEL_ENABLED=true
 export OTEL_PORT=4317
 export OTEL_HOST=localhost
 
+# Every server runs on this machine, so a gameplay lobby dials the HTTP API on
+# the loopback address instead of the compose service name .env uses.
+export INTERNAL_GRPC_URL="http://localhost:${INTERNAL_GRPC_PORT:-5743}"
+
 DATABASE_CONNECTION_STRING="$(resolve_database_connection_string)"
 export DATABASE_CONNECTION_STRING
 

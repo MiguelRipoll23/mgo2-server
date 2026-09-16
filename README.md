@@ -32,6 +32,7 @@ src/
 │   ├── Constants/     # Command identifiers, crypto keys, error codes, ports
 │   ├── Domain/        # One service per domain: lobbies, games, clans, …
 │   ├── Errors/        # ServerException
+│   ├── InternalGrpc/  # Server-to-server coordination contract
 │   ├── Interfaces/    # Command handler contracts
 │   ├── Options/       # Bound configuration
 │   ├── Persistence/   # EF Core entities and database context
@@ -97,6 +98,21 @@ the database.
 scripts/build-linux-macos.sh             # Build every project
 scripts/run-linux-macos.sh               # Run the whole deployment
 ```
+
+### Coordination and Discord
+
+Every gameplay lobby opens one persistent, bidirectional gRPC connection to the
+HTTP API: the lobby reports the players that connect and disconnect, and the API
+pushes flash news back down the same connection. The API keeps the per-lobby and
+the global player counts from those events, and relays a flash to every
+connected lobby whether it was raised through `POST /flash-news/broadcast` or
+through the Discord `/flash` command. The channel named `players [n]` mirrors
+the global count and every connection and disconnection is written in it.
+
+The API and a lobby are independent of each other: a lobby that cannot reach the
+coordination endpoint keeps serving its players and retries once a minute, and
+Discord is optional and never on the path of a game. `docs/discord-integration.md`
+describes the contract, the settings and the Discord application to create.
 
 ### Telemetry
 

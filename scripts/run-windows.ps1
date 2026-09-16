@@ -336,6 +336,11 @@ try {
     $env:OTEL_PORT = '4317'
     $env:OTEL_HOST = 'localhost'
 
+    # Every server runs on this machine, so a gameplay lobby dials the HTTP API
+    # on the loopback address instead of the compose service name .env uses.
+    $internalGrpcPort = if ($env:INTERNAL_GRPC_PORT) { $env:INTERNAL_GRPC_PORT } else { '5743' }
+    $env:INTERNAL_GRPC_URL = "http://localhost:$internalGrpcPort"
+
     $env:DATABASE_CONNECTION_STRING = Resolve-DatabaseConnectionString
 
     $logDirectory = Join-Path $projectDirectory '.logs'

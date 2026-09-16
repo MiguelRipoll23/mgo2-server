@@ -13,9 +13,11 @@ namespace Mgo2Server.Shared.Domain.Lobbies;
 /// </summary>
 /// <param name="lobbyService">Service that owns the lobby rows.</param>
 /// <param name="metricsService">Service the lobby population is reported to.</param>
+/// <param name="presencePublisher">Publisher the arrivals and departures are reported to.</param>
 public sealed class LobbyTrackerService(
     LobbyService lobbyService,
-    ServerMetricsService metricsService)
+    ServerMetricsService metricsService,
+    ILobbyPresencePublisher presencePublisher)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<int, HashSet<TcpSession>> sessionsByLobby = [];
@@ -30,10 +32,11 @@ public sealed class LobbyTrackerService(
     public void JoinLobby(TcpSession session, int lobbyIdentifier)
     {
         List<(int LobbyIdentifier, int Count)> changed;
+        List<(int LobbyIdentifier, TcpSession Session)> left;
 
         lock (gate)
         {
-            changed = LeaveLobbyCore(session);
+            (left, changed) = LeaveLobbyCore(session);
 
             if (!sessionsByLobby.TryGetValue(lobbyIdentifier, out var sessions))
             {
@@ -45,6 +48,8 @@ public sealed class LobbyTrackerService(
             changed.Add((lobbyIdentifier, sessions.Count));
         }
 
+        PublishDisconnected(left);
+        PublishConnected(lobbyIdentifier, session);
         Report(changed);
     }
 
@@ -53,12 +58,14 @@ public sealed class LobbyTrackerService(
     public void LeaveLobby(TcpSession session)
     {
         List<(int LobbyIdentifier, int Count)> changed;
+        List<(int LobbyIdentifier, TcpSession Session)> left;
 
         lock (gate)
         {
-            changed = LeaveLobbyCore(session);
+            (left, changed) = LeaveLobbyCore(session);
         }
 
+        PublishDisconnected(left);
         Report(changed);
     }
 
@@ -91,22 +98,53 @@ public sealed class LobbyTrackerService(
     }
 
     /// <summary>
-    /// Removes a session from every lobby and reports the populations it left.
-    /// The caller holds the gate.
+    /// Removes a session from every lobby and reports the populations it left,
+    /// together with the sessions that left them. The caller holds the gate.
     /// </summary>
-    private List<(int LobbyIdentifier, int Count)> LeaveLobbyCore(TcpSession session)
+    /// <param name="session">Session to remove.</param>
+    private (
+        List<(int LobbyIdentifier, TcpSession Session)> Left,
+        List<(int LobbyIdentifier, int Count)> Changed) LeaveLobbyCore(TcpSession session)
     {
+        var left = new List<(int LobbyIdentifier, TcpSession Session)>();
         var changed = new List<(int LobbyIdentifier, int Count)>();
 
         foreach (var (lobbyIdentifier, sessions) in sessionsByLobby)
         {
             if (sessions.Remove(session))
             {
+                left.Add((lobbyIdentifier, session));
                 changed.Add((lobbyIdentifier, sessions.Count));
             }
         }
 
-        return changed;
+        return (left, changed);
+    }
+
+    /// <summary>Reports a character that entered a lobby.</summary>
+    /// <param name="lobbyIdentifier">Identifier of the lobby.</param>
+    /// <param name="session">Session that entered it.</param>
+    private void PublishConnected(int lobbyIdentifier, TcpSession session)
+    {
+        // A session that has not named a character is not a player yet, so
+        // there is nobody to report and nobody to count as one later.
+        if (session.CharacterIdentifier is { } characterIdentifier)
+        {
+            presencePublisher.PlayerConnected(lobbyIdentifier, characterIdentifier);
+        }
+    }
+
+    /// <summary>Reports the characters that left the lobbies of a session.</summary>
+    /// <param name="left">Lobbies the session left, with the session.</param>
+    private void PublishDisconnected(List<(int LobbyIdentifier, TcpSession Session)> left)
+    {
+        foreach (var (lobbyIdentifier, session) in left)
+        {
+            if (session.CharacterIdentifier is { } characterIdentifier)
+            {
+                presencePublisher.PlayerDisconnected(lobbyIdentifier, characterIdentifier);
+            }
+        }
     }
 
     /// <summary>

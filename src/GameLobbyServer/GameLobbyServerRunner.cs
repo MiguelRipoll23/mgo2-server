@@ -1,4 +1,5 @@
 using Mgo2Server.GameLobbyServer.Commands;
+using Mgo2Server.GameLobbyServer.Coordination;
 using Mgo2Server.GameLobbyServer.Maintenance;
 using Mgo2Server.GameLobbyServer.Servers;
 using Mgo2Server.Shared.Domain.Automatch;
@@ -28,6 +29,7 @@ public sealed class GameLobbyServerRunner(
 {
     private readonly LobbyOptions lobbyOptions = lobbyOptions.Value;
     private GameplayLobbyServer? server;
+    private LobbyCoordinationClientService? coordination;
     private LobbyCacheRefreshService? refresh;
     private LobbyHeartbeatService? heartbeat;
     private LobbyCleanupService? cleanup;
@@ -76,6 +78,12 @@ public sealed class GameLobbyServerRunner(
             lobby.Identifier,
             serviceProvider.GetRequiredService<AutomatchHooksService>());
 
+        // Started before the listener, so the coordination stream is open before
+        // the first player can arrive and the snapshot it registers with is the
+        // empty population the lobby actually starts from.
+        coordination = serviceProvider.GetRequiredService<LobbyCoordinationClientService>();
+        coordination.StartFor(lobby.Identifier, lobby.Name);
+
         refresh = serviceProvider.GetRequiredService<LobbyCacheRefreshService>();
         heartbeat = serviceProvider.GetRequiredService<LobbyHeartbeatService>();
         cleanup = serviceProvider.GetRequiredService<LobbyCleanupService>();
@@ -96,6 +104,12 @@ public sealed class GameLobbyServerRunner(
     {
         server?.Stop();
         server = null;
+
+        if (coordination is not null)
+        {
+            await coordination.StopAsync();
+            coordination = null;
+        }
 
         if (refresh is not null)
         {

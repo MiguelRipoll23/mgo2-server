@@ -1,10 +1,14 @@
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.GameLobbyServer;
 using Mgo2Server.GameLobbyServer.Commands;
+using Mgo2Server.GameLobbyServer.Coordination;
 using Mgo2Server.GameLobbyServer.Maintenance;
+using Mgo2Server.Shared.Domain.Lobbies;
+using Mgo2Server.Shared.Domain.News;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,6 +20,16 @@ builder.Logging.AddServerLogging(builder.Configuration);
 builder.Services.AddServerServices(builder.Configuration);
 builder.Services.AddServerTelemetry(builder.Configuration);
 builder.Services.AddCommandHandlers();
+
+// The coordination stream of this lobby. It both reports the presence of this
+// lobby to the HTTP API and receives the flash news the API relays, and it is
+// the publisher the lobby tracker reports a player through. Replacing rather
+// than adding keeps the tracker and the stream on the same instance.
+builder.Services.AddSingleton<FlashNewsService>();
+builder.Services.AddSingleton<LobbyCoordinationClientService>();
+builder.Services.Replace(ServiceDescriptor.Singleton<ILobbyPresencePublisher>(
+    provider => provider.GetRequiredService<LobbyCoordinationClientService>()));
+
 builder.Services.AddSingleton<LobbyHeartbeatService>();
 builder.Services.AddSingleton<LobbyCleanupService>();
 builder.Services.AddSingleton<GameCleanupService>();

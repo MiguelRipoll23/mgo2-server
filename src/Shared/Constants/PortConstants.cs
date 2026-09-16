@@ -8,6 +8,13 @@ public static class PortConstants
     /// <summary>Port of the HTTP REST API.</summary>
     public const int HttpPort = 80;
 
+    /// <summary>
+    /// Port the HTTP API serves the internal server-to-server gRPC endpoint on.
+    /// The endpoint is internal to the deployment and is never the port the
+    /// game clients or the public API are reached on.
+    /// </summary>
+    public const int InternalGrpcPort = 5743;
+
     /// <summary>Port of the UDP domain name server.</summary>
     public const int DnsPort = 53;
 

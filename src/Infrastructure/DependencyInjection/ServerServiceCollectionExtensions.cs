@@ -18,6 +18,7 @@ using Mgo2Server.Shared.Utils;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Mgo2Server.Infrastructure.DependencyInjection;
 
@@ -67,6 +68,14 @@ public static class ServerServiceCollectionExtensions
             options.ReplaysOnly = configuration.ReadFlag("LOBBY_REPLAYS_ONLY", options.ReplaysOnly);
         });
 
+        services.Configure<CoordinationOptions>(options =>
+        {
+            options.ServerUrl = configuration.ReadText("INTERNAL_GRPC_URL") ?? options.ServerUrl;
+            options.ReconnectInterval = TimeSpan.FromSeconds(configuration.ReadNumber(
+                "INTERNAL_GRPC_RECONNECT_SECONDS",
+                (int)options.ReconnectInterval.TotalSeconds));
+        });
+
         services.Configure<AutomatchOptions>(options =>
         {
             options.Enabled = configuration.ReadFlag("AUTOMATCH_ENABLED", options.Enabled);
@@ -101,6 +110,11 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<LobbyService>();
         services.AddSingleton<LobbyGameTypeService>();
         services.AddSingleton<LobbyCacheRefreshService>();
+
+        // TryAdd: a server that speaks the coordination protocol registers its
+        // own publisher before or after this call, and either way the tracker
+        // has one to report to.
+        services.TryAddSingleton<ILobbyPresencePublisher, NullLobbyPresencePublisher>();
         services.AddSingleton<LobbyTrackerService>();
         services.AddSingleton<CharacterService>();
         services.AddSingleton<CharacterStatisticsService>();

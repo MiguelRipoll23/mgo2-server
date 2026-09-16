@@ -5,6 +5,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Runtime and tooling of the internal server-to-server protocol below. -->
+    <PackageReference Include="Google.Protobuf" Version="3.36.1" />
+    <PackageReference Include="Grpc.Core.Api" Version="2.83.0" />
+    <!-- Private assets: the tooling only runs at build time and must not flow
+         into every server that references this library. -->
+    <PackageReference Include="Grpc.Tools" Version="2.84.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <!-- Private assets: the design package backs `dotnet ef` only, and must not
          flow into every server that references this library. -->
@@ -26,6 +35,13 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageReference Include="Serilog.Settings.Configuration" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The internal server-to-server contract, compiled into this assembly so
+         every server sees the same messages and only the two servers that
+         speak the protocol reference the gRPC transport. -->
+    <Protobuf Include="InternalGrpc/Protos/lobby_coordination.proto" GrpcServices="Both" />
   </ItemGroup>
 
 </Project>

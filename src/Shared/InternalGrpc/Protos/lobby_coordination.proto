@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package mgo2.internal.v1;
+
+option csharp_namespace = "Mgo2Server.Shared.InternalGrpc.Contracts";
+
+// The channel between the HTTP API and every gameplay lobby. It is hosted by
+// the HTTP API and opened by the lobby, which is the side that knows the
+// server-to-server endpoint. One call carries both directions: the lobby sends
+// its presence events down the request stream, the API sends the announcements
+// it has to relay down the response stream.
+//
+// The call is deliberately chatty-free: nothing is polled, so a lobby that
+// loses the connection only has to open a new one.
+service LobbyCoordination {
+  rpc Coordinate(stream LobbyEvent) returns (stream HttpEvent);
+}
+
+// Everything a gameplay lobby reports to the coordinator.
+message LobbyEvent {
+  oneof event {
+    LobbyRegistration registration = 1;
+    PlayerPresenceChange player_presence = 2;
+  }
+}
+
+// First message of every stream. It names the lobby and carries the players
+// that are connected at the moment the stream opens, so a coordinator that was
+// restarted (or that never saw this lobby) starts from the truth instead of
+// from the deltas it missed.
+message LobbyRegistration {
+  int32 lobby_identifier = 1;
+  string lobby_name = 2;
+  repeated ConnectedPlayer players = 3;
+}
+
+// One player of the lobby, as the lobby counts it.
+message ConnectedPlayer {
+  int32 character_identifier = 1;
+}
+
+// A player entered or left the lobby.
+message PlayerPresenceChange {
+  int32 lobby_identifier = 1;
+  int32 character_identifier = 2;
+  bool connected = 3;
+}
+
+// Everything the coordinator pushes to a gameplay lobby.
+message HttpEvent {
+  oneof event {
+    FlashNewsBroadcast flash_news = 1;
+  }
+}
+
+// One ticker announcement the lobby has to write to its own clients. The fields
+// are the ones the announcement is encoded with; the lobby builds the packet,
+// because the payload is the client protocol and stays where the protocol is.
+message FlashNewsBroadcast {
+  string message = 1;
+  uint32 unknown1 = 2;
+  uint32 unknown2 = 3;
+  uint32 subcommand = 4;
+  uint32 unknown5 = 5;
+  uint32 maintenance_time = 6;
+}
