@@ -420,7 +420,7 @@ cd "${project_directory}"
 if [ ! -f .env ]; then
     cp .env.example .env
     jwt_secret="$(openssl rand -base64 48)"
-    sed -i.bak "s/^JWT_SECRET=.*/JWT_SECRET=${jwt_secret}/" .env
+    sed -i.bak "s|^JWT_SECRET=.*|JWT_SECRET=${jwt_secret}|" .env
     rm -f .env.bak
     echo "Created .env from .env.example with a random JWT_SECRET. Review it before exposing the deployment."
 fi
