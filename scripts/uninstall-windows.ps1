@@ -222,7 +222,8 @@ foreach ($name in (@($projectVolumes) + $VolumeNames | Select-Object -Unique)) {
 
 Write-Host 'Removing the network of the project'
 $existingNetworks = @(Get-DockerResult @('network', 'ls', '--format', '{{.Name}}'))
-foreach ($name in (@($projectNetworks = (Get-DockerResult @('network', 'ls', '--filter', "label=com.docker.compose.project=$ComposeProjectName", '--format', '{{.Name}}'))) + 'mgo2_default' | Select-Object -Unique)) {
+$projectNetworks = @(Get-DockerResult @('network', 'ls', '--filter', "label=com.docker.compose.project=$ComposeProjectName", '--format', '{{.Name}}')) + @('mgo2_default')
+foreach ($name in ($projectNetworks | Select-Object -Unique)) {
     if ($name -and ($existingNetworks -contains $name)) {
         Invoke-BestEffort @('network', 'rm', $name)
     }
