@@ -16,11 +16,10 @@ internal static class PolicyEndpoints
     }
 
     private static async Task<IResult> GetPolicyAsync(
-        HttpRequest request,
         PolicyService policyService,
         CancellationToken cancellationToken)
     {
-        var body = await policyService.GetPolicyAsync(request, cancellationToken);
+        var body = await policyService.GetPolicyAsync(cancellationToken);
         return Results.Text(body, "text/html; charset=utf-8");
     }
 }

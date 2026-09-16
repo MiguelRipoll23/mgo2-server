@@ -54,7 +54,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<PolicyService>();
 builder.Services.AddSingleton<HelpService>();
 builder.Services.AddSingleton<VersionService>();
-builder.Services.AddSingleton<FilesService>();
+builder.Services.AddSingleton<LauncherService>();
 builder.Services.AddSingleton<FlashNewsService>();
 builder.Services.AddSingleton<RankingResponseService>();
 
