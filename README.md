@@ -119,7 +119,7 @@ adds the `LOBBY_SUBTYPE` that selects its game type.
 The scripts of `scripts/` split building from running: `build-linux-macos.sh`
 and `build-windows.ps1` build every project, and `run-linux-macos.sh` and
 `run-windows.ps1` start the whole deployment from the built binaries against
-the remote database.
+the database.
 
 ```sh
 scripts/build-linux-macos.sh             # Build every project

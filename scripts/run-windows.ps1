@@ -9,12 +9,11 @@
     name server and the port-check responder: the same servers compose.yaml
     starts, minus PostgreSQL.
 
-    PostgreSQL is not started by this script. The servers connect to the remote
+    PostgreSQL is not started by this script. The servers connect to the
     database of DATABASE_CONNECTION_STRING, which must be set in .env or in the
     environment. The compose placeholder (Host=postgres) is ignored. Either the
-    keyword form Npgsql reads or the postgresql:// URL form Neon and other
-    providers hand out is accepted; the URL is translated before it reaches the
-    servers.
+    keyword form Npgsql reads or the postgresql:// URL form is accepted; the
+    URL is translated before it reaches the servers.
 
     The schema of an empty database is created by the servers themselves on
     their first start, so nothing has to be applied by hand.
@@ -230,7 +229,7 @@ function ConvertTo-NpgsqlConnectionString([string]$ConnectionString) {
     return ($settings -join ';')
 }
 
-# Reports the connection string of the remote database: the one in the process
+# Reports the connection string of the database: the one in the process
 # environment or the one in .env, ignoring the compose placeholder. The schema
 # of an empty database is created by the servers on their first start.
 function Resolve-DatabaseConnectionString {
@@ -242,7 +241,6 @@ function Resolve-DatabaseConnectionString {
 
     $connectionString = ConvertTo-NpgsqlConnectionString $connectionString
 
-    Write-Host "Using the remote database $($connectionString -replace '(?i)(Password=)[^;]*', '${1}***')"
     return $connectionString
 }
 

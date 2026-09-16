@@ -8,12 +8,11 @@
 # name server and the port-check responder: the same servers compose.yaml starts,
 # minus PostgreSQL.
 #
-# PostgreSQL is not started by this script. The servers connect to the remote
+# PostgreSQL is not started by this script. The servers connect to the
 # database of DATABASE_CONNECTION_STRING, which must be set in .env or in the
 # environment. The compose placeholder (Host=postgres) is ignored. Either the
-# keyword form Npgsql reads or the postgresql:// URL form Neon and other
-# providers hand out is accepted; the URL is translated before it reaches the
-# servers.
+# keyword form Npgsql reads or the postgresql:// URL form is accepted; the URL
+# is translated before it reaches the servers.
 #
 # The schema of an empty database is created by the servers themselves on their
 # first start, so nothing has to be applied by hand.
@@ -166,7 +165,7 @@ convert_to_npgsql_connection_string() {
     printf '%s' "$result"
 }
 
-# Reports the connection string of the remote database: the one in the
+# Reports the connection string of the database: the one in the
 # environment or the one in .env, ignoring the compose placeholder.
 resolve_database_connection_string() {
     local connection_string="${DATABASE_CONNECTION_STRING:-}"
@@ -179,8 +178,6 @@ resolve_database_connection_string() {
 
     connection_string="$(convert_to_npgsql_connection_string "$connection_string")"
 
-    printf 'Using the remote database %s\n' \
-        "$(printf '%s' "$connection_string" | sed -E 's/(Password=)[^;]*/\1***/I')" >&2
     printf '%s' "$connection_string"
 }
 
