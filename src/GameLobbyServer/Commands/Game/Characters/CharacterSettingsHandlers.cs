@@ -6,37 +6,6 @@ using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 
-/// <summary>Serves the chat macros of the session character, one page at a time.</summary>
-/// <param name="characterService">Service that owns the macros.</param>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
-public sealed class GetChatMacrosHandler(
-    CharacterService characterService,
-    SessionHelper sessionHelper) : ICommandHandler
-{
-    /// <inheritdoc />
-    public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
-    {
-        if (session.CharacterIdentifier is not { } characterIdentifier)
-        {
-            await sessionHelper.SendPacketAsync(session, CommandConstants.GetChatMacrosResult, null, cancellationToken);
-            return;
-        }
-
-        var macros = await characterService.GetChatMacrosAsync(characterIdentifier, cancellationToken);
-
-        await sessionHelper.SendPacketAsync(
-            session,
-            CommandConstants.GetChatMacrosResult,
-            CharacterPayloadBuilder.BuildChatMacrosPayload(macros, 0),
-            cancellationToken);
-        await sessionHelper.SendPacketAsync(
-            session,
-            CommandConstants.GetChatMacrosResult,
-            CharacterPayloadBuilder.BuildChatMacrosPayload(macros, 1),
-            cancellationToken);
-    }
-}
-
 /// <summary>Stores the chat macros the client submits.</summary>
 /// <param name="characterService">Service that owns the macros.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
@@ -70,29 +39,6 @@ public sealed class UpdateChatMacrosHandler(
         }
 
         await sessionHelper.SendResultAsync(session, CommandConstants.UpdateChatMacrosResult, ErrorCodeConstants.ResultNone, cancellationToken);
-    }
-}
-
-/// <summary>Serves the stored gameplay options and user-interface settings.</summary>
-/// <param name="characterService">Service that owns the stored options.</param>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
-public sealed class GetGameplayOptionsHandler(
-    CharacterService characterService,
-    SessionHelper sessionHelper) : ICommandHandler
-{
-    /// <inheritdoc />
-    public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
-    {
-        var character = session.CharacterIdentifier is { } characterIdentifier
-            ? await characterService.FindByIdAsync(characterIdentifier, cancellationToken)
-            : null;
-
-        var stored = GameplayOptionsCodec.ParseStored(character?.GameplayOptions);
-        await sessionHelper.SendPacketAsync(
-            session,
-            CommandConstants.GetGameplayOptionsResult,
-            GameplayOptionsCodec.BuildPayload(stored),
-            cancellationToken);
     }
 }
 

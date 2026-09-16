@@ -55,6 +55,16 @@ public sealed class TcpSession
     /// <summary>Room the client is in, when it joined one.</summary>
     public int? GameIdentifier { get; set; }
 
+    /// <summary>
+    /// Set once a handler has decided the connection should end. A handler
+    /// returns nothing, so this is how the disconnect command reaches the read
+    /// loop that owns the socket: dispatch stops as soon as the handler returns.
+    /// </summary>
+    public bool DisconnectRequested { get; private set; }
+
+    /// <summary>Asks the server to tear the connection down once the current handler returns.</summary>
+    public void RequestDisconnect() => DisconnectRequested = true;
+
     /// <summary>Writes bytes to the connection, one writer at a time.</summary>
     /// <param name="bytes">Bytes to write.</param>
     /// <param name="cancellationToken">Token that cancels the write.</param>

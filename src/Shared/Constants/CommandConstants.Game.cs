@@ -52,16 +52,10 @@ public static partial class CommandConstants
     /// <summary>Carries the result of a chat-macro write.</summary>
     public const ushort UpdateChatMacrosResult = 0x4115;
 
-    /// <summary>Returns the chat macros.</summary>
-    public const ushort GetChatMacros = 0x411a;
-
-    /// <summary>Carries one page of chat macros.</summary>
+    /// <summary>Carries one page of chat macros, in the connect burst.</summary>
     public const ushort GetChatMacrosResult = 0x4121;
 
-    /// <summary>Returns the gameplay options and user-interface settings.</summary>
-    public const ushort GetGameplayOptions = 0x411b;
-
-    /// <summary>Carries the gameplay options.</summary>
+    /// <summary>Carries the gameplay options, in the connect burst.</summary>
     public const ushort GetGameplayOptionsResult = 0x4120;
 
     /// <summary>Returns the personal information screen data.</summary>
@@ -91,17 +85,11 @@ public static partial class CommandConstants
     /// <summary>Carries the gear catalogue after an outfit commit.</summary>
     public const ushort CommitOutfitResult = 0x4133;
 
-    /// <summary>Returns the saved skill sets.</summary>
+    /// <summary>Carries the saved skill sets, in the connect burst.</summary>
     public const ushort GetSkillSets = 0x4140;
 
-    /// <summary>Stores the client's skill sets.</summary>
-    public const ushort UpdateSkillSets = 0x4141;
-
-    /// <summary>Returns the saved gear sets.</summary>
+    /// <summary>Carries the saved gear sets, in the connect burst.</summary>
     public const ushort GetGearSets = 0x4142;
-
-    /// <summary>Stores the client's gear sets.</summary>
-    public const ushort UpdateGearSets = 0x4143;
 
     /// <summary>Leaves the gameplay lobby.</summary>
     public const ushort GetLobbyDisconnect = 0x4150;

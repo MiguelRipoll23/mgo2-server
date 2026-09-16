@@ -32,6 +32,10 @@ public static class GameCommandHandlerRegistration
     /// <param name="services">Container to register with.</param>
     public static IServiceCollection AddCommandHandlers(this IServiceCollection services)
     {
+        // Session.
+        services.AddTransient<DisconnectHandler>();
+        services.AddTransient<KeepAliveHandler>();
+
         // Lobby lifecycle and lobby select.
         services.AddTransient<EchoHandler>();
         services.AddTransient<GameCheckSessionHandler>();
@@ -46,20 +50,11 @@ public static class GameCommandHandlerRegistration
         // Characters.
         services.AddTransient<GetCharacterInfoHandler>();
         services.AddTransient<GetPersonalStatsHandler>();
-        services.AddTransient<GetPersonalInfoHandler>();
         services.AddTransient<UpdatePersonalInfoHandler>();
         services.AddTransient<GetCharacterCardHandler>();
         services.AddTransient<GetPostGameInfoHandler>();
-        services.AddTransient<GetGearHandler>();
         services.AddTransient<CommitOutfitHandler>();
-        services.AddTransient<GetSkillsHandler>();
-        services.AddTransient<GetSkillSetsHandler>();
-        services.AddTransient<UpdateSkillSetsHandler>();
-        services.AddTransient<GetGearSetsHandler>();
-        services.AddTransient<UpdateGearSetsHandler>();
-        services.AddTransient<GetChatMacrosHandler>();
         services.AddTransient<UpdateChatMacrosHandler>();
-        services.AddTransient<GetGameplayOptionsHandler>();
         services.AddTransient<UpdateGameplayOptionsHandler>();
         services.AddTransient<UpdateUiSettingsHandler>();
         services.AddTransient<AddFriendsBlockedHandler>();
@@ -91,7 +86,6 @@ public static class GameCommandHandlerRegistration
         services.AddTransient<PutClientSettingHandler>();
         services.AddTransient<HostSkillExperienceHandler>();
         services.AddTransient<StartRoundHandler>();
-        services.AddTransient<UpdateStatsHandler>();
         services.AddTransient<HostUpdateStatsHandler>();
         services.AddTransient<RoundStatisticsProcessor>();
         services.AddTransient<HostWeaponTalliesHandler>();
@@ -143,26 +137,19 @@ public static class GameCommandHandlerRegistration
         registry.Register<GetGameEntryInfoHandler>(ServerType.GameplayLobby, CommandConstants.GetGameEntryInfo);
         registry.Register<ChatEchoHandler>(ServerType.GameplayLobby, CommandConstants.ChatEcho);
         registry.Register<SendChatHandler>(ServerType.GameplayLobby, CommandConstants.SendChat);
+        registry.Register<DisconnectHandler>(ServerType.GameplayLobby, CommandConstants.Disconnect);
+        registry.Register<KeepAliveHandler>(ServerType.GameplayLobby, CommandConstants.KeepAlive);
     }
 
     private static void RegisterCharacterCommands(CommandRegistry registry)
     {
         registry.Register<GetCharacterInfoHandler>(ServerType.GameplayLobby, CommandConstants.GetCharacterInfo);
         registry.Register<GetPersonalStatsHandler>(ServerType.GameplayLobby, CommandConstants.GetPersonalStats);
-        registry.Register<GetPersonalInfoHandler>(ServerType.GameplayLobby, CommandConstants.GetPersonalInfo);
         registry.Register<UpdatePersonalInfoHandler>(ServerType.GameplayLobby, CommandConstants.UpdatePersonalInfo);
         registry.Register<GetCharacterCardHandler>(ServerType.GameplayLobby, CommandConstants.GetCharacterCard);
         registry.Register<GetPostGameInfoHandler>(ServerType.GameplayLobby, CommandConstants.GetPostGameInfo);
-        registry.Register<GetGearHandler>(ServerType.GameplayLobby, CommandConstants.GetGear);
         registry.Register<CommitOutfitHandler>(ServerType.GameplayLobby, CommandConstants.CommitOutfit);
-        registry.Register<GetSkillsHandler>(ServerType.GameplayLobby, CommandConstants.GetSkills);
-        registry.Register<GetSkillSetsHandler>(ServerType.GameplayLobby, CommandConstants.GetSkillSets);
-        registry.Register<UpdateSkillSetsHandler>(ServerType.GameplayLobby, CommandConstants.UpdateSkillSets);
-        registry.Register<GetGearSetsHandler>(ServerType.GameplayLobby, CommandConstants.GetGearSets);
-        registry.Register<UpdateGearSetsHandler>(ServerType.GameplayLobby, CommandConstants.UpdateGearSets);
-        registry.Register<GetChatMacrosHandler>(ServerType.GameplayLobby, CommandConstants.GetChatMacros);
         registry.Register<UpdateChatMacrosHandler>(ServerType.GameplayLobby, CommandConstants.UpdateChatMacros);
-        registry.Register<GetGameplayOptionsHandler>(ServerType.GameplayLobby, CommandConstants.GetGameplayOptions);
         registry.Register<UpdateGameplayOptionsHandler>(ServerType.GameplayLobby, CommandConstants.UpdateGameplayOptions);
         registry.Register<UpdateUiSettingsHandler>(ServerType.GameplayLobby, CommandConstants.UpdateUiSettings);
         registry.Register<AddFriendsBlockedHandler>(ServerType.GameplayLobby, CommandConstants.AddFriendsBlocked);
@@ -196,8 +183,6 @@ public static class GameCommandHandlerRegistration
         registry.Register<PutClientSettingHandler>(ServerType.GameplayLobby, CommandConstants.PutClientSetting);
         registry.Register<HostSkillExperienceHandler>(ServerType.GameplayLobby, CommandConstants.HostSkillExperience);
         registry.Register<StartRoundHandler>(ServerType.GameplayLobby, CommandConstants.StartRound);
-        registry.Register<StartRoundHandler>(ServerType.GameplayLobby, CommandConstants.StartRoundAlias);
-        registry.Register<UpdateStatsHandler>(ServerType.GameplayLobby, CommandConstants.UpdateStats);
         registry.Register<HostUpdateStatsHandler>(ServerType.GameplayLobby, CommandConstants.HostUpdateStats);
         registry.Register<HostWeaponTalliesHandler>(ServerType.GameplayLobby, CommandConstants.HostWeaponTallies);
         registry.Register<StartAutomatchHandler>(ServerType.GameplayLobby, CommandConstants.StartAutomatch);

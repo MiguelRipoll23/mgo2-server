@@ -83,12 +83,6 @@ public static partial class CommandConstants
     /// <summary>Carries the result of a host hand-off.</summary>
     public const ushort HostPassResult = 0x4349;
 
-    /// <summary>Stores the statistics a client reports for itself.</summary>
-    public const ushort UpdateStats = 0x4350;
-
-    /// <summary>Carries the result of a statistics report.</summary>
-    public const ushort UpdateStatsResult = 0x4351;
-
     /// <summary>Leaves the current room.</summary>
     public const ushort QuitGame = 0x4380;
 
@@ -148,12 +142,6 @@ public static partial class CommandConstants
 
     /// <summary>Carries the result of starting a round.</summary>
     public const ushort StartRoundResult = 0x43c9;
-
-    /// <summary>Legacy alias of <see cref="StartRound"/>.</summary>
-    public const ushort StartRoundAlias = 0x43ca;
-
-    /// <summary>Carries the result of the legacy start-round alias.</summary>
-    public const ushort StartRoundAliasResult = 0x43cb;
 
     // Automatching (0x43ex) -------------------------------------------------
 

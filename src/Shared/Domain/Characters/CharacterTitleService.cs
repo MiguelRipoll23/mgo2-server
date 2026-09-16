@@ -25,6 +25,35 @@ public sealed class CharacterTitleService(
     : DomainService(contextFactory)
 {
     /// <summary>
+    /// Number of titles the client's badge table carries. Rank identifiers are
+    /// one-based positions in that table, so only ranks up to this one have a bit
+    /// in the collection the client renders.
+    /// </summary>
+    public const int ClientTitleCount = 22;
+
+    /// <summary>
+    /// Packs latched ranks into the collection the personal-stats screen renders:
+    /// bit zero is the best rank. Ranks past the client's table are skipped rather
+    /// than shifted — its popcount loop walks the table once per title, so a bit
+    /// above the last one makes it read past the end.
+    /// </summary>
+    /// <param name="ranks">Ranks the character has latched, in any order.</param>
+    /// <returns>The mask the client renders, zero when nothing is latched.</returns>
+    public static int BuildTitleMask(IEnumerable<int> ranks)
+    {
+        var mask = 0;
+        foreach (var rank in ranks)
+        {
+            if (rank is >= 1 and <= ClientTitleCount)
+            {
+                mask |= 1 << (rank - 1);
+            }
+        }
+
+        return mask;
+    }
+
+    /// <summary>
     /// Unlocks every title a character now qualifies for and refreshes the worn one.
     /// Idempotent, so it is safe to call after every round and on every lobby entry.
     /// </summary>
@@ -77,6 +106,14 @@ public sealed class CharacterTitleService(
             .Select(title => title.Rank)
             .ToListAsync(cancellationToken);
     }
+
+    /// <summary>The title collection of a character, as the client's bit mask.</summary>
+    /// <param name="characterIdentifier">Character to read.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task<int> FindTitleMaskAsync(
+        int characterIdentifier,
+        CancellationToken cancellationToken = default) =>
+        BuildTitleMask(await FindUnlockedRanksAsync(characterIdentifier, cancellationToken));
 
     /// <summary>The best rank a character has latched, or zero when it has none.</summary>
     /// <param name="characterIdentifier">Character to read.</param>

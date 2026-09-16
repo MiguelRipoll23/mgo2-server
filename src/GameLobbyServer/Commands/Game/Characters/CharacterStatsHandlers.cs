@@ -17,12 +17,14 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 /// <param name="statisticsService">Service that owns the lifetime statistics.</param>
 /// <param name="gameService">Service that owns the rooms and host ratings, and the training totals they accumulate.</param>
 /// <param name="instructorService">Service that owns the instructor relationship and reviews.</param>
+/// <param name="titleService">Service that owns the titles the character has latched.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class GetPersonalStatsHandler(
     CharacterService characterService,
     CharacterStatisticsService statisticsService,
     GameService gameService,
     InstructorService instructorService,
+    CharacterTitleService titleService,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
@@ -62,6 +64,7 @@ public sealed class GetPersonalStatsHandler(
         var instructor = await instructorService.FindInstructorAsync(targetIdentifier, cancellationToken);
         var instructorScore = await instructorService.GetInstructorScoreAsync(targetIdentifier, cancellationToken: cancellationToken);
         var trainingSeconds = await gameService.GetTrainingSecondsAsync(targetIdentifier, cancellationToken);
+        var titleMask = await titleService.FindTitleMaskAsync(targetIdentifier, cancellationToken);
 
         var hostRatings = await gameService.GetHostRatingSummariesAsync([targetIdentifier], cancellationToken);
         var hostRating = hostRatings.TryGetValue(targetIdentifier, out var summary) ? summary : default;
@@ -80,7 +83,8 @@ public sealed class GetPersonalStatsHandler(
                 clan,
                 instructor,
                 instructorScore,
-                hostRating),
+                hostRating,
+                titleMask),
             cancellationToken);
 
         // The cumulative page must precede the weekly page, because receiving

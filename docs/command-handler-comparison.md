@@ -5,15 +5,49 @@ registration tables and the handler bodies on each side.
 
 | | this repository | reference |
 |---|---|---|
-| Revision | `0e31234` (2026-09-15) | `comradesean/mgo2server` `2e3b4dc` (2026-08-04) |
+| Revision | `0e31234` (2026-09-15), re-checked 2026-09-16 | `comradesean/mgo2server` `2e3b4dc` (2026-08-04) |
 | Stack | C# / .NET 10, one handler class per command | Java / Netty, one controller per subsystem |
 | Source | `src/*/Commands/**` | `src/main/java/mgo2server/game/controller/**` |
+| Answered request ids | **85** (84 of them in the client's own send list) | **84** (83) |
 
-The two servers cover **the same opcodes** — this one registers seven more, the reference
-registers none that this one lacks — so almost every difference below is behavioural, not
-a matter of coverage. Where the reference is ahead it is usually because its handlers carry
-years of reverse-engineering notes on what the client does with the bytes, and this server's
-handlers were written against the wire shape without all of that context.
+The two servers cover **the same opcodes** — every command the reference answers is answered
+here, and the one difference is `0x4348`, a client-sent command the reference leaves as a
+`gap` — so almost every difference below is behavioural, not a matter of coverage. Where the
+reference is ahead it is usually because its handlers carry years of reverse-engineering notes
+on what the client does with the bytes, and this server's handlers were written against the
+wire shape without all of that context.
+
+The per-command status, in the reference's own vocabulary and section order, is
+[`COMMAND_STATUS.md`](COMMAND_STATUS.md); that file is generated from this repository's source
+by `tools/command_status_report.py`, so it is the side to trust when the two disagree. Each
+count below can be reproduced offline with `tools/compare_command_inventory.py`, which needs a
+checkout of the reference beside this one to read its ELF-derived id lists from.
+
+### The 2026-09-16 pass
+
+1. **`0x0003` and `0x0005` are registered commands.** They were answered by special cases in
+   `TcpServerBase`, which meant the socket loop answered two commands the registry — the only
+   inventory a reader can count — did not know about. `DisconnectHandler` marks the session
+   for teardown (a handler returns nothing, so `TcpSession.DisconnectRequested` is how it
+   reaches the read loop) and `KeepAliveHandler` replies through `SessionHelper`.
+2. **Eleven registrations for ids the client never sends are gone**, with the nine handler
+   classes behind them: `0x411a`, `0x411b`, `0x4122`, `0x4124`, `0x4125`, `0x4140`–`0x4143`,
+   `0x4350`, `0x43ca`. The pushes they answered for are untouched.
+3. **`0x43ca`/`0x43cb` are deleted**, including the branch in `StartRoundHandler` that chose
+   between them; see §4.3.
+4. **Every skill is served at maximum experience.** `CharacterSkillCatalogue` held skills 17,
+   20 and 22 at the minimum visible experience on a list inherited from another server with
+   no evidence behind it; skill 17 is the one training and graduation gates read, so nothing
+   below the maximum is defensible on a server whose whole policy is "everything unlocked".
+5. **`0x4103` carries the worn title and the title collection**; see §3.12.
+6. **Six command constants that named ids outside the client's space are deleted**
+   (`GetChatMacros`, `GetGameplayOptions`, `UpdateSkillSets`, `UpdateGearSets`, `UpdateStats`,
+   `UpdateStatsResult`). Nothing referenced them, which is the point: an unreferenced constant
+   for an id no client has is an invitation to wire it back up.
+
+Confirmed against the live deployment, not just the source: across every `mgo2-*` container's
+retained logs, the inbound opcodes total sixteen and all are answered, there is not one
+`no-handler` line, and the five ids above that remain on the wire appear only outbound.
 
 ---
 
@@ -26,7 +60,7 @@ handlers were written against the wire shape without all of that context.
 | Unknown opcode | logs `no-handler` with the payload hex, then sends a **4-byte masked-error packet on the same opcode** (deliberate — see §4.4) | logs `No handler for command X; ignoring. Payload: <hex>` and sends **nothing** |
 | Handler throws | caught, logged at Error with the opcode and payload hex, connection kept | logged at Error with the opcode and payload hex, connection kept |
 | Per-packet hooks | none | every controller's `onPacket` runs before dispatch; every controller's `onDisconnect` runs on socket close |
-| `0x0003` / `0x0005` | handled centrally in `TcpServerBase` (not registered commands) | registered commands in `CommonGameController` |
+| `0x0003` / `0x0005` | registered commands (`DisconnectHandler`, `KeepAliveHandler`), one per TCP server | registered commands in `CommonGameController` |
 
 **The reference is more careful about the two paths that stay silent, and the gap is not
 cosmetic.**
@@ -77,8 +111,8 @@ reference logs a warning and replies nothing.
 | `0x4100` | `GetCharacterInfoHandler` (the connect burst) | `connect` |
 | `0x4112` | `UpdateUiSettingsHandler` (ack, not stored) | `UNKNOWN_WRITE_BACK` (ack, not stored) |
 | `0x4114` | `UpdateChatMacrosHandler` | `updateChatMacros` |
-| `0x411a` | `GetChatMacrosHandler` | — |
-| `0x411b` | `GetGameplayOptionsHandler` | — |
+| `0x411a` | — (was `GetChatMacrosHandler`; the id is not one the client sends) | — |
+| `0x411b` | — (was `GetGameplayOptionsHandler`; same) | — |
 | `0x4700` | `GetPlayerDataHandler` | `updateConnectionInfo` |
 | `0x4150` | `GetLobbyDisconnectHandler` | `lobbyDisconnect` |
 | `0x43d0` | `TrainingConnectHandler` | `getTrainingParams` |
@@ -91,12 +125,12 @@ reference logs a warning and replies nothing.
 |---|---|---|
 | `0x4102` | `GetPersonalStatsHandler` | `getPersonalStats` |
 | `0x4110` | `UpdateGameplayOptionsHandler` | `updateSettings` |
-| `0x4122` | `GetPersonalInfoHandler` | pushed only, in the connect burst |
-| `0x4124` / `0x4125` | `GetGearHandler` / `GetSkillsHandler` (also pushed on connect) | pushed only, in the connect burst |
+| `0x4122` | pushed only, in the connect burst | pushed only, in the connect burst |
+| `0x4124` / `0x4125` | pushed only, in the connect burst | pushed only, in the connect burst |
 | `0x4128` | `GetPostGameInfoHandler` | `postGameInfo` |
 | `0x4130` / `0x4132` | `UpdatePersonalInfoHandler` / `CommitOutfitHandler` | `updatePersonalInfo` / `commitOutfit` |
-| `0x4140` / `0x4142` | `GetSkillSetsHandler` / `GetGearSetsHandler` (also pushed) | pushed only, in the connect burst |
-| `0x4141` / `0x4143` | `UpdateSkillSetsHandler` / `UpdateGearSetsHandler` | — |
+| `0x4140` / `0x4142` | pushed only, in the connect burst | pushed only, in the connect burst |
+| `0x4141` / `0x4143` | — (the ids do not exist in the client) | — |
 | `0x4220` | `GetCharacterCardHandler` | `getPlayerDetails` |
 | `0x4500` / `0x4510` / `0x4580` | `AddFriendsBlockedHandler` / `RemoveFriendsBlockedHandler` / `GetFriendsBlockedListHandler` | `addList` / `removeList` / `listRoster` |
 | `0x4600` / `0x4680` / `0x4684` | `SearchPlayerHandler` / `GetMatchHistoryHandler` / `GetMatchDetailsHandler` | `playerSearch` / `getMatchHistory` / `getMatchDetails` |
@@ -110,7 +144,7 @@ reference logs a warning and replies nothing.
 | `0x4316` / `0x4320` / `0x4322` | `CreateGameHandler` / `JoinGameHandler` / `JoinGameFailedHandler` | `createGame` / `joinGame` / `joinFailed` |
 | `0x4340`–`0x4347` | `HostPeerRegistrationHandler`, `HostPlayerDisconnectedHandler`, `HostSetPlayerTeamHandler`, `HostPlayerConnectFinishHandler` | `playerConnection` (one handler for all four) |
 | `0x4348` | `HostPassHandler` | — |
-| `0x4350` | `UpdateStatsHandler` (client self-report) | — |
+| `0x4350` | — (was `UpdateStatsHandler`; the id does not exist in the client) | — |
 | `0x4380` | `QuitGameHandler` | `quitGame` |
 | `0x4390` / `0x43a2` | `HostUpdateStatsHandler` / `HostWeaponTalliesHandler` | `updateStats` / `roundEnd` |
 | `0x4392` / `0x4398` | `SetGameHandler` / `UpdatePingsHandler` | `setGame` / `updatePings` |
@@ -118,7 +152,7 @@ reference logs a warning and replies nothing.
 | `0x43a4` | `HostSkillExperienceHandler` (ack, not stored) | `reportSkillExperience` (stored) |
 | `0x43a6` | `PutClientSettingHandler` (ack, not stored) | `PUT_CLIENT_SETTING` (ack, not stored) |
 | `0x43c0` / `0x43c4` | `HostInGameInfoHandler` / `RateHostHandler` | `editHostSettings` / `rateHost` |
-| `0x43c8` / `0x43ca` | `StartRoundHandler` (both ids) | `startRound` |
+| `0x43c8` | `StartRoundHandler` | `startRound` — `0x43ca`/`0x43cb` are gone; they were a misnumbering, not a second pairing |
 | `0x43e0` / `0x43e2` | `StartAutomatchHandler` / `CancelAutomatchHandler` | `startAutomatch` / `cancelAutomatch` |
 | `0x4400` | `SendChatHandler` | `sendChat` |
 
@@ -246,11 +280,17 @@ and a whole lobby going away. The credit shares a transaction with the removal, 
 roster row's join time is the only record of the interval. Only subtypes 7 and 8 create a
 row; every other lobby's play time comes from the round reports instead.
 
-**What is still missing here.** `0x4103`'s title-unlock mask (rating-block entry 3) and the
-worn-title byte after the comment are left at zero: titles exist (`CharacterTitleService`)
-and the worn rank is already written into `0x4122`, but the mask is an awards concern and
-was not part of this pass. The medal bits stay zero too, which is deliberate — the client
-mints medals from those words, so anything we cannot measure honestly must be zero.
+**The two title fields are written as of 2026-09-16.** `0x4103` carries the worn rank at
+wire 541 (the same value `0x4122` writes, from the rank the title service latched) and the
+collection as rating-block entry 3, `CharacterTitleService.BuildTitleMask` packing each
+latched rank into bit `rank - 1`. **Ranks past the client's 22-title table set no bit**:
+`AnimalRankService` also returns the post-1.30 ranks (Killer Whale 26, Octopus 40, and so
+on) which have no badge, and the client's popcount loop walks the table once per title, so
+shifting one of those would make it read past the end. `CharacterTitleTests` pins both
+halves.
+
+The medal bits stay zero, which is deliberate — the client mints medals from those words,
+so anything we cannot measure honestly must be zero.
 
 ---
 
@@ -380,6 +420,15 @@ sets every bit of the `0x4101` content mask, so nothing is ever gated. See §4.1
 comment on why the attributes word is written byte-by-byte. This server writes a fixed
 35-byte stride.
 
+The 35 bytes **are** the 1.36 layout — 4-byte index, subtype, three bytes, clan id, 16-byte
+name, then the open/close times and the open flag, with no text block — and 1.36 is the build
+this server targets, so nothing is wrong here today. What the reference has that this one does
+not is a second build: on 1.0 the entry is 99 bytes, the extra 64 being a per-lobby text block
+whose only consumer (the subtype-5 branch) 1.36 deleted. Sizing it per build is worth doing
+the day a 1.0 deployment is wanted, and the value belongs in configuration beside the other
+build-specific ones rather than in the payload builder, where it would be the first of several
+such constants to drift apart.
+
 ---
 
 ## 4. Where this server is ahead, or deliberately different
@@ -402,26 +451,41 @@ So the reference's per-account entitlement model (§3.10) and this server's unlo
 are the same bytes carrying opposite intent. Any future decision to gate content should
 start by choosing between them — the mask constant is the single switch.
 
-### 4.2 Answers requests the reference only pushes
+### 4.2 Answers requests the reference only pushes — retracted, and the registrations removed
 
 | Opcode | This server | Reference |
 |---|---|---|
-| `0x411a` | `GetChatMacrosHandler` serves macros on request | pushed only, in the connect burst |
-| `0x411b` | `GetGameplayOptionsHandler` | pushed only, in the connect burst |
-| `0x4141` / `0x4143` | stores skill and gear sets on request | pushed only, in the connect burst |
+| `0x411a` | no longer registered | pushed only, in the connect burst |
+| `0x411b` | no longer registered | pushed only, in the connect burst |
+| `0x4141` / `0x4143` | no longer registered | pushed only, in the connect burst |
 
-Both servers push the full catalogue burst on `0x4100` in the same order (character info,
-gameplay settings, chat macros ×2, personal info, gear, skills, skill sets, gear sets — the
-reference notes the order "matches the original's burst"). This server *additionally* answers
-the read-side commands, so a client that re-fetches a screen gets fresh data instead of the
-login snapshot.
+This section used to argue that answering the read-side commands let a client re-fetch a
+screen instead of reading the login snapshot. **The client cannot send them.** None of the
+four ids is in the ELF's client-to-server list, and none appears in the deployment's inbound
+traffic, so the handlers were unreachable code rather than extra coverage — the same defect
+the reference calls PHANTOM, one layer further in. The registrations and their handler
+classes are gone; the writes they duplicated (`0x4114`, `0x4110`, `0x4130`, `0x4132`) are
+untouched.
+
+The connect burst is unchanged and still pushes the full catalogue in the original's order
+(character info, gameplay settings, chat macros ×2, personal info, gear, skills, skill sets,
+gear sets). `0x4122`, `0x4124`, `0x4125`, `0x4140` and `0x4142` are emitted and still are —
+the deployment's logs show all five leaving the server, and none arriving.
 
 ### 4.3 Extra opcodes answered
 
-`0x4348` (`HostPassHandler`), `0x43ca` (`StartRoundAlias`, the second start-round pairing),
-and `0x4350` (`UpdateStatsHandler`, a client self-report path that shares
-`RoundStatisticsProcessor` with the host frame). The reference registers none of the three;
-on the reference a stray `0x4350` gets a hex dump in the log and no reply.
+`0x4348` (`HostPassHandler`). The reference registers nothing for it, on the reference a
+stray `0x4348` gets a hex dump in the log and no reply, and the client genuinely sends it
+(`0xd4a8a4` in its own list). This is the one place the two servers' answered sets differ,
+and it is deliberate: matching the reference exactly would mean removing the answer to a
+command the client issues.
+
+Two former entries here are gone. `0x43ca` (`StartRoundAlias`) was a **misnumbering** of
+`0x43c8`, kept because "each client build parses one of the two pairings" sounded plausible;
+the ELF has no builder and no parser for `0x43ca` or `0x43cb`, and the reply branch that
+chose between them is deleted with the constants. `0x4350` (`UpdateStatsHandler`) is not in
+the id space either — no builder, no parser, no inbound sighting — so its registration is
+gone; the round statistics it fed arrive through `0x4390` and `0x43a2` as they always did.
 
 ### 4.4 A general error for an unhandled opcode (intentional)
 
@@ -534,7 +598,13 @@ resolution so the reasoning stays attached to the change.
 6. **Verify the ranking boards against a live client.** The wire format is settled (and
    covered by `RankingTests`), but the `skey` meanings are inferred on both servers, and no
    capture of a real Konami ranking response exists to check them against.
-7. **Run a combat training session end to end.** The instructor flow is untested against a
+7. **Remove the three remaining phantoms** once each is settled: `0x4115` (the chat-macro
+   write-back, which the reference says to stop sending outright — needs one live client,
+   because a client that waits on the slot stalls when nothing answers), and `0x4140` /
+   `0x4142` (skill and gear sets in the connect burst, which no client parses; the reference's
+   own advice is to trace `0x4133` first rather than delete on inference). They are listed in
+   `COMMAND_STATUS.md` under "Ids we touch that the client does not".
+8. **Run a combat training session end to end.** The instructor flow is untested against a
    client: the subtype-8 branch in `0x43c8`, the saved-instructor field in `0x4122` (which
    must now let the recognition prompt actually appear, where the old constant suppressed
    it for everyone), and the award letter all need one live graduation to confirm. Publish a

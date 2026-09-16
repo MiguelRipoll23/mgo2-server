@@ -10,21 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 
-/// <summary>Stores the statistics a client reports for itself.</summary>
-/// <param name="roundStatisticsService">Service that applies the round.</param>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
-public sealed class UpdateStatsHandler(
-    RoundStatisticsProcessor roundStatisticsProcessor,
-    SessionHelper sessionHelper) : ICommandHandler
-{
-    /// <inheritdoc />
-    public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
-    {
-        await roundStatisticsProcessor.ProcessAsync(session, packet, cancellationToken);
-        await sessionHelper.SendResultAsync(session, CommandConstants.UpdateStatsResult, ErrorCodeConstants.ResultNone, cancellationToken);
-    }
-}
-
 /// <summary>Stores the statistics the host reports for one player.</summary>
 /// <param name="roundStatisticsProcessor">Processor that applies the round.</param>
 /// <param name="instructorService">Service that awards a pending instructor graduation.</param>

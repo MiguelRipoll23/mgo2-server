@@ -39,6 +39,9 @@ public static class PersonalStatisticsPayloadBuilder
     /// <summary>Summary column carrying the level.</summary>
     private const int SummaryLevelColumn = 13;
 
+    /// <summary>Rating-block entry carrying the title collection, a 22-bit mask.</summary>
+    private const int TitleMaskEntry = 3;
+
     /// <summary>Rating-block entry carrying the host rating numerator, the sum of the votes.</summary>
     private const int HostRatingNumeratorEntry = 5;
 
@@ -81,6 +84,7 @@ public static class PersonalStatisticsPayloadBuilder
     /// <param name="instructor">The instructor the character saved, when they have one.</param>
     /// <param name="instructorScore">Reviews the character received as an instructor.</param>
     /// <param name="hostRating">Reviews the character received as a host.</param>
+    /// <param name="titleMask">Titles the character has collected, which the screen renders as badges.</param>
     public static byte[] BuildHeader(
         Character character,
         int targetIdentifier,
@@ -89,7 +93,8 @@ public static class PersonalStatisticsPayloadBuilder
         CharacterClanInformation? clan,
         InstructorRecord? instructor,
         InstructorScore instructorScore,
-        HostRatingSummary hostRating)
+        HostRatingSummary hostRating,
+        int titleMask)
     {
         var header = new PacketWriter();
         header.WriteUInt32(0);
@@ -151,23 +156,30 @@ public static class PersonalStatisticsPayloadBuilder
             "The personal-stats header grew past the comment offset; adjust the hand-computed layout.");
         header.WritePadding(CommentOffset - header.Size);
         header.WriteFixedString(character.Comment, 128);
-        header.WriteUInt8(0);
+        // The WORN title, 1-based and zero for none: the badge the client draws
+        // beside the name. The same value travels in the 0x4122 payload, and the
+        // two screens read different blocks, so both are written from the rank
+        // the title service latched.
+        header.WriteUInt8((byte)Math.Clamp(character.Rank, 0, byte.MaxValue));
 
         for (var index = 0; index < 9; index++)
         {
             header.WriteUInt8(0);
         }
 
-        // The rating block, nine words. Only three are identified: entry 5 is the
-        // host rating's numerator and entry 6 its denominator, so sending the sum
-        // over the count makes the ratio the average and the star gauge lands on the
-        // real value. Everything else stays zero rather than carrying a placeholder,
-        // because the client mints medals and titles itself from these words and an
-        // invented number awards something nobody earned.
+        // The rating block, nine words. Four are identified: entry 3 is the title
+        // collection — the client draws a badge per set bit and nothing else the
+        // server sends carries it — entry 5 is the host rating's numerator and
+        // entry 6 its denominator, so sending the sum over the count makes the
+        // ratio the average and the star gauge lands on the real value. Everything
+        // else stays zero rather than carrying a placeholder, because the client
+        // mints medals and titles itself from these words and an invented number
+        // awards something nobody earned.
         for (var entry = 0; entry < 9; entry++)
         {
             header.WriteUInt32(entry switch
             {
+                TitleMaskEntry => (uint)titleMask,
                 HostRatingNumeratorEntry => (uint)hostRating.RatingSum,
                 HostRatingDenominatorEntry => (uint)hostRating.Votes,
                 _ => 0,

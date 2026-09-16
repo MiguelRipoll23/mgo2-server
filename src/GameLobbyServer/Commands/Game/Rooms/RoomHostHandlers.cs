@@ -312,12 +312,12 @@ public sealed class StartRoundHandler(
         writer.WriteUInt32(ErrorCodeConstants.ResultNone);
         writer.WriteUInt32(0);
 
-        // Each client build parses exactly one of the two pairings.
-        var replyCommand = packet.Header.Command == CommandConstants.StartRoundAlias
-            ? CommandConstants.StartRoundAliasResult
-            : CommandConstants.StartRoundResult;
-
-        await sessionHelper.SendPacketAsync(session, replyCommand, writer.Build(), cancellationToken);
+        // 0x43c9, the only reply the client parses. This used to answer 0x43cb when the
+        // request arrived on 0x43ca, on the theory that each build parses one of the two
+        // pairings — but neither id exists in the client: the ELF has no builder and no
+        // parser for either, and the handler bound to 0x43ca was a misnumbering of this
+        // command. 0x43ca is no longer registered, so the branch was unreachable.
+        await sessionHelper.SendPacketAsync(session, CommandConstants.StartRoundResult, writer.Build(), cancellationToken);
     }
 
     /// <summary>Whether the room sits in a combat training lobby, the one lobby the flow runs in.</summary>

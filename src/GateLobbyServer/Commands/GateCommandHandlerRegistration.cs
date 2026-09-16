@@ -14,6 +14,8 @@ public static class GateCommandHandlerRegistration
     {
         registry.Register<GetLobbyListHandler>(ServerType.Gate, CommandConstants.GetLobbyList);
         registry.Register<GetNewsHandler>(ServerType.Gate, CommandConstants.GetNews);
+        registry.Register<DisconnectHandler>(ServerType.Gate, CommandConstants.Disconnect);
+        registry.Register<KeepAliveHandler>(ServerType.Gate, CommandConstants.KeepAlive);
     }
 
     /// <summary>Registers every gate command handler with the container.</summary>
@@ -22,6 +24,8 @@ public static class GateCommandHandlerRegistration
     {
         services.AddTransient<GetLobbyListHandler>();
         services.AddTransient<GetNewsHandler>();
+        services.AddTransient<DisconnectHandler>();
+        services.AddTransient<KeepAliveHandler>();
         return services;
     }
 }

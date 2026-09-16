@@ -276,20 +276,6 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
         CancellationToken cancellationToken)
     {
         var command = packet.Header.Command;
-
-        if (command == CommandConstants.Disconnect)
-        {
-            Logger.LogDebug("[{LogPrefix}] 0x{Command} disconnect requested {State}", LogPrefix, FormatCommand(command), FormatSessionState(session));
-            return false;
-        }
-
-        if (command == CommandConstants.KeepAlive)
-        {
-            await SendKeepAliveAsync(session, cancellationToken);
-            Logger.LogDebug("[{LogPrefix}] 0x{Command} keepalive ack {State}", LogPrefix, FormatCommand(command), FormatSessionState(session));
-            return true;
-        }
-
         var handlerType = CommandRegistry.ResolveHandlerType(ServerType, command);
         if (handlerType is null)
         {
@@ -338,22 +324,7 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
                 FormatPayload(packet.Payload));
         }
 
-        return true;
-    }
-
-    /// <summary>Answers a keep-alive with a keep-alive carrying no payload.</summary>
-    /// <param name="session">Connection to answer.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    protected async Task SendKeepAliveAsync(TcpSession session, CancellationToken cancellationToken = default)
-    {
-        var sequenceOut = session.NextSequenceOut();
-        var bytes = PacketCodec.EncodePacket(
-            CommandConstants.KeepAlive,
-            [],
-            sequenceOut,
-            session.LogPrefix);
-
-        await session.WriteAsync(bytes, cancellationToken);
+        return !session.DisconnectRequested;
     }
 
     private static string FormatCommand(ushort command) => command.ToString("x4");

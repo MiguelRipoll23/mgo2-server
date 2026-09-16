@@ -7,9 +7,23 @@ namespace Mgo2Server.Shared.Domain.Characters;
 public readonly record struct MaximumLevelSkill(int SkillIdentifier, int Experience, int Flag);
 
 /// <summary>
-/// The skill catalogue every character is served. Skill levels are no longer
-/// persisted, so this catalogue is the character's entire skill state: each
-/// defined skill is advertised at its maximum level.
+/// The skill catalogue every character is served: every skill this build defines,
+/// at the highest experience the client accepts.
+/// <para>
+/// Skill progression is deliberately not persisted, so the catalogue is the whole
+/// of a character's skill state rather than a floor under a stored value. Because
+/// the maximum is also the value the client clamps to, a stored report could never
+/// be served differently from what is advertised here, which is why no table for
+/// one exists.
+/// </para>
+/// <para>
+/// Three skills used to be served below the maximum — the instructor skill, which
+/// renders without a level bar, and the two unlockable expert skills — on a list
+/// inherited from another server with no evidence behind it. Skill 17 is the one
+/// every training and graduation check reads, so serving it below the maximum was
+/// the most plausible reason a graduation requirement could fail. Nothing
+/// distinguishes those three any more; see <c>BACKLOG.md</c>.
+/// </para>
 /// </summary>
 public static class CharacterSkillCatalogue
 {
@@ -25,14 +39,11 @@ public static class CharacterSkillCatalogue
     /// <summary>Highest skill level, derived from the maximum experience.</summary>
     public const int SkillLevelCap = 3;
 
-    /// <summary>Experience advertised for skills that have no meaningful progression path.</summary>
-    public const int SkillExperienceWithoutPath = 0x2000;
-
     /// <summary>
-    /// Skills with no meaningful experience path: the instructor skill, which
-    /// renders without a level bar, and the two unlockable expert skills.
+    /// Flag byte carried by every catalogue entry. Skill 17 is the only entry the
+    /// client reads it for, where zero is what enables the training menu.
     /// </summary>
-    private static readonly int[] SkillsWithoutPath = [17, 20, 22];
+    private const int CatalogueFlag = 0;
 
     /// <summary>Builds the catalogue: every defined skill at its maximum level.</summary>
     public static List<MaximumLevelSkill> CreateMaximumLevelSkills()
@@ -40,11 +51,7 @@ public static class CharacterSkillCatalogue
         var skills = new List<MaximumLevelSkill>(DefinedSkillCount);
         for (var index = 0; index < DefinedSkillCount; index++)
         {
-            var skillIdentifier = index + 1;
-            skills.Add(new MaximumLevelSkill(
-                skillIdentifier,
-                HasProgressionPath(skillIdentifier) ? MaximumSkillExperience : SkillExperienceWithoutPath,
-                0));
+            skills.Add(new MaximumLevelSkill(index + 1, MaximumSkillExperience, CatalogueFlag));
         }
 
         return skills;
@@ -55,21 +62,8 @@ public static class CharacterSkillCatalogue
     public static int SkillLevelFromExperience(int experience) =>
         Math.Min(Math.Max(0, experience) >> 13, SkillLevelCap);
 
-    /// <summary>Maximum level of a skill identifier; zero for unassigned slots and undefined identifiers.</summary>
+    /// <summary>Level of a skill identifier in the catalogue; zero for unassigned slots and undefined identifiers.</summary>
     /// <param name="skillIdentifier">Identifier of the skill.</param>
-    public static int SkillLevelAtMaximum(int skillIdentifier)
-    {
-        if (skillIdentifier < 1 || skillIdentifier > DefinedSkillCount)
-        {
-            return 0;
-        }
-
-        return HasProgressionPath(skillIdentifier)
-            ? SkillLevelCap
-            : SkillExperienceWithoutPath >> 13;
-    }
-
-    /// <summary>Returns whether a skill accumulates experience towards its level.</summary>
-    /// <param name="skillIdentifier">Identifier of the skill.</param>
-    public static bool HasProgressionPath(int skillIdentifier) => !SkillsWithoutPath.Contains(skillIdentifier);
+    public static int SkillLevelAtMaximum(int skillIdentifier) =>
+        skillIdentifier < 1 || skillIdentifier > DefinedSkillCount ? 0 : SkillLevelCap;
 }

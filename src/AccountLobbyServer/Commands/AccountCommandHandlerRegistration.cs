@@ -18,6 +18,8 @@ public static class AccountCommandHandlerRegistration
         registry.Register<SelectCharacterHandler>(ServerType.Account, CommandConstants.SelectCharacter);
         registry.Register<DeleteCharacterHandler>(ServerType.Account, CommandConstants.DeleteCharacter);
         registry.Register<CheckCharacterNameHandler>(ServerType.Account, CommandConstants.CheckCharacterName);
+        registry.Register<DisconnectHandler>(ServerType.Account, CommandConstants.Disconnect);
+        registry.Register<KeepAliveHandler>(ServerType.Account, CommandConstants.KeepAlive);
     }
 
     /// <summary>Registers every account command handler with the container.</summary>
@@ -30,6 +32,8 @@ public static class AccountCommandHandlerRegistration
         services.AddTransient<SelectCharacterHandler>();
         services.AddTransient<DeleteCharacterHandler>();
         services.AddTransient<CheckCharacterNameHandler>();
+        services.AddTransient<DisconnectHandler>();
+        services.AddTransient<KeepAliveHandler>();
         return services;
     }
 }

@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\Dns\Mgo2Server.Dns.csproj" />
     <ProjectReference Include="..\..\src\Stun\Mgo2Server.Stun.csproj" />
     <ProjectReference Include="..\..\src\AccountLobbyServer\Mgo2Server.AccountLobbyServer.csproj" />
+    <ProjectReference Include="..\..\src\GameLobbyServer\Mgo2Server.GameLobbyServer.csproj" />
   </ItemGroup>
 
   <ItemGroup>

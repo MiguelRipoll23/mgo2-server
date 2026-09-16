@@ -106,9 +106,7 @@ public sealed class GetPostGameInfoHandler(
         for (var identifier = 1; identifier <= CharacterSkillCatalogue.DefinedSkillCount; identifier++)
         {
             writer.WriteUInt8(identifier);
-            writer.WriteUInt16(CharacterSkillCatalogue.HasProgressionPath(identifier)
-                ? CharacterSkillCatalogue.MaximumSkillExperience
-                : CharacterSkillCatalogue.SkillExperienceWithoutPath);
+            writer.WriteUInt16(CharacterSkillCatalogue.MaximumSkillExperience);
             writer.WriteUInt8(0);
         }
 
