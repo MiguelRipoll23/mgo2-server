@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
+using OpenTelemetry.Logs;
 
 namespace Mgo2Server.Shared.Telemetry;
 
@@ -42,6 +43,13 @@ public static class OpenTelemetryServiceCollectionExtensions
             .ConfigureResource(resource => resource.AddService(ServiceName))
             .WithMetrics(metrics => metrics
                 .AddMeter(ServerMetricsService.MeterName)
+                .AddOtlpExporter(
+                    exporter =>
+                    {
+                        exporter.Endpoint = new Uri(options.Endpoint);
+                        exporter.Protocol = OtlpExportProtocol.Grpc;
+                    }))
+            .WithLogging(logging => logging
                 .AddOtlpExporter(
                     exporter =>
                     {
