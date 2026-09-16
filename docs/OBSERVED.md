@@ -1973,7 +1973,9 @@ The negative result matters as much: **`0x43ca`, `0x4390`, `0x43a2`, `0x4392` an
 never sent** at any point in that complete match. Whatever triggers the round-lifecycle and
 stat-submission commands, it is not simply "a match being played" — they are conditional
 (mode/stat-game/path dependent), and their layouts remain live-unverified. Do not assume a stat
-report per round when reasoning about experience.
+report per round when reasoning about experience. **(Since corrected: a 2026-09-16 capture did
+send `0x43ca` — it is this build's start-round id, and it only fires when the host starts a
+round. The rest of this session's negatives stand.)**
 
 ## The Common Settings map, confirmed setting by setting
 
@@ -2068,7 +2070,9 @@ reference-only, same standing as the uniques fields.
 - **`0x43ca` and `0x43a2` do not exist in this build's observed vocabulary.** Not sent at
   staging, any admin restart (round/stage/next), team change, kick, pass-host, or a natural
   round end with a declared winner. The end-of-round conversation is re-registration + `0x4390`
-  per player, nothing else.
+  per player, nothing else. *(Corrected 2026-09-16: `0x43ca` *is* sent — it is this build's
+  start-round id, and none of the actions that session swept starts a round; `0x43a2` remains
+  absent from these paths.)*
 - **`0x4110` identity settled**: 304 bytes (the `0x4120` layout minus trailer), sent by a joiner
   alongside two `0x4114` chat-macro write-backs (769 bytes each, the `0x4121` layout) in one
   non-blocking burst when saving options. It is the personal-options write-back, and the old
@@ -2085,6 +2089,8 @@ reference-only, same standing as the uniques fields.
   stat report was correctly rejected — which also exposed that the `game_round` snapshot never
   populated at the time (its then-trigger, `0x43ca`, never arrives). Since resolved: the
   handler is renumbered to `0x43c8` and the snapshot populates on create/join. See BACKLOG.
+  *(Corrected: `0x43ca` *does* arrive — 2026-09-16 — and the handler serves both `0x43ca`→`0x43cb`
+  and `0x43c8`→`0x43c9`.)*
 
 ## ADDLIST (friend/blocked) solved from the ELF
 

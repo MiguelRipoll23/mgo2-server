@@ -1635,8 +1635,9 @@ the payloads are parsed and the match state tracked, **with layouts transcribed 
 GHzGangster/Nomad (tier 4)** at the user's request — fetched for these specific named questions
 after the docs and the audit both confirmed the gap. Live standing after two captured sessions
 (2026-07-22, including an admin-action sweep): **`0x4398`, `0x43a0`, `0x4392` and `0x4390` are
-all confirmed against the client, payload and effect**; `0x43ca` has **never been observed on
-any path** and is presumed absent from this build's normal vocabulary. `0x43a2` was presumed
+all confirmed against the client, payload and effect**. `0x43ca` was presumed absent until a
+live start-round capture sent it on 2026-09-16; it is this build's own start-round id (paired
+`0x43cb`), served as an alias of `0x43c8`. `0x43a2` was presumed
 absent too until 2026-07-23, when live round ends sent it (the 2026-07-22 sweep that missed
 it predates packet tracing; it fires in every mode). Since fully decoded: **one per scoring
 player**, sent immediately after that player's `0x4390`, carrying that player's per-weapon
@@ -1689,14 +1690,15 @@ if that read fails. The empty reply works only because the read primitives bound
 stale buffer contents. "Live-verified" here meant "observed not to break", which is a weaker claim
 than it looked: it verified one buffer state, not the protocol. Send an explicit `{u32 0}`.
 
-## `0x43ca` — start round (never observed)
+## `0x43ca` — start round (this build's id; alias of `0x43c8`)
 
-**Client → server**, `HostGameController.startRound`. **Never observed from this client on any
-path** — its handler (which snapshots the roster into `game_round` to gate `0x4390`) is
-Nomad-derived and effectively dormant here: without the snapshot, stat application relies on the
-current-membership check, which drops reports for players who already left (observed live: a
-crashed joiner's straggler report was rejected). See BACKLOG, "The round snapshot never
-populates". Reply `0x43cb`, result 0, if it ever arrives.
+**Client → server**, `HostGameController.startRound`, the id this build's ELF actually sends
+(builder `0xF0E260`, completed by the `0x43cb` waiter at `0xF0D4C0`). First observed live on
+2026-09-16, when an unregistered `0x43ca` produced a `no-handler` log and a stalled round start;
+the handler now serves both pairings. It snaps the roster into `game_round` to gate `0x4390` and
+answers `0x43cb` with `{u32 result, u32 token}` — the same body as the `0x43c8`/`0x43c9` pair,
+which the 1.36 client build sends instead. Each request is answered on exactly the id its build
+parses.
 
 > **Switches and refusals live in `GATES.md`** — the feature bits we send, the per-round
 > Headshots-Only / Drebin-Points flag, the player-count thresholds, and the values that make
@@ -3076,10 +3078,10 @@ grouped by how likely normal play is to hit them, not listed flat.
 
 **Two corrections the scan forced, both worth acting on:**
 
-- **`0x43ca` is never sent — the client sends `0x43c8`** (builder `0xD40CB4`, payload `{u32,
-  u8}`). Our "start round" handler *was* bound to `0x43ca`, which has no builder anywhere —
-  dead code that kept the `game_round` snapshot empty. **Resolved 2026-07-23:** the handler is
-  renumbered to `0x43c8`/`0x43c9`, and the snapshot now populates on game create and join
+- **`0x43ca` is this build's start-round id — the 1.36 build sends `0x43c8`** (builder `0xD40CB4`,
+  payload `{u32, u8}`). Both pairings are served: `0x43c8`→`0x43c9` and `0x43ca`→`0x43cb`
+  (this build's waiter at `0xF0D4C0`). A live `0x43ca` on 2026-09-16 corrected the earlier
+  "never sent" reading, and `game_round` also populates on game create and join
   regardless (BACKLOG, marked resolved).
   `0x43c8` is the likely real trigger. This reads as a two-off transcription slip inherited from
   a reference. Do not blindly repoint — capture a `0x43c8` and confirm its semantics first — but

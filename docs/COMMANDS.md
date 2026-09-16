@@ -43,8 +43,8 @@ client never uses that id", which applied the word to the wrong side of the wire
 control the client; it *is* the specification. An id **our server** touches which the client
 neither sends nor parses is a **defect**, not inert leftover:
 
-- **misnumbered** — we implement a neighbour of the real id. `0x43ca` was this, and reading it as
-  harmless vestige is precisely why start-round stalled; the real id is `0x43c8`.
+- **misnumbered** — we implement a neighbour of the real id. `0x43ca` was read this way until a
+  live capture proved it is this build's own start-round id; it is served as an alias of `0x43c8`.
 - **phantom** — we emit a reply the client has no parser for (`0x4115`, `0x4140`, `0x4142`).
 - **imported fiction** — inherited from a reference server targeting a different build.
 
@@ -99,8 +99,8 @@ settings · `0x4310` push host
 settings · `0x4312` game details · `0x4316` create game · `0x4320` join game · `0x4322` join
 failed · `0x4340`/`0x4342`/`0x4344`/`0x4346` peer register · `0x4380` quit game · `0x4390` stats ·
 `0x4392` set game · `0x4398` pings · `0x43a0` pass host · `0x43a2` round end? · `0x43c0` in-game
-info · `0x43c8` start round *(renumbered 2026-07-23 from `0x43ca`, which has no builder — our
-misnumbering, not a client id)* · `0x4440` team/spectator · `0x4500` add
+info · `0x43c8` start round *(paired `0x43c9`; `0x43ca`/`0x43cb` is this build's second pairing,
+served as an alias)* · `0x4440` team/spectator · `0x4500` add
 relation · `0x4510` remove relation · `0x4580` roster fetch · `0x4600` player search ·
 `0x4680` match history · `0x4684` match detail · `0x4700` connection info ·
 `0x4820` get messages · `0x4900` game-lobby info · `0x4990` game entry info ·
@@ -135,9 +135,10 @@ Potential `FFFFFF60` stalls *if the triggering menu is reached*; grouped by reac
 112/48 split above.)
 
 **Corrections the scan forced:**
-- `0x43c8` (`0xD40CB4`, `{u32, u8}`) — the client's real "start round"; our handler was bound
-  to `0x43ca`, which **has no builder** and is never sent. **Resolved 2026-07-23:** handler
-  renumbered to `0x43c8`/`0x43c9`; `game_round` also populates on create/join now (BACKLOG).
+- `0x43c8` (`0xD40CB4`, `{u32, u8}`) — start round on the 1.36 build, paired `0x43c9`. **This
+  build sends `0x43ca` and parses `0x43cb`**, a second pairing the handler serves as an alias;
+  a live `0x43ca` (previously read as "never sent") proved it. `game_round` also
+  populates on create/join now (BACKLOG).
 - `0x3040` (`u8`) — the 2026-07-26 "has a live builder after all" reading is itself corrected
   [ELF 2026-08-03]: the builder body exists at `0xD37B00` but has zero callers, so the disc
   build cannot send it. The byte's `<= 7` bound and the `0x3103`/`0x3105` kinship stand, and
@@ -146,7 +147,7 @@ Potential `FFFFFF60` stalls *if the triggering menu is reached*; grouped by reac
 
 **Reachable in ordinary flow (priority):** ~~`0x4112`~~, `0x4210`, `0x4220`
 (connect-family write-backs / card) · `0x4348`, `0x4394`, `0x43a6`, `0x43b0`,
-`0x43c8`, `0x43d0`, `0x43e0`, `0x43e2` (in-match / host family). ~~None has surfaced as a
+`0x43c8`/`0x43ca`, `0x43d0`, `0x43e0`, `0x43e2` (in-match / host family). ~~None has surfaced as a
 stall yet~~ — **`0x4112` did, 2026-07-27**: it fired after a player search, and unanswered it
 stalled the screen exactly as its wait slot predicted. It is answered now with a bare `0x4113`
 result; the 32-byte body is still [UNKNOWN]. The rest are gated on actions not exercised.
@@ -288,7 +289,7 @@ emit one of these instead, it never advances → `FFFFFF60`.
 
 | we send | the client parses | verdict |
 | --- | --- | --- |
-| `0x43cb` (start-round reply) | `0x43c9` | **resolved 2026-07-23**: the pair is renumbered to `0x43c8`/`0x43c9` in code. |
+| `0x43cb` (start-round reply) | `0x43c9` | both served: `0x43c8`→`0x43c9` and `0x43ca`→`0x43cb` are this server's two pairings for two client builds. |
 | `0x4140` (skill sets, in the connect burst) | *no parser* | **latent**: client has no `0x4140` parser, so saved skill-set slots may never populate. (`0x4103`/`0x4105`/`0x4107` turned out to be the personal-stats burst, now sent — but the `0x4133` outfit readback is the likelier loadout path; its entry semantics are uncaptured.) Verify against a live character before changing — the burst otherwise works. |
 | `0x4142` (gear sets, in the connect burst) | *no parser* | same as `0x4140` for gear-set slots. |
 | `0x4115` (chat-macro write-back reply) | *no parser* | harmless: `0x4114` is fire-and-forget (observed non-blocking), so the ignored reply costs nothing — but it should not be sent. |

@@ -30,11 +30,12 @@ checkout of the reference beside this one to read its ELF-derived id lists from.
    inventory a reader can count — did not know about. `DisconnectHandler` marks the session
    for teardown (a handler returns nothing, so `TcpSession.DisconnectRequested` is how it
    reaches the read loop) and `KeepAliveHandler` replies through `SessionHelper`.
-2. **Eleven registrations for ids the client never sends are gone**, with the nine handler
+2. **Ten registrations for ids the client never sends are gone**, with the nine handler
    classes behind them: `0x411a`, `0x411b`, `0x4122`, `0x4124`, `0x4125`, `0x4140`–`0x4143`,
-   `0x4350`, `0x43ca`. The pushes they answered for are untouched.
-3. **`0x43ca`/`0x43cb` are deleted**, including the branch in `StartRoundHandler` that chose
-   between them; see §4.3.
+   `0x4350`. The pushes they answered for are untouched.
+3. **`0x43ca`/`0x43cb` were deleted in that pass and restored the same day**: a live `0x43ca`
+   no-handler proved this build's client really sends the alias, so `StartRoundHandler` serves
+   both pairings again; see §4.3.
 4. **Every skill is served at maximum experience.** `CharacterSkillCatalogue` held skills 17,
    20 and 22 at the minimum visible experience on a list inherited from another server with
    no evidence behind it; skill 17 is the one training and graduation gates read, so nothing
@@ -152,7 +153,7 @@ reference logs a warning and replies nothing.
 | `0x43a4` | `HostSkillExperienceHandler` (ack, not stored) | `reportSkillExperience` (stored) |
 | `0x43a6` | `PutClientSettingHandler` (ack, not stored) | `PUT_CLIENT_SETTING` (ack, not stored) |
 | `0x43c0` / `0x43c4` | `HostInGameInfoHandler` / `RateHostHandler` | `editHostSettings` / `rateHost` |
-| `0x43c8` | `StartRoundHandler` | `startRound` — `0x43ca`/`0x43cb` are gone; they were a misnumbering, not a second pairing |
+| `0x43c8` / `0x43ca` | `StartRoundHandler` | `startRound` — two client builds, two pairings: `0x43c8`→`0x43c9`, `0x43ca`→`0x43cb` |
 | `0x43e0` / `0x43e2` | `StartAutomatchHandler` / `CancelAutomatchHandler` | `startAutomatch` / `cancelAutomatch` |
 | `0x4400` | `SendChatHandler` | `sendChat` |
 
@@ -482,12 +483,13 @@ stray `0x4348` gets a hex dump in the log and no reply, and the client genuinely
 and it is deliberate: matching the reference exactly would mean removing the answer to a
 command the client issues.
 
-Two former entries here are gone. `0x43ca` (`StartRoundAlias`) was a **misnumbering** of
-`0x43c8`, kept because "each client build parses one of the two pairings" sounded plausible;
-the ELF has no builder and no parser for `0x43ca` or `0x43cb`, and the reply branch that
-chose between them is deleted with the constants. `0x4350` (`UpdateStatsHandler`) is not in
-the id space either — no builder, no parser, no inbound sighting — so its registration is
-gone; the round statistics it fed arrive through `0x4390` and `0x43a2` as they always did.
+One former entry here is gone. `0x4350` (`UpdateStatsHandler`) is not in the id space —
+no builder, no parser, no inbound sighting — so its registration is gone; the round statistics
+it fed arrive through `0x4390` and `0x43a2` as they always did. `0x43ca` (`StartRoundAlias`)
+was deleted in the same pass, on the same claim, and restored the same day: a live `0x43ca`
+no-handler (2026-09-16) showed the client really sends it, and `StartRoundHandler` again serves
+both pairings — `0x43c8`→`0x43c9` (the 1.36 build) and `0x43ca`→`0x43cb` (this build, waiter
+`0xF0D4C0`), one reply per request.
 
 ### 4.4 A general error for an unhandled opcode (intentional)
 

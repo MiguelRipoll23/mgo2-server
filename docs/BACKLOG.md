@@ -563,7 +563,9 @@ against the live client, so it stays.
 game create and on join (`GameService.createGame`/`addPlayer`), and the start-round handler is
 renumbered to the real `0x43c8`/`0x43c9` pair (`HostGameController.START_ROUND`). The section
 below is kept as history; note a live capture of `0x43c8`'s payload semantics is still worth
-recording in OBSERVED.md when one is next taken.*
+recording in OBSERVED.md when one is next taken. **Corrected 2026-09-16:** a live `0x43ca` —
+this build's own start-round id — proved the renumber was overbroad; the alias (and its `0x43cb`
+reply) are served again alongside `0x43c8`/`0x43c9`.*
 
 *Pinned 2026-07-22 (evening); root cause found same day.* `game_round` is filled by the `0x43ca`
 handler, but this client **never sends `0x43ca`** — the full-binary send-site enumeration
@@ -620,10 +622,11 @@ which value is which from the single `02`=spectator coincidence — capture each
 builders and the inbound dispatchers, see `dev/docs/COMMANDS.md`) exposed reply ids the server
 emits that the client has **no parser for** — it is waiting on a different id. In priority order:
 
-1. **`0x43ca`/`0x43cb` should be `0x43c8`/`0x43c9`.** The client sends `0x43c8` (start round) and
-   parses `0x43c9`; it never sends `0x43ca` nor parses `0x43cb`. Our handler is bound to the
-   wrong id on both halves — same off-by-2 as the `game_round`-never-populates bug. Capture a
-   `0x43c8` live, confirm its `{u32, u8}` payload and the `0x43c9` reply shape, then repoint.
+1. **`0x43ca`/`0x43cb` are a second pairing, not a typo.** The 1.36 client sends `0x43c8`
+   (start round) and parses `0x43c9`; this build sends `0x43ca` and parses `0x43cb` (waiter
+   `0xF0D4C0`). The off-by-2 reading that wanted a single renumber was settled by a live `0x43ca`
+   on 2026-09-16: the handler now serves both pairings, each answered on its own reply id.
+   ~~The stubborn item is closed~~.
 2. **`0x4140` (skill sets) and `0x4142` (gear sets) in the `0x4100` connect burst have no client
    parser.** The client instead parses `0x4103`/`0x4105`/`0x4107` (which we never send). This is
    inherited echo numbering, and it may mean saved skill-set / gear-set slots have never actually

@@ -14,8 +14,9 @@ in-game host-to-peer link, is a disjoint id space and is not listed.
 > never uses that id" — **the wrong side of the wire.** The client is the specification, so an id
 > our server touches which the client neither sends nor parses is a **defect** (misnumbered,
 > invented, or inherited from a reference server targeting another build), not inert leftover code.
-> Reading `0x43CA` as harmless vestige is exactly why start-round stalled; the real id was
-> `0x43C8`. `COMMANDS.md`'s legend was corrected on 2026-07-26 and the two files now agree.
+> Reading `0x43CA` as harmless vestige is exactly why start-round stalled on the 1.36 client,
+> whose real id is `0x43C8`. This build sends `0x43CA` and parses `0x43CB`, so both pairings are
+> served. `COMMANDS.md`'s legend was corrected on 2026-07-26 and the two files now agree.
 >
 > `dead` is used here only with its honest meaning: **code in the ELF that goes nowhere** — an
 > unreachable builder, a stub parser, a dispatcher arm that falls through. That is a fact about the
@@ -65,9 +66,10 @@ truth and does not depend on our server at all.
   positive evidence — name the address and say what makes it a dead end. Establishing which ids
   qualify is outstanding work, listed under [What is not established](#what-is-not-established).
 
-  Two cases that are *not* `dead`: `0x43CA`/`0x43CB` have no builder and no parser anywhere in the
-  ELF, and absence from the binary is not dead code in the binary (they were our misnumbering, now
-  resolved). `0x0001` (echo) has no builder in the lobby packet library yet is plainly in use — it
+  Two cases that are *not* `dead`: `0x43CA`/`0x43CB` were once read as having no builder and no
+  parser anywhere in the ELF, and absence from the binary is not dead code in the binary — they are
+  this build's real start-round pairing, served as an alias of `0x43C8`/`0x43C9`. `0x0001` (echo)
+  has no builder in the lobby packet library yet is plainly in use — it
   lives in the pre-lobby handshake, outside that library's scope.
 
 **our status** — our server's conformance to that.
@@ -510,7 +512,6 @@ precisely the problem. Each is our code emitting or binding an id the client has
 | `0x4140` | **PHANTOM** | skill sets, emitted inside the connect burst. No client parser, so saved skill-set slots may never populate from it. | trace the real path (`0x4133` outfit readback is the likelier one) before changing — the burst otherwise works |
 | `0x4142` | **PHANTOM** | gear sets, same position and same problem as `0x4140`. | as above |
 | `0x4501` / `0x4503` | **PHANTOM** | ADDLIST acks. `HostGameController` records that an exhaustive scan found no parser for either. | verify against `0x4502` and remove |
-| `0x43CA` / `0x43CB` | **MISNUMBERED** *(resolved 2026-07-23)* | our start-round handler was bound to `0x43CA`; the client sends `0x43C8` and parses `0x43C9`. `0x43CA` has no builder anywhere in the ELF. | done — renumbered in code; listed here as the worked example, and because comments in `GameService`/`HostGameController` still mention the old ids |
 
 `0x4442` is the mirror shape and is in the tables above: the client parses it, we only ever emit
 `0x4441`, and whether the `0x4440` team/spectator flow expects both is unresolved.
@@ -585,9 +586,9 @@ Limits of this document, stated so they are not mistaken for findings.
 
   Two ids that would be miscategorised by a careless pass:
 
-  - **`0x43CA` / `0x43CB`** have no builder and no parser anywhere in the ELF. Absence *from* the
-    binary is not dead code *in* the binary — there is nothing there to be dead. They were our
-    misnumbering of `0x43C8`/`0x43C9`, resolved 2026-07-23, and appear only in the defects table.
+  - **`0x43CA` / `0x43CB`** are the start-round pairing of this build — `0x43CA` sends, `0x43CB`
+    parses — served as an alias of `0x43C8`/`0x43C9`. An earlier scan read them as a misnumbering
+    with no builder and no parser; a live `0x43CA` proved that reading wrong.
   - **`0x0001`** (echo) has no builder in the lobby packet library and is plainly in use. It lives
     in the pre-lobby handshake, outside that library's scope, so it has no row here at all. The
     builder scan's completeness claim is scoped to the lobby library and does not extend to it.
