@@ -123,43 +123,37 @@ public sealed class RoundReportService(IDbContextFactory<Mgo2DatabaseContext> co
     {
         await using var context = await CreateContextAsync(cancellationToken);
 
-        var asHost = context.RoundReports
-            .Where(report => report.HostCharacterIdentifier == viewerCharacterIdentifier)
-            .Select(report => new Encounter(
-                report.TargetCharacterIdentifier,
-                report.GameIdentifier,
-                report.CreatedAt,
-                report.LobbySubtype));
-
-        var asTarget = context.RoundReports
-            .Where(report => report.TargetCharacterIdentifier == viewerCharacterIdentifier)
-            .Select(report => new Encounter(
-                report.HostCharacterIdentifier,
-                report.GameIdentifier,
-                report.CreatedAt,
-                report.LobbySubtype));
-
-        var meetings = asHost.Concat(asTarget);
+        // For each report where the viewer is involved, compute the "other"
+        // character: the target when the viewer is the host, and the host when
+        // the viewer is the target.  This avoids a Concat after client
+        // projection, which EF Core cannot translate to SQL.
+        var meetings = context.RoundReports
+            .Where(r => r.HostCharacterIdentifier == viewerCharacterIdentifier ||
+                        r.TargetCharacterIdentifier == viewerCharacterIdentifier)
+            .Select(r => new
+            {
+                OtherCharacterIdentifier =
+                    r.HostCharacterIdentifier == viewerCharacterIdentifier
+                        ? r.TargetCharacterIdentifier
+                        : r.HostCharacterIdentifier,
+                r.CreatedAt,
+                r.LobbySubtype,
+            });
 
         var grouped = await (
             from meeting in meetings
-            join report in context.RoundReports on meeting.GameIdentifier equals report.GameIdentifier
-            join character in context.Characters on meeting.CharacterIdentifier equals character.Identifier
-            where (report.TargetCharacterIdentifier == viewerCharacterIdentifier ||
-                   report.HostCharacterIdentifier == viewerCharacterIdentifier)
-                && meeting.CharacterIdentifier != viewerCharacterIdentifier
-            group new { meeting, report } by new { meeting.CharacterIdentifier, character.Name }
+            where meeting.OtherCharacterIdentifier != viewerCharacterIdentifier
+            join character in context.Characters
+                on meeting.OtherCharacterIdentifier equals character.Identifier
+            group meeting by new { meeting.OtherCharacterIdentifier, character.Name }
             into grouping
-            orderby grouping.Max(row => row.report.CreatedAt) descending
+            orderby grouping.Max(row => row.CreatedAt) descending
             select new
             {
-                grouping.Key.CharacterIdentifier,
+                CharacterIdentifier = grouping.Key.OtherCharacterIdentifier,
                 grouping.Key.Name,
-                LastMet = grouping.Max(row => row.report.CreatedAt),
-                // The highest subtype seen in the room. Taking the subtype of
-                // the most recent encounter instead does not translate, and a
-                // mislabel on a room reused across lobbies is cosmetic.
-                LobbySubtype = grouping.Max(row => row.report.LobbySubtype),
+                LastMet = grouping.Max(row => row.CreatedAt),
+                LobbySubtype = grouping.Max(row => row.LobbySubtype),
             })
             .Take(limit)
             .ToListAsync(cancellationToken);
@@ -240,10 +234,4 @@ public sealed class RoundReportService(IDbContextFactory<Mgo2DatabaseContext> co
         return [.. identifiers.Distinct()];
     }
 
-    /// <summary>One counterpart character seen in a room.</summary>
-    /// <param name="CharacterIdentifier">Identifier of the counterpart.</param>
-    /// <param name="GameIdentifier">Room the encounter happened in.</param>
-    /// <param name="CreatedAt">Timestamp of the report.</param>
-    /// <param name="LobbySubtype">Game type of the lobby.</param>
-    private sealed record Encounter(int CharacterIdentifier, int GameIdentifier, DateTime CreatedAt, short LobbySubtype);
 }
