@@ -22,35 +22,7 @@ Windows:
 irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/install-windows.ps1 | iex
 ```
 
-The uninstall scripts remove everything the install put in place: every
-container, image, volume and network of the deployment, and the configuration
-(`.env`, and the whole downloaded deployment directory when a piped script
-installed it). They ask before removing anything; `--yes` (Linux/macOS),
-`-Yes` (Windows) or `MGO2_ASSUME_YES=1` answers for you. Docker itself is not
-removed.
-
-Linux and macOS:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/uninstall-linux-macos.sh | bash -s -- --yes
-```
-
-Windows:
-
-```powershell
-irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/uninstall-windows.ps1 | iex
-```
-
 Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to your private IP (the value of `ADVERTISED_ADDRESS`).
-
-The port-check responder answers on 3478/udp and 3479/udp and names
-`ADVERTISED_ADDRESS` in its answers, the address the console dials, so like the name
-server it does not have to own that address: the published ports hand the datagrams
-over and on Linux they also carry the console's own address and port through
-unchanged, which is what it is told it appears as. The second address is the one
-thing the port mapping cannot carry, because a reply leaving the container leaves
-from the host's primary address; `STUN_SECONDARY_ADDRESS` in `.env.example` needs
-`network_mode: host` on that one service, or the responder run outside Docker.
 
 ### Project layout
 
@@ -74,7 +46,7 @@ src/
 ├── GameplayServer/
 ├── Http/
 ├── Dns/
-└── Stun/                # Port-check responder (STUN)
+└── Stun/
 ```
 
 ### Container images
