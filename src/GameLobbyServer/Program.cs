@@ -5,6 +5,7 @@ using Mgo2Server.GameLobbyServer.Coordination;
 using Mgo2Server.GameLobbyServer.Maintenance;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Domain.News;
+using Mgo2Server.Shared.Configuration;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +15,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Configuration.AddDeploymentJsonFile();
 
 builder.Logging.AddServerLogging(builder.Configuration);
 

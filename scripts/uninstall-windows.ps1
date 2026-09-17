@@ -5,7 +5,7 @@
 .DESCRIPTION
     Removes every container, image, volume and network of the mgo2 compose
     project, and the configuration that came with it (appsettings.json,
-    deployment.env, and the whole downloaded deployment directory when the
+    deployment.json, and the whole downloaded deployment directory when the
     deployment was installed with a piped script).
 
     The script asks for confirmation before it removes anything. -Yes (or
@@ -15,7 +15,7 @@
     The script targets the directory the install script used: the machine-wide
     %ProgramData%\mgo2 of an elevated run, or the %LOCALAPPDATA%\mgo2 of a user
     run otherwise. That directory, with compose.yaml, appsettings.example.json,
-    appsettings.json and deployment.env in it, is removed entirely; the source
+    appsettings.json and deployment.json in it, is removed entirely; the source
     tree of a clone is never touched.
 
 .PARAMETER Yes

@@ -26,7 +26,7 @@ Windows:
 irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/install-windows.ps1 | iex
 ```
 
-Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to your private IP (the value of `ADVERTISED_ADDRESS` in `deployment.env`).
+Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to your private IP (the value of `ADVERTISED_ADDRESS` in `deployment.json`).
 
 The install scripts download the deployment into a platform default directory
 (`/opt/mgo2` for a root run on Linux, `~/.local/share/mgo2` on Linux or
@@ -102,9 +102,10 @@ file: the install scripts create it from the example on the first run and never
 write it again, so edits survive every update and are applied by restarting the
 container. The two settings that belong to the deployment rather than to the
 servers, a random `JWT_SECRET` and the detected `ADVERTISED_ADDRESS`, live in a
-`deployment.env` next to it, which the container entrypoint loads into the
-environment on every start; the environment overrides a file value there too,
-so an edit of either file is applied the same way. The per-container identity
+`deployment.json` next to it, which every server reads after its own sources:
+a value there beats `appsettings.json` and a real environment variable still
+beats the file, and an edit of either file is applied by restarting the
+container. The per-container identity
 (the `LOBBY_*` and `GAMEPLAY_SERVER_*` blocks) stays in `compose.yaml`, where a
 change needs `up -d` to recreate the containers instead of a restart.
 

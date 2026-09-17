@@ -1,6 +1,7 @@
 using Mgo2Server.GateLobbyServer;
 using Mgo2Server.GateLobbyServer.Commands;
 using Mgo2Server.Infrastructure.DependencyInjection;
+using Mgo2Server.Shared.Configuration;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,6 +10,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Configuration.AddDeploymentJsonFile();
 
 builder.Logging.AddServerLogging(builder.Configuration);
 

@@ -24,15 +24,15 @@
 # keeps the edits. The
 # two settings that belong to the deployment rather than to the servers, the
 # JWT secret and the private address of this machine, are written into
-# deployment.env instead, which the container entrypoint loads into the
-# environment on every start; the environment overrides appsettings.json, so an
-# edit of either file is applied by restarting the container. The secret is
-# written once, the address is detected again on every run so an update follows
-# a machine that changed networks, and ADVERTISED_ADDRESS skips the detection.
+# deployment.json instead, which every server reads after the appsettings.json
+# it also mounts; an edit of either file is applied by restarting the
+# container. The secret is written once, the address is detected again on
+# every run so an update follows a machine that changed networks, and
+# ADVERTISED_ADDRESS skips the detection.
 #
 # The deployment directory holds compose.yaml, appsettings.json and
-# deployment.env next to each other, because the compose file mounts
-# ./appsettings.json and reads deployment.env from it: the directory is the
+# deployment.json next to each other, because the compose file mounts
+# ./appsettings.json and ./deployment.json: the directory is the
 # deployment. Running as root installs the machine-wide one, /opt/mgo2; running
 # as a user installs the user one, ~/.local/share/mgo2 on Linux and
 # ~/Library/Application Support/mgo2 on macOS.
@@ -54,11 +54,11 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
                    ghcr.io/your-account/your-repository/
 
   The script detects the private address of this machine on every run and
-  writes ADVERTISED_ADDRESS into deployment.env, which compose feeds to every
+  writes ADVERTISED_ADDRESS into deployment.json, which every server reads
   container as an environment variable. Setting ADVERTISED_ADDRESS answers
   without detection.
 
-  The secret of the deployment, JWT_SECRET, is written into deployment.env
+  The secret of the deployment, JWT_SECRET, is written into deployment.json
   once, on the first install. The shared settings of the servers live in
   appsettings.json, created from appsettings.example.json on the first run and
   never written by this script: the servers log at Warning and always send
@@ -173,19 +173,29 @@ resolve_advertised_ip() {
     detect_private_ipv4
 }
 
-# Sets KEY=VALUE in a dotenv file, replacing the line of the key or appending it
-# at the end, and leaves every other line alone. The values written here are a
-# base64 secret and a dotted address, neither of which collides with the |
-# delimiter or the & of the replacement.
-set_env_value() {
+# Sets "KEY": "VALUE" in the flat deployment.json, replacing the value of the
+# key or inserting it before the closing brace, and leaves every other line
+# alone. The values written here are a base64 secret and a dotted address,
+# neither of which collides with the | delimiter or carries a quote.
+set_json_value() {
     local key="$1" value="$2" file="$3"
 
-    if grep -q "^${key}=" "$file" 2>/dev/null; then
-        sed -i.bak "s|^${key}=.*|${key}=${value}|" "$file"
-        rm -f "${file}.bak"
+    if grep -q "\"${key}\":" "$file" 2>/dev/null; then
+        sed -i.bak "s|\"${key}\": \"[^\"]*\"|\"${key}\": \"${value}\"|" "$file"
     else
-        printf '%s=%s\n' "$key" "$value" >> "$file"
+        # Inserts the setting before the closing brace, with the comma the
+        # brace takes away.
+        awk -v line="  \"${key}\": \"${value}\"," '
+            BEGIN { inserted = 0 }
+            /^}[[:space:]]*$/ && !inserted { print line; inserted = 1 }
+            { print }
+        ' "$file" > "${file}.tmp"
+        mv "${file}.tmp" "$file"
     fi
+
+    # The file carries the secret of the deployment, so it is readable by its
+    # owner only, whatever the umask of the run was.
+    chmod 600 "$file"
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
@@ -261,20 +271,21 @@ if [ ! -f appsettings.json ]; then
 fi
 
 # The secret of the deployment is written once, on the first install.
-if [ ! -f deployment.env ]; then
-    printf 'JWT_SECRET=%s\n' "$(openssl rand -base64 48)" > deployment.env
-    echo "Created deployment.env with a random JWT_SECRET. Review it before exposing the deployment."
+if [ ! -f deployment.json ]; then
+    printf '{\n  "JWT_SECRET": "%s"\n}\n' "$(openssl rand -base64 48)" > deployment.json
+    chmod 600 deployment.json
+    echo "Created deployment.json with a random JWT_SECRET. Review it before exposing the deployment."
 fi
 
 # The address clients are told to connect to is detected again on every run, so
 # an update follows a machine that changed networks. An operator who needs a
-# fixed one sets ADVERTISED_ADDRESS in deployment.env (or in the environment,
+# fixed one sets ADVERTISED_ADDRESS in deployment.json (or in the environment,
 # which answers without detection for this run only).
 resolved_advertised_ip="$(resolve_advertised_ip)"
 if [ -n "$resolved_advertised_ip" ]; then
-    set_env_value ADVERTISED_ADDRESS "$resolved_advertised_ip" deployment.env
+    set_json_value ADVERTISED_ADDRESS "$resolved_advertised_ip" deployment.json
 else
-    echo 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in deployment.env' >&2
+    echo 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in deployment.json' >&2
 fi
 
 image_prefix="$(normalise_prefix "${1:-${MGO2_IMAGE_PREFIX:-}}")"
@@ -311,7 +322,7 @@ fi
 
 echo
 echo "Installed ${running} containers."
-echo "Config: ${project_directory}/appsettings.json and ${project_directory}/deployment.env"
+echo "Config: ${project_directory}/appsettings.json and ${project_directory}/deployment.json"
 if [ -n "$resolved_advertised_ip" ]; then
     echo "To create an account, go to http://${resolved_advertised_ip}"
 fi

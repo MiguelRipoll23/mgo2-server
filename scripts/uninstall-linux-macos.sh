@@ -2,7 +2,7 @@
 #
 # Removes the whole deployment the install scripts put in place: every
 # container, image, volume and network of the mgo2 compose project, and the
-# configuration that came with it (appsettings.json, deployment.env, and the
+# configuration that came with it (appsettings.json, deployment.json, and the
 # whole downloaded deployment directory when the deployment was installed with
 # a piped script).
 #
@@ -20,7 +20,7 @@
 # The script targets the directory the install script used: the machine-wide
 # /opt/mgo2 of a root run, or the user one of the invoking (or sudo) user. That
 # directory, with compose.yaml, appsettings.example.json, appsettings.json and
-# deployment.env in it, is removed entirely; the source tree of a clone is
+# deployment.json in it, is removed entirely; the source tree of a clone is
 # never touched.
 
 set -euo pipefail
@@ -77,7 +77,7 @@ usage: scripts/uninstall-linux-macos.sh [--yes]
 
   --yes  skip the confirmation; MGO2_ASSUME_YES=1 does the same  Removes every container, image, volume and network the deployment created,
   and the deployment directory that came with it (compose.yaml,
-  appsettings.example.json, appsettings.json and deployment.env). Docker
+  appsettings.example.json, appsettings.json and deployment.json). Docker
   itself is not removed.
 TEXT
 }

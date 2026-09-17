@@ -20,16 +20,15 @@
     and never touched again: the operator edits it and an update keeps the
     edits. The two settings that belong to the deployment rather than to the
     servers, the JWT secret and the private address of this machine, are written
-    into deployment.env instead, which the container entrypoint loads into the
-    environment on every start; the environment overrides appsettings.json, so
-    an edit of either file is applied by restarting the container. The secret is
-    written once, the address is detected again on every run so an update
-    follows a machine that changed networks, and ADVERTISED_ADDRESS skips the
-    detection.
+    into deployment.json instead, which every server reads after the
+    appsettings.json it also mounts; an edit of either file is applied by
+    restarting the container. The secret is written once, the address is
+    detected again on every run so an update follows a machine that changed
+    networks, and ADVERTISED_ADDRESS skips the detection.
 
     The deployment directory holds compose.yaml, appsettings.json and
-    deployment.env next to each other, because the compose file mounts
-    .\appsettings.json and reads deployment.env from it: the directory is the
+    deployment.json next to each other, because the compose file mounts
+    .\appsettings.json and .\deployment.json: the directory is the
     deployment.
 
 .PARAMETER ImagePrefix
@@ -139,25 +138,22 @@ function Resolve-AdvertisedIP {
     return Get-PrivateIPv4
 }
 
-# Sets KEY=VALUE in a dotenv file, replacing the line of the key or appending it
-# at the end, and leaves every other line alone. The values written here are a
-# base64 secret and a dotted address, neither of which carries a newline.
-function Set-EnvValue([string]$Key, [string]$Value, [string]$File) {
-    $lines = [System.Collections.Generic.List[string]]::new()
+# Sets "KEY": "VALUE" in the flat deployment.json, replacing the value of the
+# key or inserting it before the closing brace, and leaves every other setting
+# alone. The file is parsed and rewritten with the JSON of the framework, so a
+# malformed file stops the run instead of being quietly repaired.
+function Set-JsonSetting([string]$Key, [string]$Value, [string]$File) {
+    $settings = [ordered]@{}
     if (Test-Path $File) {
-        $lines.AddRange([string[]](Get-Content -Path $File))
-    }
-
-    for ($index = 0; $index -lt $lines.Count; $index++) {
-        if ($lines[$index] -match "^$([regex]::Escape($Key))=") {
-            $lines[$index] = "$Key=$Value"
-            [IO.File]::WriteAllLines($File, $lines, [Text.UTF8Encoding]::new($false))
-            return
+        foreach ($property in (Get-Content -Raw -Path $File | ConvertFrom-Json).PSObject.Properties) {
+            $settings[$property.Name] = $property.Value
         }
     }
 
-    $lines.Add("$Key=$Value")
-    [IO.File]::WriteAllLines($File, $lines, [Text.UTF8Encoding]::new($false))
+    $settings[$Key] = $Value
+
+    $json = ConvertTo-Json -InputObject $settings
+    [IO.File]::WriteAllText($File, $json, [Text.UTF8Encoding]::new($false))
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
@@ -230,23 +226,25 @@ try {
         Write-Host 'Created appsettings.json from appsettings.example.json.'
     }
 
-    # The secret of the deployment is written once, on the first install.
-    if (-not (Test-Path 'deployment.env')) {
-        $jwtSecret = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
-        [IO.File]::WriteAllText("$PWD/deployment.env", "JWT_SECRET=$jwtSecret`n")
-        Write-Host 'Created deployment.env with a random JWT_SECRET. Review it before exposing the deployment.'
+    # The secret of the deployment is written once, on the first install, from
+    # a cryptographic random generator rather than the module one.
+    if (-not (Test-Path 'deployment.json')) {
+        $secretBytes = [byte[]]::new(48)
+        [Security.Cryptography.RandomNumberGenerator]::Fill($secretBytes)
+        Set-JsonSetting 'JWT_SECRET' ([Convert]::ToBase64String($secretBytes)) "$PWD/deployment.json"
+        Write-Host 'Created deployment.json with a random JWT_SECRET. Review it before exposing the deployment.'
     }
 
     # The address clients are told to connect to is detected again on every run,
     # so an update follows a machine that changed networks. An operator who
-    # needs a fixed one sets ADVERTISED_ADDRESS in deployment.env (or in the
+    # needs a fixed one sets ADVERTISED_ADDRESS in deployment.json (or in the
     # environment, which answers without detection for this run only).
     $resolvedAdvertisedIp = Resolve-AdvertisedIP
     if (-not [string]::IsNullOrWhiteSpace($resolvedAdvertisedIp)) {
-        Set-EnvValue 'ADVERTISED_ADDRESS' $resolvedAdvertisedIp "$PWD/deployment.env"
+        Set-JsonSetting 'ADVERTISED_ADDRESS' $resolvedAdvertisedIp "$PWD/deployment.json"
     }
     else {
-        Write-Host 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in deployment.env' -ForegroundColor Yellow
+        Write-Host 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in deployment.json' -ForegroundColor Yellow
     }
 
     if ([string]::IsNullOrWhiteSpace($ImagePrefix)) {
@@ -289,7 +287,7 @@ try {
 
     Write-Host ''
     Write-Host "Installed $running containers."
-    Write-Host "Config: $(Join-Path $PWD 'appsettings.json') and $(Join-Path $PWD 'deployment.env')"
+    Write-Host "Config: $(Join-Path $PWD 'appsettings.json') and $(Join-Path $PWD 'deployment.json')"
     if (-not [string]::IsNullOrWhiteSpace($resolvedAdvertisedIp)) {
         Write-Host "To create an account, go to http://$resolvedAdvertisedIp"
     }

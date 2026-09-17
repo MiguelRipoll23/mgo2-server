@@ -9,6 +9,7 @@ using Mgo2Server.Http.Middleware;
 using Mgo2Server.Http.Options;
 using Mgo2Server.Http.Services;
 using Mgo2Server.Infrastructure.DependencyInjection;
+using Mgo2Server.Shared.Configuration;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Telemetry;
 using Microsoft.AspNetCore.Authentication;
@@ -18,6 +19,8 @@ using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Configuration.AddDeploymentJsonFile();
 
 builder.Logging.AddServerLogging(builder.Configuration);
 

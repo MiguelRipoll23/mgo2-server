@@ -6,9 +6,9 @@
 #     docker compose -f compose.dev.yaml up --build     # build and start
 #     docker compose -f compose.dev.yaml down           # stop, keep images
 #
-# The deployment.env the install scripts write is optional here: the entrypoint
-# the images carry loads it when a deployment directory mounts it, and a clone
-# without one simply runs on the defaults of appsettings.json.
+# The deployment.json the install scripts write is optional here: every server
+# adds it to its configuration when a deployment directory mounts it, and a
+# clone without one simply runs on the defaults of appsettings.json.
 #
 # The images are tagged :dev without a registry prefix, so nothing is pushed or
 # pulled and the published images of compose.yaml are not touched. The stack
