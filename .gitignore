@@ -1,4 +1,7 @@
 appsettings.json
+# The dotenv of a deployment directory the install scripts create, which holds
+# the JWT secret. It is written next to compose.yaml, outside any clone.
+deployment.env
 bin/
 obj/
 

@@ -2,8 +2,9 @@
 #
 # Removes the whole deployment the install scripts put in place: every
 # container, image, volume and network of the mgo2 compose project, and the
-# configuration that came with it (appsettings.json, and the whole downloaded
-# deployment directory when the deployment was installed with a piped script).
+# configuration that came with it (appsettings.json, deployment.env, and the
+# whole downloaded deployment directory when the deployment was installed with
+# a piped script).
 #
 # Linux and macOS. Windows runs scripts/uninstall-windows.ps1 instead.
 #
@@ -16,11 +17,11 @@
 # MGO2_ASSUME_YES=1) answers the question without a prompt, which a run without
 # a terminal needs. Docker itself is never removed.
 #
-# When the script is started from a clone of the repository it never removes the
-# source tree: the repository and everything else in it stay, and only
-# appsettings.json and the Docker resources go. A deployment directory a piped
-# install downloaded (compose.yaml, appsettings.example.json and
-# appsettings.json) is removed entirely.
+# The script targets the directory the install script used: the machine-wide
+# /opt/mgo2 of a root run, or the user one of the invoking (or sudo) user. That
+# directory, with compose.yaml, appsettings.example.json, appsettings.json and
+# deployment.env in it, is removed entirely; the source tree of a clone is
+# never touched.
 
 set -euo pipefail
 
@@ -74,14 +75,10 @@ usage() {
     cat <<'TEXT'
 usage: scripts/uninstall-linux-macos.sh [--yes]
 
-  --yes  skip the confirmation; MGO2_ASSUME_YES=1 does the same
-
-  Removes every container, image, volume and network the deployment created,
-  and the configuration that came with it. Started from a clone, only
-  appsettings.json of the repository and the Docker resources are removed;
-  started from a downloaded deployment, the whole deployment directory
-  (compose.yaml, appsettings.example.json and appsettings.json) is removed.
-  Docker itself is not removed.
+  --yes  skip the confirmation; MGO2_ASSUME_YES=1 does the same  Removes every container, image, volume and network the deployment created,
+  and the deployment directory that came with it (compose.yaml,
+  appsettings.example.json, appsettings.json and deployment.env). Docker
+  itself is not removed.
 TEXT
 }
 
@@ -222,61 +219,39 @@ if ! docker compose version >/dev/null 2>&1; then
     exit 1
 fi
 
-# A script started from disk next to a compose file runs against that clone; a
-# piped script (curl ... | bash) targets the downloaded deployment instead, the
-# same way the install scripts choose where they act.
-script_path="${BASH_SOURCE[0]:-}"
-script_directory=""
-if [ -n "${script_path}" ] && [ -f "${script_path}" ]; then
-    script_directory="$(cd "$(dirname "${script_path}")" && pwd)"
-fi
+# The deployment is where the install script puts it: the machine-wide
+# directory of a root run, or the user one otherwise. A directory an install
+# run with sudo wrote is the user one of the user behind sudo, so that one is
+# checked before giving up on the machine-wide one.
+case "$(uname -s 2>/dev/null || true)" in
+    Darwin)
+        user_directory="${HOME}/Library/Application Support/mgo2"
+        ;;
+    *)
+        user_directory="${HOME}/.local/share/mgo2"
+        ;;
+esac
 
-if [ -n "${script_directory}" ] && [ -f "${script_directory}/../compose.yaml" ]; then
-    project_directory="$(cd "${script_directory}/.." && pwd)"
-elif [ -f "${PWD}/compose.yaml" ]; then
-    project_directory="${PWD}"
-else
-    case "$(uname -s 2>/dev/null || true)" in
-        Darwin)
-            user_directory="${HOME}/Library/Application Support/mgo2"
-            ;;
-        *)
-            user_directory="${HOME}/.local/share/mgo2"
-            ;;
-    esac
+if [ "$(id -u)" = '0' ]; then
+    project_directory="${root_deployment_directory}"
 
-    if [ "$(id -u)" = '0' ]; then
-        project_directory="${root_deployment_directory}"
-
-        # An install run with sudo wrote the user directory of the user behind
-        # sudo, so that one is checked before giving up on the machine-wide one.
-        if [ ! -d "${project_directory}" ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != 'root' ]; then
-            sudo_home="$(su -s /bin/sh -c 'printf %s "$HOME"' "${SUDO_USER}" 2>/dev/null || true)"
-            case "$(uname -s 2>/dev/null || true)" in
-                Darwin) sudo_directory="${sudo_home}/Library/Application Support/mgo2" ;;
-                *) sudo_directory="${sudo_home}/.local/share/mgo2" ;;
-            esac
-            if [ -n "${sudo_home}" ] && [ -d "${sudo_directory}" ]; then
-                project_directory="${sudo_directory}"
-            fi
+    if [ ! -d "${project_directory}" ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != 'root' ]; then
+        sudo_home="$(su -s /bin/sh -c 'printf %s "$HOME"' "${SUDO_USER}" 2>/dev/null || true)"
+        case "$(uname -s 2>/dev/null || true)" in
+            Darwin) sudo_directory="${sudo_home}/Library/Application Support/mgo2" ;;
+            *) sudo_directory="${sudo_home}/.local/share/mgo2" ;;
+        esac
+        if [ -n "${sudo_home}" ] && [ -d "${sudo_directory}" ]; then
+            project_directory="${sudo_directory}"
         fi
-    else
-        project_directory="${user_directory}"
     fi
+else
+    project_directory="${user_directory}"
 fi
 
 project_present=false
 if [ -d "${project_directory}" ]; then
     project_present=true
-fi
-
-# A repository checkout keeps everything but appsettings.json; a downloaded
-# deployment is removed in full.
-repository_checkout=false
-if [ "${project_present}" = "true" ] &&
-    { [ -d "${project_directory}/.git" ] ||
-        [ -f "${project_directory}/scripts/install-linux-macos.sh" ]; }; then
-    repository_checkout=true
 fi
 
 if [ "${accepted}" != "true" ] && [ -n "${MGO2_ASSUME_YES:-}" ]; then
@@ -294,11 +269,7 @@ if [ "${accepted}" != "true" ]; then
         exit 1
     fi
 
-    if [ "${repository_checkout}" = "true" ]; then
-        description="${project_directory}/appsettings.json"
-    else
-        description="the deployment directory ${project_directory}"
-    fi
+    description="the deployment directory ${project_directory}"
 
     echo
     echo "This removes every container, image, volume and network of the mgo2 deployment, and ${description}."
@@ -335,13 +306,6 @@ remove_stale_images
 echo
 if [ "${project_present}" = "false" ]; then
     echo "Nothing to remove on disk: ${project_directory} does not exist."
-elif [ "${repository_checkout}" = "true" ]; then
-    if [ -f appsettings.json ]; then
-        rm -f appsettings.json
-        echo "Removed ${project_directory}/appsettings.json"
-    else
-        echo "No appsettings.json config to remove in ${project_directory}"
-    fi
 else
     remove_deployment_directory "${project_directory}"
 fi

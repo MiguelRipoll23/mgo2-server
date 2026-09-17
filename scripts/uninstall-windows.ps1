@@ -4,19 +4,19 @@
 
 .DESCRIPTION
     Removes every container, image, volume and network of the mgo2 compose
-    project, and the configuration that came with it (appsettings.json, and the
-    whole downloaded deployment directory when the deployment was installed with
-    a piped script).
+    project, and the configuration that came with it (appsettings.json,
+    deployment.env, and the whole downloaded deployment directory when the
+    deployment was installed with a piped script).
 
     The script asks for confirmation before it removes anything. -Yes (or
     MGO2_ASSUME_YES=1) answers the question without a prompt, which a run
     without a terminal needs. Docker itself is never removed.
 
-    When the script is started from a clone of the repository it never removes
-    the source tree: the repository and everything else in it stay, and only
-    appsettings.json and the Docker resources go. A deployment directory a piped
-    install downloaded (compose.yaml, appsettings.example.json and
-    appsettings.json) is removed entirely.
+    The script targets the directory the install script used: the machine-wide
+    %ProgramData%\mgo2 of an elevated run, or the %LOCALAPPDATA%\mgo2 of a user
+    run otherwise. That directory, with compose.yaml, appsettings.example.json,
+    appsettings.json and deployment.env in it, is removed entirely; the source
+    tree of a clone is never touched.
 
 .PARAMETER Yes
     Skips the confirmation prompt.
@@ -42,11 +42,10 @@ $programData = if ($env:ProgramData) { $env:ProgramData } else { 'C:\ProgramData
 $MachineWideDeploymentDirectory = Join-Path $programData $DeploymentDirectoryName
 $ComposeProjectName = 'mgo2'
 
-# Reports the deployment directory of a run that is not started from a clone or
-# from the deployment itself: the machine-wide one of %ProgramData%\mgo2 for an
-# elevated run, and the user one of %LOCALAPPDATA%\mgo2 otherwise. It reads the
-# same defaults the install script wrote, so an uninstall finds the deployment
-# an install left behind.
+# Reports the deployment directory every uninstall run targets: the machine-wide
+# one of %ProgramData%\mgo2 for an elevated run, and the user one of
+# %LOCALAPPDATA%\mgo2 otherwise. It reads the same defaults the install script
+# wrote, so an uninstall finds the deployment an install left behind.
 function Get-DefaultDeploymentDirectory {
     $elevated = $false
     try {
@@ -139,13 +138,6 @@ function Get-DockerResult([string[]]$Arguments) {
     return @($output)
 }
 
-# Answers true when the directory is a repository checkout, which is where a
-# clone of this repository can be told apart from a downloaded deployment.
-function Test-RepositoryCheckout([string]$Path) {
-    return (Test-Path (Join-Path $Path '.git')) -or
-           (Test-Path (Join-Path $Path 'scripts\install-windows.ps1'))
-}
-
 # Removes a downloaded deployment directory, but only when it actually holds the
 # deployment and is neither the filesystem root nor the home directory.
 function Remove-DeploymentDirectory([string]$Directory) {
@@ -185,25 +177,11 @@ if ($LASTEXITCODE -ne 0) {
     throw 'the docker compose plugin was not found; it ships with Docker Desktop'
 }
 
-# A script started from disk next to a compose file runs against that clone; a
-# piped script (irm ... | iex) targets the downloaded deployment instead, the
-# same way the install scripts choose where they act.
-if ($PSScriptRoot -and (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'compose.yaml'))) {
-    $projectDirectory = Split-Path -Parent $PSScriptRoot
-} elseif (Test-Path (Join-Path $PWD.Path 'compose.yaml')) {
-    $projectDirectory = $PWD.Path
-} else {
-    $projectDirectory = Get-DefaultDeploymentDirectory
-}
+# The deployment is where the install script puts it, the same directory the
+# install run resolved.
+$projectDirectory = Get-DefaultDeploymentDirectory
 
 $projectPresent = Test-Path -LiteralPath $projectDirectory
-
-# A repository checkout keeps everything but appsettings.json; a downloaded
-# deployment is removed in full.
-$repositoryCheckout = $false
-if ($projectPresent) {
-    $repositoryCheckout = Test-RepositoryCheckout $projectDirectory
-}
 
 $accepted = [bool]$Yes
 if (-not $accepted -and $env:MGO2_ASSUME_YES) {
@@ -221,7 +199,7 @@ if (-not $accepted) {
         exit 1
     }
 
-    $description = if ($repositoryCheckout) { (Join-Path $projectDirectory 'appsettings.json') } else { "the deployment directory $projectDirectory" }
+    $description = "the deployment directory $projectDirectory"
 
     Write-Host ''
     Write-Host "This removes every container, image, volume and network of the mgo2 deployment, and $description."
@@ -293,16 +271,6 @@ Invoke-BestEffort @('image', 'prune', '--force')
 Write-Host ''
 if (-not $projectPresent) {
     Write-Host "Nothing to remove on disk: $projectDirectory does not exist."
-}
-elseif ($repositoryCheckout) {
-    $appsettingsFile = Join-Path $projectDirectory 'appsettings.json'
-    if (Test-Path -LiteralPath $appsettingsFile) {
-        Remove-Item -LiteralPath $appsettingsFile -Force
-        Write-Host "Removed $appsettingsFile"
-    }
-    else {
-        Write-Host "No appsettings.json config to remove in $projectDirectory"
-    }
 }
 else {
     Remove-DeploymentDirectory $projectDirectory

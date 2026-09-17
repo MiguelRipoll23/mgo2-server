@@ -26,7 +26,7 @@ Windows:
 irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/install-windows.ps1 | iex
 ```
 
-Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to your private IP (the value of `ADVERTISED_ADDRESS`).
+Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to your private IP (the value of `ADVERTISED_ADDRESS` in `deployment.env`).
 
 The install scripts download the deployment into a platform default directory
 (`/opt/mgo2` for a root run on Linux, `~/.local/share/mgo2` on Linux or
@@ -98,10 +98,14 @@ the build step of every image, tagging them `:dev` locally.
 The servers read their shared settings from an `appsettings.json` baked into each
 image from `appsettings.example.json`. A deployment mounts its own
 `appsettings.json` over the baked one, read-only, so the settings live in one
-file; the install scripts create it from the example on the first run and write
-`ADVERTISED_ADDRESS`, `OTEL_ENABLED` and a random `JWT_SECRET` into it. An environment variable of the same upper-case name still overrides a file
-value, and the per-container identity (the `LOBBY_*` and `GAMEPLAY_SERVER_*`
-blocks) stays in `compose.yaml`.
+file: the install scripts create it from the example on the first run and never
+write it again, so edits survive every update. The two settings that belong to
+the deployment rather than to the servers, a random `JWT_SECRET` and the
+detected `ADVERTISED_ADDRESS`, live in a `deployment.env` next to it, which
+compose feeds to every container as environment variables; an environment
+variable of the same upper-case name still overrides a file value, and the
+per-container identity (the `LOBBY_*` and `GAMEPLAY_SERVER_*` blocks) stays in
+`compose.yaml`.
 
 ## Development
 

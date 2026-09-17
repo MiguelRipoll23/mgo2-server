@@ -13,23 +13,23 @@
     changed and removes old dangling images, so a new release is one command
     away.
 
-    The script runs against a clone when it is started from one; otherwise it
-    creates a deployment directory in a platform default (%ProgramData%\mgo2 for
+    The script installs the deployment into a platform default (%ProgramData%\mgo2 for
     an elevated run, %LOCALAPPDATA%\mgo2 otherwise) and downloads
-    compose.yaml and appsettings.example.json into it. Everything else is
-    configured in appsettings.json, which is created from appsettings.example.json
-    on the first run with a random JWT_SECRET and never overwritten afterwards,
-    except for ADVERTISED_ADDRESS: the script detects the private address of this
-    machine and writes it there so clients on the network can reach the published
-    ports.
+    compose.yaml and appsettings.example.json into it. The shared settings of
+    the servers live in appsettings.json, which is created from the example once
+    and never touched again: the operator edits it and an update keeps the
+    edits. The two settings that belong to the deployment rather than to the
+    servers, the JWT secret and the private address of this machine, are written
+    into deployment.env instead, which compose feeds to every container as
+    environment variables; the environment overrides appsettings.json. The
+    secret is written once, the address is detected again on every run so an
+    update follows a machine that changed networks, and ADVERTISED_ADDRESS skips
+    the detection.
 
-    Set ADVERTISED_ADDRESS to skip detection. The deployment directory holds
-    compose.yaml and appsettings.json next to each other, because the compose
-    file mounts .\appsettings.json into the containers: the directory is the
-    deployment. The servers log at Warning and always send their metrics over
-    gRPC to the collector, whose port OTEL_PORT of appsettings.json carries: the
-    collector itself is the operator's change, and nothing of it is touched or
-    checked here.
+    The deployment directory holds compose.yaml, appsettings.json and
+    deployment.env next to each other, because the compose file mounts
+    .\appsettings.json and reads deployment.env from it: the directory is the
+    deployment.
 
 .PARAMETER ImagePrefix
     Registry path the images are pulled from, including the trailing slash, for
@@ -53,17 +53,16 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Where a deployment that is not run from a clone comes from, and the registry
-# the CI workflow publishes the images to.
+# The source of the deployment files, and the registry the CI workflow
+# publishes the images to.
 $DefaultSourceUrl = 'https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main'
 $DefaultImagePrefix = 'ghcr.io/miguelripoll23/mgo2-server/'
 $DeploymentDirectoryName = 'mgo2'
 
-# Reports the deployment directory a run that is not started from a clone
-# installs into: the machine-wide one of %ProgramData%\mgo2 for an elevated
-# run, and the user one of %LOCALAPPDATA%\mgo2 otherwise. A piped run of a
-# non-elevated terminal keeps the user directory, so updating needs no
-# elevation either.
+# Reports the deployment directory every run installs into: the machine-wide
+# one of %ProgramData%\mgo2 for an elevated run, and the user one of
+# %LOCALAPPDATA%\mgo2 otherwise. A piped run of a non-elevated terminal keeps
+# the user directory, so updating needs no elevation either.
 function Get-DefaultDeploymentDirectory {
     $userProfile = if ($env:USERPROFILE) { $env:USERPROFILE } else { 'C:\Users\Public' }
 
@@ -85,29 +84,6 @@ function Get-DefaultDeploymentDirectory {
 
     $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $userProfile 'AppData\Local' }
     return Join-Path $localAppData $DeploymentDirectoryName
-}
-
-# Prints the value of a setting of appsettings.json, or nothing when it is not
-# set. A quoted string and a bare number or boolean are both read; a quoted
-# value comes back without the surrounding quotes.
-function Read-JsonValue([string]$Name, [string]$ProjectDirectory) {
-    $settingsFile = Join-Path $ProjectDirectory 'appsettings.json'
-    if (-not (Test-Path $settingsFile)) {
-        return ''
-    }
-
-    $pattern = '"' + [regex]::Escape($Name) + '":\s*(.*?),?\s*$'
-    $match = Select-String -Path $settingsFile -Pattern $pattern | Select-Object -Last 1
-    if ($null -eq $match) {
-        return ''
-    }
-
-    $value = $match.Matches[0].Groups[1].Value.Trim()
-    if ($value.StartsWith('"') -and $value.EndsWith('"') -and $value.Length -ge 2) {
-        $value = $value.Substring(1, $value.Length - 2)
-    }
-
-    return $value
 }
 
 # Reports the private IPv4 address of this machine, or nothing when it cannot be
@@ -151,66 +127,36 @@ function Test-IPv4([string]$Value) {
     return $true
 }
 
-# Sets a setting of appsettings.json, replacing its value or inserting the key
-# before the closing brace when it is absent, and leaves every other setting
-# alone. A quoted value is written between double quotes; a bare value (a number
-# or a boolean) is not.
-function Set-JsonValue([string]$Name, [string]$Value, [bool]$Quoted, [string]$SettingsFile) {
-    $escaped = $Value.Replace('\', '\\').Replace('"', '\"')
-    if ($Quoted) {
-        $literal = '"' + $Name + '": "' + $escaped + '",'
-    }
-    else {
-        $literal = '"' + $Name + '": ' + $escaped + ','
-    }
-
-    $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.AddRange([string[]](Get-Content -Path $SettingsFile))
-
-    $keyPattern = '^\s*"' + [regex]::Escape($Name) + '":'
-    for ($index = 0; $index -lt $lines.Count; $index++) {
-        if ($lines[$index] -match $keyPattern) {
-            $lines[$index] = '  ' + $literal
-            [IO.File]::WriteAllLines($SettingsFile, $lines, [Text.UTF8Encoding]::new($false))
-            return
-        }
-    }
-
-    # Inserts the key before the closing brace, and gives the setting that
-    # precedes it the comma the insertion takes away.
-    for ($index = 0; $index -lt $lines.Count; $index++) {
-        if ($lines[$index].Trim() -eq '}') {
-            if ($index -gt 0 -and -not $lines[$index - 1].TrimEnd().EndsWith(',')) {
-                $lines[$index - 1] = $lines[$index - 1] + ','
-            }
-            $lines.Insert($index, '  ' + $literal.TrimEnd(','))
-            break
-        }
-    }
-
-    [IO.File]::WriteAllLines($SettingsFile, $lines, [Text.UTF8Encoding]::new($false))
-}
-
-# Reports the private address clients are told to connect to. An empty answer
-# means nothing was decided, so an existing value is kept.
-function Resolve-AdvertisedIP([string]$ProjectDirectory) {
+# Reports the private address clients are told to connect to: the environment
+# decides without detection, which is what an unattended run needs, and the
+# detection answers otherwise. An empty answer means the address is unknown.
+function Resolve-AdvertisedIP {
     if ($null -ne $env:ADVERTISED_ADDRESS) {
         return $env:ADVERTISED_ADDRESS
     }
 
-    $current = Read-JsonValue 'ADVERTISED_ADDRESS' $ProjectDirectory
+    return Get-PrivateIPv4
+}
 
-    $detected = Get-PrivateIPv4
-    if (-not [string]::IsNullOrWhiteSpace($detected)) {
-        return $detected
+# Sets KEY=VALUE in a dotenv file, replacing the line of the key or appending it
+# at the end, and leaves every other line alone. The values written here are a
+# base64 secret and a dotted address, neither of which carries a newline.
+function Set-EnvValue([string]$Key, [string]$Value, [string]$File) {
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if (Test-Path $File) {
+        $lines.AddRange([string[]](Get-Content -Path $File))
     }
 
-    if (Test-IPv4 $current) {
-        return $current
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($lines[$index] -match "^$([regex]::Escape($Key))=") {
+            $lines[$index] = "$Key=$Value"
+            [IO.File]::WriteAllLines($File, $lines, [Text.UTF8Encoding]::new($false))
+            return
+        }
     }
 
-    Write-Host 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in appsettings.json' -ForegroundColor Yellow
-    return ''
+    $lines.Add("$Key=$Value")
+    [IO.File]::WriteAllLines($File, $lines, [Text.UTF8Encoding]::new($false))
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
@@ -266,51 +212,41 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# A script started from disk next to a compose file runs against that clone; a
-# piped script (irm ... | iex) downloads the deployment instead.
-if ($PSScriptRoot -and (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'compose.yaml'))) {
-    $projectDirectory = Split-Path -Parent $PSScriptRoot
-    $downloadsDeployment = $false
-} elseif (Test-Path (Join-Path $PWD.Path 'compose.yaml')) {
-    $projectDirectory = $PWD.Path
-    $downloadsDeployment = $false
-} else {
-    $projectDirectory = Get-DefaultDeploymentDirectory
-    $downloadsDeployment = $true
-}
-
+$projectDirectory = Get-DefaultDeploymentDirectory
 $sourceUrl = if ($env:MGO2_SOURCE_URL) { $env:MGO2_SOURCE_URL.TrimEnd('/') } else { $DefaultSourceUrl }
 
-if ($downloadsDeployment) {
-    New-Item -ItemType Directory -Force -Path $projectDirectory | Out-Null
-    Write-Host "Installing into $projectDirectory"
-    Save-DeploymentFile 'compose.yaml' $projectDirectory $sourceUrl
-    Save-DeploymentFile 'appsettings.example.json' $projectDirectory $sourceUrl
-}
+New-Item -ItemType Directory -Force -Path $projectDirectory | Out-Null
+Write-Host "Installing into $projectDirectory"
+Save-DeploymentFile 'compose.yaml' $projectDirectory $sourceUrl
+Save-DeploymentFile 'appsettings.example.json' $projectDirectory $sourceUrl
 
 Push-Location $projectDirectory
 try {
-    $settingsFile = Join-Path $projectDirectory 'appsettings.json'
-    if (-not (Test-Path $settingsFile)) {
-        Copy-Item (Join-Path $projectDirectory 'appsettings.example.json') $settingsFile
+    # The shared settings of the servers are copied from the example once; an
+    # update run never touches the file again, so edits survive.
+    if (-not (Test-Path 'appsettings.json')) {
+        Copy-Item 'appsettings.example.json' 'appsettings.json'
+        Write-Host 'Created appsettings.json from appsettings.example.json.'
+    }
+
+    # The secret of the deployment is written once, on the first install.
+    if (-not (Test-Path 'deployment.env')) {
         $jwtSecret = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
-        Set-JsonValue 'JWT_SECRET' $jwtSecret $true $settingsFile
-        Write-Host 'Created appsettings.json from appsettings.example.json with a random JWT_SECRET. Review it before exposing the deployment.'
+        [IO.File]::WriteAllText("$PWD/deployment.env", "JWT_SECRET=$jwtSecret`n")
+        Write-Host 'Created deployment.env with a random JWT_SECRET. Review it before exposing the deployment.'
     }
 
-    $resolvedAdvertisedIp = Resolve-AdvertisedIP $projectDirectory
+    # The address clients are told to connect to is detected again on every run,
+    # so an update follows a machine that changed networks. An operator who
+    # needs a fixed one sets ADVERTISED_ADDRESS in deployment.env (or in the
+    # environment, which answers without detection for this run only).
+    $resolvedAdvertisedIp = Resolve-AdvertisedIP
     if (-not [string]::IsNullOrWhiteSpace($resolvedAdvertisedIp)) {
-        Set-JsonValue 'ADVERTISED_ADDRESS' $resolvedAdvertisedIp $true $settingsFile
+        Set-EnvValue 'ADVERTISED_ADDRESS' $resolvedAdvertisedIp "$PWD/deployment.env"
     }
-
-    # Telemetry is always on: appsettings.example.json ships OTEL_ENABLED=true
-    # and OTEL_PORT=4317, so nothing has to be written here. The collector the
-    # metrics are sent to is the operator's change: nothing of it is touched
-    # or checked here. The log level is left alone as well: the example ships
-    # Warning, and a deployment that changed it keeps it across updates.
-    Write-Host ''
-    Write-Host 'Telemetry is on: the servers send their metrics over gRPC on port 4317.'
-    Write-Host 'Change OTEL_PORT in appsettings.json to point them elsewhere; the collector has to listen on the same one.'
+    else {
+        Write-Host 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in deployment.env' -ForegroundColor Yellow
+    }
 
     if ([string]::IsNullOrWhiteSpace($ImagePrefix)) {
         $ImagePrefix = if ($env:MGO2_IMAGE_PREFIX) { $env:MGO2_IMAGE_PREFIX } else { '' }
@@ -350,16 +286,11 @@ try {
         exit 1
     }
 
-    $accountHost = Read-JsonValue 'ADVERTISED_ADDRESS' $projectDirectory
-    if ([string]::IsNullOrWhiteSpace($accountHost) -or $accountHost -eq '0.0.0.0') {
-        $accountHost = Get-PrivateIPv4
-    }
-
     Write-Host ''
     Write-Host "Installed $running containers."
-    Write-Host "Config: $(Join-Path $projectDirectory 'appsettings.json')"
-    if (-not [string]::IsNullOrWhiteSpace($accountHost)) {
-        Write-Host "To create an account, go to http://$accountHost"
+    Write-Host "Config: $(Join-Path $PWD 'appsettings.json') and $(Join-Path $PWD 'deployment.env')"
+    if (-not [string]::IsNullOrWhiteSpace($resolvedAdvertisedIp)) {
+        Write-Host "To create an account, go to http://$resolvedAdvertisedIp"
     }
     Write-Host 'Run this script again to install the update; stop the deployment with: docker compose down'
 }
