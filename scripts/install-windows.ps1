@@ -23,16 +23,13 @@
     machine and writes it there so clients on the network can reach the published
     ports.
 
-    Set ADVERTISED_ADDRESS to skip detection. Set MGO2_LOG_LEVEL to answer the
-    log-level question without a prompt, and MGO2_TELEMETRY to answer the
-    telemetry question without a prompt. The deployment directory holds
+    Set ADVERTISED_ADDRESS to skip detection. The deployment directory holds
     compose.yaml and appsettings.json next to each other, because the compose
     file mounts .\appsettings.json into the containers: the directory is the
-    deployment. Telemetry defaults to yes: the servers
-    then send their metrics over gRPC on port 4317, which OTEL_PORT changes. The
-    collector the metrics are sent to is the operator's change: nothing of it is
-    touched or checked here. With telemetry off no OpenTelemetry integration is
-    configured.
+    deployment. The servers log at Warning and always send their metrics over
+    gRPC to the collector, whose port OTEL_PORT of appsettings.json carries: the
+    collector itself is the operator's change, and nothing of it is touched or
+    checked here.
 
 .PARAMETER ImagePrefix
     Registry path the images are pulled from, including the trailing slash, for
@@ -139,45 +136,6 @@ function Get-PrivateIPv4 {
     return ''
 }
 
-# Answers true for one of the log levels the servers know how to parse.
-function Test-LogLevel([string]$Value) {
-    return $Value -imatch '^(debug|information|warning|error)$'
-}
-
-# Spells a log level the one way the servers document it.
-function Get-NormalisedLogLevel([string]$Value) {
-    switch ($Value.ToLowerInvariant()) {
-        'debug' { return 'Debug' }
-        'information' { return 'Information' }
-        'warning' { return 'Warning' }
-        'error' { return 'Error' }
-    }
-
-    return 'Warning'
-}
-
-# Maps a log level to its menu number.
-function Get-LogLevelChoice([string]$Value) {
-    switch (Get-NormalisedLogLevel $Value) {
-        'Debug' { return '1' }
-        'Information' { return '2' }
-        'Warning' { return '3' }
-        'Error' { return '4' }
-    }
-    return ''
-}
-
-# Maps a menu number to its log level.
-function Get-ChoiceLogLevel([string]$Value) {
-    switch ($Value) {
-        '1' { return 'Debug' }
-        '2' { return 'Information' }
-        '3' { return 'Warning' }
-        '4' { return 'Error' }
-    }
-    return ''
-}
-
 # Answers true for a dotted IPv4 address whose four octets each fit in a byte.
 function Test-IPv4([string]$Value) {
     if ($Value -notmatch '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$') {
@@ -253,137 +211,6 @@ function Resolve-AdvertisedIP([string]$ProjectDirectory) {
 
     Write-Host 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in appsettings.json' -ForegroundColor Yellow
     return ''
-}
-
-# Reports the log level the servers run at. Every container writes its log to
-# its standard output, so the answer is what the level of 'docker compose logs'
-# is set to. Warning is the default; MGO2_LOG_LEVEL answers without a prompt.
-function Resolve-LogLevel([string]$ProjectDirectory) {
-    if ($env:MGO2_LOG_LEVEL) {
-        if (Test-LogLevel $env:MGO2_LOG_LEVEL) {
-            return (Get-NormalisedLogLevel $env:MGO2_LOG_LEVEL)
-        }
-
-        Write-Host "warning: MGO2_LOG_LEVEL='$($env:MGO2_LOG_LEVEL)' is not a log level; using Warning" -ForegroundColor Yellow
-        return 'Warning'
-    }
-
-    # A level that is already configured stays the default, so running the
-    # script again to install an update does not silently rescale the logs; a
-    # fresh deployment starts at Warning.
-    $current = Read-JsonValue 'LOG_LEVEL' $ProjectDirectory
-    $defaultChoice = if (Test-LogLevel $current) { Get-LogLevelChoice $current } else { '3' }
-
-    # A run without an interactive host cannot be asked anything, so the default
-    # is what such a run gets.
-    if (-not [Environment]::UserInteractive) {
-        return (Get-ChoiceLogLevel $defaultChoice)
-    }
-
-    Write-Host ''
-    Write-Host 'Which log level should the servers use?'
-    foreach ($entry in @(@{ N = '1'; L = 'Debug' }, @{ N = '2'; L = 'Information' }, @{ N = '3'; L = 'Warning' }, @{ N = '4'; L = 'Error' })) {
-        if ($defaultChoice -eq $entry.N) {
-            Write-Host "  $($entry.N)) $($entry.L) (default)"
-        }
-        else {
-            Write-Host "  $($entry.N)) $($entry.L)"
-        }
-    }
-
-    $choice = Read-Host "Choice [$defaultChoice]"
-    if ([string]::IsNullOrWhiteSpace($choice)) {
-        $choice = $defaultChoice
-    }
-
-    $selected = Get-ChoiceLogLevel $choice
-    if ([string]::IsNullOrWhiteSpace($selected)) {
-        Write-Host "warning: '$choice' is not a log level; using $(Get-ChoiceLogLevel $defaultChoice)" -ForegroundColor Yellow
-        $selected = Get-ChoiceLogLevel $defaultChoice
-    }
-
-    return $selected
-}
-
-# Answers true for a yes/no answer.
-function Test-YesNo([string]$Value) {
-    return $Value -imatch '^(y|yes|true|1|n|no|false|0)$'
-}
-
-# Spells a yes/no answer the one way appsettings.json stores it.
-function Get-NormalisedYesNo([string]$Value) {
-    if ($Value -imatch '^(y|yes|true|1)$') {
-        return 'true'
-    }
-
-    return 'false'
-}
-
-# Answers true for a whole number that is a usable port.
-function Test-Port([string]$Value) {
-    if ($Value -notmatch '^\d{1,5}$') {
-        return $false
-    }
-
-    return [int]$Value -ge 1 -and [int]$Value -le 65535
-}
-
-# Reports whether the servers should send telemetry. Yes is the default, so an
-# unattended run installs with it on; MGO2_TELEMETRY answers without a prompt.
-function Resolve-Telemetry([string]$ProjectDirectory) {
-    if ($env:MGO2_TELEMETRY) {
-        if (Test-YesNo $env:MGO2_TELEMETRY) {
-            return (Get-NormalisedYesNo $env:MGO2_TELEMETRY)
-        }
-
-        Write-Host "warning: MGO2_TELEMETRY='$($env:MGO2_TELEMETRY)' is not a yes or no; using yes" -ForegroundColor Yellow
-        return 'true'
-    }
-
-    # A deployment that was installed with telemetry off stays off by default,
-    # so running the script again to install an update does not silently turn it
-    # on; a fresh deployment starts with it on.
-    $current = Read-JsonValue 'OTEL_ENABLED' $ProjectDirectory
-    $defaultChoice = if ($current -eq 'false') { 'no' } else { 'yes' }
-
-    # A run without an interactive host cannot be asked anything, so the default
-    # is what such a run gets.
-    if (-not [Environment]::UserInteractive) {
-        return (Get-NormalisedYesNo $defaultChoice)
-    }
-
-    Write-Host ''
-    Write-Host 'Should the servers send telemetry over OpenTelemetry?'
-    Write-Host '  yes) Export metrics over gRPC (default)'
-    Write-Host '  no)  Do not configure OpenTelemetry'
-
-    $answer = Read-Host "Send telemetry? [$defaultChoice]"
-    if ([string]::IsNullOrWhiteSpace($answer)) {
-        $answer = $defaultChoice
-    }
-
-    if (-not (Test-YesNo $answer)) {
-        Write-Host "warning: '$answer' is not a yes or no; using $defaultChoice" -ForegroundColor Yellow
-        $answer = $defaultChoice
-    }
-
-    return (Get-NormalisedYesNo $answer)
-}
-
-# Reports the port the OTLP/gRPC collector the metrics are sent to listens on. 4317 is
-# the default; OTEL_PORT in the environment or in appsettings.json answers without
-# a prompt.
-function Resolve-OtelPort([string]$ProjectDirectory) {
-    if ($env:OTEL_PORT -and (Test-Port $env:OTEL_PORT)) {
-        return $env:OTEL_PORT
-    }
-
-    $current = Read-JsonValue 'OTEL_PORT' $ProjectDirectory
-    if (Test-Port $current) {
-        return $current
-    }
-
-    return '4317'
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
@@ -476,28 +303,14 @@ try {
         Set-JsonValue 'ADVERTISED_ADDRESS' $resolvedAdvertisedIp $true $settingsFile
     }
 
-    # The level decides what a container writes to its standard output, so it is
-    # answered and written before the images are pulled.
-    $resolvedLogLevel = Resolve-LogLevel $projectDirectory
-    Set-JsonValue 'LOG_LEVEL' $resolvedLogLevel $true $settingsFile
-
-    # Whether the servers send telemetry is answered and written before the
-    # images are pulled. Pointing the collector at the chosen port is the
-    # operator's change: nothing about the collector is touched here.
-    $resolvedTelemetry = Resolve-Telemetry $projectDirectory
-    if ($resolvedTelemetry -eq 'true') {
-        $resolvedOtelPort = Resolve-OtelPort $projectDirectory
-        Set-JsonValue 'OTEL_ENABLED' 'true' $false $settingsFile
-        Set-JsonValue 'OTEL_PORT' $resolvedOtelPort $false $settingsFile
-        Write-Host ''
-        Write-Host "OpenTelemetry is enabled: the servers send their metrics over gRPC on port $resolvedOtelPort."
-        Write-Host 'Set OTEL_PORT to change the port; the collector has to listen on the same one.'
-    }
-    else {
-        Set-JsonValue 'OTEL_ENABLED' 'false' $false $settingsFile
-        Write-Host ''
-        Write-Host 'OpenTelemetry is disabled: no OpenTelemetry integration is configured.'
-    }
+    # Telemetry is always on: appsettings.example.json ships OTEL_ENABLED=true
+    # and OTEL_PORT=4317, so nothing has to be written here. The collector the
+    # metrics are sent to is the operator's change: nothing of it is touched
+    # or checked here. The log level is left alone as well: the example ships
+    # Warning, and a deployment that changed it keeps it across updates.
+    Write-Host ''
+    Write-Host 'Telemetry is on: the servers send their metrics over gRPC on port 4317.'
+    Write-Host 'Change OTEL_PORT in appsettings.json to point them elsewhere; the collector has to listen on the same one.'
 
     if ([string]::IsNullOrWhiteSpace($ImagePrefix)) {
         $ImagePrefix = if ($env:MGO2_IMAGE_PREFIX) { $env:MGO2_IMAGE_PREFIX } else { '' }

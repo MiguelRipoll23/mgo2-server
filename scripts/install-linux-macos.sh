@@ -31,8 +31,7 @@
 # the directory is the deployment. Running as root installs the machine-wide one,
 # /opt/mgo2; running as a user installs the user one, ~/.local/share/mgo2 on
 # Linux and ~/Library/Application Support/mgo2 on macOS. ADVERTISED_ADDRESS
-# skips address detection and MGO2_LOG_LEVEL answers the log-level question
-# without a prompt.
+# skips address detection.
 
 set -euo pipefail
 
@@ -54,16 +53,11 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
   ADVERTISED_ADDRESS into appsettings.json. Setting ADVERTISED_ADDRESS answers
   without detection.
 
-  It also asks which log level the servers run at (Debug, Information, Warning
-  or Error) and writes LOG_LEVEL, defaulting to Warning. Setting MGO2_LOG_LEVEL
-  answers without a prompt.
-
-  It asks whether the servers should send telemetry over OpenTelemetry and
-  writes OTEL_ENABLED and OTEL_PORT into appsettings.json, defaulting to yes
-  and to port 4317; MGO2_TELEMETRY answers the question without a prompt. The
-  collector the metrics are sent to is the operator's change: nothing of it is
-  touched or checked here. When telemetry is off no OpenTelemetry integration
-  is configured.
+  The servers log at Warning by default (LOG_LEVEL of appsettings.json changes
+  it) and always send their metrics over OpenTelemetry: appsettings.example.json
+  ships OTEL_ENABLED=true and OTEL_PORT=4317, which the script leaves alone.
+  The collector the metrics are sent to is the operator's change: nothing of it
+  is touched or checked here.
 
   When it is omitted, MGO2_IMAGE_PREFIX is used: the environment variable, or
   the registry the images are published to by default.
@@ -165,140 +159,6 @@ detect_private_ipv4() {
     printf '%s' "$address"
 }
 
-# Answers true for one of the log levels the servers know how to parse.
-is_log_level() {
-    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
-        debug|information|warning|error) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-# Spells a log level the one way the servers document it, so appsettings.json
-# holds a value that reads the same however it was typed.
-normalise_log_level() {
-    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
-        debug) printf '%s' 'Debug' ;;
-        information) printf '%s' 'Information' ;;
-        warning) printf '%s' 'Warning' ;;
-        error) printf '%s' 'Error' ;;
-    esac
-}
-
-# Maps a log level to its menu number.
-log_level_choice() {
-    case "$(normalise_log_level "$1")" in
-        Debug) printf '%s' '1' ;;
-        Information) printf '%s' '2' ;;
-        Warning) printf '%s' '3' ;;
-        Error) printf '%s' '4' ;;
-    esac
-}
-
-# Maps a menu number to its log level.
-choice_log_level() {
-    case "$1" in
-        1) printf '%s' 'Debug' ;;
-        2) printf '%s' 'Information' ;;
-        3) printf '%s' 'Warning' ;;
-        4) printf '%s' 'Error' ;;
-    esac
-}
-
-# Answers true for a yes/no answer.
-is_yes_no() {
-    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
-        y|yes|true|1|n|no|false|0) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-# Spells a yes/no answer the one way appsettings.json stores it.
-normalise_yes_no() {
-    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
-        y|yes|true|1) printf '%s' 'true' ;;
-        *) printf '%s' 'false' ;;
-    esac
-}
-
-# Answers true for a whole number that is a usable port.
-is_port() {
-    case "$1" in
-        '' | *[!0-9]*) return 1 ;;
-    esac
-
-    [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
-}
-
-# Reports whether the servers should send telemetry. Yes is the default, so an
-# unattended run installs with it on; MGO2_TELEMETRY answers without a prompt.
-resolve_telemetry() {
-    local current default answer
-
-    current="$(read_json_value OTEL_ENABLED)"
-
-    # The environment decides without asking, which is what a piped or otherwise
-    # unattended run needs.
-    if [ -n "${MGO2_TELEMETRY+x}" ]; then
-        if is_yes_no "$MGO2_TELEMETRY"; then
-            normalise_yes_no "$MGO2_TELEMETRY"
-        else
-            echo "warning: MGO2_TELEMETRY='$MGO2_TELEMETRY' is not a yes or no; using yes" >&2
-            printf '%s' 'true'
-        fi
-        return 0
-    fi
-
-    # A deployment that was installed with telemetry off stays off by default, so
-    # running the script again to install an update does not silently turn it on;
-    # a fresh deployment starts with it on.
-    if [ "$current" = 'false' ]; then
-        default='no'
-    else
-        default='yes'
-    fi
-
-    # A run without a terminal cannot be asked anything, so the default is what
-    # such a run gets.
-    if ! { : < /dev/tty; } 2>/dev/null; then
-        normalise_yes_no "$default"
-        return 0
-    fi
-
-    printf '\nShould the servers send telemetry over OpenTelemetry?\n' > /dev/tty
-    printf '  yes) Export metrics over gRPC (default)\n' > /dev/tty
-    printf '  no)  Do not configure OpenTelemetry\n' > /dev/tty
-
-    read -r -p "Send telemetry? [${default}] " answer < /dev/tty || answer=''
-    answer="${answer:-$default}"
-
-    if ! is_yes_no "$answer"; then
-        echo "warning: '$answer' is not a yes or no; using ${default}" >&2
-        answer="$default"
-    fi
-
-    normalise_yes_no "$answer"
-}
-
-# Reports the port the OTLP/gRPC collector the metrics are sent to listens on. 4317 is
-# the default; OTEL_PORT in the environment or in appsettings.json answers without
-# a prompt.
-resolve_otel_port() {
-    local current
-
-    if [ -n "${OTEL_PORT:-}" ] && is_port "$OTEL_PORT"; then
-        printf '%s' "$OTEL_PORT"
-        return 0
-    fi
-
-    current="$(read_json_value OTEL_PORT)"
-    if is_port "$current"; then
-        printf '%s' "$current"
-        return 0
-    fi
-
-    printf '%s' '4317'
-}
-
 # Answers true for a dotted IPv4 address whose four octets each fit in a byte.
 is_ipv4() {
     [ -n "$1" ] || return 1
@@ -374,66 +234,6 @@ resolve_advertised_ip() {
 
     echo 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in appsettings.json' >&2
     printf '%s' ''
-}
-
-# Reports the log level the servers run at. Every container writes its log to
-# its standard output, so the answer is what the level of 'docker compose logs'
-# is set to. Warning is the default; MGO2_LOG_LEVEL answers without a prompt.
-resolve_log_level() {
-    local current default_choice choice selected
-
-    current="$(read_json_value LOG_LEVEL)"
-
-    # The environment decides without asking, which is what a piped or otherwise
-    # unattended run needs.
-    if [ -n "${MGO2_LOG_LEVEL+x}" ]; then
-        if is_log_level "$MGO2_LOG_LEVEL"; then
-            normalise_log_level "$MGO2_LOG_LEVEL"
-        else
-            echo "warning: MGO2_LOG_LEVEL='$MGO2_LOG_LEVEL' is not a log level; using Warning" >&2
-            printf '%s' 'Warning'
-        fi
-        return 0
-    fi
-
-    # A level that is already configured stays the default, so running the
-    # script again to install an update does not silently rescale the logs;
-    # a fresh deployment starts at Warning.
-    if is_log_level "$current"; then
-        default_choice="$(log_level_choice "$current")"
-    else
-        default_choice='3'
-    fi
-
-    # A run without a terminal cannot be asked anything, so the default is what
-    # such a run gets.
-    if ! { : < /dev/tty; } 2>/dev/null; then
-        choice_log_level "$default_choice"
-        return 0
-    fi
-
-    printf '\nWhich log level should the servers use?\n' > /dev/tty
-    for number_level in '1:Debug' '2:Information' '3:Warning' '4:Error'; do
-        number="${number_level%%:*}"
-        level="${number_level#*:}"
-        if [ "$default_choice" = "$number" ]; then
-            printf '  %s) %s (default)\n' "$number" "$level" > /dev/tty
-        else
-            printf '  %s) %s\n' "$number" "$level" > /dev/tty
-        fi
-    done
-
-    choice=''
-    read -r -p "Choice [${default_choice}]: " choice < /dev/tty || choice=''
-    choice="${choice:-$default_choice}"
-
-    selected="$(choice_log_level "$choice")"
-    if [ -z "$selected" ]; then
-        echo "warning: '$choice' is not a log level; using $(choice_log_level "$default_choice")" >&2
-        selected="$(choice_log_level "$default_choice")"
-    fi
-
-    printf '%s' "$selected"
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
@@ -533,27 +333,14 @@ if [ -n "$resolved_advertised_ip" ]; then
     set_json_value ADVERTISED_ADDRESS "$resolved_advertised_ip" true appsettings.json
 fi
 
-# The level decides what a container writes to its standard output, so it is
-# answered and written before the images are pulled.
-resolved_log_level="$(resolve_log_level)"
-set_json_value LOG_LEVEL "$resolved_log_level" true appsettings.json
-
-# Whether the servers send telemetry is answered and written before the images
-# are pulled. Pointing the collector at the chosen port is the operator's
-# change: nothing about the collector is touched here.
-resolved_telemetry="$(resolve_telemetry)"
-if [ "$resolved_telemetry" = 'true' ]; then
-    resolved_otel_port="$(resolve_otel_port)"
-    set_json_value OTEL_ENABLED true false appsettings.json
-    set_json_value OTEL_PORT "$resolved_otel_port" false appsettings.json
-    echo
-    echo "OpenTelemetry is enabled: the servers send their metrics over gRPC on port ${resolved_otel_port}."
-    echo "Set OTEL_PORT to change the port; the collector has to listen on the same one."
-else
-    set_json_value OTEL_ENABLED false false appsettings.json
-    echo
-    echo 'OpenTelemetry is disabled: no OpenTelemetry integration is configured.'
-fi
+# Telemetry is always on: appsettings.example.json ships OTEL_ENABLED=true and
+# OTEL_PORT=4317, so nothing has to be written here. The collector the metrics
+# are sent to is the operator's change: nothing of it is touched or checked
+# here. The log level is left alone as well: the example ships Warning, and a
+# deployment that changed it keeps it across updates.
+echo
+echo 'Telemetry is on: the servers send their metrics over gRPC on port 4317.'
+echo 'Change OTEL_PORT in appsettings.json to point them elsewhere; the collector has to listen on the same one.'
 
 image_prefix="$(normalise_prefix "${1:-${MGO2_IMAGE_PREFIX:-}}")"
 image_prefix="${image_prefix:-$(normalise_prefix "${default_image_prefix}")}"

@@ -99,8 +99,7 @@ The servers read their shared settings from an `appsettings.json` baked into eac
 image from `appsettings.example.json`. A deployment mounts its own
 `appsettings.json` over the baked one, read-only, so the settings live in one
 file; the install scripts create it from the example on the first run and write
-`ADVERTISED_ADDRESS`, `LOG_LEVEL`, `OTEL_ENABLED` and a random `JWT_SECRET` into
-it. An environment variable of the same upper-case name still overrides a file
+`ADVERTISED_ADDRESS`, `OTEL_ENABLED` and a random `JWT_SECRET` into it. An environment variable of the same upper-case name still overrides a file
 value, and the per-container identity (the `LOBBY_*` and `GAMEPLAY_SERVER_*`
 blocks) stays in `compose.yaml`.
 
@@ -159,12 +158,12 @@ describes the contract, the settings and the Discord application to create.
 The servers support OpenTelemetry: they export their metrics over OTLP/gRPC to
 a collector that listens on port 4317.
 
-The install scripts ask whether the deployment should send telemetry and
-default to yes. When it is on, they write `OTEL_ENABLED=true` and `OTEL_PORT`
-into `appsettings.json`; when it is off, no OpenTelemetry integration is
-configured. They never touch the collector; the Alloy receiver running on the
-host is configured by hand, and its port has to match `OTEL_PORT`. The run
-scripts always enable telemetry on port 4317.
+Telemetry is always on: `appsettings.example.json` ships `OTEL_ENABLED=true`
+and `OTEL_PORT=4317`, the install scripts leave them alone, and the run scripts
+export the same values. The scripts never touch the collector; the Alloy
+receiver running on the host is configured by hand, and its port has to match
+`OTEL_PORT`. The servers log at `Warning` by default; `LOG_LEVEL` of
+`appsettings.json` changes it.
 
 ## Acknowledgements
 

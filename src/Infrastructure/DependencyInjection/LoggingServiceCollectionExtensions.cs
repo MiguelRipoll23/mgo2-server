@@ -12,9 +12,8 @@ namespace Mgo2Server.Infrastructure.DependencyInjection;
 /// when LOG_DIRECTORY is set, to a rolling file under that directory. The
 /// console sink is what puts a container's log on its standard output, where
 /// 'docker compose logs' reads it. The minimum level defaults to Warning; set
-/// LOG_LEVEL to override (Debug, Information, Warning, Error). The install
-/// scripts ask for the level and default to Debug, and the run scripts export
-/// LOG_LEVEL=Debug outright.
+/// LOG_LEVEL to override (Debug, Information, Warning, Error). The run scripts
+/// export LOG_LEVEL=Debug outright.
 /// </summary>
 public static class LoggingServiceCollectionExtensions
 {
