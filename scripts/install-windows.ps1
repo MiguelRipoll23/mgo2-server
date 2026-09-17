@@ -140,8 +140,8 @@ function Resolve-AdvertisedIP {
 # value, as a plain text swap; a text without the placeholder comes back
 # unchanged.
 function Set-SettingPlaceholder([string]$Key, [string]$Value, [string]$Text) {
-    $placeholder = '"' + $Key + '": "REPLACE_ME"'
-    $replacement = '"' + $Key + '": "' + $Value + '"'
+    $placeholder = '\"' + $Key + '\": \"REPLACE_ME\"'
+    $replacement = '\"' + $Key + '\": \"' + $Value + '\"'
     return $Text.Replace($placeholder, $replacement)
 }
 
@@ -224,9 +224,15 @@ try {
     # first install, from a cryptographic random generator rather than the
     # module one; an update run, whose secret already replaced it, leaves the
     # file alone.
-    if ($settingsText.Contains('"JWT_SECRET": "REPLACE_ME"')) {
+    if ($settingsText.Contains('\"JWT_SECRET\": \"REPLACE_ME\"')) {
         $secretBytes = [byte[]]::new(48)
-        [Security.Cryptography.RandomNumberGenerator]::Fill($secretBytes)
+        $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+        try {
+            $rng.GetBytes($secretBytes)
+        }
+        finally {
+            $rng.Dispose()
+        }
         $settingsText = Set-SettingPlaceholder 'JWT_SECRET' ([Convert]::ToBase64String($secretBytes)) $settingsText
         Write-Host 'Replaced the JWT_SECRET placeholder with a random secret. Review it before exposing the deployment.'
     }
