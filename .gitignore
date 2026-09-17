@@ -1,7 +1,4 @@
 appsettings.json
-# The settings of a deployment directory the install scripts create, which
-# hold the JWT secret. They are written next to compose.yaml, outside any clone.
-deployment.json
 bin/
 obj/
 

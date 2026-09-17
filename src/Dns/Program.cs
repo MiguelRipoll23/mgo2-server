@@ -1,14 +1,12 @@
 using System.IO;
 using Mgo2Server.Dns;
 using Mgo2Server.Dns.Options;
-using Mgo2Server.Shared.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 var configuration = new ConfigurationBuilder()
     .SetBasePath(Directory.GetCurrentDirectory())
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-    .AddDeploymentJsonFile()
     .AddEnvironmentVariables()
     .AddCommandLine(args)
     .Build();

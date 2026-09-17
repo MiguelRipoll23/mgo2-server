@@ -112,8 +112,6 @@ COPY --from=build /app ./
 # example has the deployment defaults; a deployment mounts its own
 # appsettings.json over this one, and a runtime environment variable of the same
 # name overrides any file value, so secrets never have to be baked into an image.
-# A deployment.json the deployment also mounts sits between the two: every
-# server adds it after appsettings.json and before the environment variables.
 COPY appsettings.example.json ./appsettings.json
 
 # exec keeps the process as PID 1 so the container stops on SIGTERM.

@@ -15,21 +15,19 @@
 
     The script installs the deployment into a platform default (%ProgramData%\mgo2 for
     an elevated run, %LOCALAPPDATA%\mgo2 otherwise) and downloads
-    compose.yaml and appsettings.example.json into it. The shared settings of
-    the servers live in appsettings.json, which is created from the example once
-    and never touched again: the operator edits it and an update keeps the
-    edits. The two settings that belong to the deployment rather than to the
-    servers, the JWT secret and the private address of this machine, are written
-    into deployment.json instead, which every server reads after the
-    appsettings.json it also mounts; an edit of either file is applied by
-    restarting the container. The secret is written once, the address is
-    detected again on every run so an update follows a machine that changed
-    networks, and ADVERTISED_ADDRESS skips the detection.
+    compose.yaml and appsettings.example.json into it. The settings of the
+    servers live in appsettings.json, created from the example once and edited
+    by the operator. The example ships two values that belong to the deployment
+    rather than to the servers, the JWT secret and the private address of this
+    machine, as the REPLACE_ME placeholder; the first run replaces the secret
+    with a random one and the address with a detected one, and a placeholder
+    left after a run that could not detect the address is how the operator sets
+    it by hand. An edit of appsettings.json is applied by restarting the
+    container.
 
-    The deployment directory holds compose.yaml, appsettings.json and
-    deployment.json next to each other, because the compose file mounts
-    .\appsettings.json and .\deployment.json: the directory is the
-    deployment.
+    The deployment directory holds compose.yaml and appsettings.json next to
+    each other, because the compose file mounts .\appsettings.json: the
+    directory is the deployment.
 
 .PARAMETER ImagePrefix
     Registry path the images are pulled from, including the trailing slash, for
@@ -138,22 +136,13 @@ function Resolve-AdvertisedIP {
     return Get-PrivateIPv4
 }
 
-# Sets "KEY": "VALUE" in the flat deployment.json, replacing the value of the
-# key or inserting it before the closing brace, and leaves every other setting
-# alone. The file is parsed and rewritten with the JSON of the framework, so a
-# malformed file stops the run instead of being quietly repaired.
-function Set-JsonSetting([string]$Key, [string]$Value, [string]$File) {
-    $settings = [ordered]@{}
-    if (Test-Path $File) {
-        foreach ($property in (Get-Content -Raw -Path $File | ConvertFrom-Json).PSObject.Properties) {
-            $settings[$property.Name] = $property.Value
-        }
-    }
-
-    $settings[$Key] = $Value
-
-    $json = ConvertTo-Json -InputObject $settings
-    [IO.File]::WriteAllText($File, $json, [Text.UTF8Encoding]::new($false))
+# Replaces the REPLACE_ME placeholder of one setting of appsettings.json with a
+# value, as a plain text swap; a text without the placeholder comes back
+# unchanged.
+function Set-SettingPlaceholder([string]$Key, [string]$Value, [string]$Text) {
+    $placeholder = '"' + $Key + '": "REPLACE_ME"'
+    $replacement = '"' + $Key + '": "' + $Value + '"'
+    return $Text.Replace($placeholder, $replacement)
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
@@ -219,33 +208,42 @@ Save-DeploymentFile 'appsettings.example.json' $projectDirectory $sourceUrl
 
 Push-Location $projectDirectory
 try {
-    # The shared settings of the servers are copied from the example once; an
-    # update run never touches the file again, so edits survive.
+    # The settings of the deployment are copied from the example once; an
+    # update run never touches the file again, so edits survive. The example
+    # ships the two values that belong to the deployment as the REPLACE_ME
+    # placeholder, which the first run replaces below.
     if (-not (Test-Path 'appsettings.json')) {
         Copy-Item 'appsettings.example.json' 'appsettings.json'
         Write-Host 'Created appsettings.json from appsettings.example.json.'
     }
 
-    # The secret of the deployment is written once, on the first install, from
-    # a cryptographic random generator rather than the module one.
-    if (-not (Test-Path 'deployment.json')) {
+    $appSettingsPath = Join-Path $PWD 'appsettings.json'
+    $settingsText = [IO.File]::ReadAllText($appSettingsPath)
+
+    # The secret of the deployment replaces the JWT_SECRET placeholder on the
+    # first install, from a cryptographic random generator rather than the
+    # module one; an update run, whose secret already replaced it, leaves the
+    # file alone.
+    if ($settingsText.Contains('"JWT_SECRET": "REPLACE_ME"')) {
         $secretBytes = [byte[]]::new(48)
         [Security.Cryptography.RandomNumberGenerator]::Fill($secretBytes)
-        Set-JsonSetting 'JWT_SECRET' ([Convert]::ToBase64String($secretBytes)) "$PWD/deployment.json"
-        Write-Host 'Created deployment.json with a random JWT_SECRET. Review it before exposing the deployment.'
+        $settingsText = Set-SettingPlaceholder 'JWT_SECRET' ([Convert]::ToBase64String($secretBytes)) $settingsText
+        Write-Host 'Replaced the JWT_SECRET placeholder with a random secret. Review it before exposing the deployment.'
     }
 
-    # The address clients are told to connect to is detected again on every run,
-    # so an update follows a machine that changed networks. An operator who
-    # needs a fixed one sets ADVERTISED_ADDRESS in deployment.json (or in the
-    # environment, which answers without detection for this run only).
+    # The address clients are told to connect to replaces its placeholder. An
+    # operator who needs a fixed one sets ADVERTISED_ADDRESS in appsettings.json,
+    # and the ADVERTISED_ADDRESS environment variable of the run answers without
+    # detection.
     $resolvedAdvertisedIp = Resolve-AdvertisedIP
     if (-not [string]::IsNullOrWhiteSpace($resolvedAdvertisedIp)) {
-        Set-JsonSetting 'ADVERTISED_ADDRESS' $resolvedAdvertisedIp "$PWD/deployment.json"
+        $settingsText = Set-SettingPlaceholder 'ADVERTISED_ADDRESS' $resolvedAdvertisedIp $settingsText
     }
     else {
-        Write-Host 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in deployment.json' -ForegroundColor Yellow
+        Write-Host 'warning: the private address of this machine could not be detected; set the ADVERTISED_ADDRESS placeholder in appsettings.json' -ForegroundColor Yellow
     }
+
+    [IO.File]::WriteAllText($appSettingsPath, $settingsText, [Text.UTF8Encoding]::new($false))
 
     if ([string]::IsNullOrWhiteSpace($ImagePrefix)) {
         $ImagePrefix = if ($env:MGO2_IMAGE_PREFIX) { $env:MGO2_IMAGE_PREFIX } else { '' }
@@ -287,7 +285,7 @@ try {
 
     Write-Host ''
     Write-Host "Installed $running containers."
-    Write-Host "Config: $(Join-Path $PWD 'appsettings.json') and $(Join-Path $PWD 'deployment.json')"
+    Write-Host "Config: $(Join-Path $PWD 'appsettings.json')"
     if (-not [string]::IsNullOrWhiteSpace($resolvedAdvertisedIp)) {
         Write-Host "To create an account, go to http://$resolvedAdvertisedIp"
     }

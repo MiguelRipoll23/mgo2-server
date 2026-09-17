@@ -18,23 +18,20 @@
 # and removes old dangling images, so a new release is one command away.
 #
 # The script installs the deployment into a platform default directory and
-# downloads compose.yaml and appsettings.example.json into it. The shared
-# settings of the servers live in appsettings.json, which is created from the
-# example once and never touched again: the operator edits it and an update
-# keeps the edits. The
-# two settings that belong to the deployment rather than to the servers, the
-# JWT secret and the private address of this machine, are written into
-# deployment.json instead, which every server reads after the appsettings.json
-# it also mounts; an edit of either file is applied by restarting the
-# container. The secret is written once, the address is detected again on
-# every run so an update follows a machine that changed networks, and
-# ADVERTISED_ADDRESS skips the detection.
+# downloads compose.yaml and appsettings.example.json into it. The settings of
+# the servers live in appsettings.json, created from the example once and
+# edited by the operator. Two of its values belong to the deployment rather
+# than to the servers: the JWT secret and the private address of this machine.
+# The example ships both as the REPLACE_ME placeholder; the first run replaces
+# the secret with a random one and the address with a detected one, and a
+# placeholder left after a run that could not detect the address is how the
+# operator sets it by hand. An edit of appsettings.json is applied by
+# restarting the container.
 #
-# The deployment directory holds compose.yaml, appsettings.json and
-# deployment.json next to each other, because the compose file mounts
-# ./appsettings.json and ./deployment.json: the directory is the
-# deployment. Running as root installs the machine-wide one, /opt/mgo2; running
-# as a user installs the user one, ~/.local/share/mgo2 on Linux and
+# The deployment directory holds compose.yaml and appsettings.json next to each
+# other, because the compose file mounts ./appsettings.json: the directory is
+# the deployment. Running as root installs the machine-wide one, /opt/mgo2;
+# running as a user installs the user one, ~/.local/share/mgo2 on Linux and
 # ~/Library/Application Support/mgo2 on macOS.
 
 set -euo pipefail
@@ -53,17 +50,17 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
                    trailing slash, for example
                    ghcr.io/your-account/your-repository/
 
-  The script detects the private address of this machine on every run and
-  writes ADVERTISED_ADDRESS into deployment.json, which every server reads
-  container as an environment variable. Setting ADVERTISED_ADDRESS answers
-  without detection.
+  The script replaces the REPLACE_ME placeholders of appsettings.json: the
+  JWT_SECRET with a random secret and the ADVERTISED_ADDRESS with the private
+  address of this machine, which every server reads as an environment
+  variable. Setting ADVERTISED_ADDRESS to a fixed value answers for the
+  address, and an operator who skips the detection edits appsettings.json.
 
-  The secret of the deployment, JWT_SECRET, is written into deployment.json
-  once, on the first install. The shared settings of the servers live in
-  appsettings.json, created from appsettings.example.json on the first run and
-  never written by this script: the servers log at Warning and always send
-  their metrics over OpenTelemetry (OTEL_ENABLED=true, OTEL_PORT=4317), and
-  editing the file is how anything else changes.
+  The JWT_SECRET of the deployment is a random value on the first install, when
+  the placeholder is still there; an operator who set one keeps it. The servers
+  log at Warning and always send their metrics over OpenTelemetry
+  (OTEL_ENABLED=true, OTEL_PORT=4317), and editing appsettings.json is how
+  anything else changes.
 
   When the registry prefix is omitted, MGO2_IMAGE_PREFIX is used: the
   environment variable, or the registry the images are published to by
@@ -173,29 +170,15 @@ resolve_advertised_ip() {
     detect_private_ipv4
 }
 
-# Sets "KEY": "VALUE" in the flat deployment.json, replacing the value of the
-# key or inserting it before the closing brace, and leaves every other line
-# alone. The values written here are a base64 secret and a dotted address,
-# neither of which collides with the | delimiter or carries a quote.
-set_json_value() {
+# Replaces the REPLACE_ME placeholder of one setting of appsettings.json with a
+# value. The settings live on their own quoted lines, so the substitution is a
+# plain text swap; a run whose file holds no placeholder leaves it alone. The
+# values written here are a base64 secret and a dotted address, neither of which
+# collides with the | delimiter or carries a quote.
+replace_setting_placeholder() {
     local key="$1" value="$2" file="$3"
 
-    if grep -q "\"${key}\":" "$file" 2>/dev/null; then
-        sed -i.bak "s|\"${key}\": \"[^\"]*\"|\"${key}\": \"${value}\"|" "$file"
-    else
-        # Inserts the setting before the closing brace, with the comma the
-        # brace takes away.
-        awk -v line="  \"${key}\": \"${value}\"," '
-            BEGIN { inserted = 0 }
-            /^}[[:space:]]*$/ && !inserted { print line; inserted = 1 }
-            { print }
-        ' "$file" > "${file}.tmp"
-        mv "${file}.tmp" "$file"
-    fi
-
-    # The file carries the secret of the deployment, so it is readable by its
-    # owner only, whatever the umask of the run was.
-    chmod 600 "$file"
+    sed -i "s|\"${key}\": \"REPLACE_ME\"|\"${key}\": \"${value}\"|" "$file"
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
@@ -263,29 +246,34 @@ download_deployment_file appsettings.example.json
 
 cd "${project_directory}"
 
-# The shared settings of the servers are copied from the example once; an
-# update run never touches the file again, so edits survive.
+# The settings of the deployment are copied from the example once; an update
+# run never touches the file again, so edits survive. The example ships the two
+# values that belong to the deployment as the REPLACE_ME placeholder, which the
+# first run replaces below. The file carries the secret of the deployment, so it
+# is readable by its owner only, whatever the umask of the run was.
 if [ ! -f appsettings.json ]; then
     cp appsettings.example.json appsettings.json
+    chmod 600 appsettings.json
     echo "Created appsettings.json from appsettings.example.json."
 fi
 
-# The secret of the deployment is written once, on the first install.
-if [ ! -f deployment.json ]; then
-    printf '{\n  "JWT_SECRET": "%s"\n}\n' "$(openssl rand -base64 48)" > deployment.json
-    chmod 600 deployment.json
-    echo "Created deployment.json with a random JWT_SECRET. Review it before exposing the deployment."
+# The secret of the deployment replaces the JWT_SECRET placeholder on the first
+# install; an update run, whose secret already replaced it, leaves the file
+# alone.
+if grep -q '"JWT_SECRET": "REPLACE_ME"' appsettings.json 2>/dev/null; then
+    replace_setting_placeholder JWT_SECRET "$(openssl rand -base64 48)" appsettings.json
+    echo "Replaced the JWT_SECRET placeholder with a random secret. Review it before exposing the deployment."
 fi
 
-# The address clients are told to connect to is detected again on every run, so
-# an update follows a machine that changed networks. An operator who needs a
-# fixed one sets ADVERTISED_ADDRESS in deployment.json (or in the environment,
-# which answers without detection for this run only).
+# The address clients are told to connect to replaces its placeholder. An
+# operator who needs a fixed one sets ADVERTISED_ADDRESS in appsettings.json,
+# and the ADVERTISED_ADDRESS environment variable of the run answers without
+# detection.
 resolved_advertised_ip="$(resolve_advertised_ip)"
 if [ -n "$resolved_advertised_ip" ]; then
-    set_json_value ADVERTISED_ADDRESS "$resolved_advertised_ip" deployment.json
+    replace_setting_placeholder ADVERTISED_ADDRESS "$resolved_advertised_ip" appsettings.json
 else
-    echo 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in deployment.json' >&2
+    echo 'warning: the private address of this machine could not be detected; set the ADVERTISED_ADDRESS placeholder in appsettings.json' >&2
 fi
 
 image_prefix="$(normalise_prefix "${1:-${MGO2_IMAGE_PREFIX:-}}")"
@@ -322,7 +310,7 @@ fi
 
 echo
 echo "Installed ${running} containers."
-echo "Config: ${project_directory}/appsettings.json and ${project_directory}/deployment.json"
+echo "Config: ${project_directory}/appsettings.json"
 if [ -n "$resolved_advertised_ip" ]; then
     echo "To create an account, go to http://${resolved_advertised_ip}"
 fi
