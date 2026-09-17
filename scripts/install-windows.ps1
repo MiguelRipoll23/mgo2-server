@@ -140,8 +140,8 @@ function Resolve-AdvertisedIP {
 # value, as a plain text swap; a text without the placeholder comes back
 # unchanged.
 function Set-SettingPlaceholder([string]$Key, [string]$Value, [string]$Text) {
-    $placeholder = '\"' + $Key + '\": \"REPLACE_ME\"'
-    $replacement = '\"' + $Key + '\": \"' + $Value + '\"'
+    $placeholder = '"' + $Key + '": "REPLACE_ME"'
+    $replacement = '"' + $Key + '": "' + $Value + '"'
     return $Text.Replace($placeholder, $replacement)
 }
 
@@ -224,7 +224,7 @@ try {
     # first install, from a cryptographic random generator rather than the
     # module one; an update run, whose secret already replaced it, leaves the
     # file alone.
-    if ($settingsText.Contains('\"JWT_SECRET\": \"REPLACE_ME\"')) {
+    if ($settingsText.Contains('"JWT_SECRET": "REPLACE_ME"')) {
         $secretBytes = [byte[]]::new(48)
         $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
         try {
