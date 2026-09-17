@@ -1,9 +1,12 @@
+using System.IO;
 using Mgo2Server.Stun;
 using Mgo2Server.Stun.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 var configuration = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
     .AddEnvironmentVariables()
     .AddCommandLine(args)
     .Build();

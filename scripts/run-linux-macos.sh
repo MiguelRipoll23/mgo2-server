@@ -9,10 +9,10 @@
 # minus PostgreSQL.
 #
 # PostgreSQL is not started by this script. The servers connect to the
-# database of DATABASE_CONNECTION_STRING, which must be set in .env or in the
-# environment. The compose placeholder (Host=postgres) is ignored. Either the
-# keyword form Npgsql reads or the postgresql:// URL form is accepted; the URL
-# is translated before it reaches the servers.
+# database of DATABASE_CONNECTION_STRING, which must be set in appsettings.json
+# or in the environment. The compose placeholder (Host=postgres) is ignored.
+# Either the keyword form Npgsql reads or the postgresql:// URL form is
+# accepted; the URL is translated before it reaches the servers.
 #
 # The schema of an empty database is created by the servers themselves on their
 # first start, so nothing has to be applied by hand.
@@ -27,12 +27,12 @@
 # to .logs/ with daily rotation (7-day retention).
 #
 # Telemetry is always on: every server sends its OpenTelemetry metrics over
-# gRPC to a collector on port 4317, and the OTEL_* settings of .env are
-# overridden so the scripts behave the same however the deployment was
-# installed.
+# gRPC to a collector on port 4317, and the OTEL_* settings are overridden so
+# the scripts behave the same however the deployment was installed.
 #
-# Every setting is read from .env, which is created from .env.example on
-# the first run and never overwritten. The environment wins over .env.
+# Every setting is read from appsettings.json, which is created from
+# appsettings.example.json on the first run and never overwritten, and from the
+# environment. The environment wins over the file.
 #
 # Usage:
 #   scripts/run-linux-macos.sh
@@ -45,38 +45,40 @@ dotnet_channel="10.0"
 configuration="${MGO2_CONFIGURATION:-Debug}"
 
 # Database connection string. Required; set DATABASE_CONNECTION_STRING in the
-# environment or in .env. The compose placeholder (Host=postgres) is ignored.
+# environment or in appsettings.json. The compose placeholder (Host=postgres) is
+# ignored.
 
 # Settings this script started, so a failure anywhere still stops them.
 server_pids=()
 server_labels=()
 stopping=0
 
-# Copies .env into the process environment, so the servers see the same settings
-# they would get from compose. A setting that is already in the environment is
-# left alone, which is what lets the shell override .env.
-load_env_file() {
-    local path="$1"
-    [ -f "$path" ] || return 0
+# Prints the value of a setting of appsettings.json, or nothing when it is not
+# set. A quoted string and a bare number or boolean are both read; a quoted
+# value comes back without the surrounding quotes.
+read_json_value() {
+    local name="$1" value
+    [ -f "${project_directory}/appsettings.json" ] || return 0
+    value="$(sed -n "s|.*\"${name}\": \(.*\)$|\1|p" "${project_directory}/appsettings.json" | tail -n 1 | tr -d '\r')"
+    value="${value%,}"
+    case "$value" in
+        \"*\") value="${value#\"}"; value="${value%\"}" ;;
+    esac
+    printf '%s\n' "$value"
+}
 
-    local line name
-    while IFS= read -r line || [ -n "$line" ]; do
-        line="${line#"${line%%[![:space:]]*}"}"
-        line="${line%"${line##*[![:space:]]}"}"
-        case "$line" in
-            '' | '#'*) continue ;;
-        esac
-
-        name="${line%%=*}"
-        [ "$name" != "$line" ] || continue
-        case "$name" in
-            *[!A-Za-z0-9_]*) continue ;;
-        esac
-
-        if [ -z "${!name+x}" ]; then
-            export "$name=${line#*=}"
-        fi
-    done < "$path"
+# Prints the value of a setting: the environment wins, then appsettings.json,
+# then the default.
+setting_value() {
+    local name="$1" default_value="${2:-}" value
+    value="$(printenv "$name" 2>/dev/null || true)"
+    if [ -z "$value" ]; then
+        value="$(read_json_value "$name")"
+    fi
+    if [ -z "$value" ]; then
+        value="$default_value"
+    fi
+    printf '%s\n' "$value"
 }
 
 # Turns %XX escapes and '+' back into the bytes they stand for.
@@ -165,14 +167,15 @@ convert_to_npgsql_connection_string() {
     printf '%s' "$result"
 }
 
-# Reports the connection string of the database: the one in the
-# environment or the one in .env, ignoring the compose placeholder.
+# Reports the connection string of the database: the one in the environment or
+# the one in appsettings.json, ignoring the compose placeholder.
 resolve_database_connection_string() {
-    local connection_string="${DATABASE_CONNECTION_STRING:-}"
+    local connection_string
+    connection_string="$(setting_value DATABASE_CONNECTION_STRING)"
 
     if [ -z "$connection_string" ] ||
         [[ "$connection_string" =~ (^|;)[[:space:]]*Host=postgres[[:space:]]*(;|$) ]]; then
-        echo 'error: DATABASE_CONNECTION_STRING is not set or is the compose placeholder. Set it in .env or in the environment' >&2
+        echo 'error: DATABASE_CONNECTION_STRING is not set or is the compose placeholder. Set it in appsettings.json or in the environment' >&2
         exit 1
     fi
 
@@ -286,12 +289,13 @@ trap stop_servers EXIT INT TERM
 
 cd "$project_directory"
 
-if [ ! -f .env ]; then
-    cp .env.example .env
-    echo 'Created .env from .env.example. Review it before exposing the deployment.'
+# The servers read their configuration from appsettings.json first, and the
+# environment overrides it. The example carries the shared defaults; a real file
+# is created on the first run so the settings can be reviewed.
+if [ ! -f appsettings.json ]; then
+    cp appsettings.example.json appsettings.json
+    echo 'Created appsettings.json from appsettings.example.json. Review it before exposing the deployment.'
 fi
-
-load_env_file "${project_directory}/.env"
 
 # The run scripts always enable the telemetry integration, so every server
 # exports its metrics and nothing has to be configured to develop against them.
@@ -301,7 +305,7 @@ export OTEL_PORT=4317
 export OTEL_HOST=localhost
 
 # Every server runs on this machine, so a gameplay lobby dials the HTTP API on
-# the loopback address instead of the compose service name .env uses.
+# the loopback address instead of the compose service name.
 export INTERNAL_GRPC_URL="http://localhost:${INTERNAL_GRPC_PORT:-5743}"
 
 DATABASE_CONNECTION_STRING="$(resolve_database_connection_string)"
@@ -323,10 +327,11 @@ echo 'Applying the database migrations'
     dotnet ef database update --project src/Shared/Mgo2Server.Shared.csproj
 )
 
-http_port="${HTTP_PORT:-80}"
-dns_port="${DNS_PORT:-53}"
-stun_port="${STUN_PORT:-3478}"
-launcher_server="${LAUNCHER_SERVER:-http://mgo2pc.com}"
+http_port="$(setting_value HTTP_PORT 80)"
+dns_port="$(setting_value DNS_PORT 53)"
+stun_port="$(setting_value STUN_PORT 3478)"
+launcher_server="$(setting_value LAUNCHER_SERVER http://mgo2pc.com)"
+p2p_host="$(setting_value ADVERTISED_ADDRESS 127.0.0.1)"
 
 echo ''
 echo 'Starting every server'
@@ -369,7 +374,7 @@ done
 start_server gameplay-5730 GameplayServer 'Gameplay server (5730/udp)' \
     'GAMEPLAY_SERVER_PORT=5730' \
     'GAMEPLAY_SERVER_LOBBY_NAME=Free Battle' \
-    "P2P_HOST=${ADVERTISED_ADDRESS:-127.0.0.1}"
+    "P2P_HOST=${p2p_host}"
 
 start_server http Http "HTTP API (${http_port}/tcp)" \
     "HTTP_PORT=${http_port}" \
@@ -380,8 +385,8 @@ start_server dns Dns "DNS (${dns_port}/udp)" \
 
 # The port-check responder serves the port the console dials and the one after it.
 # Its second address, which answers a request to change the address, is the
-# STUN_SECONDARY_ADDRESS of .env; without one it logs a warning and can only move
-# the port.
+# STUN_SECONDARY_ADDRESS of appsettings.json; without one it logs a warning and
+# can only move the port.
 start_server stun Stun "Port check (${stun_port}/udp)" \
     "STUN_PORT=${stun_port}"
 

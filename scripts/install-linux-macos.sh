@@ -10,7 +10,7 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/install-linux-macos.sh | bash
-#   scripts/install-linux-macos.sh                          # registry prefix from .env
+#   scripts/install-linux-macos.sh                          # registry prefix from MGO2_IMAGE_PREFIX
 #   scripts/install-linux-macos.sh ghcr.io/owner/repo       # registry prefix from the argument
 #
 # Running it again installs the update: it refreshes the compose file, pulls the
@@ -19,8 +19,9 @@
 #
 # The script runs against a clone when it is started from one; otherwise it
 # creates a deployment directory (./mgo2-server, or MGO2_HOME) and downloads
-# compose.yaml and .env.example into it. Everything else is configured in .env,
-# which is created from .env.example on the first run and never overwritten,
+# compose.yaml and appsettings.example.json into it. Everything else is
+# configured in appsettings.json, which is created from appsettings.example.json
+# on the first run with a random JWT_SECRET and never overwritten afterwards,
 # except for ADVERTISED_ADDRESS: the script detects the private address of this
 # machine and writes it there so clients on the network can reach the published
 # ports.
@@ -45,20 +46,22 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
                    ghcr.io/your-account/your-repository/
 
   The script detects the private address of this machine and writes
-  ADVERTISED_ADDRESS. Setting ADVERTISED_ADDRESS answers without detection.
+  ADVERTISED_ADDRESS into appsettings.json. Setting ADVERTISED_ADDRESS answers
+  without detection.
 
   It also asks which log level the servers run at (Debug, Information, Warning
   or Error) and writes LOG_LEVEL, defaulting to Warning. Setting MGO2_LOG_LEVEL
   answers without a prompt.
 
   It asks whether the servers should send telemetry over OpenTelemetry and
-  writes OTEL_ENABLED and OTEL_PORT, defaulting to yes and to port 4317;
-  MGO2_TELEMETRY answers the question without a prompt. The collector the metrics
-  are sent to is the operator's change: nothing of it is touched or checked
-  here. When telemetry is off no OpenTelemetry integration is configured.
+  writes OTEL_ENABLED and OTEL_PORT into appsettings.json, defaulting to yes
+  and to port 4317; MGO2_TELEMETRY answers the question without a prompt. The
+  collector the metrics are sent to is the operator's change: nothing of it is
+  touched or checked here. When telemetry is off no OpenTelemetry integration
+  is configured.
 
-  When it is omitted, MGO2_IMAGE_PREFIX is used: the setting of .env, or the
-  environment variable, or the registry the images are published to by default.
+  When it is omitted, MGO2_IMAGE_PREFIX is used: the environment variable, or
+  the registry the images are published to by default.
 
   The script pulls the images of every container (the gate, the account server,
   the nine gameplay lobbies, a gameplay server, the HTTP API, the name server, the
@@ -67,11 +70,18 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
 TEXT
 }
 
-# Prints the value of a setting of .env, or nothing when it is not set.
-read_env_value() {
-    local name="$1"
-    [ -f "${project_directory}/.env" ] || return 0
-    sed -n "s/^${name}=//p" "${project_directory}/.env" | tail -n 1 | tr -d '\r'
+# Prints the value of a setting of appsettings.json, or nothing when it is not
+# set. A quoted string and a bare number or boolean are both read; a quoted
+# value comes back without the surrounding quotes.
+read_json_value() {
+    local name="$1" value
+    [ -f "${project_directory}/appsettings.json" ] || return 0
+    value="$(sed -n "s|.*\"${name}\": \(.*\)$|\1|p" "${project_directory}/appsettings.json" | tail -n 1 | tr -d '\r')"
+    value="${value%,}"
+    case "$value" in
+        \"*\") value="${value#\"}"; value="${value%\"}" ;;
+    esac
+    printf '%s\n' "$value"
 }
 
 # Reports the private IPv4 address of this machine, or nothing when it cannot be
@@ -111,8 +121,8 @@ is_log_level() {
     esac
 }
 
-# Spells a log level the one way the servers document it, so .env holds a value
-# that reads the same however it was typed.
+# Spells a log level the one way the servers document it, so appsettings.json
+# holds a value that reads the same however it was typed.
 normalise_log_level() {
     case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
         debug) printf '%s' 'Debug' ;;
@@ -150,7 +160,7 @@ is_yes_no() {
     esac
 }
 
-# Spells a yes/no answer the one way .env stores it.
+# Spells a yes/no answer the one way appsettings.json stores it.
 normalise_yes_no() {
     case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
         y|yes|true|1) printf '%s' 'true' ;;
@@ -172,7 +182,7 @@ is_port() {
 resolve_telemetry() {
     local current default answer
 
-    current="$(read_env_value OTEL_ENABLED)"
+    current="$(read_json_value OTEL_ENABLED)"
 
     # The environment decides without asking, which is what a piped or otherwise
     # unattended run needs.
@@ -218,7 +228,8 @@ resolve_telemetry() {
 }
 
 # Reports the port the OTLP/gRPC collector the metrics are sent to listens on. 4317 is
-# the default; OTEL_PORT in the environment or in .env answers without a prompt.
+# the default; OTEL_PORT in the environment or in appsettings.json answers without
+# a prompt.
 resolve_otel_port() {
     local current
 
@@ -227,7 +238,7 @@ resolve_otel_port() {
         return 0
     fi
 
-    current="$(read_env_value OTEL_PORT)"
+    current="$(read_json_value OTEL_PORT)"
     if is_port "$current"; then
         printf '%s' "$current"
         return 0
@@ -246,16 +257,42 @@ is_ipv4() {
     '
 }
 
-# Sets a setting of .env, replacing its value or appending it when the key is
-# absent, and leaves every other setting alone.
-set_env_value() {
-    local name="$1" value="$2" env_file="$3"
+# Sets a setting of appsettings.json, replacing its value or inserting the key
+# before the closing brace when it is absent, and leaves every other setting
+# alone. A quoted value is written between double quotes; a bare value (a
+# number or a boolean) is not.
+set_json_value() {
+    local name="$1" value="$2" quoted="$3" settings_file="$4"
+    local escaped replacement
 
-    if grep -q "^${name}=" "$env_file"; then
-        sed -i.bak "s|^${name}=.*|${name}=${value}|" "$env_file"
-        rm -f "${env_file}.bak"
+    escaped="$(printf '%s' "$value" | sed 's/[&|]/\\&/g')"
+    if [ "$quoted" = 'true' ]; then
+        replacement="\"${name}\": \"${escaped}\","
     else
-        printf '%s=%s\n' "$name" "$value" >> "$env_file"
+        replacement="\"${name}\": ${escaped},"
+    fi
+
+    if grep -q "\"${name}\":" "$settings_file"; then
+        sed -i.bak "s|\"${name}\": .*|${replacement}|" "$settings_file"
+        rm -f "${settings_file}.bak"
+    else
+        # Inserts the key before the closing brace, and gives the setting that
+        # precedes it the comma the insertion takes away.
+        awk -v line="  ${replacement%,}" '
+            { lines[NR] = $0 }
+            END {
+                for (i = 1; i <= NR; i++) {
+                    if (lines[i] == "}" && i > 1 &&
+                        lines[i - 1] !~ /,[[:space:]]*$/) {
+                        lines[i - 1] = lines[i - 1] ","
+                    }
+                }
+                for (i = 1; i <= NR; i++) {
+                    if (lines[i] == "}") print line
+                    print lines[i]
+                }
+            }' "$settings_file" > "${settings_file}.tmp"
+        mv "${settings_file}.tmp" "$settings_file"
     fi
 }
 
@@ -270,7 +307,7 @@ resolve_advertised_ip() {
     fi
 
     local current detected
-    current="$(read_env_value ADVERTISED_ADDRESS)"
+    current="$(read_json_value ADVERTISED_ADDRESS)"
 
     detected="$(detect_private_ipv4)"
     if [ -n "$detected" ]; then
@@ -283,7 +320,7 @@ resolve_advertised_ip() {
         return 0
     fi
 
-    echo 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in .env' >&2
+    echo 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in appsettings.json' >&2
     printf '%s' ''
 }
 
@@ -293,7 +330,7 @@ resolve_advertised_ip() {
 resolve_log_level() {
     local current default_choice choice selected
 
-    current="$(read_env_value LOG_LEVEL)"
+    current="$(read_json_value LOG_LEVEL)"
 
     # The environment decides without asking, which is what a piped or otherwise
     # unattended run needs.
@@ -412,28 +449,27 @@ if [ "${downloads_deployment}" = "true" ]; then
     mkdir --parents "${project_directory}"
     echo "Installing into ${project_directory}"
     download_deployment_file compose.yaml
-    download_deployment_file .env.example
+    download_deployment_file appsettings.example.json
 fi
 
 cd "${project_directory}"
 
-if [ ! -f .env ]; then
-    cp .env.example .env
+if [ ! -f appsettings.json ]; then
+    cp appsettings.example.json appsettings.json
     jwt_secret="$(openssl rand -base64 48)"
-    sed -i.bak "s|^JWT_SECRET=.*|JWT_SECRET=${jwt_secret}|" .env
-    rm -f .env.bak
-    echo "Created .env from .env.example with a random JWT_SECRET. Review it before exposing the deployment."
+    set_json_value JWT_SECRET "$jwt_secret" true appsettings.json
+    echo "Created appsettings.json from appsettings.example.json with a random JWT_SECRET. Review it before exposing the deployment."
 fi
 
 resolved_advertised_ip="$(resolve_advertised_ip)"
 if [ -n "$resolved_advertised_ip" ]; then
-    set_env_value ADVERTISED_ADDRESS "$resolved_advertised_ip" .env
+    set_json_value ADVERTISED_ADDRESS "$resolved_advertised_ip" true appsettings.json
 fi
 
 # The level decides what a container writes to its standard output, so it is
 # answered and written before the images are pulled.
 resolved_log_level="$(resolve_log_level)"
-set_env_value LOG_LEVEL "$resolved_log_level" .env
+set_json_value LOG_LEVEL "$resolved_log_level" true appsettings.json
 
 # Whether the servers send telemetry is answered and written before the images
 # are pulled. Pointing the collector at the chosen port is the operator's
@@ -441,24 +477,22 @@ set_env_value LOG_LEVEL "$resolved_log_level" .env
 resolved_telemetry="$(resolve_telemetry)"
 if [ "$resolved_telemetry" = 'true' ]; then
     resolved_otel_port="$(resolve_otel_port)"
-    set_env_value OTEL_ENABLED true .env
-    set_env_value OTEL_PORT "$resolved_otel_port" .env
+    set_json_value OTEL_ENABLED true false appsettings.json
+    set_json_value OTEL_PORT "$resolved_otel_port" false appsettings.json
     echo
     echo "OpenTelemetry is enabled: the servers send their metrics over gRPC on port ${resolved_otel_port}."
     echo "Set OTEL_PORT to change the port; the collector has to listen on the same one."
 else
-    set_env_value OTEL_ENABLED false .env
+    set_json_value OTEL_ENABLED false false appsettings.json
     echo
     echo 'OpenTelemetry is disabled: no OpenTelemetry integration is configured.'
 fi
 
-image_prefix="$(normalise_prefix "${1:-${MGO2_IMAGE_PREFIX:-$(read_env_value MGO2_IMAGE_PREFIX)}}")"
+image_prefix="$(normalise_prefix "${1:-${MGO2_IMAGE_PREFIX:-}}")"
 image_prefix="${image_prefix:-$(normalise_prefix "${default_image_prefix}")}"
-image_tag="${MGO2_IMAGE_TAG:-$(read_env_value MGO2_IMAGE_TAG)}"
-image_tag="${image_tag:-latest}"
+image_tag="${MGO2_IMAGE_TAG:-latest}"
 
-# The shell environment wins over .env, so exporting is enough to point compose
-# at the chosen registry.
+# The exported variables point compose at the chosen registry.
 export MGO2_IMAGE_PREFIX="${image_prefix}"
 export MGO2_IMAGE_TAG="${image_tag}"
 
@@ -486,7 +520,7 @@ if [ "${running}" != "${expected}" ]; then
     exit 1
 fi
 
-account_host="$(read_env_value ADVERTISED_ADDRESS)"
+account_host="$(read_json_value ADVERTISED_ADDRESS)"
 if [ -z "$account_host" ] || [ "$account_host" = '0.0.0.0' ]; then
     account_host="$(detect_private_ipv4)"
 fi

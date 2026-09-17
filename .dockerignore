@@ -1,4 +1,4 @@
-.env
+appsettings.json
 .git
 **/bin
 **/obj

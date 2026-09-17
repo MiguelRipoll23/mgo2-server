@@ -3,12 +3,23 @@
 # server or the port-check responder can be restarted, scaled or replaced
 # independently.
 #
-# Every setting is a single upper-case environment variable. The images are the
-# same ones the CI workflow publishes to ghcr.io; this deployment pulls them, so
-# a bare `docker compose up` runs the published stack, by default from
-# ghcr.io/miguelripoll23/mgo2-server/. MGO2_IMAGE_PREFIX and MGO2_IMAGE_TAG (see
-# .env.example) replace that default, and the install scripts do this exact
-# pull-and-install sequence.
+# The servers read their shared settings from appsettings.json, baked into each
+# image from the appsettings.example.json of the repository. Every container
+# mounts the deployment's own appsettings.json over the baked one, read-only, so
+# the operator configures shared settings in a single file and this compose file
+# only carries the per-container identity below. An environment variable of the
+# same upper-case name still overrides any file value. The identity of each
+# gameplay lobby lives in its own environment block: LOBBY_NAME, LOBBY_SUBTYPE,
+# LOBBY_PORT and the LOBBY_* attributes, so two lobbies cannot end up claiming
+# the same name or port. PostgreSQL is not a .NET process, so it cannot read
+# appsettings.json and receives DATABASE_CONNECTION_STRING from its own
+# environment block instead.
+#
+# The images are the same ones the CI workflow publishes to ghcr.io; this
+# deployment pulls them, so a bare `docker compose up` runs the published stack,
+# by default from ghcr.io/miguelripoll23/mgo2-server/. MGO2_IMAGE_PREFIX and
+# MGO2_IMAGE_TAG, read from the shell that runs compose, replace that default,
+# and the install scripts do this exact pull-and-install sequence.
 #
 # To build the images locally instead of pulling them, use compose.dev.yaml: it
 # includes this file and adds the build step of every image, so
@@ -33,12 +44,12 @@
 name: mgo2
 
 x-database: &database
-  env_file:
-    - .env
   depends_on:
     postgres:
       condition: service_healthy
   restart: unless-stopped
+  volumes:
+    - ./appsettings.json:/app/appsettings.json:ro
   # Lets a container reach the Grafana Alloy running on the host, which is where
   # the OpenTelemetry exporter sends the metrics (OTEL_HOST). Docker Desktop
   # resolves this name on its own; the mapping makes it resolve on Linux too.
@@ -69,9 +80,11 @@ services:
   postgres:
     image: ${MGO2_IMAGE_PREFIX:-ghcr.io/miguelripoll23/mgo2-server/}mgo2-postgres:${MGO2_IMAGE_TAG:-latest}
     container_name: mgo2-postgres
-    env_file:
-      - .env
+    # The migration bundle in the entrypoint and the servers that share the
+    # database read this. PostgreSQL itself is not a .NET process, so it cannot
+    # read the mounted appsettings.json and this setting comes from here.
     environment:
+      DATABASE_CONNECTION_STRING: Host=postgres;Port=5432;Database=mgo2;Username=postgres
       POSTGRES_DB: mgo2
       POSTGRES_USER: postgres
       POSTGRES_HOST_AUTH_METHOD: trust
@@ -240,10 +253,11 @@ services:
   mgo2-gameplay-1:
     <<: *gameplay-server
     container_name: mgo2-gameplay-1
+    # The address players are told to rendezvous at comes from ADVERTISED_ADDRESS
+    # in the mounted appsettings.json; P2P_HOST is deliberately not set.
     environment:
       GAMEPLAY_SERVER_PORT: "5730"
       GAMEPLAY_SERVER_LOBBY_NAME: Free Battle
-      P2P_HOST: ${ADVERTISED_ADDRESS:-127.0.0.1}
     ports:
       - "5730:5730/udp"
 
@@ -252,17 +266,12 @@ services:
     <<: *database
     image: ${MGO2_IMAGE_PREFIX:-ghcr.io/miguelripoll23/mgo2-server/}mgo2-http:${MGO2_IMAGE_TAG:-latest}
     container_name: mgo2-http
-    environment:
-      HTTP_PORT: "80"
-      LAUNCHER_SERVER: http://mgo2pc.com
-      # The internal endpoint the gameplay lobbies dial. It is served on the
-      # network of this compose project and is deliberately not published: only
-      # the lobbies and the API itself ever speak to it.
-      INTERNAL_GRPC_PORT: "5743"
     # A mounted volume at the Data Protection key ring silences the framework's
     # "keys may not be persisted" warning and keeps protected payloads valid
-    # across restarts.
+    # across restarts. The shared settings it serves (HTTP_PORT, LAUNCHER_SERVER,
+    # INTERNAL_GRPC_PORT and its secrets) come from the mounted appsettings.json.
     volumes:
+      - ./appsettings.json:/app/appsettings.json:ro
       - http-keys:/root/.aspnet/DataProtection-Keys
     ports:
       - "80:80/tcp"
@@ -271,9 +280,9 @@ services:
   mgo2-dns:
     image: ${MGO2_IMAGE_PREFIX:-ghcr.io/miguelripoll23/mgo2-server/}mgo2-dns:${MGO2_IMAGE_TAG:-latest}
     container_name: mgo2-dns
-    env_file:
-      - .env
     restart: unless-stopped
+    volumes:
+      - ./appsettings.json:/app/appsettings.json:ro
     ports:
       - "53:53/udp"
 
@@ -285,9 +294,9 @@ services:
   mgo2-stun:
     image: ${MGO2_IMAGE_PREFIX:-ghcr.io/miguelripoll23/mgo2-server/}mgo2-stun:${MGO2_IMAGE_TAG:-latest}
     container_name: mgo2-stun
-    env_file:
-      - .env
     restart: unless-stopped
+    volumes:
+      - ./appsettings.json:/app/appsettings.json:ro
     # Both ports are published: the console dials 3478, and it is told to reach
     # 3479 for the test that detects a symmetric NAT, so that one has to arrive
     # too. On Linux the container sees the source address and port of the console
@@ -307,7 +316,7 @@ services:
       # one. Serving a second address means owning both, which only works where
       # the responder has host addresses of its own: set network_mode: host on
       # this service and drop this line, or run it outside Docker. Clearing it
-      # here keeps a value in .env from failing the bind.
+      # here keeps a value in the mounted appsettings.json from failing the bind.
       STUN_SECONDARY_ADDRESS: ""
 
 volumes:

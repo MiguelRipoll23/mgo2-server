@@ -108,5 +108,11 @@ ENV ASPNETCORE_HTTP_PORTS=
 WORKDIR /app
 COPY --from=build /app ./
 
+# The servers read their configuration from appsettings.json. The committed
+# example has the deployment defaults; a deployment mounts its own
+# appsettings.json over this one, and a runtime environment variable of the same
+# name overrides any file value, so secrets never have to be baked into an image.
+COPY appsettings.example.json ./appsettings.json
+
 # exec keeps the process as PID 1 so the container stops on SIGTERM.
 ENTRYPOINT ["sh", "-c", "exec dotnet \"$MGO2_SERVER_ASSEMBLY\".dll"]

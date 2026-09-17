@@ -10,10 +10,10 @@
     starts, minus PostgreSQL.
 
     PostgreSQL is not started by this script. The servers connect to the
-    database of DATABASE_CONNECTION_STRING, which must be set in .env or in the
-    environment. The compose placeholder (Host=postgres) is ignored. Either the
-    keyword form Npgsql reads or the postgresql:// URL form is accepted; the
-    URL is translated before it reaches the servers.
+    database of DATABASE_CONNECTION_STRING, which must be set in appsettings.json
+    or in the environment. The compose placeholder (Host=postgres) is ignored.
+    Either the keyword form Npgsql reads or the postgresql:// URL form is
+    accepted; the URL is translated before it reaches the servers.
 
     The schema of an empty database is created by the servers themselves on
     their first start, so nothing has to be applied by hand.
@@ -23,19 +23,20 @@
     binaries themselves are built by scripts/build-windows.ps1, which this
     script refuses to start without. No elevation is required and none is
     looked for: the servers bind their own ports, and every one of them is
-    configurable through .env.
+    configurable through appsettings.json.
 
     The servers run in the foreground and Ctrl+C stops all of them. Their log
     level is set to Debug so packet hex dumps are visible. Log files are written
     to .logs\ with daily rotation (7-day retention).
 
     Telemetry is always on: every server sends its OpenTelemetry metrics over
-    gRPC to a collector on port 4317, and the OTEL_* settings of .env are
+    gRPC to a collector on port 4317, and the OTEL_* settings are
     overridden so the scripts behave the same however the deployment was
     installed.
 
-    Every other setting is read from .env, which is created from .env.example on
-    the first run and never overwritten. The process environment wins over .env.
+    Every other setting is read from appsettings.json, which is created from
+    appsettings.example.json on the first run. The process environment wins over
+    the file.
 
 .PARAMETER Configuration
     Build configuration, Debug by default. MGO2_CONFIGURATION sets it as well.
@@ -59,7 +60,8 @@ $SolutionName = 'Mgo2Server.slnx'
 $DotNetChannel = '10.0'
 
 # Database connection string. Required; set DATABASE_CONNECTION_STRING in the
-# environment or in .env. The compose placeholder (Host=postgres) is ignored.
+# environment or in appsettings.json. The compose placeholder (Host=postgres) is
+# ignored.
 
 # Npgsql keyword, keyed by the libpq parameter a PostgreSQL URL carries. Npgsql
 # reads keyword=value pairs only, so a URL is translated through this table
@@ -76,30 +78,41 @@ $serverProcesses = @()
 $serverLabels = @()
 $stopping = $false
 
-# Copies .env into the process environment, so the servers see the same settings
-# they would get from compose. A setting that is already in the environment is
-# left alone, which is what lets the shell override .env.
-function Import-EnvFile([string]$Path) {
-    foreach ($line in Get-Content -Path $Path) {
-        $trimmed = $line.Trim()
-        if (-not $trimmed -or $trimmed.StartsWith('#')) {
-            continue
-        }
-
-        $separator = $trimmed.IndexOf('=')
-        if ($separator -lt 1) {
-            continue
-        }
-
-        $name = $trimmed.Substring(0, $separator)
-        if ($name -notmatch '^[A-Za-z0-9_]+$') {
-            continue
-        }
-
-        if ($null -eq [Environment]::GetEnvironmentVariable($name, 'Process')) {
-            [Environment]::SetEnvironmentVariable($name, $trimmed.Substring($separator + 1), 'Process')
-        }
+# Prints the value of a setting of appsettings.json, or nothing when it is not
+# set. A quoted string and a bare number or boolean are both read; a quoted
+# value comes back without the surrounding quotes.
+function Read-JsonValue([string]$Name, [string]$ProjectDirectory) {
+    $settingsFile = Join-Path $ProjectDirectory 'appsettings.json'
+    if (-not (Test-Path $settingsFile)) {
+        return ''
     }
+
+    $pattern = '"' + [regex]::Escape($Name) + '":\s*(.*?),?\s*$'
+    $match = Select-String -Path $settingsFile -Pattern $pattern | Select-Object -Last 1
+    if ($null -eq $match) {
+        return ''
+    }
+
+    $value = $match.Matches[0].Groups[1].Value.Trim()
+    if ($value.StartsWith('"') -and $value.EndsWith('"') -and $value.Length -ge 2) {
+        $value = $value.Substring(1, $value.Length - 2)
+    }
+
+    return $value
+}
+
+# Prints the value of a setting: the process environment wins, then
+# appsettings.json, then the default.
+function Get-SettingValue([string]$Name, [string]$Default, [string]$ProjectDirectory) {
+    $value = [Environment]::GetEnvironmentVariable($Name, 'Process')
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        $value = Read-JsonValue $Name $ProjectDirectory
+    }
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        $value = $Default
+    }
+
+    return $value
 }
 
 # Reports whether a dotnet command able to build net10.0 is on the PATH.
@@ -230,13 +243,14 @@ function ConvertTo-NpgsqlConnectionString([string]$ConnectionString) {
 }
 
 # Reports the connection string of the database: the one in the process
-# environment or the one in .env, ignoring the compose placeholder. The schema
-# of an empty database is created by the servers on their first start.
+# environment or the one in appsettings.json, ignoring the compose placeholder.
+# The schema of an empty database is created by the servers on their first
+# start.
 function Resolve-DatabaseConnectionString {
-    $connectionString = $env:DATABASE_CONNECTION_STRING
+    $connectionString = Get-SettingValue 'DATABASE_CONNECTION_STRING' '' $projectDirectory
 
     if ([string]::IsNullOrWhiteSpace($connectionString) -or $connectionString -match '(?i)(^|;)\s*Host=postgres\s*(;|$)') {
-        throw 'DATABASE_CONNECTION_STRING is not set or is the compose placeholder. Set it in .env or in the environment'
+        throw 'DATABASE_CONNECTION_STRING is not set or is the compose placeholder. Set it in appsettings.json or in the environment'
     }
 
     $connectionString = ConvertTo-NpgsqlConnectionString $connectionString
@@ -321,12 +335,13 @@ else {
 
 Push-Location $projectDirectory
 try {
-    if (-not (Test-Path '.env')) {
-        Copy-Item '.env.example' '.env'
-        Write-Host 'Created .env from .env.example. Review it before exposing the deployment.'
+    # The servers read their configuration from appsettings.json first, and the
+    # environment overrides it. The example carries the shared defaults; a real
+    # file is created on the first run so the settings can be reviewed.
+    if (-not (Test-Path 'appsettings.json')) {
+        Copy-Item 'appsettings.example.json' 'appsettings.json'
+        Write-Host 'Created appsettings.json from appsettings.example.json. Review it before exposing the deployment.'
     }
-
-    Import-EnvFile (Join-Path $projectDirectory '.env')
 
     # The run scripts always enable the telemetry integration, so every server
     # exports its metrics and nothing has to be configured to develop against
@@ -337,7 +352,7 @@ try {
     $env:OTEL_HOST = 'localhost'
 
     # Every server runs on this machine, so a gameplay lobby dials the HTTP API
-    # on the loopback address instead of the compose service name .env uses.
+    # on the loopback address instead of the compose service name.
     $internalGrpcPort = if ($env:INTERNAL_GRPC_PORT) { $env:INTERNAL_GRPC_PORT } else { '5743' }
     $env:INTERNAL_GRPC_URL = "http://localhost:$internalGrpcPort"
 
@@ -365,10 +380,10 @@ try {
         Pop-Location
     }
 
-    $httpPort = if ($env:HTTP_PORT) { $env:HTTP_PORT } else { '80' }
-    $dnsPort = if ($env:DNS_PORT) { $env:DNS_PORT } else { '53' }
-    $stunPort = if ($env:STUN_PORT) { $env:STUN_PORT } else { '3478' }
-    $launcherServer = if ($env:LAUNCHER_SERVER) { $env:LAUNCHER_SERVER } else { 'http://mgo2pc.com' }
+    $httpPort = Get-SettingValue 'HTTP_PORT' '80' $projectDirectory
+    $dnsPort = Get-SettingValue 'DNS_PORT' '53' $projectDirectory
+    $stunPort = Get-SettingValue 'STUN_PORT' '3478' $projectDirectory
+    $launcherServer = Get-SettingValue 'LAUNCHER_SERVER' 'http://mgo2pc.com' $projectDirectory
 
     try {
         Write-Host ''
@@ -414,7 +429,7 @@ try {
         Start-Server 'gameplay-5730' 'GameplayServer' 'Gameplay server (5730/udp)' @{
             GAMEPLAY_SERVER_PORT = '5730'
             GAMEPLAY_SERVER_LOBBY_NAME = 'Free Battle'
-            P2P_HOST = if ($env:ADVERTISED_ADDRESS) { $env:ADVERTISED_ADDRESS } else { '127.0.0.1' }
+            P2P_HOST = Get-SettingValue 'ADVERTISED_ADDRESS' '127.0.0.1' $projectDirectory
         }
 
         Start-Server 'http' 'Http' "HTTP API ($httpPort/tcp)" @{
@@ -428,8 +443,8 @@ try {
 
         # The port-check responder serves the port the console dials and the one
         # after it. Its second address, which answers a request to change the
-        # address, is the STUN_SECONDARY_ADDRESS of .env; without one it logs a
-        # warning and can only move the port.
+        # address, is the STUN_SECONDARY_ADDRESS of appsettings.json; without
+        # one it logs a warning and can only move the port.
         Start-Server 'stun' 'Stun' "Port check ($stunPort/udp)" @{
             STUN_PORT = $stunPort
         }

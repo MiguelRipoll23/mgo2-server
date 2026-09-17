@@ -4,9 +4,9 @@
 
 .DESCRIPTION
     Removes every container, image, volume and network of the mgo2 compose
-    project, and the configuration that came with it (.env, and the whole
-    downloaded deployment directory when the deployment was installed with a
-    piped script).
+    project, and the configuration that came with it (appsettings.json, and the
+    whole downloaded deployment directory when the deployment was installed with
+    a piped script).
 
     The script asks for confirmation before it removes anything. -Yes (or
     MGO2_ASSUME_YES=1) answers the question without a prompt, which a run
@@ -14,8 +14,9 @@
 
     When the script is started from a clone of the repository it never removes
     the source tree: the repository and everything else in it stay, and only
-    .env and the Docker resources go. A deployment directory a piped install
-    downloaded (compose.yaml, .env.example and .env) is removed entirely.
+    appsettings.json and the Docker resources go. A deployment directory a piped
+    install downloaded (compose.yaml, appsettings.example.json and
+    appsettings.json) is removed entirely.
 
 .PARAMETER Yes
     Skips the confirmation prompt.
@@ -119,8 +120,8 @@ function Remove-DeploymentDirectory([string]$Directory) {
     }
 
     $hasMarker = (Test-Path (Join-Path $Directory 'compose.yaml')) -or
-                 (Test-Path (Join-Path $Directory '.env')) -or
-                 (Test-Path (Join-Path $Directory '.env.example'))
+                 (Test-Path (Join-Path $Directory 'appsettings.json')) -or
+                 (Test-Path (Join-Path $Directory 'appsettings.example.json'))
     if (-not $hasMarker) {
         Write-Host "warning: refusing to remove $Directory; it holds no downloaded deployment" -ForegroundColor Yellow
         return
@@ -157,8 +158,8 @@ if ($PSScriptRoot -and (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 
 
 $projectPresent = Test-Path -LiteralPath $projectDirectory
 
-# A repository checkout keeps everything but .env; a downloaded deployment is
-# removed in full.
+# A repository checkout keeps everything but appsettings.json; a downloaded
+# deployment is removed in full.
 $repositoryCheckout = $false
 if ($projectPresent) {
     $repositoryCheckout = Test-RepositoryCheckout $projectDirectory
@@ -180,7 +181,7 @@ if (-not $accepted) {
         exit 1
     }
 
-    $description = if ($repositoryCheckout) { (Join-Path $projectDirectory '.env') } else { "the deployment directory $projectDirectory" }
+    $description = if ($repositoryCheckout) { (Join-Path $projectDirectory 'appsettings.json') } else { "the deployment directory $projectDirectory" }
 
     Write-Host ''
     Write-Host "This removes every container, image, volume and network of the mgo2 deployment, and $description."
@@ -254,13 +255,13 @@ if (-not $projectPresent) {
     Write-Host "Nothing to remove on disk: $projectDirectory does not exist."
 }
 elseif ($repositoryCheckout) {
-    $envFile = Join-Path $projectDirectory '.env'
-    if (Test-Path -LiteralPath $envFile) {
-        Remove-Item -LiteralPath $envFile -Force
-        Write-Host "Removed $envFile"
+    $appsettingsFile = Join-Path $projectDirectory 'appsettings.json'
+    if (Test-Path -LiteralPath $appsettingsFile) {
+        Remove-Item -LiteralPath $appsettingsFile -Force
+        Write-Host "Removed $appsettingsFile"
     }
     else {
-        Write-Host "No .env config to remove in $projectDirectory"
+        Write-Host "No appsettings.json config to remove in $projectDirectory"
     }
 }
 else {

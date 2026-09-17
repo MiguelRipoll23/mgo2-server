@@ -15,11 +15,12 @@
 
     The script runs against a clone when it is started from one; otherwise it
     creates a deployment directory (.\mgo2-server, or MGO2_HOME) and downloads
-    compose.yaml and .env.example into it. Everything else is configured in
-    .env, which is created from .env.example on the first run and never
-    overwritten, except for ADVERTISED_ADDRESS: the script detects the private
-    address of this machine and writes it there so clients on the network can
-    reach the published ports.
+    compose.yaml and appsettings.example.json into it. Everything else is
+    configured in appsettings.json, which is created from appsettings.example.json
+    on the first run with a random JWT_SECRET and never overwritten afterwards,
+    except for ADVERTISED_ADDRESS: the script detects the private address of this
+    machine and writes it there so clients on the network can reach the published
+    ports.
 
     Set ADVERTISED_ADDRESS to skip detection. Set MGO2_LOG_LEVEL to answer the
     log-level question without a prompt, and MGO2_TELEMETRY to answer the
@@ -32,8 +33,8 @@
 .PARAMETER ImagePrefix
     Registry path the images are pulled from, including the trailing slash, for
     example ghcr.io/your-account/your-repository/. When it is omitted,
-    MGO2_IMAGE_PREFIX is used: the setting of .env, or the environment
-    variable, or the registry the images are published to by default.
+    MGO2_IMAGE_PREFIX is used: the environment variable, or the registry the
+    images are published to by default.
 
 .EXAMPLE
     irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/install-windows.ps1 | iex
@@ -57,19 +58,27 @@ $DefaultSourceUrl = 'https://raw.githubusercontent.com/MiguelRipoll23/mgo2-serve
 $DefaultImagePrefix = 'ghcr.io/miguelripoll23/mgo2-server/'
 $DeploymentDirectoryName = 'mgo2-server'
 
-# Prints the value of a setting of .env, or nothing when it is not set.
-function Read-EnvValue([string]$Name, [string]$ProjectDirectory) {
-    $envFile = Join-Path $ProjectDirectory '.env'
-    if (-not (Test-Path $envFile)) {
+# Prints the value of a setting of appsettings.json, or nothing when it is not
+# set. A quoted string and a bare number or boolean are both read; a quoted
+# value comes back without the surrounding quotes.
+function Read-JsonValue([string]$Name, [string]$ProjectDirectory) {
+    $settingsFile = Join-Path $ProjectDirectory 'appsettings.json'
+    if (-not (Test-Path $settingsFile)) {
         return ''
     }
 
-    $match = Select-String -Path $envFile -Pattern "^$Name=" | Select-Object -Last 1
+    $pattern = '"' + [regex]::Escape($Name) + '":\s*(.*?),?\s*$'
+    $match = Select-String -Path $settingsFile -Pattern $pattern | Select-Object -Last 1
     if ($null -eq $match) {
         return ''
     }
 
-    return ($match.Line -replace "^$Name=", '').Trim()
+    $value = $match.Matches[0].Groups[1].Value.Trim()
+    if ($value.StartsWith('"') -and $value.EndsWith('"') -and $value.Length -ge 2) {
+        $value = $value.Substring(1, $value.Length - 2)
+    }
+
+    return $value
 }
 
 # Reports the private IPv4 address of this machine, or nothing when it cannot be
@@ -152,27 +161,44 @@ function Test-IPv4([string]$Value) {
     return $true
 }
 
-# Sets a setting of .env, replacing its value and leaving every other setting alone.
-function Set-EnvValue([string]$Name, [string]$Value, [string]$EnvFile) {
-    $written = $false
-
-    $result = @(foreach ($line in (Get-Content -Path $EnvFile)) {
-        if ($line -match "^$Name=") {
-            if (-not $written) {
-                "$Name=$Value"
-                $written = $true
-            }
-        }
-        else {
-            $line
-        }
-    })
-
-    if (-not $written) {
-        $result += "$Name=$Value"
+# Sets a setting of appsettings.json, replacing its value or inserting the key
+# before the closing brace when it is absent, and leaves every other setting
+# alone. A quoted value is written between double quotes; a bare value (a number
+# or a boolean) is not.
+function Set-JsonValue([string]$Name, [string]$Value, [bool]$Quoted, [string]$SettingsFile) {
+    $escaped = $Value.Replace('\', '\\').Replace('"', '\"')
+    if ($Quoted) {
+        $literal = '"' + $Name + '": "' + $escaped + '",'
+    }
+    else {
+        $literal = '"' + $Name + '": ' + $escaped + ','
     }
 
-    [IO.File]::WriteAllLines($EnvFile, $result, [Text.UTF8Encoding]::new($false))
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.AddRange([string[]](Get-Content -Path $SettingsFile))
+
+    $keyPattern = '^\s*"' + [regex]::Escape($Name) + '":'
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($lines[$index] -match $keyPattern) {
+            $lines[$index] = '  ' + $literal
+            [IO.File]::WriteAllLines($SettingsFile, $lines, [Text.UTF8Encoding]::new($false))
+            return
+        }
+    }
+
+    # Inserts the key before the closing brace, and gives the setting that
+    # precedes it the comma the insertion takes away.
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($lines[$index].Trim() -eq '}') {
+            if ($index -gt 0 -and -not $lines[$index - 1].TrimEnd().EndsWith(',')) {
+                $lines[$index - 1] = $lines[$index - 1] + ','
+            }
+            $lines.Insert($index, '  ' + $literal.TrimEnd(','))
+            break
+        }
+    }
+
+    [IO.File]::WriteAllLines($SettingsFile, $lines, [Text.UTF8Encoding]::new($false))
 }
 
 # Reports the private address clients are told to connect to. An empty answer
@@ -182,7 +208,7 @@ function Resolve-AdvertisedIP([string]$ProjectDirectory) {
         return $env:ADVERTISED_ADDRESS
     }
 
-    $current = Read-EnvValue 'ADVERTISED_ADDRESS' $ProjectDirectory
+    $current = Read-JsonValue 'ADVERTISED_ADDRESS' $ProjectDirectory
 
     $detected = Get-PrivateIPv4
     if (-not [string]::IsNullOrWhiteSpace($detected)) {
@@ -193,7 +219,7 @@ function Resolve-AdvertisedIP([string]$ProjectDirectory) {
         return $current
     }
 
-    Write-Host 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in .env' -ForegroundColor Yellow
+    Write-Host 'warning: the private address of this machine could not be detected; set ADVERTISED_ADDRESS in appsettings.json' -ForegroundColor Yellow
     return ''
 }
 
@@ -213,7 +239,7 @@ function Resolve-LogLevel([string]$ProjectDirectory) {
     # A level that is already configured stays the default, so running the
     # script again to install an update does not silently rescale the logs; a
     # fresh deployment starts at Warning.
-    $current = Read-EnvValue 'LOG_LEVEL' $ProjectDirectory
+    $current = Read-JsonValue 'LOG_LEVEL' $ProjectDirectory
     $defaultChoice = if (Test-LogLevel $current) { Get-LogLevelChoice $current } else { '3' }
 
     # A run without an interactive host cannot be asked anything, so the default
@@ -252,7 +278,7 @@ function Test-YesNo([string]$Value) {
     return $Value -imatch '^(y|yes|true|1|n|no|false|0)$'
 }
 
-# Spells a yes/no answer the one way .env stores it.
+# Spells a yes/no answer the one way appsettings.json stores it.
 function Get-NormalisedYesNo([string]$Value) {
     if ($Value -imatch '^(y|yes|true|1)$') {
         return 'true'
@@ -285,7 +311,7 @@ function Resolve-Telemetry([string]$ProjectDirectory) {
     # A deployment that was installed with telemetry off stays off by default,
     # so running the script again to install an update does not silently turn it
     # on; a fresh deployment starts with it on.
-    $current = Read-EnvValue 'OTEL_ENABLED' $ProjectDirectory
+    $current = Read-JsonValue 'OTEL_ENABLED' $ProjectDirectory
     $defaultChoice = if ($current -eq 'false') { 'no' } else { 'yes' }
 
     # A run without an interactive host cannot be asked anything, so the default
@@ -313,13 +339,14 @@ function Resolve-Telemetry([string]$ProjectDirectory) {
 }
 
 # Reports the port the OTLP/gRPC collector the metrics are sent to listens on. 4317 is
-# the default; OTEL_PORT in the environment or in .env answers without a prompt.
+# the default; OTEL_PORT in the environment or in appsettings.json answers without
+# a prompt.
 function Resolve-OtelPort([string]$ProjectDirectory) {
     if ($env:OTEL_PORT -and (Test-Port $env:OTEL_PORT)) {
         return $env:OTEL_PORT
     }
 
-    $current = Read-EnvValue 'OTEL_PORT' $ProjectDirectory
+    $current = Read-JsonValue 'OTEL_PORT' $ProjectDirectory
     if (Test-Port $current) {
         return $current
     }
@@ -378,28 +405,28 @@ if ($downloadsDeployment) {
     New-Item -ItemType Directory -Force -Path $projectDirectory | Out-Null
     Write-Host "Installing into $projectDirectory"
     Save-DeploymentFile 'compose.yaml' $projectDirectory $sourceUrl
-    Save-DeploymentFile '.env.example' $projectDirectory $sourceUrl
+    Save-DeploymentFile 'appsettings.example.json' $projectDirectory $sourceUrl
 }
 
 Push-Location $projectDirectory
 try {
-    $envFile = Join-Path $projectDirectory '.env'
-    if (-not (Test-Path $envFile)) {
-        Copy-Item (Join-Path $projectDirectory '.env.example') $envFile
+    $settingsFile = Join-Path $projectDirectory 'appsettings.json'
+    if (-not (Test-Path $settingsFile)) {
+        Copy-Item (Join-Path $projectDirectory 'appsettings.example.json') $settingsFile
         $jwtSecret = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
-        (Get-Content $envFile) -replace '^JWT_SECRET=.*', "JWT_SECRET=$jwtSecret" | Set-Content $envFile
-        Write-Host 'Created .env from .env.example with a random JWT_SECRET. Review it before exposing the deployment.'
+        Set-JsonValue 'JWT_SECRET' $jwtSecret $true $settingsFile
+        Write-Host 'Created appsettings.json from appsettings.example.json with a random JWT_SECRET. Review it before exposing the deployment.'
     }
 
     $resolvedAdvertisedIp = Resolve-AdvertisedIP $projectDirectory
     if (-not [string]::IsNullOrWhiteSpace($resolvedAdvertisedIp)) {
-        Set-EnvValue 'ADVERTISED_ADDRESS' $resolvedAdvertisedIp $envFile
+        Set-JsonValue 'ADVERTISED_ADDRESS' $resolvedAdvertisedIp $true $settingsFile
     }
 
     # The level decides what a container writes to its standard output, so it is
     # answered and written before the images are pulled.
     $resolvedLogLevel = Resolve-LogLevel $projectDirectory
-    Set-EnvValue 'LOG_LEVEL' $resolvedLogLevel $envFile
+    Set-JsonValue 'LOG_LEVEL' $resolvedLogLevel $true $settingsFile
 
     # Whether the servers send telemetry is answered and written before the
     # images are pulled. Pointing the collector at the chosen port is the
@@ -407,20 +434,20 @@ try {
     $resolvedTelemetry = Resolve-Telemetry $projectDirectory
     if ($resolvedTelemetry -eq 'true') {
         $resolvedOtelPort = Resolve-OtelPort $projectDirectory
-        Set-EnvValue 'OTEL_ENABLED' 'true' $envFile
-        Set-EnvValue 'OTEL_PORT' $resolvedOtelPort $envFile
+        Set-JsonValue 'OTEL_ENABLED' 'true' $false $settingsFile
+        Set-JsonValue 'OTEL_PORT' $resolvedOtelPort $false $settingsFile
         Write-Host ''
         Write-Host "OpenTelemetry is enabled: the servers send their metrics over gRPC on port $resolvedOtelPort."
         Write-Host 'Set OTEL_PORT to change the port; the collector has to listen on the same one.'
     }
     else {
-        Set-EnvValue 'OTEL_ENABLED' 'false' $envFile
+        Set-JsonValue 'OTEL_ENABLED' 'false' $false $settingsFile
         Write-Host ''
         Write-Host 'OpenTelemetry is disabled: no OpenTelemetry integration is configured.'
     }
 
     if ([string]::IsNullOrWhiteSpace($ImagePrefix)) {
-        $ImagePrefix = if ($env:MGO2_IMAGE_PREFIX) { $env:MGO2_IMAGE_PREFIX } else { Read-EnvValue 'MGO2_IMAGE_PREFIX' $projectDirectory }
+        $ImagePrefix = if ($env:MGO2_IMAGE_PREFIX) { $env:MGO2_IMAGE_PREFIX } else { '' }
     }
 
     $resolvedPrefix = Get-NormalisedPrefix $ImagePrefix
@@ -428,13 +455,9 @@ try {
         $resolvedPrefix = Get-NormalisedPrefix $DefaultImagePrefix
     }
 
-    $resolvedTag = if ($env:MGO2_IMAGE_TAG) { $env:MGO2_IMAGE_TAG } else { Read-EnvValue 'MGO2_IMAGE_TAG' $projectDirectory }
-    if ([string]::IsNullOrWhiteSpace($resolvedTag)) {
-        $resolvedTag = 'latest'
-    }
+    $resolvedTag = if ($env:MGO2_IMAGE_TAG) { $env:MGO2_IMAGE_TAG } else { 'latest' }
 
-    # The process environment wins over .env, so exporting is enough to point
-    # compose at the chosen registry.
+    # The exported variables point compose at the chosen registry.
     $env:MGO2_IMAGE_PREFIX = $resolvedPrefix
     $env:MGO2_IMAGE_TAG = $resolvedTag
 
@@ -461,7 +484,7 @@ try {
         exit 1
     }
 
-    $accountHost = Read-EnvValue 'ADVERTISED_ADDRESS' $projectDirectory
+    $accountHost = Read-JsonValue 'ADVERTISED_ADDRESS' $projectDirectory
     if ([string]::IsNullOrWhiteSpace($accountHost) -or $accountHost -eq '0.0.0.0') {
         $accountHost = Get-PrivateIPv4
     }

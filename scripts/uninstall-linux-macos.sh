@@ -2,8 +2,8 @@
 #
 # Removes the whole deployment the install scripts put in place: every
 # container, image, volume and network of the mgo2 compose project, and the
-# configuration that came with it (.env, and the whole downloaded deployment
-# directory when the deployment was installed with a piped script).
+# configuration that came with it (appsettings.json, and the whole downloaded
+# deployment directory when the deployment was installed with a piped script).
 #
 # Linux and macOS. Windows runs scripts/uninstall-windows.ps1 instead.
 #
@@ -17,9 +17,10 @@
 # a terminal needs. Docker itself is never removed.
 #
 # When the script is started from a clone of the repository it never removes the
-# source tree: the repository and everything else in it stay, and only .env and
-# the Docker resources go. A deployment directory a piped install downloaded
-# (compose.yaml, .env.example and .env) is removed entirely.
+# source tree: the repository and everything else in it stay, and only
+# appsettings.json and the Docker resources go. A deployment directory a piped
+# install downloaded (compose.yaml, appsettings.example.json and
+# appsettings.json) is removed entirely.
 
 set -euo pipefail
 
@@ -76,10 +77,11 @@ usage: scripts/uninstall-linux-macos.sh [--yes]
   --yes  skip the confirmation; MGO2_ASSUME_YES=1 does the same
 
   Removes every container, image, volume and network the deployment created,
-  and the configuration that came with it. Started from a clone, only .env of
-  the repository and the Docker resources are removed; started from a downloaded
-  deployment, the whole deployment directory (compose.yaml, .env.example and
-  .env) is removed. Docker itself is not removed.
+  and the configuration that came with it. Started from a clone, only
+  appsettings.json of the repository and the Docker resources are removed;
+  started from a downloaded deployment, the whole deployment directory
+  (compose.yaml, appsettings.example.json and appsettings.json) is removed.
+  Docker itself is not removed.
 TEXT
 }
 
@@ -177,8 +179,8 @@ remove_deployment_directory() {
     esac
 
     if [ ! -e "${directory}/compose.yaml" ] &&
-        [ ! -e "${directory}/.env" ] &&
-        [ ! -e "${directory}/.env.example" ]; then
+        [ ! -e "${directory}/appsettings.json" ] &&
+        [ ! -e "${directory}/appsettings.example.json" ]; then
         echo "warning: refusing to remove ${directory}: it holds no downloaded deployment" >&2
         return 0
     fi
@@ -239,8 +241,8 @@ if [ -d "${project_directory}" ]; then
     project_present=true
 fi
 
-# A repository checkout keeps everything but .env; a downloaded deployment is
-# removed in full.
+# A repository checkout keeps everything but appsettings.json; a downloaded
+# deployment is removed in full.
 repository_checkout=false
 if [ "${project_present}" = "true" ] &&
     { [ -d "${project_directory}/.git" ] ||
@@ -264,7 +266,7 @@ if [ "${accepted}" != "true" ]; then
     fi
 
     if [ "${repository_checkout}" = "true" ]; then
-        description="${project_directory}/.env"
+        description="${project_directory}/appsettings.json"
     else
         description="the deployment directory ${project_directory}"
     fi
@@ -305,11 +307,11 @@ echo
 if [ "${project_present}" = "false" ]; then
     echo "Nothing to remove on disk: ${project_directory} does not exist."
 elif [ "${repository_checkout}" = "true" ]; then
-    if [ -f .env ]; then
-        rm -f .env
-        echo "Removed ${project_directory}/.env"
+    if [ -f appsettings.json ]; then
+        rm -f appsettings.json
+        echo "Removed ${project_directory}/appsettings.json"
     else
-        echo "No .env config to remove in ${project_directory}"
+        echo "No appsettings.json config to remove in ${project_directory}"
     fi
 else
     remove_deployment_directory "${project_directory}"

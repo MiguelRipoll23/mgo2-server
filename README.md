@@ -83,6 +83,15 @@ docker compose -f compose.dev.yaml up --build   # build and run from source
 `compose.dev.yaml` is a local-build overlay: it includes `compose.yaml` and adds
 the build step of every image, tagging them `:dev` locally.
 
+The servers read their shared settings from an `appsettings.json` baked into each
+image from `appsettings.example.json`. A deployment mounts its own
+`appsettings.json` over the baked one, read-only, so the settings live in one
+file; the install scripts create it from the example on the first run and write
+`ADVERTISED_ADDRESS`, `LOG_LEVEL`, `OTEL_ENABLED` and a random `JWT_SECRET` into
+it. An environment variable of the same upper-case name still overrides a file
+value, and the per-container identity (the `LOBBY_*` and `GAMEPLAY_SERVER_*`
+blocks) stays in `compose.yaml`.
+
 ## Development
 
 ```sh
@@ -140,10 +149,10 @@ a collector that listens on port 4317.
 
 The install scripts ask whether the deployment should send telemetry and
 default to yes. When it is on, they write `OTEL_ENABLED=true` and `OTEL_PORT`
-into `.env`; when it is off, no OpenTelemetry integration is configured. They
-never touch the collector; the Alloy receiver running on the host is configured
-by hand, and its port has to match `OTEL_PORT`. The run scripts always enable
-telemetry on port 4317.
+into `appsettings.json`; when it is off, no OpenTelemetry integration is
+configured. They never touch the collector; the Alloy receiver running on the
+host is configured by hand, and its port has to match `OTEL_PORT`. The run
+scripts always enable telemetry on port 4317.
 
 ## Acknowledgements
 
