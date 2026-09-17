@@ -114,5 +114,10 @@ COPY --from=build /app ./
 # name overrides any file value, so secrets never have to be baked into an image.
 COPY appsettings.example.json ./appsettings.json
 
+# The entrypoint loads the mounted deployment.env into the environment on every
+# start, so an edited value is applied by restarting the container, exactly like
+# an edit of the mounted appsettings.json.
+COPY docker/entrypoint-server.sh /usr/local/bin/entrypoint-server.sh
+
 # exec keeps the process as PID 1 so the container stops on SIGTERM.
-ENTRYPOINT ["sh", "-c", "exec dotnet \"$MGO2_SERVER_ASSEMBLY\".dll"]
+ENTRYPOINT ["/usr/local/bin/entrypoint-server.sh"]

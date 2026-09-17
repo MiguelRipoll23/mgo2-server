@@ -20,11 +20,12 @@
     and never touched again: the operator edits it and an update keeps the
     edits. The two settings that belong to the deployment rather than to the
     servers, the JWT secret and the private address of this machine, are written
-    into deployment.env instead, which compose feeds to every container as
-    environment variables; the environment overrides appsettings.json. The
-    secret is written once, the address is detected again on every run so an
-    update follows a machine that changed networks, and ADVERTISED_ADDRESS skips
-    the detection.
+    into deployment.env instead, which the container entrypoint loads into the
+    environment on every start; the environment overrides appsettings.json, so
+    an edit of either file is applied by restarting the container. The secret is
+    written once, the address is detected again on every run so an update
+    follows a machine that changed networks, and ADVERTISED_ADDRESS skips the
+    detection.
 
     The deployment directory holds compose.yaml, appsettings.json and
     deployment.env next to each other, because the compose file mounts

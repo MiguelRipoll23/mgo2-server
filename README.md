@@ -99,13 +99,14 @@ The servers read their shared settings from an `appsettings.json` baked into eac
 image from `appsettings.example.json`. A deployment mounts its own
 `appsettings.json` over the baked one, read-only, so the settings live in one
 file: the install scripts create it from the example on the first run and never
-write it again, so edits survive every update. The two settings that belong to
-the deployment rather than to the servers, a random `JWT_SECRET` and the
-detected `ADVERTISED_ADDRESS`, live in a `deployment.env` next to it, which
-compose feeds to every container as environment variables; an environment
-variable of the same upper-case name still overrides a file value, and the
-per-container identity (the `LOBBY_*` and `GAMEPLAY_SERVER_*` blocks) stays in
-`compose.yaml`.
+write it again, so edits survive every update and are applied by restarting the
+container. The two settings that belong to the deployment rather than to the
+servers, a random `JWT_SECRET` and the detected `ADVERTISED_ADDRESS`, live in a
+`deployment.env` next to it, which the container entrypoint loads into the
+environment on every start; the environment overrides a file value there too,
+so an edit of either file is applied the same way. The per-container identity
+(the `LOBBY_*` and `GAMEPLAY_SERVER_*` blocks) stays in `compose.yaml`, where a
+change needs `up -d` to recreate the containers instead of a restart.
 
 ## Development
 

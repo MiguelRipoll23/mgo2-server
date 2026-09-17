@@ -17,7 +17,8 @@
 #
 # The install scripts download this file and appsettings.example.json into the
 # deployment directory, where the appsettings.json of the deployment and the
-# deployment.env it writes the JWT secret and the private address into are kept:
+# deployment.env the entrypoint loads the JWT secret and the private address
+# from are kept:
 # /opt/mgo2 for a root run on Linux, ~/.local/share/mgo2 (Linux) or
 # ~/Library/Application Support/mgo2 (macOS) for a user run, %ProgramData%\mgo2
 # for an elevated run on Windows and %LOCALAPPDATA%\mgo2 for a user run. The
@@ -59,14 +60,13 @@ x-database: &database
   restart: unless-stopped
   volumes:
     - ./appsettings.json:/app/appsettings.json:ro
-  # The deployment's own settings that are not shared defaults: the JWT secret
-  # and the private address of the machine, written by the install scripts into
-  # deployment.env next to this file. The servers read them as the environment
-  # variables they already accept, which override the mounted appsettings.json.
-  # Optional, so a clone without the file still builds and runs.
-  env_file:
-    - path: deployment.env
-      required: false
+    # The deployment's own settings that are not shared defaults: the JWT secret
+    # and the private address of the machine, written by the install scripts into
+    # deployment.env next to this file. The container entrypoint loads it into the
+    # environment on every start, where the variables override the mounted
+    # appsettings.json, so an edited value is applied by restarting the container.
+    # Optional, so a clone without the file still runs.
+    - ./deployment.env:/app/deployment.env:ro
   # Lets a container reach the Grafana Alloy running on the host, which is where
   # the OpenTelemetry exporter sends the metrics (OTEL_HOST). Docker Desktop
   # resolves this name on its own; the mapping makes it resolve on Linux too.
@@ -300,9 +300,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
-    env_file:
-      - path: deployment.env
-        required: false
+      - ./deployment.env:/app/deployment.env:ro
     ports:
       - "53:53/udp"
 
@@ -317,9 +315,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
-    env_file:
-      - path: deployment.env
-        required: false
+      - ./deployment.env:/app/deployment.env:ro
     # Both ports are published: the console dials 3478, and it is told to reach
     # 3479 for the test that detects a symmetric NAT, so that one has to arrive
     # too. On Linux the container sees the source address and port of the console
