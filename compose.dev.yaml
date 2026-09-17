@@ -1,0 +1,122 @@
+# Local-development overlay for compose.yaml. It includes the production file,
+# so every service, container name, port and environment setting is inherited,
+# and adds the build step of every image with a plain local tag: this stack is
+# compiled from the clone instead of pulled from the registry.
+#
+#     docker compose -f compose.dev.yaml up --build     # build and start
+#     docker compose -f compose.dev.yaml down           # stop, keep images
+#
+# The images are tagged :dev without a registry prefix, so nothing is pushed or
+# pulled and the published images of compose.yaml are not touched. The stack
+# runs as its own compose project (the directory name), with its own network and
+# volumes, separate from a production deployment.
+
+include:
+  - path: compose.yaml
+
+# One build definition per image. Every gameplay lobby runs the game-lobby-server
+# image, so its build settings are named here and shared.
+x-lobby-build: &game-lobby-build
+  context: .
+  dockerfile: docker/Dockerfile
+  args:
+    PROJECT: src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj
+    ASSEMBLY: Mgo2Server.GameLobbyServer
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: postgres
+    image: mgo2-postgres:dev
+
+  mgo2-gate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        PROJECT: src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj
+        ASSEMBLY: Mgo2Server.GateLobbyServer
+    image: mgo2-gate-lobby-server:dev
+
+  mgo2-account:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        PROJECT: src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj
+        ASSEMBLY: Mgo2Server.AccountLobbyServer
+    image: mgo2-account-lobby-server:dev
+
+  mgo2-free-battle:
+    build: *game-lobby-build
+    image: mgo2-game-lobby-server:dev
+
+  mgo2-replays:
+    build: *game-lobby-build
+    image: mgo2-game-lobby-server:dev
+
+  mgo2-survival:
+    build: *game-lobby-build
+    image: mgo2-game-lobby-server:dev
+
+  mgo2-basic-training:
+    build: *game-lobby-build
+    image: mgo2-game-lobby-server:dev
+
+  mgo2-combat-training:
+    build: *game-lobby-build
+    image: mgo2-game-lobby-server:dev
+
+  mgo2-survival-hosts:
+    build: *game-lobby-build
+    image: mgo2-game-lobby-server:dev
+
+  mgo2-automatching:
+    build: *game-lobby-build
+    image: mgo2-game-lobby-server:dev
+
+  mgo2-registration:
+    build: *game-lobby-build
+    image: mgo2-game-lobby-server:dev
+
+  mgo2-tournament:
+    build: *game-lobby-build
+    image: mgo2-game-lobby-server:dev
+
+  mgo2-gameplay-1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        PROJECT: src/GameplayServer/Mgo2Server.GameplayServer.csproj
+        ASSEMBLY: Mgo2Server.GameplayServer
+    image: mgo2-gameplay-server:dev
+
+  mgo2-http:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        PROJECT: src/Http/Mgo2Server.Http.csproj
+        ASSEMBLY: Mgo2Server.Http
+    image: mgo2-http:dev
+
+  mgo2-dns:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        PROJECT: src/Dns/Mgo2Server.Dns.csproj
+        ASSEMBLY: Mgo2Server.Dns
+    image: mgo2-dns:dev
+
+  mgo2-stun:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        PROJECT: src/Stun/Mgo2Server.Stun.csproj
+        ASSEMBLY: Mgo2Server.Stun
+    image: mgo2-stun:dev

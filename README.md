@@ -72,6 +72,17 @@ Entity Framework migration bundle; it applies the schema migrations on startup,
 before it accepts connections. A push to `main` publishes `latest` and the
 branch tag; a `v*` tag publishes the version. Pull requests only run the tests.
 
+`compose.yaml` references these images directly, so a deployment pulls the
+published stack and never builds:
+
+```sh
+docker compose up                               # run the published images
+docker compose -f compose.dev.yaml up --build   # build and run from source
+```
+
+`compose.dev.yaml` is a local-build overlay: it includes `compose.yaml` and adds
+the build step of every image, tagging them `:dev` locally.
+
 ## Development
 
 ```sh
@@ -97,6 +108,14 @@ the database.
 ```sh
 scripts/build-linux-macos.sh             # Build every project
 scripts/run-linux-macos.sh               # Run the whole deployment
+```
+
+To run the whole stack in containers from the source tree instead, build the
+images locally with `compose.dev.yaml` (the production `compose.yaml` only
+pulls them):
+
+```sh
+docker compose -f compose.dev.yaml up --build
 ```
 
 ### Coordination and Discord

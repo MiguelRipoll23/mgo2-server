@@ -467,7 +467,7 @@ docker compose pull
 
 echo
 echo "Starting every container and waiting for them to come up"
-docker compose up --detach --no-build --remove-orphans --wait --wait-timeout 180
+docker compose up --detach --remove-orphans --wait --wait-timeout 180
 
 echo
 echo "Removing old images left behind by the update"

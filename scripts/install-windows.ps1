@@ -443,7 +443,7 @@ try {
 
     Write-Host ''
     Write-Host 'Starting every container and waiting for them to come up'
-    Invoke-Compose @('up', '--detach', '--no-build', '--remove-orphans', '--wait', '--wait-timeout', '180')
+    Invoke-Compose @('up', '--detach', '--remove-orphans', '--wait', '--wait-timeout', '180')
 
     Write-Host ''
     Write-Host 'Removing old images left behind by the update'
