@@ -8,7 +8,11 @@ responder for NAT discovery and a PostgreSQL-backed persistence layer.
 ## Quick start
 
 The install scripts pull the published images and bring up the whole
-deployment.
+deployment. Run them as your own user: no elevation is needed, the Docker
+daemon does the privileged work. The only requirement is access to the daemon
+(membership of the `docker` group on Linux, or of `docker-users` with Docker
+Desktop; running the script with `sudo` instead installs the machine-wide
+deployment into `/opt/mgo2`).
 
 Linux and macOS:
 
@@ -23,6 +27,14 @@ irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/in
 ```
 
 Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to your private IP (the value of `ADVERTISED_ADDRESS`).
+
+The install scripts download the deployment into a platform default directory
+(`/opt/mgo2` for a root run on Linux, `~/.local/share/mgo2` on Linux or
+`~/Library/Application Support/mgo2` on macOS for a user run, `%ProgramData%\mgo2`
+for an elevated run on Windows and `%LOCALAPPDATA%\mgo2` for a user run). The
+compose file and the `appsettings.json` the containers read their configuration
+from live there together: edit that file and run the same command again to
+apply it.
 
 ### Project layout
 

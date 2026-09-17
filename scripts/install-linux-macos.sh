@@ -18,7 +18,7 @@
 # and removes old dangling images, so a new release is one command away.
 #
 # The script runs against a clone when it is started from one; otherwise it
-# creates a deployment directory (./mgo2-server, or MGO2_HOME) and downloads
+# creates a deployment directory in a platform default and downloads
 # compose.yaml and appsettings.example.json into it. Everything else is
 # configured in appsettings.json, which is created from appsettings.example.json
 # on the first run with a random JWT_SECRET and never overwritten afterwards,
@@ -26,8 +26,13 @@
 # machine and writes it there so clients on the network can reach the published
 # ports.
 #
-# Set ADVERTISED_ADDRESS to skip detection. Set MGO2_LOG_LEVEL to answer the
-# log-level question without a prompt.
+# The deployment directory holds compose.yaml and appsettings.json next to each
+# other, because the compose file mounts ./appsettings.json into the containers:
+# the directory is the deployment. Running as root installs the machine-wide one,
+# /opt/mgo2; running as a user installs the user one, ~/.local/share/mgo2 on
+# Linux and ~/Library/Application Support/mgo2 on macOS. ADVERTISED_ADDRESS
+# skips address detection and MGO2_LOG_LEVEL answers the log-level question
+# without a prompt.
 
 set -euo pipefail
 
@@ -35,7 +40,7 @@ set -euo pipefail
 # the CI workflow publishes the images to.
 readonly default_source_url="https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main"
 readonly default_image_prefix="ghcr.io/miguelripoll23/mgo2-server/"
-readonly deployment_directory_name="mgo2-server"
+readonly root_deployment_directory="/opt/mgo2"
 
 usage() {
     cat <<'TEXT'
@@ -63,11 +68,58 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
   When it is omitted, MGO2_IMAGE_PREFIX is used: the environment variable, or
   the registry the images are published to by default.
 
+  Without a clone the deployment is installed into /opt/mgo2 when the script
+  runs as root, and into ~/.local/share/mgo2 (Linux) or ~/Library/Application
+  Support/mgo2 (macOS) otherwise.
+
   The script pulls the images of every container (the gate, the account server,
   the nine gameplay lobbies, a gameplay server, the HTTP API, the name server, the
   port-check responder and PostgreSQL) and installs them. Running it again
   installs the update.
 TEXT
+}
+
+# Reports the deployment directory a run that is not started from a clone
+# installs into: /opt/mgo2 for the machine-wide install of a root run, and the
+# user one of $HOME otherwise. The user home of a sudo run is the one of the
+# user behind sudo, so an install of a piped script run with sudo does not land
+# in the root home.
+resolve_deployment_directory() {
+    local home="${HOME:-}"
+
+    if [ "$(id -u)" = '0' ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != 'root' ]; then
+        local sudo_home=''
+        sudo_home="$(su -s /bin/sh -c 'printf %s "$HOME"' "${SUDO_USER}" 2>/dev/null || true)"
+        if [ -z "${sudo_home}" ]; then
+            case "${SUDO_USER}" in
+                *[!a-zA-Z0-9._-]*) ;;
+                *) sudo_home="$(eval "echo ~${SUDO_USER}" 2>/dev/null || true)" ;;
+            esac
+        fi
+        case "${sudo_home}" in
+            '' | /root | /var/root) ;;
+            *) home="${sudo_home}" ;;
+        esac
+    fi
+
+    if [ "$(id -u)" = '0' ] && [ "${home}" = '/root' -o "${home}" = '/var/root' ]; then
+        printf '%s' "${root_deployment_directory}"
+        return 0
+    fi
+
+    if [ -z "${home}" ]; then
+        printf '%s' "${root_deployment_directory}"
+        return 0
+    fi
+
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin)
+            printf '%s' "${home}/Library/Application Support/mgo2"
+            ;;
+        *)
+            printf '%s' "${home}/.local/share/mgo2"
+            ;;
+    esac
 }
 
 # Prints the value of a setting of appsettings.json, or nothing when it is not
@@ -424,6 +476,21 @@ if ! docker compose version >/dev/null 2>&1; then
     exit 1
 fi
 
+# The first pull fails with a bare permission error when the daemon is not
+# reachable, so the access is checked here with the answer ready.
+docker_info_error=''
+if ! docker_info_error="$(docker info 2>&1 >/dev/null)"; then
+    echo 'error: the docker daemon is not reachable; start Docker first' >&2
+    case "${docker_info_error}" in
+        *'permission denied'*)
+            echo "       this user cannot reach the docker daemon: add it to the docker group with" >&2
+            echo "       'sudo usermod -aG docker $(id -un)' and log in again, or run this script with" >&2
+            echo "       sudo, which installs the machine-wide deployment into /opt/mgo2" >&2
+            ;;
+    esac
+    exit 1
+fi
+
 # A script started from disk next to a compose file runs against that clone; a
 # piped script (curl ... | bash) downloads the deployment instead.
 script_path="${BASH_SOURCE[0]:-}"
@@ -439,7 +506,7 @@ elif [ -f "${PWD}/compose.yaml" ]; then
     project_directory="${PWD}"
     downloads_deployment=false
 else
-    project_directory="${MGO2_HOME:-${PWD}/${deployment_directory_name}}"
+    project_directory="$(resolve_deployment_directory)"
     downloads_deployment=true
 fi
 
@@ -527,6 +594,7 @@ fi
 
 echo
 echo "Installed ${running} containers."
+echo "Config: ${project_directory}/appsettings.json"
 if [ -n "$account_host" ]; then
     echo "To create an account, go to http://${account_host}"
 fi

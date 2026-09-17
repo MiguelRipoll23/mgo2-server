@@ -37,8 +37,43 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$DeploymentDirectoryName = 'mgo2-server'
+$DeploymentDirectoryName = 'mgo2'
+$programData = if ($env:ProgramData) { $env:ProgramData } else { 'C:\ProgramData' }
+$MachineWideDeploymentDirectory = Join-Path $programData $DeploymentDirectoryName
 $ComposeProjectName = 'mgo2'
+
+# Reports the deployment directory of a run that is not started from a clone or
+# from the deployment itself: the machine-wide one of %ProgramData%\mgo2 for an
+# elevated run, and the user one of %LOCALAPPDATA%\mgo2 otherwise. It reads the
+# same defaults the install script wrote, so an uninstall finds the deployment
+# an install left behind.
+function Get-DefaultDeploymentDirectory {
+    $elevated = $false
+    try {
+        $principal = [Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
+        $elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    }
+    catch {
+        $elevated = $true
+    }
+
+    if ($elevated) {
+        # An install of a non-elevated terminal wrote the user directory, so
+        # that one is checked before giving up on the machine-wide one.
+        if (-not (Test-Path $MachineWideDeploymentDirectory)) {
+            $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path 'C:\Users\Public' 'AppData\Local' }
+            $userDirectory = Join-Path $localAppData $DeploymentDirectoryName
+            if (Test-Path $userDirectory) {
+                return $userDirectory
+            }
+        }
+
+        return $MachineWideDeploymentDirectory
+    }
+
+    $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path 'C:\Users\Public' 'AppData\Local' }
+    return Join-Path $localAppData $DeploymentDirectoryName
+}
 
 # The fixed container names compose.yaml gives every service.
 $ContainerNames = @(
@@ -114,9 +149,14 @@ function Test-RepositoryCheckout([string]$Path) {
 # Removes a downloaded deployment directory, but only when it actually holds the
 # deployment and is neither the filesystem root nor the home directory.
 function Remove-DeploymentDirectory([string]$Directory) {
-    if ([string]::IsNullOrWhiteSpace($Directory) -or $Directory -eq '/' -or $Directory -eq $HOME) {
-        Write-Host "refusing to remove $Directory" -ForegroundColor Yellow
-        return
+    # Rejects the filesystem roots and the protected system directories, so an
+    # unset variable can never end in a removal of one.
+    $protected = @('C:\', 'C:\Windows', 'C:\Program Files', 'C:\Program Files (x86)', 'C:\ProgramData', 'C:\Users', $env:ProgramData, $env:SystemRoot, $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:USERPROFILE, $HOME) | Where-Object { $_ }
+    foreach ($item in $protected) {
+        if ($Directory -eq $item) {
+            Write-Host "refusing to remove $Directory; it is a protected location" -ForegroundColor Yellow
+            return
+        }
     }
 
     $hasMarker = (Test-Path (Join-Path $Directory 'compose.yaml')) -or
@@ -153,7 +193,7 @@ if ($PSScriptRoot -and (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 
 } elseif (Test-Path (Join-Path $PWD.Path 'compose.yaml')) {
     $projectDirectory = $PWD.Path
 } else {
-    $projectDirectory = if ($env:MGO2_HOME) { $env:MGO2_HOME } else { Join-Path $PWD.Path $DeploymentDirectoryName }
+    $projectDirectory = Get-DefaultDeploymentDirectory
 }
 
 $projectPresent = Test-Path -LiteralPath $projectDirectory

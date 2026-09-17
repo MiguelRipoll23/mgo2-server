@@ -24,7 +24,7 @@
 
 set -euo pipefail
 
-readonly deployment_directory_name="mgo2-server"
+readonly root_deployment_directory="/opt/mgo2"
 readonly compose_project_name="mgo2"
 
 # The fixed container names compose.yaml gives every service.
@@ -175,7 +175,10 @@ remove_deployment_directory() {
     local directory="$1"
 
     case "${directory}" in
-        '' | '/' | "$HOME") return 1 ;;
+        '' | '/' | "$HOME" | /root | /var/root | /etc | /usr | /opt | /bin | /sbin | /lib | /lib64 | /boot | /dev | /proc | /sys | /tmp | /var | /etc/opt | /usr/local)
+            echo "warning: refusing to remove ${directory}: it is a protected location"
+            return 0
+            ;;
     esac
 
     if [ ! -e "${directory}/compose.yaml" ] &&
@@ -233,7 +236,33 @@ if [ -n "${script_directory}" ] && [ -f "${script_directory}/../compose.yaml" ];
 elif [ -f "${PWD}/compose.yaml" ]; then
     project_directory="${PWD}"
 else
-    project_directory="${MGO2_HOME:-${PWD}/${deployment_directory_name}}"
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin)
+            user_directory="${HOME}/Library/Application Support/mgo2"
+            ;;
+        *)
+            user_directory="${HOME}/.local/share/mgo2"
+            ;;
+    esac
+
+    if [ "$(id -u)" = '0' ]; then
+        project_directory="${root_deployment_directory}"
+
+        # An install run with sudo wrote the user directory of the user behind
+        # sudo, so that one is checked before giving up on the machine-wide one.
+        if [ ! -d "${project_directory}" ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != 'root' ]; then
+            sudo_home="$(su -s /bin/sh -c 'printf %s "$HOME"' "${SUDO_USER}" 2>/dev/null || true)"
+            case "$(uname -s 2>/dev/null || true)" in
+                Darwin) sudo_directory="${sudo_home}/Library/Application Support/mgo2" ;;
+                *) sudo_directory="${sudo_home}/.local/share/mgo2" ;;
+            esac
+            if [ -n "${sudo_home}" ] && [ -d "${sudo_directory}" ]; then
+                project_directory="${sudo_directory}"
+            fi
+        fi
+    else
+        project_directory="${user_directory}"
+    fi
 fi
 
 project_present=false

@@ -15,6 +15,14 @@
 # appsettings.json and receives DATABASE_CONNECTION_STRING from its own
 # environment block instead.
 #
+# The install scripts download this file and appsettings.example.json into the
+# deployment directory, where the appsettings.json of the deployment is created
+# and kept: /opt/mgo2 for a root run on Linux, ~/.local/share/mgo2 (Linux) or
+# ~/Library/Application Support/mgo2 (macOS) for a user run, %ProgramData%\mgo2
+# for an elevated run on Windows and %LOCALAPPDATA%\mgo2 for a user run. The
+# directory is the deployment: compose resolves the ./appsettings.json mounts
+# below against it, so compose.yaml and appsettings.json have to stay together.
+#
 # The images are the same ones the CI workflow publishes to ghcr.io; this
 # deployment pulls them, so a bare `docker compose up` runs the published stack,
 # by default from ghcr.io/miguelripoll23/mgo2-server/. MGO2_IMAGE_PREFIX and

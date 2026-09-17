@@ -14,7 +14,8 @@
     away.
 
     The script runs against a clone when it is started from one; otherwise it
-    creates a deployment directory (.\mgo2-server, or MGO2_HOME) and downloads
+    creates a deployment directory in a platform default (%ProgramData%\mgo2 for
+    an elevated run, %LOCALAPPDATA%\mgo2 otherwise) and downloads
     compose.yaml and appsettings.example.json into it. Everything else is
     configured in appsettings.json, which is created from appsettings.example.json
     on the first run with a random JWT_SECRET and never overwritten afterwards,
@@ -24,7 +25,10 @@
 
     Set ADVERTISED_ADDRESS to skip detection. Set MGO2_LOG_LEVEL to answer the
     log-level question without a prompt, and MGO2_TELEMETRY to answer the
-    telemetry question without a prompt. Telemetry defaults to yes: the servers
+    telemetry question without a prompt. The deployment directory holds
+    compose.yaml and appsettings.json next to each other, because the compose
+    file mounts .\appsettings.json into the containers: the directory is the
+    deployment. Telemetry defaults to yes: the servers
     then send their metrics over gRPC on port 4317, which OTEL_PORT changes. The
     collector the metrics are sent to is the operator's change: nothing of it is
     touched or checked here. With telemetry off no OpenTelemetry integration is
@@ -56,7 +60,35 @@ $ErrorActionPreference = 'Stop'
 # the CI workflow publishes the images to.
 $DefaultSourceUrl = 'https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main'
 $DefaultImagePrefix = 'ghcr.io/miguelripoll23/mgo2-server/'
-$DeploymentDirectoryName = 'mgo2-server'
+$DeploymentDirectoryName = 'mgo2'
+
+# Reports the deployment directory a run that is not started from a clone
+# installs into: the machine-wide one of %ProgramData%\mgo2 for an elevated
+# run, and the user one of %LOCALAPPDATA%\mgo2 otherwise. A piped run of a
+# non-elevated terminal keeps the user directory, so updating needs no
+# elevation either.
+function Get-DefaultDeploymentDirectory {
+    $userProfile = if ($env:USERPROFILE) { $env:USERPROFILE } else { 'C:\Users\Public' }
+
+    $elevated = $false
+    try {
+        $principal = [Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
+        $elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    }
+    catch {
+        # The identity could not be read; the machine-wide directory is the safe
+        # answer when the run turns out to have the rights for it.
+        $elevated = $true
+    }
+
+    if ($elevated) {
+        $programData = if ($env:ProgramData) { $env:ProgramData } else { 'C:\ProgramData' }
+        return Join-Path $programData $DeploymentDirectoryName
+    }
+
+    $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $userProfile 'AppData\Local' }
+    return Join-Path $localAppData $DeploymentDirectoryName
+}
 
 # Prints the value of a setting of appsettings.json, or nothing when it is not
 # set. A quoted string and a bare number or boolean are both read; a quoted
@@ -386,6 +418,27 @@ if ($LASTEXITCODE -ne 0) {
     throw 'the docker compose plugin was not found; it ships with Docker Desktop'
 }
 
+# The first pull fails with a bare permission error when the daemon is not
+# reachable, so the access is checked here with the answer ready.
+$dockerInfoOutput = ''
+try {
+    $dockerInfoOutput = (& docker info 2>&1 | Out-String)
+}
+catch {
+    # A native error stops the pipeline under Windows PowerShell 5.1; the stderr
+    # text arrives inside the error record and is kept for the hint below.
+    $dockerInfoOutput = "$_"
+}
+if ($LASTEXITCODE -ne 0) {
+    Write-Host 'error: the docker daemon is not reachable; start Docker Desktop first' -ForegroundColor Red
+    if ($dockerInfoOutput -match 'permission denied') {
+        Write-Host '       this user cannot reach the docker daemon: add it to the docker-users group and' -ForegroundColor Red
+        Write-Host '       sign in again, or run this script from an elevated terminal, which installs the' -ForegroundColor Red
+        Write-Host '       machine-wide deployment into %ProgramData%\mgo2' -ForegroundColor Red
+    }
+    exit 1
+}
+
 # A script started from disk next to a compose file runs against that clone; a
 # piped script (irm ... | iex) downloads the deployment instead.
 if ($PSScriptRoot -and (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'compose.yaml'))) {
@@ -395,7 +448,7 @@ if ($PSScriptRoot -and (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 
     $projectDirectory = $PWD.Path
     $downloadsDeployment = $false
 } else {
-    $projectDirectory = if ($env:MGO2_HOME) { $env:MGO2_HOME } else { Join-Path $PWD.Path $DeploymentDirectoryName }
+    $projectDirectory = Get-DefaultDeploymentDirectory
     $downloadsDeployment = $true
 }
 
@@ -491,6 +544,7 @@ try {
 
     Write-Host ''
     Write-Host "Installed $running containers."
+    Write-Host "Config: $(Join-Path $projectDirectory 'appsettings.json')"
     if (-not [string]::IsNullOrWhiteSpace($accountHost)) {
         Write-Host "To create an account, go to http://$accountHost"
     }
