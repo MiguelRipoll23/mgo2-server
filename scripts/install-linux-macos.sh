@@ -174,11 +174,13 @@ resolve_advertised_ip() {
 # value. The settings live on their own quoted lines, so the substitution is a
 # plain text swap; a run whose file holds no placeholder leaves it alone. The
 # values written here are a base64 secret and a dotted address, neither of which
-# collides with the | delimiter or carries a quote.
+# collides with the | delimiter or carries a quote. -i.bak is the in-place flag
+# both GNU and macOS sed accept; the backup only used as scratch.
 replace_setting_placeholder() {
     local key="$1" value="$2" file="$3"
 
-    sed -i "s|\"${key}\": \"REPLACE_ME\"|\"${key}\": \"${value}\"|" "$file"
+    sed -i.bak "s|\"${key}\": \"REPLACE_ME\"|\"${key}\": \"${value}\"|" "$file"
+    rm -f "${file}.bak"
 }
 
 # Adds the trailing slash the compose file expects, and nothing when empty.
