@@ -47,13 +47,90 @@ jobs:
       - name: Test
         run: dotnet test Mgo2Server.slnx --configuration Release --no-build
 
+
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.filter.outputs.changes }}
+    steps:
+      - name: Detect changed projects
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            mgo2-gate-lobby-server:
+              - 'src/GateLobbyServer/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-account-lobby-server:
+              - 'src/AccountLobbyServer/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-game-lobby-server:
+              - 'src/GameLobbyServer/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-gameplay-server:
+              - 'src/GameplayServer/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-http:
+              - 'src/Http/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-dns:
+              - 'src/Dns/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-stun:
+              - 'src/Stun/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-postgres:
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - '.config/**'
+              - 'docker/Dockerfile'
+              - 'docker/entrypoint-postgres.sh'
+              - 'docker/healthcheck-postgres.sh'
+
   images:
     name: Publish ${{ matrix.image }}
     runs-on: ubuntu-latest
-    needs: test
+    needs:
+      - test
+      - changes
     # Pull requests only run the tests; an image is published from main and from
-    # version tags.
-    if: github.event_name != 'pull_request'
+    # version tags. Version tags rebuild every image for a complete release.
+    if: |
+      github.event_name != 'pull_request' &&
+      (
+        github.ref_type == 'tag' ||
+        contains(needs.changes.outputs.images, matrix.image)
+      )
     permissions:
       contents: read
       packages: write
