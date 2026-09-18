@@ -29,6 +29,12 @@ public sealed class DiscordCommandService(
     /// <summary>Name of the option that carries the text of a flash.</summary>
     private const string MessageOptionName = "message";
 
+    /// <summary>
+    /// Longest message the ticker of the game client carries, which is the cap
+    /// the HTTP broadcast API enforces as well.
+    /// </summary>
+    private const int MaximumMessageLength = 255;
+
     private readonly DiscordOptions options = options.Value;
 
     /// <summary>Handles one interaction the gateway delivered.</summary>
@@ -76,6 +82,13 @@ public sealed class DiscordCommandService(
                 "The message option is required.",
                 cancellationToken);
             return;
+        }
+
+        // A slash command does not carry the validation the HTTP API applies,
+        // so the message is trimmed to what the ticker of the client holds.
+        if (message.Length > MaximumMessageLength)
+        {
+            message = message[..MaximumMessageLength];
         }
 
         var recipients = flashNewsDispatcher.Dispatch(new FlashNewsAnnouncement(message));

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Mgo2Server.Http.Contracts;
 using Mgo2Server.Http.Discord;
 
@@ -10,6 +11,9 @@ namespace Mgo2Server.Http.Endpoints.Authenticated;
 /// </summary>
 internal static class DiscordMessageEndpoints
 {
+    /// <summary>Shape of a Discord snowflake, which is what a channel is named by.</summary>
+    private static readonly Regex ChannelIdentifierPattern = new("^\\d{1,20}$", RegexOptions.Compiled);
+
     /// <summary>Maps the Discord message endpoints.</summary>
     /// <param name="group">Group the endpoints are added to.</param>
     public static void MapDiscordMessageEndpoints(this RouteGroupBuilder group)
@@ -31,6 +35,13 @@ internal static class DiscordMessageEndpoints
         IDiscordMessageService messenger,
         CancellationToken cancellationToken)
     {
+        // The channel is placed into the request path, so only the snowflake
+        // Discord names a channel with may reach it.
+        if (!ChannelIdentifierPattern.IsMatch(request.ChannelIdentifier))
+        {
+            return RequestBodyValidation.Reject("channelIdentifier: expected a Discord snowflake");
+        }
+
         var sent = await messenger.SendChannelMessageAsync(
             request.ChannelIdentifier,
             request.Content,

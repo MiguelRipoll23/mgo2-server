@@ -72,6 +72,9 @@ public sealed class DiscordRestClientService(
     /// <summary>Flag that shows the response only to the member that used the command.</summary>
     private const int EphemeralResponseFlag = 64;
 
+    /// <summary>Longest message the command accepts, which is what the ticker of the game holds.</summary>
+    private const int MaximumMessageOptionLength = 255;
+
     /// <summary>Serializer the request bodies and the channel responses are read and written with.</summary>
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
@@ -82,6 +85,12 @@ public sealed class DiscordRestClientService(
     /// command over its REST API, so this is the one setup call the WebSocket
     /// integration keeps.
     /// </summary>
+    /// <remarks>
+    /// The registration is a POST: Discord treats it as an upsert, so the same
+    /// call creates the command once and updates it on every later start. The
+    /// bulk overwrite the collection answers with expects a list of commands,
+    /// and refuses a single one with 400.
+    /// </remarks>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>Whether Discord accepted the command.</returns>
     public async Task<bool> RegisterFlashCommandAsync(CancellationToken cancellationToken)
@@ -106,6 +115,7 @@ public sealed class DiscordRestClientService(
                     name = "message",
                     description = "Text shown in the ticker of every connected client.",
                     required = true,
+                    max_length = MaximumMessageOptionLength,
                 },
             },
         };
@@ -118,7 +128,7 @@ public sealed class DiscordRestClientService(
             : $"applications/{applicationIdentifier}/guilds/{options.GuildIdentifier}/commands";
 
         return await SendAsync(
-            HttpMethod.Put,
+            HttpMethod.Post,
             path,
             command,
             "register the flash command",
@@ -168,7 +178,7 @@ public sealed class DiscordRestClientService(
         var response = await SendAsync(
             HttpMethod.Post,
             $"guilds/{options.GuildIdentifier}/channels",
-            new DiscordChannelEditBody(name, TextChannelType),
+            new DiscordChannelCreateBody(name, TextChannelType),
             "create the player count channel",
             cancellationToken);
 
@@ -195,7 +205,11 @@ public sealed class DiscordRestClientService(
         }
     }
 
-    /// <summary>Renames a channel.</summary>
+    /// <summary>
+    /// Renames a channel. The body carries the name only: the type of the
+    /// modify endpoint is reserved for a text to announcement conversion, and
+    /// any other value, a null among them, Discord refuses with 400.
+    /// </summary>
     /// <param name="channelIdentifier">Identifier of the channel.</param>
     /// <param name="name">Name to give it.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>

@@ -44,6 +44,26 @@ public sealed class DiscordRestClientTests
     }
 
     [Fact]
+    public async Task AChannelMessageStripsEveryMention()
+    {
+        var rest = new RecordingRestClient();
+
+        var sent = await rest.Client.SendChannelMessageAsync(
+            "77",
+            "A message from the bot.",
+            CancellationToken.None);
+
+        Assert.True(sent);
+        var request = Assert.Single(rest.Requests);
+        Assert.Equal("POST", request.Method);
+        Assert.Equal("/api/v10/channels/77/messages", request.Path);
+
+        using var body = JsonDocument.Parse(request.Body);
+        Assert.Equal("A message from the bot.", body.RootElement.GetProperty("content").GetString());
+        Assert.Empty(body.RootElement.GetProperty("allowed_mentions").GetProperty("parse").EnumerateArray());
+    }
+
+    [Fact]
     public async Task TheFlashCommandIsRegisteredAgainstTheApplicationOfTheToken()
     {
         var rest = new RecordingRestClient();
@@ -52,8 +72,55 @@ public sealed class DiscordRestClientTests
 
         Assert.True(registered);
         var request = Assert.Single(rest.Requests);
-        Assert.Equal("PUT", request.Method);
+        Assert.Equal("POST", request.Method);
         Assert.Equal($"/api/v10/applications/{Application}/guilds/10/commands", request.Path);
+    }
+
+    [Fact]
+    public async Task TheRegisteredCommandCarriesOneStringOption()
+    {
+        var rest = new RecordingRestClient();
+
+        await rest.Client.RegisterFlashCommandAsync(CancellationToken.None);
+
+        var request = Assert.Single(rest.Requests);
+        using var body = JsonDocument.Parse(request.Body);
+        var option = Assert.Single(body.RootElement.GetProperty("options").EnumerateArray());
+        Assert.Equal("flash", body.RootElement.GetProperty("name").GetString());
+        Assert.Equal(3, option.GetProperty("type").GetInt32());
+        Assert.Equal("message", option.GetProperty("name").GetString());
+        Assert.True(option.GetProperty("required").GetBoolean());
+    }
+
+    [Fact]
+    public async Task TheRenameCarriesTheNameWithoutAType()
+    {
+        var rest = new RecordingRestClient();
+
+        var renamed = await rest.Client.RenameChannelAsync("77", "players [1]", CancellationToken.None);
+
+        Assert.True(renamed);
+        var request = Assert.Single(rest.Requests);
+        Assert.Equal("PATCH", request.Method);
+        Assert.Equal("/api/v10/channels/77", request.Path);
+        using var body = JsonDocument.Parse(request.Body);
+        Assert.Equal("players [1]", body.RootElement.GetProperty("name").GetString());
+        Assert.False(body.RootElement.TryGetProperty("type", out _));
+    }
+
+    [Fact]
+    public async Task TheCreateCarriesTheNameWithTheTextChannelType()
+    {
+        var rest = new RecordingRestClient();
+
+        _ = await rest.Client.CreateChannelAsync("players [0]", CancellationToken.None);
+
+        var request = Assert.Single(rest.Requests);
+        Assert.Equal("POST", request.Method);
+        Assert.Equal("/api/v10/guilds/10/channels", request.Path);
+        using var body = JsonDocument.Parse(request.Body);
+        Assert.Equal("players [0]", body.RootElement.GetProperty("name").GetString());
+        Assert.Equal(0, body.RootElement.GetProperty("type").GetInt32());
     }
 
     private sealed record RecordedRequest(string Method, string Path, string Body);

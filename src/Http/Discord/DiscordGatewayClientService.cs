@@ -63,6 +63,21 @@ public sealed class DiscordGatewayClientService(
     /// <summary>Longest the client ever waits between attempts.</summary>
     private const int MaximumReconnectDelayMilliseconds = 30000;
 
+    /// <summary>
+    /// Close codes after which reconnecting cannot succeed: an invalid token,
+    /// an invalid shard or API version, and intents the app may not send. The
+    /// deployment has to be corrected instead of the connection retried.
+    /// </summary>
+    private static readonly IReadOnlySet<int> FatalCloseCodes = new HashSet<int>
+    {
+        4004, // Authentication failed.
+        4010, // Invalid shard.
+        4011, // Sharding required.
+        4012, // Invalid API version.
+        4013, // Invalid intent(s).
+        4014, // Disallowed intent(s).
+    };
+
     private readonly DiscordOptions options = options.Value;
     private readonly object sequenceGate = new();
     private readonly CancellationTokenSource lifetimeCts = new();
@@ -74,6 +89,9 @@ public sealed class DiscordGatewayClientService(
 
     /// <summary>Identifier of the gateway session, kept so a dropped connection can be resumed.</summary>
     private string? sessionIdentifier;
+
+    /// <summary>URL the Ready event of the session named for resuming it.</summary>
+    private string? resumeUrl;
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
@@ -106,6 +124,8 @@ public sealed class DiscordGatewayClientService(
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            var immediate = false;
+
             try
             {
                 await RunConnectionAsync(cancellationToken);
@@ -113,6 +133,21 @@ public sealed class DiscordGatewayClientService(
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                return;
+            }
+            catch (GatewayReconnectException)
+            {
+                // The connection is to be opened again at once, without the
+                // backoff of an unexpected drop.
+                immediate = true;
+                reconnectDelay = InitialReconnectDelayMilliseconds;
+            }
+            catch (GatewayFatalCloseException exception)
+            {
+                logger.LogError(
+                    "The Discord gateway closed the connection with {CloseCode}; the integration stops " +
+                    "until the deployment is corrected",
+                    exception.CloseCode);
                 return;
             }
             catch (Exception exception)
@@ -128,26 +163,30 @@ public sealed class DiscordGatewayClientService(
                 return;
             }
 
-            try
+            if (!immediate)
             {
-                await Task.Delay(reconnectDelay, cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
+                try
+                {
+                    await Task.Delay(reconnectDelay, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
 
-            reconnectDelay = Math.Min(reconnectDelay * 2, MaximumReconnectDelayMilliseconds);
+                reconnectDelay = Math.Min(reconnectDelay * 2, MaximumReconnectDelayMilliseconds);
+            }
         }
     }
 
     /// <summary>Serves one connection to the gateway until it drops.</summary>
     /// <param name="cancellationToken">Token that cancels the connection.</param>
+    /// <exception cref="GatewayReconnectException">The connection is to be opened again at once.</exception>
     private async Task RunConnectionAsync(CancellationToken cancellationToken)
     {
         using var socket = new ClientWebSocket();
         socket.Options.SetRequestHeader("User-Agent", options.UserAgent);
-        await socket.ConnectAsync(new Uri(options.GatewayUrl), cancellationToken);
+        await socket.ConnectAsync(new Uri(CurrentGatewayUrl), cancellationToken);
 
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
@@ -158,7 +197,7 @@ public sealed class DiscordGatewayClientService(
                 var frame = await DiscordGatewayStreamUtils.ReceiveAsync(socket, cancellationToken);
                 if (frame is null)
                 {
-                    return;
+                    break;
                 }
 
                 switch (frame.OpCode)
@@ -168,13 +207,26 @@ public sealed class DiscordGatewayClientService(
                         await HandleDispatchAsync(frame, cancellationToken);
                         break;
 
+                    case HeartbeatOpCode:
+                        // Discord asks for an extra heartbeat outside the
+                        // interval; it is answered at once.
+                        await DiscordGatewayStreamUtils.SendAsync(
+                            socket,
+                            new DiscordGatewayHeartbeat(Sequence: LastSequence),
+                            cancellationToken);
+                        break;
+
                     case ReconnectOpCode:
                         throw new GatewayReconnectException();
 
                     case InvalidSessionOpCode:
-                        // A session that cannot be resumed has to be opened
-                        // again with a fresh identify.
-                        sessionIdentifier = null;
+                        // The d field tells whether the session may be resumed:
+                        // a false one has to be opened again with an identify.
+                        if (frame.Data is not { ValueKind: JsonValueKind.True })
+                        {
+                            sessionIdentifier = null;
+                        }
+
                         throw new GatewayReconnectException();
 
                     case HelloOpCode:
@@ -192,6 +244,15 @@ public sealed class DiscordGatewayClientService(
         {
             heartbeatCts.Cancel();
         }
+
+        // The loop above ends when the gateway closes the connection, and the
+        // close code tells whether opening it again can succeed at all: an
+        // invalid token or a disallowed intent is corrected in the deployment,
+        // not waited out.
+        if (socket.CloseStatus is { } closeStatus && FatalCloseCodes.Contains((int)closeStatus))
+        {
+            throw new GatewayFatalCloseException((int)closeStatus);
+        }
     }
 
     /// <summary>Handles one event Discord dispatched.</summary>
@@ -207,6 +268,7 @@ public sealed class DiscordGatewayClientService(
                 if (ready is not null)
                 {
                     sessionIdentifier = ready.SessionIdentifier;
+                    resumeUrl = ready.ResumeGatewayUrl;
                     logger.LogInformation("The Discord gateway opened a session");
                 }
 
@@ -294,13 +356,7 @@ public sealed class DiscordGatewayClientService(
     /// <param name="cancellationToken">Token that cancels the send.</param>
     private Task SendHeartbeatAsync(ClientWebSocket socket, CancellationToken cancellationToken)
     {
-        int? sequence;
-        lock (sequenceGate)
-        {
-            sequence = lastSequence;
-        }
-
-        return DiscordGatewayStreamUtils.SendAsync(socket, new DiscordGatewayHeartbeat(Sequence: sequence), cancellationToken);
+        return DiscordGatewayStreamUtils.SendAsync(socket, new DiscordGatewayHeartbeat(Sequence: LastSequence), cancellationToken);
     }
 
     /// <summary>Opens the session: a fresh identify, or a resume when one is already held.</summary>
@@ -321,17 +377,11 @@ public sealed class DiscordGatewayClientService(
                 cancellationToken);
         }
 
-        int? sequence;
-        lock (sequenceGate)
-        {
-            sequence = lastSequence;
-        }
-
         return DiscordGatewayStreamUtils.SendAsync(
             socket,
             new DiscordGatewayRequest(
                 ResumeOpCode,
-                new DiscordResumeData(options.BotToken, sessionIdentifier, sequence ?? 0)),
+                new DiscordResumeData(options.BotToken, sessionIdentifier, LastSequence ?? 0)),
             cancellationToken);
     }
 
@@ -350,6 +400,29 @@ public sealed class DiscordGatewayClientService(
         }
     }
 
+    /// <summary>The gateway URL this connection and its resumes are opened with.</summary>
+    private string CurrentGatewayUrl =>
+        string.IsNullOrWhiteSpace(resumeUrl) ? options.GatewayUrl : resumeUrl!;
+
+    private int? LastSequence
+    {
+        get
+        {
+            lock (sequenceGate)
+            {
+                return lastSequence;
+            }
+        }
+    }
+
     /// <summary>Signals a connection that has to be dropped and opened again.</summary>
     private sealed class GatewayReconnectException : Exception;
+
+    /// <summary>Signals a close the integration cannot recover from on its own.</summary>
+    /// <param name="CloseCode">Close code the gateway ended the connection with.</param>
+    private sealed class GatewayFatalCloseException(int closeCode) : Exception
+    {
+        /// <summary>Close code the gateway ended the connection with.</summary>
+        public int CloseCode { get; } = closeCode;
+    }
 }

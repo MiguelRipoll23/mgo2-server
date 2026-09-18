@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -64,7 +65,9 @@ public sealed class DiscordGatewayClientTests
         Assert.Contains("\"op\":2", identify, StringComparison.Ordinal);
         Assert.Contains("\"token\":\"token\"", identify, StringComparison.Ordinal);
 
-        await FakeGatewayServer.SendAsync(socket, """{"op":0,"t":"READY","s":1,"d":{"session_id":"abc"}}""");
+        await FakeGatewayServer.SendAsync(
+            socket,
+            FakeGatewayServer.ReadyPayload(gateway.Port));
         await FakeGatewayServer.SendAsync(socket, Interaction);
 
         var reply = await responder.NextAnswer.WaitAsync(TimeSpan.FromSeconds(10));
@@ -77,6 +80,92 @@ public sealed class DiscordGatewayClientTests
         await client.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task AnExtraHeartbeatTheGatewayAsksForIsAnsweredAtOnce()
+    {
+        await using var gateway = await FakeGatewayServer.StartAsync();
+        var client = CreateClient(gateway.Port, new RecordingResponder());
+
+        await client.StartAsync(CancellationToken.None);
+        var socket = await gateway.AcceptConnectionAsync();
+
+        await FakeGatewayServer.SendAsync(socket, """{"op":10,"d":{"heartbeat_interval":45000}}""");
+        await FakeGatewayServer.ReceiveAsync(socket);
+
+        await FakeGatewayServer.SendAsync(socket, """{"op":1}""");
+        var heartbeat = await FakeGatewayServer.ReceiveAsync(socket);
+        Assert.Contains("\"op\":1", heartbeat, StringComparison.Ordinal);
+
+        await client.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AReconnectFrameIsFollowedByANewConnectionThatResumes()
+    {
+        await using var gateway = await FakeGatewayServer.StartAsync();
+        var client = CreateClient(gateway.Port, new RecordingResponder());
+
+        await client.StartAsync(CancellationToken.None);
+        var socket = await gateway.AcceptConnectionAsync();
+
+        await FakeGatewayServer.SendAsync(socket, """{"op":10,"d":{"heartbeat_interval":45000}}""");
+        await FakeGatewayServer.ReceiveAsync(socket);
+        await FakeGatewayServer.SendAsync(
+            socket,
+            FakeGatewayServer.ReadyPayload(gateway.Port));
+
+        // The reconnect frame is answered with a fresh connection at once,
+        // which carries the resume instead of a fresh identify.
+        await FakeGatewayServer.SendAsync(socket, """{"op":7}""");
+        var second = await gateway.AcceptConnectionAsync();
+
+        await FakeGatewayServer.SendAsync(second, """{"op":10,"d":{"heartbeat_interval":45000}}""");
+        var resume = await FakeGatewayServer.ReceiveAsync(second);
+        Assert.Contains("\"op\":6", resume, StringComparison.Ordinal);
+        Assert.Contains("\"session_id\":\"abc\"", resume, StringComparison.Ordinal);
+
+        await client.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AnInvalidSessionThatCannotBeResumedIsFollowedByAnIdentify()
+    {
+        await using var gateway = await FakeGatewayServer.StartAsync();
+        var client = CreateClient(gateway.Port, new RecordingResponder());
+
+        await client.StartAsync(CancellationToken.None);
+        var socket = await gateway.AcceptConnectionAsync();
+
+        await FakeGatewayServer.SendAsync(socket, """{"op":10,"d":{"heartbeat_interval":45000}}""");
+        await FakeGatewayServer.ReceiveAsync(socket);
+        await FakeGatewayServer.SendAsync(
+            socket,
+            FakeGatewayServer.ReadyPayload(gateway.Port));
+
+        // A d of false refuses the resume, so the next connection identifies
+        // again instead of resuming the dead session.
+        await FakeGatewayServer.SendAsync(socket, """{"op":9,"d":false}""");
+        var second = await gateway.AcceptConnectionAsync();
+
+        await FakeGatewayServer.SendAsync(second, """{"op":10,"d":{"heartbeat_interval":45000}}""");
+        var identify = await FakeGatewayServer.ReceiveAsync(second);
+        Assert.Contains("\"op\":2", identify, StringComparison.Ordinal);
+
+        await client.StopAsync(CancellationToken.None);
+    }
+
+    private static DiscordGatewayClientService CreateClient(int port, RecordingResponder responder) =>
+        new(
+            CreateOptions(port),
+            new DiscordCommandService(
+                responder,
+                new FlashNewsDispatcherService(
+                    new LobbyConnectionRegistryService(NullLogger<LobbyConnectionRegistryService>.Instance),
+                    NullLogger<FlashNewsDispatcherService>.Instance),
+                CreateOptions(port),
+                NullLogger<DiscordCommandService>.Instance),
+            NullLogger<DiscordGatewayClientService>.Instance);
+
     private static IOptions<DiscordOptions> CreateOptions(int port) => Options.Create(new DiscordOptions
     {
         Enabled = true,
@@ -85,6 +174,8 @@ public sealed class DiscordGatewayClientTests
         GuildIdentifier = "10",
         ModeratorRoleIdentifier = ModeratorRole,
     });
+
+
 
     private sealed class RecordingResponder : IDiscordInteractionResponder
     {
@@ -108,8 +199,8 @@ public sealed class DiscordGatewayClientTests
     private sealed class FakeGatewayServer : IAsyncDisposable
     {
         private readonly HttpListener listener = new();
-        private readonly TaskCompletionSource<WebSocket> connection =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly BlockingCollection<WebSocket> accepted = new(1);
+        private readonly CancellationTokenSource disposed = new();
 
         private FakeGatewayServer(int port)
         {
@@ -119,18 +210,46 @@ public sealed class DiscordGatewayClientTests
 
         public int Port { get; }
 
-        public static Task<FakeGatewayServer> StartAsync()
+        /// <summary>The ready event the fake gateway answers an identify with.</summary>
+        public static string ReadyPayload(int port) =>
+            "{\"op\":0,\"t\":\"READY\",\"s\":1,\"d\":{\"session_id\":\"abc\",\"resume_gateway_url\":\"ws://127.0.0.1:" +
+            port + "/?v=10&encoding=json\"}}";
+
+        public static async Task<FakeGatewayServer> StartAsync()
         {
             var server = new FakeGatewayServer(FreePort());
             server.listener.Start();
-            _ = server.AcceptAsync();
-            return Task.FromResult(server);
+            _ = server.AcceptLoopAsync();
+            return await Task.FromResult(server);
         }
 
-        public Task<WebSocket> AcceptConnectionAsync() => connection.Task;
+        /// <summary>Waits for the next connection the client opens, in order.</summary>
+        public async Task<WebSocket> AcceptConnectionAsync()
+        {
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    return accepted.Take(disposed.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw new ObjectDisposedException(nameof(FakeGatewayServer));
+                }
+            });
+        }
 
         public ValueTask DisposeAsync()
         {
+            disposed.Cancel();
+            try
+            {
+                accepted.CompleteAdding();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+
             listener.Stop();
             listener.Close();
             return ValueTask.CompletedTask;
@@ -159,17 +278,24 @@ public sealed class DiscordGatewayClientTests
             return Encoding.UTF8.GetString(payload.ToArray());
         }
 
-        private async Task AcceptAsync()
+        private async Task AcceptLoopAsync()
         {
-            try
+            while (!disposed.IsCancellationRequested)
             {
-                var context = await listener.GetContextAsync();
-                var accepted = await context.AcceptWebSocketAsync(subProtocol: null);
-                connection.TrySetResult(accepted.WebSocket);
-            }
-            catch (Exception exception)
-            {
-                connection.TrySetException(exception);
+                try
+                {
+                    var context = await listener.GetContextAsync();
+                    var accepted = await context.AcceptWebSocketAsync(subProtocol: null);
+                    this.accepted.Add(accepted.WebSocket);
+                }
+                catch (Exception) when (disposed.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    Console.WriteLine($"The fake gateway dropped a connection: {exception.Message}");
+                }
             }
         }
 

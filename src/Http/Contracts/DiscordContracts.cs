@@ -75,8 +75,10 @@ public sealed record DiscordResumeData(
 
 /// <summary>Data of the ready event, which names the session that was opened.</summary>
 /// <param name="SessionIdentifier">Identifier of the session.</param>
+/// <param name="ResumeGatewayUrl">URL the session is resumed over after a disconnect.</param>
 public sealed record DiscordReadyData(
-    [property: JsonPropertyName("session_id")] string SessionIdentifier);
+    [property: JsonPropertyName("session_id")] string SessionIdentifier,
+    [property: JsonPropertyName("resume_gateway_url")] string? ResumeGatewayUrl = null);
 
 /// <summary>
 /// One interaction the gateway delivers: a slash command a member of a guild
@@ -186,12 +188,20 @@ public sealed class DiscordChannel
     public string? Name { get; set; }
 }
 
-/// <summary>Body of the calls that create or rename a channel.</summary>
-/// <param name="Name">Name the channel is created or renamed with.</param>
-/// <param name="Type">Channel type, carried by the create call only.</param>
-public sealed record DiscordChannelEditBody(
+/// <summary>Body of the call that creates a channel.</summary>
+/// <param name="Name">Name the channel is created with.</param>
+/// <param name="Type">Channel type of the created channel.</param>
+public sealed record DiscordChannelCreateBody(
     [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("type")] int? Type = null);
+    [property: JsonPropertyName("type")] int Type);
+
+/// <summary>Body of the call that renames a channel.</summary>
+/// <remarks>
+/// It carries the name only. The type of the modify endpoint converts a text
+/// channel into an announcement one, and any other value Discord refuses.
+/// </remarks>
+/// <param name="Name">Name to give the channel.</param>
+public sealed record DiscordChannelEditBody([property: JsonPropertyName("name")] string Name);
 
 /// <summary>Request the API accepts to send a message from the bot.</summary>
 public sealed class DiscordMessageSendRequest

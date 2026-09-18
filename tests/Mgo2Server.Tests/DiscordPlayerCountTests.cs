@@ -61,6 +61,28 @@ public sealed class DiscordPlayerCountServiceTests
     }
 
     [Fact]
+    public async Task InitializationAdoptsTheChannelOfAPreviousRunUnderItsStoredName()
+    {
+        // Discord stores a text channel name lowercased with its spaces as
+        // dashes, so the channel this integration created as players [0] is
+        // listed back as players-[0] and has to be found all the same.
+        var rest = new RecordingRestClient(
+            new Dictionary<string, (HttpStatusCode, string)>
+            {
+                ["GET /api/v10/guilds/10/channels"] = (HttpStatusCode.OK, """[{"id":"77","name":"players-[0]"}]"""),
+            });
+        var service = new DiscordPlayerCountService(rest.Client, new LobbyPresenceService(), rest.Options, NullLogger<DiscordPlayerCountService>.Instance);
+
+        await service.InitializeAsync(3, CancellationToken.None);
+
+        Assert.DoesNotContain(rest.Requests, request => request.Method == "POST" && request.Path.Contains("/guilds/"));
+        Assert.Contains(rest.Requests, request =>
+            request.Method == "PATCH" &&
+            request.Path == "/api/v10/channels/77" &&
+            request.Body.Contains("players [3]"));
+    }
+
+    [Fact]
     public async Task EveryConnectionAndDisconnectionIsWrittenInTheChannel()
     {
         var rest = new RecordingRestClient(new Dictionary<string, (HttpStatusCode, string)>

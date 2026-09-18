@@ -98,6 +98,21 @@ public sealed class DiscordFlashCommandTests
     }
 
     [Fact]
+    public async Task AMessageLongerThanTheTickerCarriesIsTrimmed()
+    {
+        var registry = new LobbyConnectionRegistryService(NullLogger<LobbyConnectionRegistryService>.Instance);
+        var lobby = registry.Open(3, "Free Battle");
+        var responder = new RecordingResponder();
+
+        await CreateService(responder, registry).HandleInteractionAsync(
+            CommandInteraction(new string('x', 300), ModeratorRole),
+            CancellationToken.None);
+
+        Assert.True(lobby.Outgoing.TryRead(out var packet));
+        Assert.Equal(255, packet.FlashNews.Message.Length);
+    }
+
+    [Fact]
     public void AnUnconfiguredRoleAllowsNobody()
     {
         var options = new DiscordOptions

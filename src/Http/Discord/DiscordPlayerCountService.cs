@@ -239,11 +239,17 @@ public sealed partial class DiscordPlayerCountService(
     /// Reports whether a channel name is one this integration could have
     /// applied, so a channel it created before a restart is found again.
     /// </summary>
+    /// <remarks>
+    /// Discord stores a text channel name lowercased with its spaces as
+    /// dashes, so the channel this integration created as
+    /// <c>players [0]</c> is listed back as <c>players-[0]</c>; both spellings
+    /// are accepted, or a restart would create a second channel.
+    /// </remarks>
     /// <param name="name">Name of a channel.</param>
     private static bool IsPlayerCountChannelName(string? name) =>
         name is not null && PlayerCountChannelNamePattern().IsMatch(name);
 
-    [GeneratedRegex(@"^players \[\d+\]$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^players[ -]\[\d+\]$", RegexOptions.IgnoreCase)]
     private static partial Regex PlayerCountChannelNamePattern();
 
     /// <summary>A presence change held back until its window closes.</summary>
