@@ -30,51 +30,6 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve image configuration
-        id: config
-        shell: bash
-        run: |
-          case "${{ matrix.image }}" in
-            mgo2-gate-lobby-server)
-              echo "project=src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj" >> "$GITHUB_OUTPUT"
-              echo "assembly=Mgo2Server.GateLobbyServer" >> "$GITHUB_OUTPUT"
-              echo "target=runtime" >> "$GITHUB_OUTPUT"
-              ;;
-            mgo2-account-lobby-server)
-              echo "project=src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj" >> "$GITHUB_OUTPUT"
-              echo "assembly=Mgo2Server.AccountLobbyServer" >> "$GITHUB_OUTPUT"
-              echo "target=runtime" >> "$GITHUB_OUTPUT"
-              ;;
-            mgo2-game-lobby-server)
-              echo "project=src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj" >> "$GITHUB_OUTPUT"
-              echo "assembly=Mgo2Server.GameLobbyServer" >> "$GITHUB_OUTPUT"
-              echo "target=runtime" >> "$GITHUB_OUTPUT"
-              ;;
-            mgo2-gameplay-server)
-              echo "project=src/GameplayServer/Mgo2Server.GameplayServer.csproj" >> "$GITHUB_OUTPUT"
-              echo "assembly=Mgo2Server.GameplayServer" >> "$GITHUB_OUTPUT"
-              echo "target=runtime" >> "$GITHUB_OUTPUT"
-              ;;
-            mgo2-http)
-              echo "project=src/Http/Mgo2Server.Http.csproj" >> "$GITHUB_OUTPUT"
-              echo "assembly=Mgo2Server.Http" >> "$GITHUB_OUTPUT"
-              echo "target=runtime" >> "$GITHUB_OUTPUT"
-              ;;
-            mgo2-dns)
-              echo "project=src/Dns/Mgo2Server.Dns.csproj" >> "$GITHUB_OUTPUT"
-              echo "assembly=Mgo2Server.Dns" >> "$GITHUB_OUTPUT"
-              echo "target=runtime" >> "$GITHUB_OUTPUT"
-              ;;
-            mgo2-stun)
-              echo "project=src/Stun/Mgo2Server.Stun.csproj" >> "$GITHUB_OUTPUT"
-              echo "assembly=Mgo2Server.Stun" >> "$GITHUB_OUTPUT"
-              echo "target=runtime" >> "$GITHUB_OUTPUT"
-              ;;
-            mgo2-postgres)
-              echo "target=postgres" >> "$GITHUB_OUTPUT"
-              ;;
-          esac
-
       - name: Check out the repository
         uses: actions/checkout@v7
 
@@ -177,6 +132,51 @@ jobs:
       matrix:
         image: ${{ fromJSON(needs.changes.outputs.images) }}
     steps:
+      - name: Resolve image configuration
+        id: config
+        shell: bash
+        run: |
+          case "${{ matrix.image }}" in
+            mgo2-gate-lobby-server)
+              echo "project=src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.GateLobbyServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-account-lobby-server)
+              echo "project=src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.AccountLobbyServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-game-lobby-server)
+              echo "project=src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.GameLobbyServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-gameplay-server)
+              echo "project=src/GameplayServer/Mgo2Server.GameplayServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.GameplayServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-http)
+              echo "project=src/Http/Mgo2Server.Http.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.Http" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-dns)
+              echo "project=src/Dns/Mgo2Server.Dns.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.Dns" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-stun)
+              echo "project=src/Stun/Mgo2Server.Stun.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.Stun" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-postgres)
+              echo "target=postgres" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
       - name: Check out the repository
         uses: actions/checkout@v7
 
