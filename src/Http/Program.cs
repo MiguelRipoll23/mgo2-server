@@ -67,8 +67,9 @@ var discordOptions = new DiscordOptions
 {
     Enabled = bool.TryParse(builder.Configuration["DISCORD_ENABLED"], out var discordEnabled) && discordEnabled,
     BotToken = builder.Configuration["DISCORD_BOT_TOKEN"] ?? string.Empty,
-    ApplicationIdentifier = builder.Configuration["DISCORD_APPLICATION_ID"] ?? string.Empty,
-    ApplicationPublicKey = builder.Configuration["DISCORD_PUBLIC_KEY"] ?? string.Empty,
+    GatewayUrl = builder.Configuration["DISCORD_GATEWAY_URL"] is { Length: > 0 } gatewayUrl
+        ? gatewayUrl
+        : DiscordOptions.DefaultGatewayUrl,
     GuildIdentifier = builder.Configuration["DISCORD_GUILD_ID"] ?? string.Empty,
     PlayerCountChannelIdentifier = builder.Configuration["DISCORD_PLAYER_COUNT_CHANNEL_ID"] ?? string.Empty,
     ModeratorRoleIdentifier = builder.Configuration["DISCORD_MODERATOR_ROLE_ID"] ?? string.Empty,
@@ -98,13 +99,20 @@ builder.Services.AddSingleton<FlashNewsDispatcherService>();
 
 // Discord is optional and only ever observes and relays: it is switched off by
 // configuration, and every failure of it is logged and absorbed by the service
-// that made the call.
+// that made the call. Slash commands arrive over the gateway socket; the
+// command registration and the answers to Discord are the REST side of it.
 builder.Services.AddSingleton<DiscordRestClientService>();
+builder.Services.AddSingleton<IDiscordMessageService>(
+    provider => provider.GetRequiredService<DiscordRestClientService>());
+builder.Services.AddSingleton<IDiscordInteractionResponder>(
+    provider => provider.GetRequiredService<DiscordRestClientService>());
 builder.Services.AddSingleton<DiscordPlayerCountService>();
-builder.Services.AddSingleton<DiscordInteractionService>();
 builder.Services.AddSingleton<IPlayerPresenceObserver>(
     provider => provider.GetRequiredService<DiscordPlayerCountService>());
-builder.Services.AddHostedService<DiscordIntegrationService>();
+builder.Services.AddSingleton<DiscordCommandService>();
+builder.Services.AddSingleton<DiscordGatewayClientService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<DiscordGatewayClientService>());
+builder.Services.AddHostedService<DiscordStartupService>();
 
 // The API registers a single scheme, and a single registered scheme is also the
 // default one, so the handler runs for the anonymous routes as well. It answers

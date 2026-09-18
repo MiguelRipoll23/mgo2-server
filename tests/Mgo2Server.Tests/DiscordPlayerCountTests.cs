@@ -30,7 +30,7 @@ public sealed class DiscordPlayerCountServiceTests
             {
                 ["GET /api/v10/guilds/10/channels"] = (HttpStatusCode.OK, """[{"id":"77","name":"players [0]"}]"""),
             });
-        var service = new DiscordPlayerCountService(rest.Client, rest.Options, NullLogger<DiscordPlayerCountService>.Instance);
+        var service = new DiscordPlayerCountService(rest.Client, new LobbyPresenceService(), rest.Options, NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(3, CancellationToken.None);
 
@@ -50,7 +50,7 @@ public sealed class DiscordPlayerCountServiceTests
                 ["GET /api/v10/guilds/10/channels"] = (HttpStatusCode.OK, "[]"),
             },
             jsonResponse: """{"id":"88","name":"players [0]"}""");
-        var service = new DiscordPlayerCountService(rest.Client, rest.Options, NullLogger<DiscordPlayerCountService>.Instance);
+        var service = new DiscordPlayerCountService(rest.Client, new LobbyPresenceService(), rest.Options, NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(0, CancellationToken.None);
 
@@ -69,24 +69,35 @@ public sealed class DiscordPlayerCountServiceTests
             ["PATCH /api/v10/channels/77"] = (HttpStatusCode.OK, """{"id":"77"}"""),
             ["POST /api/v10/channels/77/messages"] = (HttpStatusCode.OK, """{"id":"91"}"""),
         });
-        var service = new DiscordPlayerCountService(rest.Client, Configured(options => { }), NullLogger<DiscordPlayerCountService>.Instance);
+        var presence = new LobbyPresenceService();
+        var service = new DiscordPlayerCountService(
+            rest.Client,
+            presence,
+            Configured(options => options.PresenceCoalesceMilliseconds = 20),
+            NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(0, CancellationToken.None);
+
+        presence.AddPlayer(1, 42, out _);
         await service.PlayerPresenceChangedAsync(
             new PlayerPresenceNotification(1, "Free Battle", 42, "Snake", Connected: true, TotalPlayers: 1),
             CancellationToken.None);
+        await WaitForAsync(() => Messages(rest).Any(body => body.Contains("Snake connected", StringComparison.Ordinal)));
+
+        presence.RemovePlayer(1, 42, out _);
         await service.PlayerPresenceChangedAsync(
             new PlayerPresenceNotification(1, "Free Battle", 42, "Snake", Connected: false, TotalPlayers: 0),
             CancellationToken.None);
+        await WaitForAsync(() => Messages(rest).Any(body => body.Contains("Snake disconnected", StringComparison.Ordinal)));
 
-        var messages = rest.Requests
-            .Where(request => request.Path.EndsWith("/messages", StringComparison.Ordinal))
-            .ToList();
-        var connected = Assert.Single(messages, request => request.Body.Contains("Snake connected.", StringComparison.Ordinal));
-        Assert.Contains("\"parse\":[]", connected.Body, StringComparison.Ordinal);
+        var messages = Messages(rest);
+        var connected = Assert.Single(messages, body => body.Contains("Snake connected", StringComparison.Ordinal));
+        Assert.Contains("\"parse\":[]", connected, StringComparison.Ordinal);
+        Assert.DoesNotContain("connected.", connected, StringComparison.Ordinal);
 
-        var disconnected = Assert.Single(messages, request => request.Body.Contains("Snake disconnected.", StringComparison.Ordinal));
-        Assert.Contains("\"parse\":[]", disconnected.Body, StringComparison.Ordinal);
+        var disconnected = Assert.Single(messages, body => body.Contains("Snake disconnected", StringComparison.Ordinal));
+        Assert.Contains("\"parse\":[]", disconnected, StringComparison.Ordinal);
+        Assert.DoesNotContain("disconnected.", disconnected, StringComparison.Ordinal);
 
         var renames = rest.Requests
             .Where(request => request.Method == "PATCH")
@@ -94,6 +105,41 @@ public sealed class DiscordPlayerCountServiceTests
             .ToList();
         Assert.Contains(renames, body => body.Contains("players [1]"));
         Assert.Contains(renames, body => body.Contains("players [0]"));
+    }
+
+    [Fact]
+    public async Task ASwitchBetweenLobbiesIsNotWrittenInTheChannel()
+    {
+        var rest = new RecordingRestClient(new Dictionary<string, (HttpStatusCode, string)>
+        {
+            ["GET /api/v10/guilds/10/channels"] = (HttpStatusCode.OK, """[{"id":"77","name":"players [0]"}]"""),
+            ["PATCH /api/v10/channels/77"] = (HttpStatusCode.OK, """{"id":"77"}"""),
+            ["POST /api/v10/channels/77/messages"] = (HttpStatusCode.OK, """{"id":"91"}"""),
+        });
+        var presence = new LobbyPresenceService();
+        var service = new DiscordPlayerCountService(
+            rest.Client,
+            presence,
+            Configured(options => options.PresenceCoalesceMilliseconds = 60),
+            NullLogger<DiscordPlayerCountService>.Instance);
+
+        await service.InitializeAsync(1, CancellationToken.None);
+
+        // Leaving one lobby for another is a departure and an arrival of the
+        // same character inside one window, so they cancel out.
+        presence.RemovePlayer(1, 42, out _);
+        await service.PlayerPresenceChangedAsync(
+            new PlayerPresenceNotification(1, "Free Battle", 42, "Snake", Connected: false, TotalPlayers: 0),
+            CancellationToken.None);
+        presence.AddPlayer(2, 42, out _);
+        await service.PlayerPresenceChangedAsync(
+            new PlayerPresenceNotification(2, "Team Battle", 42, "Snake", Connected: true, TotalPlayers: 1),
+            CancellationToken.None);
+
+        await Task.Delay(200);
+
+        Assert.Empty(Messages(rest));
+        Assert.Single(rest.Requests, request => request.Method == "PATCH");
     }
 
     [Fact]
@@ -105,7 +151,7 @@ public sealed class DiscordPlayerCountServiceTests
                 ["GET /api/v10/guilds/10/channels"] = (HttpStatusCode.OK, """[{"id":"123","name":"players [0]"}]"""),
                 ["PATCH /api/v10/channels/123"] = (HttpStatusCode.TooManyRequests, """{"retry_after":60}"""),
             });
-        var service = new DiscordPlayerCountService(rest.Client, Configured(options => { }), NullLogger<DiscordPlayerCountService>.Instance);
+        var service = new DiscordPlayerCountService(rest.Client, new LobbyPresenceService(), Configured(options => { }), NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(1, CancellationToken.None);
         await service.PlayerTotalChangedAsync(2, CancellationToken.None);
@@ -119,6 +165,7 @@ public sealed class DiscordPlayerCountServiceTests
         var rest = new RecordingRestClient(new Dictionary<string, (HttpStatusCode, string)>());
         var service = new DiscordPlayerCountService(
             rest.Client,
+            new LobbyPresenceService(),
             Configured(options => options.PlayerCountChannelIdentifier = "55"),
             NullLogger<DiscordPlayerCountService>.Instance);
 
@@ -137,12 +184,28 @@ public sealed class DiscordPlayerCountServiceTests
         var rest = new RecordingRestClient(new Dictionary<string, (HttpStatusCode, string)>());
         var service = new DiscordPlayerCountService(
             rest.Client,
+            new LobbyPresenceService(),
             Options.Create(new DiscordOptions { Enabled = true, GuildIdentifier = "10" }),
             NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(4, CancellationToken.None);
 
         Assert.Empty(rest.Requests);
+    }
+
+    private static List<string> Messages(RecordingRestClient rest) =>
+        [.. rest.Requests
+            .Where(request => request.Path.EndsWith("/messages", StringComparison.Ordinal))
+            .Select(request => request.Body)];
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        for (var attempt = 0; attempt < 100 && !condition(); attempt++)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.True(condition(), "The expected Discord call was not made in time.");
     }
 
     private static IOptions<DiscordOptions> Configured(Action<DiscordOptions> configure)

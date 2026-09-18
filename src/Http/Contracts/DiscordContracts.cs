@@ -1,31 +1,110 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Mgo2Server.Http.Contracts;
 
 /// <summary>
-/// One interaction Discord delivers to the registered endpoint: a ping that
-/// proves the endpoint is alive, or a command a member used.
+/// One frame of the Discord gateway protocol. Every frame carries an operation
+/// code; a dispatch (opcode 0) also carries the event name and its data.
+/// </summary>
+public sealed class GatewayFrame
+{
+    /// <summary>Operation code of the frame.</summary>
+    [JsonPropertyName("op")]
+    public int OpCode { get; set; }
+
+    /// <summary>Sequence number of a dispatch, echoed in the heartbeats.</summary>
+    [JsonPropertyName("s")]
+    public int? Sequence { get; set; }
+
+    /// <summary>Name of a dispatched event.</summary>
+    [JsonPropertyName("t")]
+    public string? EventName { get; set; }
+
+    /// <summary>Event data, read according to the operation code.</summary>
+    [JsonPropertyName("d")]
+    public JsonElement? Data { get; set; }
+}
+
+/// <summary>Hello the gateway opens every connection with.</summary>
+/// <param name="HeartbeatInterval">Interval in milliseconds between heartbeats.</param>
+public sealed record DiscordGatewayHello(
+    [property: JsonPropertyName("heartbeat_interval")] int HeartbeatInterval);
+
+/// <summary>Heartbeat the client sends within the interval the hello set.</summary>
+/// <param name="OpCode">Operation code of the heartbeat.</param>
+/// <param name="Sequence">Sequence of the last frame received, or <c>null</c>.</param>
+public sealed record DiscordGatewayHeartbeat(
+    [property: JsonPropertyName("op")] int OpCode = 1,
+    [property: JsonPropertyName("d")] int? Sequence = null);
+
+/// <summary>Request the client sends to the gateway besides a heartbeat.</summary>
+/// <param name="OpCode">Operation code of the request.</param>
+/// <param name="Data">Payload of the request.</param>
+public sealed record DiscordGatewayRequest(
+    [property: JsonPropertyName("op")] int OpCode,
+    [property: JsonPropertyName("d")] object Data);
+
+/// <summary>Payload of the identify request, which opens a session.</summary>
+/// <param name="Token">Bot token of the application.</param>
+/// <param name="Intents">Intents the events are subscribed with.</param>
+/// <param name="Properties">Connection metadata Discord asks every identify to carry.</param>
+public sealed record DiscordIdentifyData(
+    [property: JsonPropertyName("token")] string Token,
+    [property: JsonPropertyName("intents")] int Intents,
+    [property: JsonPropertyName("properties")] DiscordConnectionProperties Properties);
+
+/// <summary>Connection metadata of a gateway session.</summary>
+/// <param name="OperatingSystem">Operating system the bot runs on.</param>
+/// <param name="Browser">Browser value Discord records for the session.</param>
+/// <param name="Device">Device value Discord records for the session.</param>
+public sealed record DiscordConnectionProperties(
+    [property: JsonPropertyName("os")] string OperatingSystem,
+    [property: JsonPropertyName("browser")] string Browser,
+    [property: JsonPropertyName("device")] string Device);
+
+/// <summary>Payload of the resume request, sent over a session that was dropped.</summary>
+/// <param name="Token">Bot token of the application.</param>
+/// <param name="SessionIdentifier">Identifier of the session to resume.</param>
+/// <param name="Sequence">Last sequence number of the dropped session.</param>
+public sealed record DiscordResumeData(
+    [property: JsonPropertyName("token")] string Token,
+    [property: JsonPropertyName("session_id")] string SessionIdentifier,
+    [property: JsonPropertyName("seq")] int Sequence);
+
+/// <summary>Data of the ready event, which names the session that was opened.</summary>
+/// <param name="SessionIdentifier">Identifier of the session.</param>
+public sealed record DiscordReadyData(
+    [property: JsonPropertyName("session_id")] string SessionIdentifier);
+
+/// <summary>
+/// One interaction the gateway delivers: a slash command a member of a guild
+/// used.
 /// </summary>
 public sealed class DiscordInteraction
 {
+    /// <summary>Identifier of the interaction.</summary>
+    [JsonPropertyName("id")]
+    public string? Identifier { get; set; }
+
+    /// <summary>Token that authorizes the callback that answers the interaction.</summary>
+    [JsonPropertyName("token")]
+    public string? Token { get; set; }
+
     /// <summary>Kind of interaction.</summary>
     [JsonPropertyName("type")]
     public int Type { get; set; }
 
-    /// <summary>Identifier of the interaction, echoed nowhere but the reply.</summary>
-    [JsonPropertyName("id")]
-    public string? Identifier { get; set; }
-
-    /// <summary>Token the reply is sent with instead of a bot token.</summary>
-    [JsonPropertyName("token")]
-    public string? Token { get; set; }
-
-    /// <summary>Guild the interaction happened in, when it happened in one.</summary>
+    /// <summary>Guild the interaction happened in.</summary>
     [JsonPropertyName("guild_id")]
     public string? GuildIdentifier { get; set; }
 
-    /// <summary>Member that used the command, when it is a guild interaction.</summary>
+    /// <summary>Channel the interaction happened in, where the reply is written.</summary>
+    [JsonPropertyName("channel_id")]
+    public string? ChannelIdentifier { get; set; }
+
+    /// <summary>Member that used the command.</summary>
     [JsonPropertyName("member")]
     public DiscordInteractionMember? Member { get; set; }
 
@@ -69,6 +148,32 @@ public sealed class DiscordApplicationCommandOption
     public JsonElement? Value { get; set; }
 }
 
+/// <summary>Body of the channel message the bot sends over the REST API.</summary>
+/// <param name="Content">Text of the message.</param>
+/// <param name="AllowedMentions">Mentions the message is allowed to trigger.</param>
+public sealed record DiscordChannelMessageBody(
+    [property: JsonPropertyName("content")] string Content,
+    [property: JsonPropertyName("allowed_mentions")] DiscordAllowedMentions AllowedMentions);
+
+/// <summary>Mentions a bot-written message may trigger.</summary>
+/// <param name="Parse">Kinds of mention the message is allowed to parse.</param>
+public sealed record DiscordAllowedMentions(
+    [property: JsonPropertyName("parse")] List<string> Parse);
+
+/// <summary>Body of the callback that answers an interaction.</summary>
+/// <param name="Type">Kind of response.</param>
+/// <param name="Data">Content the response carries.</param>
+public sealed record DiscordInteractionResponse(
+    [property: JsonPropertyName("type")] int Type,
+    [property: JsonPropertyName("data")] DiscordInteractionResponseData Data);
+
+/// <summary>Message an interaction response carries.</summary>
+/// <param name="Content">Text of the message.</param>
+/// <param name="Flags">Flags of the message, such as ephemeral.</param>
+public sealed record DiscordInteractionResponseData(
+    [property: JsonPropertyName("content")] string Content,
+    [property: JsonPropertyName("flags")] int Flags);
+
 /// <summary>Channel of a guild, as the channel endpoints report it.</summary>
 public sealed class DiscordChannel
 {
@@ -81,23 +186,22 @@ public sealed class DiscordChannel
     public string? Name { get; set; }
 }
 
-/// <summary>Reply of an interaction, sent within the three seconds Discord waits.</summary>
-/// <param name="Type">Kind of reply.</param>
-/// <param name="Data">Content of the reply, when it carries any.</param>
-public sealed record DiscordInteractionResponse(
-    [property: JsonPropertyName("type")] int Type,
-    [property: JsonPropertyName("data")] DiscordInteractionMessage? Data = null);
+/// <summary>Body of the calls that create or rename a channel.</summary>
+/// <param name="Name">Name the channel is created or renamed with.</param>
+/// <param name="Type">Channel type, carried by the create call only.</param>
+public sealed record DiscordChannelEditBody(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("type")] int? Type = null);
 
-/// <summary>Message carried by a reply.</summary>
-/// <param name="Content">Text of the message.</param>
-/// <param name="Flags">Message flags; the ephemeral flag hides it from everyone else.</param>
-public sealed record DiscordInteractionMessage(
-    [property: JsonPropertyName("content")] string Content,
-    [property: JsonPropertyName("flags")] int? Flags = null);
+/// <summary>Request the API accepts to send a message from the bot.</summary>
+public sealed class DiscordMessageSendRequest
+{
+    /// <summary>Channel the message is written in.</summary>
+    [Required]
+    public required string ChannelIdentifier { get; set; }
 
-/// <summary>Outcome of one interaction, as the endpoint answers it.</summary>
-/// <param name="StatusCode">Status the endpoint responds with.</param>
-/// <param name="Response">Reply Discord is given, when there is one.</param>
-public sealed record DiscordInteractionResult(
-    int StatusCode,
-    DiscordInteractionResponse? Response = null);
+    /// <summary>Text of the message.</summary>
+    [Required]
+    [StringLength(2000, MinimumLength = 1)]
+    public required string Content { get; set; }
+}

@@ -9,9 +9,43 @@ using Microsoft.Extensions.Options;
 namespace Mgo2Server.Http.Discord;
 
 /// <summary>
-/// The Discord REST API, as far as the integration needs it: the channels the
-/// player count is published in, the commands the application offers and the
-/// replies to the interactions it receives.
+/// Sends messages into the channels of a guild through the Discord REST API.
+/// It is one of the two outbound calls of the integration; the slash commands
+/// and every event travel over the gateway socket instead.
+/// </summary>
+/// <param name="channelIdentifier">Identifier of the channel.</param>
+/// <param name="content">Text of the message.</param>
+/// <param name="cancellationToken">Token that cancels the operation.</param>
+/// <returns>Whether Discord accepted the message.</returns>
+public interface IDiscordMessageService
+{
+    Task<bool> SendChannelMessageAsync(
+        string channelIdentifier,
+        string content,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>Answers the interactions the gateway delivers, over the REST API.</summary>
+public interface IDiscordInteractionResponder
+{
+    /// <summary>Answers one interaction, so the command that carried it does not time out.</summary>
+    /// <param name="interactionIdentifier">Identifier of the interaction.</param>
+    /// <param name="interactionToken">Token that authorizes the answer.</param>
+    /// <param name="content">Text of the answer.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Whether Discord accepted the answer.</returns>
+    Task<bool> RespondAsync(
+        string interactionIdentifier,
+        string interactionToken,
+        string content,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// The REST side of the Discord integration, as far as it needs it: the channel
+/// the player count is published in and the channel messages the bot writes.
+/// Discord does not deliver these over its gateway socket, so they are the one
+/// HTTP call of the deployment.
 /// </summary>
 /// <remarks>
 /// Every call reports its own failure instead of throwing one. Discord being
@@ -24,7 +58,7 @@ namespace Mgo2Server.Http.Discord;
 public sealed class DiscordRestClientService(
     IHttpClientFactory httpClientFactory,
     IOptions<DiscordOptions> options,
-    ILogger<DiscordRestClientService> logger)
+    ILogger<DiscordRestClientService> logger) : IDiscordMessageService, IDiscordInteractionResponder
 {
     /// <summary>Channel type of a text channel, which is what the count is published in.</summary>
     private const int TextChannelType = 0;
@@ -32,15 +66,34 @@ public sealed class DiscordRestClientService(
     /// <summary>Option type of a free-text command option.</summary>
     private const int StringOptionType = 3;
 
+    /// <summary>Response that writes a message in the channel of the interaction.</summary>
+    private const int ChannelMessageResponseType = 4;
+
+    /// <summary>Flag that shows the response only to the member that used the command.</summary>
+    private const int EphemeralResponseFlag = 64;
+
     /// <summary>Serializer the request bodies and the channel responses are read and written with.</summary>
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     private readonly DiscordOptions options = options.Value;
 
-    /// <summary>Registers the flash command of the application.</summary>
+    /// <summary>
+    /// Registers the flash command of the application. Discord only takes a
+    /// command over its REST API, so this is the one setup call the WebSocket
+    /// integration keeps.
+    /// </summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Whether Discord accepted the command.</returns>
     public async Task<bool> RegisterFlashCommandAsync(CancellationToken cancellationToken)
     {
+        var applicationIdentifier = DiscordApplicationIdentifierUtils.FromBotToken(options.BotToken);
+        if (applicationIdentifier is null)
+        {
+            logger.LogWarning(
+                "The flash command is not registered; the bot token does not carry an application identifier");
+            return false;
+        }
+
         var command = new
         {
             name = DiscordOptions.FlashCommandName,
@@ -61,8 +114,8 @@ public sealed class DiscordRestClientService(
         // once; a global command may take an hour to appear, which would make
         // the integration look broken right after it was configured.
         var path = string.IsNullOrWhiteSpace(options.GuildIdentifier)
-            ? $"applications/{options.ApplicationIdentifier}/commands"
-            : $"applications/{options.ApplicationIdentifier}/guilds/{options.GuildIdentifier}/commands";
+            ? $"applications/{applicationIdentifier}/commands"
+            : $"applications/{applicationIdentifier}/guilds/{options.GuildIdentifier}/commands";
 
         return await SendAsync(
             HttpMethod.Put,
@@ -106,18 +159,16 @@ public sealed class DiscordRestClientService(
         }
     }
 
-    /// <summary>Creates the channel the player count is published in.</summary>
+    /// <summary>Creates a text channel in the guild.</summary>
     /// <param name="name">Name the channel is created with.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The identifier of the channel, or <c>null</c> when it was not created.</returns>
-    public async Task<string?> CreatePlayerCountChannelAsync(
-        string name,
-        CancellationToken cancellationToken)
+    public async Task<string?> CreateChannelAsync(string name, CancellationToken cancellationToken)
     {
         var response = await SendAsync(
             HttpMethod.Post,
             $"guilds/{options.GuildIdentifier}/channels",
-            new { name, type = TextChannelType },
+            new DiscordChannelEditBody(name, TextChannelType),
             "create the player count channel",
             cancellationToken);
 
@@ -155,14 +206,11 @@ public sealed class DiscordRestClientService(
         await SendAsync(
             HttpMethod.Patch,
             $"channels/{channelIdentifier}",
-            new { name },
+            new DiscordChannelEditBody(name),
             $"rename channel {channelIdentifier}",
             cancellationToken) is not null;
 
-    /// <summary>Writes a message in a channel.</summary>
-    /// <param name="channelIdentifier">Identifier of the channel.</param>
-    /// <param name="content">Text of the message.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <inheritdoc />
     public async Task<bool> SendChannelMessageAsync(
         string channelIdentifier,
         string content,
@@ -170,31 +218,28 @@ public sealed class DiscordRestClientService(
         await SendAsync(
             HttpMethod.Post,
             $"channels/{channelIdentifier}/messages",
-            new
-            {
+            new DiscordChannelMessageBody(
                 content,
-
-                // A character name is player input, so it is never allowed to
-                // ping a role or everyone in the guild.
-                allowed_mentions = new { parse = Array.Empty<string>() },
-            },
+                // A command option or a moderator is player input, so a message
+                // is never allowed to ping a role or everyone in the guild.
+                new DiscordAllowedMentions(Parse: [])),
             $"write in channel {channelIdentifier}",
             cancellationToken) is not null;
 
-    /// <summary>Answers an interaction through the token it arrived with.</summary>
-    /// <param name="interactionIdentifier">Identifier of the interaction.</param>
-    /// <param name="interactionToken">Token of the interaction.</param>
-    /// <param name="response">Reply to deliver.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<bool> RespondToInteractionAsync(
+    /// <inheritdoc />
+    public async Task<bool> RespondAsync(
         string interactionIdentifier,
         string interactionToken,
-        DiscordInteractionResponse response,
+        string content,
         CancellationToken cancellationToken) =>
         await SendAsync(
             HttpMethod.Post,
             $"interactions/{interactionIdentifier}/{interactionToken}/callback",
-            response,
+            new DiscordInteractionResponse(
+                ChannelMessageResponseType,
+                // The answer is the feedback of the command, not a message of
+                // the guild, so it is shown only to the member that used it.
+                new DiscordInteractionResponseData(content, EphemeralResponseFlag)),
             "answer an interaction",
             cancellationToken) is not null;
 

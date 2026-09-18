@@ -74,6 +74,10 @@ lobby holds 64 announcements.
 Discord is switched on with `DISCORD_ENABLED=true` and never becomes a
 requirement of anything:
 
+* The bot connects to the Discord gateway over a WebSocket, which is where the
+  `/flash` command and the events arrive. The gateway only carries what Discord
+  pushes down, so the command registration, the answers to the interactions and
+  the channel messages go over the REST API.
 * Every call to Discord is wrapped, and a failure is logged and forgotten. An
   unreachable Discord, a revoked token or a rate limit cannot fail a request of
   the API, a flash, or a game lobby.
@@ -85,43 +89,48 @@ requirement of anything:
 
 ### Settings
 
-| Variable                           | Meaning                                                          |
-| ---------------------------------- | ---------------------------------------------------------------- |
-| `DISCORD_ENABLED`                  | Switches the whole integration on.                                |
-| `DISCORD_BOT_TOKEN`                | Bot token of the application. Required for everything.            |
-| `DISCORD_APPLICATION_ID`           | Application identifier, used to register the command.             |
-| `DISCORD_PUBLIC_KEY`               | Hex Ed25519 public key that verifies every interaction.           |
-| `DISCORD_GUILD_ID`                 | Guild the commands are registered in and the channel lives in.    |
-| `DISCORD_PLAYER_COUNT_CHANNEL_ID`  | Channel of the player count; found by name and created when empty. |
-| `DISCORD_MODERATOR_ROLE_ID`        | Role that may use `/flash`.                                       |
-| `DISCORD_MANAGER_ROLE_ID`          | Other role that may use `/flash`.                                 |
+| Variable                           | Meaning                                                                |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| `DISCORD_ENABLED`                  | Switches the whole integration on.                                      |
+| `DISCORD_BOT_TOKEN`                | Bot token of the application. Required for everything.                  |
+| `DISCORD_GATEWAY_URL`              | WebSocket URL of the gateway; defaults to the public Discord gateway.   |
+| `DISCORD_GUILD_ID`                 | Guild the command is registered in, the channel lives in, and the guild the flash command is honored in. |
+| `DISCORD_PLAYER_COUNT_CHANNEL_ID`  | Channel of the player count; found by name and created when empty.      |
+| `DISCORD_MODERATOR_ROLE_ID`        | Role that may use `/flash`.                                             |
+| `DISCORD_MANAGER_ROLE_ID`          | Other role that may use `/flash`.                                       |
 
-The API answers nothing until `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID` and
-`DISCORD_PUBLIC_KEY` are set, and publishes no count until `DISCORD_BOT_TOKEN`
-and `DISCORD_GUILD_ID` are set.
+The integration does nothing until `DISCORD_BOT_TOKEN` is set, and publishes no
+count until `DISCORD_GUILD_ID` is set as well. Nothing else is needed: the
+application identifier the command registration requires is read out of the bot
+token.
 
 ### Preparing the application
 
 1. Create an application in the Discord developer portal and a bot in it. Give
    the bot the `Manage Channels` and `Send Messages` permissions and invite it
    to the guild with those permissions.
-2. Put the bot token in `DISCORD_BOT_TOKEN` and the application identifier in
-   `DISCORD_APPLICATION_ID`. Create a guild and set `DISCORD_GUILD_ID`.
-3. Copy the public key of the application into `DISCORD_PUBLIC_KEY`. It is the
-   Ed25519 key Discord signs every interaction with, and the endpoint verifies
-   that signature before it reads anything.
-4. Point the interactions endpoint URL of the application at
-   `https://<host>/discord/interactions`. Discord sends a signed ping when the
-   URL is saved; the API answers it, which is what proves the URL.
-5. Set `DISCORD_MODERATOR_ROLE_ID` and `DISCORD_MANAGER_ROLE_ID` to the roles
+2. Put the bot token in `DISCORD_BOT_TOKEN` and the guild identifier in
+   `DISCORD_GUILD_ID`.
+3. Set `DISCORD_MODERATOR_ROLE_ID` and `DISCORD_MANAGER_ROLE_ID` to the roles
    that may broadcast. Without them nobody may use the command.
-6. Start the deployment. The API registers `/flash` in the guild and finds or
-   creates the channel of the player count.
+4. Start the deployment. The API registers `/flash` in the guild, connects the
+   bot to the gateway and finds or creates the channel of the player count.
 
-The `/flash` command takes one required option, `message`, and answers
-ephemerally in the channel it was used in. It is registered per guild, so it is
-available immediately instead of waiting for Discord to publish a global
-command.
+The `/flash` command takes one required option, `message`. It is registered per
+guild, so it is available immediately instead of waiting for Discord to publish
+a global command, and it arrives over the gateway socket: a member runs it, the
+API sees the interaction and relays the flash, and the bot answers the member
+alone, so the channel is not cluttered with the outcome. A command from a guild
+that is not `DISCORD_GUILD_ID` is ignored.
+
+### Sending messages
+
+Besides the answers to the `/flash` command, the bot can be told to write a
+message through the authenticated API:
+
+* `POST /discord/messages` (bearer token required) with a `channelIdentifier`
+  and a `content` writes a message from the bot into that channel of the guild.
+  The message is never allowed to ping a role or everyone.
 
 ### The player count channel
 
@@ -131,13 +140,20 @@ Every connection and disconnection is also written in it as a message:
 
 ```
 players [42]
-Snake connected.
-Snake disconnected.
+Snake connected
+Snake disconnected
 ```
 
 The channel is remembered by its name (`players [n]`), so a restart adopts the
 channel it created instead of adding a second one; setting
 `DISCORD_PLAYER_COUNT_CHANNEL_ID` skips the search entirely.
+
+A player who moves from one lobby to another is reported by both lobbies, so
+the move arrives as a departure and an arrival of the same character. The
+integration holds an event back for a few seconds: when the opposite event
+lands inside that window the two cancel out, so a move is neither written in the
+channel nor allowed to flip its name through the transient count. A genuine
+connection or disconnection still waits out the window and is then written.
 
 Discord allows only a couple of renames of a channel per ten minutes, and the
 count moves far more often than that. The integration therefore treats a rename

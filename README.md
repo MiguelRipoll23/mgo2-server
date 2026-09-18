@@ -157,8 +157,11 @@ the global count and every connection and disconnection is written in it.
 
 The API and a lobby are independent of each other: a lobby that cannot reach the
 coordination endpoint keeps serving its players and retries once a minute, and
-Discord is optional and never on the path of a game. `docs/discord-integration.md`
-describes the contract, the settings and the Discord application to create.
+Discord is optional and never on the path of a game. The bot receives the
+`/flash` command over its gateway WebSocket connection and answers it, and
+`POST /discord/messages` writes a message from the bot into a channel.
+`docs/discord-integration.md` describes the contract, the settings and the
+Discord application to create.
 
 ### Telemetry
 

@@ -13,5 +13,6 @@ internal static class AuthenticatedEndpoints
         group.MapLobbyEndpoints();
         group.MapFlashNewsEndpoints();
         group.MapGameEndpoints();
+        group.MapDiscordMessageEndpoints();
     }
 }

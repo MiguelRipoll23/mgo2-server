@@ -1,13 +1,14 @@
 using Mgo2Server.Http.Coordination;
 using Mgo2Server.Http.Options;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.Http.Discord;
 
 /// <summary>
-/// Brings the Discord integration up once the API is running: it registers the
-/// flash command and finds or creates the channel the player count is published
-/// in.
+/// Brings the REST side of the integration up once the API is running: it
+/// registers the flash command, which Discord only takes over its REST API, and
+/// finds or creates the channel the player count is published in.
 /// </summary>
 /// <remarks>
 /// It runs in the background and reports every failure itself. Discord is
@@ -16,21 +17,21 @@ namespace Mgo2Server.Http.Discord;
 /// as one that never enabled the integration.
 /// </remarks>
 /// <param name="options">Options of the integration.</param>
-/// <param name="restClient">Client of the Discord REST API.</param>
+/// <param name="restClient">REST side of the integration.</param>
 /// <param name="playerCount">Service that publishes the player count.</param>
 /// <param name="presence">Counts the coordinator holds.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class DiscordIntegrationService(
+public sealed class DiscordStartupService(
     IOptions<DiscordOptions> options,
     DiscordRestClientService restClient,
     DiscordPlayerCountService playerCount,
     LobbyPresenceService presence,
-    ILogger<DiscordIntegrationService> logger) : IHostedService
+    ILogger<DiscordStartupService> logger) : IHostedService
 {
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled)
+        if (!options.Value.IsConfigured)
         {
             logger.LogInformation("The Discord integration is disabled");
             return Task.CompletedTask;
@@ -39,28 +40,20 @@ public sealed class DiscordIntegrationService(
         logger.LogInformation("The Discord integration is starting");
 
         // Not awaited: the API has to start whether or not Discord answers.
-        _ = Task.Run(() => InitializeAsync(cancellationToken), CancellationToken.None);
+        _ = InitializeAsync(cancellationToken);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    /// <summary>Registers the commands and prepares the channel of the count.</summary>
+    /// <summary>Registers the command and prepares the channel of the count.</summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     private async Task InitializeAsync(CancellationToken cancellationToken)
     {
         try
         {
-            if (options.Value.IsInteractionConfigured)
-            {
-                await restClient.RegisterFlashCommandAsync(cancellationToken);
-            }
-            else
-            {
-                logger.LogWarning(
-                    "The Discord slash commands are not registered; DISCORD_BOT_TOKEN, DISCORD_APPLICATION_ID and DISCORD_PUBLIC_KEY are required");
-            }
+            await restClient.RegisterFlashCommandAsync(cancellationToken);
 
             if (!options.Value.IsPlayerCountConfigured)
             {

@@ -15,21 +15,29 @@ namespace Mgo2Server.Http.Discord;
 /// It is an observer of the coordinator, so it needs the global count rather
 /// than the count of one lobby, which is why the integration belongs to the
 /// HTTP API. None of its failures reach the coordinator: a Discord that refuses
-/// a rename or a message is logged and forgotten.
+/// a rename or a message is logged and forgotten. A connection and its opposite
+/// are held back for a short window, so a player who moves between lobbies does
+/// not read as a departure followed by an arrival.
 /// </remarks>
-/// <param name="restClient">Client of the Discord REST API.</param>
+/// <param name="restClient">REST side of the integration, which owns the channel calls.</param>
+/// <param name="presence">Counts the coordinator owns, read for the settled total.</param>
 /// <param name="options">Options of the integration.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class DiscordPlayerCountService(
     DiscordRestClientService restClient,
+    LobbyPresenceService presence,
     IOptions<DiscordOptions> options,
     ILogger<DiscordPlayerCountService> logger) : IPlayerPresenceObserver
 {
     private readonly DiscordOptions options = options.Value;
     private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly Lock pendingGate = new();
+    private readonly Dictionary<int, PendingPresence> pending = [];
+    private readonly SemaphoreSlim flushGate = new(1, 1);
 
     private string? channelIdentifier;
     private string? appliedName;
+    private long pendingGenerations;
 
     /// <summary>Builds the name of the channel for a number of players.</summary>
     /// <param name="totalPlayers">Players connected across every lobby.</param>
@@ -64,15 +72,84 @@ public sealed partial class DiscordPlayerCountService(
     }
 
     /// <inheritdoc />
-    public async Task PlayerPresenceChangedAsync(
+    public Task PlayerPresenceChangedAsync(
         PlayerPresenceNotification notification,
         CancellationToken cancellationToken)
     {
-        await SendMessageAsync(
-            $"{notification.CharacterName} {(notification.Connected ? "connected" : "disconnected")}.",
-            cancellationToken);
+        long generation;
+        lock (pendingGate)
+        {
+            if (!pending.TryGetValue(notification.CharacterIdentifier, out var entry))
+            {
+                entry = new PendingPresence();
+                pending[notification.CharacterIdentifier] = entry;
+            }
 
-        await PlayerTotalChangedAsync(notification.TotalPlayers, cancellationToken);
+            // A connection and a disconnection of the same character that fall
+            // inside one window are one move between lobbies, so they cancel
+            // out and nothing is written.
+            entry.Change += notification.Connected ? 1 : -1;
+            entry.CharacterName = notification.CharacterName;
+
+            generation = ++pendingGenerations;
+            entry.Generation = generation;
+        }
+
+        // Not awaited: the coordinator reports a change rather than waiting for
+        // the window to close.
+        _ = FlushAfterWindowAsync(notification.CharacterIdentifier, generation);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Writes one coalesced presence change once its window has closed.</summary>
+    /// <param name="characterIdentifier">Character the change belongs to.</param>
+    /// <param name="generation">Window the change was scheduled in.</param>
+    private async Task FlushAfterWindowAsync(int characterIdentifier, long generation)
+    {
+        try
+        {
+            await Task.Delay(options.PresenceCoalesceMilliseconds);
+
+            int change;
+            string characterName;
+            lock (pendingGate)
+            {
+                if (!pending.TryGetValue(characterIdentifier, out var entry) ||
+                    entry.Generation != generation)
+                {
+                    return;
+                }
+
+                pending.Remove(characterIdentifier);
+                change = entry.Change;
+                characterName = entry.CharacterName;
+            }
+
+            if (change == 0)
+            {
+                return;
+            }
+
+            await flushGate.WaitAsync();
+            try
+            {
+                await SendMessageAsync(
+                    $"{characterName} {(change > 0 ? "connected" : "disconnected")}",
+                    CancellationToken.None);
+
+                // The settled total, so the dip of a move never reaches the
+                // channel name.
+                await PlayerTotalChangedAsync(presence.TotalPlayers, CancellationToken.None);
+            }
+            finally
+            {
+                flushGate.Release();
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "A Discord player presence change could not be published");
+        }
     }
 
     /// <inheritdoc />
@@ -121,7 +198,7 @@ public sealed partial class DiscordPlayerCountService(
         }
 
         logger.LogInformation("The guild holds no player count channel; creating one");
-        return await restClient.CreatePlayerCountChannelAsync(name, cancellationToken);
+        return await restClient.CreateChannelAsync(name, cancellationToken);
     }
 
     /// <summary>Writes one message in the channel of the count.</summary>
@@ -168,4 +245,17 @@ public sealed partial class DiscordPlayerCountService(
 
     [GeneratedRegex(@"^players \[\d+\]$", RegexOptions.IgnoreCase)]
     private static partial Regex PlayerCountChannelNamePattern();
+
+    /// <summary>A presence change held back until its window closes.</summary>
+    private sealed class PendingPresence
+    {
+        /// <summary>Connections minus disconnections seen inside the window.</summary>
+        public int Change { get; set; }
+
+        /// <summary>Name of the character, taken from the latest change.</summary>
+        public string CharacterName { get; set; } = string.Empty;
+
+        /// <summary>Window the latest change belongs to; an older flush is dropped.</summary>
+        public long Generation { get; set; }
+    }
 }

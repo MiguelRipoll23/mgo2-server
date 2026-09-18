@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using Mgo2Server.Http.Contracts;
 using Mgo2Server.Http.Coordination;
@@ -7,107 +6,95 @@ using Mgo2Server.Http.Options;
 using Mgo2Server.Shared.Domain.News;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using NSec.Cryptography;
 
 namespace Mgo2Server.Tests;
 
 /// <summary>
-/// The interactions endpoint is reachable by anyone, so a request without a
-/// signature of the application is answered with nothing, and the command it
-/// carries is only run for the staff roles.
+/// The flash command arrives over the gateway as an interaction, so it is only
+/// run for the staff roles, only in the configured guild, and its outcome is
+/// written back as the answer to the interaction.
 /// </summary>
 public sealed class DiscordFlashCommandTests
 {
     private const string ModeratorRole = "100000000000000001";
     private const string ManagerRole = "100000000000000002";
     private const string OtherRole = "100000000000000003";
-
-    [Fact]
-    public void AnUnsignedRequestIsRefused()
-    {
-        var result = CreateService().Handle(Encoding.UTF8.GetBytes("{\"type\":1}"), null, "123");
-
-        Assert.Equal(401, result.StatusCode);
-        Assert.Null(result.Response);
-    }
-
-    [Fact]
-    public void ARequestSignedWithAnotherKeyIsRefused()
-    {
-        using var other = Key.Create(SignatureAlgorithm.Ed25519);
-        var body = Encoding.UTF8.GetBytes("{\"type\":1}");
-
-        var result = CreateService().Handle(body, Sign(other, body, "123"), "123");
-
-        Assert.Equal(401, result.StatusCode);
-    }
-
-    [Fact]
-    public void APingIsAcknowledged()
-    {
-        var body = Encoding.UTF8.GetBytes("{\"type\":1}");
-
-        var result = CreateService().Handle(body, Sign(KeyPair.Key, body, "123"), "123");
-
-        Assert.Equal(200, result.StatusCode);
-        Assert.Equal(1, result.Response!.Type);
-    }
-
-    [Fact]
-    public void ADisabledIntegrationAnswersNothing()
-    {
-        var body = Encoding.UTF8.GetBytes("{\"type\":1}");
-
-        var result = CreateService(new DiscordOptions())
-            .Handle(body, Sign(KeyPair.Key, body, "123"), "123");
-
-        Assert.Equal(503, result.StatusCode);
-    }
+    private const string Interaction = "300000000000000001";
+    private const string InteractionToken = "interaction-token";
 
     [Theory]
     [InlineData(ModeratorRole)]
     [InlineData(ManagerRole)]
-    public void StaffRolesRelayTheFlashNews(string role)
+    public async Task StaffRolesRelayTheFlashNews(string role)
     {
         var registry = new LobbyConnectionRegistryService(NullLogger<LobbyConnectionRegistryService>.Instance);
         var lobby = registry.Open(3, "Free Battle");
-        var body = CommandBody("Maintenance in ten minutes", role);
+        var responder = new RecordingResponder();
 
-        var result = CreateService(registry: registry).Handle(body, Sign(KeyPair.Key, body, "123"), "123");
-
-        Assert.Equal(200, result.StatusCode);
-        Assert.Contains("1 lobbies", result.Response!.Data!.Content);
+        await CreateService(responder, registry).HandleInteractionAsync(
+            CommandInteraction("Maintenance in ten minutes", role),
+            CancellationToken.None);
 
         // The command and the broadcast endpoints share the same flow, so the
         // lobby receives the announcement the coordinator relays.
         Assert.True(lobby.Outgoing.TryRead(out var message));
         Assert.Equal("Maintenance in ten minutes", message.FlashNews.Message);
         Assert.Equal(FlashNewsSubcommand.ServerMessage, (ushort)message.FlashNews.Subcommand);
+
+        var reply = Assert.Single(responder.Answers);
+        Assert.Equal(Interaction, reply.InteractionIdentifier);
+        Assert.Contains("1 lobbies", reply.Content);
     }
 
     [Fact]
-    public void ACommandFromAnotherRoleIsRefused()
+    public async Task ACommandFromAnotherRoleIsRefused()
     {
         var registry = new LobbyConnectionRegistryService(NullLogger<LobbyConnectionRegistryService>.Instance);
         var lobby = registry.Open(3, "Free Battle");
-        var body = CommandBody("Maintenance in ten minutes", OtherRole);
+        var responder = new RecordingResponder();
 
-        var result = CreateService(registry: registry).Handle(body, Sign(KeyPair.Key, body, "123"), "123");
+        await CreateService(responder, registry).HandleInteractionAsync(
+            CommandInteraction("Maintenance in ten minutes", OtherRole),
+            CancellationToken.None);
 
-        Assert.Equal(200, result.StatusCode);
-        Assert.Contains("Moderator or Manager", result.Response!.Data!.Content);
+        Assert.Contains("Moderator or Manager", Assert.Single(responder.Answers).Content);
         Assert.False(lobby.Outgoing.TryRead(out _));
     }
 
     [Fact]
-    public void ACommandWithoutAMessageIsRefused()
+    public async Task ACommandWithoutAMessageIsRefused()
     {
-        var body = CommandBody(null, ModeratorRole);
+        var responder = new RecordingResponder();
 
-        var result = CreateService().Handle(body, Sign(KeyPair.Key, body, "123"), "123");
+        await CreateService(responder).HandleInteractionAsync(
+            CommandInteraction(null, ModeratorRole),
+            CancellationToken.None);
 
-        Assert.Equal(200, result.StatusCode);
-        Assert.Contains("required", result.Response!.Data!.Content);
+        Assert.Contains("required", Assert.Single(responder.Answers).Content);
+    }
+
+    [Fact]
+    public async Task ACommandOfAnotherGuildIsIgnored()
+    {
+        var responder = new RecordingResponder();
+        var interaction = CommandInteraction("hello", ModeratorRole);
+        interaction.GuildIdentifier = "99";
+
+        await CreateService(responder).HandleInteractionAsync(interaction, CancellationToken.None);
+
+        Assert.Empty(responder.Answers);
+    }
+
+    [Fact]
+    public async Task AnUnrelatedCommandIsIgnored()
+    {
+        var responder = new RecordingResponder();
+        var interaction = CommandInteraction("hello", ModeratorRole);
+        interaction.Data!.Name = "something-else";
+
+        await CreateService(responder).HandleInteractionAsync(interaction, CancellationToken.None);
+
+        Assert.Empty(responder.Answers);
     }
 
     [Fact]
@@ -117,73 +104,75 @@ public sealed class DiscordFlashCommandTests
         {
             Enabled = true,
             BotToken = "token",
-            ApplicationIdentifier = "1",
-            ApplicationPublicKey = KeyPair.PublicKey,
         };
 
         Assert.False(options.AllowsFlashCommand([ModeratorRole]));
-
-        var body = CommandBody("hello", ModeratorRole);
-        var result = CreateService(options).Handle(body, Sign(KeyPair.Key, body, "123"), "123");
-
-        Assert.Contains("Moderator or Manager", result.Response!.Data!.Content);
     }
 
-    private static byte[] CommandBody(string? message, string role)
-    {
-        var options = message is null
-            ? """[{"name":"other","value":"x"}]"""
-            : $$"""[{"name":"message","value":{{JsonSerializer.Serialize(message)}}}]""";
-
-        var payload =
-            $$"""
-            {
-              "type": 2,
-              "id": "1",
-              "token": "interaction-token",
-              "guild_id": "10",
-              "member": { "roles": ["{{role}}"] },
-              "data": { "name": "flash", "options": {{options}} }
-            }
-            """;
-
-        return Encoding.UTF8.GetBytes(payload);
-    }
-
-    private static string Sign(Key key, byte[] body, string timestamp) =>
-        Convert.ToHexString(SignatureAlgorithm.Ed25519.Sign(
-            key,
-            Encoding.UTF8.GetBytes(timestamp).Concat(body).ToArray()));
-
-    private static DiscordInteractionService CreateService(
-        DiscordOptions? options = null,
+    private static DiscordCommandService CreateService(
+        RecordingResponder responder,
         LobbyConnectionRegistryService? registry = null) =>
         new(
+            responder,
             new FlashNewsDispatcherService(
                 registry ?? new LobbyConnectionRegistryService(
                     NullLogger<LobbyConnectionRegistryService>.Instance),
                 NullLogger<FlashNewsDispatcherService>.Instance),
-            Options.Create(options ?? Configured()),
-            NullLogger<DiscordInteractionService>.Instance);
+            Options.Create(Configured()),
+            NullLogger<DiscordCommandService>.Instance);
 
     private static DiscordOptions Configured() => new()
     {
         Enabled = true,
         BotToken = "token",
-        ApplicationIdentifier = "1",
-        ApplicationPublicKey = KeyPair.PublicKey,
+        GuildIdentifier = "10",
         ModeratorRoleIdentifier = ModeratorRole,
         ManagerRoleIdentifier = ManagerRole,
     };
 
-    /// <summary>Key the test interactions are signed with, shared by the tests of this class.</summary>
-    private static class KeyPair
+    private static DiscordInteraction CommandInteraction(string? message, string role) => new()
     {
-        public static readonly Key Key = Key.Create(
-            SignatureAlgorithm.Ed25519,
-            new KeyCreationParameters { ExportPolicy = KeyExportPolicies.AllowPlaintextExport });
+        Identifier = Interaction,
+        Token = InteractionToken,
+        Type = 2,
+        GuildIdentifier = "10",
+        ChannelIdentifier = "200000000000000001",
+        Member = new DiscordInteractionMember { Roles = [role] },
+        Data = new DiscordApplicationCommandData
+        {
+            Name = DiscordOptions.FlashCommandName,
+            Options = message is null
+                ?
+                [
+                    new DiscordApplicationCommandOption
+                    {
+                        Name = "other",
+                        Value = JsonSerializer.SerializeToElement("x"),
+                    },
+                ]
+                :
+                [
+                    new DiscordApplicationCommandOption
+                    {
+                        Name = "message",
+                        Value = JsonSerializer.SerializeToElement(message),
+                    },
+                ],
+        },
+    };
 
-        public static readonly string PublicKey =
-            Convert.ToHexString(Key.PublicKey.Export(KeyBlobFormat.RawPublicKey));
+    private sealed class RecordingResponder : IDiscordInteractionResponder
+    {
+        public List<(string InteractionIdentifier, string Content)> Answers { get; } = [];
+
+        public Task<bool> RespondAsync(
+            string interactionIdentifier,
+            string interactionToken,
+            string content,
+            CancellationToken cancellationToken)
+        {
+            Answers.Add((interactionIdentifier, content));
+            return Task.FromResult(true);
+        }
     }
 }

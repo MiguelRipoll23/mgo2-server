@@ -18,6 +18,5 @@ internal static class PublicEndpoints
         group.MapDataListEdnpoints();
         group.MapRankingEndpoints();
         group.MapLauncherEndpoints();
-        group.MapDiscordEndpoints();
     }
 }
