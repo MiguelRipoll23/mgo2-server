@@ -30,6 +30,51 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve image configuration
+        id: config
+        shell: bash
+        run: |
+          case "${{ matrix.image }}" in
+            mgo2-gate-lobby-server)
+              echo "project=src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.GateLobbyServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-account-lobby-server)
+              echo "project=src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.AccountLobbyServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-game-lobby-server)
+              echo "project=src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.GameLobbyServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-gameplay-server)
+              echo "project=src/GameplayServer/Mgo2Server.GameplayServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.GameplayServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-http)
+              echo "project=src/Http/Mgo2Server.Http.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.Http" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-dns)
+              echo "project=src/Dns/Mgo2Server.Dns.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.Dns" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-stun)
+              echo "project=src/Stun/Mgo2Server.Stun.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.Stun" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-postgres)
+              echo "target=postgres" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
       - name: Check out the repository
         uses: actions/checkout@v7
 
@@ -52,7 +97,7 @@ jobs:
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
-      images: ${{ steps.filter.outputs.changes }}
+      images: ${{ github.ref_type == 'tag' && '["mgo2-gate-lobby-server","mgo2-account-lobby-server","mgo2-game-lobby-server","mgo2-gameplay-server","mgo2-http","mgo2-dns","mgo2-stun","mgo2-postgres"]' || steps.filter.outputs.changes }}
     steps:
       - name: Detect changed projects
         id: filter
@@ -123,53 +168,14 @@ jobs:
     needs:
       - test
       - changes
-    # Pull requests only run the tests; an image is published from main and from
-    # version tags. Version tags rebuild every image for a complete release.
-    if: |
-      github.event_name != 'pull_request' &&
-      (
-        github.ref_type == 'tag' ||
-        contains(needs.changes.outputs.images, matrix.image)
-      )
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - image: mgo2-gate-lobby-server
-            project: src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj
-            assembly: Mgo2Server.GateLobbyServer
-            target: runtime
-          - image: mgo2-account-lobby-server
-            project: src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj
-            assembly: Mgo2Server.AccountLobbyServer
-            target: runtime
-          - image: mgo2-game-lobby-server
-            project: src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj
-            assembly: Mgo2Server.GameLobbyServer
-            target: runtime
-          - image: mgo2-gameplay-server
-            project: src/GameplayServer/Mgo2Server.GameplayServer.csproj
-            assembly: Mgo2Server.GameplayServer
-            target: runtime
-          - image: mgo2-http
-            project: src/Http/Mgo2Server.Http.csproj
-            assembly: Mgo2Server.Http
-            target: runtime
-          - image: mgo2-dns
-            project: src/Dns/Mgo2Server.Dns.csproj
-            assembly: Mgo2Server.Dns
-            target: runtime
-          - image: mgo2-stun
-            project: src/Stun/Mgo2Server.Stun.csproj
-            assembly: Mgo2Server.Stun
-            target: runtime
-          # The postgres image. It is built from the postgres stage and needs no
-          # project or assembly argument, so it passes none.
-          - image: mgo2-postgres
-            target: postgres
+        image: ${{ fromJSON(needs.changes.outputs.images) }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7
@@ -205,13 +211,13 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
-          target: ${{ matrix.target }}
+          target: ${{ steps.config.outputs.target }}
           push: true
           platforms: linux/amd64,linux/arm64/v8
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
           build-args: |
-            PROJECT=${{ matrix.project }}
-            ASSEMBLY=${{ matrix.assembly }}
+            PROJECT=${{ steps.config.outputs.project }}
+            ASSEMBLY=${{ steps.config.outputs.assembly }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
