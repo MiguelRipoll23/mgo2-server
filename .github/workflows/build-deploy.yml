@@ -470,6 +470,13 @@ jobs:
           set -euo pipefail
 
           if [ ! -f "${DEPLOYMENT_DIRECTORY}/compose.yaml" ]; then
+            echo "warning: ${DEPLOYMENT_DIRECTORY}/compose.yaml missing; fetching from repo"
+            curl --fail --silent --show-error --location \
+                 "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/compose.yaml" \
+                 --output "${DEPLOYMENT_DIRECTORY}/compose.yaml" || true
+          fi
+
+          if [ ! -f "${DEPLOYMENT_DIRECTORY}/compose.yaml" ]; then
             echo "error: ${DEPLOYMENT_DIRECTORY}/compose.yaml was not found" >&2
             exit 1
           fi
