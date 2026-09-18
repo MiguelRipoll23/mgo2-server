@@ -8,12 +8,10 @@ namespace Mgo2Server.Shared.Domain.Characters;
 /// <param name="UserIdentifier">Account the character belongs to.</param>
 /// <param name="Name">Name of the character.</param>
 /// <param name="CreationTime">Unix timestamp the character was created at.</param>
-/// <param name="LobbyIdentifier">Lobby the character starts in, when known.</param>
 public sealed record CharacterCreateInput(
     int UserIdentifier,
     string Name,
-    int CreationTime,
-    int? LobbyIdentifier = null);
+    int CreationTime);
 
 /// <summary>A friends or blocked entry together with the name it points at.</summary>
 /// <param name="TargetIdentifier">Character the entry refers to.</param>
@@ -47,7 +45,7 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
         await using var context = await CreateContextAsync(cancellationToken);
         return await context.Characters
             .AsNoTracking()
-            .Where(character => character.UserIdentifier == userIdentifier && character.Active == 1)
+            .Where(character => character.UserIdentifier == userIdentifier && character.Active)
             .ToListAsync(cancellationToken);
     }
 
@@ -90,7 +88,6 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
             UserIdentifier = input.UserIdentifier,
             Name = input.Name,
             CreationTime = input.CreationTime,
-            LobbyIdentifier = input.LobbyIdentifier,
         };
 
         context.Characters.Add(character);
@@ -122,27 +119,10 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
             return;
         }
 
-        character.Active = 0;
+        character.Active = false;
         character.OldName = character.Name;
         character.Name = $":#{characterIdentifier}";
         await context.SaveChangesAsync(cancellationToken);
-    }
-
-    /// <summary>Stores the lobby a character is currently in.</summary>
-    /// <param name="characterIdentifier">Identifier of the character.</param>
-    /// <param name="lobbyIdentifier">Identifier of the lobby, or <c>null</c> to clear it.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task SetLobbyAsync(
-        int characterIdentifier,
-        int? lobbyIdentifier,
-        CancellationToken cancellationToken = default)
-    {
-        await using var context = await CreateContextAsync(cancellationToken);
-        await context.Characters
-            .Where(character => character.Identifier == characterIdentifier)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(character => character.LobbyIdentifier, lobbyIdentifier),
-                cancellationToken);
     }
 
     /// <summary>Returns the appearance of a character.</summary>

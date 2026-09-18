@@ -3,6 +3,7 @@ using System;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mgo2Server.Shared.Persistence.Migrations
 {
     [DbContext(typeof(Mgo2DatabaseContext))]
-    partial class Mgo2DatabaseContextModelSnapshot : ModelSnapshot
+    [Migration("20260918110507_CharacterActiveFlag")]
+    partial class CharacterActiveFlag
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -57,9 +60,25 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasDefaultValue(0)
                         .HasColumnName("experience");
 
+                    b.Property<int>("HostScore")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("host_score");
+
+                    b.Property<int>("HostVotes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("host_votes");
+
                     b.Property<int?>("LastLoginTime")
                         .HasColumnType("integer")
                         .HasColumnName("last_login_time");
+
+                    b.Property<int?>("LobbyIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("lobby_id");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -91,6 +110,8 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasColumnName("user_id");
 
                     b.HasKey("Identifier");
+
+                    b.HasIndex("LobbyIdentifier");
 
                     b.HasIndex("Name")
                         .IsUnique();
@@ -2499,11 +2520,18 @@ namespace Mgo2Server.Shared.Persistence.Migrations
 
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.Character", b =>
                 {
+                    b.HasOne("Mgo2Server.Shared.Persistence.Entities.Lobby", "Lobby")
+                        .WithMany()
+                        .HasForeignKey("LobbyIdentifier")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Mgo2Server.Shared.Persistence.Entities.User", "User")
                         .WithMany("Characters")
                         .HasForeignKey("UserIdentifier")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+
+                    b.Navigation("Lobby");
 
                     b.Navigation("User");
                 });

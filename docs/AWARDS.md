@@ -244,7 +244,7 @@ Every input exists in `round_report` or `round_weapon_tally` **except last-login
 | bases conquered | struct B b25 |
 | rolls, CQC, box uses, scans, traps, ENVG | b12, b10, b21, b19, b18, b13 |
 | weekly anything | the `Period.WEEKLY` window already built |
-| **last login** | **NOT TRACKED.** Needed for TSUCHINOKO alone |
+| **last login** | tracked since 2026-09-18: `characters.previous_login_time` / `last_login_time`, stamped by `CharacterService.RecordLoginAsync`. Needed for TSUCHINOKO alone |
 
 Note `withdrawal rate` is a genuinely new use for a column nothing has read: `counter_0x1f` has sat
 in `round_report` unread since V16.
@@ -368,6 +368,15 @@ else could supply it**, because not playing writes nothing — there is no round
 `days_since_login` reads it; `NULL` (never seen since the column existed) counts as **zero days**,
 not infinity, so missing data cannot award the title. The column also makes `0x4103`'s two
 login-time fields servable, which have been zero because nothing recorded a login.
+
+**This server records it the same way and for the same two reasons** (2026-09-18). The pair of
+stamps lives on the character (`characters.previous_login_time` / `last_login_time`, null until a
+login is recorded), the connect burst rotates it, and the gap comes out of the rotation itself
+(`CharacterLoginTimes`): the title is evaluated against the login the character arrived with, so
+the gap has to be measured in the step that replaces it — rotate first and every absence reads as
+zero, which is exactly the bug that makes the title look unreachable. Before the stamps existed,
+the gap was the default zero at both call sites, so TSUCHINOKO could never be earned here. The
+same pair is what the two login fields of `0x4101` and `0x4103` now carry.
 
 #### What still cannot be earned, and why
 

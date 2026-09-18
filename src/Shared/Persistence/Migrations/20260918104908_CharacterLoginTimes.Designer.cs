@@ -3,6 +3,7 @@ using System;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mgo2Server.Shared.Persistence.Migrations
 {
     [DbContext(typeof(Mgo2DatabaseContext))]
-    partial class Mgo2DatabaseContextModelSnapshot : ModelSnapshot
+    [Migration("20260918104908_CharacterLoginTimes")]
+    partial class CharacterLoginTimes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -31,10 +34,10 @@ namespace Mgo2Server.Shared.Persistence.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Identifier"));
 
-                    b.Property<bool>("Active")
+                    b.Property<int>("Active")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
                         .HasColumnName("active");
 
                     b.Property<string>("Comment")
@@ -57,9 +60,29 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasDefaultValue(0)
                         .HasColumnName("experience");
 
+                    b.Property<string>("GameplayOptions")
+                        .HasColumnType("text")
+                        .HasColumnName("gameplay_options");
+
+                    b.Property<int>("HostScore")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("host_score");
+
+                    b.Property<int>("HostVotes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("host_votes");
+
                     b.Property<int?>("LastLoginTime")
                         .HasColumnType("integer")
                         .HasColumnName("last_login_time");
+
+                    b.Property<int?>("LobbyIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("lobby_id");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -91,6 +114,8 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasColumnName("user_id");
 
                     b.HasKey("Identifier");
+
+                    b.HasIndex("LobbyIdentifier");
 
                     b.HasIndex("Name")
                         .IsUnique();
@@ -429,245 +454,6 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("characters_friends");
-                });
-
-            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.CharacterGameplayOptions", b =>
-                {
-                    b.Property<int>("CharacterIdentifier")
-                        .HasColumnType("integer")
-                        .HasColumnName("character_id");
-
-                    b.Property<int>("BgmVolume")
-                        .HasColumnType("integer")
-                        .HasColumnName("bgm_volume");
-
-                    b.Property<int>("Codec1A")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec1a");
-
-                    b.Property<int>("Codec1B")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec1b");
-
-                    b.Property<int>("Codec1C")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec1c");
-
-                    b.Property<int>("Codec1D")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec1d");
-
-                    b.Property<string>("Codec1Name")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("codec1_name");
-
-                    b.Property<int>("Codec2A")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec2a");
-
-                    b.Property<int>("Codec2B")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec2b");
-
-                    b.Property<int>("Codec2C")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec2c");
-
-                    b.Property<int>("Codec2D")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec2d");
-
-                    b.Property<string>("Codec2Name")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("codec2_name");
-
-                    b.Property<int>("Codec3A")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec3a");
-
-                    b.Property<int>("Codec3B")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec3b");
-
-                    b.Property<int>("Codec3C")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec3c");
-
-                    b.Property<int>("Codec3D")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec3d");
-
-                    b.Property<string>("Codec3Name")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("codec3_name");
-
-                    b.Property<int>("Codec4A")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec4a");
-
-                    b.Property<int>("Codec4B")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec4b");
-
-                    b.Property<int>("Codec4C")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec4c");
-
-                    b.Property<int>("Codec4D")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec4d");
-
-                    b.Property<string>("Codec4Name")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("codec4_name");
-
-                    b.Property<int>("CodecOutputDevice")
-                        .HasColumnType("integer")
-                        .HasColumnName("codec_output_device");
-
-                    b.Property<bool>("EmailFriendsOnly")
-                        .HasColumnType("boolean")
-                        .HasColumnName("email_friends_only");
-
-                    b.Property<bool>("FirstViewHorizontalInvert")
-                        .HasColumnType("boolean")
-                        .HasColumnName("first_view_horizontal_invert");
-
-                    b.Property<bool>("FirstViewMemory")
-                        .HasColumnType("boolean")
-                        .HasColumnName("first_view_memory");
-
-                    b.Property<bool>("FirstViewPlayerDirection")
-                        .HasColumnType("boolean")
-                        .HasColumnName("first_view_player_direction");
-
-                    b.Property<int>("FirstViewSpeed")
-                        .HasColumnType("integer")
-                        .HasColumnName("first_view_speed");
-
-                    b.Property<bool>("FirstViewVerticalInvert")
-                        .HasColumnType("boolean")
-                        .HasColumnName("first_view_vertical_invert");
-
-                    b.Property<int>("HeadsetVolume")
-                        .HasColumnType("integer")
-                        .HasColumnName("headset_volume");
-
-                    b.Property<int>("HudDisplaySize")
-                        .HasColumnType("integer")
-                        .HasColumnName("hud_display_size");
-
-                    b.Property<bool>("HudHideNameTags")
-                        .HasColumnType("boolean")
-                        .HasColumnName("hud_hide_name_tags");
-
-                    b.Property<int>("ItemSwitchMode")
-                        .HasColumnType("integer")
-                        .HasColumnName("item_switch_mode");
-
-                    b.Property<bool>("LockOnEnabled")
-                        .HasColumnType("boolean")
-                        .HasColumnName("lock_on_enabled");
-
-                    b.Property<bool>("NormalViewHorizontalInvert")
-                        .HasColumnType("boolean")
-                        .HasColumnName("normal_view_horizontal_invert");
-
-                    b.Property<int>("NormalViewSpeed")
-                        .HasColumnType("integer")
-                        .HasColumnName("normal_view_speed");
-
-                    b.Property<bool>("NormalViewVerticalInvert")
-                        .HasColumnType("boolean")
-                        .HasColumnName("normal_view_vertical_invert");
-
-                    b.Property<int>("OnlineStatusMode")
-                        .HasColumnType("integer")
-                        .HasColumnName("online_status_mode");
-
-                    b.Property<bool>("RadarFloorHide")
-                        .HasColumnType("boolean")
-                        .HasColumnName("radar_floor_hide");
-
-                    b.Property<bool>("RadarLockNorth")
-                        .HasColumnType("boolean")
-                        .HasColumnName("radar_lock_north");
-
-                    b.Property<bool>("ReceiveInvites")
-                        .HasColumnType("boolean")
-                        .HasColumnName("receive_invites");
-
-                    b.Property<bool>("ReceiveNotices")
-                        .HasColumnType("boolean")
-                        .HasColumnName("receive_notices");
-
-                    b.Property<bool>("ShoulderViewHorizontalInvert")
-                        .HasColumnType("boolean")
-                        .HasColumnName("shoulder_view_horizontal_invert");
-
-                    b.Property<int>("ShoulderViewSpeed")
-                        .HasColumnType("integer")
-                        .HasColumnName("shoulder_view_speed");
-
-                    b.Property<bool>("ShoulderViewVerticalInvert")
-                        .HasColumnType("boolean")
-                        .HasColumnName("shoulder_view_vertical_invert");
-
-                    b.Property<int>("ViewChangeSpeed")
-                        .HasColumnType("integer")
-                        .HasColumnName("view_change_speed");
-
-                    b.Property<int>("VoiceChatOutputDevice")
-                        .HasColumnType("integer")
-                        .HasColumnName("voice_chat_output_device");
-
-                    b.Property<int>("VoiceChatRecognitionLevel")
-                        .HasColumnType("integer")
-                        .HasColumnName("voice_chat_recognition_level");
-
-                    b.Property<int>("VoiceChatVolume")
-                        .HasColumnType("integer")
-                        .HasColumnName("voice_chat_volume");
-
-                    b.Property<int>("WeaponSwitchA")
-                        .HasColumnType("integer")
-                        .HasColumnName("weapon_switch_a");
-
-                    b.Property<int>("WeaponSwitchB")
-                        .HasColumnType("integer")
-                        .HasColumnName("weapon_switch_b");
-
-                    b.Property<int>("WeaponSwitchBefore")
-                        .HasColumnType("integer")
-                        .HasColumnName("weapon_switch_before");
-
-                    b.Property<int>("WeaponSwitchC")
-                        .HasColumnType("integer")
-                        .HasColumnName("weapon_switch_c");
-
-                    b.Property<int>("WeaponSwitchMode")
-                        .HasColumnType("integer")
-                        .HasColumnName("weapon_switch_mode");
-
-                    b.Property<int>("WeaponSwitchNow")
-                        .HasColumnType("integer")
-                        .HasColumnName("weapon_switch_now");
-
-                    b.Property<int>("WeaponSwitchToggle")
-                        .HasColumnType("integer")
-                        .HasColumnName("weapon_switch_toggle");
-
-                    b.HasKey("CharacterIdentifier");
-
-                    b.ToTable("character_gameplay_options");
                 });
 
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.CharacterGearSet", b =>
@@ -2499,11 +2285,18 @@ namespace Mgo2Server.Shared.Persistence.Migrations
 
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.Character", b =>
                 {
+                    b.HasOne("Mgo2Server.Shared.Persistence.Entities.Lobby", "Lobby")
+                        .WithMany()
+                        .HasForeignKey("LobbyIdentifier")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Mgo2Server.Shared.Persistence.Entities.User", "User")
                         .WithMany("Characters")
                         .HasForeignKey("UserIdentifier")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+
+                    b.Navigation("Lobby");
 
                     b.Navigation("User");
                 });
@@ -2569,17 +2362,6 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     b.Navigation("Character");
 
                     b.Navigation("Target");
-                });
-
-            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.CharacterGameplayOptions", b =>
-                {
-                    b.HasOne("Mgo2Server.Shared.Persistence.Entities.Character", "Character")
-                        .WithOne("GameplayOptions")
-                        .HasForeignKey("Mgo2Server.Shared.Persistence.Entities.CharacterGameplayOptions", "CharacterIdentifier")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Character");
                 });
 
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.CharacterGearSet", b =>
@@ -2924,8 +2706,6 @@ namespace Mgo2Server.Shared.Persistence.Migrations
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.Character", b =>
                 {
                     b.Navigation("Appearance");
-
-                    b.Navigation("GameplayOptions");
 
                     b.Navigation("Statistics");
                 });

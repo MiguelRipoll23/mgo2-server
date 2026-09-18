@@ -90,8 +90,21 @@ public sealed partial class CharacterService
     }
 
     /// <summary>
-    /// Stores the experience of a character: the reported amount, or sixty
-    /// points less than the stored value for an aborted round.
+    /// Largest experience a character can hold: the round report carries the total
+    /// as a zero-extended <c>u16</c>, so nothing above it could be reported back.
+    /// </summary>
+    public const int MaximumExperience = 65535;
+
+    /// <summary>
+    /// Stores the experience of a character: the reported total, or sixty points less
+    /// than the stored value for an aborted round.
+    /// <para>
+    /// The reported value is an absolute total, not a delta, so it is stored as it
+    /// arrives — and a decrease is legitimate, because experience in this game can go
+    /// down. It is clamped to the wire's own range rather than trusted, which is also
+    /// what the schema states as a check constraint. The aborted dock is operator
+    /// policy rather than protocol and is knowingly kept.
+    /// </para>
     /// </summary>
     /// <param name="characterIdentifier">Identifier of the character.</param>
     /// <param name="amount">Experience reported for the round.</param>
@@ -109,7 +122,9 @@ public sealed partial class CharacterService
             return;
         }
 
-        var experience = aborted ? Math.Max(0, character.Experience - 60) : amount;
+        var experience = aborted
+            ? Math.Max(0, character.Experience - 60)
+            : Math.Clamp(amount, 0, MaximumExperience);
 
         await using var context = await CreateContextAsync(cancellationToken);
         await context.Characters
@@ -118,31 +133,4 @@ public sealed partial class CharacterService
                 setters => setters.SetProperty(row => row.Experience, experience),
                 cancellationToken);
     }
-
-    /// <summary>Derives the level shown for an experience total.</summary>
-    /// <param name="experience">Experience of the character.</param>
-    public static int CalculateLevel(int experience) => experience switch
-    {
-        < 125 => 0,
-        < 250 => 1,
-        < 375 => 2,
-        < 500 => 3,
-        < 650 => 4,
-        < 800 => 5,
-        < 950 => 6,
-        < 1100 => 7,
-        < 1250 => 8,
-        < 1400 => 9,
-        < 1550 => 10,
-        < 1700 => 11,
-        < 1850 => 12,
-        < 2000 => 13,
-        < 2175 => 14,
-        < 2350 => 15,
-        < 2525 => 16,
-        < 2725 => 17,
-        < 2925 => 18,
-        < 3275 => 19,
-        _ => 20,
-    };
 }

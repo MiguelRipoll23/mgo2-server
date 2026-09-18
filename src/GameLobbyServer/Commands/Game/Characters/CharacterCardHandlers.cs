@@ -8,11 +8,9 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 
 /// <summary>Serves another character's card.</summary>
 /// <param name="characterService">Service that owns the character records.</param>
-/// <param name="statisticsService">Service that owns the lifetime statistics.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class GetCharacterCardHandler(
     CharacterService characterService,
-    CharacterStatisticsService statisticsService,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <summary>Exact size of the card payload.</summary>
@@ -27,15 +25,15 @@ public sealed class GetCharacterCardHandler(
         var character = targetIdentifier > 0
             ? await characterService.FindByIdAsync(targetIdentifier, cancellationToken)
             : null;
-        var statistics = targetIdentifier > 0
-            ? await statisticsService.FindByCharacterIdentifierAsync(targetIdentifier, cancellationToken)
-            : null;
         var clan = targetIdentifier > 0
             ? await characterService.GetClanInformationAsync(targetIdentifier, cancellationToken)
             : null;
 
         var experience = character?.Experience ?? 0;
-        var totalReward = statistics?.Score ?? 0;
+        // Wire 0x1e is the client's total_rewards slot, the card's bit-2-gated
+        // "TOTAL REWARDS" figure. It is the character's own reward total and not
+        // the round score, which is what used to land here.
+        var totalRewards = character?.TotalRewards ?? 0;
         var hasClan = clan is not null;
         var clanTag = hasClan ? $";{clan!.ClanName}" : string.Empty;
 
@@ -46,7 +44,7 @@ public sealed class GetCharacterCardHandler(
         writer.WriteUInt16(0);
         writer.WriteUInt16(experience);
         writer.WriteUInt16(0);
-        writer.WriteUInt32((uint)totalReward);
+        writer.WriteUInt32((uint)totalRewards);
         writer.WriteUInt32(0);
         writer.WriteUInt8(0);
         writer.WriteFixedString(character?.Comment ?? string.Empty, 127);

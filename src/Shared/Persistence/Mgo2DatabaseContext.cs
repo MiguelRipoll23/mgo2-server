@@ -102,6 +102,9 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
     /// <summary>Peer-to-peer endpoints registered by clients.</summary>
     public DbSet<CharacterConnection> CharacterConnections => Set<CharacterConnection>();
 
+    /// <summary>Gameplay options a character has stored.</summary>
+    public DbSet<CharacterGameplayOptions> CharacterGameplayOptions => Set<CharacterGameplayOptions>();
+
     /// <summary>
     /// Pins the plain timestamps to <c>timestamp without time zone</c>. The
     /// provider would otherwise store them as <c>timestamp with time zone</c>,

@@ -99,7 +99,7 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
         var rows = await context.CharacterStatistics
             .AsNoTracking()
             .Join(
-                context.Characters.AsNoTracking().Where(character => character.Active != 0),
+                context.Characters.AsNoTracking().Where(character => character.Active),
                 statistics => statistics.CharacterIdentifier,
                 character => character.Identifier,
                 (statistics, character) => new
@@ -126,7 +126,7 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
     {
         var rows = await context.Characters
             .AsNoTracking()
-            .Where(character => character.Active != 0)
+            .Where(character => character.Active)
             .Select(character => new { character.Identifier, character.Name, character.Experience })
             .ToListAsync(cancellationToken);
 
@@ -144,7 +144,7 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
             var lifetime = await context.CharacterStatistics
                 .AsNoTracking()
                 .Join(
-                    context.Characters.AsNoTracking().Where(character => character.Active != 0),
+                    context.Characters.AsNoTracking().Where(character => character.Active),
                     statistics => statistics.CharacterIdentifier,
                     character => character.Identifier,
                     (statistics, character) => new { character.Identifier, character.Name, statistics.TotalTime })
@@ -159,7 +159,7 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
             where report.CreatedAt >= since
             group report by report.TargetCharacterIdentifier
             into grouped
-            join character in context.Characters.AsNoTracking().Where(character => character.Active != 0)
+            join character in context.Characters.AsNoTracking().Where(character => character.Active)
                 on grouped.Key equals character.Identifier
             select new
             {
@@ -187,7 +187,7 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
 
         var rows = await (
             from review in reviews
-            join character in context.Characters.AsNoTracking().Where(character => character.Active != 0)
+            join character in context.Characters.AsNoTracking().Where(character => character.Active)
                 on review.HostCharacterIdentifier equals character.Identifier
             group review by new { character.Identifier, character.Name }
             into grouped
@@ -231,7 +231,7 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
 
         var rows = await (
             from review in reviews
-            join character in context.Characters.AsNoTracking().Where(character => character.Active != 0)
+            join character in context.Characters.AsNoTracking().Where(character => character.Active)
                 on review.InstructorCharacterIdentifier equals character.Identifier
             group review by new { character.Identifier, character.Name }
             into grouped
@@ -259,7 +259,7 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
     {
         var rows = await (
             from member in context.ClanMembers.AsNoTracking()
-            join character in context.Characters.AsNoTracking().Where(character => character.Active != 0)
+            join character in context.Characters.AsNoTracking().Where(character => character.Active)
                 on member.CharacterIdentifier equals character.Identifier
             join statistics in context.CharacterStatistics.AsNoTracking()
                 on character.Identifier equals statistics.CharacterIdentifier
@@ -284,7 +284,7 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
     {
         var rows = await (
             from member in context.ClanMembers.AsNoTracking()
-            join character in context.Characters.AsNoTracking().Where(character => character.Active != 0)
+            join character in context.Characters.AsNoTracking().Where(character => character.Active)
                 on member.CharacterIdentifier equals character.Identifier
             join clan in context.Clans.AsNoTracking() on member.ClanIdentifier equals clan.Identifier
             group character by new { clan.Identifier, clan.Name }
@@ -310,7 +310,7 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
         {
             var lifetime = await (
                 from member in context.ClanMembers.AsNoTracking()
-                join character in context.Characters.AsNoTracking().Where(character => character.Active != 0)
+                join character in context.Characters.AsNoTracking().Where(character => character.Active)
                     on member.CharacterIdentifier equals character.Identifier
                 join statistics in context.CharacterStatistics.AsNoTracking()
                     on character.Identifier equals statistics.CharacterIdentifier

@@ -35,6 +35,12 @@ CREATE TABLE public.chara_presence (
 );
 ```
 
+**The schema shape is now in place on this server; the table is not** (2026-09-18). No character row
+carries a lobby reference — the write-only `lobby_id` was dropped — and the presence that exists is
+the in-memory session registry (`ActiveGameSessionsService`) plus the coordination events a lobby
+sends upward. So this page is still the plan for the table and its readers, not a description of
+what is stored today.
+
 ### `chara_id` alone is the primary key
 
 Not `(chara_id, lobby_id)`. **A character is in exactly one lobby at a time**, and making that the

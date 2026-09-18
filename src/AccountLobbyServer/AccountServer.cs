@@ -1,4 +1,3 @@
-using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Tcp;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,30 +17,4 @@ public sealed class AccountServer(IServiceProvider serviceProvider, int port)
 
     /// <inheritdoc />
     protected override string LogPrefix => "tcp:account";
-
-    /// <summary>
-    /// Releases the lobby the character was parked in, so an account that
-    /// disconnects without a lobby notice does not keep it.
-    /// </summary>
-    /// <param name="session">Session that ended.</param>
-    protected override void OnSessionDestroyed(TcpSession session)
-    {
-        if (session.CharacterIdentifier is null)
-        {
-            return;
-        }
-
-        var characterService = Services.GetRequiredService<CharacterService>();
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await characterService.SetLobbyAsync(session.CharacterIdentifier.Value, null);
-            }
-            catch (Exception exception)
-            {
-                Logger.LogError(exception, "[{LogPrefix}] setLobby on disconnect failed", LogPrefix);
-            }
-        });
-    }
 }

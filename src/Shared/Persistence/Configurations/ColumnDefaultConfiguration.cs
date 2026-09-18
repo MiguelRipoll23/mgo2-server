@@ -29,12 +29,7 @@ internal static class ColumnDefaultConfiguration
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
     {
-        ApplyDefault<User>(
-            modelBuilder,
-            0,
-            nameof(User.Role),
-            nameof(User.MainExperience),
-            nameof(User.AlternateExperience));
+        ApplyDefault<User>(modelBuilder, 0, nameof(User.Role));
         ApplyDefault<User>(modelBuilder, 3, nameof(User.Slots));
     }
 
@@ -44,11 +39,9 @@ internal static class ColumnDefaultConfiguration
             modelBuilder,
             0,
             nameof(Character.Rank),
-            nameof(Character.HostScore),
-            nameof(Character.HostVotes),
             nameof(Character.Experience),
             nameof(Character.CreationTime));
-        ApplyDefault<Character>(modelBuilder, 1, nameof(Character.Active));
+        ApplyDefault<Character>(modelBuilder, true, nameof(Character.Active));
         ApplyDefault<Character>(modelBuilder, string.Empty, nameof(Character.Comment));
 
         ZeroEveryCounter<CharacterAppearance>(modelBuilder);

@@ -60,7 +60,7 @@ public sealed class UpdateGameplayOptionsHandler(
             // preferences trailer, so it shares the codec with the reader.
             await characterService.UpdateGameplayOptionsAsync(
                 characterIdentifier,
-                parsed.ToJsonString(),
+                parsed,
                 cancellationToken);
         }
 

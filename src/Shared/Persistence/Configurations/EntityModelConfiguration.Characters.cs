@@ -1,3 +1,4 @@
+using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,6 +12,16 @@ internal static partial class EntityModelConfiguration
     {
         modelBuilder.Entity<Character>(entity =>
         {
+            // The round report carries the experience as a zero-extended u16, so a
+            // value above the ceiling could never be reported back and a negative one
+            // could never have arrived. The constraint is the wire's range stated
+            // rather than left to be discovered by a character that stops updating.
+            entity.ToTable(
+                "characters",
+                table => table.HasCheckConstraint(
+                    "characters_experience_range",
+                    $"experience BETWEEN 0 AND {CharacterService.MaximumExperience}"));
+
             entity.HasIndex(character => character.Name).IsUnique();
             // The user and character tables reference each other, so this side
             // of the cycle cannot cascade.
@@ -18,10 +29,7 @@ internal static partial class EntityModelConfiguration
                 .WithMany(user => user.Characters)
                 .HasForeignKey(character => character.UserIdentifier)
                 .OnDelete(DeleteBehavior.NoAction);
-            entity.HasOne(character => character.Lobby)
-                .WithMany()
-                .HasForeignKey(character => character.LobbyIdentifier)
-                .OnDelete(DeleteBehavior.NoAction);
+
         });
 
         modelBuilder.Entity<CharacterAppearance>(entity =>
@@ -110,6 +118,14 @@ internal static partial class EntityModelConfiguration
             entity.HasOne(connection => connection.Character)
                 .WithOne()
                 .HasForeignKey<CharacterConnection>(connection => connection.CharacterIdentifier)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CharacterGameplayOptions>(entity =>
+        {
+            entity.HasOne(options => options.Character)
+                .WithOne(character => character.GameplayOptions)
+                .HasForeignKey<CharacterGameplayOptions>(options => options.CharacterIdentifier)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

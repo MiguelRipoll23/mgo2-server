@@ -58,8 +58,8 @@ public sealed class InstructorRequirementTests
     {
         const int required = InstructorService.MinimumLevelExperience;
 
-        Assert.Equal(3, CharacterService.CalculateLevel(required));
-        Assert.Equal(2, CharacterService.CalculateLevel(required - 1));
+        Assert.Equal(3, LevelUtils.CalculateLevel(required));
+        Assert.Equal(2, LevelUtils.CalculateLevel(required - 1));
     }
 
     /// <summary>Twenty hours, the other half of the documented requirement.</summary>

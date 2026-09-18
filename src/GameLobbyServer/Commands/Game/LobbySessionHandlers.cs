@@ -81,7 +81,7 @@ public sealed class GameCheckSessionHandler(
         // A suspended character is filtered out of the account's character list,
         // but its identifier still resolves, so the lobby is where the door has to
         // be shut rather than the list.
-        if (character.Active != 1)
+        if (!character.Active)
         {
             logger.LogInformation(
                 "In-lobby session check: character {CharacterIdentifier} is suspended; refused",
@@ -95,12 +95,12 @@ public sealed class GameCheckSessionHandler(
         // opinion about who counts as one, only that a lobby can be marked and an
         // entry can be refused.
         if (lobbyOptions.Value.BeginnerOnly &&
-            CharacterService.CalculateLevel(character.Experience) > BeginnerMaximumLevel)
+            LevelUtils.CalculateLevel(character.Experience) > BeginnerMaximumLevel)
         {
             logger.LogInformation(
                 "In-lobby session check: character {CharacterIdentifier} is level {Level}, past the ceiling of the beginners-only lobby; refused",
                 claimedCharacterIdentifier,
-                CharacterService.CalculateLevel(character.Experience));
+                LevelUtils.CalculateLevel(character.Experience));
             await sessionHelper.SendResultAsync(session, CommandConstants.GameCheckSessionResult, ErrorCodeConstants.ResultLobbyEntryRefused, cancellationToken);
             return;
         }
@@ -108,10 +108,11 @@ public sealed class GameCheckSessionHandler(
         session.CharacterIdentifier = claimedCharacterIdentifier;
 
         // The lobby is the server the client connected to, stamped on the
-        // session when the connection was accepted.
+        // session when the connection was accepted. It is kept there and not on
+        // the character record: which lobby a connection is in is a fact about the
+        // connection, and it is the session that the counts and the friend list read.
         if (session.LobbyIdentifier is { } lobbyIdentifier)
         {
-            await characterService.SetLobbyAsync(claimedCharacterIdentifier, lobbyIdentifier, cancellationToken);
             lobbyTrackerService.JoinLobby(session, lobbyIdentifier);
             await lobbyTrackerService.SynchronizeAllLobbyCountsAsync(cancellationToken);
         }

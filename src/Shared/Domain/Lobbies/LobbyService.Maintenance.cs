@@ -164,8 +164,9 @@ public sealed partial class LobbyService
 
     /// <summary>
     /// Deletes the gameplay lobbies that stopped being heartbeated. The rooms of
-    /// such a lobby cascade away with it, and the characters that last selected
-    /// it are detached first, because the character reference does not cascade.
+    /// such a lobby cascade away with it. No character record refers to a lobby,
+    /// so nothing has to be detached first — which a lobby reference on the
+    /// character would have made necessary, since it could not cascade.
     /// </summary>
     /// <param name="staleAfter">Age at which a lobby is considered abandoned.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
@@ -186,13 +187,6 @@ public sealed partial class LobbyService
         {
             return 0;
         }
-
-        await context.Characters
-            .Where(character =>
-                character.LobbyIdentifier != null && stale.Contains(character.LobbyIdentifier.Value))
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(character => character.LobbyIdentifier, (int?)null),
-                cancellationToken);
 
         return await context.Lobbies
             .Where(lobby => stale.Contains(lobby.Identifier))

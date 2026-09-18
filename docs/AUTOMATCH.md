@@ -170,7 +170,9 @@ allocation, same lifecycle.
 
 Twenty-two entries, so the cap is **level 22 at 4,600 experience** — which is exactly why the gauge
 is 23 columns. All twelve recorded live readings reproduce, with `T[3] = 500` bracketed to a single
-experience point. Now in `mgo2server.common.Level`.
+experience point. Now in `mgo2server.common.Level`, and in this server's `LevelUtils` since
+2026-09-18 — it replaced a 20-entry table that diverged from the disc's at the ninth threshold and
+could not express level 21 or 22 at all.
 
 The native was identified through the GCX registration table rather than the shape of the data:
 hash `0x00D3656D` at `0x1031584` → OPD `0x1014CF0` → `0x6F9370`. The same walk reproduces the

@@ -48,14 +48,6 @@ public sealed class User
     [Column("main_character_id")]
     public int? MainCharacterIdentifier { get; set; }
 
-    /// <summary>Experience banked by the account's main character.</summary>
-    [Column("main_exp")]
-    public int MainExperience { get; set; }
-
-    /// <summary>Experience banked by the account's alternate characters.</summary>
-    [Column("alt_exp")]
-    public int AlternateExperience { get; set; }
-
     /// <summary>Character most recently selected by the account.</summary>
     [ForeignKey(nameof(CurrentCharacterIdentifier))]
     public Character? CurrentCharacter { get; set; }

@@ -70,7 +70,7 @@ public sealed class Searcher(
     public PendingMatch? Match { get; set; }
 
     /// <summary>The level the client draws this searcher's window around.</summary>
-    public int Level => CharacterService.CalculateLevel(Experience);
+    public int Level => LevelUtils.CalculateLevel(Experience);
 
     /// <summary>How long the searcher has waited.</summary>
     public TimeSpan Waited => DateTimeOffset.UtcNow - JoinedAt;
@@ -117,7 +117,9 @@ public sealed class AutomatchPolicy(
     int minimumPlayersStepMilliseconds = 30_000,
     int bandAtStart = 1,
     int bandStepMilliseconds = 30_000,
-    int bandMaximum = 22,
+    // The band widens until it covers every level there is, so its ceiling is the
+    // level cap rather than a number of its own.
+    int bandMaximum = LevelUtils.MaximumLevel,
     int modeRelaxMilliseconds = 90_000)
 {
     /// <summary>Players a group needs once fully relaxed.</summary>

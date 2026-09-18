@@ -792,13 +792,20 @@ were parsed, which is a race nobody would find by reading the sending code.
 | `0x000` | 4 | u32 | character id |
 | `0x004` | 16 | ISO-8859-1 | character name |
 | `0x014` | 8 | 4 × u16 | **unknown**: `0x16AE, 0x0338, 0x013E, 0x0150` — fixed constants, reproduced from the original byte for byte |
-| `0x01c` | 4 | u32 | experience (account's main exp if this is the main character, else alt exp) |
-| `0x020` | 4 | u32 | previous login, Unix seconds — we send `now - 1` |
-| `0x024` | 4 | u32 | current login, Unix seconds |
+| `0x01c` | 4 | u32 | experience — **the character's own** (`characters.experience`) since 2026-09-18. It was the account's pool, which the client derives the displayed level from, so an account's characters shared one level |
+| `0x020` | 4 | u32 | previous login, Unix seconds — the login this one replaced, from `characters.previous_login_time`; zero when the character has never logged in |
+| `0x024` | 4 | u32 | current login, Unix seconds — `characters.last_login_time`, which the connect burst stamps with the login being served. The pair was `creation_time` and `now` until 2026-09-18 |
 | `0x028` | 1 | u8 | zero, purpose unknown |
 | `0x029` | 128 | 32 × u32 | friend ids — always zero; friends are not modelled |
 | `0x0a9` | 128 | 32 × u32 | blocked ids — always zero |
 | `0x129` | 25 | — | tail: u8, 16 bytes, two u32s per the client's parser. Always zero |
+
+**Corrected 2026-09-18: the two grids are 64 identifiers wide, not 32, and the tail is not 25
+bytes.** The client's loops compare against `0x40`, so each grid is 256 bytes — friends at `0x029`,
+blocked at `0x129` — and the payload continues past them with the map and rule availability mask at
+`0x22a` (16 bytes) and the feature byte at `0x242`, ending at `0x243` (579 bytes). The rows above
+that describe a 322-byte reply are the layout of an earlier build of this server, not of the parser.
+See `CharacterInfoPayloadBuilder`, which a test pins at those offsets.
 
 **The `0x142` size is a deliberate divergence.** The client's parser at `0xD3C120` consumes a fixed
 `0x142`-byte grid and never reads past it. Every reference server sends `0x243` with 256-byte
@@ -1011,6 +1018,13 @@ one 48-byte block and then four 64-byte blocks — a loop bounded `cmpwi r28,3` 
 `r5 = 48` on the first pass and `r5 = 64` on the rest. 48 + 4×64 = **304** = `0x4120[0:0x130]`,
 exactly the live capture. Two independent sources now agree, which is worth more than either.
 
+**Stored in `character_gameplay_options`** (2026-09-18): one typed column per setting, the shape
+the reference keeps in its `chara_settings` table, with the row's own initializers as the game's
+defaults. Until then this server kept the settings as a JSON blob on the character row, which
+nothing could read or default from the database side. The read payload is built from the row and
+this write-back is parsed into it by `GameplayOptionsCodec`, whose two halves are pinned against
+each other and against the row by a test.
+
 ## `0x4114` — update chat macros
 
 **Client → server**, `CharacterConnectController.updateChatMacros`. The write-back half of
@@ -1070,8 +1084,9 @@ below is the summary; the `.ksy` files are the canonical field-level truth.
 `0x4103` opens with a real status code: nonzero error-completes the slot and skips the body
 (`0xd3ea38`), so a bad id is answered with a 4-byte `0x4103` alone. Head (wire order): u32 status,
 u32 char id, 16-byte name, the `0x4101` constant block (4×u16), u32 experience, 2×u32 login
-times, u8, 32×u32 friend ids, 32×u32 blocked ids (both confirmed flat id arrays from the parser
-loops, not stats) — 301 bytes. The 347-byte tail is a **flat, packed field sequence** (no tables,
+times — the same stored pair `0x4101` carries, previous login first, zero for a character that has
+never logged in (both were zero here until 2026-09-18) — u8, 32×u32 friend ids, 32×u32 blocked ids
+(both confirmed flat id arrays from the parser loops, not stats) — 301 bytes. The 347-byte tail is a **flat, packed field sequence** (no tables,
 no conditional layouts; full second trace 2026-07-23), in wire order:
 
 u8 · u32 · 16-byte string · u8 · 12×u16 · u32 · 9×u8 · u32 · 14×u8 · 10×u8 · 5×u32 · u8 · u32 ·

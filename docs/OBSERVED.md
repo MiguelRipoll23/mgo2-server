@@ -4730,6 +4730,65 @@ So the eighth row block is **not a mode**; it is the card's summary row. The ser
 column 17 with total play seconds and column 13 with a value labelled "level", in the cumulative
 matrix only — see the correction above for what that column actually is.
 
+**2026-09-18 — the two writers of `T+0x484` both served the wrong quantity, and now serve the same
+one.** A live client showed `TOTAL REWARDS` as a small number that matched neither screen's label:
+the cumulative matrix's summary row carried the character's **level** (column 13) and `0x4221`
+carried the character's accumulated **round score** (wire `0x1e`). Both are writes to this one cell.
+Both now send `characters.total_rewards`, a column added by migration `AddCharacterTotalRewards`,
+so the two screens agree and neither invents a figure. The level stays where the card already
+reads it, `T+0x120` via `0x4103`'s `experience`.
+
+**2026-09-18 — `0x4101` wire `0x01c` now carries the character's own experience, and the level table
+is the disc's.** The header served `users.main_exp`, the account's pooled figure, while every other
+surface — the statistics payload, the rookie lobby's ceiling, the instructor requirement, the
+automatch band — derived its level from `characters.experience`, the column a round report writes.
+`T+0x120` is fed only by this field, so the client was drawing a level the server never updated and
+no character's own total ever reached the screen. Nothing in the server wrote either pool, which is
+why the two disagreed as soon as a round was played. Both pools are gone
+(`ExperiencePerCharacter`): each character's stored total was raised to the pool it was served if
+that pool was higher, never lowered, and the migration also states the wire's own range as
+`characters_experience_range`, so a stored total can no longer be one the client could not have sent.
+
+The level derived from that column was also wrong above 1,100 experience: `CalculateLevel` used a
+20-entry table that diverged from the disc's at `1275`, so 1,250 experience showed level 9 where the
+client shows 8, and the cap was 20 where the client's is 22. The table recovered on 2026-07-28
+(`AUTOMATCH.md`) is now the only one, in `LevelUtils`, pinned by the twelve live readings.
+
+**2026-09-18 — the login pair is recorded, and with it the title that needs an absence.** The two
+login fields this packet carries were `creation_time` and `now`, and `0x4103`'s copies were zero
+(`AWARDS.md` recorded "last login: NOT TRACKED"). Nothing about a login was stored, so the gap one
+title family is measured against — TSUCHINOKO, thirty days — was the default zero at both call
+sites and the title could never be earned. `characters.previous_login_time` and `last_login_time`
+now carry the pair, the connect burst rotates it, and `CharacterService.RecordLoginAsync` returns
+the gap the rotation just consumed so the title pass is evaluated against the login the character
+arrived with. Both packets read the stored pair, so the card and the personal-data screen agree.
+
+**2026-09-18 — three schema changes, all of them the reference's own shape.** The gameplay
+options moved off the character row into `character_gameplay_options`, one typed column per
+setting, which is the shape the reference keeps in its `chara_settings`; the stored JSON blob is
+decoded into it by the migration's data statement, so no setting is lost and none is silently
+replaced by a default. `characters.active` became a boolean rather than an integer that only ever
+held zero or one. And `host_score`, `host_votes` and `lobby_id` were dropped: nothing read or
+wrote the first two — the host rating is derived from `host_reviews` — and `lobby_id` was written
+by the session check and cleared on disconnect while every packet that reports a location reads it
+from the live session instead. The reference has none of the three on its character row either;
+the location it keeps lives in its own `chara_presence` table (`PRESENCE.md`), which this server
+does not have and which is a feature to port rather than a column to keep.
+
+**Whether the cell is on screen at all is still the open `0x4101` question** (see the comparison
+document's §7): the release build gates it on feature bit 2 and we send that byte clear, but this
+build's content mask at `0x22a` — which we send all ones — is the other candidate for the same
+bits. The narrowed-mask test settles which block the client reads; it does not change what this
+cell is called or what belongs in it.
+
+**No accrual behaviour was ported, because the reference has none.** It answers `0x4221` wire `0x1e`
+with a literal zero and says why in its own ksy: the bit stays closed on release day and it serves
+no rewards system. Its only reward wire content is post-launch — the Survival result report
+(`0x43b0`, its `rec+0x8C` reward) and the tournament Metal Gear Point rewards on `0x4911`/`0x4913`
+— none of which a release-day server reaches. So `total_rewards` is a stored balance an operator
+sets, not a counter this server increments mid-match; a rule for earning it would have to be
+designed, and nothing in the reference can be copied for it.
+
 **The probe was worthless and its "elimination" was invalid.** All four probed slots (`T+0x1AD0`,
 `T+0x1DEC`, `T+0x1E20`, `T+0x124`) lie *outside* the memset range, so none could ever have suppressed
 the field — two of them have no reader anywhere in the binary. The `00:00:00` the probe produced was

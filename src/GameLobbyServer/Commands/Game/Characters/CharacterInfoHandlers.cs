@@ -1,7 +1,6 @@
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Instructors;
-using Mgo2Server.Shared.Domain.Users;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
@@ -14,41 +13,17 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 /// the client needs, in the order it expects them.
 /// </summary>
 /// <param name="characterService">Service that owns the character records.</param>
-/// <param name="userService">Service that owns the accounts.</param>
 /// <param name="titleService">Service that latches the titles the character has earned.</param>
 /// <param name="instructorService">Service that owns the saved instructor, which the payload announces.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class GetCharacterInfoHandler(
     CharacterService characterService,
-    UserService userService,
     CharacterTitleService titleService,
     InstructorService instructorService,
     SessionHelper sessionHelper,
     ILogger<GetCharacterInfoHandler> logger) : ICommandHandler
 {
-    /// <summary>
-    /// Offset of the sixteen-byte map and rule availability mask, one past the
-    /// tail byte that follows the friend and blocked grids.
-    /// </summary>
-    private const int ContentMaskOffset = 0x22a;
-
-    /// <summary>Offset of the trailing feature byte, one past the fixed grid.</summary>
-    private const int FeatureByteOffset = 0x242;
-
-    /// <summary>
-    /// Number of identifiers in each friend and blocked array. The client reads
-    /// 64 (its loops compare against 0x40), so each array is 256 bytes: a short
-    /// payload shifts the feature byte into the friend grid.
-    /// </summary>
-    private const int MaximumListIdentifiers = 64;
-
-    /// <summary>The four dead 16-bit constants that follow the name.</summary>
-    private static readonly byte[] CharacterInfoFixedBytes =
-    [
-        0x16, 0xae, 0x03, 0x38, 0x01, 0x3e, 0x01, 0x50,
-    ];
-
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
@@ -69,7 +44,7 @@ public sealed class GetCharacterInfoHandler(
         }
 
         var character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken);
-        if (character is null || character.Active != 1)
+        if (character is null || !character.Active)
         {
             logger.LogWarning(
                 "0x4100 cannot be served: character {CharacterIdentifier} is gone or suspended. Answering nothing",
@@ -77,41 +52,66 @@ public sealed class GetCharacterInfoHandler(
             return;
         }
 
+        // The login the character arrived with is what the payload below reports as the
+        // previous one, so it is read before the stamp replaces it. The reload the title
+        // pass may do would otherwise hand back the stamp this visit just wrote.
+        var previousLoginTime = character.LastLoginTime ?? 0;
+
+        // The visit is stamped first, and the gap it reports is what the title pass is
+        // given: one title is unlocked by an absence, so it is measured against the login
+        // the character had recorded, which the stamp has just replaced.
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var daysSinceLastLogin = await characterService.RecordLoginAsync(
+            characterIdentifier,
+            (int)now,
+            cancellationToken);
+
         // Stamping the visit also re-tests the titles — a character who qualified
         // while away is told on the way in — and it runs before the payloads below
         // are built, so a title earned since the last visit is already worn by the
         // record this burst describes.
-        var unlocked = await titleService.EvaluateAsync(characterIdentifier, cancellationToken: cancellationToken);
+        var unlocked = await titleService.EvaluateAsync(
+            characterIdentifier,
+            daysSinceLastLogin,
+            cancellationToken);
         if (unlocked.Count > 0)
         {
             logger.LogInformation(
-                "Character {CharacterIdentifier} unlocked title {Titles} on entering the lobby",
+                "Character {CharacterIdentifier} unlocked title {Titles} on entering the lobby, {DaysSinceLastLogin} days after the login before this one",
                 characterIdentifier,
-                string.Join(',', unlocked));
+                string.Join(',', unlocked),
+                daysSinceLastLogin);
             character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken) ?? character;
         }
 
-        var user = session.UserIdentifier is { } userIdentifier
-            ? await userService.FindByIdAsync(userIdentifier, cancellationToken)
-            : null;
         var friendsAndBlocked = await characterService.GetFriendsAndBlockedAsync(characterIdentifier, cancellationToken);
 
         var friends = friendsAndBlocked.Where(entry => entry.Type == 0).Select(entry => entry.TargetIdentifier).ToList();
         var blocked = friendsAndBlocked.Where(entry => entry.Type == 1).Select(entry => entry.TargetIdentifier).ToList();
 
-        var experience = user?.MainExperience ?? 0;
-        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var lastLogin = character.CreationTime;
-
+        // The experience is the character's own, never the account's. The field is the
+        // only thing the client derives the displayed level from, and the wire carries
+        // it per character, so a pool shared by an account's alts moved every one of
+        // their levels together.
+        //
         await sessionHelper.SendPacketAsync(
             session,
             CommandConstants.GetCharacterInfoResult,
-            BuildCharacterInfoPayload(characterIdentifier, character.Name, experience, now, lastLogin, friends, blocked),
+            CharacterInfoPayloadBuilder.Build(
+                characterIdentifier,
+                character.Name,
+                character.Experience,
+                previousLoginTime,
+                (int)now,
+                friends,
+                blocked),
             cancellationToken);
 
         // The gameplay options must be populated here: an empty payload makes
-        // the client's validator reset every setting to its hardcoded default.
-        var storedOptions = GameplayOptionsCodec.ParseStored(character.GameplayOptions);
+        // the client's validator reset every setting to its hardcoded default. A
+        // character with no stored row is served the game's own defaults, which is
+        // what the codec does with a null.
+        var storedOptions = await characterService.GetGameplayOptionsAsync(characterIdentifier, cancellationToken);
         await sessionHelper.SendPacketAsync(
             session,
             CommandConstants.GetGameplayOptionsResult,
@@ -189,77 +189,5 @@ public sealed class GetCharacterInfoHandler(
                 instructor?.InstructorCharacterIdentifier ?? CharacterPayloadBuilder.NoSavedInstructor),
             cancellationToken);
     }
-
-    private static byte[] BuildCharacterInfoPayload(
-        int characterIdentifier,
-        string characterName,
-        int experience,
-        long lastLogin,
-        int secondLastLogin,
-        IReadOnlyList<int> friends,
-        IReadOnlyList<int> blocked)
-    {
-        var writer = new PacketWriter();
-        writer.WriteUInt32((uint)characterIdentifier);
-        writer.WriteFixedString(characterName, 16);
-        writer.WriteBytes(CharacterInfoFixedBytes);
-        writer.WriteUInt32((uint)experience);
-        // The client shows the previous login alongside the current one.
-        writer.WriteUInt32((uint)secondLastLogin);
-        writer.WriteUInt32((uint)lastLogin);
-        writer.WriteUInt8(0);
-
-        for (var index = 0; index < MaximumListIdentifiers; index++)
-        {
-            writer.WriteUInt32((uint)(index < friends.Count ? friends[index] : 0));
-        }
-
-        for (var index = 0; index < MaximumListIdentifiers; index++)
-        {
-            writer.WriteUInt32((uint)(index < blocked.Count ? blocked[index] : 0));
-        }
-
-        // Tail the client reads past the two grids: a u8, the map and rule
-        // availability mask, two reserved u32s and the feature byte.
-        writer.WritePadding(ContentMaskOffset - writer.Size);
-        writer.WriteBytes(FeatureFlags.ContentMask);
-        writer.WritePadding(FeatureByteOffset - writer.Size);
-        // The parser reads this byte's four low bits as separate feature flags
-        // and greys out the expansion maps and modes when they are clear.
-        writer.WriteUInt8(FeatureFlags.ExpansionByte);
-        return writer.Build();
-    }
-}
-
-/// <summary>Feature bits the client reads one byte past the character grid.</summary>
-public static class FeatureFlags
-{
-    /// <summary>
-    /// Lets the client offer expansion content such as Team Sneaking without
-    /// triggering the post-login tip modals. The low nibble splits into four
-    /// flags (bit 0 <c>0x4184</c>, bit 1 <c>0x4185</c>, bit 2 <c>0x4187</c>,
-    /// bit 3 <c>0x4186</c> in the splitter at <c>0xf06450</c>); bits 2 and 3
-    /// each gate a one-time "welcome" help document that the main-menu state
-    /// machine opens as soon as the character info is parsed: bit 2 opens help
-    /// document 13 (<c>2_13.txt</c>, gate <c>0x98e208</c>) and bit 3 opens
-    /// document 6 (<c>2_6.txt</c>, gate <c>0x98e2b0</c>). Clearing both bits
-    /// keeps the map and rule catalogue fully unlocked (that is bit 0) while
-    /// suppressing both modals, which is what the official servers did.
-    /// </summary>
-    public const int ExpansionByte = 0x03;
-
-    /// <summary>
-    /// Map, rule and expansion availability mask. The client reads it as a bit
-    /// field in which bit 0 through bit 55 each stand for one selectable map or
-    /// rule, and it offers the real row for a set bit and a greyed row whose
-    /// name is the shipped <c>????</c> translation for a clear one. Every bit is
-    /// set so the whole catalogue is offered; the trailing nine bytes are past
-    /// the highest bit the client ever tests.
-    /// </summary>
-    public static readonly byte[] ContentMask =
-    [
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
 }
 

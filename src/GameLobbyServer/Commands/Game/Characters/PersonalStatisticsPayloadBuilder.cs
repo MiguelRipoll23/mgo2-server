@@ -36,8 +36,14 @@ public static class PersonalStatisticsPayloadBuilder
     /// <summary>Summary column carrying the play time.</summary>
     private const int SummaryPlaySecondsColumn = 17;
 
-    /// <summary>Summary column carrying the level.</summary>
-    private const int SummaryLevelColumn = 13;
+    /// <summary>
+    /// Summary column carrying the total rewards. It is the cell the client's
+    /// character block holds at `T+0x484` — the player-details card's "TOTAL
+    /// REWARDS" figure — because the eighth wire block is the card's summary row,
+    /// not a game mode. It is deliberately not the level: the card derives that
+    /// from the experience the header carries.
+    /// </summary>
+    private const int SummaryTotalRewardsColumn = 13;
 
     /// <summary>Rating-block entry carrying the title collection, a 22-bit mask.</summary>
     private const int TitleMaskEntry = 3;
@@ -102,9 +108,11 @@ public static class PersonalStatisticsPayloadBuilder
         header.WriteFixedString(character.Name, 16);
         header.WriteBytes(CharacterInfoPrefix);
         header.WriteUInt32((uint)character.Experience);
-        // Login times are not recorded; zero is the honest answer.
-        header.WriteUInt32(0);
-        header.WriteUInt32(0);
+        // The login this one replaced, then the login recorded for the character. Both are
+        // the stamps the connect burst rotates, so this screen and the card agree; zero is
+        // what a character who has never logged in sends, rather than an invented epoch.
+        header.WriteUInt32((uint)(character.PreviousLoginTime ?? 0));
+        header.WriteUInt32((uint)(character.LastLoginTime ?? 0));
         header.WriteUInt8(0);
 
         for (var index = 0; index < RelationListIdentifiers; index++)
@@ -239,13 +247,16 @@ public static class PersonalStatisticsPayloadBuilder
             return matrix.Build();
         }
 
-        // The summary row feeds the player-details card: play time and level.
+        // The summary row feeds the player-details card: play time and the
+        // character's total rewards.
         var payload = matrix.Build();
         var summaryBase = 8 + (ModeRows - 1) * StatColumns * 4;
-        var level = CharacterService.CalculateLevel(character.Experience);
         var playSeconds = character.CreationTime > 0 && statistics is not null ? statistics.TotalTime : 0;
         BinaryUtility.WriteUInt32BigEndian(payload, summaryBase + SummaryPlaySecondsColumn * 4, (uint)playSeconds);
-        BinaryUtility.WriteUInt32BigEndian(payload, summaryBase + SummaryLevelColumn * 4, (uint)level);
+        BinaryUtility.WriteUInt32BigEndian(
+            payload,
+            summaryBase + SummaryTotalRewardsColumn * 4,
+            (uint)character.TotalRewards);
         return payload;
     }
 

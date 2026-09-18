@@ -161,20 +161,45 @@ public sealed partial class CharacterService
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    /// <summary>Stores the serialized gameplay options of a character.</summary>
+    /// <summary>
+    /// Returns the gameplay options of a character, or <c>null</c> when it has never
+    /// stored any — which is a different state from having stored the defaults.
+    /// </summary>
     /// <param name="characterIdentifier">Identifier of the character.</param>
-    /// <param name="options">Serialized options blob.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task UpdateGameplayOptionsAsync(
+    public async Task<CharacterGameplayOptions?> GetGameplayOptionsAsync(
         int characterIdentifier,
-        string options,
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        await context.Characters
-            .Where(character => character.Identifier == characterIdentifier)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(character => character.GameplayOptions, options),
+        return await context.CharacterGameplayOptions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                options => options.CharacterIdentifier == characterIdentifier,
                 cancellationToken);
+    }
+
+    /// <summary>
+    /// Stores the gameplay options of a character, replacing every row it has: the
+    /// write-back the client sends is the whole of its settings, so a merge would keep
+    /// a setting the player had just cleared.
+    /// </summary>
+    /// <param name="characterIdentifier">Identifier of the character.</param>
+    /// <param name="options">Settings to store.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task UpdateGameplayOptionsAsync(
+        int characterIdentifier,
+        CharacterGameplayOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        options.CharacterIdentifier = characterIdentifier;
+
+        await using var context = await CreateContextAsync(cancellationToken);
+        await context.CharacterGameplayOptions
+            .Where(row => row.CharacterIdentifier == characterIdentifier)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        context.CharacterGameplayOptions.Add(options);
+        await context.SaveChangesAsync(cancellationToken);
     }
 }
