@@ -49,6 +49,18 @@ below, and they are about where the code runs rather than what it does:
 - **The table and the entity use `character`, not `chara`** — `character_presence`, columns
   `character_id` / `lobby_id`. There is no abbreviation rule in this repository, and the rest of
   the schema spells the word out.
+- **No `since` column** (dropped by migration `DropPresenceSince`). The reference's `V72` keeps one,
+  and on this server it was written on every enter and read by nothing at all: no packet carries a
+  "in this lobby since" field and no reader wanted it. It is the same test the character row's
+  write-only `host_score`/`host_votes` failed in the same week. The upsert no longer resets it
+  because there is nothing to reset.
+- **One clock, the process's.** Every stamp the server writes — on enter, on the beat and in the
+  repair — is taken from the process and passed as a value; the sweep's cutoff is taken from the
+  same clock. The reference writes `now()` in all three statements, which is one clock too, and a
+  better one when the only writer is the database — but a beat taken in one lobby and a sweep taken
+  in the next are two processes, and the risk being removed is a host clock skew evicting live
+  players. The columns keep their `now()` default for an insert that names no columns, which
+  nothing in this server does.
 - **The writes hang off `LobbyTrackerService`** rather than off the channel registry, because that
   is this process's equivalent: it is what is told a session joined or left a lobby, and it is
   already the one place that knows both the character and the lobby.
@@ -61,9 +73,39 @@ below, and they are about where the code runs rather than what it does:
   to the lobby died with the process it was talking to, so the same "nobody is connected to a
   process that has just started" that clears the presence rows also zeroes the count, before the
   listener opens.
+- **The ticker also records missing rows again.** A live character with no row is re-recorded
+  (insert-only, so a lobby hop that already claimed them keeps its row) and the anomaly is logged.
+  Two ways to get there, both by design: a write on the enter path is fire-and-forget, and a row is
+  removed by cascade when the lobby row it points at is deleted. The reference deliberately does not
+  resurrect, to keep an over-aggressive sweep visible — that visibility is kept by the log line, so
+  the repair does not hide anything except a player who would otherwise be invisible to every friend
+  list until they reconnected.
 - **The reaper runs in every gameplay lobby process.** There is no other process it could run in
   usefully: the account server never writes a presence row, so it would only be sweeping after
   lobbies, which each lobby already does for itself and for whoever else had died.
+
+### Considered on this server and deliberately not changed
+
+**Running the sweep in the gate and the account server too.** The reference runs it in every server,
+because the gate is what serves its lobby list and so has to clean up after lobbies it does not own.
+Here the three readers are gameplay-lobby packets (`0x4582`, `0x4602`, `0x4b54` are registered for
+`ServerType.GameplayLobby` alone), so "no gameplay lobby is running" already means "nothing can read
+the table"; the extra processes would reap for no reader. It is one move of the worker into
+`Shared` away if the HTTP side ever serves a location.
+
+**The read is two statements, and the search only ever wants one.** `FindLocationsAsync` asks
+presence and the room rosters separately, then matches them in memory, and the player search hands
+it a single identifier. Left alone because the reply is one row and a search is a person typing a
+name, so an overload whose joins are stated once for one character buys a round trip nobody waits
+for. The friend and clan rosters are where the batching matters, and they batch.
+
+**The strongest argument for changing something is not one of the above: the semantics have no
+automated test.** The tests pin the wire block, the label table and the relationship between the
+beat and the staleness bound, but the three rules that are actually subtle — the upsert that claims,
+the delete that checks ownership, and the repair that must not overwrite a hop — are argued in
+comments and unwitnessed by anything executable. Closing that means an integration test against a
+real PostgreSQL (Testcontainers), which puts Docker in the path of `dotnet test` for everyone,
+including a laptop with no daemon running. That is a decision rather than an oversight.
 
 ### `chara_id` alone is the primary key
 
@@ -162,13 +204,14 @@ Automatch slot-in eligibility becomes possible after step 1 and is tracked separ
 > The steps below are the **reference server's** history, kept because the order and the mistakes
 > are the useful part of it. This server's port is the entry after them.
 
-- **This server: DONE** (2026-09-18). `character_presence` (generated migration
-  `CharacterPresence`), `CharacterPresenceService` in `Shared/Domain/Presence`, writes on
-  `LobbyTrackerService.JoinLobby`/`LeaveLobby`, the boot clear in `GameLobbyServerRunner`,
-  `CharacterPresenceTickerService` (heartbeat every 30s, sweep at 120s) in the gameplay lobby, and
-  the location block served by the friends roster, the player search and the clan roster. 163
-  tests pass; nothing is applied to a database until the migration runs. The three known deltas
-  from the reference are listed above under the design.
+- **This server: DONE** (2026-09-18). `character_presence` (generated migrations
+  `CharacterPresence` and `DropPresenceSince`), `CharacterPresenceService` in
+  `Shared/Domain/Presence`, writes on `LobbyTrackerService.JoinLobby`/`LeaveLobby`, the boot clear
+  and the population reset in `GameLobbyServerRunner`, `CharacterPresenceTickerService` (beat every
+  30s, repair of missing rows, sweep at 120s) in the gameplay lobby, and the location block served
+  by the friends roster, the player search and the clan roster. 165 tests pass; nothing is applied
+  to a database until the migrations run. The deltas from the reference are listed above under the
+  design.
 
 - **Step 1: DONE** (2026-08-01). `V72__chara_presence.sql`, `PresenceService`, hooks in
   `ChannelRegistry`, boot-clear and the periodic heartbeat/reap. `mvn verify` 233 unit / 236

@@ -44,7 +44,10 @@ internal static class ColumnDefaultConfiguration
         ApplyDefault<Character>(modelBuilder, true, nameof(Character.Active));
         ApplyDefault<Character>(modelBuilder, string.Empty, nameof(Character.Comment));
 
-        ApplyNow<CharacterPresence>(modelBuilder, nameof(CharacterPresence.Since), nameof(CharacterPresence.LastSeen));
+        // The one stamp of the table. Every statement this server writes names the
+        // column with a value from the process, so the default is for an insert that
+        // names no columns at all — a hand-written one — rather than a second clock.
+        ApplyNow<CharacterPresence>(modelBuilder, nameof(CharacterPresence.LastSeen));
 
         ZeroEveryCounter<CharacterAppearance>(modelBuilder);
         ApplyDefault<CharacterFriend>(modelBuilder, 0, nameof(CharacterFriend.Type));

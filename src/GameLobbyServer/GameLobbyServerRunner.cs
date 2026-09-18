@@ -122,7 +122,9 @@ public sealed class GameLobbyServerRunner(
         cleanup.Start();
         gameCleanup.Start();
         automatch.StartFor(lobby.Identifier, lobby.SubtypeIdentifier);
-        presenceTicker.Start();
+        // Bound to this lobby so a missing row can be recorded again under the right
+        // one: the ticker heals the rows it owns and sweeps everybody's.
+        presenceTicker.StartFor(lobby.Identifier);
 
         server = new GameplayLobbyServer(serviceProvider, lobby.Port, lobby.Name, lobby.Identifier);
         await server.StartAsync(cancellationToken);

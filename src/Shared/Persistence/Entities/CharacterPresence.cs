@@ -11,6 +11,11 @@ namespace Mgo2Server.Shared.Persistence.Entities;
 /// The rows describe a live connection rather than durable state, so losing
 /// them costs a reconnect and nothing else.
 /// <para>
+/// There is no "in this lobby since" column: nothing on the wire carries one,
+/// and no reader wanted it, which is the same test the character row's own
+/// write-only columns failed.
+/// </para>
+/// <para>
 /// Which game the character is in is deliberately not recorded here: the room
 /// roster already says that, and a second answer to the same question is the
 /// one that goes stale and gets believed.
@@ -28,11 +33,7 @@ public sealed class CharacterPresence
     [Column("lobby_id")]
     public int LobbyIdentifier { get; set; }
 
-    /// <summary>When the character entered this lobby. Reset by a lobby change.</summary>
-    [Column("since")]
-    public DateTimeOffset Since { get; set; }
-
-    /// <summary>Timestamp of the last heartbeat. Only the reaper reads it.</summary>
+    /// <summary>Timestamp of the last heartbeat. Only the sweep reads it.</summary>
     [Column("last_seen")]
     public DateTimeOffset LastSeen { get; set; }
 

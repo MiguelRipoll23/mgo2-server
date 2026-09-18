@@ -6,8 +6,9 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameLobbyServer.Maintenance;
 
 /// <summary>
-/// Keeps the presence of this lobby's characters alive and clears away the rows
-/// of lobbies that are no longer running.
+/// Keeps the presence of this lobby's characters alive, records again the ones
+/// whose row went missing, and clears away the rows of lobbies that are no
+/// longer running.
 /// <para>
 /// The heartbeat covers the one case the boot clear cannot: a process that dies
 /// and never comes back, so nobody is left to drop its rows. That is why the
@@ -30,6 +31,16 @@ public sealed class CharacterPresenceTickerService(
     ILogger<CharacterPresenceTickerService> logger)
     : PeriodicWorker(CharacterPresenceService.HeartbeatInterval, logger)
 {
+    private int lobbyIdentifier;
+
+    /// <summary>Starts the ticker for the lobby this instance registered.</summary>
+    /// <param name="lobbyIdentifier">Identifier of the registered lobby.</param>
+    public void StartFor(int lobbyIdentifier)
+    {
+        this.lobbyIdentifier = lobbyIdentifier;
+        Start();
+    }
+
     /// <inheritdoc />
     protected override async Task RunOnceAsync(CancellationToken cancellationToken)
     {
@@ -42,22 +53,55 @@ public sealed class CharacterPresenceTickerService(
 
         var touched = await presenceService.HeartbeatAsync(characterIdentifiers, cancellationToken);
 
-        // Fewer rows touched than characters connected means rows went missing
-        // under a running process, which is worth surfacing rather than
-        // resurrecting: the heartbeat updates what exists and creates nothing,
-        // so a sweep that is too aggressive shows up here instead of hiding.
+        // Fewer rows touched than characters connected means a row went missing under
+        // a running process: an enter whose write never landed, or a row removed with
+        // the lobby row it pointed at, which the foreign key cascades.
         if (characterIdentifiers.Count > 0 && touched != characterIdentifiers.Count)
         {
+            var repaired = await RepairMissingRowsAsync(characterIdentifiers, cancellationToken);
+
+            // Said out loud rather than only repaired: a sweep that is too aggressive
+            // has to stay visible, and so does a write path that keeps failing.
             logger.LogWarning(
-                "Presence heartbeat touched {TouchedCount} rows for {CharacterCount} connected characters",
+                "Presence heartbeat touched {TouchedCount} of {CharacterCount} rows for lobby {LobbyIdentifier}; recorded {RepairedCount} again",
                 touched,
-                characterIdentifiers.Count);
+                characterIdentifiers.Count,
+                lobbyIdentifier,
+                repaired);
         }
 
         var reaped = await presenceService.ReapStaleAsync(cancellationToken);
         if (reaped > 0)
         {
             logger.LogInformation("Reaped {PresenceCount} stale presence rows", reaped);
+        }
+    }
+
+    /// <summary>
+    /// Records the connected characters that have no row, logging a failure
+    /// rather than ending the tick with it: the sweep below is what cleans up
+    /// after a process that is not running, and a repair that cannot land must
+    /// not cost the tick its sweep.
+    /// </summary>
+    /// <param name="characterIdentifiers">Characters that are connected.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task<int> RepairMissingRowsAsync(
+        IReadOnlyCollection<int> characterIdentifiers,
+        CancellationToken cancellationToken)
+    {
+        if (lobbyIdentifier <= 0)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return await presenceService.RepairAsync(characterIdentifiers, lobbyIdentifier, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Presence repair for lobby {LobbyIdentifier} failed", lobbyIdentifier);
+            return 0;
         }
     }
 }

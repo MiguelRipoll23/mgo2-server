@@ -18,6 +18,15 @@ namespace Mgo2Server.Shared.Domain.Presence;
 /// below is deliberately blunt: a process clears its own lobby's rows at
 /// startup, where a timeout would only reach the same answer by waiting.
 /// </para>
+/// <para>
+/// <b>Every stamp this class writes comes from one clock.</b> The timestamps are
+/// taken from the process and passed as values, rather than read from the
+/// database's <c>now()</c>, because a row written by one process is compared
+/// against a cutoff taken by another: a beat in one lobby and a sweep in the
+/// next have to be measured on the same clock, or a skew between two hosts
+/// evicts players who are connected. The columns keep their <c>now()</c> default
+/// for an insert that names none, which nothing in this server does.
+/// </para>
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 public sealed class CharacterPresenceService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
@@ -56,17 +65,18 @@ public sealed class CharacterPresenceService(IDbContextFactory<Mgo2DatabaseConte
         int lobbyIdentifier,
         CancellationToken cancellationToken = default)
     {
+        var now = DateTimeOffset.UtcNow;
+
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         // A read followed by an insert or an update would let two processes both
         // find no row and both insert, so the upsert is stated to the database
-        // instead. `since` moves on a hop because it means "entered this lobby",
-        // not "came online".
+        // instead.
         await context.Database.ExecuteSqlInterpolatedAsync(
             $"""
-            insert into character_presence (character_id, lobby_id, since, last_seen)
-            values ({characterIdentifier}, {lobbyIdentifier}, now(), now())
+            insert into character_presence (character_id, lobby_id, last_seen)
+            values ({characterIdentifier}, {lobbyIdentifier}, {now})
             on conflict (character_id) do update
-                set lobby_id = excluded.lobby_id, since = now(), last_seen = now()
+                set lobby_id = excluded.lobby_id, last_seen = excluded.last_seen
             """,
             cancellationToken);
     }
@@ -130,9 +140,10 @@ public sealed class CharacterPresenceService(IDbContextFactory<Mgo2DatabaseConte
     /// Marks the given characters as still connected, in one statement.
     /// <para>
     /// One round trip per beat however many players the lobby holds. A character
-    /// whose row was swept is not resurrected here — the update touches rows
-    /// that exist and creates nothing — because resurrecting one would hide a
-    /// sweep that is too aggressive instead of surfacing it.
+    /// whose row is missing is not recorded here — the update touches rows that
+    /// exist and creates nothing — so the caller can tell the two apart:
+    /// <see cref="RepairAsync"/> is what puts a missing row back, and the
+    /// difference between the two is the signal that something removed it.
     /// </para>
     /// </summary>
     /// <param name="characterIdentifiers">Characters that are connected.</param>
@@ -158,6 +169,75 @@ public sealed class CharacterPresenceService(IDbContextFactory<Mgo2DatabaseConte
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(presence => presence.LastSeen, now),
                 cancellationToken);
+    }
+
+    /// <summary>
+    /// Records the given characters again, for the connected ones that have no
+    /// row.
+    /// <para>
+    /// This is the only healing path for a row that never landed or was removed
+    /// while its character stayed connected, and both have happened by design:
+    /// a write on the enter path is fire-and-forget, because a connection must
+    /// not wait on the database for it, and a row is removed by cascade when the
+    /// lobby row it points at is deleted. Without this, either one leaves the
+    /// player invisible to every friend list until they reconnect.
+    /// </para>
+    /// <para>
+    /// <b>Insert-only, never an update.</b> A lobby hop records the character
+    /// under the destination, and a repair racing it must not put the origin
+    /// back: an existing row is left alone, whichever lobby it names, and a
+    /// conflict is dropped rather than retried.
+    /// </para>
+    /// </summary>
+    /// <param name="characterIdentifiers">Characters that are connected.</param>
+    /// <param name="lobbyIdentifier">Lobby they are connected to.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>How many rows were written back.</returns>
+    public async Task<int> RepairAsync(
+        IReadOnlyCollection<int> characterIdentifiers,
+        int lobbyIdentifier,
+        CancellationToken cancellationToken = default)
+    {
+        if (characterIdentifiers.Count == 0)
+        {
+            return 0;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        List<int> identifiers = [.. characterIdentifiers];
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var recorded = await context.CharacterPresence
+            .AsNoTracking()
+            .Where(presence => identifiers.Contains(presence.CharacterIdentifier))
+            .Select(presence => presence.CharacterIdentifier)
+            .ToListAsync(cancellationToken);
+
+        var repaired = 0;
+        foreach (var missing in identifiers.Except(recorded))
+        {
+            context.CharacterPresence.Add(new CharacterPresence
+            {
+                CharacterIdentifier = missing,
+                LobbyIdentifier = lobbyIdentifier,
+                LastSeen = now,
+            });
+
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+                repaired++;
+            }
+            catch (DbUpdateException)
+            {
+                // A lobby hop recorded the character between the read above and this
+                // insert. That row is the newer truth, so this one is dropped: the
+                // write is not retried and nothing already stored is overwritten.
+                context.ChangeTracker.Clear();
+            }
+        }
+
+        return repaired;
     }
 
     /// <summary>
@@ -245,7 +325,7 @@ public sealed class CharacterPresenceService(IDbContextFactory<Mgo2DatabaseConte
         {
             // A room counts only while it belongs to the lobby the character is
             // in: a row from a lobby they have left is not where they are. Two
-            // rows cannot happen by design, but the roster is cleaned up on
+            // rows cannot happen by design, but the room roster is cleaned up on
             // leave rather than constrained to one, so keeping the first is
             // arbitrary and deterministic rather than throwing over one row.
             var room = rooms
@@ -264,15 +344,5 @@ public sealed class CharacterPresenceService(IDbContextFactory<Mgo2DatabaseConte
         }
 
         return locations;
-    }
-
-    /// <summary>How many characters are recorded in a lobby.</summary>
-    /// <param name="lobbyIdentifier">Lobby to count.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<int> CountInLobbyAsync(int lobbyIdentifier, CancellationToken cancellationToken = default)
-    {
-        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        return await context.CharacterPresence
-            .CountAsync(presence => presence.LobbyIdentifier == lobbyIdentifier, cancellationToken);
     }
 }

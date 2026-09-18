@@ -4798,6 +4798,22 @@ long enough to be seen on screen at all. Both now write the block through one wr
 clan roster's fourth field stops claiming to be the host's name: it is the room's, from the same
 argument list the client's three-column painter is fed from.
 
+**2026-09-18 — three things were reviewed out of the port, and one was added.** The presence table
+carried a `since` column from the reference that nothing read — no packet carries a timestamp of when
+a character entered a lobby — so it is gone (`DropPresenceSince`), by the same test that removed the
+character row's `host_score` and `host_votes` the same week. The stamps were also being taken from
+two clocks: `now()` in the database on the enter and `DateTimeOffset.UtcNow` in the process on the
+beat, so a row written by one lobby was compared against a cutoff taken by another. All three
+statements now carry a value from the process, including the sweep's cutoff, and the columns keep
+their `now()` default only for an insert that names no columns. Neither of those changes anything
+the client sees; the third does: a connected character whose row is **missing** is now recorded
+again. There are two ways to get there and both were by design — the write on the enter path is
+fire-and-forget, so one failure leaves the player invisible for the whole session, and a row is
+removed by cascade when the lobby row it points at is deleted — and neither healed before. The
+repair is insert-only, so a lobby hop that has already claimed the character keeps its row, and it
+is logged as a warning every time, because the reference's reason for never resurrecting (an
+over-aggressive sweep must stay visible) is worth keeping.
+
 **Serving zeros is safe, and that was in doubt.** `0x4582`'s end handler compacts records whose
 word at `0x14` is zero — and `0x14` is the lobby id, the block's first field, not a flag of ours —
 but it copies them into `list(x, -1)`, which nothing reads, while the UI reads `list(x, 0)`. So an
