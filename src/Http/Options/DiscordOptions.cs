@@ -71,7 +71,7 @@ public sealed class DiscordOptions
     /// another reports both a departure and an arrival in quick succession; the
     /// window lets the two cancel out instead of cluttering the channel.
     /// </summary>
-    public int PresenceCoalesceMilliseconds { get; set; } = 3000;
+    public int PresenceCoalesceMilliseconds { get; set; } = 10000;
 
     /// <summary>Whether the integration can reach Discord at all.</summary>
     public bool IsConfigured => Enabled && !string.IsNullOrWhiteSpace(BotToken);
