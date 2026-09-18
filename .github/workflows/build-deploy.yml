@@ -14,7 +14,9 @@
 # label: it applies the pending schema migrations with the bundle against the
 # connection string in /opt/mgo2/appsettings.json, and only then recreates the
 # containers whose image changed. A failed migration stops the job, so no
-# container is ever recreated against a schema the migration has not applied.
+# container is ever recreated against a schema the migration has not applied,
+# and a missing appsettings.json is created from the example and skips the
+# deployment without failing the run.
 name: "Build & Deploy"
 
 on:
@@ -257,8 +259,9 @@ jobs:
   # straight here and deploys every image without building; every other run
   # waits for the images job and deploys only what it published. Nothing to
   # build is not a deployment, so a run with no changed project, a failed build
-  # and a failed detection all leave this job skipped. The migration step is
-  # first, and a failure there fails the job before the deploy step runs.
+  # and a failed detection all leave this job skipped. The migration step runs
+  # first, and a failure there fails the job before the deploy step runs; a
+  # missing appsettings.json skips the deployment without failing the run.
   deploy:
     name: Deploy
     runs-on: [self-hosted, mgo2-server]
@@ -293,6 +296,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Apply the pending database migrations
+        id: migrations
         shell: bash
         run: |
           set -euo pipefail
@@ -388,19 +392,21 @@ jobs:
 
           # A deployment without settings has never been installed. Downloading
           # the example creates the file the operator reviews and edits, and the
-          # run stops here so the placeholder connection string is never used
-          # against a server.
+          # deployment is skipped rather than failed: the placeholder connection
+          # string is never used against a server and the run stays green.
           if [ ! -f "$settings_file" ]; then
-            echo "error: ${settings_file} was not found" >&2
-            echo "       downloading appsettings.example.json so it can be reviewed" >&2
+            echo "warning: ${settings_file} was not found; downloading appsettings.example.json and skipping the deployment"
             mkdir --parents "$DEPLOYMENT_DIRECTORY"
             curl --fail --silent --show-error --location \
               "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/appsettings.example.json" \
               --output "$settings_file"
             chmod 600 "$settings_file"
-            echo "error: review ${settings_file} and run the workflow again; the deployment did not run" >&2
-            exit 1
+            echo "::warning title=Deployment skipped::${settings_file} was created from appsettings.example.json; review it and run the workflow again to deploy"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
           # The servers read this key from the same file, so the migration is
           # applied with the connection string the deployment runs with. A Neon
@@ -440,6 +446,9 @@ jobs:
       # mgo2-postgres is absent on purpose: it is managed separately and is never
       # pulled, recreated or stopped here.
       - name: Deploy the changed containers
+        # success() is written out because an if drops the implicit check, and a
+        # failed migration must never be followed by a deployment.
+        if: success() && steps.migrations.outputs.ready == 'true'
         shell: bash
         env:
           CHANGED_IMAGES: ${{ needs.changes.outputs.images }}

@@ -91,13 +91,11 @@ changed.
 After the images are published, the workflow deploys them on the self-hosted
 runner carrying the `mgo2-server` label. The deploy job reads the connection
 string from `/opt/mgo2/appsettings.json`; when that file does not exist it
-downloads `appsettings.example.json` to `/opt/mgo2/appsettings.json` and stops
-with an error. It applies the pending migrations with the bundle carried by the
-`mgo2-postgres` image, and then recreates the containers whose image this run
-rebuilt, which on a manual run is every container. A failed migration stops the
-job, so no container is recreated against a schema the migration has not
-applied, and `mgo2-postgres` is never
-touched because it is managed separately.
+downloads `appsettings.example.json` to `/opt/mgo2/appsettings.json` and skips
+the deployment without failing the run. It applies the pending migrations with the bundle carried by the
+`mgo2-postgres` image, and then recreates the containers whose image this runrebuilt, which on a manual run is every container. A failed migration stops the
+deployment, so no container is recreated against a schema the migration has not
+applied, and `mgo2-postgres` is never touched because it is managed separately.
 
 The migration and every server read the same `DATABASE_CONNECTION_STRING`. Write
 it in the keyword form, because the servers hand the value to Npgsql as it is
