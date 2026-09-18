@@ -296,30 +296,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The deployment directory is root-owned and its settings file is readable
-      # by its owner only, and the Docker daemon may be reachable only through
-      # sudo. Resolve each command once here: sudo when it does not ask for a
-      # password, the plain command otherwise. A runner that can do neither is
-      # skipped by the migration step instead of failing the run.
-      - name: Resolve the deploy commands
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if command -v sudo >/dev/null 2>&1 && sudo --non-interactive true 2>/dev/null; then
-            echo "MGO2_SUDO=sudo --non-interactive" >> "$GITHUB_ENV"
-          else
-            echo "MGO2_SUDO=" >> "$GITHUB_ENV"
-          fi
-
-          if docker info >/dev/null 2>&1; then
-            echo "MGO2_DOCKER=docker" >> "$GITHUB_ENV"
-          elif command -v sudo >/dev/null 2>&1 && sudo --non-interactive docker info >/dev/null 2>&1; then
-            echo "MGO2_DOCKER=sudo --non-interactive docker" >> "$GITHUB_ENV"
-          else
-            echo "MGO2_DOCKER=docker" >> "$GITHUB_ENV"
-          fi
-
       - name: Apply the pending database migrations
         id: migrations
         shell: bash
@@ -418,18 +394,17 @@ jobs:
           # A deployment without settings has never been installed. The example
           # is downloaded so the operator can review it, and the deployment is
           # skipped rather than failed: the placeholder connection string is
-          # never used against a server and the run stays green. A runner that
-          # cannot create the file at all is skipped the same way, so a host
-          # whose runner has no access to the deployment never goes red.
-          if ! $MGO2_SUDO test -f "$settings_file"; then
+          # never used against a server and the run stays green.
+          if [ ! -f "$settings_file" ]; then
             echo "warning: ${settings_file} was not found; the deployment is skipped"
             created=false
-            if $MGO2_SUDO mkdir --parents "$DEPLOYMENT_DIRECTORY"; then
+            if mkdir --parents "$DEPLOYMENT_DIRECTORY"; then
               example="$(mktemp)"
               if curl --fail --silent --show-error --location \
                    "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/appsettings.example.json" \
                    --output "$example" &&
-                 $MGO2_SUDO install -m 0600 "$example" "$settings_file"; then
+                 mv "$example" "$settings_file" &&
+                 chmod 0600 "$settings_file"; then
                 created=true
               fi
               rm --force "$example"
@@ -454,12 +429,10 @@ jobs:
           # to the keyword form below. Npgsql negotiates TLS and validates Neon's
           # certificate against the system trust store, so no client certificate
           # or root certificate is needed.
-          settings_contents="$($MGO2_SUDO cat "$settings_file")"
-
           if command -v jq >/dev/null 2>&1; then
-            connection_string="$(printf '%s' "$settings_contents" | jq --raw-output '.DATABASE_CONNECTION_STRING // empty')"
+            connection_string="$(jq --raw-output '.DATABASE_CONNECTION_STRING // empty' "$settings_file")"
           else
-            connection_string="$(printf '%s' "$settings_contents" | sed -n 's/.*"DATABASE_CONNECTION_STRING"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+            connection_string="$(sed -n 's/.*"DATABASE_CONNECTION_STRING"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$settings_file" | head -n 1)"
           fi
 
           if [ -z "$connection_string" ]; then
@@ -478,8 +451,8 @@ jobs:
           image="${REGISTRY}/${GITHUB_REPOSITORY,,}/mgo2-postgres:${MGO2_IMAGE_TAG}"
           echo "Applying the pending migrations from ${image}"
 
-          $MGO2_DOCKER pull "$image"
-          $MGO2_DOCKER run --rm --entrypoint /bundle/efbundle "$image" --connection "$connection_string"
+          docker pull "$image"
+          docker run --rm --entrypoint /bundle/efbundle "$image" --connection "$connection_string"
 
       # Only the containers whose image this run rebuilt are recreated. Every
       # image maps to the compose services that run it; the gameplay lobby image
@@ -496,7 +469,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! $MGO2_SUDO test -f "${DEPLOYMENT_DIRECTORY}/compose.yaml"; then
+          if [ ! -f "${DEPLOYMENT_DIRECTORY}/compose.yaml" ]; then
             echo "error: ${DEPLOYMENT_DIRECTORY}/compose.yaml was not found" >&2
             exit 1
           fi
@@ -537,14 +510,14 @@ jobs:
           cd "$DEPLOYMENT_DIRECTORY"
 
           echo "Pulling the images of:${services}"
-          $MGO2_DOCKER compose pull $services
+          docker compose pull $services
 
           # --no-deps keeps the deployment from touching a dependency of a named
           # service, so a changed server never brings postgres up or down with it.
           echo "Recreating the changed containers"
-          $MGO2_DOCKER compose up --detach --no-deps --wait --wait-timeout 180 $services
+          docker compose up --detach --no-deps --wait --wait-timeout 180 $services
 
           echo "Removing the images the update left behind"
-          $MGO2_DOCKER image prune --force
+          docker image prune --force
 
-          $MGO2_DOCKER compose ps
+          docker compose ps
