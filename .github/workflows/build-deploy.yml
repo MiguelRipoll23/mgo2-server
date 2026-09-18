@@ -40,7 +40,7 @@ env:
   # The deployment directory the install scripts create on the host: compose.yaml
   # and appsettings.json live there together and compose resolves the mounts
   # against it.
-  DEPLOYMENT_DIRECTORY: /opt/mgo2
+  DEPLOYMENT_DIRECTORY: /opt/mgo2-server
 
 jobs:
   test:
