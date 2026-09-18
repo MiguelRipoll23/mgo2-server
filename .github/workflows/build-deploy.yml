@@ -391,33 +391,9 @@ jobs:
 
           settings_file="${DEPLOYMENT_DIRECTORY}/appsettings.json"
 
-          # A deployment without settings has never been installed. The example
-          # is downloaded so the operator can review it, and the deployment is
-          # skipped rather than failed: the placeholder connection string is
-          # never used against a server and the run stays green.
           if [ ! -f "$settings_file" ]; then
-            echo "warning: ${settings_file} was not found; the deployment is skipped"
-            created=false
-            if mkdir --parents "$DEPLOYMENT_DIRECTORY"; then
-              example="$(mktemp)"
-              if curl --fail --silent --show-error --location \
-                   "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/appsettings.example.json" \
-                   --output "$example" &&
-                 mv "$example" "$settings_file" &&
-                 chmod 0600 "$settings_file"; then
-                created=true
-              fi
-              rm --force "$example"
-            fi
-
-            if [ "$created" = 'true' ]; then
-              echo "::warning title=Deployment skipped::${settings_file} was created from appsettings.example.json; review it and run the workflow again to deploy"
-            else
-              echo "::warning title=Deployment skipped::${settings_file} does not exist and could not be created, so the deployment was skipped"
-            fi
-
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "error: ${settings_file} was not found" >&2
+            exit 1
           fi
 
           echo "ready=true" >> "$GITHUB_OUTPUT"
