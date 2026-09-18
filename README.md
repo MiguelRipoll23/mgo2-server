@@ -64,7 +64,7 @@ src/
 
 ### Container images
 
-`.github/workflows/docker-images.yml` runs the tests and then builds and
+`.github/workflows/build-deploy.yml` runs the tests and then builds and
 publishes one image per standalone project to the GitHub container registry,
 using `docker/Dockerfile` with the project and its assembly as build arguments:
 
@@ -83,6 +83,33 @@ The `mgo2-postgres` image is the official PostgreSQL image extended with the
 Entity Framework migration bundle; it applies the schema migrations on startup,
 before it accepts connections. A push to `main` publishes `latest` and the
 branch tag; a `v*` tag publishes the version. Pull requests only run the tests.
+
+After the images are published, the workflow deploys them on the self-hosted
+runner carrying the `mgo2-server` label. The deploy job reads the connection
+string from `/opt/mgo2/appsettings.json`; when that file does not exist it
+downloads `appsettings.example.json` to `/opt/mgo2/appsettings.json` and stops
+with an error. It applies the pending migrations with the bundle carried by the
+`mgo2-postgres` image, and then recreates only the containers whose image this
+run rebuilt. A failed migration stops the job, so no container is recreated
+against a schema the migration has not applied, and `mgo2-postgres` is never
+touched because it is managed separately.
+
+The migration and every server read the same `DATABASE_CONNECTION_STRING`. Write
+it in the keyword form, because the servers hand the value to Npgsql as it is
+and Npgsql does not read the `postgres://…?sslmode=require` URL the Neon console
+shows; the migration step also accepts that URL and rewrites it the way
+`scripts/run-linux-macos.sh` does, so a URL left in the file does not stop the
+migration. Either way, use the **direct** (non-pooled) host, which is the one
+Neon recommends for migrations, and `SSL Mode=Require`, since Neon accepts TLS
+connections only. Npgsql validates Neon's certificate against the system trust
+store, so no client certificate or root certificate is needed, and Neon's
+`channel_binding=require` needs no counterpart because Npgsql negotiates channel
+binding by default — the workflow's rewrite carries it over when a URL is used.
+For example:
+
+```json
+"DATABASE_CONNECTION_STRING": "Host=ep-xxx.eu-central-1.aws.neon.tech;Port=5432;Database=mgo2;Username=neondb_owner;Password=REPLACE_ME;SSL Mode=Require"
+```
 
 `compose.yaml` references these images directly, so a deployment pulls the
 published stack and never builds:

@@ -1,0 +1,480 @@
+# Builds and publishes one container image per standalone server project, then
+# deploys the images this run rebuilt to the self-hosted runner. Every role is
+# its own executable, so every role gets its own image and its own container;
+# there is no combined image. The mgo2-postgres image is the custom PostgreSQL
+# image that also carries the migration bundle; it is managed separately from
+# the servers and is never deployed by this workflow.
+#
+# The build runs on a GitHub-hosted runner and only builds the projects whose
+# files changed, exactly as before. The deploy job runs afterwards on the
+# self-hosted runner carrying the mgo2-server label: it applies the pending
+# schema migrations with the bundle against the connection string in
+# /opt/mgo2/appsettings.json, and only then recreates the containers whose image
+# changed. A failed migration stops the job, so no container is ever recreated
+# against a schema the migration has not applied.
+name: "Build & Deploy"
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same workflow, branch, and event.
+# Only the most recent commit's run continues.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  # The deployment directory the install scripts create on the host: compose.yaml
+  # and appsettings.json live there together and compose resolves the mounts
+  # against it.
+  DEPLOYMENT_DIRECTORY: /opt/mgo2
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Install the .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore Mgo2Server.slnx
+
+      - name: Build
+        run: dotnet build Mgo2Server.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Mgo2Server.slnx --configuration Release --no-build
+
+
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ github.ref_type == 'tag' && '["mgo2-gate-lobby-server","mgo2-account-lobby-server","mgo2-game-lobby-server","mgo2-gameplay-server","mgo2-http","mgo2-dns","mgo2-stun","mgo2-postgres"]' || steps.filter.outputs.changes }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Detect changed projects
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            mgo2-gate-lobby-server:
+              - 'src/GateLobbyServer/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-account-lobby-server:
+              - 'src/AccountLobbyServer/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-game-lobby-server:
+              - 'src/GameLobbyServer/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-gameplay-server:
+              - 'src/GameplayServer/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-http:
+              - 'src/Http/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-dns:
+              - 'src/Dns/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-stun:
+              - 'src/Stun/**'
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - 'appsettings.example.json'
+              - 'docker/Dockerfile'
+            mgo2-postgres:
+              - 'src/Shared/**'
+              - 'Directory.Build.props'
+              - 'Mgo2Server.slnx'
+              - '.config/**'
+              - 'docker/Dockerfile'
+              - 'docker/entrypoint-postgres.sh'
+              - 'docker/healthcheck-postgres.sh'
+
+  images:
+    name: Publish ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    needs:
+      - test
+      - changes
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.changes.outputs.images) }}
+    steps:
+      - name: Resolve image configuration
+        id: config
+        shell: bash
+        run: |
+          case "${{ matrix.image }}" in
+            mgo2-gate-lobby-server)
+              echo "project=src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.GateLobbyServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-account-lobby-server)
+              echo "project=src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.AccountLobbyServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-game-lobby-server)
+              echo "project=src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.GameLobbyServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-gameplay-server)
+              echo "project=src/GameplayServer/Mgo2Server.GameplayServer.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.GameplayServer" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-http)
+              echo "project=src/Http/Mgo2Server.Http.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.Http" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-dns)
+              echo "project=src/Dns/Mgo2Server.Dns.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.Dns" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-stun)
+              echo "project=src/Stun/Mgo2Server.Stun.csproj" >> "$GITHUB_OUTPUT"
+              echo "assembly=Mgo2Server.Stun" >> "$GITHUB_OUTPUT"
+              echo "target=runtime" >> "$GITHUB_OUTPUT"
+              ;;
+            mgo2-postgres)
+              echo "target=postgres" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      # The registry requires a lower-case path, and an owner may not be.
+      - name: Resolve the image name
+        id: image
+        run: echo "value=${REGISTRY}/${GITHUB_REPOSITORY,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive the tags and labels
+        id: metadata
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.value }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: ${{ steps.config.outputs.target }}
+          push: true
+          platforms: linux/amd64,linux/arm64/v8
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            PROJECT=${{ steps.config.outputs.project }}
+            ASSEMBLY=${{ steps.config.outputs.assembly }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  # Deployment runs on the machine that hosts the stack, after the images job has
+  # published the changed images and only when it did (a matrix of no changed
+  # projects skips the images job and therefore this one). The migration step is
+  # first, and a failure there fails the job before the deploy step runs.
+  deploy:
+    name: Deploy
+    runs-on: [self-hosted, mgo2-server]
+    needs:
+      - changes
+      - images
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      # The deployment pulls the tag of the ref it was built from: latest for a
+      # branch, and the version of a v tag, which is the tag docker/metadata-action
+      # derives from the same ref after dropping the leading v.
+      - name: Resolve the deployment tag
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = 'tag' ]; then
+            echo "MGO2_IMAGE_TAG=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "MGO2_IMAGE_TAG=latest" >> "$GITHUB_ENV"
+          fi
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply the pending database migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Turns %XX escapes and '+' back into the bytes they stand for.
+          url_decode() {
+            local value="${1//+/ }"
+            printf '%b' "${value//%/\\x}"
+          }
+
+          # Rewrites a postgresql:// URL as the keyword=value string Npgsql
+          # reads, the way scripts/run-linux-macos.sh does. Npgsql reads the
+          # keyword form only, and the Neon console hands out a URL, so the
+          # operator can paste either. A string that is already keyword=value
+          # is returned untouched.
+          convert_to_npgsql_connection_string() {
+            local connection_string="$1"
+            if [[ ! "$connection_string" =~ ^[[:space:]]*postgres(ql)?:// ]]; then
+              printf '%s' "$connection_string"
+              return 0
+            fi
+
+            local remainder="${connection_string#*://}"
+
+            local query=""
+            if [[ "$remainder" == *"?"* ]]; then
+              query="${remainder#*\?}"
+              remainder="${remainder%%\?*}"
+            fi
+
+            local path=""
+            if [[ "$remainder" == *"/"* ]]; then
+              path="${remainder#*/}"
+              remainder="${remainder%%/*}"
+            fi
+
+            local userinfo="" hostport="$remainder"
+            if [[ "$remainder" == *"@"* ]]; then
+              userinfo="${remainder%@*}"
+              hostport="${remainder##*@}"
+            fi
+
+            local host="${hostport%%:*}" port=""
+            if [[ "$hostport" == *":"* ]]; then
+              port="${hostport##*:}"
+            fi
+
+            local settings=("Host=$host")
+            [ -n "$port" ] && settings+=("Port=$port")
+            [ -n "$path" ] && settings+=("Database=$(url_decode "$path")")
+
+            if [ -n "$userinfo" ]; then
+              settings+=("Username=$(url_decode "${userinfo%%:*}")")
+              if [[ "$userinfo" == *":"* ]]; then
+                settings+=("Password=$(url_decode "${userinfo#*:}")")
+              fi
+            fi
+
+            local parameter name value
+            if [ -n "$query" ]; then
+              local IFS='&'
+              for parameter in $query; do
+                [ -n "$parameter" ] || continue
+
+                name="${parameter%%=*}"
+                value=""
+                if [[ "$parameter" == *"="* ]]; then
+                  value="${parameter#*=}"
+                fi
+
+                case "${name,,}" in
+                  sslmode) settings+=("SSL Mode=$(url_decode "$value")") ;;
+                  channel_binding) settings+=("Channel Binding=$(url_decode "$value")") ;;
+                  application_name) settings+=("Application Name=$(url_decode "$value")") ;;
+                  connect_timeout) settings+=("Timeout=$(url_decode "$value")") ;;
+                  *) echo "warning: '${name,,}' of the connection string has no Npgsql equivalent and is ignored" >&2 ;;
+                esac
+              done
+            fi
+
+            local result="" item
+            for item in "${settings[@]}"; do
+              if [ -z "$result" ]; then
+                result="$item"
+              else
+                result="$result;$item"
+              fi
+            done
+            printf '%s' "$result"
+          }
+
+          settings_file="${DEPLOYMENT_DIRECTORY}/appsettings.json"
+
+          # A deployment without settings has never been installed. Downloading
+          # the example creates the file the operator reviews and edits, and the
+          # run stops here so the placeholder connection string is never used
+          # against a server.
+          if [ ! -f "$settings_file" ]; then
+            echo "error: ${settings_file} was not found" >&2
+            echo "       downloading appsettings.example.json so it can be reviewed" >&2
+            mkdir --parents "$DEPLOYMENT_DIRECTORY"
+            curl --fail --silent --show-error --location \
+              "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/appsettings.example.json" \
+              --output "$settings_file"
+            chmod 600 "$settings_file"
+            echo "error: review ${settings_file} and run the workflow again; the deployment did not run" >&2
+            exit 1
+          fi
+
+          # The servers read this key from the same file, so the migration is
+          # applied with the connection string the deployment runs with. A Neon
+          # URL works as it comes from the console: the direct (non-pooled) host
+          # is the one Neon recommends for migrations, and the URL is rewritten
+          # to the keyword form below. Npgsql negotiates TLS and validates Neon's
+          # certificate against the system trust store, so no client certificate
+          # or root certificate is needed.
+          if command -v jq >/dev/null 2>&1; then
+            connection_string="$(jq --raw-output '.DATABASE_CONNECTION_STRING // empty' "$settings_file")"
+          else
+            connection_string="$(sed -n 's/.*"DATABASE_CONNECTION_STRING"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$settings_file" | head -n 1)"
+          fi
+
+          if [ -z "$connection_string" ]; then
+            echo "error: DATABASE_CONNECTION_STRING is missing from ${settings_file}" >&2
+            exit 1
+          fi
+
+          # Npgsql reads the keyword form only, so a Neon URL is rewritten here
+          # before the bundle sees it.
+          connection_string="$(convert_to_npgsql_connection_string "$connection_string")"
+
+          # The migration bundle is carried by the postgres image, so the schema
+          # is applied by the same artifact the deployment was built from and no
+          # runner needs the SDK or the source tree. Overriding the entrypoint
+          # runs the bundle once and exits instead of starting PostgreSQL.
+          image="${REGISTRY}/${GITHUB_REPOSITORY,,}/mgo2-postgres:${MGO2_IMAGE_TAG}"
+          echo "Applying the pending migrations from ${image}"
+
+          docker pull "$image"
+          docker run --rm --entrypoint /bundle/efbundle "$image" --connection "$connection_string"
+
+      # Only the containers whose image this run rebuilt are recreated. Every
+      # image maps to the compose services that run it; the gameplay lobby image
+      # backs one container per lobby, so a change to it recreates all of them.
+      # mgo2-postgres is absent on purpose: it is managed separately and is never
+      # pulled, recreated or stopped here.
+      - name: Deploy the changed containers
+        shell: bash
+        env:
+          CHANGED_IMAGES: ${{ needs.changes.outputs.images }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "${DEPLOYMENT_DIRECTORY}/compose.yaml" ]; then
+            echo "error: ${DEPLOYMENT_DIRECTORY}/compose.yaml was not found" >&2
+            exit 1
+          fi
+
+          services=''
+          for image in $(printf '%s' "$CHANGED_IMAGES" | tr -d '[]"' | tr ',' ' '); do
+            case "$image" in
+              mgo2-gate-lobby-server)
+                services="$services mgo2-gate"
+                ;;
+              mgo2-account-lobby-server)
+                services="$services mgo2-account"
+                ;;
+              mgo2-game-lobby-server)
+                services="$services mgo2-free-battle mgo2-replays mgo2-survival mgo2-basic-training mgo2-combat-training mgo2-survival-hosts mgo2-automatching mgo2-registration mgo2-tournament"
+                ;;
+              mgo2-gameplay-server)
+                services="$services mgo2-gameplay-1"
+                ;;
+              mgo2-http)
+                services="$services mgo2-http"
+                ;;
+              mgo2-dns)
+                services="$services mgo2-dns"
+                ;;
+              mgo2-stun)
+                services="$services mgo2-stun"
+                ;;
+            esac
+          done
+          services="$(printf '%s' "$services" | xargs)"
+
+          if [ -z "$services" ]; then
+            echo "No deployable container changed; nothing to deploy."
+            exit 0
+          fi
+
+          cd "$DEPLOYMENT_DIRECTORY"
+
+          echo "Pulling the images of:${services}"
+          docker compose pull $services
+
+          # --no-deps keeps the deployment from touching a dependency of a named
+          # service, so a changed server never brings postgres up or down with it.
+          echo "Recreating the changed containers"
+          docker compose up --detach --no-deps --wait --wait-timeout 180 $services
+
+          echo "Removing the images the update left behind"
+          docker image prune --force
+
+          docker compose ps
