@@ -89,7 +89,7 @@ deploys every container from the published images, whether or not anything
 changed.
 
 After the images are published, the workflow deploys them on the self-hosted
-runner carrying the `mgo2-server` label. The deploy job reads the connection
+runner. The deploy job reads the connection
 string from `/opt/mgo2/appsettings.json`; when that file does not exist it
 downloads `appsettings.example.json` to `/opt/mgo2/appsettings.json` and skips
 the deployment without failing the run. It applies the pending migrations with the bundle carried by the

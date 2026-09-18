@@ -10,13 +10,12 @@
 # image. A manual run from the Actions tab skips the build and deploys the whole
 # stack from the published images. A push that matches no project skips the
 # build and the deployment without failing the run. The deploy job runs on the
-# self-hosted runner carrying the mgo2-server
-# label: it applies the pending schema migrations with the bundle against the
-# connection string in /opt/mgo2/appsettings.json, and only then recreates the
-# containers whose image changed. A failed migration stops the job, so no
-# container is ever recreated against a schema the migration has not applied,
-# and a missing appsettings.json is created from the example and skips the
-# deployment without failing the run.
+# self-hosted runner: it applies the pending schema migrations with the bundle
+# against the connection string in /opt/mgo2/appsettings.json, and only then
+# recreates the containers whose image changed. A failed migration stops the
+# job, so no container is ever recreated against a schema the migration has not
+# applied, and a missing appsettings.json is created from the example and skips
+# the deployment without failing the run.
 name: "Build & Deploy"
 
 on:
