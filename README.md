@@ -89,10 +89,12 @@ deploys every container from the published images, whether or not anything
 changed.
 
 After the images are published, the workflow deploys them on the self-hosted
-runner. The deploy job reads the connection
-string from `/opt/mgo2/appsettings.json`; when that file does not exist it
-downloads `appsettings.example.json` to `/opt/mgo2/appsettings.json` and skips
-the deployment without failing the run. It applies the pending migrations with the bundle carried by the
+runner. The runner user has to reach the deployment directory and the Docker
+daemon, through `sudo` when it does not ask for a password or directly; when it
+can reach neither, the deployment is skipped instead of failing the run. The
+deploy job reads the connection string from `/opt/mgo2/appsettings.json`; when
+that file does not exist it downloads `appsettings.example.json` to
+`/opt/mgo2/appsettings.json` and skips the deployment without failing the run. It applies the pending migrations with the bundle carried by the
 `mgo2-postgres` image, and then recreates the containers whose image this runrebuilt, which on a manual run is every container. A failed migration stops the
 deployment, so no container is recreated against a schema the migration has not
 applied, and `mgo2-postgres` is never touched because it is managed separately.
