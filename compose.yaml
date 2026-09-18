@@ -20,7 +20,7 @@
 # create it from the example once and write the JWT secret and the private
 # address of the machine into it, so the settings of the deployment and the
 # servers share a single file:
-# /opt/mgo2 for a root run on Linux, ~/.local/share/mgo2 (Linux) or
+# /opt/mgo2-server for a root run on Linux, ~/.local/share/mgo2 (Linux) or
 # ~/Library/Application Support/mgo2 (macOS) for a user run, %ProgramData%\mgo2
 # for an elevated run on Windows and %LOCALAPPDATA%\mgo2 for a user run. The
 # directory is the deployment: compose resolves the ./appsettings.json mounts

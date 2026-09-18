@@ -30,7 +30,7 @@
 #
 # The deployment directory holds compose.yaml and appsettings.json next to each
 # other, because the compose file mounts ./appsettings.json: the directory is
-# the deployment. Running as root installs the machine-wide one, /opt/mgo2;
+# the deployment. Running as root installs the machine-wide one, /opt/mgo2-server;
 # running as a user installs the user one, ~/.local/share/mgo2 on Linux and
 # ~/Library/Application Support/mgo2 on macOS.
 
@@ -40,7 +40,7 @@ set -euo pipefail
 # publishes the images to.
 readonly default_source_url="https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main"
 readonly default_image_prefix="ghcr.io/miguelripoll23/mgo2-server/"
-readonly root_deployment_directory="/opt/mgo2"
+readonly root_deployment_directory="/opt/mgo2-server"
 
 usage() {
     cat <<'TEXT'
@@ -66,7 +66,7 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
   environment variable, or the registry the images are published to by
   default.
 
-  The deployment is installed into /opt/mgo2 when the script runs as root, and
+  The deployment is installed into /opt/mgo2-server when the script runs as root, and
   into ~/.local/share/mgo2 (Linux) or ~/Library/Application Support/mgo2
   (macOS) otherwise.
 
@@ -77,7 +77,7 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
 TEXT
 }
 
-# Reports the deployment directory every run installs into: /opt/mgo2 for the
+# Reports the deployment directory every run installs into: /opt/mgo2-server for the
 # machine-wide install of a root run, and the user one of $HOME otherwise. The user home of a sudo run is the one of the
 # user behind sudo, so an install of a piped script run with sudo does not land
 # in the root home.
@@ -232,7 +232,7 @@ if ! docker_info_error="$(docker info 2>&1 >/dev/null)"; then
         *'permission denied'*)
             echo "       this user cannot reach the docker daemon: add it to the docker group with" >&2
             echo "       'sudo usermod -aG docker $(id -un)' and log in again, or run this script with" >&2
-            echo "       sudo, which installs the machine-wide deployment into /opt/mgo2" >&2
+            echo "       sudo, which installs the machine-wide deployment into /opt/mgo2-server" >&2
             ;;
     esac
     exit 1

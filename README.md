@@ -12,7 +12,7 @@ deployment. Run them as your own user: no elevation is needed, the Docker
 daemon does the privileged work. The only requirement is access to the daemon
 (membership of the `docker` group on Linux, or of `docker-users` with Docker
 Desktop; running the script with `sudo` instead installs the machine-wide
-deployment into `/opt/mgo2`).
+deployment into `/opt/mgo2-server`).
 
 Linux and macOS:
 
@@ -29,7 +29,7 @@ irm https://raw.githubusercontent.com/MiguelRipoll23/mgo2-server/main/scripts/in
 Then go to the `Metal Gear Online` tab in RPCS3 settings and set the DNS server to your private IP (the value of `ADVERTISED_ADDRESS` in `appsettings.json`).
 
 The install scripts download the deployment into a platform default directory
-(`/opt/mgo2` for a root run on Linux, `~/.local/share/mgo2` on Linux or
+(`/opt/mgo2-server` for a root run on Linux, `~/.local/share/mgo2` on Linux or
 `~/Library/Application Support/mgo2` on macOS for a user run, `%ProgramData%\mgo2`
 for an elevated run on Windows and `%LOCALAPPDATA%\mgo2` for a user run). The
 compose file and the `appsettings.json` the containers read their configuration
@@ -92,8 +92,8 @@ After the images are published, the workflow deploys them on the self-hosted
 runner. The runner user owns the deployment directory and is in the `docker`
 group, so the deployment needs no elevation: it writes `appsettings.json` itself
 when the file is missing. The deploy job reads the connection string from
-`/opt/mgo2/appsettings.json`; when that file does not exist it downloads
-`appsettings.example.json` to `/opt/mgo2/appsettings.json` and skips the
+`/opt/mgo2-server/appsettings.json`; when that file does not exist it downloads
+`appsettings.example.json` to `/opt/mgo2-server/appsettings.json` and skips the
 deployment. It applies the pending migrations with the bundle carried by the
 `mgo2-postgres` image, and then recreates the containers whose image this runrebuilt, which on a manual run is every container. A failed migration stops the
 deployment, so no container is recreated against a schema the migration has not

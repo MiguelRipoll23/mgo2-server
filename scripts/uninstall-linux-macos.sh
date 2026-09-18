@@ -17,13 +17,13 @@
 # a terminal needs. Docker itself is never removed.
 #
 # The script targets the directory the install script used: the machine-wide
-# /opt/mgo2 of a root run, or the user one of the invoking (or sudo) user. That
+# /opt/mgo2-server of a root run, or the user one of the invoking (or sudo) user. That
 # directory, with compose.yaml, appsettings.example.json and appsettings.json in
 # it, is removed entirely; the source tree of a clone is never touched.
 
 set -euo pipefail
 
-readonly root_deployment_directory="/opt/mgo2"
+readonly root_deployment_directory="/opt/mgo2-server"
 readonly compose_project_name="mgo2"
 
 # The fixed container names compose.yaml gives every service.
