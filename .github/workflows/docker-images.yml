@@ -54,6 +54,9 @@ jobs:
     outputs:
       images: ${{ github.ref_type == 'tag' && '["mgo2-gate-lobby-server","mgo2-account-lobby-server","mgo2-game-lobby-server","mgo2-gameplay-server","mgo2-http","mgo2-dns","mgo2-stun","mgo2-postgres"]' || steps.filter.outputs.changes }}
     steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
       - name: Detect changed projects
         id: filter
         uses: dorny/paths-filter@v4
