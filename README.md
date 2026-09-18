@@ -84,17 +84,19 @@ Entity Framework migration bundle; it applies the schema migrations on startup,
 before it accepts connections. A push to `main` publishes `latest` and the
 branch tag; a `v*` tag publishes the version. Pull requests only run the tests.
 A push that matches no project skips the build and the deployment without
-failing the run, and a manual run from the Actions tab builds and deploys every
-image, whether or not anything changed.
+failing the run, and a manual run from the Actions tab skips the build and
+deploys every container from the published images, whether or not anything
+changed.
 
 After the images are published, the workflow deploys them on the self-hosted
 runner carrying the `mgo2-server` label. The deploy job reads the connection
 string from `/opt/mgo2/appsettings.json`; when that file does not exist it
 downloads `appsettings.example.json` to `/opt/mgo2/appsettings.json` and stops
 with an error. It applies the pending migrations with the bundle carried by the
-`mgo2-postgres` image, and then recreates only the containers whose image this
-run rebuilt. A failed migration stops the job, so no container is recreated
-against a schema the migration has not applied, and `mgo2-postgres` is never
+`mgo2-postgres` image, and then recreates the containers whose image this run
+rebuilt, which on a manual run is every container. A failed migration stops the
+job, so no container is recreated against a schema the migration has not
+applied, and `mgo2-postgres` is never
 touched because it is managed separately.
 
 The migration and every server read the same `DATABASE_CONNECTION_STRING`. Write

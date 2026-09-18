@@ -6,10 +6,11 @@
 # the servers and is never deployed by this workflow.
 #
 # The build runs on a GitHub-hosted runner and only builds the projects whose
-# files changed, exactly as before, except that a version tag and a manual run
-# from the Actions tab build and deploy every image. A push that matches no
-# project skips the build and the deployment without failing the run. The
-# deploy job runs afterwards on the self-hosted runner carrying the mgo2-server
+# files changed, exactly as before; a version tag builds and deploys every
+# image. A manual run from the Actions tab skips the build and deploys the whole
+# stack from the published images. A push that matches no project skips the
+# build and the deployment without failing the run. The deploy job runs on the
+# self-hosted runner carrying the mgo2-server
 # label: it applies the pending schema migrations with the bundle against the
 # connection string in /opt/mgo2/appsettings.json, and only then recreates the
 # containers whose image changed. A failed migration stops the job, so no
@@ -44,6 +45,8 @@ jobs:
   test:
     name: Build and test
     runs-on: ubuntu-latest
+    # A manual run deploys the published images and never builds.
+    if: github.event_name != 'workflow_dispatch'
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7
@@ -67,12 +70,12 @@ jobs:
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
-      # The images to build and deploy. A version tag and a manual dispatch run
-      # the whole deployment; every other push builds only the projects whose
-      # files changed. An empty result becomes the placeholder 'none' so the
-      # matrix of the images job is never empty, which GitHub rejects, and
-      # has_images is what skips that job, and every job that needs it, when
-      # nothing changed.
+      # The images to build and deploy. A version tag and a manual dispatch
+      # select every image, so a manual run deploys the whole stack; every other
+      # push builds only the projects whose files changed. An empty result
+      # becomes the placeholder 'none' so the matrix of the images job is never
+      # empty, which GitHub rejects, and has_images is what skips that job, and
+      # every job that needs it, when nothing changed.
       images: ${{ (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && '["mgo2-gate-lobby-server","mgo2-account-lobby-server","mgo2-game-lobby-server","mgo2-gameplay-server","mgo2-http","mgo2-dns","mgo2-stun","mgo2-postgres"]' || ((steps.filter.outputs.changes == '[]' || steps.filter.outputs.changes == '') && '["none"]' || steps.filter.outputs.changes) }}
       has_images: ${{ (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || (steps.filter.outputs.changes != '[]' && steps.filter.outputs.changes != '')) && 'true' || 'false' }}
     steps:
@@ -149,8 +152,9 @@ jobs:
       - test
       - changes
     # Nothing to build is a skip, not an error: the empty matrix would otherwise
-    # fail the run when no project changed.
-    if: github.event_name != 'pull_request' && needs.changes.outputs.has_images == 'true'
+    # fail the run when no project changed, and a manual run needs no build at
+    # all. The deploy job still needs this one, so it checks for that.
+    if: github.event_name != 'pull_request' && github.event_name != 'workflow_dispatch' && needs.changes.outputs.has_images == 'true'
     permissions:
       contents: read
       packages: write
@@ -249,9 +253,11 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-  # Deployment runs on the machine that hosts the stack, after the images job has
-  # published the changed images and only when it did (a matrix of no changed
-  # projects skips the images job and therefore this one). The migration step is
+  # Deployment runs on the machine that hosts the stack. A manual run comes
+  # straight here and deploys every image without building; every other run
+  # waits for the images job and deploys only what it published. Nothing to
+  # build is not a deployment, so a run with no changed project, a failed build
+  # and a failed detection all leave this job skipped. The migration step is
   # first, and a failure there fails the job before the deploy step runs.
   deploy:
     name: Deploy
@@ -259,7 +265,10 @@ jobs:
     needs:
       - changes
       - images
-    if: github.event_name != 'pull_request'
+    # always() keeps a skipped images job from skipping this one, and
+    # !cancelled() keeps a cancelled run from deploying. The checks after them
+    # decide whether this run may deploy at all.
+    if: always() && !cancelled() && needs.changes.result == 'success' && github.event_name != 'pull_request' && (github.event_name == 'workflow_dispatch' || needs.images.result == 'success')
     permissions:
       contents: read
       packages: read
