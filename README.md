@@ -83,6 +83,9 @@ The `mgo2-postgres` image is the official PostgreSQL image extended with the
 Entity Framework migration bundle; it applies the schema migrations on startup,
 before it accepts connections. A push to `main` publishes `latest` and the
 branch tag; a `v*` tag publishes the version. Pull requests only run the tests.
+A push that matches no project skips the build and the deployment without
+failing the run, and a manual run from the Actions tab builds and deploys every
+image, whether or not anything changed.
 
 After the images are published, the workflow deploys them on the self-hosted
 runner carrying the `mgo2-server` label. The deploy job reads the connection
