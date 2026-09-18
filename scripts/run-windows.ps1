@@ -26,8 +26,8 @@
     configurable through appsettings.json.
 
     The servers run in the foreground and Ctrl+C stops all of them. Their log
-    level is set to Debug so packet hex dumps are visible. Log files are written
-    to .logs\ with daily rotation (7-day retention).
+    level is set to Debug so packet hex dumps are visible; everything is
+    written to the console of this script.
 
     Telemetry is always on: every server sends its OpenTelemetry metrics over
     gRPC to a collector on port 4317, and the OTEL_* settings are
@@ -259,8 +259,7 @@ function Resolve-DatabaseConnectionString {
 }
 
 # Starts one built server. The settings are name=value pairs applied to this
-# one process only. In Debug builds the app writes log files through Serilog
-# when LOG_DIRECTORY is set; Release builds write to the console only.
+# one process only. Logs go to the console so the script can show server status.
 function Start-Server([string]$Name, [string]$Project, [string]$Label, [hashtable]$Settings) {
     $assembly = "Mgo2Server.$Project"
     $dll = Join-Path $projectDirectory "src/$Project/bin/$Configuration/net10.0/$assembly.dll"
@@ -275,9 +274,6 @@ function Start-Server([string]$Name, [string]$Project, [string]$Label, [hashtabl
         $envOverrides[$setting] = [string]$Settings[$setting]
     }
 
-    # Always pass LOG_DIRECTORY so Serilog writes to disk regardless of
-    # build configuration. The app no longer relies on shell redirection.
-    $envOverrides['LOG_DIRECTORY'] = $logDirectory
     $envOverrides['LOG_LEVEL'] = 'Debug'
 
     $savedSettings = @{}
@@ -357,9 +353,6 @@ try {
     $env:INTERNAL_GRPC_URL = "http://localhost:$internalGrpcPort"
 
     $env:DATABASE_CONNECTION_STRING = Resolve-DatabaseConnectionString
-
-    $logDirectory = Join-Path $projectDirectory '.logs'
-    New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 
     Initialize-DotNet
 
@@ -466,18 +459,12 @@ try {
 
         Write-Host ''
         if ($running -ne $expected) {
-            $hint = if ($logDirectory) { "; see $logDirectory" } else { '' }
-            Write-Host "error: $running of $expected servers are running$hint" -ForegroundColor Red
+            Write-Host "error: $running of $expected servers are running" -ForegroundColor Red
         }
 
         Write-Host "Started $running of $expected servers."
         Write-Host "The gate listens on 5731, the account server on 5732 and the HTTP API on $httpPort."
-        if ($logDirectory) {
-            Write-Host "Logs are in $logDirectory; press Ctrl+C to stop every server."
-        }
-        else {
-            Write-Host 'Press Ctrl+C to stop every server.'
-        }
+        Write-Host 'Press Ctrl+C to stop every server.'
 
         # Stays in the foreground until the last server exits or the user
         # interrupts it, which is when the servers are stopped.

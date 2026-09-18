@@ -23,8 +23,8 @@
 # script refuses to start without.
 #
 # The servers run in the foreground and Ctrl+C stops all of them. Their log
-# level is set to Debug so packet hex dumps are visible. Log files are written
-# to .logs/ with daily rotation (7-day retention).
+# level is set to Debug so packet hex dumps are visible; everything is written
+# to the console of this script.
 #
 # Telemetry is always on: every server sends its OpenTelemetry metrics over
 # gRPC to a collector on port 4317, and the OTEL_* settings are overridden so
@@ -240,8 +240,7 @@ initialize_dotnet() {
 }
 
 # Starts one built server. The settings are name=value pairs applied to this
-# one process only. The app writes log files through Serilog when LOG_DIRECTORY
-# is set; stdout is left on the console so the script can show server status.
+# one process only. Logs go to the console so the script can show server status.
 start_server() {
     local name="$1" project="$2" label="$3"
     shift 3
@@ -257,7 +256,6 @@ start_server() {
             export "$1"
             shift
         done
-        export LOG_DIRECTORY="$log_directory"
         export LOG_LEVEL=Debug
         exec dotnet "$dll"
     ) &
@@ -310,9 +308,6 @@ export INTERNAL_GRPC_URL="http://localhost:${INTERNAL_GRPC_PORT:-5743}"
 
 DATABASE_CONNECTION_STRING="$(resolve_database_connection_string)"
 export DATABASE_CONNECTION_STRING
-
-log_directory="${project_directory}/.logs"
-mkdir -p "$log_directory"
 
 initialize_dotnet
 
@@ -408,20 +403,12 @@ done
 
 echo ''
 if [ "$running" -ne "$expected" ]; then
-    hint=""
-    if [ -n "$log_directory" ]; then
-        hint="; see $log_directory"
-    fi
-    echo "error: $running of $expected servers are running${hint}" >&2
+    echo "error: $running of $expected servers are running" >&2
 fi
 
 echo "Started $running of $expected servers."
 echo "The gate listens on 5731, the account server on 5732 and the HTTP API on $http_port."
-if [ -n "$log_directory" ]; then
-    echo "Logs are in $log_directory; press Ctrl+C to stop every server."
-else
-    echo "Press Ctrl+C to stop every server."
-fi
+echo "Press Ctrl+C to stop every server."
 
 # Stays in the foreground until the last server exits or the user interrupts it,
 # which is when the servers are stopped.
