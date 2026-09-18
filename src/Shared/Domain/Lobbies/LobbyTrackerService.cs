@@ -1,5 +1,7 @@
+using Mgo2Server.Shared.Domain.Presence;
 using Mgo2Server.Shared.Telemetry;
 using Mgo2Server.Shared.Types;
+using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.Shared.Domain.Lobbies;
 
@@ -10,14 +12,24 @@ namespace Mgo2Server.Shared.Domain.Lobbies;
 /// between instances. The population is also reported to the telemetry as
 /// total_players, at the moment a session joins or leaves rather than on a
 /// timer.
+/// <para>
+/// Joining and leaving a lobby is also what records which lobby a character is
+/// in, which is the one fact a lobby cannot answer from its own sessions: a
+/// roster, a search or a clan list that names a player connected elsewhere
+/// needs the shared record rather than this process's channels.
+/// </para>
 /// </summary>
 /// <param name="lobbyService">Service that owns the lobby rows.</param>
 /// <param name="metricsService">Service the lobby population is reported to.</param>
 /// <param name="presencePublisher">Publisher the arrivals and departures are reported to.</param>
+/// <param name="presenceService">Service that records which lobby a character is in.</param>
+/// <param name="logger">Logger of the tracker.</param>
 public sealed class LobbyTrackerService(
     LobbyService lobbyService,
     ServerMetricsService metricsService,
-    ILobbyPresencePublisher presencePublisher)
+    ILobbyPresencePublisher presencePublisher,
+    CharacterPresenceService presenceService,
+    ILogger<LobbyTrackerService> logger)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<int, HashSet<TcpSession>> sessionsByLobby = [];
@@ -51,6 +63,7 @@ public sealed class LobbyTrackerService(
         PublishDisconnected(left);
         PublishConnected(lobbyIdentifier, session);
         Report(changed);
+        RecordPresence(lobbyIdentifier, session);
     }
 
     /// <summary>Records that a session left whatever lobby it was in.</summary>
@@ -67,6 +80,7 @@ public sealed class LobbyTrackerService(
 
         PublishDisconnected(left);
         Report(changed);
+        ReleasePresence(left);
     }
 
     /// <summary>Returns how many sessions this process holds in a lobby.</summary>
@@ -145,6 +159,68 @@ public sealed class LobbyTrackerService(
                 presencePublisher.PlayerDisconnected(lobbyIdentifier, characterIdentifier);
             }
         }
+    }
+
+    /// <summary>
+    /// Records that a session's character is now in a lobby. A session that has
+    /// not named a character is not a player yet, so there is no presence to
+    /// record — the row follows the character, not the socket.
+    /// </summary>
+    /// <param name="lobbyIdentifier">Lobby the session joined.</param>
+    /// <param name="session">Session that joined it.</param>
+    private void RecordPresence(int lobbyIdentifier, TcpSession session)
+    {
+        if (session.CharacterIdentifier is { } characterIdentifier)
+        {
+            RunPresenceAsync(
+                presenceService.EnterAsync(characterIdentifier, lobbyIdentifier),
+                $"record character {characterIdentifier} in lobby {lobbyIdentifier}");
+        }
+    }
+
+    /// <summary>
+    /// Releases the presence of every character that left a lobby, checking per
+    /// lobby that the one being left is still the one recorded: a session that
+    /// hopped while its old disconnect was still in flight must not have the
+    /// arrival erased by the departure that follows it.
+    /// </summary>
+    /// <param name="left">Lobbies the sessions left, with the sessions.</param>
+    private void ReleasePresence(List<(int LobbyIdentifier, TcpSession Session)> left)
+    {
+        foreach (var (lobbyIdentifier, session) in left)
+        {
+            if (session.CharacterIdentifier is { } characterIdentifier)
+            {
+                RunPresenceAsync(
+                    presenceService.LeaveAsync(characterIdentifier, lobbyIdentifier),
+                    $"release character {characterIdentifier} from lobby {lobbyIdentifier}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs a presence write without holding up the caller.
+    /// <para>
+    /// The writes are started on the path that accepts and drops connections,
+    /// which must not wait on a database round trip: a join is answered and a
+    /// disconnect is closed whether or not the record lands. A failure is
+    /// logged and swallowed, because a list that is missing a player for a
+    /// moment is a lesser failure than a connection that is refused or a socket
+    /// that is never released.
+    /// </para>
+    /// </summary>
+    /// <param name="operation">Write to run.</param>
+    /// <param name="description">What the write does, for the log.</param>
+    private void RunPresenceAsync(Task operation, string description)
+    {
+        _ = operation.ContinueWith(
+            completed => logger.LogError(
+                completed.Exception,
+                "Failed to {Description}",
+                description),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     /// <summary>

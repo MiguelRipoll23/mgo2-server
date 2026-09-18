@@ -44,6 +44,8 @@ internal static class ColumnDefaultConfiguration
         ApplyDefault<Character>(modelBuilder, true, nameof(Character.Active));
         ApplyDefault<Character>(modelBuilder, string.Empty, nameof(Character.Comment));
 
+        ApplyNow<CharacterPresence>(modelBuilder, nameof(CharacterPresence.Since), nameof(CharacterPresence.LastSeen));
+
         ZeroEveryCounter<CharacterAppearance>(modelBuilder);
         ApplyDefault<CharacterFriend>(modelBuilder, 0, nameof(CharacterFriend.Type));
 

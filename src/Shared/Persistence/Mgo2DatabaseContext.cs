@@ -105,6 +105,9 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
     /// <summary>Gameplay options a character has stored.</summary>
     public DbSet<CharacterGameplayOptions> CharacterGameplayOptions => Set<CharacterGameplayOptions>();
 
+    /// <summary>Which lobby each character is in right now.</summary>
+    public DbSet<CharacterPresence> CharacterPresence => Set<CharacterPresence>();
+
     /// <summary>
     /// Pins the plain timestamps to <c>timestamp without time zone</c>. The
     /// provider would otherwise store them as <c>timestamp with time zone</c>,

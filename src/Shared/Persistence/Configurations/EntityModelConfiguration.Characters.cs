@@ -128,5 +128,20 @@ internal static partial class EntityModelConfiguration
                 .HasForeignKey<CharacterGameplayOptions>(options => options.CharacterIdentifier)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
+        modelBuilder.Entity<CharacterPresence>(entity =>
+        {
+            // One row per character, so a lobby change is one upsert instead of a
+            // delete followed by an insert with a window in the middle.
+            entity.HasOne(presence => presence.Character)
+                .WithOne()
+                .HasForeignKey<CharacterPresence>(presence => presence.CharacterIdentifier)
+                .OnDelete(DeleteBehavior.Cascade);
+            // A lobby that is removed cannot hold anybody, so its rows go with it.
+            entity.HasOne(presence => presence.Lobby)
+                .WithMany()
+                .HasForeignKey(presence => presence.LobbyIdentifier)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }

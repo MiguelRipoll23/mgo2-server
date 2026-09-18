@@ -1,7 +1,8 @@
+using Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Clans;
-using Mgo2Server.Shared.Domain.Games;
+using Mgo2Server.Shared.Domain.Presence;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Tcp;
 using Mgo2Server.Shared.Types;
@@ -93,15 +94,11 @@ public sealed class GetClanMemberInfoHandler(
 
 /// <summary>Lists the members of a clan with where each of them is now.</summary>
 /// <param name="clanService">Service that owns the clans.</param>
-/// <param name="activeGameSessions">Connections currently in the lobby.</param>
-/// <param name="gameService">Service that owns the rooms.</param>
-/// <param name="characterService">Service that owns the character records.</param>
+/// <param name="presenceService">Service that records which lobby a character is in.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class GetClanRosterHandler(
     ClanService clanService,
-    ActiveGameSessionsService activeGameSessions,
-    GameService gameService,
-    CharacterService characterService,
+    CharacterPresenceService presenceService,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
@@ -114,9 +111,12 @@ public sealed class GetClanRosterHandler(
             ? await clanService.GetMembersWithNamesAsync(clanIdentifier, cancellationToken)
             : [];
 
-        var sessionsByCharacter = activeGameSessions.List()
-            .Where(candidate => candidate.CharacterIdentifier is not null && candidate.GameIdentifier is not null)
-            .ToDictionary(candidate => candidate.CharacterIdentifier!.Value);
+        // One query for the whole roster rather than one per row: presence is shared,
+        // so a member connected to another lobby is reported where they are while the
+        // clan's own process has no session for them at all.
+        var locations = await presenceService.FindLocationsAsync(
+            [.. members.Select(member => member.CharacterIdentifier)],
+            cancellationToken);
 
         await sessionHelper.SendStartEndPacketAsync(session, CommandConstants.GetClanRosterStart, cancellationToken);
 
@@ -132,33 +132,9 @@ public sealed class GetClanRosterHandler(
                 writer.WriteUInt8(1);
                 writer.WriteUInt32(0);
                 writer.WriteUInt32((uint)member.CharacterIdentifier);
-
-                var wroteGameInformation = false;
-                if (sessionsByCharacter.TryGetValue(member.CharacterIdentifier, out var memberSession) &&
-                    memberSession.LobbyIdentifier is { } lobbyIdentifier)
-                {
-                    var game = await gameService.FindByIdAsync(memberSession.GameIdentifier!.Value, cancellationToken);
-                    var lobby = await gameService.FindLobbyAsync(lobbyIdentifier, cancellationToken);
-                    if (game is not null && lobby is not null)
-                    {
-                        var host = await characterService.FindByIdAsync(game.HostIdentifier, cancellationToken);
-                        writer.WriteUInt16(lobby.Identifier);
-                        writer.WriteFixedString(lobby.Name, 16);
-                        writer.WriteUInt32((uint)game.Identifier);
-                        writer.WriteFixedString(host?.Name ?? string.Empty, 16);
-                        writer.WriteUInt8(lobby.SubtypeIdentifier);
-                        wroteGameInformation = true;
-                    }
-                }
-
-                if (!wroteGameInformation)
-                {
-                    writer.WriteUInt16(0);
-                    writer.WriteFixedString(string.Empty, 16);
-                    writer.WriteUInt32(0);
-                    writer.WriteFixedString(string.Empty, 16);
-                    writer.WriteUInt8(0);
-                }
+                // The same location block the friend roster and the player search
+                // carry, and the third packet that carries it.
+                CharacterLocationWriter.Write(writer, locations.GetValueOrDefault(member.CharacterIdentifier));
             }
 
             await sessionHelper.SendPacketAsync(session, CommandConstants.GetClanRosterPage, writer.Build(), cancellationToken);

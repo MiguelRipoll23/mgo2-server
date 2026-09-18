@@ -1,25 +1,29 @@
 # Per-character presence across lobby processes
 
-**Which lobby is each character in, right now.** The server has never known this, and three
-features are blocked on it. This page is the design, the reasoning, and the staging.
+**Which lobby is each character in, right now.** The page began as the design of the table and
+stayed the reasoning behind it; the table and the three readers it was written for are implemented
+on this server as of 2026-09-18 (see *Status*).
 
-## Why it does not exist yet
+## Why it is not answerable from a process's own sessions
 
-Production runs **one process per lobby**. Each knows only its own connections —
-`ChannelRegistry` is deliberately an instance rather than a static, because the integration suite
-stands several servers up in one JVM and a shared map would silently join them. So no process can
-answer "where is this character" about anyone outside itself, and nothing durable records it.
+Production runs **one process per lobby**. Each knows only its own connections — the reference's
+`ChannelRegistry`, and this server's `ActiveGameSessionsService`, are deliberately instances rather
+than statics, because the integration suite stands several servers up in one process and a shared
+map would silently join them. So no process can answer "where is this character" about anyone
+outside itself, and nothing else records it.
 
 ## What is blocked on it
 
-| consumer | what it sends today | why that is wrong |
+| consumer | what it sent before the table | why that was wrong |
 | --- | --- | --- |
-| `0x4582` roster, wire `0x14` (`ROSTER_ENTRY_VISIBLE`) | hardcoded **1** | [ELF] it is a **lobby id**, rendered into `STRING_F_LIST_LOBBY` and handed to `0x884300`/`0xD47CE0` on "move to lobby". We tell every client that every friend is in lobby 1, and aim the jump there |
+| `0x4582` roster, wire `0x14` (`ROSTER_ENTRY_VISIBLE`) | a hardcoded **1** as a lobby id | [ELF] it is a **lobby id**, rendered into `STRING_F_LIST_LOBBY` and handed to `0x884300`/`0xD47CE0` on "move to lobby". Every client was told every friend was in lobby 1, and the jump was aimed there |
 | `0x4602` player-search tail | three zeros | `lobby_id`, `lobby_name`, `game_id`, `game_name`, `lobby_type` — all confirmed 2026-07-31. Deliberately blank rather than guessed |
-| automatch slot-in eligibility | — | needs the same "who is where" query |
+| `0x4b54` clan roster tail | the same zeros | the *third* carrier of the block, found by live testing a day after the first two |
+| automatch slot-in eligibility | — | needs the same "who is where" query, and still does |
 
 The `0x4582` case is the sharp one: it is not a blank, it is a **wrong answer that misroutes a
-player action**.
+player action**. All three readers are served from the table on this server now; automatch slot-in
+is not, and is still open.
 
 ## The design
 
@@ -35,11 +39,31 @@ CREATE TABLE public.chara_presence (
 );
 ```
 
-**The schema shape is now in place on this server; the table is not** (2026-09-18). No character row
-carries a lobby reference — the write-only `lobby_id` was dropped — and the presence that exists is
-the in-memory session registry (`ActiveGameSessionsService`) plus the coordination events a lobby
-sends upward. So this page is still the plan for the table and its readers, not a description of
-what is stored today.
+**Implemented on this server** (2026-09-18), with the schema and the three readers this page
+describes: `character_presence` (migration `CharacterPresence`), the service in
+`Shared/Domain/Presence`, the writes on the lobby tracker's join and leave, the boot clear, the
+heartbeat and the sweep, and the location block served from it by the friends roster (`0x4582`),
+the player search (`0x4602`) and the clan roster (`0x4b54`). The differences from the reference are
+below, and they are about where the code runs rather than what it does:
+
+- **The table and the entity use `character`, not `chara`** — `character_presence`, columns
+  `character_id` / `lobby_id`. There is no abbreviation rule in this repository, and the rest of
+  the schema spells the word out.
+- **The writes hang off `LobbyTrackerService`** rather than off the channel registry, because that
+  is this process's equivalent: it is what is told a session joined or left a lobby, and it is
+  already the one place that knows both the character and the lobby.
+- **Two timestamp columns on the character are this server's answer to one `last_seen_at`**, and
+  the presence pair is still the presence pair: a process that dies leaves its rows behind, which
+  is why the boot clear exists at all.
+- **The boot path also writes the lobby's population as zero.** The row is keyed by port, so a
+  restart lands on the row the previous instance published, count included, and nothing moves that
+  count until a join or a leave — which cannot happen before a client is served. Every connection
+  to the lobby died with the process it was talking to, so the same "nobody is connected to a
+  process that has just started" that clears the presence rows also zeroes the count, before the
+  listener opens.
+- **The reaper runs in every gameplay lobby process.** There is no other process it could run in
+  usefully: the account server never writes a presence row, so it would only be sweeping after
+  lobbies, which each lobby already does for itself and for whoever else had died.
 
 ### `chara_id` alone is the primary key
 
@@ -134,6 +158,17 @@ tests once already, and its own comment had predicted it.
 Automatch slot-in eligibility becomes possible after step 1 and is tracked separately.
 
 ## Status
+
+> The steps below are the **reference server's** history, kept because the order and the mistakes
+> are the useful part of it. This server's port is the entry after them.
+
+- **This server: DONE** (2026-09-18). `character_presence` (generated migration
+  `CharacterPresence`), `CharacterPresenceService` in `Shared/Domain/Presence`, writes on
+  `LobbyTrackerService.JoinLobby`/`LeaveLobby`, the boot clear in `GameLobbyServerRunner`,
+  `CharacterPresenceTickerService` (heartbeat every 30s, sweep at 120s) in the gameplay lobby, and
+  the location block served by the friends roster, the player search and the clan roster. 163
+  tests pass; nothing is applied to a database until the migration runs. The three known deltas
+  from the reference are listed above under the design.
 
 - **Step 1: DONE** (2026-08-01). `V72__chara_presence.sql`, `PresenceService`, hooks in
   `ChannelRegistry`, boot-clear and the periodic heartbeat/reap. `mvn verify` 233 unit / 236

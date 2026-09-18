@@ -1,7 +1,7 @@
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Games;
-using Mgo2Server.Shared.Domain.Lobbies;
+using Mgo2Server.Shared.Domain.Presence;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Tcp;
 using Mgo2Server.Shared.Types;
@@ -75,54 +75,44 @@ public sealed class RemoveFriendsBlockedHandler(
     }
 }
 
-/// <summary>Lists the caller's friends and blocked entries, with presence.</summary>
+/// <summary>Lists the requested state of the caller's friends or blocked entries.</summary>
 /// <param name="characterService">Service that owns the friends lists.</param>
-/// <param name="activeGameSessions">Connections currently in the lobby.</param>
-/// <param name="lobbyService">Service that owns the lobby metadata.</param>
+/// <param name="presenceService">Service that records which lobby a character is in.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class GetFriendsBlockedListHandler(
     CharacterService characterService,
-    ActiveGameSessionsService activeGameSessions,
-    LobbyService lobbyService,
+    CharacterPresenceService presenceService,
     SessionHelper sessionHelper) : ICommandHandler
 {
-    /// <summary>Maximum number of entries per page.</summary>
-    private const int MaximumPerPacket = 15;
+    /// <summary>Maximum number of entries the client's roster holds.</summary>
+    private const int MaximumEntries = 32;
+
+    /// <summary>Entries per packet: 17 × 59 bytes of record is 1003, inside the payload.</summary>
+    private const int MaximumPerPacket = 17;
 
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
+        // Friends and blocked are two lists in one table, and the state asked for is
+        // the request's first byte. The reply is keyed to it rather than sending both
+        // states with a per-row marker: the record has no room for one, and the client
+        // keys the transaction by the state it asked for.
+        var reader = new PacketReader(packet.Payload);
+        var state = packet.Payload.Length >= 1 ? reader.ReadUInt8() : 0;
+
         var characterIdentifier = session.CharacterIdentifier ?? 0;
         var entries = characterIdentifier > 0
             ? await characterService.GetFriendsAndBlockedWithNamesAsync(characterIdentifier, cancellationToken)
             : [];
+        entries = [.. entries.Where(entry => entry.Type == state).Take(MaximumEntries)];
 
-        // Snapshot the online set once instead of rescanning every entry, and
-        // resolve each lobby one time rather than once per online friend.
-        var onlineByCharacter = new Dictionary<int, TcpSession>();
-        foreach (var candidate in activeGameSessions.List())
-        {
-            if (candidate.CharacterIdentifier is { } candidateCharacter)
-            {
-                onlineByCharacter[candidateCharacter] = candidate;
-            }
-        }
-
-        var lobbies = new Dictionary<int, LobbyResponse>();
-        foreach (var lobbyIdentifier in onlineByCharacter.Values
-            .Where(candidate => candidate.LobbyIdentifier is not null)
-            .Select(candidate => candidate.LobbyIdentifier!.Value)
-            .Distinct())
-        {
-            try
-            {
-                lobbies[lobbyIdentifier] = await lobbyService.FindByIdAsync(lobbyIdentifier, cancellationToken);
-            }
-            catch
-            {
-                // A lobby that vanished mid-list has no name to show.
-            }
-        }
+        // One query for the whole roster rather than one per row: this is a list screen
+        // of up to 32 entries, and asking per entry would be 32 round trips to draw
+        // one page. Presence is shared, so a friend connected to another lobby is
+        // reported where they are rather than as absent.
+        var locations = await presenceService.FindLocationsAsync(
+            [.. entries.Select(entry => entry.TargetIdentifier)],
+            cancellationToken);
 
         await sessionHelper.SendStartEndPacketAsync(session, CommandConstants.GetFriendsBlockedListStart, cancellationToken);
 
@@ -132,7 +122,7 @@ public sealed class GetFriendsBlockedListHandler(
             var writer = new PacketWriter();
             foreach (var entry in page)
             {
-                WriteEntry(writer, entry, onlineByCharacter, lobbies);
+                WriteEntry(writer, entry, locations);
             }
 
             await sessionHelper.SendPacketAsync(session, CommandConstants.GetFriendsBlockedListPage, writer.Build(), cancellationToken);
@@ -141,44 +131,37 @@ public sealed class GetFriendsBlockedListHandler(
         await sessionHelper.SendStartEndPacketAsync(session, CommandConstants.GetFriendsBlockedListEnd, cancellationToken);
     }
 
+    /// <summary>
+    /// Writes one entry: the target, their name, then where they are.
+    /// <para>
+    /// The record is 59 bytes and carries no state byte of its own, because the state
+    /// is the transaction rather than the row. A character who is not connected
+    /// anywhere keeps their row and gets a zeroed location, which the client draws as
+    /// the lobby column's placeholder rather than dropping the entry — an offline
+    /// friend still belongs on the list.
+    /// </para>
+    /// </summary>
+    /// <param name="writer">Writer the entry is appended to.</param>
+    /// <param name="entry">Entry being written.</param>
+    /// <param name="locations">Where each listed character is.</param>
     private static void WriteEntry(
         PacketWriter writer,
         CharacterFriendEntry entry,
-        IReadOnlyDictionary<int, TcpSession> onlineByCharacter,
-        IReadOnlyDictionary<int, LobbyResponse> lobbies)
+        IReadOnlyDictionary<int, CharacterLocation> locations)
     {
-        writer.WriteUInt8(entry.Type);
         writer.WriteUInt32((uint)entry.TargetIdentifier);
         writer.WriteFixedString(entry.TargetName, 16);
-
-        var isOnline = onlineByCharacter.TryGetValue(entry.TargetIdentifier, out var targetSession);
-        writer.WriteUInt8(isOnline ? 1 : 0);
-        writer.WritePadding(3);
-
-        if (isOnline &&
-            targetSession!.LobbyIdentifier is { } lobbyIdentifier &&
-            lobbies.TryGetValue(lobbyIdentifier, out var lobby))
-        {
-            writer.WriteUInt16(lobby.Identifier);
-            writer.WriteFixedString(lobby.Name, 16);
-        }
-        else
-        {
-            writer.WriteUInt16(0);
-            writer.WriteFixedString(string.Empty, 16);
-        }
+        CharacterLocationWriter.Write(writer, locations.GetValueOrDefault(entry.TargetIdentifier));
     }
 }
 
 /// <summary>Searches for a player by name and reports where they are.</summary>
 /// <param name="characterService">Service that owns the character records.</param>
-/// <param name="activeGameSessions">Connections currently in the lobby.</param>
-/// <param name="gameService">Service that owns the rooms.</param>
+/// <param name="presenceService">Service that records which lobby a character is in.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class SearchPlayerHandler(
     CharacterService characterService,
-    ActiveGameSessionsService activeGameSessions,
-    GameService gameService,
+    CharacterPresenceService presenceService,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <summary>Length of the search query field.</summary>
@@ -197,38 +180,19 @@ public sealed class SearchPlayerHandler(
             var character = await characterService.FindByNameAsync(query, cancellationToken);
             if (character is not null)
             {
+                var locations = await presenceService.FindLocationsAsync(
+                    [character.Identifier],
+                    cancellationToken);
+
                 var writer = new PacketWriter();
                 writer.WriteUInt32((uint)character.Identifier);
                 writer.WriteFixedString(character.Name, 16);
-
-                var targetSession = activeGameSessions.List()
-                    .FirstOrDefault(candidate => candidate.CharacterIdentifier == character.Identifier);
-                var isOnline = targetSession is not null;
-                writer.WriteUInt8(isOnline ? 1 : 0);
-
-                var wroteGameInformation = false;
-                if (isOnline && targetSession!.GameIdentifier is { } gameIdentifier && targetSession.LobbyIdentifier is { } lobbyIdentifier)
-                {
-                    var game = await gameService.FindByIdAsync(gameIdentifier, cancellationToken);
-                    var lobby = await gameService.FindLobbyAsync(lobbyIdentifier, cancellationToken);
-                    if (game is not null && lobby is not null)
-                    {
-                        var host = await characterService.FindByIdAsync(game.HostIdentifier, cancellationToken);
-                        writer.WriteUInt16(lobby.Identifier);
-                        writer.WriteFixedString(lobby.Name, 16);
-                        writer.WriteUInt32((uint)game.Identifier);
-                        writer.WriteFixedString(host?.Name ?? string.Empty, 16);
-                        wroteGameInformation = true;
-                    }
-                }
-
-                if (!wroteGameInformation)
-                {
-                    writer.WriteUInt16(0);
-                    writer.WriteFixedString(string.Empty, 16);
-                    writer.WriteUInt32(0);
-                    writer.WriteFixedString(string.Empty, 16);
-                }
+                // The tail is the same location block the friend roster carries, and
+                // it is the only tail the record has: a searched player connected to
+                // any lobby is reported where they are, and one who is not connected
+                // gets the empty block, which the client draws as a blank row rather
+                // than dropping the result.
+                CharacterLocationWriter.Write(writer, locations.GetValueOrDefault(character.Identifier));
 
                 await sessionHelper.SendPacketAsync(session, CommandConstants.SearchPlayerPage, writer.Build(), cancellationToken);
             }

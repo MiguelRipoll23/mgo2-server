@@ -8,6 +8,7 @@ using Mgo2Server.Shared.Domain.Instructors;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Domain.Mail;
 using Mgo2Server.Shared.Domain.News;
+using Mgo2Server.Shared.Domain.Presence;
 using Mgo2Server.Shared.Domain.Rankings;
 using Mgo2Server.Shared.Domain.Users;
 using Mgo2Server.Shared.Options;
@@ -116,6 +117,7 @@ public static class ServerServiceCollectionExtensions
         // has one to report to.
         services.TryAddSingleton<ILobbyPresencePublisher, NullLobbyPresencePublisher>();
         services.AddSingleton<LobbyTrackerService>();
+        services.AddSingleton<CharacterPresenceService>();
         services.AddSingleton<CharacterService>();
         services.AddSingleton<CharacterStatisticsService>();
         services.AddSingleton<CharacterTitleService>();

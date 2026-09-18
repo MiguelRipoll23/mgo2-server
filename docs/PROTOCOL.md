@@ -2188,14 +2188,22 @@ relation and replies with one **`0x4512`** packet — 9 bytes, **field order dif
 | `0x04` | 1 | u8 | state removed |
 | `0x05` | 4 | u32 | target character id |
 
-## `0x4580` — bulk roster fetch (answered empty)
+## `0x4580` / `0x4582` — Friends and Blocked roster
 
 The standalone Friends/Blocked menu (distinct from the in-game ADDLIST), request a single
 `{u8 state}`. Reply is a real triple: `0x4581` start (4-byte result), N × `0x4582` entries
-(**59-byte** records — u32 id, char[16] name, u16 at `0x14`, char[16], u32, char[16], u8; only id
-and name are of known meaning), `0x4583` end. **Never observed live**, and we cannot fill the
-59-byte record honestly, so it is answered **empty** (start then end) — enough that the menu
-cannot hang. The client's table caps at **32** entries.
+(**59-byte** records), `0x4583` end. The client's table caps at **32** entries, and at most 17
+records fit one packet (17 × 59 = 1003, inside the payload).
+
+The record is **`{u32 id, char[16] name, location block}`** — the same five-field block `0x4602`
+and the clan roster carry, and the record has **no state byte of its own**: the state is the
+transaction (see the subsystem index below), so friends and blocked are two replies of the same
+shape rather than one reply with a per-row marker. A character with no recorded presence gets a
+zeroed block and **keeps their row** — the client draws its placeholder in the lobby column
+(`"----"`) instead of dropping the entry, so an offline friend still appears on the list.
+
+**The state byte is read from the request and the entries are filtered by it.** Serving both
+states with a per-row marker is not an option: the record has nowhere to put one.
 
 **The subsystem index is not fixed: it is `0x51 + the u8 state` from the request** (ELF
 2026-07-26, single-source trace, `0xD46ABC`). Friends and blocked are therefore **separate
@@ -2203,12 +2211,13 @@ transactions** with separate wait slots, not one list with a filter. A reply mus
 state that was asked for; answering a blocked-list request against the friends slot leaves the
 friends screen waiting.
 
-> **Read this before populating the list.** The end handler `0xD466D4` copies a record into the
-> display array **only if the u16 at record offset `0x14` is nonzero**. Every record with a zero
-> there parses perfectly, is counted, and is then silently dropped — producing an empty roster
-> screen with no error anywhere. We currently send nothing at all so it cannot bite yet, but the
-> obvious first implementation (fill id and name, zero the fields whose meaning is unknown) fails
-> in exactly this way. Traced 2026-07-26; single-source ELF, not confirmed live.
+> **Read this before changing the record.** The end handler `0xD466D4` compacts records whose u16
+> at record offset `0x14` is zero into `list(x, -1)`, a buffer with no readers, while the UI reads
+> `list(x, 0)`, which the pass leaves intact — so a zero there does **not** empty the screen and
+> serving a zeroed block for an offline friend is safe (the 2026-07-31 correction to the
+> "silently dropped" reading, `0x4582` row of the packet table). Offset `0x14` is the **lobby
+> id**, the first field of the location block, not a flag of our own; a field of a different width
+> in front of the block moves it, and that is what the note is guarding.
 >
 > **The sibling `0x4603` does no such filtering** — byte-identical record family, different
 > behaviour. Per the no-duplicates rule these two have matched shape in the one comparison made;
@@ -2258,13 +2267,27 @@ ignore-case and a case-sensitive search is still reachable with `0`.
 
 An integration test had asserted the old reading. Its only authority was the field's own name — no
 capture, no disassembly — which per `CLAUDE.md` is a regression guard, not a correctness check. Result records (`0x4602`, parser `0xd45f38`,
-59 bytes each, client table caps at **100**): u32 id, 16-byte name, u16, 16 bytes (likely clan
-name), u32, 16 bytes, u8 — tail fields inferred only from width; we send zeros there. The
-SaveMGO Nomad dev-era test payload (`search-player.bin`, tier 4, decoded 2026-07-23 —
-OBSERVED.md) fills the record as a **presence card**: {u32 chara id, 16B name, u16 = 36
-(level/rank?), 16B current lobby name, u32 = 1 (in-game flag?), 16B current game name,
-u8 = 4 (lobby id?)} — plausible labels worth a fingerprint pass if search results ever
-need to show location.
+59 bytes each, client table caps at **100**) are **`{u32 id, char[16] name, location block}`**:
+u32 id, 16-byte name, u16 **lobby id**, 16-byte **lobby name**, u32 **game id**, 16-byte **game
+name**, u8 **lobby label** — the same five-field block `0x4582` and the clan roster carry, settled
+2026-09-18 from the reference server's trace of the row painter (it draws name / lobby_name /
+game_name as three columns and falls back to `GetString(hash("lobby"), 18)` = `"----"` for a
+gated one) and of `0x9351AC(kind, charaId, name, gameId, gameName, lobbyId, lobbyType)`, the
+argument list both row builder and painter share. Two candidate labels this replaced were wrong:
+the u16 is a **lobby id**, not the level/rank, and the trailing u8 is a **category enum**, not a
+lobby id. The SaveMGO Nomad dev-era test payload (`search-player.bin`, tier 4, decoded
+2026-07-23 — OBSERVED.md) reads the same way once its fields are named from this block.
+
+**The record has no online flag.** An earlier version of this server wrote a u8 at offset `0x14`
+(the roster's own online/state byte, borrowed here) with the location fields behind it, which put
+the field boundaries one byte off for every record — the u16, the two strings and the label all
+decoded out of other fields' bytes. The width matched (the flag pushed the trailing u8 off the end,
+4+16+2+16+4+16+1 = 59 either way), which is why it survived: **a record of the right length is not
+a record of the right layout.**
+
+**The label is the lobby subtype through the 8-arm table** (1 Free Battle … 8 Training, no arm 9),
+*not* the match-history byte's 9-arm table — the two disagree at 5 and 6 and do not share a value
+in the ninth arm at all. Anything outside 1..8 is sent as 0, which the client renders blank.
 
 ### `0x4680` — match history list (sender `0xD3B864`, replies `0x4681`/`0x4682`/`0x4683`)
 
@@ -2787,12 +2810,21 @@ Start and end carry a **result code, never a count** — a count there produced 
 `1032:00000005` error on the sibling social path, and the client counts the item records itself.
 
 The `0x4b54` record is **68 wire bytes**: `{u32 chara id, char name[16], u8 isMember, u32, u32,
-then game-location fields}`. **`isMember` is 1 for joined members and 0 for pending applicants**,
+then the location block}`. **`isMember` is 1 for joined members and 0 for pending applicants**,
 and members and applicants go out as **one batch with the flag set per row**. Two other
 combinations were tried and both failed visibly: two separate `0x4b54` packets put both groups on
 the wire but the client rendered only the first, so the applicant vanished; and mixing applicants
-into the members query with the flag set per *batch* made them appear as full members. The trailing
-game-location fields (lobby id, lobby name, game id, host name, subtype) are unpopulated.
+into the members query with the flag set per *batch* made them appear as full members.
+
+The trailing 39 bytes are the **same location block** the friend roster and the player search
+carry — u16 lobby id, 16-byte lobby name, u32 game id, 16-byte game name, u8 label — 29 header
+bytes plus 39 is the 68. The fourth field had been called the **host's name** here and is the
+**room's name**: the painter that draws this row's three string columns is fed by the same
+`0x9351AC(kind, charaId, name, gameId, gameName, lobbyId, lobbyType)` argument list the other two
+packets use, where the string pairing the game id is the room's name. **Not confirmed on screen**
+for this packet; a row that reads the host's name instead refutes it. All five fields are served
+from the recorded presence, so a clan member connected to another lobby is reported where they
+are rather than as absent (2026-09-18).
 
 ## Clan stats — one `0x4b71`, then `0x4b72`
 

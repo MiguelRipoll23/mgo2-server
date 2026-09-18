@@ -320,12 +320,22 @@ invisible, so the count reads "0 unless games are up" rather than true occupancy
 
 Still open if true occupancy is ever wanted:
 
-- **Presence table.** The lobby servers are separate JVMs, so live occupancy has to go through
-  postgres: a row per authenticated connection (`lobby_id`, `account_id`, `updated_at`); insert on
-  auth, delete on disconnect, and on process start delete every row for the process's own
-  `lobby_id` so a crash cannot leave phantom occupants. The `0x2005` handler then selects counts
-  grouped by lobby. The gate serves the list but owns no lobby population of its own, which is why
-  the counts must come from shared state rather than in-memory connection counts.
+- **Presence table.** *Shipped 2026-09-18 (`PRESENCE.md`): `character_presence` has a row per
+  authenticated character, deleted on disconnect, with a boot clear of the process's own lobby and
+  a heartbeat behind it.* **This item is closed on this server, and it was never open the same way
+  it was for the reference.** The count the lobby list shows is already occupancy rather than rooms:
+  `lobbies.players_count` is published by the process that **serves** that lobby, out of its own
+  live session set (`LobbyTrackerService`, on every join and leave), and the gate reads the column
+  rather than counting anything itself. A player idling in a lobby without a room is therefore
+  counted, which is the case the reference could not see because it derived the figure from
+  `game_player`.
+
+  **The restart gap is closed too** (2026-09-18): a process that restarts publishes nothing until
+  its first join or leave, and the row is keyed by port, so it landed on the previous instance's
+  row carrying the count that instance published. `GameLobbyServerRunner` now writes **zero**
+  beside the presence clear — every connection to that lobby died with the process it was talking
+  to, so the population is zero and does not have to be derived from anything — and it is written
+  before the listener opens rather than after the first player arrives.
 - Whatever the source, what the client *renders* for the field is a presentation claim and has not
   been checked against the binary (see `CLAUDE.md` on presentation claims).
 
@@ -351,6 +361,14 @@ Not fixed yet because it needs a real signal for "entered," and none has been id
 a specific client packet sent on committing to Automatching (as opposed to merely opening its
 menu), or does presence need a mode split — "connected" vs "in queue" — with the roster/search
 screens reading the latter? Whatever the answer, it is ELF work, not a guess.
+
+**The same conflation applies to this server's port, and cannot be improved there** (2026-09-18).
+The write point is the in-lobby session check, which is the moment the client names the character
+it is bringing into the lobby it connected to — one step later than the reference's, since a
+character is only recorded once it has been claimed and vetted, and not earlier than the client's
+choice of lobby either: the client picks the lobby by connecting to it, so choosing Automatching
+*is* the connect. A character browsing a menu that its lobby serves therefore reads the same as one
+queued in it, exactly as the reference found.
 
 ## The peer-connect FSM — fully traced; blocker is the UDP handshake
 

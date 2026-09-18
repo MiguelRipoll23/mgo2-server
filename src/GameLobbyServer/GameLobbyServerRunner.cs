@@ -4,6 +4,7 @@ using Mgo2Server.GameLobbyServer.Maintenance;
 using Mgo2Server.GameLobbyServer.Servers;
 using Mgo2Server.Shared.Domain.Automatch;
 using Mgo2Server.Shared.Domain.Lobbies;
+using Mgo2Server.Shared.Domain.Presence;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Tcp;
 using Mgo2Server.Shared.Telemetry;
@@ -35,6 +36,7 @@ public sealed class GameLobbyServerRunner(
     private LobbyCleanupService? cleanup;
     private GameCleanupService? gameCleanup;
     private AutomatchTickerService? automatch;
+    private CharacterPresenceTickerService? presenceTicker;
 
     /// <summary>
     /// Registers this instance's lobby and starts it. The schema is not this
@@ -66,6 +68,31 @@ public sealed class GameLobbyServerRunner(
                 lobbyTracker.GetPlayerCount(lobby.Identifier),
                 cancellationToken);
 
+        // Nobody is connected to a process that has just started, so every
+        // presence row naming this lobby is stale by definition: they are
+        // cleared exactly, rather than left for the sweep to time out. A count
+        // above zero means a previous run stopped without processing its
+        // departures, which is worth knowing about rather than hiding.
+        var clearedPresences = await serviceProvider.GetRequiredService<CharacterPresenceService>()
+            .ClearLobbyAsync(lobby.Identifier, cancellationToken);
+        if (clearedPresences > 0)
+        {
+            logger.LogWarning(
+                "Cleared {PresenceCount} presence rows left behind in lobby {LobbyIdentifier}",
+                clearedPresences,
+                lobby.Identifier);
+        }
+
+        // The population the row publishes is stale for the same reason, and unlike
+        // presence nothing clears it: the row is keyed by port, so a restart lands on
+        // the previous instance's row carrying the count that instance published, and
+        // that count only moves on a join or a leave — neither of which can happen
+        // until a client is served, long after this line. Every connection to this
+        // lobby died with the process it was talking to, so the population is zero,
+        // and it is published before the listener opens rather than after the first
+        // player arrives.
+        await lobbyService.UpdatePlayerCountAsync(lobby.Identifier, 0, cancellationToken);
+
         // The cache decides which lobbies this instance serves, and the lobby
         // just registered has to be in it before the listener starts.
         await lobbyService.LoadCacheAsync(cancellationToken);
@@ -89,11 +116,13 @@ public sealed class GameLobbyServerRunner(
         cleanup = serviceProvider.GetRequiredService<LobbyCleanupService>();
         gameCleanup = serviceProvider.GetRequiredService<GameCleanupService>();
         automatch = serviceProvider.GetRequiredService<AutomatchTickerService>();
+        presenceTicker = serviceProvider.GetRequiredService<CharacterPresenceTickerService>();
         refresh.Start();
         heartbeat.StartFor(lobby.Identifier);
         cleanup.Start();
         gameCleanup.Start();
         automatch.StartFor(lobby.Identifier, lobby.SubtypeIdentifier);
+        presenceTicker.Start();
 
         server = new GameplayLobbyServer(serviceProvider, lobby.Port, lobby.Name, lobby.Identifier);
         await server.StartAsync(cancellationToken);
@@ -139,6 +168,12 @@ public sealed class GameLobbyServerRunner(
         {
             await automatch.StopAsync();
             automatch = null;
+        }
+
+        if (presenceTicker is not null)
+        {
+            await presenceTicker.StopAsync();
+            presenceTicker = null;
         }
     }
 }

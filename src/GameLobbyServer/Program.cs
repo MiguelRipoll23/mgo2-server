@@ -34,6 +34,7 @@ builder.Services.AddSingleton<LobbyHeartbeatService>();
 builder.Services.AddSingleton<LobbyCleanupService>();
 builder.Services.AddSingleton<GameCleanupService>();
 builder.Services.AddSingleton<AutomatchTickerService>();
+builder.Services.AddSingleton<CharacterPresenceTickerService>();
 builder.Services.AddSingleton<GameLobbyServerRunner>();
 
 var host = builder.Build();
