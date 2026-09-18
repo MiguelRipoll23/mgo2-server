@@ -264,7 +264,7 @@ jobs:
   # missing appsettings.json skips the deployment without failing the run.
   deploy:
     name: Deploy
-    runs-on: [self-hosted, mgo2-server]
+    runs-on: [self-hosted, Linux, ARM64]
     needs:
       - changes
       - images
