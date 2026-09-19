@@ -502,7 +502,8 @@ jobs:
               *) img="$svc";;
             esac
             for d in $svc; do
-              kubectl set image deployment/$d $d=${REGISTRY}/${GITHUB_REPOSITORY,,}/${img}:${MGO2_IMAGE_TAG} -n mgo2
+            [ "$d" = "mgo2-postgres" ] && continue
+            kubectl set image deployment/$d $d=${REGISTRY}/${GITHUB_REPOSITORY,,}/${img}:${MGO2_IMAGE_TAG} -n mgo2
               kubectl rollout restart deployment/$d -n mgo2
               kubectl rollout status deployment/$d -n mgo2 --timeout=180s
             done
