@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"name":"mgo2-stun","namespace":"mgo2"},"spec":{"ports":[{"name":"stun","port":3478,"protocol":"UDP","targetPort":3478},{"name":"stun-secondary","port":3479,"protocol":"UDP","targetPort":3479}],"selector":{"app":"mgo2-stun"},"type":"ClusterIP"}}
+  creationTimestamp: "2026-09-19T01:05:28Z"
+  name: mgo2-stun
+  namespace: mgo2
+  resourceVersion: "2291"
+  uid: f2e56014-677b-4b64-b0d0-5220188554a7
+spec:
+  clusterIP: 10.43.12.22
+  clusterIPs:
+  - 10.43.12.22
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: stun
+    port: 3478
+    protocol: UDP
+    targetPort: 3478
+  - name: stun-secondary
+    port: 3479
+    protocol: UDP
+    targetPort: 3479
+  selector:
+    app: mgo2-stun
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}

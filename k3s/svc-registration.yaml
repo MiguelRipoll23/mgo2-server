@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"name":"mgo2-registration","namespace":"mgo2"},"spec":{"ports":[{"port":5741,"protocol":"TCP","targetPort":5741}],"selector":{"app":"mgo2-registration"},"type":"ClusterIP"}}
+  creationTimestamp: "2026-09-19T01:05:20Z"
+  name: mgo2-registration
+  namespace: mgo2
+  resourceVersion: "2260"
+  uid: 064ed5a1-db94-4013-aaf4-5cbb8804706f
+spec:
+  clusterIP: 10.43.80.71
+  clusterIPs:
+  - 10.43.80.71
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 5741
+    protocol: TCP
+    targetPort: 5741
+  selector:
+    app: mgo2-registration
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}

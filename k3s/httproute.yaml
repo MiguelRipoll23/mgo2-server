@@ -1,0 +1,14 @@
+# HTTPRoute for mgo2-http service (no hostname filter)
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mgo2-http
+  namespace: mgo2
+spec:
+  parentRefs:
+  - name: mgo2-gateway
+    namespace: mgo2
+  rules:
+  - backendRefs:
+    - name: mgo2-http
+      port: 80

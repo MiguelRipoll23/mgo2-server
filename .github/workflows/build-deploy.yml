@@ -276,4 +276,47 @@ jobs:
     permissions:
       contents: read
       packages: read
-    steps: []
+    steps:
+      - name: Resolve deployment tag
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = 'tag' ]; then
+            echo "MGO2_IMAGE_TAG=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "MGO2_IMAGE_TAG=latest" >> "$GITHUB_ENV"
+          fi
+
+      - name: Apply Kubernetes manifests
+        run: kubectl apply -f k3s/
+
+      - name: Update deployment images
+        run: |
+          for svc in mgo2-account mgo2-automatching mgo2-basic-training mgo2-combat-training mgo2-dns mgo2-free-battle mgo2-gameplay-1 mgo2-gate mgo2-http mgo2-registration mgo2-replays mgo2-stun mgo2-survival mgo2-survival-hosts mgo2-tournament; do
+            case "$svc" in
+              mgo2-gate) img="mgo2-gate-lobby-server";;
+              mgo2-account) img="mgo2-account-lobby-server";;
+              mgo2-free-battle|mgo2-replays|mgo2-survival|mgo2-basic-training|mgo2-combat-training|mgo2-survival-hosts|mgo2-automatching|mgo2-registration|mgo2-tournament) img="mgo2-game-lobby-server";;
+              mgo2-gameplay-1) img="mgo2-gameplay-server";;
+              mgo2-http) img="mgo2-http";;
+              mgo2-dns) img="mgo2-dns";;
+              mgo2-stun) img="mgo2-stun";;
+              *) img="$svc";;
+            esac
+            kubectl set image deployment/$svc $svc=ghcr.io/miguelripoll23/mgo2-server/${img}:${MGO2_IMAGE_TAG} -n mgo2
+          done
+
+      - name: Rollout and wait all
+        run: |
+          for svc in mgo2-account mgo2-automatching mgo2-basic-training mgo2-combat-training mgo2-dns mgo2-free-battle mgo2-gameplay-1 mgo2-gate mgo2-http mgo2-registration mgo2-replays mgo2-stun mgo2-survival mgo2-survival-hosts mgo2-tournament; do
+            kubectl rollout restart deployment/$svc -n mgo2
+            kubectl rollout status deployment/$svc -n mgo2 --timeout=180s
+          done
+
+      - name: Verify namespace health
+        run: |
+          kubectl get pods -n mgo2 -o wide
+          echo "HTTP check:"
+          curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://192.168.1.15/
+          echo "TCP check (account):"
+          timeout 2 bash -c 'echo > /dev/tcp/10.43.162.230/5732' || exit 1
+          echo "DNS check:"
+          kubectl run -i --rm --restart=Never -n mgo2 --image=busybox:1.36 -- nslookup mgo2-dns

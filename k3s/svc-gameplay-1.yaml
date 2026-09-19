@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"name":"mgo2-gameplay-1","namespace":"mgo2"},"spec":{"ports":[{"port":5730,"protocol":"UDP","targetPort":5730}],"selector":{"app":"mgo2-gameplay-1"},"type":"ClusterIP"}}
+  creationTimestamp: "2026-09-19T01:05:17Z"
+  name: mgo2-gameplay-1
+  namespace: mgo2
+  resourceVersion: "2233"
+  uid: 1ce1cb7d-21f5-498d-aa9e-6a6d1eff9e85
+spec:
+  clusterIP: 10.43.164.182
+  clusterIPs:
+  - 10.43.164.182
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 5730
+    protocol: UDP
+    targetPort: 5730
+  selector:
+    app: mgo2-gameplay-1
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}

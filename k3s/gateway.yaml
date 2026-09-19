@@ -1,0 +1,15 @@
+# Gateway listener on port 80 (Gateway API)
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: mgo2-gateway
+  namespace: mgo2
+spec:
+  gatewayClassName: traefik
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes:
+      namespaces:
+        from: Same

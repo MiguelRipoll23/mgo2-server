@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '7'
+    kubectl.kubernetes.io/last-applied-configuration: '{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"name":"mgo2-stun","namespace":"mgo2"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"mgo2-stun"}},"template":{"metadata":{"labels":{"app":"mgo2-stun"}},"spec":{"containers":[{"env":[{"name":"STUN_PORT","value":"3478"},{"name":"STUN_SECONDARY_ADDRESS","value":""}],"image":"ghcr.io/miguelripoll23/mgo2-server/mgo2-stun:latest","name":"stun","ports":[{"containerPort":3478,"protocol":"UDP"},{"containerPort":3479,"protocol":"UDP"}],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"add":[],"drop":["ALL"]},"runAsNonRoot":true,"runAsUser":1000,"seccompProfile":{"type":"RuntimeDefault"}},"volumeMounts":[{"mountPath":"/app/appsettings.json","name":"appsettings","readOnly":true,"subPath":"appsettings.json"}]}],"volumes":[{"configMap":{"name":"mgo2-appsettings"},"name":"appsettings"}]}}}}
+
+      '
+  creationTimestamp: '2026-09-19T01:05:10Z'
+  generation: 7
+  name: mgo2-stun
+  namespace: mgo2
+  resourceVersion: '24729'
+  uid: 032a3b48-9426-4d6b-91f0-c12cf4acdd79
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: mgo2-stun
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-09-19T04:45:17+02:00'
+      labels:
+        app: mgo2-stun
+    spec:
+      containers:
+      - env:
+        - name: STUN_PORT
+          value: '3478'
+        - name: STUN_SECONDARY_ADDRESS
+        image: ghcr.io/miguelripoll23/mgo2-server/mgo2-stun:latest
+        imagePullPolicy: Always
+        name: stun
+        ports:
+        - containerPort: 3478
+          protocol: UDP
+        - containerPort: 3479
+          protocol: UDP
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app/appsettings.json
+          name: appsettings
+          readOnly: true
+          subPath: appsettings.json
+        envFrom:
+        - secretRef:
+            name: mgo2-secrets
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: appsettings
+        configMap:
+          name: mgo2-appsettings
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: '2026-09-19T01:05:33Z'
+    lastUpdateTime: '2026-09-19T01:05:33Z'
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: 'True'
+    type: Available
+  - lastTransitionTime: '2026-09-19T01:05:15Z'
+    lastUpdateTime: '2026-09-19T11:24:47Z'
+    message: ReplicaSet "mgo2-stun-5759fb8f47" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: 'True'
+    type: Progressing
+  observedGeneration: 7
+  readyReplicas: 1
+  replicas: 1
+  terminatingReplicas: 0
+  updatedReplicas: 1

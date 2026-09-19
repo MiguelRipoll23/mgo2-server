@@ -1,0 +1,5 @@
+# Namespace for mgo2 k3s deployment
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mgo2

@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '8'
+    kubectl.kubernetes.io/last-applied-configuration: '{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"name":"mgo2-combat-training","namespace":"mgo2"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"mgo2-combat-training"}},"template":{"metadata":{"labels":{"app":"mgo2-combat-training"}},"spec":{"containers":[{"env":[{"name":"LOBBY_NAME","value":"Combat
+      Training"},{"name":"LOBBY_SUBTYPE","value":"COMBAT TRAINING"},{"name":"LOBBY_PORT","value":"5738"},{"name":"LOBBY_BEGINNER_ONLY","value":"false"},{"name":"LOBBY_EXPANSION_ONLY","value":"false"},{"name":"LOBBY_NO_HEADSHOT","value":"false"},{"name":"LOBBY_REPLAYS_ONLY","value":"false"}],"image":"ghcr.io/miguelripoll23/mgo2-server/mgo2-game-lobby-server:latest","name":"lobby","ports":[{"containerPort":5738,"protocol":"TCP"}],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"add":[],"drop":["ALL"]},"runAsNonRoot":true,"runAsUser":1000,"seccompProfile":{"type":"RuntimeDefault"}},"volumeMounts":[{"mountPath":"/app/appsettings.json","name":"appsettings","readOnly":true,"subPath":"appsettings.json"}]}],"terminationGracePeriodSeconds":21600,"volumes":[{"configMap":{"name":"mgo2-appsettings"},"name":"appsettings"}]}}}}
+
+      '
+  creationTimestamp: '2026-09-19T01:05:10Z'
+  generation: 8
+  name: mgo2-combat-training
+  namespace: mgo2
+  resourceVersion: '24892'
+  uid: 94a13a25-25ea-4d2f-a790-6f6ae8dba016
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: mgo2-combat-training
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-09-19T04:45:14+02:00'
+      labels:
+        app: mgo2-combat-training
+    spec:
+      containers:
+      - env:
+        - name: LOBBY_NAME
+          value: Combat Training
+        - name: LOBBY_SUBTYPE
+          value: COMBAT TRAINING
+        - name: LOBBY_PORT
+          value: '5738'
+        - name: LOBBY_BEGINNER_ONLY
+          value: 'false'
+        - name: LOBBY_EXPANSION_ONLY
+          value: 'false'
+        - name: LOBBY_NO_HEADSHOT
+          value: 'false'
+        - name: LOBBY_REPLAYS_ONLY
+          value: 'false'
+        image: ghcr.io/miguelripoll23/mgo2-server/mgo2-game-lobby-server:latest
+        imagePullPolicy: Always
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 5
+        name: lobby
+        ports:
+        - containerPort: 5738
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          successThreshold: 1
+          tcpSocket:
+            port: 5738
+          timeoutSeconds: 1
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app/appsettings.json
+          name: appsettings
+          readOnly: true
+          subPath: appsettings.json
+        envFrom:
+        - secretRef:
+            name: mgo2-secrets
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 21600
+      volumes:
+      - name: appsettings
+        configMap:
+          name: mgo2-appsettings
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: '2026-09-19T01:05:30Z'
+    lastUpdateTime: '2026-09-19T01:05:30Z'
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: 'True'
+    type: Available
+  - lastTransitionTime: '2026-09-19T01:05:10Z'
+    lastUpdateTime: '2026-09-19T11:25:05Z'
+    message: ReplicaSet "mgo2-combat-training-5b78f8d5ff" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: 'True'
+    type: Progressing
+  observedGeneration: 8
+  readyReplicas: 1
+  replicas: 1
+  terminatingReplicas: 0
+  updatedReplicas: 1
