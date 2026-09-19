@@ -24,10 +24,16 @@ public sealed class CharacterListPayloadTests
     /// <summary>Codec voice pack unlock.</summary>
     private const byte CodecPacks = 0x03;
 
+    /// <summary>Moment every countdown in these cases is measured against.</summary>
+    private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
+
+    /// <summary>Offset of the trailing word inside one entry.</summary>
+    private const int EntryCountdownOffset = 0x17 + 48;
+
     [Fact]
     public void Build_writes_the_grid_the_client_parses()
     {
-        var payload = CharacterListPayloadBuilder.Build(characterSlots: 3, entries: []);
+        var payload = CharacterListPayloadBuilder.Build(characterSlots: 3, entries: [], Now);
 
         // Eight entries of fifty-two bytes plus the header and the trailer. The
         // client's loop compares its destination offset against 0x1a4 before it
@@ -46,7 +52,7 @@ public sealed class CharacterListPayloadTests
     [Fact]
     public void Build_places_the_entitlements_where_the_client_reads_them()
     {
-        var payload = CharacterListPayloadBuilder.Build(characterSlots: 8, entries: []);
+        var payload = CharacterListPayloadBuilder.Build(characterSlots: 8, entries: [], Now);
         var trailer = payload.AsSpan(CharacterListPayloadBuilder.TrailerOffset);
 
         Assert.Equal(CharacterListPayloadBuilder.TrailerSize, trailer.Length);
@@ -69,7 +75,7 @@ public sealed class CharacterListPayloadTests
                 IsMain: identifier == 1))
             .ToList();
 
-        var payload = CharacterListPayloadBuilder.Build(characterSlots: 10, entries);
+        var payload = CharacterListPayloadBuilder.Build(characterSlots: 10, entries, Now);
 
         Assert.Equal(0x1d7, payload.Length);
         // Slot byte, then the identifier, then the sixteenth byte name field.
@@ -93,10 +99,55 @@ public sealed class CharacterListPayloadTests
             Appearance: null,
             IsMain: true);
 
-        var payload = CharacterListPayloadBuilder.Build(characterSlots: 1, [entry]);
+        var payload = CharacterListPayloadBuilder.Build(characterSlots: 1, [entry], Now);
 
         var name = System.Text.Encoding.Latin1.GetString(payload.AsSpan(0x17 + 5, 16));
 
         Assert.Equal("*SIXTEEN_CHAR_NA", name);
+    }
+
+    /// <summary>
+    /// The trailing word is the seconds left before the character may be deleted, and
+    /// the client draws its wait screen from it. Serving zero here would promise a
+    /// deletion the delete command then refuses, with no countdown to explain why.
+    /// </summary>
+    [Fact]
+    public void Build_carries_the_seconds_left_before_a_character_may_be_deleted()
+    {
+        var entry = new CharacterListPayloadBuilder.Entry(
+            new Character
+            {
+                Identifier = 1,
+                Name = "YOUNG",
+                CreatedAt = Now - TimeSpan.FromDays(2),
+            },
+            Appearance: null,
+            IsMain: false);
+
+        var payload = CharacterListPayloadBuilder.Build(characterSlots: 1, [entry], Now);
+
+        // Five days of the seven-day cooldown are left, in whole seconds.
+        Assert.Equal(
+            (uint)TimeSpan.FromDays(5).TotalSeconds,
+            BinaryPrimitives.ReadUInt32BigEndian(payload.AsSpan(EntryCountdownOffset)));
+    }
+
+    /// <summary>A character past the cooldown carries no countdown, which reads as deletable.</summary>
+    [Fact]
+    public void Build_serves_no_countdown_once_a_character_is_old_enough()
+    {
+        var entry = new CharacterListPayloadBuilder.Entry(
+            new Character
+            {
+                Identifier = 1,
+                Name = "SETTLED",
+                CreatedAt = Now - TimeSpan.FromDays(30),
+            },
+            Appearance: null,
+            IsMain: false);
+
+        var payload = CharacterListPayloadBuilder.Build(characterSlots: 1, [entry], Now);
+
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32BigEndian(payload.AsSpan(EntryCountdownOffset)));
     }
 }

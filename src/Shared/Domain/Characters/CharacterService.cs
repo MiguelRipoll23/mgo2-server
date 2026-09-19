@@ -103,14 +103,70 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
     }
 
     /// <summary>
-    /// Marks a character as deleted, preserving its name so the name cannot be
-    /// reused while the row remains.
+    /// Prefix of the placeholder name a deleted character is parked under, which also
+    /// keeps players from claiming a name a tombstone already holds.
     /// </summary>
+    public const string DeletedNamePrefix = ":#";
+
+    /// <summary>
+    /// How long a character has to have existed before it can be deleted.
+    /// <para>
+    /// The client is told the remaining time rather than only being refused — the
+    /// character list carries it per slot, and the client draws its own "you must wait"
+    /// screen from it — so the two have to agree on the span as well as on the check.
+    /// </para>
+    /// </summary>
+    public static readonly TimeSpan DeletionCooldown = TimeSpan.FromDays(7);
+
+    /// <summary>Seconds until a character may be deleted, or zero once it already may be.</summary>
+    /// <param name="createdAt">Moment the character was created.</param>
+    /// <param name="now">Moment the question is asked at.</param>
+    public static int SecondsUntilDeletable(DateTimeOffset createdAt, DateTimeOffset now)
+    {
+        // Measured as the age elapsed rather than as the instant it expires, because the
+        // latter would overflow for a creation time near the end of the range — and this
+        // runs while a reply is being built, where a throw costs the whole list rather
+        // than one badly-counted field.
+        var age = now - createdAt;
+        if (age >= DeletionCooldown)
+        {
+            return 0;
+        }
+
+        // Clamped rather than cast: a row whose creation time reads as far in the future
+        // would otherwise wrap into a negative wait that the client renders as already
+        // expired.
+        return (int)Math.Min((long)(DeletionCooldown - age).TotalSeconds, int.MaxValue);
+    }
+
+    /// <summary>Whether a character has existed long enough to be deleted.</summary>
+    /// <param name="createdAt">Moment the character was created.</param>
+    /// <param name="now">Moment the question is asked at.</param>
+    public static bool CanDelete(DateTimeOffset createdAt, DateTimeOffset now) =>
+        SecondsUntilDeletable(createdAt, now) == 0;
+
+    /// <summary>
+    /// Marks a character as deleted. The row stays, hidden and renamed, and the name it
+    /// held becomes available again; the original is kept in
+    /// <see cref="Character.OldName"/>.
+    /// <para>
+    /// The account's pointers to the character are cleared in the same transaction. They
+    /// are what the list orders by and marks the selection with, and a soft delete never
+    /// trips the foreign key that would otherwise clear them: left behind, the account
+    /// would go on naming a character nobody can sign into again.
+    /// </para>
+    /// </summary>
+    /// <param name="accountIdentifier">Identifier of the account owning the character.</param>
     /// <param name="characterIdentifier">Identifier of the character.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task SoftDeleteAsync(int characterIdentifier, CancellationToken cancellationToken = default)
+    public async Task SoftDeleteAsync(
+        int accountIdentifier,
+        int characterIdentifier,
+        CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
         var character = await context.Characters
             .FirstOrDefaultAsync(row => row.Identifier == characterIdentifier, cancellationToken);
 
@@ -121,8 +177,26 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
 
         character.Active = false;
         character.OldName = character.Name;
-        character.Name = $":#{characterIdentifier}";
+        character.Name = $"{DeletedNamePrefix}{characterIdentifier}";
+
+        var account = await context.Accounts
+            .FirstOrDefaultAsync(row => row.Identifier == accountIdentifier, cancellationToken);
+
+        if (account is not null)
+        {
+            if (account.MainCharacterIdentifier == characterIdentifier)
+            {
+                account.MainCharacterIdentifier = null;
+            }
+
+            if (account.CurrentCharacterIdentifier == characterIdentifier)
+            {
+                account.CurrentCharacterIdentifier = null;
+            }
+        }
+
         await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>Returns the appearance of a character.</summary>
@@ -163,6 +237,31 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
         }
 
         await context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Stores the free-text comment shown on a character's card.
+    /// <para>
+    /// This is written by the same write-back as the appearance, and it has to be
+    /// stored there for the same reason: the reply echoes what was sent, so an
+    /// unstored comment looks correct on the screen that set it and is gone on the
+    /// next connect burst, which reads the record rather than the echo.
+    /// </para>
+    /// </summary>
+    /// <param name="characterIdentifier">Identifier of the character.</param>
+    /// <param name="comment">Comment to store.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task UpdateCommentAsync(
+        int characterIdentifier,
+        string comment,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await CreateContextAsync(cancellationToken);
+        await context.Characters
+            .Where(character => character.Identifier == characterIdentifier)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(character => character.Comment, comment),
+                cancellationToken);
     }
 
     /// <summary>Lists the friends and blocked entries of a character.</summary>

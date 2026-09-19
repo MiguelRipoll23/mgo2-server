@@ -34,9 +34,9 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     important = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
-                    time = table.Column<int>(type: "integer", nullable: false),
-                    topic = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
-                    message = table.Column<string>(type: "text", nullable: false)
+                    time = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    title = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    body = table.Column<string>(type: "text", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -49,7 +49,7 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 {
                     id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    user_id = table.Column<int>(type: "integer", nullable: false),
+                    account_id = table.Column<int>(type: "integer", nullable: false),
                     token = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false)
                 },
                 constraints: table =>
@@ -69,8 +69,8 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     ip_address = table.Column<string>(type: "character varying(15)", maxLength: 15, nullable: false),
                     port = table.Column<int>(type: "integer", nullable: false),
                     players_count = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    beginner_only = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
-                    expansion_only = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
+                    begginers_only = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
+                    expansion_required = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
                     no_headshots = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
                     replays_only = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
@@ -88,6 +88,55 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "accounts",
+                columns: table => new
+                {
+                    id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    display_name = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    password = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
+                    role = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    banned_until = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    ban_reason = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    slots = table.Column<int>(type: "integer", nullable: false, defaultValue: 3),
+                    current_character_id = table.Column<int>(type: "integer", nullable: true),
+                    main_character_id = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_accounts", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "characters",
+                columns: table => new
+                {
+                    id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    account_id = table.Column<int>(type: "integer", nullable: false),
+                    name = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    old_name = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: true),
+                    rank = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    comment = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, defaultValue: ""),
+                    experience = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    total_rewards = table.Column<int>(type: "integer", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    previous_login_time = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    last_seen_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    active = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_characters", x => x.id);
+                    table.CheckConstraint("characters_experience_range", "experience BETWEEN 0 AND 65535");
+                    table.ForeignKey(
+                        name: "FK_characters_accounts_account_id",
+                        column: x => x.account_id,
+                        principalTable: "accounts",
+                        principalColumn: "id");
+                });
+
+            migrationBuilder.CreateTable(
                 name: "character_connections",
                 columns: table => new
                 {
@@ -101,106 +150,109 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_character_connections", x => x.character_id);
+                    table.ForeignKey(
+                        name: "FK_character_connections_characters_character_id",
+                        column: x => x.character_id,
+                        principalTable: "characters",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
-                name: "character_stats",
+                name: "character_gameplay_options",
                 columns: table => new
                 {
-                    id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     character_id = table.Column<int>(type: "integer", nullable: false),
-                    kills = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    deaths = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    wins = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    score = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    rounds = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    stuns = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    stuns_received = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    stuns_friendly = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    headshot_kills = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    headshot_deaths = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    headshot_stuns = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    headshot_stuns_received = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    lock_kills = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    lock_deaths = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    lock_stuns = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    lock_stuns_received = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    consecutive_kills = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    consecutive_deaths = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    consecutive_headshots = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    consecutive_tdm = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    spotted = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    self_spotted = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    snake_spotted = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    snake_self_spotted = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    suicides = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    salutes = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    radio = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    chat = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    cqc_given = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    cqc_taken = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    rolls = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    catapult = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    falls = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    trapped = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    melee = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    melee_rec = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    box_time = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    box_uses = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    bases_captured = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    bases_destroyed = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    sop_destab = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    gako_saved = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    gako_defended = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    gako_first = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    res_defend = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    res_gako_time = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    res_first_grab = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    bomb_disarms = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    sdm_survivals = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    race_checkpoints = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    wins_snake = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    kills_snake = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    snake_holdups = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    snake_tags_spawned = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    snake_tags_taken = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    snake_injured = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    tsne_grab1 = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    tsne_grab2 = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    knife_kills = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    knife_stuns = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    boosts = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    scans = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    evg_time = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    wakeups = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    team_kills = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    withdrawals = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    points_assist = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    points_base = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    trained_soldiers = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    time_training = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    time_instructor = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    time_student = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    time = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    time_snake = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    time_dedi = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    stats_dm = table.Column<string>(type: "text", nullable: true),
-                    stats_tdm = table.Column<string>(type: "text", nullable: true),
-                    stats_res = table.Column<string>(type: "text", nullable: true),
-                    stats_cap = table.Column<string>(type: "text", nullable: true),
-                    stats_base = table.Column<string>(type: "text", nullable: true),
-                    stats_bomb = table.Column<string>(type: "text", nullable: true),
-                    stats_sne = table.Column<string>(type: "text", nullable: true),
-                    stats_tsne = table.Column<string>(type: "text", nullable: true),
-                    stats_sdm = table.Column<string>(type: "text", nullable: true),
-                    stats_scap = table.Column<string>(type: "text", nullable: true),
-                    stats_race = table.Column<string>(type: "text", nullable: true),
-                    last_updated = table.Column<int>(type: "integer", nullable: true)
+                    online_status_mode = table.Column<int>(type: "integer", nullable: false),
+                    email_friends_only = table.Column<bool>(type: "boolean", nullable: false),
+                    receive_notices = table.Column<bool>(type: "boolean", nullable: false),
+                    receive_invites = table.Column<bool>(type: "boolean", nullable: false),
+                    normal_view_vertical_invert = table.Column<bool>(type: "boolean", nullable: false),
+                    normal_view_horizontal_invert = table.Column<bool>(type: "boolean", nullable: false),
+                    normal_view_speed = table.Column<int>(type: "integer", nullable: false),
+                    shoulder_view_vertical_invert = table.Column<bool>(type: "boolean", nullable: false),
+                    shoulder_view_horizontal_invert = table.Column<bool>(type: "boolean", nullable: false),
+                    shoulder_view_speed = table.Column<int>(type: "integer", nullable: false),
+                    first_view_vertical_invert = table.Column<bool>(type: "boolean", nullable: false),
+                    first_view_horizontal_invert = table.Column<bool>(type: "boolean", nullable: false),
+                    first_view_speed = table.Column<int>(type: "integer", nullable: false),
+                    first_view_player_direction = table.Column<bool>(type: "boolean", nullable: false),
+                    view_change_speed = table.Column<int>(type: "integer", nullable: false),
+                    first_view_memory = table.Column<bool>(type: "boolean", nullable: false),
+                    radar_lock_north = table.Column<bool>(type: "boolean", nullable: false),
+                    radar_floor_hide = table.Column<bool>(type: "boolean", nullable: false),
+                    hud_display_size = table.Column<int>(type: "integer", nullable: false),
+                    hud_hide_name_tags = table.Column<bool>(type: "boolean", nullable: false),
+                    lock_on_enabled = table.Column<bool>(type: "boolean", nullable: false),
+                    weapon_switch_mode = table.Column<int>(type: "integer", nullable: false),
+                    weapon_switch_a = table.Column<int>(type: "integer", nullable: false),
+                    weapon_switch_b = table.Column<int>(type: "integer", nullable: false),
+                    weapon_switch_c = table.Column<int>(type: "integer", nullable: false),
+                    weapon_switch_now = table.Column<int>(type: "integer", nullable: false),
+                    weapon_switch_before = table.Column<int>(type: "integer", nullable: false),
+                    weapon_switch_toggle = table.Column<int>(type: "integer", nullable: false),
+                    item_switch_mode = table.Column<int>(type: "integer", nullable: false),
+                    voice_chat_output_device = table.Column<int>(type: "integer", nullable: false),
+                    codec_output_device = table.Column<int>(type: "integer", nullable: false),
+                    codec1_name = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    codec1a = table.Column<int>(type: "integer", nullable: false),
+                    codec1b = table.Column<int>(type: "integer", nullable: false),
+                    codec1c = table.Column<int>(type: "integer", nullable: false),
+                    codec1d = table.Column<int>(type: "integer", nullable: false),
+                    codec2_name = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    codec2a = table.Column<int>(type: "integer", nullable: false),
+                    codec2b = table.Column<int>(type: "integer", nullable: false),
+                    codec2c = table.Column<int>(type: "integer", nullable: false),
+                    codec2d = table.Column<int>(type: "integer", nullable: false),
+                    codec3_name = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    codec3a = table.Column<int>(type: "integer", nullable: false),
+                    codec3b = table.Column<int>(type: "integer", nullable: false),
+                    codec3c = table.Column<int>(type: "integer", nullable: false),
+                    codec3d = table.Column<int>(type: "integer", nullable: false),
+                    codec4_name = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    codec4a = table.Column<int>(type: "integer", nullable: false),
+                    codec4b = table.Column<int>(type: "integer", nullable: false),
+                    codec4c = table.Column<int>(type: "integer", nullable: false),
+                    codec4d = table.Column<int>(type: "integer", nullable: false),
+                    voice_chat_recognition_level = table.Column<int>(type: "integer", nullable: false),
+                    voice_chat_volume = table.Column<int>(type: "integer", nullable: false),
+                    headset_volume = table.Column<int>(type: "integer", nullable: false),
+                    bgm_volume = table.Column<int>(type: "integer", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_character_stats", x => x.id);
+                    table.PrimaryKey("PK_character_gameplay_options", x => x.character_id);
+                    table.ForeignKey(
+                        name: "FK_character_gameplay_options_characters_character_id",
+                        column: x => x.character_id,
+                        principalTable: "characters",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "character_presence",
+                columns: table => new
+                {
+                    character_id = table.Column<int>(type: "integer", nullable: false),
+                    lobby_id = table.Column<int>(type: "integer", nullable: false),
+                    last_seen = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_character_presence", x => x.character_id);
+                    table.ForeignKey(
+                        name: "FK_character_presence_characters_character_id",
+                        column: x => x.character_id,
+                        principalTable: "characters",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_character_presence_lobbies_lobby_id",
+                        column: x => x.lobby_id,
+                        principalTable: "lobbies",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -215,35 +267,12 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_character_training_times", x => x.character_id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "characters",
-                columns: table => new
-                {
-                    id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    user_id = table.Column<int>(type: "integer", nullable: false),
-                    name = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
-                    old_name = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: true),
-                    rank = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    comment = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, defaultValue: ""),
-                    host_score = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    host_votes = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    experience = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    gameplay_options = table.Column<string>(type: "text", nullable: true),
-                    creation_time = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    active = table.Column<int>(type: "integer", nullable: false, defaultValue: 1),
-                    lobby_id = table.Column<int>(type: "integer", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_characters", x => x.id);
                     table.ForeignKey(
-                        name: "FK_characters_lobbies_lobby_id",
-                        column: x => x.lobby_id,
-                        principalTable: "lobbies",
-                        principalColumn: "id");
+                        name: "FK_character_training_times_characters_character_id",
+                        column: x => x.character_id,
+                        principalTable: "characters",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -368,8 +397,49 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     character_id = table.Column<int>(type: "integer", nullable: false),
-                    type = table.Column<int>(type: "integer", nullable: false),
-                    settings = table.Column<string>(type: "text", nullable: false)
+                    type = table.Column<short>(type: "smallint", nullable: false),
+                    name = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    password = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: true),
+                    comment = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    stance = table.Column<short>(type: "smallint", nullable: false),
+                    max_players = table.Column<short>(type: "smallint", nullable: false),
+                    briefing_time = table.Column<int>(type: "integer", nullable: false),
+                    dedicated = table.Column<bool>(type: "boolean", nullable: false),
+                    non_stat = table.Column<bool>(type: "boolean", nullable: false),
+                    friendly_fire = table.Column<bool>(type: "boolean", nullable: false),
+                    auto_aim = table.Column<bool>(type: "boolean", nullable: false),
+                    uniques_enabled = table.Column<bool>(type: "boolean", nullable: false),
+                    enemy_nametags = table.Column<bool>(type: "boolean", nullable: false),
+                    silent_mode = table.Column<bool>(type: "boolean", nullable: false),
+                    auto_assign = table.Column<bool>(type: "boolean", nullable: false),
+                    teams_switch = table.Column<bool>(type: "boolean", nullable: false),
+                    ghosts = table.Column<bool>(type: "boolean", nullable: false),
+                    voice_chat = table.Column<bool>(type: "boolean", nullable: false),
+                    level_limit_enabled = table.Column<bool>(type: "boolean", nullable: false),
+                    level_limit_base = table.Column<int>(type: "integer", nullable: false),
+                    level_limit_tolerance = table.Column<short>(type: "smallint", nullable: false),
+                    team_kill_kick = table.Column<short>(type: "smallint", nullable: false),
+                    idle_kick = table.Column<short>(type: "smallint", nullable: false),
+                    settings_lobby_subtype = table.Column<short>(type: "smallint", nullable: false),
+                    rotation_rules = table.Column<short[]>(type: "smallint[]", nullable: true),
+                    rotation_maps = table.Column<short[]>(type: "smallint[]", nullable: true),
+                    rotation_flags = table.Column<short[]>(type: "smallint[]", nullable: true),
+                    weapon_restrictions = table.Column<byte[]>(type: "bytea", nullable: true),
+                    rule_timers = table.Column<int[]>(type: "integer[]", nullable: true),
+                    unique_red = table.Column<short>(type: "smallint", nullable: false),
+                    unique_blue = table.Column<short>(type: "smallint", nullable: false),
+                    common_a = table.Column<short>(type: "smallint", nullable: false),
+                    common_b = table.Column<short>(type: "smallint", nullable: false),
+                    capture_extra_time = table.Column<bool>(type: "boolean", nullable: false),
+                    sneaking_snake_kills = table.Column<short>(type: "smallint", nullable: false),
+                    unread_800 = table.Column<short>(type: "smallint", nullable: false),
+                    unread_801 = table.Column<short>(type: "smallint", nullable: false),
+                    unread_824 = table.Column<long>(type: "bigint", nullable: false),
+                    unread_832 = table.Column<int>(type: "integer", nullable: false),
+                    unread_836 = table.Column<long>(type: "bigint", nullable: false),
+                    unread_844 = table.Column<int>(type: "integer", nullable: false),
+                    unread_931 = table.Column<short>(type: "smallint", nullable: false),
+                    unread_tail = table.Column<byte[]>(type: "bytea", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -391,8 +461,7 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     instructor_name = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
                     generation = table.Column<int>(type: "integer", nullable: false),
                     rating = table.Column<short>(type: "smallint", nullable: false),
-                    graduated_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: false),
-                    instructor_skill_awarded_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: true)
+                    graduated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -490,7 +559,7 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     character_id = table.Column<int>(type: "integer", nullable: false),
                     rank = table.Column<int>(type: "integer", nullable: false),
-                    unlocked_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: false)
+                    unlocked_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -513,7 +582,7 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     sender_name = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false, defaultValue: ""),
                     subject = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, defaultValue: ""),
                     body = table.Column<string>(type: "character varying(708)", maxLength: 708, nullable: false, defaultValue: ""),
-                    sent_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: false, defaultValueSql: "now()")
+                    sent_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
                 constraints: table =>
                 {
@@ -544,7 +613,7 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     common = table.Column<string>(type: "text", nullable: false, defaultValue: "{}"),
                     rules = table.Column<string>(type: "text", nullable: false, defaultValue: "{}"),
                     status = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    created_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: true, defaultValueSql: "now()"),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true, defaultValueSql: "now()"),
                     updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
                 constraints: table =>
@@ -632,11 +701,11 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     recipient_name = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false, defaultValue: ""),
                     subject = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, defaultValue: ""),
                     body = table.Column<string>(type: "character varying(708)", maxLength: 708, nullable: false, defaultValue: ""),
-                    recipient_read = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
+                    is_read = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
                     recipient_deleted = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
                     sender_read = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
                     sender_deleted = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
-                    sent_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: false, defaultValueSql: "now()")
+                    sent_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
                 constraints: table =>
                 {
@@ -649,38 +718,6 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     table.ForeignKey(
                         name: "FK_mail_characters_sender_character_id",
                         column: x => x.sender_character_id,
-                        principalTable: "characters",
-                        principalColumn: "id");
-                });
-
-            migrationBuilder.CreateTable(
-                name: "users",
-                columns: table => new
-                {
-                    id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    display_name = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
-                    password = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
-                    role = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    banned_until = table.Column<int>(type: "integer", nullable: true),
-                    ban_reason = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
-                    slots = table.Column<int>(type: "integer", nullable: false, defaultValue: 3),
-                    current_character_id = table.Column<int>(type: "integer", nullable: true),
-                    main_character_id = table.Column<int>(type: "integer", nullable: true),
-                    main_exp = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    alt_exp = table.Column<int>(type: "integer", nullable: false, defaultValue: 0)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_users", x => x.id);
-                    table.ForeignKey(
-                        name: "FK_users_characters_current_character_id",
-                        column: x => x.current_character_id,
-                        principalTable: "characters",
-                        principalColumn: "id");
-                    table.ForeignKey(
-                        name: "FK_users_characters_main_character_id",
-                        column: x => x.main_character_id,
                         principalTable: "characters",
                         principalColumn: "id");
                 });
@@ -745,12 +782,28 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     game_id = table.Column<int>(type: "integer", nullable: false),
                     host_character_id = table.Column<int>(type: "integer", nullable: false),
                     target_character_id = table.Column<int>(type: "integer", nullable: false),
+                    rule = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
                     team_win = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
                     seconds = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
                     experience = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
                     aborted = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
                     lobby_subtype = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
-                    created_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: false, defaultValueSql: "now()")
+                    wins = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    kills = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    deaths = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    score = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    stuns = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    stuns_received = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    headshot_kills = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    headshot_deaths = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    headshot_stuns = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    headshot_stuns_received = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    lock_kills = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    lock_deaths = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    lock_stuns = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    lock_stuns_received = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    consecutive_kills = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
                 constraints: table =>
                 {
@@ -782,9 +835,10 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     game_id = table.Column<int>(type: "integer", nullable: false),
                     character_id = table.Column<int>(type: "integer", nullable: false),
                     weapon_id = table.Column<short>(type: "smallint", nullable: false),
-                    value_a = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
-                    value_b = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
-                    value_c = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0)
+                    kills = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    headshots = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    faints = table.Column<short>(type: "smallint", nullable: false, defaultValue: (short)0),
+                    reported_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
                 constraints: table =>
                 {
@@ -810,7 +864,7 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     clan_id = table.Column<int>(type: "integer", nullable: false),
                     character_id = table.Column<int>(type: "integer", nullable: false),
-                    applied_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: false, defaultValueSql: "now()")
+                    applied_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
                 constraints: table =>
                 {
@@ -833,13 +887,13 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     leader_id = table.Column<int>(type: "integer", nullable: true),
                     comment = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, defaultValue: ""),
                     notice = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: false, defaultValue: ""),
-                    notice_time = table.Column<long>(type: "bigint", nullable: false, defaultValue: 0L),
+                    notice_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     notice_writer_id = table.Column<int>(type: "integer", nullable: true),
                     emblem_editor_id = table.Column<int>(type: "integer", nullable: true),
                     emblem = table.Column<byte[]>(type: "bytea", nullable: true),
-                    emblem_wip = table.Column<byte[]>(type: "bytea", nullable: true),
+                    emblem_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     open = table.Column<int>(type: "integer", nullable: false, defaultValue: 1),
-                    created_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: true, defaultValueSql: "now()")
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true, defaultValueSql: "now()")
                 },
                 constraints: table =>
                 {
@@ -889,26 +943,36 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_character_stats_character_id",
-                table: "character_stats",
-                column: "character_id",
+                name: "IX_accounts_current_character_id",
+                table: "accounts",
+                column: "current_character_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_accounts_display_name",
+                table: "accounts",
+                column: "display_name",
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_characters_lobby_id",
-                table: "characters",
+                name: "IX_accounts_main_character_id",
+                table: "accounts",
+                column: "main_character_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_character_presence_lobby_id",
+                table: "character_presence",
                 column: "lobby_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_characters_account_id",
+                table: "characters",
+                column: "account_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_characters_name",
                 table: "characters",
                 column: "name",
                 unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_characters_user_id",
-                table: "characters",
-                column: "user_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_characters_appearance_character_id",
@@ -1093,56 +1157,23 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 column: "game_id");
 
             migrationBuilder.CreateIndex(
-                name: "IX_sessions_user_id",
+                name: "IX_sessions_account_id",
                 table: "sessions",
-                column: "user_id",
+                column: "account_id",
                 unique: true);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_users_current_character_id",
-                table: "users",
-                column: "current_character_id");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_users_display_name",
-                table: "users",
-                column: "display_name",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_users_main_character_id",
-                table: "users",
-                column: "main_character_id");
-
             migrationBuilder.AddForeignKey(
-                name: "FK_character_connections_characters_character_id",
-                table: "character_connections",
-                column: "character_id",
+                name: "FK_accounts_characters_current_character_id",
+                table: "accounts",
+                column: "current_character_id",
                 principalTable: "characters",
-                principalColumn: "id",
-                onDelete: ReferentialAction.Cascade);
+                principalColumn: "id");
 
             migrationBuilder.AddForeignKey(
-                name: "FK_character_stats_characters_character_id",
-                table: "character_stats",
-                column: "character_id",
+                name: "FK_accounts_characters_main_character_id",
+                table: "accounts",
+                column: "main_character_id",
                 principalTable: "characters",
-                principalColumn: "id",
-                onDelete: ReferentialAction.Cascade);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_character_training_times_characters_character_id",
-                table: "character_training_times",
-                column: "character_id",
-                principalTable: "characters",
-                principalColumn: "id",
-                onDelete: ReferentialAction.Cascade);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_characters_users_user_id",
-                table: "characters",
-                column: "user_id",
-                principalTable: "users",
                 principalColumn: "id");
 
             migrationBuilder.AddForeignKey(
@@ -1179,16 +1210,16 @@ namespace Mgo2Server.Shared.Persistence.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropForeignKey(
+                name: "FK_accounts_characters_current_character_id",
+                table: "accounts");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_accounts_characters_main_character_id",
+                table: "accounts");
+
+            migrationBuilder.DropForeignKey(
                 name: "FK_clans_members_characters_character_id",
                 table: "clans_members");
-
-            migrationBuilder.DropForeignKey(
-                name: "FK_users_characters_current_character_id",
-                table: "users");
-
-            migrationBuilder.DropForeignKey(
-                name: "FK_users_characters_main_character_id",
-                table: "users");
 
             migrationBuilder.DropForeignKey(
                 name: "FK_clans_members_clans_clan_id",
@@ -1198,7 +1229,10 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 name: "character_connections");
 
             migrationBuilder.DropTable(
-                name: "character_stats");
+                name: "character_gameplay_options");
+
+            migrationBuilder.DropTable(
+                name: "character_presence");
 
             migrationBuilder.DropTable(
                 name: "character_training_times");
@@ -1267,16 +1301,16 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 name: "games");
 
             migrationBuilder.DropTable(
-                name: "characters");
-
-            migrationBuilder.DropTable(
                 name: "lobbies");
 
             migrationBuilder.DropTable(
-                name: "users");
+                name: "lobby_game_types");
 
             migrationBuilder.DropTable(
-                name: "lobby_game_types");
+                name: "characters");
+
+            migrationBuilder.DropTable(
+                name: "accounts");
 
             migrationBuilder.DropTable(
                 name: "clans");

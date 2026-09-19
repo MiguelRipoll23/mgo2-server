@@ -194,8 +194,18 @@ mask, and the general error packet sent for an unhandled opcode.
 ### 3.11 Rankings, as implemented here
 
 The two endpoints are `POST /jp/mgo2/rank/mgogetrank.html` and
-`POST /jp/mgo2/rank/mgogetrank_clan.html`, matching this server's `/jp/mgo2` base URL
-rather than the reference's `/us/mgo2`.
+`POST /jp/mgo2/rank/mgogetrank_clan.html`.
+
+The region segment in front of them is the **disc's**, not this server's: it comes from the
+`scenerio.gcx` address table, so a North American disc asks for `/us/mgo2/…` (the reference
+hardcodes `/us` for that reason) and a Japanese one for `/jp/mgo2/…` — see
+[HOSTS.md](HOSTS.md) §1. `LegacyPathNormalizer` folds whichever region arrives onto the one
+the routes are declared in, so one declaration serves every disc, and it collapses the
+repeated separators the client sends below the prefix (`/us/mgo2//patch//checkver.html`).
+A request that is not answered — a path the server does not route, or a board query that
+throws — reaches the client as the same `1120:00000001`, so both endpoints log the window
+they answered with; an empty board and an unrouted request are otherwise indistinguishable
+on screen.
 
 Six form fields, clamped the way the client clamps them: `term`, `rule` (masked to four
 bits), `skey` (masked to three), `from`, `records`, and `pid` or `cid`.
@@ -551,7 +561,19 @@ Worth recording so a later diff does not re-open them:
   and blocked arrays, with a separate reply for the added and the removed entry.
 * **Host ratings (`0x43c4`)**: the 1..5 range is enforced on both; this server also records
   one vote per player per game, which the client keeps no memory of across joins.
-* **Character deletion cooldown**: both refuse to delete a character below a fixed age.
+* **Character deletion**: ported in full. Both mark the row inactive and park the name under the
+  `:#` prefix, releasing it for reuse. Both clear the account's main and current character
+  pointers in the same transaction as the rename, because a soft delete never trips the foreign
+  key that would otherwise clear them — left behind, the account goes on naming a character that
+  can no longer be signed into. Both refuse below a fixed age, and both *state* the remaining time
+  in `0x3049`'s per-entry trailing word, which is what lets the client draw its own wait screen
+  instead of only meeting a refusal. Both also refuse a **clan leader**, whose reference would
+  otherwise be left dangling by exactly the same argument, and send `-1212` so the sentence names
+  the two ways out (disband, or reassign the leadership). An out-of-range slot clamps to the last
+  character on both, never the first: the first is the main, so falling back to it would delete a
+  character other than the one under the cursor. One deliberate difference: the reference makes the
+  cooldown operator policy (`MGO2SERVER_CHARACTER_DELETE_COOLDOWN_HOURS`), where this server holds
+  the seven-day constant.
 * **Connection registration (`0x4700`)**: both take the public address from the socket, not
   the payload.
 * **Lobby restriction bits**: beginner `0x01`, expansion `0x08`, no-headshots `0x10`.

@@ -507,7 +507,10 @@ looks right whether or not it means what we think it means.
 
 **Not part of the appearance block** (corrected 2026-07-27; this file previously filed it there,
 and the `0x3049` spec had it as "read but never identified; we send zero"). It is the
-**per-character delete cooldown in seconds**: how long until this character may be deleted.
+**per-character delete cooldown in seconds**: how long until this character may be deleted. It is
+served per slot by `CharacterListPayloadBuilder`, from the same `CharacterService` helper the
+delete command itself is checked against, so the countdown the player is shown and the refusal they
+would meet cannot disagree.
 
 The client reads it at wire `+0x30` of each entry (parser `0xD372F8`, stored to
 `sess+0x55D4 + 60*slot + 56`) and the character-management screen formats it itself at `0x9510B4` —

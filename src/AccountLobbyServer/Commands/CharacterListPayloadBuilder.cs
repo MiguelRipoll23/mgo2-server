@@ -1,3 +1,4 @@
+using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Persistence.Entities;
 using Mgo2Server.Shared.Utils;
 
@@ -68,7 +69,8 @@ public static class CharacterListPayloadBuilder
     /// <summary>Builds the character list reply.</summary>
     /// <param name="characterSlots">Number of slots the account owns.</param>
     /// <param name="entries">Characters to serve, main first; entries past the grid are dropped.</param>
-    public static byte[] Build(int characterSlots, IReadOnlyList<Entry> entries)
+    /// <param name="now">Moment the deletion countdown of every entry is measured against.</param>
+    public static byte[] Build(int characterSlots, IReadOnlyList<Entry> entries, DateTimeOffset now)
     {
         var shownCount = Math.Min(entries.Count, SlotCount);
         var writer = new PacketWriter();
@@ -76,7 +78,7 @@ public static class CharacterListPayloadBuilder
 
         for (var slotIndex = 0; slotIndex < shownCount; slotIndex++)
         {
-            WriteEntry(writer, entries[slotIndex], slotIndex);
+            WriteEntry(writer, entries[slotIndex], slotIndex, now);
         }
 
         WriteTrailer(writer);
@@ -105,7 +107,8 @@ public static class CharacterListPayloadBuilder
     /// <param name="writer">Writer to append to.</param>
     /// <param name="entry">Character to write.</param>
     /// <param name="slotIndex">Index of the slot the entry lands in.</param>
-    private static void WriteEntry(PacketWriter writer, Entry entry, int slotIndex)
+    /// <param name="now">Moment the deletion countdown is measured against.</param>
+    private static void WriteEntry(PacketWriter writer, Entry entry, int slotIndex, DateTimeOffset now)
     {
         var appearance = entry.Appearance;
         writer.WriteUInt8(slotIndex);
@@ -139,10 +142,12 @@ public static class CharacterListPayloadBuilder
         writer.WriteUInt8(appearance?.Accessory1Color ?? 0);
         writer.WriteUInt8(appearance?.Accessory2Color ?? 0);
 
-        // Trailing word the client stores at record offset 0x38. This server
-        // enforces its own grace period when a deletion is requested, so it sends
-        // no countdown.
-        writer.WriteUInt32(0);
+        // Trailing word the client stores at record offset 0x38 and reads as the
+        // seconds left before this character may be deleted. It draws its own wait
+        // screen from the value and pre-checks the deletion against it, so serving a
+        // zero here would promise a character can be deleted that the delete command
+        // then refuses — the wait would surface as a bare failure with no countdown.
+        writer.WriteUInt32((uint)CharacterService.SecondsUntilDeletable(entry.Character.CreatedAt, now));
     }
 
     /// <summary>

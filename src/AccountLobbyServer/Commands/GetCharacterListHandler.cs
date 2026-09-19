@@ -43,7 +43,7 @@ public sealed class GetCharacterListHandler(
         var orderedCharacters = SelectCharacterHandler.OrderMainFirst(characters, user.MainCharacterIdentifier);
         var entries = await LoadEntriesAsync(orderedCharacters, user.MainCharacterIdentifier, cancellationToken);
 
-        var payload = CharacterListPayloadBuilder.Build(user.Slots, entries);
+        var payload = CharacterListPayloadBuilder.Build(user.Slots, entries, DateTimeOffset.UtcNow);
         if (payload.Length != CharacterListPayloadBuilder.PayloadSize)
         {
             // A wrong grid size desynchronises the trailer, so the mismatch is

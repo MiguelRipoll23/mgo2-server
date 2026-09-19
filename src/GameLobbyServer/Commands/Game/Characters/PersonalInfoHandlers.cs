@@ -43,6 +43,12 @@ public sealed class UpdatePersonalInfoHandler(
                 appearance.Accessory2Color = update.Accessory2Color;
             }, cancellationToken);
 
+            // The comment is stored for the same reason the skills below are: it is
+            // echoed back, so the screen that set it looks right either way, while
+            // every other reader — the connect burst, the character card, the personal
+            // stats header — serves the record and would keep serving the old one.
+            await characterService.UpdateCommentAsync(characterIdentifier, update.Comment, cancellationToken);
+
             // The equipped skills are echoed back and must be stored too, or
             // they vanish on the next connect burst.
             await characterService.UpdateEquippedSkillsAsync(characterIdentifier, skills =>

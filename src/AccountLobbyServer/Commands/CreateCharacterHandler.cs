@@ -22,8 +22,13 @@ public sealed class CreateCharacterHandler(
     /// <summary>Field length of a character name.</summary>
     private const int CharacterNameLength = 16;
 
-    /// <summary>Prefixes reserved for system characters.</summary>
-    private static readonly string[] ReservedPrefixes = [":#", "GM_", "GM-", "GM.", "GM,"];
+    /// <summary>
+    /// Prefixes reserved for system characters. The first is the one deleted characters
+    /// are parked under, so it is load-bearing rather than branding: a player allowed to
+    /// take it could collide with a tombstone.
+    /// </summary>
+    private static readonly string[] ReservedPrefixes =
+        [CharacterService.DeletedNamePrefix, "GM_", "GM-", "GM.", "GM,"];
 
     /// <summary>Names reserved for system characters.</summary>
     private static readonly string[] ReservedNames = ["SaveMGO"];

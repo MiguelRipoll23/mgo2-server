@@ -167,7 +167,13 @@ public static class CharacterPayloadBuilder
         }
         else
         {
-            writer.WritePadding(24);
+            // Twenty-seven, the width of the block above it, not twenty-four. Every
+            // field below this one is addressed by the client as an offset, so a short
+            // block here does not leave a hole — it moves the comment and every field
+            // after it three bytes early, and the card reads the shift as a comment
+            // starting mid-word. Only a character with no appearance row reaches this,
+            // which is why it went unnoticed.
+            writer.WritePadding(27);
         }
 
         if (skills is not null)

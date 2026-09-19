@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mgo2Server.Shared.Persistence.Migrations
 {
     [DbContext(typeof(Mgo2DatabaseContext))]
-    [Migration("20260919221406_StatisticsFromRoundReports")]
-    partial class StatisticsFromRoundReports
+    [Migration("20260919233719_InitialSchema")]
+    partial class InitialSchema
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

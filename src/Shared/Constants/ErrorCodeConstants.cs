@@ -93,6 +93,14 @@ public static class ErrorCodeConstants
     /// </summary>
     public const uint ResultCharacterCannotDeleteYet = 0xfffffef4;
 
+    /// <summary>
+    /// Official CHARACTER_IS_CLAN_LEADER(-1212): "You are the leader of a clan. Either
+    /// disband the clan or assign another character as leader." Unmasked, and it earns
+    /// that more than most: the sentence is the only place the two ways out are named,
+    /// so a generic refusal would leave the player stuck rather than directed.
+    /// </summary>
+    public const uint ResultCharacterIsClanLeader = 0xfffffb44;
+
     /// <summary>Official AUTOMATCH_CANNOT_START(-950).</summary>
     public const uint ResultAutomatchCannotStart = 0xfffffc4a;
 
@@ -131,4 +139,7 @@ public static class ErrorCodeConstants
 
     /// <summary>Clan-specific failure code the emblem replies carry (0x40).</summary>
     public const uint ErrorClanDoesNotExist = 0x40;
+
+    /// <summary>Character-specific failure code (masked, 0xc0ffee20).</summary>
+    public const uint ResultCharacterDoesNotExist = 0xc0ffee20;
 }
