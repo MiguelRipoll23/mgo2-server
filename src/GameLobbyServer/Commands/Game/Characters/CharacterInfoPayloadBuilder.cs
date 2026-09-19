@@ -101,7 +101,7 @@ public static class FeatureFlags
     /// keeps the map and rule catalogue fully unlocked (that is bit 0) while
     /// suppressing both modals, which is what the official servers did.
     /// </summary>
-    public const int ExpansionByte = 0x03;
+    public const int ExpansionByte = 0x02;
 
     /// <summary>
     /// Map, rule and expansion availability mask. The client reads it as a bit
