@@ -114,10 +114,5 @@ COPY --from=build /app ./
 # name overrides any file value, so secrets never have to be baked into an image.
 COPY appsettings.example.json ./appsettings.json
 
-# Run as non-root (matches k8s securityContext runAsUser:1000)
-RUN groupadd -r -g 1000 appgroup && useradd -r -u 1000 -g appgroup appuser && \
-    chown -R 1000:1000 /app /usr/share/dotnet /usr/local/bin/dotnet /bundle
-USER 1000:1000
-
 # exec keeps the process as PID 1 so the container stops on SIGTERM.
 ENTRYPOINT ["sh", "-c", "exec dotnet \"$MGO2_SERVER_ASSEMBLY\".dll"]
