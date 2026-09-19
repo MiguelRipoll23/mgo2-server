@@ -4,9 +4,7 @@ metadata:
   name: mgo2-gate
   namespace: mgo2
 spec:
-  clusterIP: 10.43.209.18
-  clusterIPs:
-  - 10.43.209.18
+  externalTrafficPolicy: Cluster
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
@@ -18,4 +16,4 @@ spec:
   selector:
     app: mgo2-gate
   sessionAffinity: None
-  type: ClusterIP
+  type: LoadBalancer

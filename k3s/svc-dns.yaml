@@ -4,9 +4,7 @@ metadata:
   name: mgo2-dns
   namespace: mgo2
 spec:
-  clusterIP: 10.43.60.47
-  clusterIPs:
-  - 10.43.60.47
+  externalTrafficPolicy: Cluster
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
@@ -18,4 +16,4 @@ spec:
   selector:
     app: mgo2-dns
   sessionAffinity: None
-  type: ClusterIP
+  type: LoadBalancer

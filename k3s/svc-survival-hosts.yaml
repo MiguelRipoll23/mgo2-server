@@ -4,9 +4,7 @@ metadata:
   name: mgo2-survival-hosts
   namespace: mgo2
 spec:
-  clusterIP: 10.43.42.75
-  clusterIPs:
-  - 10.43.42.75
+  externalTrafficPolicy: Cluster
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
@@ -18,4 +16,4 @@ spec:
   selector:
     app: mgo2-survival-hosts
   sessionAffinity: None
-  type: ClusterIP
+  type: LoadBalancer

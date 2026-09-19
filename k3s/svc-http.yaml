@@ -4,11 +4,6 @@ metadata:
   name: mgo2-http
   namespace: mgo2
 spec:
-  clusterIP: 10.43.18.14
-  clusterIPs:
-  - 10.43.18.14
-  externalIPs:
-  - 192.168.1.15
   externalTrafficPolicy: Cluster
   internalTrafficPolicy: Cluster
   ipFamilies:
@@ -26,4 +21,4 @@ spec:
   selector:
     app: mgo2-http
   sessionAffinity: None
-  type: ClusterIP
+  type: LoadBalancer

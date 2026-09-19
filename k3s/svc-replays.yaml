@@ -4,9 +4,7 @@ metadata:
   name: mgo2-replays
   namespace: mgo2
 spec:
-  clusterIP: 10.43.250.175
-  clusterIPs:
-  - 10.43.250.175
+  externalTrafficPolicy: Cluster
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
@@ -18,4 +16,4 @@ spec:
   selector:
     app: mgo2-replays
   sessionAffinity: None
-  type: ClusterIP
+  type: LoadBalancer
