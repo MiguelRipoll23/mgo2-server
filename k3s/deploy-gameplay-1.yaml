@@ -41,17 +41,6 @@ spec:
         ports:
         - containerPort: 5730
           protocol: UDP
-        readinessProbe:
-          exec:
-            command:
-            - /bin/sh
-            - -c
-            - timeout 2 bash -c 'echo > /dev/udp/127.0.0.1/5730'
-          failureThreshold: 3
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          successThreshold: 1
-          timeoutSeconds: 1
         resources: {}
         securityContext:
           allowPrivilegeEscalation: false

@@ -51,14 +51,6 @@ spec:
         ports:
         - containerPort: 5734
           protocol: TCP
-        readinessProbe:
-          failureThreshold: 3
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          successThreshold: 1
-          tcpSocket:
-            port: 5734
-          timeoutSeconds: 1
         resources: {}
         securityContext:
           allowPrivilegeEscalation: false

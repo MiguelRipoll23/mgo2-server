@@ -43,14 +43,6 @@ spec:
         ports:
         - containerPort: 5731
           protocol: TCP
-        readinessProbe:
-          failureThreshold: 3
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          successThreshold: 1
-          tcpSocket:
-            port: 5731
-          timeoutSeconds: 1
         resources: {}
         securityContext:
           allowPrivilegeEscalation: false
