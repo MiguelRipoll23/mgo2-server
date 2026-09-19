@@ -16,9 +16,6 @@ namespace Mgo2Server.Shared.Telemetry;
 /// </summary>
 public static class OpenTelemetryServiceCollectionExtensions
 {
-    /// <summary>Name every server reports itself under.</summary>
-    private const string ServiceName = "mgo2-server";
-
     /// <summary>
     /// Registers the metrics service and, when OTEL_ENABLED asks for it,
     /// configures the OTLP exporter that sends the metrics over gRPC. A server
@@ -29,7 +26,8 @@ public static class OpenTelemetryServiceCollectionExtensions
     /// <param name="configuration">Configuration the settings are read from.</param>
     public static IServiceCollection AddServerTelemetry(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        string serviceName = "mgo2-server")
     {
         services.TryAddSingleton<ServerMetricsService>();
 
@@ -40,7 +38,7 @@ public static class OpenTelemetryServiceCollectionExtensions
         }
 
         services.AddOpenTelemetry()
-            .ConfigureResource(resource => resource.AddService(ServiceName))
+            .ConfigureResource(resource => resource.AddService(serviceName))
             .WithMetrics(metrics => metrics
                 .AddMeter(ServerMetricsService.MeterName)
                 .AddOtlpExporter(
