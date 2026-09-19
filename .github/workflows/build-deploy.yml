@@ -275,6 +275,9 @@ jobs:
       contents: read
       packages: read
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: Resolve deployment tag
         run: |
           if [ "${GITHUB_REF_TYPE}" = 'tag' ]; then
