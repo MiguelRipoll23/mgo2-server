@@ -11,7 +11,7 @@
 # stack from the published images. A push that matches no project skips the
 # build and the deployment without failing the run. The deploy job runs on the
 # self-hosted runner: it applies the pending schema migrations with the bundle
-# against the connection string in /opt/mgo2-server/appsettings.json, and only then
+# deploy is handled by kubectl apply of k3s/ manifests
 # recreates the containers whose image changed. A failed migration stops the
 # job, so no container is ever recreated against a schema the migration has not
 # applied, and a missing appsettings.json is created from the example and skips
@@ -37,10 +37,6 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  # The deployment directory the install scripts create on the host: compose.yaml
-  # and appsettings.json live there together and compose resolves the mounts
-  # against it.
-  DEPLOYMENT_DIRECTORY: /opt/mgo2-server
 
 jobs:
   test:
