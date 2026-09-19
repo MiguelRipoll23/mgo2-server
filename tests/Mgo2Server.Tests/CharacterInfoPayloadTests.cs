@@ -86,6 +86,6 @@ public sealed class CharacterInfoPayloadTests
         Assert.Equal(0u, BinaryUtility.ReadUInt32BigEndian(payload, friendGrid + 8));
         Assert.Equal(9u, BinaryUtility.ReadUInt32BigEndian(payload, friendGrid + (64 * 4)));
         Assert.Equal(0xff, payload[ContentMaskOffset]);
-        Assert.Equal(0x02, payload[FeatureByteOffset]);
+        Assert.Equal(0x00, payload[FeatureByteOffset]);
     }
 }
