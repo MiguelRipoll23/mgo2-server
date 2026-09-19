@@ -304,7 +304,17 @@ jobs:
               mgo2-stun) img="mgo2-stun";;
               *) img="$svc";;
             esac
-            kubectl set image deployment/$svc $svc=ghcr.io/miguelripoll23/mgo2-server/${img}:${MGO2_IMAGE_TAG} -n mgo2
+            case "$svc" in
+              mgo2-account) c=account;;
+              mgo2-automatching|mgo2-basic-training|mgo2-combat-training|mgo2-free-battle|mgo2-registration|mgo2-replays|mgo2-survival|mgo2-survival-hosts|mgo2-tournament) c=lobby;;
+              mgo2-dns) c=dns;;
+              mgo2-gameplay-1) c=gameplay;;
+              mgo2-gate) c=gate;;
+              mgo2-http) c=http;;
+              mgo2-stun) c=stun;;
+              *) c=$svc;;
+            esac
+            kubectl set image deployment/$svc $c=ghcr.io/miguelripoll23/mgo2-server/${img}:${MGO2_IMAGE_TAG} -n mgo2
           done
 
       - name: Rollout and wait all
