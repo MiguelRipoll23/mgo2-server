@@ -308,7 +308,7 @@ public sealed class LauncherService(
 
             await File.WriteAllBytesAsync(localPath, data, cancellationToken);
         }
-        catch (IOException exception)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             // Non-fatal: the file is still served, it is simply not cached.
             logger.LogWarning(exception, "Caching the local copy of {FilePath} failed", filePath);

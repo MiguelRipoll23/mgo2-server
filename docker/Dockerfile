@@ -108,6 +108,12 @@ ENV ASPNETCORE_HTTP_PORTS=
 WORKDIR /app
 COPY --from=build /app ./
 
+# The HTTP API mirrors the launcher files into its Static directory, so that
+# cache has to be writable by the non-root user the k3s deployment runs the
+# container as. Only the HTTP image carries a Static directory; the other roles
+# have none.
+RUN [ -d /app/Static ] && chown -R 1000:1000 /app/Static || true
+
 # The servers read their configuration from appsettings.json. The committed
 # example has the deployment defaults; a deployment mounts its own
 # appsettings.json over this one, and a runtime environment variable of the same

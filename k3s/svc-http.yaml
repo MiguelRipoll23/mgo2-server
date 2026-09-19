@@ -10,10 +10,12 @@ spec:
   - IPv4
   ipFamilyPolicy: SingleStack
   ports:
-  - port: 80
+  - name: http
+    port: 80
     protocol: TCP
     targetPort: 80
-  - port: 5743
+  - name: grpc
+    port: 5743
     protocol: TCP
     targetPort: 5743
   selector:
