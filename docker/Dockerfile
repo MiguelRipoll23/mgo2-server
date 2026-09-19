@@ -115,7 +115,7 @@ COPY --from=build /app ./
 COPY appsettings.example.json ./appsettings.json
 
 # Run as non-root (matches k8s securityContext runAsUser:1000)
-RUN addgroup -S appgroup -g 1000 && adduser -S appuser -u 1000 -G appgroup && \
+RUN groupadd -r -g 1000 appgroup && useradd -r -u 1000 -g appgroup appuser && \
     chown -R 1000:1000 /app /usr/share/dotnet /usr/local/bin/dotnet /bundle
 USER 1000:1000
 
