@@ -490,24 +490,20 @@ jobs:
             exit 0
           fi
 
-          echo "Updating k3s deployments for:${services}"
           for svc in $services; do
-            # Derive container name and image tag per service mapping
             case "$svc" in
-              mgo2-gate) img="mgo2-gate-lobby-server" ;;
-              mgo2-account) img="mgo2-account-lobby-server" ;;
-              mgo2-free-battle|mgo2-replays|mgo2-survival|mgo2-basic-training|mgo2-combat-training|mgo2-survival-hosts|mgo2-automatching|mgo2-registration|mgo2-tournament) img="mgo2-game-lobby-server" ;;
-              mgo2-gameplay-1) img="mgo2-gameplay-server" ;;
-              mgo2-http) img="mgo2-http" ;;
-              mgo2-dns) img="mgo2-dns" ;;
-              mgo2-stun) img="mgo2-stun" ;;
-              *) img="$svc" ;;
+              mgo2-gate) img="mgo2-gate-lobby-server";;
+              mgo2-account) img="mgo2-account-lobby-server";;
+              mgo2-free-battle|mgo2-replays|mgo2-survival|mgo2-basic-training|mgo2-combat-training|mgo2-survival-hosts|mgo2-automatching|mgo2-registration|mgo2-tournament) img="mgo2-game-lobby-server";;
+              mgo2-gameplay-1) img="mgo2-gameplay-server";;
+              mgo2-http) img="mgo2-http";;
+              mgo2-dns) img="mgo2-dns";;
+              mgo2-stun) img="mgo2-stun";;
+              *) img="$svc";;
             esac
-            echo "Rolling ${svc} with image ${img}:${MGO2_IMAGE_TAG}"
-            kubectl set image deployment/${svc} ${svc}=${REGISTRY}/${GITHUB_REPOSITORY,,}/${img}:${MGO2_IMAGE_TAG} --namespace default || true
-            kubectl rollout restart deployment/${svc} --namespace default || true
-            kubectl rollout status deployment/${svc} --namespace default --timeout=180s || true
+            for d in $svc; do
+              kubectl set image deployment/$d $d=${REGISTRY}/${GITHUB_REPOSITORY,,}/${img}:${MGO2_IMAGE_TAG} -n default || true
+              kubectl rollout restart deployment/$d -n default || true
+            done
           done
-
-          echo "k3s pods status"
-          kubectl get pods -n default -o wide | grep -E "mgo2-" || true
+          kubectl get pods -n default -o wide || true
