@@ -331,3 +331,5 @@ jobs:
           curl -s -o /dev/null -w '%{http_code}\n' --max-time 5 http://mgo2-http.mgo2.svc.cluster.local/ || true
           echo "Pod readiness check:"
           kubectl wait --for=condition=ready pod -l app=mgo2-http -n mgo2 --timeout=30s || true
+          echo "DNS check (existing dns pod):"
+          kubectl exec deploy/mgo2-dns -n mgo2 -- nslookup mgo2-dns || true
