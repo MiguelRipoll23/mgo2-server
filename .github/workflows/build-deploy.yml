@@ -502,8 +502,9 @@ jobs:
               *) img="$svc";;
             esac
             for d in $svc; do
-              kubectl set image deployment/$d $d=${REGISTRY}/${GITHUB_REPOSITORY,,}/${img}:${MGO2_IMAGE_TAG} -n default || true
-              kubectl rollout restart deployment/$d -n default || true
+              kubectl set image deployment/$d $d=${REGISTRY}/${GITHUB_REPOSITORY,,}/${img}:${MGO2_IMAGE_TAG} -n default
+              kubectl rollout restart deployment/$d -n default
+              kubectl rollout status deployment/$d -n default --timeout=180s
             done
           done
           kubectl get pods -n default -o wide || true
