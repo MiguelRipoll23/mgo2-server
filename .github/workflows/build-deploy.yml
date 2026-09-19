@@ -262,6 +262,8 @@ jobs:
   deploy:
     name: Deploy
     runs-on: [self-hosted, Linux, ARM64]
+    env:
+      KUBECONFIG: /opt/github-runners/.kube/config
     needs:
       - changes
       - images
@@ -282,6 +284,8 @@ jobs:
           fi
 
       - name: Apply Kubernetes manifests
+        env:
+          KUBECONFIG: /opt/github-runners/.kube/config
         run: kubectl apply -f k3s/
 
       - name: Update deployment images
