@@ -6,16 +6,16 @@
 # the servers and is never deployed by this workflow.
 #
 # The build runs on a GitHub-hosted runner and only builds the projects whose
-# files changed, exactly as before; a version tag builds and deploys every
-# image. A manual run from the Actions tab skips the build and deploys the whole
-# stack from the published images. A push that matches no project skips the
-# build and the deployment without failing the run. The deploy job runs on the
-# self-hosted runner: it applies the pending schema migrations with the bundle
-# deploy is handled by kubectl apply of k3s/ manifests
-# recreates the containers whose image changed. A failed migration stops the
-# job, so no container is ever recreated against a schema the migration has not
-# applied, and a missing appsettings.json is created from the example and skips
-# the deployment without failing the run.
+# files changed; a version tag builds and deploys every image. A manual run
+# from the Actions tab skips the build and deploys the whole stack from the
+# published images. A push that matches no project skips the build and the
+# deployment without failing the run.
+#
+# The deploy job runs on the self-hosted runner: it applies the k3s/ manifests
+# and then updates and restarts only the deployments whose image this run
+# rebuilt. The image list comes from the changes job, so a push touching a
+# single project touches a single deployment.
+
 name: "Build & Deploy"
 
 on:
@@ -61,7 +61,6 @@ jobs:
 
       - name: Test
         run: dotnet test Mgo2Server.slnx --configuration Release --no-build
-
 
   changes:
     name: Detect changes
@@ -256,9 +255,7 @@ jobs:
   # straight here and deploys every image without building; every other run
   # waits for the images job and deploys only what it published. Nothing to
   # build is not a deployment, so a run with no changed project, a failed build
-  # and a failed detection all leave this job skipped. The migration step runs
-  # first, and a failure there fails the job before the deploy step runs; a
-  # missing appsettings.json skips the deployment without failing the run.
+  # and a failed detection all leave this job skipped.
   deploy:
     name: Deploy
     runs-on: [self-hosted, Linux, ARM64]
@@ -287,47 +284,56 @@ jobs:
           fi
 
       - name: Apply Kubernetes manifests
-        env:
-          KUBECONFIG: /opt/github-runners/.kube/config
         run: kubectl apply --server-side --force-conflicts -f k3s/
 
-      - name: Update deployment images
+      # Only the deployments backed by an image this run rebuilt are touched.
+      # A tag or a manual run selects every image in the changes job, so the
+      # whole stack is still redeployed there.
+      - name: Resolve affected deployments
+        id: targets
+        shell: bash
         run: |
-          for svc in mgo2-account mgo2-automatching mgo2-basic-training mgo2-combat-training mgo2-dns mgo2-free-battle mgo2-gameplay-1 mgo2-gate mgo2-http mgo2-registration mgo2-replays mgo2-stun mgo2-survival mgo2-survival-hosts mgo2-tournament; do
-            case "$svc" in
-              mgo2-gate) img="mgo2-gate-lobby-server";;
-              mgo2-account) img="mgo2-account-lobby-server";;
-              mgo2-free-battle|mgo2-replays|mgo2-survival|mgo2-basic-training|mgo2-combat-training|mgo2-survival-hosts|mgo2-automatching|mgo2-registration|mgo2-tournament) img="mgo2-game-lobby-server";;
-              mgo2-gameplay-1) img="mgo2-gameplay-server";;
-              mgo2-http) img="mgo2-http";;
-              mgo2-dns) img="mgo2-dns";;
-              mgo2-stun) img="mgo2-stun";;
-              *) img="$svc";;
-            esac
-            case "$svc" in
-              mgo2-account) c=account;;
-              mgo2-automatching|mgo2-basic-training|mgo2-combat-training|mgo2-free-battle|mgo2-registration|mgo2-replays|mgo2-survival|mgo2-survival-hosts|mgo2-tournament) c=lobby;;
-              mgo2-dns) c=dns;;
-              mgo2-gameplay-1) c=gameplay;;
-              mgo2-gate) c=gate;;
-              mgo2-http) c=http;;
-              mgo2-stun) c=stun;;
-              *) c=$svc;;
-            esac
-            kubectl set image deployment/$svc $c=ghcr.io/miguelripoll23/mgo2-server/${img}:${MGO2_IMAGE_TAG} -n mgo2
+          # image -> "deployment:container deployment:container ..."
+          declare -A MAP=(
+            [mgo2-gate-lobby-server]="mgo2-gate:gate"
+            [mgo2-account-lobby-server]="mgo2-account:account"
+            [mgo2-game-lobby-server]="mgo2-automatching:lobby mgo2-basic-training:lobby mgo2-combat-training:lobby mgo2-free-battle:lobby mgo2-registration:lobby mgo2-replays:lobby mgo2-survival:lobby mgo2-survival-hosts:lobby mgo2-tournament:lobby"
+            [mgo2-gameplay-server]="mgo2-gameplay-1:gameplay"
+            [mgo2-http]="mgo2-http:http"
+            [mgo2-dns]="mgo2-dns:dns"
+            [mgo2-stun]="mgo2-stun:stun"
+            # mgo2-postgres is managed outside this workflow: no entry, no deploy.
+          )
+
+          targets=""
+          for image in ${{ join(fromJSON(needs.changes.outputs.images), ' ') }}; do
+            [ "$image" = "none" ] && continue
+            for pair in ${MAP[$image]:-}; do
+              targets="$targets ${pair}:${image}"
+            done
           done
 
-      - name: Rollout and wait all
+          echo "list=$(echo $targets)" >> "$GITHUB_OUTPUT"
+          echo "Deploying: ${targets:-<nothing>}"
+
+      - name: Update deployment images
+        if: steps.targets.outputs.list != ''
         run: |
-          for svc in mgo2-account mgo2-automatching mgo2-basic-training mgo2-combat-training mgo2-dns mgo2-free-battle mgo2-gameplay-1 mgo2-gate mgo2-http mgo2-registration mgo2-replays mgo2-stun mgo2-survival mgo2-survival-hosts mgo2-tournament; do
-            kubectl rollout restart deployment/$svc -n mgo2
-            kubectl rollout status deployment/$svc -n mgo2 --timeout=180s
+          for t in ${{ steps.targets.outputs.list }}; do
+            IFS=: read -r svc container image <<< "$t"
+            kubectl set image "deployment/$svc" \
+              "$container=ghcr.io/miguelripoll23/mgo2-server/${image}:${MGO2_IMAGE_TAG}" -n mgo2
+            kubectl rollout restart "deployment/$svc" -n mgo2
+          done
+
+      - name: Wait for rollouts
+        if: steps.targets.outputs.list != ''
+        run: |
+          for t in ${{ steps.targets.outputs.list }}; do
+            svc="${t%%:*}"
+            kubectl rollout status "deployment/$svc" -n mgo2 --timeout=180s
           done
 
       - name: Verify namespace health
         run: |
           kubectl get pods -n mgo2 -o wide
-          echo "HTTP check:"
-          curl -s -o /dev/null -w '%{http_code}\n' --max-time 5 http://mgo2-http.mgo2.svc.cluster.local/ || true
-          echo "Pod readiness check:"
-          kubectl wait --for=condition=ready pod -l app=mgo2-http -n mgo2 --timeout=30s || true
