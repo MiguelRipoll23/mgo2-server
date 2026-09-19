@@ -14,8 +14,8 @@ public sealed class Character
     public int Identifier { get; set; }
 
     /// <summary>Account that owns the character.</summary>
-    [Column("user_id")]
-    public int UserIdentifier { get; set; }
+    [Column("account_id")]
+    public int AccountIdentifier { get; set; }
 
     /// <summary>Name shown to other players.</summary>
     [Column("name")]
@@ -54,25 +54,25 @@ public sealed class Character
     /// </summary>
     public CharacterGameplayOptions? GameplayOptions { get; set; }
 
-    /// <summary>Unix timestamp the character was created at.</summary>
-    [Column("creation_time")]
-    public int CreationTime { get; set; }
+    /// <summary>Timestamp the character was created at.</summary>
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
 
     /// <summary>
-    /// Unix timestamp of the login recorded before the character's most recent one, or
+    /// Timestamp of the login recorded before the character's most recent one, or
     /// <c>null</c> when none has been recorded since the column existed. The client shows
     /// it beside the current login on the character card.
     /// </summary>
     [Column("previous_login_time")]
-    public int? PreviousLoginTime { get; set; }
+    public DateTimeOffset? PreviousLoginTime { get; set; }
 
     /// <summary>
-    /// Unix timestamp of the character's most recent login, or <c>null</c> when none has
+    /// Timestamp of the character's most recent login, or <c>null</c> when none has
     /// been recorded since the column existed. One title family measures an absence from
     /// this stamp, so it is written before that family is evaluated, not after.
     /// </summary>
-    [Column("last_login_time")]
-    public int? LastLoginTime { get; set; }
+    [Column("last_seen_at")]
+    public DateTimeOffset? LastSeenAt { get; set; }
 
     /// <summary>
     /// Whether the character may be used: a suspended character keeps its row, its name
@@ -82,12 +82,9 @@ public sealed class Character
     public bool Active { get; set; } = true;
 
     /// <summary>Account that owns the character.</summary>
-    [ForeignKey(nameof(UserIdentifier))]
-    public User? User { get; set; }
+    [ForeignKey(nameof(AccountIdentifier))]
+    public Account? Account { get; set; }
 
     /// <summary>Appearance of the character.</summary>
     public CharacterAppearance? Appearance { get; set; }
-
-    /// <summary>Statistics of the character.</summary>
-    public CharacterStatistics? Statistics { get; set; }
 }

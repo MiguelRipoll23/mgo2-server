@@ -106,13 +106,13 @@ public sealed class GetHostSettingsHandler(
             var saved = settings.FirstOrDefault(row => row.Type == HostSettingsType.Value);
             if (saved is not null)
             {
-                blob = HostSettingsBlobCodec.Decode(saved.Settings);
+                blob = HostSettingsCodec.ToPayload(saved);
             }
         }
 
-        var payload = blob is not null && blob.Length >= HostSettingsBlobCodec.MinimumBlobLength
-            ? HostSettingsBlobCodec.BuildReply(blob)
-            : new byte[HostSettingsBlobCodec.EmptyReplySize];
+        var payload = blob is not null && blob.Length >= HostSettingsCodec.MinimumBlobLength
+            ? HostSettingsCodec.BuildReply(blob)
+            : new byte[HostSettingsCodec.EmptyReplySize];
 
         await sessionHelper.SendPacketAsync(session, CommandConstants.GetHostSettingsResult, payload, cancellationToken);
     }
@@ -130,11 +130,10 @@ public sealed class CheckHostSettingsHandler(
     {
         if (session.CharacterIdentifier is { } characterIdentifier && packet.Payload.Length > 0)
         {
-            // The blob is the whole payload; the room name starts at offset zero.
             await characterService.UpdateHostSettingsAsync(
                 characterIdentifier,
                 HostSettingsType.Value,
-                HostSettingsBlobCodec.Encode(packet.Payload),
+                HostSettingsCodec.FromPayload(packet.Payload),
                 cancellationToken);
         }
 

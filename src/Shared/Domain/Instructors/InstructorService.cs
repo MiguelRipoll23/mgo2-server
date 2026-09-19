@@ -142,7 +142,7 @@ public sealed class InstructorService(
 
         if (recognised)
         {
-            var graduatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            var graduatedAt = DateTimeOffset.UtcNow;
             var relationship = await context.CharacterInstructors
                 .FirstOrDefaultAsync(
                     candidate => candidate.CharacterIdentifier == studentCharacterIdentifier,
@@ -162,9 +162,9 @@ public sealed class InstructorService(
             }
             else
             {
-                // Re-parenting keeps the award latch: the student already holds the
-                // skill and already has the letter, so a second graduation with a
-                // different instructor must not deliver another one.
+                // Re-parenting is harmless twice over: the student already holds the
+                // skill, and the announcement letter latches on its own subject, so a
+                // second graduation with a different instructor delivers nothing new.
                 relationship.InstructorCharacterIdentifier = instructorCharacterIdentifier;
                 relationship.InstructorName = instructorName;
                 relationship.Generation = generation;
@@ -181,23 +181,17 @@ public sealed class InstructorService(
     /// Awards the instructor skill to a character who has a recognised graduation on
     /// file and meets the requirements, delivering the announcement.
     /// <para>
-    /// Idempotent: the relationship row is claimed with a conditional update, so the
-    /// letter is sent exactly once even if two end-of-round reports arrive together.
-    /// Driven by the end-of-round statistics report rather than by the graduation
-    /// itself, because the host reports every player as they leave — including
-    /// leaving combat training — so the award rides the session ending and one that
-    /// is somehow missed is picked up by the next report.
+    /// Idempotent: the announcement letter is its own latch, so the letter is sent
+    /// exactly once even if two end-of-round reports arrive together. Driven by the
+    /// end-of-round statistics report rather than by the graduation itself, because
+    /// the host reports every player as they leave — including leaving combat
+    /// training — so the award rides the session ending and one that is somehow
+    /// missed is picked up by the next report.
     /// </para>
     /// <para>
     /// The letter is written before the student's client fetches its mailbox, which
     /// is why the awarding has to happen inline: leaving sends the statistics report
     /// first and the mailbox fetch a few seconds later.
-    /// </para>
-    /// <para>
-    /// The latch is claimed before the letter is delivered rather than after, so a
-    /// delivery that fails leaves the award latched with no letter. The alternative
-    /// orders are both worse: delivering first then latching can send the letter
-    /// twice, and neither is checkable from here.
     /// </para>
     /// </summary>
     /// <param name="characterIdentifier">Character to consider.</param>
@@ -212,11 +206,11 @@ public sealed class InstructorService(
         var relationship = await context.CharacterInstructors
             .AsNoTracking()
             .Where(candidate => candidate.CharacterIdentifier == characterIdentifier)
-            .Select(candidate => new { candidate.InstructorSkillAwardedAt })
+            .Select(candidate => (int?)candidate.CharacterIdentifier)
             .FirstOrDefaultAsync(cancellationToken);
 
-        // No recognised graduation on file, or the letter has already gone out.
-        if (relationship is null || relationship.InstructorSkillAwardedAt is not null)
+        // No recognised graduation on file, so there is nothing to award.
+        if (relationship is null)
         {
             return false;
         }
@@ -244,31 +238,15 @@ public sealed class InstructorService(
             return false;
         }
 
-        // The claim is the latch. A conditional update rather than a read-modify-write
-        // because two reports for the same character can be in flight at once.
-        var claimedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
-        var claimed = await context.CharacterInstructors
-            .Where(candidate => candidate.CharacterIdentifier == characterIdentifier &&
-                candidate.InstructorSkillAwardedAt == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(
-                    candidate => candidate.InstructorSkillAwardedAt,
-                    claimedAt),
-                cancellationToken);
-
-        if (claimed == 0)
-        {
-            return false;
-        }
-
-        await mailService.SendSystemMailAsync(
+        // The letter is the latch: it is delivered once per subject, so a repeat
+        // report is harmless and a re-graduation under a new instructor cannot send
+        // a second copy.
+        return await mailService.SendSystemMailOnceAsync(
             characterIdentifier,
             AnnouncementSender,
             AnnouncementSubject,
             AnnouncementBody,
             cancellationToken);
-
-        return true;
     }
 
     /// <summary>Returns the instructor a character saved, or <c>null</c> when they never graduated.</summary>

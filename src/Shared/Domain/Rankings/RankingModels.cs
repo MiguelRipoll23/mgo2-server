@@ -11,7 +11,7 @@ namespace Mgo2Server.Shared.Domain.Rankings;
 /// <param name="Identifier">Character identifier, or clan identifier on the clan board.</param>
 /// <param name="Name">Name of the character or clan.</param>
 /// <param name="Value">Quantity the board sorts by.</param>
-public sealed record RankingEntry(int Rank, int Identifier, string Name, int Value);
+public sealed record RankingEntry(int Rank, long Identifier, string Name, int Value);
 
 /// <summary>
 /// A window of a board plus the size of the whole board, which is what drives the
@@ -28,4 +28,4 @@ public sealed record RankingPage(IReadOnlyList<RankingEntry> Entries, int Total)
 /// <param name="Identifier">Character identifier, or clan identifier on the clan board.</param>
 /// <param name="Name">Name of the character or clan.</param>
 /// <param name="Value">Quantity the board sorts by, in the client's units.</param>
-public readonly record struct RankingBoardRow(int Identifier, string Name, long Value);
+public readonly record struct RankingBoardRow(long Identifier, string Name, long Value);

@@ -63,8 +63,8 @@ public static class ServerServiceCollectionExtensions
             options.Name = configuration.ReadText("LOBBY_NAME") ?? options.Name;
             options.Subtype = configuration.ReadText("LOBBY_SUBTYPE") ?? options.Subtype;
             options.Port = configuration.ReadNumber("LOBBY_PORT", options.Port);
-            options.BeginnerOnly = configuration.ReadFlag("LOBBY_BEGINNER_ONLY", options.BeginnerOnly);
-            options.ExpansionOnly = configuration.ReadFlag("LOBBY_EXPANSION_ONLY", options.ExpansionOnly);
+            options.BeginnersOnly = configuration.ReadFlag("LOBBY_BEGINNER_ONLY", options.BeginnersOnly);
+            options.ExpansionRequired = configuration.ReadFlag("LOBBY_EXPANSION_ONLY", options.ExpansionRequired);
             options.NoHeadshot = configuration.ReadFlag("LOBBY_NO_HEADSHOT", options.NoHeadshot);
             options.ReplaysOnly = configuration.ReadFlag("LOBBY_REPLAYS_ONLY", options.ReplaysOnly);
         });

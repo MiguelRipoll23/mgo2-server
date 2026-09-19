@@ -4,6 +4,7 @@ using Mgo2Server.Shared.Domain.Automatch;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Interfaces;
+using Mgo2Server.Shared.Persistence.Entities;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.Logging;
@@ -37,23 +38,21 @@ public sealed class CreateGameHandler(
 
         var settings = await characterService.GetHostSettingsAsync(characterIdentifier, cancellationToken);
         var pushed = settings.FirstOrDefault(row => row.Type == HostSettingsType.Value);
-        var block = pushed is not null ? HostSettingsBlobCodec.Decode(pushed.Settings) : null;
-        var parsed = block is not null ? HostSettingsBlobCodec.Parse(block) : null;
+        var defaultMaximumPlayers = pushed is { MaxPlayers: > 0 } ? (int)pushed.MaxPlayers : 8;
 
-        var name = parsed?.Name ?? string.Empty;
-        var comment = parsed?.Comment ?? string.Empty;
-        var password = parsed is { PasswordEnabled: true } ? parsed.Password : string.Empty;
-        var maximumPlayers = parsed is { MaximumPlayers: > 0 } ? parsed.MaximumPlayers : 8;
-        var rotation = parsed?.Rotation ?? [];
+        var name = pushed?.Name is { Length: > 0 } pushedName ? pushedName : string.Empty;
+        var comment = pushed?.Comment ?? string.Empty;
+        var password = pushed is { Password.Length: > 0 } ? pushed.Password : string.Empty;
+        var rotation = ReadRotation(pushed);
 
         var game = await gameService.CreateAsync(room =>
         {
             room.HostIdentifier = characterIdentifier;
             room.LobbyIdentifier = lobbyIdentifier;
             room.Name = name.Length > 0 ? name : $"Game_{characterIdentifier}";
-            room.Password = password;
+            room.Password = password ?? string.Empty;
             room.Comment = comment;
-            room.MaximumPlayers = maximumPlayers;
+            room.MaximumPlayers = defaultMaximumPlayers;
             room.Games = JsonSerializer.Serialize(rotation);
         }, cancellationToken);
 
@@ -72,6 +71,35 @@ public sealed class CreateGameHandler(
         writer.WriteUInt32(ErrorCodeConstants.ResultNone);
         writer.WriteUInt32((uint)game.Identifier);
         await sessionHelper.SendPacketAsync(session, CommandConstants.CreateGameResult, writer.Build(), cancellationToken);
+    }
+
+    /// <summary>Reads the non-empty rotation triples a push stored, rule first.</summary>
+    /// <param name="settings">Stored settings row, or <c>null</c> when the host never pushed.</param>
+    private static List<int[]> ReadRotation(CharacterHostSettings? settings)
+    {
+        var rotation = new List<int[]>();
+        if (settings is null)
+        {
+            return rotation;
+        }
+
+        for (var index = 0; index < 16; index++)
+        {
+            var rules = settings.RotationRules;
+            var maps = settings.RotationMaps;
+            var flags = settings.RotationFlags;
+            var rule = rules is not null && index < rules.Length ? rules[index] : (short)0;
+            var map = maps is not null && index < maps.Length ? maps[index] : (short)0;
+            if (rule == 0 && map == 0)
+            {
+                break;
+            }
+
+            var flag = flags is not null && index < flags.Length ? flags[index] : (short)0;
+            rotation.Add([rule, map, flag]);
+        }
+
+        return rotation;
     }
 }
 

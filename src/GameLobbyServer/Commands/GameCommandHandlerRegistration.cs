@@ -110,7 +110,7 @@ public static class GameCommandHandlerRegistration
         services.AddTransient<UpdateClanNoticeHandler>();
         services.AddTransient<GetClanEmblemLobbyHandler>();
         services.AddTransient<GetClanEmblemHandler>();
-        services.AddTransient<GetClanEmblemWorkInProgressHandler>();
+        services.AddTransient<GetClanDetailHandler>();
         services.AddTransient<SetClanEmblemHandler>();
         services.AddTransient<GetClanListHandler>();
         services.AddTransient<GetClanMemberInfoHandler>();
@@ -211,7 +211,7 @@ public static class GameCommandHandlerRegistration
         registry.Register<UpdateClanNoticeHandler>(ServerType.GameplayLobby, CommandConstants.UpdateClanNotice);
         registry.Register<GetClanEmblemLobbyHandler>(ServerType.GameplayLobby, CommandConstants.GetClanEmblemLobby);
         registry.Register<GetClanEmblemHandler>(ServerType.GameplayLobby, CommandConstants.GetClanEmblem);
-        registry.Register<GetClanEmblemWorkInProgressHandler>(ServerType.GameplayLobby, CommandConstants.GetClanEmblemWorkInProgress);
+        registry.Register<GetClanDetailHandler>(ServerType.GameplayLobby, CommandConstants.GetClanDetail);
         registry.Register<SetClanEmblemHandler>(ServerType.GameplayLobby, CommandConstants.SetClanEmblem);
         registry.Register<GetClanListHandler>(ServerType.GameplayLobby, CommandConstants.GetClanList);
         registry.Register<GetClanMemberInfoHandler>(ServerType.GameplayLobby, CommandConstants.GetClanMemberInfo);

@@ -59,12 +59,12 @@ public sealed class Lobby
     public int PlayersCount { get; set; }
 
     /// <summary>Whether the lobby only accepts beginners.</summary>
-    [Column("beginner_only")]
-    public bool BeginnerOnly { get; set; }
+    [Column("begginers_only")]
+    public bool BeginnersOnly { get; set; }
 
-    /// <summary>Whether the lobby only accepts expansion owners.</summary>
-    [Column("expansion_only")]
-    public bool ExpansionOnly { get; set; }
+    /// <summary>Whether the lobby requires expansion content.</summary>
+    [Column("expansion_required")]
+    public bool ExpansionRequired { get; set; }
 
     /// <summary>Whether the lobby disables headshots.</summary>
     [Column("no_headshots")]

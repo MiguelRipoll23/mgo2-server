@@ -32,9 +32,9 @@ public sealed class Clan
     [MaxLength(512)]
     public string Notice { get; set; } = string.Empty;
 
-    /// <summary>Unix timestamp the notice was published at.</summary>
-    [Column("notice_time")]
-    public long NoticeTime { get; set; }
+    /// <summary>Timestamp the notice was published at.</summary>
+    [Column("notice_at")]
+    public DateTimeOffset? NoticeAt { get; set; }
 
     /// <summary>Membership row of the member that wrote the notice.</summary>
     [Column("notice_writer_id")]
@@ -48,17 +48,17 @@ public sealed class Clan
     [Column("emblem")]
     public byte[]? Emblem { get; set; }
 
-    /// <summary>Clan emblem currently being edited.</summary>
-    [Column("emblem_wip")]
-    public byte[]? EmblemWorkInProgress { get; set; }
+    /// <summary>Timestamp the clan's emblem was last put on display.</summary>
+    [Column("emblem_at")]
+    public DateTimeOffset? EmblemAt { get; set; }
 
     /// <summary>Whether the clan accepts open applications.</summary>
     [Column("open")]
     public int Open { get; set; } = 1;
 
-    /// <summary>Timestamp without time zone the clan was created at.</summary>
+    /// <summary>Timestamp the clan was created at.</summary>
     [Column("created_at")]
-    public DateTime? CreatedAt { get; set; }
+    public DateTimeOffset? CreatedAt { get; set; }
 
     /// <summary>Membership row of the clan leader.</summary>
     [ForeignKey(nameof(LeaderIdentifier))]
@@ -120,9 +120,9 @@ public sealed class ClanApplication
     [Column("character_id")]
     public int CharacterIdentifier { get; set; }
 
-    /// <summary>Timestamp without time zone the application was submitted at.</summary>
+    /// <summary>Timestamp the application was submitted at.</summary>
     [Column("applied_at")]
-    public DateTime AppliedAt { get; set; }
+    public DateTimeOffset AppliedAt { get; set; }
 
     /// <summary>Clan applied to.</summary>
     [ForeignKey(nameof(ClanIdentifier))]

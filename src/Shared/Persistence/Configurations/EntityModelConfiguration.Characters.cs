@@ -23,11 +23,11 @@ internal static partial class EntityModelConfiguration
                     $"experience BETWEEN 0 AND {CharacterService.MaximumExperience}"));
 
             entity.HasIndex(character => character.Name).IsUnique();
-            // The user and character tables reference each other, so this side
+            // The account and character tables reference each other, so this side
             // of the cycle cannot cascade.
-            entity.HasOne(character => character.User)
-                .WithMany(user => user.Characters)
-                .HasForeignKey(character => character.UserIdentifier)
+            entity.HasOne(character => character.Account)
+                .WithMany(account => account.Characters)
+                .HasForeignKey(character => character.AccountIdentifier)
                 .OnDelete(DeleteBehavior.NoAction);
 
         });
@@ -38,15 +38,6 @@ internal static partial class EntityModelConfiguration
             entity.HasOne(appearance => appearance.Character)
                 .WithOne(character => character.Appearance)
                 .HasForeignKey<CharacterAppearance>(appearance => appearance.CharacterIdentifier)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<CharacterStatistics>(entity =>
-        {
-            entity.HasIndex(statistics => statistics.CharacterIdentifier).IsUnique();
-            entity.HasOne(statistics => statistics.Character)
-                .WithOne(character => character.Statistics)
-                .HasForeignKey<CharacterStatistics>(statistics => statistics.CharacterIdentifier)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

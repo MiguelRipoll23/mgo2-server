@@ -13,16 +13,13 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
     : DbContext(options)
 {
     /// <summary>Accounts.</summary>
-    public DbSet<User> Users => Set<User>();
+    public DbSet<Account> Accounts => Set<Account>();
 
     /// <summary>Characters.</summary>
     public DbSet<Character> Characters => Set<Character>();
 
     /// <summary>Character appearances.</summary>
     public DbSet<CharacterAppearance> CharacterAppearances => Set<CharacterAppearance>();
-
-    /// <summary>Character statistics.</summary>
-    public DbSet<CharacterStatistics> CharacterStatistics => Set<CharacterStatistics>();
 
     /// <summary>Login sessions.</summary>
     public DbSet<UserSession> UserSessions => Set<UserSession>();
@@ -107,19 +104,6 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
 
     /// <summary>Which lobby each character is in right now.</summary>
     public DbSet<CharacterPresence> CharacterPresence => Set<CharacterPresence>();
-
-    /// <summary>
-    /// Pins the plain timestamps to <c>timestamp without time zone</c>. The
-    /// provider would otherwise store them as <c>timestamp with time zone</c>,
-    /// which changes both the column type and the meaning of the stored value.
-    /// </summary>
-    /// <param name="configurationBuilder">Conventions being built.</param>
-    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
-    {
-        configurationBuilder.Properties<DateTime>().HaveColumnType("timestamp without time zone");
-
-        base.ConfigureConventions(configurationBuilder);
-    }
 
     /// <summary>Maps every entity onto its table.</summary>
     /// <param name="modelBuilder">Model being built.</param>

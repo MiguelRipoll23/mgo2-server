@@ -8,16 +8,16 @@ internal static partial class EntityModelConfiguration
 {
     private static void ConfigureUsers(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<User>(entity =>
+        modelBuilder.Entity<Account>(entity =>
         {
-            entity.HasIndex(user => user.DisplayName).IsUnique();
-            entity.HasOne(user => user.CurrentCharacter)
+            entity.HasIndex(account => account.DisplayName).IsUnique();
+            entity.HasOne(account => account.CurrentCharacter)
                 .WithMany()
-                .HasForeignKey(user => user.CurrentCharacterIdentifier)
+                .HasForeignKey(account => account.CurrentCharacterIdentifier)
                 .OnDelete(DeleteBehavior.NoAction);
-            entity.HasOne(user => user.MainCharacter)
+            entity.HasOne(account => account.MainCharacter)
                 .WithMany()
-                .HasForeignKey(user => user.MainCharacterIdentifier)
+                .HasForeignKey(account => account.MainCharacterIdentifier)
                 .OnDelete(DeleteBehavior.NoAction);
         });
 
@@ -25,7 +25,7 @@ internal static partial class EntityModelConfiguration
         {
             // An account has at most one session row, so the upsert that
             // replaces it cannot race another login into a duplicate.
-            entity.HasIndex(session => session.UserIdentifier).IsUnique();
+            entity.HasIndex(session => session.AccountIdentifier).IsUnique();
         });
     }
 }

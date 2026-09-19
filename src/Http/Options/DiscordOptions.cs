@@ -15,6 +15,9 @@ public sealed class DiscordOptions
     /// <summary>Name of the command the moderators broadcast flash news with.</summary>
     public const string FlashCommandName = "flash";
 
+    /// <summary>Name of the command the moderators send an official message with.</summary>
+    public const string MessageCommandName = "message";
+
     /// <summary>Gateway the client connects to by default.</summary>
     public const string DefaultGatewayUrl = "wss://gateway.discord.gg/?v=10&encoding=json";
 
@@ -35,12 +38,15 @@ public sealed class DiscordOptions
 
     /// <summary>
     /// Identifier of the guild the commands belong to. Left empty, every guild
-    /// the bot is in may use the flash command.
+    /// the bot is in may use the staff commands.
     /// </summary>
     public string GuildIdentifier { get; set; } = string.Empty;
 
-    /// <summary>Identifier of the role that may use the flash command.</summary>
+    /// <summary>Identifier of the role that may use the staff commands.</summary>
     public string ModeratorRoleIdentifier { get; set; } = string.Empty;
+
+    /// <summary>Identifier of the other role that may use the staff commands.</summary>
+    public string ManagerRoleIdentifier { get; set; } = string.Empty;
 
     /// <summary>
     /// Identifier of the channel the player count is published in. Left empty,
@@ -48,9 +54,6 @@ public sealed class DiscordOptions
     /// has none.
     /// </summary>
     public string PlayerCountChannelIdentifier { get; set; } = string.Empty;
-
-    /// <summary>Identifier of the other role that may use the flash command.</summary>
-    public string ManagerRoleIdentifier { get; set; } = string.Empty;
 
     /// <summary>Base URL of the Discord REST API, used for the one call the integration makes.</summary>
     public string ApiBaseUrl { get; set; } = "https://discord.com/api/v10";
@@ -81,12 +84,13 @@ public sealed class DiscordOptions
         Enabled && !string.IsNullOrWhiteSpace(BotToken) && !string.IsNullOrWhiteSpace(GuildIdentifier);
 
     /// <summary>
-    /// Reports whether the roles of a command user allow the flash command. An
-    /// unconfigured role allows nobody, so a deployment that forgot to name its
-    /// staff roles does not hand the command to everyone.
+    /// Reports whether the roles of a command user allow the staff commands
+    /// (the flash and the official message). An unconfigured role allows
+    /// nobody, so a deployment that forgot to name its staff roles does not
+    /// hand the commands to everyone.
     /// </summary>
     /// <param name="roleIdentifiers">Roles of the user that used the command.</param>
-    public bool AllowsFlashCommand(IEnumerable<string> roleIdentifiers)
+    public bool AllowsStaffCommand(IEnumerable<string> roleIdentifiers)
     {
         var allowed = new[] { ModeratorRoleIdentifier, ManagerRoleIdentifier }
             .Where(identifier => !string.IsNullOrWhiteSpace(identifier))

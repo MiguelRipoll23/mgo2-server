@@ -68,9 +68,9 @@ public sealed class Game
     [Column("status")]
     public int Status { get; set; }
 
-    /// <summary>Timestamp without time zone the room was created at.</summary>
+    /// <summary>Timestamp with time zone the room was created at.</summary>
     [Column("created_at")]
-    public DateTime? CreatedAt { get; set; }
+    public DateTimeOffset? CreatedAt { get; set; }
 
     /// <summary>
     /// Timestamp of the last heartbeat. Only a gameplay server maintains this

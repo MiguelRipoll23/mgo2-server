@@ -23,7 +23,7 @@ public sealed class CheckCharacterNameHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.UserIdentifier is null)
+        if (session.AccountIdentifier is null)
         {
             await sessionHelper.SendResultAsync(session, 0x3108, ErrorCodeConstants.ResultInvalidSession, cancellationToken);
             return;

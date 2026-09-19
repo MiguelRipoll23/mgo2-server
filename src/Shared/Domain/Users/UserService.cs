@@ -16,39 +16,39 @@ public sealed class UserService(
     /// <summary>Finds an account by its login name.</summary>
     /// <param name="displayName">Login name of the account.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<User?> FindByDisplayNameAsync(
+    public async Task<Account?> FindByDisplayNameAsync(
         string displayName,
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        return await context.Users
+        return await context.Accounts
             .AsNoTracking()
             .FirstOrDefaultAsync(user => user.DisplayName == displayName, cancellationToken);
     }
 
     /// <summary>Finds an account by its identifier.</summary>
-    /// <param name="userIdentifier">Identifier of the account.</param>
+    /// <param name="accountIdentifier">Identifier of the account.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<User?> FindByIdAsync(int userIdentifier, CancellationToken cancellationToken = default)
+    public async Task<Account?> FindByIdAsync(long accountIdentifier, CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        return await context.Users
+        return await context.Accounts
             .AsNoTracking()
-            .FirstOrDefaultAsync(user => user.Identifier == userIdentifier, cancellationToken);
+            .FirstOrDefaultAsync(user => user.Identifier == accountIdentifier, cancellationToken);
     }
 
     /// <summary>Creates an account.</summary>
     /// <param name="displayName">Login name of the account.</param>
     /// <param name="passwordHash">Hashed password of the account.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<User> CreateAsync(
+    public async Task<Account> CreateAsync(
         string displayName,
         string passwordHash,
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        var created = new User { DisplayName = displayName, Password = passwordHash };
-        context.Users.Add(created);
+        var created = new Account { DisplayName = displayName, Password = passwordHash };
+        context.Accounts.Add(created);
         await context.SaveChangesAsync(cancellationToken);
 
         // The account count changed, so the new total is published rather than
@@ -58,34 +58,34 @@ public sealed class UserService(
     }
 
     /// <summary>Stores the character an account most recently selected.</summary>
-    /// <param name="userIdentifier">Identifier of the account.</param>
+    /// <param name="accountIdentifier">Identifier of the account.</param>
     /// <param name="characterIdentifier">Identifier of the character, or <c>null</c> to clear it.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task SetCurrentCharacterAsync(
-        int userIdentifier,
-        int? characterIdentifier,
+        long accountIdentifier,
+        long? characterIdentifier,
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        await context.Users
-            .Where(user => user.Identifier == userIdentifier)
+        await context.Accounts
+            .Where(user => user.Identifier == accountIdentifier)
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(user => user.CurrentCharacterIdentifier, characterIdentifier),
                 cancellationToken);
     }
 
     /// <summary>Stores the character an account designates as its main.</summary>
-    /// <param name="userIdentifier">Identifier of the account.</param>
+    /// <param name="accountIdentifier">Identifier of the account.</param>
     /// <param name="characterIdentifier">Identifier of the character, or <c>null</c> to clear it.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task SetMainCharacterAsync(
-        int userIdentifier,
-        int? characterIdentifier,
+        long accountIdentifier,
+        long? characterIdentifier,
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        await context.Users
-            .Where(user => user.Identifier == userIdentifier)
+        await context.Accounts
+            .Where(user => user.Identifier == accountIdentifier)
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(user => user.MainCharacterIdentifier, characterIdentifier),
                 cancellationToken);

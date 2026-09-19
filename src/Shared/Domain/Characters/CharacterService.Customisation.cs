@@ -138,12 +138,12 @@ public sealed partial class CharacterService
     /// <summary>Replaces the host settings of one game type for a character.</summary>
     /// <param name="characterIdentifier">Identifier of the character.</param>
     /// <param name="type">Game type the settings apply to.</param>
-    /// <param name="settings">Serialized settings blob.</param>
+    /// <param name="settings">Host settings entity to store.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task UpdateHostSettingsAsync(
         int characterIdentifier,
-        int type,
-        string settings,
+        short type,
+        CharacterHostSettings settings,
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
@@ -151,12 +151,9 @@ public sealed partial class CharacterService
             .Where(row => row.CharacterIdentifier == characterIdentifier && row.Type == type)
             .ExecuteDeleteAsync(cancellationToken);
 
-        context.CharacterHostSettings.Add(new CharacterHostSettings
-        {
-            CharacterIdentifier = characterIdentifier,
-            Type = type,
-            Settings = settings,
-        });
+        settings.CharacterIdentifier = characterIdentifier;
+        settings.Type = type;
+        context.CharacterHostSettings.Add(settings);
 
         await context.SaveChangesAsync(cancellationToken);
     }

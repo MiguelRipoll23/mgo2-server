@@ -59,7 +59,7 @@ public sealed partial class ClanService
             row.LeaderCharacterIdentifier,
             row.LeaderCharacterName,
             row.CreatedAt is { } createdAt
-                ? (int)new DateTimeOffset(DateTime.SpecifyKind(createdAt, DateTimeKind.Utc)).ToUnixTimeSeconds()
+                ? (int)createdAt.ToUnixTimeSeconds()
                 : 0,
             row.Emblem != null))];
     }

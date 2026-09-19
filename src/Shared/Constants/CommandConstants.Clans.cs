@@ -81,11 +81,11 @@ public static partial class CommandConstants
     /// <summary>Carries the published emblem of a clan.</summary>
     public const ushort GetClanEmblemResult = 0x4b4b;
 
-    /// <summary>Returns the emblem a clan is editing.</summary>
-    public const ushort GetClanEmblemWorkInProgress = 0x4b4c;
+    /// <summary>Returns the clan detail block, whose emblem is the published one.</summary>
+    public const ushort GetClanDetail = 0x4b4c;
 
-    /// <summary>Carries the emblem a clan is editing.</summary>
-    public const ushort GetClanEmblemWorkInProgressResult = 0x4b4d;
+    /// <summary>Carries the clan detail block.</summary>
+    public const ushort GetClanDetailResult = 0x4b4d;
 
     /// <summary>Stores a clan emblem.</summary>
     public const ushort SetClanEmblem = 0x4b50;

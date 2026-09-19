@@ -46,9 +46,11 @@ public sealed class HostReview
 }
 
 /// <summary>
-/// One host-reported round statistics frame, the source of the match history.
-/// The game row is deleted at teardown, so the report carries its own lobby
-/// subtype for the type label.
+/// One host-reported round statistics frame. The frame is stored as it arrived,
+/// counter by counter, rather than folded into a per-character accumulator, so
+/// every statistics surface derives from it at query time. The game row is deleted
+/// at teardown, so the report carries its own lobby subtype and game mode for the
+/// labels and the per-mode splits.
 /// </summary>
 [Table("round_reports")]
 public sealed class RoundReport
@@ -71,6 +73,13 @@ public sealed class RoundReport
     [Column("target_character_id")]
     public int TargetCharacterIdentifier { get; set; }
 
+    /// <summary>
+    /// Game mode the round was played under, stamped at insert. It cannot be read back
+    /// from the room because the room is deleted at teardown while reports are history.
+    /// </summary>
+    [Column("rule")]
+    public short Rule { get; set; }
+
     /// <summary>Team the report credits with the win.</summary>
     [Column("team_win")]
     public short TeamWin { get; set; }
@@ -91,9 +100,69 @@ public sealed class RoundReport
     [Column("lobby_subtype")]
     public short LobbySubtype { get; set; }
 
-    /// <summary>Timestamp without time zone the report was stored at.</summary>
+    /// <summary>Rounds won within the round's frame.</summary>
+    [Column("wins")]
+    public short Wins { get; set; }
+
+    /// <summary>Kills.</summary>
+    [Column("kills")]
+    public short Kills { get; set; }
+
+    /// <summary>Deaths.</summary>
+    [Column("deaths")]
+    public short Deaths { get; set; }
+
+    /// <summary>Score earned, signed because deaths and penalties outweigh kills.</summary>
+    [Column("score")]
+    public short Score { get; set; }
+
+    /// <summary>Stuns delivered.</summary>
+    [Column("stuns")]
+    public short Stuns { get; set; }
+
+    /// <summary>Stuns received.</summary>
+    [Column("stuns_received")]
+    public short StunsReceived { get; set; }
+
+    /// <summary>Headshot kills.</summary>
+    [Column("headshot_kills")]
+    public short HeadshotKills { get; set; }
+
+    /// <summary>Headshot deaths.</summary>
+    [Column("headshot_deaths")]
+    public short HeadshotDeaths { get; set; }
+
+    /// <summary>Headshot stuns delivered.</summary>
+    [Column("headshot_stuns")]
+    public short HeadshotStuns { get; set; }
+
+    /// <summary>Headshot stuns received.</summary>
+    [Column("headshot_stuns_received")]
+    public short HeadshotStunsReceived { get; set; }
+
+    /// <summary>Lock-on kills.</summary>
+    [Column("lock_kills")]
+    public short LockKills { get; set; }
+
+    /// <summary>Lock-on deaths.</summary>
+    [Column("lock_deaths")]
+    public short LockDeaths { get; set; }
+
+    /// <summary>Lock-on stuns delivered.</summary>
+    [Column("lock_stuns")]
+    public short LockStuns { get; set; }
+
+    /// <summary>Lock-on stuns received.</summary>
+    [Column("lock_stuns_received")]
+    public short LockStunsReceived { get; set; }
+
+    /// <summary>Best consecutive kill streak of the round.</summary>
+    [Column("consecutive_kills")]
+    public short ConsecutiveKills { get; set; }
+
+    /// <summary>Timestamp with time zone the report was stored at.</summary>
     [Column("created_at")]
-    public DateTime CreatedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
 
     /// <summary>Room the round was played in.</summary>
     [ForeignKey(nameof(GameIdentifier))]
@@ -131,16 +200,20 @@ public sealed class RoundWeaponStat
     public short WeaponIdentifier { get; set; }
 
     /// <summary>Kills credited to the weapon.</summary>
-    [Column("value_a")]
-    public short ValueA { get; set; }
+    [Column("kills")]
+    public short Kills { get; set; }
 
     /// <summary>Headshots the weapon ended kills or faints with.</summary>
-    [Column("value_b")]
-    public short ValueB { get; set; }
+    [Column("headshots")]
+    public short Headshots { get; set; }
 
     /// <summary>Faints the weapon caused.</summary>
-    [Column("value_c")]
-    public short ValueC { get; set; }
+    [Column("faints")]
+    public short Faints { get; set; }
+
+    /// <summary>Timestamp with time zone the statistic was reported at.</summary>
+    [Column("reported_at")]
+    public DateTimeOffset ReportedAt { get; set; }
 
     /// <summary>Room the statistic belongs to.</summary>
     [ForeignKey(nameof(GameIdentifier))]

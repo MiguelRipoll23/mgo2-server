@@ -40,7 +40,7 @@ public sealed class PersonalStatisticsSummaryRowTests
             Name = "Someone",
             Experience = 4000,
             TotalRewards = 1234,
-            CreationTime = 1,
+            CreatedAt = DateTimeOffset.FromUnixTimeSeconds(1),
         };
 
         var payload = PersonalStatisticsPayloadBuilder.BuildMatrix(null, 0, character);
@@ -62,7 +62,7 @@ public sealed class PersonalStatisticsSummaryRowTests
             Name = "Someone",
             Experience = 4000,
             TotalRewards = 7,
-            CreationTime = 1,
+            CreatedAt = DateTimeOffset.FromUnixTimeSeconds(1),
         };
 
         var payload = PersonalStatisticsPayloadBuilder.BuildMatrix(null, 0, character);
@@ -82,7 +82,7 @@ public sealed class PersonalStatisticsSummaryRowTests
             Name = "Someone",
             Experience = 1000,
             TotalRewards = 4321,
-            CreationTime = 1,
+            CreatedAt = DateTimeOffset.FromUnixTimeSeconds(1),
         };
 
         var payload = PersonalStatisticsPayloadBuilder.BuildMatrix(null, 1, character);
@@ -100,9 +100,9 @@ public sealed class PersonalStatisticsSummaryRowTests
             Name = "Someone",
             Experience = 100,
             TotalRewards = 99,
-            CreationTime = 1,
+            CreatedAt = DateTimeOffset.FromUnixTimeSeconds(1),
         };
-        var statistics = new CharacterStatistics { CharacterIdentifier = 7, TotalTime = 60200 };
+        var statistics = new CharacterStatistics { TotalTime = 60200 };
 
         var payload = PersonalStatisticsPayloadBuilder.BuildMatrix(statistics, 0, character);
 

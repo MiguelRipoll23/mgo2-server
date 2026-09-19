@@ -15,12 +15,16 @@ GameLobbyServer (one per lobby)                  Http (one)
    ├─ opens the stream, retries every minute       ├─ one stream per connected lobby
    ├─ reports connect / disconnect ───────────────▶├─ PlayerPresenceNotificationService
    └─ writes the ticker to its own clients ◀───────┤  ├─ LobbyPresenceService (global count)
-                                                   │  └─ IPlayerPresenceObserver
-                                                   │     └─ DiscordPlayerCountService
-                                                   └─ FlashNewsDispatcherService
-                                                      ▲
-                        POST /flash-news/broadcast ────┤
-                        Discord /flash command ────────┘
+                                                    │  └─ IPlayerPresenceObserver
+                                                    │     └─ DiscordPlayerCountService
+                                                    └─ FlashNewsDispatcherService
+                                                       ▲
+                         POST /flash-news/broadcast ────┤
+                         Discord /flash command ────────┘
+
+      Discord ──(gateway events)──▶ DiscordCommandService
+        ├─ /flash   ──▶ FlashNewsDispatcherService
+        └─ /message ──▶ IDiscordMessageService (channel message over REST)
 ```
 
 * **Http owns the coordination.** It keeps the streams, the per-lobby counts and
@@ -75,9 +79,9 @@ Discord is switched on with `DISCORD_ENABLED=true` and never becomes a
 requirement of anything:
 
 * The bot connects to the Discord gateway over a WebSocket, which is where the
-  `/flash` command and the events arrive. The gateway only carries what Discord
-  pushes down, so the command registration, the answers to the interactions and
-  the channel messages go over the REST API.
+  `/flash` and `/message` commands and the events arrive. The gateway only
+  carries what Discord pushes down, so the command registration, the answers to
+  the interactions and the channel messages go over the REST API.
 * Every call to Discord is wrapped, and a failure is logged and forgotten. An
   unreachable Discord, a revoked token or a rate limit cannot fail a request of
   the API, a flash, or a game lobby.
@@ -94,10 +98,10 @@ requirement of anything:
 | `DISCORD_ENABLED`                  | Switches the whole integration on.                                      |
 | `DISCORD_BOT_TOKEN`                | Bot token of the application. Required for everything.                  |
 | `DISCORD_GATEWAY_URL`              | WebSocket URL of the gateway; defaults to the public Discord gateway.   |
-| `DISCORD_GUILD_ID`                 | Guild the command is registered in, the channel lives in, and the guild the flash command is honored in. |
+| `DISCORD_GUILD_ID`                 | Guild the commands are registered in, the channel lives in, and the guild the staff commands are honored in. |
 | `DISCORD_PLAYER_COUNT_CHANNEL_ID`  | Channel of the player count; found by name and created when empty.      |
-| `DISCORD_MODERATOR_ROLE_ID`        | Role that may use `/flash`.                                             |
-| `DISCORD_MANAGER_ROLE_ID`          | Other role that may use `/flash`.                                       |
+| `DISCORD_MODERATOR_ROLE_ID`        | Role that may use `/flash` and `/message`.                             |
+| `DISCORD_MANAGER_ROLE_ID`          | Other role that may use `/flash` and `/message`.                       |
 
 The integration does nothing until `DISCORD_BOT_TOKEN` is set, and publishes no
 count until `DISCORD_GUILD_ID` is set as well. Nothing else is needed: the
@@ -112,23 +116,27 @@ token.
 2. Put the bot token in `DISCORD_BOT_TOKEN` and the guild identifier in
    `DISCORD_GUILD_ID`.
 3. Set `DISCORD_MODERATOR_ROLE_ID` and `DISCORD_MANAGER_ROLE_ID` to the roles
-   that may broadcast. Without them nobody may use the command.
-4. Start the deployment. The API registers `/flash` in the guild, connects the
-   bot to the gateway and finds or creates the channel of the player count.
+   that may broadcast. Without them nobody may use the commands.
+4. Start the deployment. The API registers `/flash` and `/message` in the guild,
+   connects the bot to the gateway and finds or creates the channel of the
+   player count.
 
-The `/flash` command takes one required option, `message`. It is registered per
-guild, so it is available immediately instead of waiting for Discord to publish
-a global command, and it arrives over the gateway socket: a member runs it, the
-API sees the interaction and relays the flash, and the bot answers the member
+Both commands take one required option — `/flash` a `message`, `/message` a
+`body` — and are registered per guild, so they are available immediately instead
+of waiting for Discord to publish a global command. They arrive over the gateway
+socket: a member runs one, the API sees the interaction and answers the member
 alone, so the channel is not cluttered with the outcome. A command from a guild
 that is not `DISCORD_GUILD_ID` is ignored.
 
 ### Sending messages
 
-Besides the answers to the `/flash` command, the bot can be told to write a
-message through the authenticated API:
+The bot has two ways to write a channel message:
 
-* `POST /discord/messages` (bearer token required) with a `channelIdentifier`
+* The Discord `/message` command writes an official message from the bot into
+  the channel it was used in, with the text of its `body` option. It is only run
+  for the moderator and manager roles, and the message is never allowed to ping
+  a role or everyone in the guild.
+* `POST /discord/messages` (bearer token required) with a `channelId`
   and a `content` writes a message from the bot into that channel of the guild.
   The message is never allowed to ping a role or everyone.
 

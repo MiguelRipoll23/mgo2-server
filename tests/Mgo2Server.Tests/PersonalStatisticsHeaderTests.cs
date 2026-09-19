@@ -33,9 +33,9 @@ public sealed class PersonalStatisticsHeaderTests
             Identifier = 8,
             Name = "Someone",
             Experience = 1450,
-            PreviousLoginTime = 1_699_000_001,
-            LastLoginTime = 1_700_000_002,
-            CreationTime = 1,
+            PreviousLoginTime = DateTimeOffset.FromUnixTimeSeconds(1_699_000_001),
+            LastSeenAt = DateTimeOffset.FromUnixTimeSeconds(1_700_000_002),
+            CreatedAt = DateTimeOffset.FromUnixTimeSeconds(1),
         };
 
         var payload = PersonalStatisticsPayloadBuilder.BuildHeader(
@@ -67,7 +67,7 @@ public sealed class PersonalStatisticsHeaderTests
             Identifier = 8,
             Name = "Someone",
             Experience = 0,
-            CreationTime = 1,
+            CreatedAt = DateTimeOffset.FromUnixTimeSeconds(1),
         };
 
         var payload = PersonalStatisticsPayloadBuilder.BuildHeader(

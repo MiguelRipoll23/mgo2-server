@@ -18,7 +18,6 @@ public sealed class PersistenceModelTests
         "character_connections",
         "character_gameplay_options",
         "character_presence",
-        "character_stats",
         "character_training_times",
         "characters",
         "characters_appearance",
@@ -46,7 +45,7 @@ public sealed class PersistenceModelTests
         "round_reports",
         "round_weapon_stats",
         "sessions",
-        "users",
+        "accounts",
     ];
 
     [Fact]

@@ -76,7 +76,7 @@ public sealed class CharacterLoginTimesTests
     {
         // Five kills over ten rounds clears the passive-play rank that would otherwise be
         // returned before the absence is consulted.
-        var statistics = new CharacterStatistics { CharacterIdentifier = 1, Rounds = 10, Kills = 5 };
+        var statistics = new CharacterStatistics { Rounds = 10, Kills = 5 };
 
         Assert.Equal(13, AnimalRankService.CalculateRank(statistics, 30));
         Assert.Equal(0, AnimalRankService.CalculateRank(statistics, 29));

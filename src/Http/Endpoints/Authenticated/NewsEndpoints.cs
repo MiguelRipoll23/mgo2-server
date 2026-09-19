@@ -61,8 +61,8 @@ internal static class NewsEndpoints
             {
                 Important = request.Important,
                 Time = request.Time,
-                Topic = request.Topic,
-                Message = request.Message,
+                Title = request.Title,
+                Body = request.Body,
             },
             cancellationToken);
 
@@ -81,8 +81,8 @@ internal static class NewsEndpoints
             {
                 item.Important = request.Important ?? item.Important;
                 item.Time = request.Time ?? item.Time;
-                item.Topic = request.Topic ?? item.Topic;
-                item.Message = request.Message ?? item.Message;
+                item.Title = request.Title ?? item.Title;
+                item.Body = request.Body ?? item.Body;
             },
             cancellationToken);
 

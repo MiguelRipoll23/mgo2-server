@@ -14,8 +14,8 @@ public sealed class UserSession
     public int Identifier { get; set; }
 
     /// <summary>Account the session belongs to.</summary>
-    [Column("user_id")]
-    public int UserIdentifier { get; set; }
+    [Column("account_id")]
+    public int AccountIdentifier { get; set; }
 
     /// <summary>Login token issued to the client.</summary>
     [Column("token")]

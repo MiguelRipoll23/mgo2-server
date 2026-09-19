@@ -95,22 +95,9 @@ public sealed class CharacterInstructor
     [Column("rating")]
     public short Rating { get; set; }
 
-    /// <summary>Timestamp without time zone the relationship was written at.</summary>
+    /// <summary>Timestamp with time zone the relationship was written at.</summary>
     [Column("graduated_at")]
-    public DateTime GraduatedAt { get; set; }
-
-    /// <summary>
-    /// When the instructor skill was awarded on the strength of this relationship,
-    /// or <c>null</c> while the award is still pending.
-    /// <para>
-    /// The skill itself is served to every character at its maximum level, so this
-    /// is not an ownership record: it is the latch that makes the award letter be
-    /// sent once. Without it, every end-of-round report after the requirements are
-    /// met would deliver another copy of the same letter.
-    /// </para>
-    /// </summary>
-    [Column("instructor_skill_awarded_at")]
-    public DateTime? InstructorSkillAwardedAt { get; set; }
+    public DateTimeOffset GraduatedAt { get; set; }
 
     /// <summary>Character that was trained.</summary>
     [ForeignKey(nameof(CharacterIdentifier))]

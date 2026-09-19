@@ -17,16 +17,16 @@ public sealed class NewsArticle
     [Column("important")]
     public bool Important { get; set; }
 
-    /// <summary>Unix timestamp of the article.</summary>
+    /// <summary>Timestamp with time zone of the article.</summary>
     [Column("time")]
-    public int Time { get; set; }
+    public DateTimeOffset Time { get; set; }
 
-    /// <summary>Topic line of the article.</summary>
-    [Column("topic")]
+    /// <summary>Title of the article.</summary>
+    [Column("title")]
     [MaxLength(128)]
-    public required string Topic { get; set; }
+    public required string Title { get; set; }
 
     /// <summary>Body of the article.</summary>
-    [Column("message")]
-    public required string Message { get; set; }
+    [Column("body")]
+    public required string Body { get; set; }
 }

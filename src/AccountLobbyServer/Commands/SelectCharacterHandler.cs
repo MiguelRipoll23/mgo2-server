@@ -24,7 +24,7 @@ public sealed class SelectCharacterHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.UserIdentifier is null)
+        if (session.AccountIdentifier is null)
         {
             await sessionHelper.SendErrorAsync(session, 0x3104, ErrorCodeConstants.ErrorInvalidSession, cancellationToken);
             return;
@@ -33,14 +33,14 @@ public sealed class SelectCharacterHandler(
         var reader = new PacketReader(packet.Payload);
         var slotIndex = reader.ReadUInt8();
 
-        var user = await userService.FindByIdAsync(session.UserIdentifier.Value, cancellationToken);
+        var user = await userService.FindByIdAsync(session.AccountIdentifier.Value, cancellationToken);
         if (user is null)
         {
             await sessionHelper.SendErrorAsync(session, 0x3104, ErrorCodeConstants.ErrorInvalidSession, cancellationToken);
             return;
         }
 
-        var characters = await characterService.FindByUserIdentifierAsync(session.UserIdentifier.Value, cancellationToken);
+        var characters = await characterService.FindByAccountIdentifierAsync(session.AccountIdentifier.Value, cancellationToken);
         var sortedCharacters = OrderMainFirst(characters, user.MainCharacterIdentifier);
 
         if (slotIndex >= sortedCharacters.Count)

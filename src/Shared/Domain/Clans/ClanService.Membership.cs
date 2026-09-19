@@ -159,7 +159,6 @@ public sealed partial class ClanService
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        var secondsSinceEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
         await context.Clans
             .Where(clan => clan.Identifier == clanIdentifier)
@@ -167,7 +166,7 @@ public sealed partial class ClanService
                 setters => setters
                     .SetProperty(clan => clan.Notice, notice)
                     .SetProperty(clan => clan.NoticeWriterIdentifier, writerIdentifier)
-                    .SetProperty(clan => clan.NoticeTime, secondsSinceEpoch),
+                    .SetProperty(clan => clan.NoticeAt, DateTimeOffset.UtcNow),
                 cancellationToken);
     }
 
@@ -183,23 +182,12 @@ public sealed partial class ClanService
         await using var context = await CreateContextAsync(cancellationToken);
         await context.Clans
             .Where(clan => clan.Identifier == clanIdentifier)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(clan => clan.Emblem, emblem), cancellationToken);
-    }
-
-    /// <summary>Stores the emblem a clan is currently editing.</summary>
-    /// <param name="clanIdentifier">Identifier of the clan.</param>
-    /// <param name="emblem">Emblem bytes to store.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task SetEmblemWorkInProgressAsync(
-        int clanIdentifier,
-        byte[] emblem,
-        CancellationToken cancellationToken = default)
-    {
-        await using var context = await CreateContextAsync(cancellationToken);
-        await context.Clans
-            .Where(clan => clan.Identifier == clanIdentifier)
             .ExecuteUpdateAsync(
-                setters => setters.SetProperty(clan => clan.EmblemWorkInProgress, emblem),
+                setters => setters
+                    .SetProperty(clan => clan.Emblem, emblem)
+                    // Publishing is the moment the emblem goes on display, which is
+                    // the cooldown the client's own warning text measures from.
+                    .SetProperty(clan => clan.EmblemAt, DateTimeOffset.UtcNow),
                 cancellationToken);
     }
 }

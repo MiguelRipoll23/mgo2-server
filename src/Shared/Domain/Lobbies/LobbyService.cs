@@ -15,8 +15,8 @@ namespace Mgo2Server.Shared.Domain.Lobbies;
 /// <param name="IpAddress">Address clients are told to connect to.</param>
 /// <param name="Port">Port the lobby listens on.</param>
 /// <param name="PlayersCount">Number of players currently in the lobby.</param>
-/// <param name="BeginnerOnly">Whether the lobby only accepts beginners.</param>
-/// <param name="ExpansionOnly">Whether the lobby only accepts expansion owners.</param>
+/// <param name="BeginnersOnly">Whether the lobby only accepts beginners.</param>
+/// <param name="ExpansionRequired">Whether the lobby only accepts expansion owners.</param>
 /// <param name="NoHeadshot">Whether the lobby disables headshots.</param>
 /// <param name="ReplaysOnly">Whether the lobby only accepts replays.</param>
 public sealed record LobbyResponse(
@@ -27,8 +27,8 @@ public sealed record LobbyResponse(
     string IpAddress,
     int Port,
     int PlayersCount,
-    bool BeginnerOnly,
-    bool ExpansionOnly,
+    bool BeginnersOnly,
+    bool ExpansionRequired,
     bool NoHeadshot,
     bool ReplaysOnly);
 
@@ -210,8 +210,8 @@ public sealed partial class LobbyService(
             ipAddress,
             lobby.Port,
             playerCount ?? lobby.PlayersCount,
-            lobby.BeginnerOnly,
-            lobby.ExpansionOnly,
+            lobby.BeginnersOnly,
+            lobby.ExpansionRequired,
             lobby.NoHeadshot,
             lobby.ReplaysOnly);
     }

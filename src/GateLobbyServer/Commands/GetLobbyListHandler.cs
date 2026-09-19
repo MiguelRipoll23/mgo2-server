@@ -47,8 +47,8 @@ public sealed class GetLobbyListHandler(
                 foreach (var lobby in page)
                 {
                     var restriction = 0;
-                    restriction |= lobby.BeginnerOnly ? 0x01 : 0;
-                    restriction |= lobby.ExpansionOnly ? 0x08 : 0;
+                    restriction |= lobby.BeginnersOnly ? 0x01 : 0;
+                    restriction |= lobby.ExpansionRequired ? 0x08 : 0;
                     restriction |= lobby.NoHeadshot ? 0x10 : 0;
 
                     writer.WriteUInt32((uint)baseIndex++);

@@ -6,7 +6,10 @@ using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Clans;
 
-/// <summary>Serves the emblem of one clan, published or still being edited.</summary>
+/// <summary>
+/// Serves the published emblem of a clan. There is one emblem, not a draft and a
+/// published copy: an upload replaces it, so every fetch answers with the same bytes.
+/// </summary>
 public abstract class ClanEmblemHandlerBase : ICommandHandler
 {
     private readonly ClanService clanService;
@@ -27,9 +30,6 @@ public abstract class ClanEmblemHandlerBase : ICommandHandler
     /// <summary>Reply the handler answers on.</summary>
     protected abstract ushort ReplyCommand { get; }
 
-    /// <summary>Whether the emblem still being edited is preferred over the published one.</summary>
-    protected virtual bool PreferWorkInProgress => false;
-
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
@@ -49,11 +49,7 @@ public abstract class ClanEmblemHandlerBase : ICommandHandler
             return;
         }
 
-        var emblem = PreferWorkInProgress
-            ? clan.EmblemWorkInProgress ?? clan.Emblem
-            : clan.Emblem;
-
-        await sessionHelper.SendPacketAsync(session, ReplyCommand, BuildEmblemPayload(emblem), cancellationToken);
+        await sessionHelper.SendPacketAsync(session, ReplyCommand, BuildEmblemPayload(clan.Emblem), cancellationToken);
     }
 
     /// <summary>Builds the emblem reply: a status word followed by the fixed-width emblem.</summary>
@@ -104,17 +100,14 @@ public sealed class GetClanEmblemHandler(ClanService clanService, SessionHelper 
     protected override ushort ReplyCommand => CommandConstants.GetClanEmblemResult;
 }
 
-/// <summary>Serves the emblem a clan is currently editing.</summary>
+/// <summary>Serves the clan-detail fetch, whose emblem block is the published emblem.</summary>
 /// <param name="clanService">Service that owns the clans.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
-public sealed class GetClanEmblemWorkInProgressHandler(ClanService clanService, SessionHelper sessionHelper)
+public sealed class GetClanDetailHandler(ClanService clanService, SessionHelper sessionHelper)
     : ClanEmblemHandlerBase(clanService, sessionHelper)
 {
     /// <inheritdoc />
-    protected override ushort ReplyCommand => CommandConstants.GetClanEmblemWorkInProgressResult;
-
-    /// <inheritdoc />
-    protected override bool PreferWorkInProgress => true;
+    protected override ushort ReplyCommand => CommandConstants.GetClanDetailResult;
 }
 
 /// <summary>Stores the emblem the client submits.</summary>

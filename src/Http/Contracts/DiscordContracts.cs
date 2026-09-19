@@ -208,7 +208,7 @@ public sealed class DiscordMessageSendRequest
 {
     /// <summary>Channel the message is written in.</summary>
     [Required]
-    public required string ChannelIdentifier { get; set; }
+    public required string ChannelId { get; set; }
 
     /// <summary>Text of the message.</summary>
     [Required]

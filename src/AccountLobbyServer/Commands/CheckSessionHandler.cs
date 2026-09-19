@@ -36,7 +36,7 @@ public sealed class CheckSessionHandler(
         }
 
         var reader = new PacketReader(packet.Payload);
-        var claimedUserIdentifier = reader.ReadUInt32();
+        var claimedAccountIdentifier = (int)reader.ReadUInt32();
         var sessionField = CryptoUtility.StoredSessionFieldFromWire(reader.ReadBytes(SessionFieldLength));
 
         // The client derived this from its login token, so the session row
@@ -53,12 +53,12 @@ public sealed class CheckSessionHandler(
 
         // The session is real, but it has to belong to whoever the client says
         // it is; otherwise a leaked token would let any identifier be claimed.
-        if (storedSession.UserIdentifier != claimedUserIdentifier)
+        if (storedSession.AccountIdentifier != claimedAccountIdentifier)
         {
             logger.LogInformation(
                 "[tcp][account] check session: session belongs to user {Owner}, client claimed {Claimed}",
-                storedSession.UserIdentifier,
-                claimedUserIdentifier);
+                storedSession.AccountIdentifier,
+                claimedAccountIdentifier);
             await sessionHelper.SendResultAsync(session, 0x3004, ErrorCodeConstants.ResultInvalidSession, cancellationToken);
             return;
         }
@@ -66,7 +66,7 @@ public sealed class CheckSessionHandler(
         // Entering an account lobby means choosing a character, so a stale
         // selection is meaningless here; the character choice arrives with the
         // gameplay lobby's check-session.
-        session.UserIdentifier = storedSession.UserIdentifier;
+        session.AccountIdentifier = storedSession.AccountIdentifier;
         session.CharacterIdentifier = null;
 
         await sessionHelper.SendResultAsync(session, 0x3004, ErrorCodeConstants.ResultNone, cancellationToken);

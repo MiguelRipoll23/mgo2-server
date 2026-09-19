@@ -55,7 +55,7 @@ public sealed class GetCharacterInfoHandler(
         // The login the character arrived with is what the payload below reports as the
         // previous one, so it is read before the stamp replaces it. The reload the title
         // pass may do would otherwise hand back the stamp this visit just wrote.
-        var previousLoginTime = character.LastLoginTime ?? 0;
+        var previousLoginTime = (int)(character.LastSeenAt?.ToUnixTimeSeconds() ?? 0);
 
         // The visit is stamped first, and the gap it reports is what the title pass is
         // given: one title is unlocked by an absence, so it is measured against the login

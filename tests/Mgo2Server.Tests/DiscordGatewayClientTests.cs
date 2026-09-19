@@ -44,11 +44,13 @@ public sealed class DiscordGatewayClientTests
         var registry = new LobbyConnectionRegistryService(NullLogger<LobbyConnectionRegistryService>.Instance);
         var lobby = registry.Open(3, "Free Battle");
         var responder = new RecordingResponder();
+        var messageService = new RecordingMessageService();
 
         var client = new DiscordGatewayClientService(
             CreateOptions(gateway.Port),
             new DiscordCommandService(
                 responder,
+                messageService,
                 new FlashNewsDispatcherService(registry, NullLogger<FlashNewsDispatcherService>.Instance),
                 CreateOptions(gateway.Port),
                 NullLogger<DiscordCommandService>.Instance),
@@ -76,6 +78,7 @@ public sealed class DiscordGatewayClientTests
 
         Assert.True(lobby.Outgoing.TryRead(out var packet));
         Assert.Equal("Maintenance soon", packet.FlashNews.Message);
+        Assert.Empty(messageService.Messages);
 
         await client.StopAsync(CancellationToken.None);
     }
@@ -159,6 +162,7 @@ public sealed class DiscordGatewayClientTests
             CreateOptions(port),
             new DiscordCommandService(
                 responder,
+                new RecordingMessageService(),
                 new FlashNewsDispatcherService(
                     new LobbyConnectionRegistryService(NullLogger<LobbyConnectionRegistryService>.Instance),
                     NullLogger<FlashNewsDispatcherService>.Instance),
@@ -191,6 +195,20 @@ public sealed class DiscordGatewayClientTests
             CancellationToken cancellationToken)
         {
             answer.TrySetResult((interactionIdentifier, content));
+            return Task.FromResult(true);
+        }
+    }
+
+    private sealed class RecordingMessageService : IDiscordMessageService
+    {
+        public List<(string ChannelIdentifier, string Content)> Messages { get; } = [];
+
+        public Task<bool> SendChannelMessageAsync(
+            string channelIdentifier,
+            string content,
+            CancellationToken cancellationToken)
+        {
+            Messages.Add((channelIdentifier, content));
             return Task.FromResult(true);
         }
     }

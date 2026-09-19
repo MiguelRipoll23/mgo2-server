@@ -44,7 +44,7 @@ public sealed class TcpSession
     public uint NextSequenceOut() => (uint)Interlocked.Increment(ref sequenceOut);
 
     /// <summary>Account the client proved ownership of, when it has.</summary>
-    public int? UserIdentifier { get; set; }
+    public int? AccountIdentifier { get; set; }
 
     /// <summary>Character the client selected, when it has.</summary>
     public int? CharacterIdentifier { get; set; }

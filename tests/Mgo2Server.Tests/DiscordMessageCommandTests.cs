@@ -3,136 +3,151 @@ using Mgo2Server.Http.Contracts;
 using Mgo2Server.Http.Coordination;
 using Mgo2Server.Http.Discord;
 using Mgo2Server.Http.Options;
-using Mgo2Server.Shared.Domain.News;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.Tests;
 
 /// <summary>
-/// The flash command arrives over the gateway as an interaction, so it is only
-/// run for the staff roles, only in the configured guild, and its outcome is
-/// written back as the answer to the interaction.
+/// The message command arrives over the gateway as an interaction, so it is only
+/// run for the staff roles, only in the configured guild, and it writes an
+/// official bot message in the channel it was used in.
 /// </summary>
-public sealed class DiscordFlashCommandTests
+public sealed class DiscordMessageCommandTests
 {
     private const string ModeratorRole = "100000000000000001";
     private const string ManagerRole = "100000000000000002";
     private const string OtherRole = "100000000000000003";
+    private const string Channel = "200000000000000001";
     private const string Interaction = "300000000000000001";
     private const string InteractionToken = "interaction-token";
 
     [Theory]
     [InlineData(ModeratorRole)]
     [InlineData(ManagerRole)]
-    public async Task StaffRolesRelayTheFlashNews(string role)
+    public async Task StaffRolesWriteAnOfficialMessageInTheChannel(string role)
     {
-        var registry = new LobbyConnectionRegistryService(NullLogger<LobbyConnectionRegistryService>.Instance);
-        var lobby = registry.Open(3, "Free Battle");
+        var messageService = new RecordingMessageService();
         var responder = new RecordingResponder();
 
-        await CreateService(responder, registry).HandleInteractionAsync(
+        await CreateService(responder, messageService).HandleInteractionAsync(
             CommandInteraction("Maintenance in ten minutes", role),
             CancellationToken.None);
 
-        // The command and the broadcast endpoints share the same flow, so the
-        // lobby receives the announcement the coordinator relays.
-        Assert.True(lobby.Outgoing.TryRead(out var message));
-        Assert.Equal("Maintenance in ten minutes", message.FlashNews.Message);
-        Assert.Equal(FlashNewsSubcommand.ServerMessage, (ushort)message.FlashNews.Subcommand);
+        var message = Assert.Single(messageService.Messages);
+        Assert.Equal(Channel, message.ChannelIdentifier);
+        Assert.Equal("Maintenance in ten minutes", message.Content);
 
         var reply = Assert.Single(responder.Answers);
         Assert.Equal(Interaction, reply.InteractionIdentifier);
-        Assert.Contains("1 lobbies", reply.Content);
+        Assert.Contains("sent", reply.Content, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task ACommandFromAnotherRoleIsRefused()
     {
-        var registry = new LobbyConnectionRegistryService(NullLogger<LobbyConnectionRegistryService>.Instance);
-        var lobby = registry.Open(3, "Free Battle");
+        var messageService = new RecordingMessageService();
         var responder = new RecordingResponder();
 
-        await CreateService(responder, registry).HandleInteractionAsync(
+        await CreateService(responder, messageService).HandleInteractionAsync(
             CommandInteraction("Maintenance in ten minutes", OtherRole),
             CancellationToken.None);
 
         Assert.Contains("Moderator or Manager", Assert.Single(responder.Answers).Content);
-        Assert.False(lobby.Outgoing.TryRead(out _));
+        Assert.Empty(messageService.Messages);
     }
 
     [Fact]
-    public async Task ACommandWithoutAMessageIsRefused()
+    public async Task ACommandWithoutABodyIsRefused()
     {
+        var messageService = new RecordingMessageService();
         var responder = new RecordingResponder();
 
-        await CreateService(responder).HandleInteractionAsync(
+        await CreateService(responder, messageService).HandleInteractionAsync(
             CommandInteraction(null, ModeratorRole),
             CancellationToken.None);
 
         Assert.Contains("required", Assert.Single(responder.Answers).Content);
+        Assert.Empty(messageService.Messages);
     }
 
     [Fact]
     public async Task ACommandOfAnotherGuildIsIgnored()
     {
+        var messageService = new RecordingMessageService();
         var responder = new RecordingResponder();
         var interaction = CommandInteraction("hello", ModeratorRole);
         interaction.GuildIdentifier = "99";
 
-        await CreateService(responder).HandleInteractionAsync(interaction, CancellationToken.None);
+        await CreateService(responder, messageService).HandleInteractionAsync(interaction, CancellationToken.None);
 
         Assert.Empty(responder.Answers);
+        Assert.Empty(messageService.Messages);
     }
 
     [Fact]
     public async Task AnUnrelatedCommandIsIgnored()
     {
+        var messageService = new RecordingMessageService();
         var responder = new RecordingResponder();
         var interaction = CommandInteraction("hello", ModeratorRole);
         interaction.Data!.Name = "something-else";
 
-        await CreateService(responder).HandleInteractionAsync(interaction, CancellationToken.None);
+        await CreateService(responder, messageService).HandleInteractionAsync(interaction, CancellationToken.None);
 
         Assert.Empty(responder.Answers);
+        Assert.Empty(messageService.Messages);
     }
 
     [Fact]
-    public async Task AMessageLongerThanTheTickerCarriesIsTrimmed()
+    public async Task AMessageLongerThanDiscordAcceptsIsTrimmed()
     {
-        var registry = new LobbyConnectionRegistryService(NullLogger<LobbyConnectionRegistryService>.Instance);
-        var lobby = registry.Open(3, "Free Battle");
+        var messageService = new RecordingMessageService();
         var responder = new RecordingResponder();
 
-        await CreateService(responder, registry).HandleInteractionAsync(
-            CommandInteraction(new string('x', 300), ModeratorRole),
+        await CreateService(responder, messageService).HandleInteractionAsync(
+            CommandInteraction(new string('x', 3000), ModeratorRole),
             CancellationToken.None);
 
-        Assert.True(lobby.Outgoing.TryRead(out var packet));
-        Assert.Equal(255, packet.FlashNews.Message.Length);
+        var message = Assert.Single(messageService.Messages);
+        Assert.Equal(2000, message.Content.Length);
     }
 
     [Fact]
-    public void AnUnconfiguredRoleAllowsNobody()
+    public async Task ARefusedMessageIsAnsweredWithAFailure()
     {
-        var options = new DiscordOptions
-        {
-            Enabled = true,
-            BotToken = "token",
-        };
+        var messageService = new RecordingMessageService(accepted: false);
+        var responder = new RecordingResponder();
 
-        Assert.False(options.AllowsStaffCommand([ModeratorRole]));
+        await CreateService(responder, messageService).HandleInteractionAsync(
+            CommandInteraction("Maintenance in ten minutes", ModeratorRole),
+            CancellationToken.None);
+
+        Assert.Contains("could not be sent", Assert.Single(responder.Answers).Content);
+    }
+
+    [Fact]
+    public async Task ACommandWithoutAChannelIsIgnored()
+    {
+        var messageService = new RecordingMessageService();
+        var responder = new RecordingResponder();
+        var interaction = CommandInteraction("hello", ModeratorRole);
+        interaction.ChannelIdentifier = null;
+
+        await CreateService(responder, messageService).HandleInteractionAsync(interaction, CancellationToken.None);
+
+        Assert.Empty(responder.Answers);
+        Assert.Empty(messageService.Messages);
     }
 
     private static DiscordCommandService CreateService(
         RecordingResponder responder,
-        LobbyConnectionRegistryService? registry = null) =>
+        RecordingMessageService messageService) =>
         new(
             responder,
-            new RecordingMessageService(),
+            messageService,
             new FlashNewsDispatcherService(
-                registry ?? new LobbyConnectionRegistryService(
-                    NullLogger<LobbyConnectionRegistryService>.Instance),
+                new LobbyConnectionRegistryService(NullLogger<LobbyConnectionRegistryService>.Instance),
                 NullLogger<FlashNewsDispatcherService>.Instance),
             Options.Create(Configured()),
             NullLogger<DiscordCommandService>.Instance);
@@ -146,18 +161,18 @@ public sealed class DiscordFlashCommandTests
         ManagerRoleIdentifier = ManagerRole,
     };
 
-    private static DiscordInteraction CommandInteraction(string? message, string role) => new()
+    private static DiscordInteraction CommandInteraction(string? body, string role) => new()
     {
         Identifier = Interaction,
         Token = InteractionToken,
         Type = 2,
         GuildIdentifier = "10",
-        ChannelIdentifier = "200000000000000001",
+        ChannelIdentifier = Channel,
         Member = new DiscordInteractionMember { Roles = [role] },
         Data = new DiscordApplicationCommandData
         {
-            Name = DiscordOptions.FlashCommandName,
-            Options = message is null
+            Name = DiscordOptions.MessageCommandName,
+            Options = body is null
                 ?
                 [
                     new DiscordApplicationCommandOption
@@ -170,8 +185,8 @@ public sealed class DiscordFlashCommandTests
                 [
                     new DiscordApplicationCommandOption
                     {
-                        Name = "message",
-                        Value = JsonSerializer.SerializeToElement(message),
+                        Name = "body",
+                        Value = JsonSerializer.SerializeToElement(body),
                     },
                 ],
         },
@@ -192,12 +207,17 @@ public sealed class DiscordFlashCommandTests
         }
     }
 
-    private sealed class RecordingMessageService : IDiscordMessageService
+    private sealed class RecordingMessageService(bool accepted = true) : IDiscordMessageService
     {
+        public List<(string ChannelIdentifier, string Content)> Messages { get; } = [];
+
         public Task<bool> SendChannelMessageAsync(
             string channelIdentifier,
             string content,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(true);
+            CancellationToken cancellationToken)
+        {
+            Messages.Add((channelIdentifier, content));
+            return Task.FromResult(accepted);
+        }
     }
 }

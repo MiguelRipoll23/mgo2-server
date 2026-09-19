@@ -10,7 +10,7 @@ internal static class ContractMapping
     /// <summary>Maps a news article.</summary>
     /// <param name="article">Article to map.</param>
     public static NewsItemContract ToContract(this NewsArticle article) =>
-        new(article.Identifier, article.Important, article.Time, article.Topic, article.Message);
+        new(article.Identifier, article.Important, article.Time, article.Title, article.Body);
 
     /// <summary>Maps a game room.</summary>
     /// <param name="game">Room to map.</param>
@@ -43,8 +43,8 @@ internal static class ContractMapping
             lobby.IpAddress,
             lobby.Port,
             lobby.PlayersCount,
-            lobby.BeginnerOnly,
-            lobby.ExpansionOnly,
+            lobby.BeginnersOnly,
+            lobby.ExpansionRequired,
             lobby.NoHeadshot,
             lobby.ReplaysOnly);
 
@@ -59,8 +59,8 @@ internal static class ContractMapping
             lobby.IpAddress,
             lobby.Port,
             lobby.PlayersCount,
-            lobby.BeginnerOnly,
-            lobby.ExpansionOnly,
+            lobby.BeginnersOnly,
+            lobby.ExpansionRequired,
             lobby.NoHeadshot,
             lobby.ReplaysOnly);
 }

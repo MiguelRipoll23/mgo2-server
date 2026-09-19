@@ -24,11 +24,11 @@ public sealed class SessionService(IDbContextFactory<Mgo2DatabaseContext> contex
     }
 
     /// <summary>Stores the session field for an account, replacing any existing row.</summary>
-    /// <param name="userIdentifier">Identifier of the account.</param>
+    /// <param name="accountIdentifier">Identifier of the account.</param>
     /// <param name="token">Session field to store.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<UserSession> CreateSessionAsync(
-        int userIdentifier,
+        int accountIdentifier,
         string token,
         CancellationToken cancellationToken = default)
     {
@@ -36,15 +36,15 @@ public sealed class SessionService(IDbContextFactory<Mgo2DatabaseContext> contex
 
         // Serialize logins of the same account on its user row. A plain
         // check-then-insert would let two simultaneous logins create a second
-        // row; the unique index on sessions.user_id is the backstop on a fresh
+        // row; the unique index on sessions.account_id is the backstop on a fresh
         // schema, but this lock also holds on a database created before it.
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
         await context.Database.ExecuteSqlAsync(
-            $"SELECT id FROM users WHERE id = {userIdentifier} FOR UPDATE",
+            $"SELECT id FROM accounts WHERE id = {accountIdentifier} FOR UPDATE",
             cancellationToken);
 
         var existing = await context.UserSessions
-            .FirstOrDefaultAsync(session => session.UserIdentifier == userIdentifier, cancellationToken);
+            .FirstOrDefaultAsync(session => session.AccountIdentifier == accountIdentifier, cancellationToken);
 
         if (existing is not null)
         {
@@ -54,7 +54,7 @@ public sealed class SessionService(IDbContextFactory<Mgo2DatabaseContext> contex
             return existing;
         }
 
-        var created = new UserSession { UserIdentifier = userIdentifier, Token = token };
+        var created = new UserSession { AccountIdentifier = accountIdentifier, Token = token };
         context.UserSessions.Add(created);
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

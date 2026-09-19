@@ -7,7 +7,7 @@ namespace Mgo2Server.Http.Discord;
 
 /// <summary>
 /// Brings the REST side of the integration up once the API is running: it
-/// registers the flash command, which Discord only takes over its REST API, and
+/// registers the slash commands, which Discord only takes over its REST API, and
 /// finds or creates the channel the player count is published in.
 /// </summary>
 /// <remarks>
@@ -47,13 +47,14 @@ public sealed class DiscordStartupService(
     /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    /// <summary>Registers the command and prepares the channel of the count.</summary>
+    /// <summary>Registers the commands and prepares the channel of the count.</summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     private async Task InitializeAsync(CancellationToken cancellationToken)
     {
         try
         {
             await restClient.RegisterFlashCommandAsync(cancellationToken);
+            await restClient.RegisterMessageCommandAsync(cancellationToken);
 
             if (!options.Value.IsPlayerCountConfigured)
             {

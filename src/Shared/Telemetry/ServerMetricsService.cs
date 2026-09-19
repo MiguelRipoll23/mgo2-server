@@ -86,7 +86,7 @@ public sealed class ServerMetricsService : IDisposable
         }
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        RecordTotalUsers(await context.Users.LongCountAsync(cancellationToken));
+        RecordTotalUsers(await context.Accounts.LongCountAsync(cancellationToken));
     }
 
     /// <summary>
@@ -98,7 +98,7 @@ public sealed class ServerMetricsService : IDisposable
     /// <param name="playerCount">Players currently in the hosted lobby.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task ReportLobbyTotalsAsync(
-        int lobbyIdentifier,
+        long lobbyIdentifier,
         long playerCount,
         CancellationToken cancellationToken = default)
     {
@@ -121,7 +121,7 @@ public sealed class ServerMetricsService : IDisposable
     /// <param name="lobbyName">Name the lobby is reported under.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task ReportTotalMatchesAsync(
-        int lobbyIdentifier,
+        long lobbyIdentifier,
         string? lobbyName,
         CancellationToken cancellationToken = default)
     {
@@ -144,7 +144,7 @@ public sealed class ServerMetricsService : IDisposable
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>Name of the lobby.</returns>
     public async Task<string> ResolveLobbyNameAsync(
-        int lobbyIdentifier,
+        long lobbyIdentifier,
         CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -159,7 +159,7 @@ public sealed class ServerMetricsService : IDisposable
 
     /// <summary>Labels a total of a lobby that no longer has a row.</summary>
     /// <param name="lobbyIdentifier">Identifier of the lobby.</param>
-    public static string FormatLobbyIdentifier(int lobbyIdentifier) => $"lobby_{lobbyIdentifier}";
+    public static string FormatLobbyIdentifier(long lobbyIdentifier) => $"lobby_{lobbyIdentifier}";
 
     /// <inheritdoc />
     public void Dispose() => meter.Dispose();

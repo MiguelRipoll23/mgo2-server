@@ -61,7 +61,7 @@ public sealed partial class ClanService
             .Select(application => new ClanApplicant(
                 application.CharacterIdentifier,
                 application.Character != null ? application.Character.Name : string.Empty,
-                application.AppliedAt))
+                application.AppliedAt.UtcDateTime))
             .ToListAsync(cancellationToken);
     }
 

@@ -37,13 +37,13 @@ internal static class DiscordMessageEndpoints
     {
         // The channel is placed into the request path, so only the snowflake
         // Discord names a channel with may reach it.
-        if (!ChannelIdentifierPattern.IsMatch(request.ChannelIdentifier))
+        if (!ChannelIdentifierPattern.IsMatch(request.ChannelId))
         {
-            return RequestBodyValidation.Reject("channelIdentifier: expected a Discord snowflake");
+            return RequestBodyValidation.Reject("channelId: expected a Discord snowflake");
         }
 
         var sent = await messenger.SendChannelMessageAsync(
-            request.ChannelIdentifier,
+            request.ChannelId,
             request.Content,
             cancellationToken);
 

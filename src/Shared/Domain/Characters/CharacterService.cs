@@ -5,13 +5,13 @@ using Microsoft.EntityFrameworkCore;
 namespace Mgo2Server.Shared.Domain.Characters;
 
 /// <summary>Fields accepted when a character is created.</summary>
-/// <param name="UserIdentifier">Account the character belongs to.</param>
+/// <param name="AccountIdentifier">Account the character belongs to.</param>
 /// <param name="Name">Name of the character.</param>
-/// <param name="CreationTime">Unix timestamp the character was created at.</param>
+/// <param name="CreatedAt">Timestamp the character was created at.</param>
 public sealed record CharacterCreateInput(
-    int UserIdentifier,
+    int AccountIdentifier,
     string Name,
-    int CreationTime);
+    DateTimeOffset CreatedAt);
 
 /// <summary>A friends or blocked entry together with the name it points at.</summary>
 /// <param name="TargetIdentifier">Character the entry refers to.</param>
@@ -36,16 +36,16 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
     : DomainService(contextFactory)
 {
     /// <summary>Lists the active characters of an account.</summary>
-    /// <param name="userIdentifier">Identifier of the account.</param>
+    /// <param name="accountIdentifier">Identifier of the account.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<List<Character>> FindByUserIdentifierAsync(
-        int userIdentifier,
+    public async Task<List<Character>> FindByAccountIdentifierAsync(
+        int accountIdentifier,
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
         return await context.Characters
             .AsNoTracking()
-            .Where(character => character.UserIdentifier == userIdentifier && character.Active)
+            .Where(character => character.AccountIdentifier == accountIdentifier && character.Active)
             .ToListAsync(cancellationToken);
     }
 
@@ -85,9 +85,9 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
 
         var character = new Character
         {
-            UserIdentifier = input.UserIdentifier,
+            AccountIdentifier = input.AccountIdentifier,
             Name = input.Name,
-            CreationTime = input.CreationTime,
+            CreatedAt = input.CreatedAt,
         };
 
         context.Characters.Add(character);

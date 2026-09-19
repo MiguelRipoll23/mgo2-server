@@ -46,8 +46,8 @@ public sealed class MailMessage
     public string Body { get; set; } = string.Empty;
 
     /// <summary>Whether the recipient has read the message.</summary>
-    [Column("recipient_read")]
-    public bool RecipientRead { get; set; }
+    [Column("is_read")]
+    public bool IsRead { get; set; }
 
     /// <summary>Whether the recipient has deleted the message.</summary>
     [Column("recipient_deleted")]
@@ -61,9 +61,9 @@ public sealed class MailMessage
     [Column("sender_deleted")]
     public bool SenderDeleted { get; set; }
 
-    /// <summary>Timestamp without time zone the message was sent at.</summary>
+    /// <summary>Timestamp with time zone the message was sent at.</summary>
     [Column("sent_at")]
-    public DateTime SentAt { get; set; }
+    public DateTimeOffset SentAt { get; set; }
 
     /// <summary>Sending character.</summary>
     [ForeignKey(nameof(SenderCharacterIdentifier))]
@@ -107,9 +107,9 @@ public sealed class GameMasterMail
     [MaxLength(708)]
     public string Body { get; set; } = string.Empty;
 
-    /// <summary>Timestamp without time zone the message was sent at.</summary>
+    /// <summary>Timestamp with time zone the message was sent at.</summary>
     [Column("sent_at")]
-    public DateTime SentAt { get; set; }
+    public DateTimeOffset SentAt { get; set; }
 
     /// <summary>Sending character.</summary>
     [ForeignKey(nameof(SenderCharacterIdentifier))]

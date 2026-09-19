@@ -61,9 +61,9 @@ public sealed class GetNewsHandler(
         var writer = new PacketWriter();
         writer.WriteUInt32((uint)article.Identifier);
         writer.WriteUInt8(article.Important ? 1 : 0);
-        writer.WriteUInt32((uint)article.Time);
-        writer.WriteFixedString(article.Topic, NewsTopicLength);
-        writer.WriteBytes(Encoding.UTF8.GetBytes(article.Message));
+        writer.WriteUInt32((uint)article.Time.ToUnixTimeSeconds());
+        writer.WriteFixedString(article.Title, NewsTopicLength);
+        writer.WriteBytes(Encoding.UTF8.GetBytes(article.Body));
         writer.WriteUInt8(0);
         return writer.Build();
     }

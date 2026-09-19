@@ -31,7 +31,7 @@ public sealed class CreateCharacterHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.UserIdentifier is null)
+        if (session.AccountIdentifier is null)
         {
             await sessionHelper.SendErrorAsync(session, 0x3102, ErrorCodeConstants.ErrorInvalidSession, cancellationToken);
             return;
@@ -89,23 +89,22 @@ public sealed class CreateCharacterHandler(
             return;
         }
 
-        var user = await userService.FindByIdAsync(session.UserIdentifier.Value, cancellationToken);
+        var user = await userService.FindByIdAsync(session.AccountIdentifier.Value, cancellationToken);
         if (user is null)
         {
             await sessionHelper.SendErrorAsync(session, 0x3102, ErrorCodeConstants.ErrorInvalidSession, cancellationToken);
             return;
         }
 
-        var existingCharacters = await characterService.FindByUserIdentifierAsync(session.UserIdentifier.Value, cancellationToken);
+        var existingCharacters = await characterService.FindByAccountIdentifierAsync(session.AccountIdentifier.Value, cancellationToken);
         if (existingCharacters.Count >= user.Slots)
         {
             await sessionHelper.SendErrorAsync(session, 0x3102, ErrorCodeConstants.ErrorGeneral, cancellationToken);
             return;
         }
 
-        var creationTime = (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var created = await characterService.CreateAsync(
-            new CharacterCreateInput(session.UserIdentifier.Value, name, creationTime),
+            new CharacterCreateInput(session.AccountIdentifier.Value, name, DateTimeOffset.UtcNow),
             appearance =>
             {
                 appearance.Gender = gender;

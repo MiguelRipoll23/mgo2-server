@@ -34,9 +34,9 @@ public sealed class CharacterTitle
     [Column("rank")]
     public int Rank { get; set; }
 
-    /// <summary>Timestamp without time zone the title was unlocked at.</summary>
+    /// <summary>Timestamp with time zone the title was unlocked at.</summary>
     [Column("unlocked_at")]
-    public DateTime UnlockedAt { get; set; }
+    public DateTimeOffset UnlockedAt { get; set; }
 
     /// <summary>Character that earned the title.</summary>
     [ForeignKey(nameof(CharacterIdentifier))]

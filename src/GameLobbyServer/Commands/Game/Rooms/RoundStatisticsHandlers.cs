@@ -46,18 +46,18 @@ public sealed class HostUpdateStatsHandler(
 
 /// <summary>
 /// Applies one end-of-round report: stores the frame as a round report, then
-/// applies the statistics and the experience it carries. The report is only
-/// applied when the target verifiably played the round.
+/// applies the experience it carries. The frame is the statistics store, so the
+/// report is only stored when the target verifiably played the round — there is no
+/// accumulator left for a dropped report to have already dirtied.
 /// </summary>
 /// <param name="gameService">Service that owns the rooms.</param>
 /// <param name="characterService">Service that owns the character records.</param>
-/// <param name="statisticsService">Service that owns the lifetime statistics.</param>    /// <param name="roundReportService">Service that owns the round reports.</param>
-    /// <param name="titleService">Service that latches the titles a round earns.</param>
-    /// <param name="logger">Logger of this processor.</param>
+/// <param name="roundReportService">Service that owns the round reports.</param>
+/// <param name="titleService">Service that latches the titles a round earns.</param>
+/// <param name="logger">Logger of this processor.</param>
 public sealed class RoundStatisticsProcessor(
     GameService gameService,
     CharacterService characterService,
-    CharacterStatisticsService statisticsService,
     RoundReportService roundReportService,
     CharacterTitleService titleService,
     ILogger<RoundStatisticsProcessor> logger)
@@ -138,21 +138,38 @@ public sealed class RoundStatisticsProcessor(
 
         if (game is not null)
         {
-            // The whole frame is stored: these rows are the match history.
+            // The whole frame is stored: these rows are the match history and the
+            // statistics every screen is derived from.
             await roundReportService.InsertAsync(
                 new RoundReportInput(
                     game.Identifier,
                     game.HostIdentifier,
                     (int)targetIdentifier,
+                    (short)round.GameMode,
                     (short)BinaryUtility.ReadUInt16BigEndian(payload, TeamWinOffset),
                     (short)BinaryUtility.ReadUInt16BigEndian(payload, SecondsOffset),
                     experience,
                     aborted,
-                    session.LobbyIdentifier is null ? (short)0 : (short)(await ResolveLobbySubtypeAsync(game, cancellationToken))),
+                    session.LobbyIdentifier is null ? (short)0 : (short)(await ResolveLobbySubtypeAsync(game, cancellationToken)),
+                    new RoundCounters(
+                        (short)round.Wins,
+                        (short)round.Kills,
+                        (short)round.Deaths,
+                        (short)round.Score,
+                        (short)round.Stuns,
+                        (short)round.StunsReceived,
+                        (short)round.HeadshotKills,
+                        (short)round.HeadshotDeaths,
+                        (short)round.HeadshotStuns,
+                        (short)round.HeadshotStunsReceived,
+                        (short)round.LockKills,
+                        (short)round.LockDeaths,
+                        (short)round.LockStuns,
+                        (short)round.LockStunsReceived,
+                        (short)round.ConsecutiveKills)),
                 cancellationToken);
         }
 
-        await statisticsService.ApplyRoundStatisticsAsync((int)targetIdentifier, round, cancellationToken);
         await characterService.AddExperienceAsync((int)targetIdentifier, round.Experience, round.Aborted, cancellationToken);
 
         // Titles are evaluated after the statistics and the experience have

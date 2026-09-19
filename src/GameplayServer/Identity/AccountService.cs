@@ -52,21 +52,21 @@ public sealed class AccountService(
         // must not be "upgraded" to a modern KDF without a client-side change.
         await context.Database.ExecuteSqlAsync(
             $"""
-             INSERT INTO users (display_name, password)
+             INSERT INTO accounts (display_name, password)
              VALUES ({accountName}, {cryptographyService.ComputeMd5Hex(accountPassword)})
              ON CONFLICT (display_name) DO UPDATE SET password = EXCLUDED.password
              """,
             cancellationToken);
 
-        var userIdentifier = await context.Users
-            .Where(user => user.DisplayName == accountName)
-            .Select(user => user.Identifier)
+        var accountIdentifier = await context.Accounts
+            .Where(account => account.DisplayName == accountName)
+            .Select(account => account.Identifier)
             .FirstAsync(cancellationToken);
 
         await context.Database.ExecuteSqlAsync(
             $"""
-             INSERT INTO characters (id, user_id, name, comment)
-             VALUES ({characterIdentifier}, {userIdentifier}, {characterName}, {CharacterComment})
+             INSERT INTO characters (id, account_id, name, comment)
+             VALUES ({characterIdentifier}, {accountIdentifier}, {characterName}, {CharacterComment})
              ON CONFLICT DO NOTHING
              """,
             cancellationToken);

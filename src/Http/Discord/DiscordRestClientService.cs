@@ -75,6 +75,9 @@ public sealed class DiscordRestClientService(
     /// <summary>Longest message the command accepts, which is what the ticker of the game holds.</summary>
     private const int MaximumMessageOptionLength = 255;
 
+    /// <summary>Longest channel message Discord accepts.</summary>
+    private const int MaximumChannelMessageLength = 2000;
+
     /// <summary>Serializer the request bodies and the channel responses are read and written with.</summary>
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
@@ -82,7 +85,41 @@ public sealed class DiscordRestClientService(
 
     /// <summary>
     /// Registers the flash command of the application. Discord only takes a
-    /// command over its REST API, so this is the one setup call the WebSocket
+    /// command over its REST API, so this is one of the setup calls the
+    /// WebSocket integration keeps.
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Whether Discord accepted the command.</returns>
+    public Task<bool> RegisterFlashCommandAsync(CancellationToken cancellationToken) =>
+        RegisterCommandAsync(
+            DiscordOptions.FlashCommandName,
+            "Sends flash news to every game lobby.",
+            "Text shown in the ticker of every connected client.",
+            "message",
+            MaximumMessageOptionLength,
+            "register the flash command",
+            cancellationToken);
+
+    /// <summary>
+    /// Registers the message command of the application. Discord only takes a
+    /// command over its REST API, so this is one of the setup calls the
+    /// WebSocket integration keeps.
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Whether Discord accepted the command.</returns>
+    public Task<bool> RegisterMessageCommandAsync(CancellationToken cancellationToken) =>
+        RegisterCommandAsync(
+            DiscordOptions.MessageCommandName,
+            "Sends an official message from the bot into this channel.",
+            "Text of the official message.",
+            "body",
+            MaximumChannelMessageLength,
+            "register the message command",
+            cancellationToken);
+
+    /// <summary>
+    /// Registers one command of the application. Discord only takes a command
+    /// over its REST API, so this is the one setup call the WebSocket
     /// integration keeps.
     /// </summary>
     /// <remarks>
@@ -91,31 +128,45 @@ public sealed class DiscordRestClientService(
     /// bulk overwrite the collection answers with expects a list of commands,
     /// and refuses a single one with 400.
     /// </remarks>
+    /// <param name="name">Name the command is registered with.</param>
+    /// <param name="description">Description Discord shows for the command.</param>
+    /// <param name="optionDescription">Description of the option that carries the text.</param>
+    /// <param name="optionName">Name of the option that carries the text.</param>
+    /// <param name="maximumOptionLength">Longest text the option accepts.</param>
+    /// <param name="callDescription">Description of the call, used in the log.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>Whether Discord accepted the command.</returns>
-    public async Task<bool> RegisterFlashCommandAsync(CancellationToken cancellationToken)
+    private async Task<bool> RegisterCommandAsync(
+        string name,
+        string description,
+        string optionDescription,
+        string optionName,
+        int maximumOptionLength,
+        string callDescription,
+        CancellationToken cancellationToken)
     {
         var applicationIdentifier = DiscordApplicationIdentifierUtils.FromBotToken(options.BotToken);
         if (applicationIdentifier is null)
         {
             logger.LogWarning(
-                "The flash command is not registered; the bot token does not carry an application identifier");
+                "The {Command} command is not registered; the bot token does not carry an application identifier",
+                name);
             return false;
         }
 
         var command = new
         {
-            name = DiscordOptions.FlashCommandName,
-            description = "Sends flash news to every game lobby.",
+            name,
+            description,
             options = new[]
             {
                 new
                 {
                     type = StringOptionType,
-                    name = "message",
-                    description = "Text shown in the ticker of every connected client.",
+                    name = optionName,
+                    description = optionDescription,
                     required = true,
-                    max_length = MaximumMessageOptionLength,
+                    max_length = maximumOptionLength,
                 },
             },
         };
@@ -131,7 +182,7 @@ public sealed class DiscordRestClientService(
             HttpMethod.Post,
             path,
             command,
-            "register the flash command",
+            callDescription,
             cancellationToken) is not null;
     }
 

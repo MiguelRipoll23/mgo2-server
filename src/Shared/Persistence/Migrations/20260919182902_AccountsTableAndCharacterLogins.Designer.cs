@@ -3,6 +3,7 @@ using System;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mgo2Server.Shared.Persistence.Migrations
 {
     [DbContext(typeof(Mgo2DatabaseContext))]
-    partial class Mgo2DatabaseContextModelSnapshot : ModelSnapshot
+    [Migration("20260919182902_AccountsTableAndCharacterLogins")]
+    partial class AccountsTableAndCharacterLogins
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -111,9 +114,9 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasDefaultValue("")
                         .HasColumnName("comment");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
+                    b.Property<DateTimeOffset>("CreationTime")
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
+                        .HasColumnName("creation_time");
 
                     b.Property<int>("Experience")
                         .ValueGeneratedOnAdd()
@@ -121,9 +124,9 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasDefaultValue(0)
                         .HasColumnName("experience");
 
-                    b.Property<DateTimeOffset?>("LastSeenAt")
+                    b.Property<DateTimeOffset?>("LastLoginTime")
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("last_seen_at");
+                        .HasColumnName("last_login_time");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1111,6 +1114,10 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("instructor_name");
 
+                    b.Property<DateTimeOffset?>("InstructorSkillAwardedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("instructor_skill_awarded_at");
+
                     b.Property<short>("Rating")
                         .HasColumnType("smallint")
                         .HasColumnName("rating");
@@ -1233,6 +1240,525 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     b.ToTable("characters_sets_skills");
                 });
 
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.CharacterStatistics", b =>
+                {
+                    b.Property<int>("Identifier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Identifier"));
+
+                    b.Property<string>("BaseStatistics")
+                        .HasColumnType("text")
+                        .HasColumnName("stats_base");
+
+                    b.Property<int>("BasesCaptured")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("bases_captured");
+
+                    b.Property<int>("BasesDestroyed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("bases_destroyed");
+
+                    b.Property<int>("BombDisarms")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("bomb_disarms");
+
+                    b.Property<string>("BombStatistics")
+                        .HasColumnType("text")
+                        .HasColumnName("stats_bomb");
+
+                    b.Property<int>("Boosts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("boosts");
+
+                    b.Property<int>("BoxTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("box_time");
+
+                    b.Property<int>("BoxUses")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("box_uses");
+
+                    b.Property<string>("CaptureStatistics")
+                        .HasColumnType("text")
+                        .HasColumnName("stats_cap");
+
+                    b.Property<int>("Catapult")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("catapult");
+
+                    b.Property<int>("CharacterIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("character_id");
+
+                    b.Property<int>("Chat")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("chat");
+
+                    b.Property<int>("ConsecutiveDeaths")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("consecutive_deaths");
+
+                    b.Property<int>("ConsecutiveHeadshots")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("consecutive_headshots");
+
+                    b.Property<int>("ConsecutiveKills")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("consecutive_kills");
+
+                    b.Property<int>("ConsecutiveTeamDeathmatch")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("consecutive_tdm");
+
+                    b.Property<int>("CqcGiven")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("cqc_given");
+
+                    b.Property<int>("CqcTaken")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("cqc_taken");
+
+                    b.Property<string>("DeathmatchStatistics")
+                        .HasColumnType("text")
+                        .HasColumnName("stats_dm");
+
+                    b.Property<int>("Deaths")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("deaths");
+
+                    b.Property<int>("DedicatedHostTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("time_dedi");
+
+                    b.Property<int>("EvasionTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("evg_time");
+
+                    b.Property<int>("Falls")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("falls");
+
+                    b.Property<int>("HeadshotDeaths")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("headshot_deaths");
+
+                    b.Property<int>("HeadshotKills")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("headshot_kills");
+
+                    b.Property<int>("HeadshotStuns")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("headshot_stuns");
+
+                    b.Property<int>("HeadshotStunsReceived")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("headshot_stuns_received");
+
+                    b.Property<int>("InstructorTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("time_instructor");
+
+                    b.Property<int>("Kills")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("kills");
+
+                    b.Property<int>("KnifeKills")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("knife_kills");
+
+                    b.Property<int>("KnifeStuns")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("knife_stuns");
+
+                    b.Property<DateTimeOffset?>("LastUpdated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_updated");
+
+                    b.Property<int>("LockDeaths")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("lock_deaths");
+
+                    b.Property<int>("LockKills")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("lock_kills");
+
+                    b.Property<int>("LockStuns")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("lock_stuns");
+
+                    b.Property<int>("LockStunsReceived")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("lock_stuns_received");
+
+                    b.Property<int>("Melee")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("melee");
+
+                    b.Property<int>("MeleeReceived")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("melee_rec");
+
+                    b.Property<int>("PointsAssist")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("points_assist");
+
+                    b.Property<int>("PointsBase")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("points_base");
+
+                    b.Property<int>("RaceCheckpoints")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("race_checkpoints");
+
+                    b.Property<string>("RaceStatistics")
+                        .HasColumnType("text")
+                        .HasColumnName("stats_race");
+
+                    b.Property<int>("Radio")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("radio");
+
+                    b.Property<int>("RescueDefends")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("res_defend");
+
+                    b.Property<int>("RescueFirstGrab")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("res_first_grab");
+
+                    b.Property<int>("RescueHoldTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("res_gako_time");
+
+                    b.Property<string>("RescueStatistics")
+                        .HasColumnType("text")
+                        .HasColumnName("stats_res");
+
+                    b.Property<int>("RescueTargetDefended")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("gako_defended");
+
+                    b.Property<int>("RescueTargetReachedFirst")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("gako_first");
+
+                    b.Property<int>("RescueTargetSaved")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("gako_saved");
+
+                    b.Property<int>("Rolls")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("rolls");
+
+                    b.Property<int>("Rounds")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("rounds");
+
+                    b.Property<int>("Salutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("salutes");
+
+                    b.Property<int>("Scans")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("scans");
+
+                    b.Property<string>("ScapStatistics")
+                        .HasColumnType("text")
+                        .HasColumnName("stats_scap");
+
+                    b.Property<int>("Score")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("score");
+
+                    b.Property<string>("SdmStatistics")
+                        .HasColumnType("text")
+                        .HasColumnName("stats_sdm");
+
+                    b.Property<int>("SdmSurvivals")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("sdm_survivals");
+
+                    b.Property<int>("SelfSpotted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("self_spotted");
+
+                    b.Property<int>("SnakeHoldups")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("snake_holdups");
+
+                    b.Property<int>("SnakeInjured")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("snake_injured");
+
+                    b.Property<int>("SnakeKills")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("kills_snake");
+
+                    b.Property<int>("SnakeSelfSpotted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("snake_self_spotted");
+
+                    b.Property<int>("SnakeSpotted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("snake_spotted");
+
+                    b.Property<int>("SnakeTagsSpawned")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("snake_tags_spawned");
+
+                    b.Property<int>("SnakeTagsTaken")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("snake_tags_taken");
+
+                    b.Property<int>("SnakeTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("time_snake");
+
+                    b.Property<int>("SnakeWins")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("wins_snake");
+
+                    b.Property<string>("SneakingStatistics")
+                        .HasColumnType("text")
+                        .HasColumnName("stats_sne");
+
+                    b.Property<int>("SopDestabilizations")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("sop_destab");
+
+                    b.Property<int>("Spotted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("spotted");
+
+                    b.Property<int>("StudentTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("time_student");
+
+                    b.Property<int>("Stuns")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("stuns");
+
+                    b.Property<int>("StunsFriendly")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("stuns_friendly");
+
+                    b.Property<int>("StunsReceived")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("stuns_received");
+
+                    b.Property<int>("Suicides")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("suicides");
+
+                    b.Property<string>("TeamDeathmatchStatistics")
+                        .HasColumnType("text")
+                        .HasColumnName("stats_tdm");
+
+                    b.Property<int>("TeamKills")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("team_kills");
+
+                    b.Property<int>("TeamSneakingFirstGrab")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("tsne_grab1");
+
+                    b.Property<int>("TeamSneakingSecondGrab")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("tsne_grab2");
+
+                    b.Property<string>("TeamSneakingStatistics")
+                        .HasColumnType("text")
+                        .HasColumnName("stats_tsne");
+
+                    b.Property<int>("TotalTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("time");
+
+                    b.Property<int>("TrainedSoldiers")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("trained_soldiers");
+
+                    b.Property<int>("TrainingTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("time_training");
+
+                    b.Property<int>("Trapped")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("trapped");
+
+                    b.Property<int>("Wakeups")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("wakeups");
+
+                    b.Property<int>("Wins")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("wins");
+
+                    b.Property<int>("Withdrawals")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("withdrawals");
+
+                    b.HasKey("Identifier");
+
+                    b.HasIndex("CharacterIdentifier")
+                        .IsUnique();
+
+                    b.ToTable("character_stats");
+                });
+
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.CharacterTitle", b =>
                 {
                     b.Property<int>("Identifier")
@@ -1289,13 +1815,13 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasColumnType("bytea")
                         .HasColumnName("emblem");
 
-                    b.Property<DateTimeOffset?>("EmblemAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("emblem_at");
-
                     b.Property<int?>("EmblemEditorIdentifier")
                         .HasColumnType("integer")
                         .HasColumnName("emblem_editor_id");
+
+                    b.Property<byte[]>("EmblemWorkInProgress")
+                        .HasColumnType("bytea")
+                        .HasColumnName("emblem_wip");
 
                     b.Property<int?>("LeaderIdentifier")
                         .HasColumnType("integer")
@@ -1315,9 +1841,9 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasDefaultValue("")
                         .HasColumnName("notice");
 
-                    b.Property<DateTimeOffset?>("NoticeAt")
+                    b.Property<DateTimeOffset?>("NoticeTime")
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("notice_at");
+                        .HasColumnName("notice_time");
 
                     b.Property<int?>("NoticeWriterIdentifier")
                         .HasColumnType("integer")
@@ -2010,23 +2536,11 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("aborted");
 
-                    b.Property<short>("ConsecutiveKills")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("consecutive_kills");
-
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
-
-                    b.Property<short>("Deaths")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("deaths");
 
                     b.Property<int>("Experience")
                         .ValueGeneratedOnAdd()
@@ -2038,39 +2552,9 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("game_id");
 
-                    b.Property<short>("HeadshotDeaths")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("headshot_deaths");
-
-                    b.Property<short>("HeadshotKills")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("headshot_kills");
-
-                    b.Property<short>("HeadshotStuns")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("headshot_stuns");
-
-                    b.Property<short>("HeadshotStunsReceived")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("headshot_stuns_received");
-
                     b.Property<int>("HostCharacterIdentifier")
                         .HasColumnType("integer")
                         .HasColumnName("host_character_id");
-
-                    b.Property<short>("Kills")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("kills");
 
                     b.Property<short>("LobbySubtype")
                         .ValueGeneratedOnAdd()
@@ -2078,59 +2562,11 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasDefaultValue((short)0)
                         .HasColumnName("lobby_subtype");
 
-                    b.Property<short>("LockDeaths")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("lock_deaths");
-
-                    b.Property<short>("LockKills")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("lock_kills");
-
-                    b.Property<short>("LockStuns")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("lock_stuns");
-
-                    b.Property<short>("LockStunsReceived")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("lock_stuns_received");
-
-                    b.Property<short>("Rule")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("rule");
-
-                    b.Property<short>("Score")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("score");
-
                     b.Property<int>("Seconds")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(0)
                         .HasColumnName("seconds");
-
-                    b.Property<short>("Stuns")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("stuns");
-
-                    b.Property<short>("StunsReceived")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("stuns_received");
 
                     b.Property<int>("TargetCharacterIdentifier")
                         .HasColumnType("integer")
@@ -2141,12 +2577,6 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasColumnType("smallint")
                         .HasDefaultValue((short)0)
                         .HasColumnName("team_win");
-
-                    b.Property<short>("Wins")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValue((short)0)
-                        .HasColumnName("wins");
 
                     b.HasKey("Identifier");
 
@@ -2436,6 +2866,17 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     b.Navigation("Character");
                 });
 
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.CharacterStatistics", b =>
+                {
+                    b.HasOne("Mgo2Server.Shared.Persistence.Entities.Character", "Character")
+                        .WithOne("Statistics")
+                        .HasForeignKey("Mgo2Server.Shared.Persistence.Entities.CharacterStatistics", "CharacterIdentifier")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Character");
+                });
+
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.CharacterTitle", b =>
                 {
                     b.HasOne("Mgo2Server.Shared.Persistence.Entities.Character", "Character")
@@ -2705,6 +3146,8 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     b.Navigation("Appearance");
 
                     b.Navigation("GameplayOptions");
+
+                    b.Navigation("Statistics");
                 });
 
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.Clan", b =>

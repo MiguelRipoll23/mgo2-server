@@ -34,13 +34,13 @@ public sealed class AuthenticationService(
     /// <param name="displayName">Login name of the account.</param>
     /// <param name="passwordHash">Password hash presented by the client.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<User?> FindByCredentialsAsync(
+    public async Task<Account?> FindByCredentialsAsync(
         string displayName,
         string passwordHash,
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        return await context.Users
+        return await context.Accounts
             .AsNoTracking()
             .FirstOrDefaultAsync(
                 user => user.DisplayName == displayName && user.Password == passwordHash,
@@ -48,14 +48,14 @@ public sealed class AuthenticationService(
     }
 
     /// <summary>Finds an account by its identifier.</summary>
-    /// <param name="userIdentifier">Identifier of the account.</param>
+    /// <param name="accountIdentifier">Identifier of the account.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<User?> FindByIdAsync(int userIdentifier, CancellationToken cancellationToken = default)
+    public async Task<Account?> FindByIdAsync(long accountIdentifier, CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        return await context.Users
+        return await context.Accounts
             .AsNoTracking()
-            .FirstOrDefaultAsync(user => user.Identifier == userIdentifier, cancellationToken);
+            .FirstOrDefaultAsync(user => user.Identifier == accountIdentifier, cancellationToken);
     }
 
     /// <summary>

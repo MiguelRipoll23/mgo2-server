@@ -15,39 +15,76 @@ public readonly record struct MetPlayer(
     long LastMetEpochSeconds,
     int LobbySubtype);
 
+/// <summary>The counters one end-of-round frame carries for a character.</summary>
+/// <param name="Wins">Rounds won within the round.</param>
+/// <param name="Kills">Kills.</param>
+/// <param name="Deaths">Deaths.</param>
+/// <param name="Score">Score earned, signed because deaths and penalties outweigh kills.</param>
+/// <param name="Stuns">Stuns delivered.</param>
+/// <param name="StunsReceived">Stuns received.</param>
+/// <param name="HeadshotKills">Headshot kills.</param>
+/// <param name="HeadshotDeaths">Headshot deaths.</param>
+/// <param name="HeadshotStuns">Headshot stuns delivered.</param>
+/// <param name="HeadshotStunsReceived">Headshot stuns received.</param>
+/// <param name="LockKills">Lock-on kills.</param>
+/// <param name="LockDeaths">Lock-on deaths.</param>
+/// <param name="LockStuns">Lock-on stuns delivered.</param>
+/// <param name="LockStunsReceived">Lock-on stuns received.</param>
+/// <param name="ConsecutiveKills">Best consecutive kill streak of the round.</param>
+public sealed record RoundCounters(
+    short Wins,
+    short Kills,
+    short Deaths,
+    short Score,
+    short Stuns,
+    short StunsReceived,
+    short HeadshotKills,
+    short HeadshotDeaths,
+    short HeadshotStuns,
+    short HeadshotStunsReceived,
+    short LockKills,
+    short LockDeaths,
+    short LockStuns,
+    short LockStunsReceived,
+    short ConsecutiveKills);
+
 /// <summary>Fields of a stored round report.</summary>
 /// <param name="GameIdentifier">Room the round was played in.</param>
 /// <param name="HostCharacterIdentifier">Character that hosted the round.</param>
 /// <param name="TargetCharacterIdentifier">Character the report describes.</param>
+/// <param name="Rule">Game mode the round was played under.</param>
 /// <param name="TeamWin">Team credited with the win.</param>
 /// <param name="Seconds">Duration of the round in seconds.</param>
 /// <param name="Experience">Experience awarded by the round.</param>
 /// <param name="Aborted">Whether the round was aborted.</param>
 /// <param name="LobbySubtype">Game type of the lobby the round was played in.</param>
+/// <param name="Counters">Counters the report carries.</param>
 public sealed record RoundReportInput(
     int GameIdentifier,
     int HostCharacterIdentifier,
     int TargetCharacterIdentifier,
+    short Rule,
     short TeamWin,
     int Seconds,
     int Experience,
     bool Aborted,
-    short LobbySubtype);
+    short LobbySubtype,
+    RoundCounters Counters);
 
 /// <summary>Fields of a stored weapon tally.</summary>
 /// <param name="GameIdentifier">Room the tally belongs to.</param>
 /// <param name="CharacterIdentifier">Character the tally belongs to.</param>
 /// <param name="WeaponIdentifier">Weapon identifier.</param>
-/// <param name="ValueA">First tallied value.</param>
-/// <param name="ValueB">Second tallied value.</param>
-/// <param name="ValueC">Third tallied value.</param>
+/// <param name="Kills">Kills scored with the weapon.</param>
+/// <param name="Headshots">Headshot terminal blows scored with the weapon.</param>
+/// <param name="Faints">Faints caused with the weapon.</param>
 public sealed record WeaponTallyInput(
     int GameIdentifier,
     int CharacterIdentifier,
     short WeaponIdentifier,
-    short ValueA,
-    short ValueB,
-    short ValueC);
+    short Kills,
+    short Headshots,
+    short Faints);
 
 /// <summary>
 /// Owns the round reports that back the match history, and the weapon tallies
@@ -63,17 +100,34 @@ public sealed class RoundReportService(IDbContextFactory<Mgo2DatabaseContext> co
     public async Task InsertAsync(RoundReportInput input, CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
+        var counters = input.Counters;
         context.RoundReports.Add(new RoundReport
         {
             GameIdentifier = input.GameIdentifier,
             HostCharacterIdentifier = input.HostCharacterIdentifier,
             TargetCharacterIdentifier = input.TargetCharacterIdentifier,
+            Rule = input.Rule,
             TeamWin = input.TeamWin,
             Seconds = input.Seconds,
             Experience = input.Experience,
             Aborted = input.Aborted,
             LobbySubtype = input.LobbySubtype,
-            CreatedAt = DateTime.UtcNow,
+            Wins = counters.Wins,
+            Kills = counters.Kills,
+            Deaths = counters.Deaths,
+            Score = counters.Score,
+            Stuns = counters.Stuns,
+            StunsReceived = counters.StunsReceived,
+            HeadshotKills = counters.HeadshotKills,
+            HeadshotDeaths = counters.HeadshotDeaths,
+            HeadshotStuns = counters.HeadshotStuns,
+            HeadshotStunsReceived = counters.HeadshotStunsReceived,
+            LockKills = counters.LockKills,
+            LockDeaths = counters.LockDeaths,
+            LockStuns = counters.LockStuns,
+            LockStunsReceived = counters.LockStunsReceived,
+            ConsecutiveKills = counters.ConsecutiveKills,
+            CreatedAt = DateTimeOffset.UtcNow,
         });
 
         await context.SaveChangesAsync(cancellationToken);
@@ -99,9 +153,9 @@ public sealed class RoundReportService(IDbContextFactory<Mgo2DatabaseContext> co
                 GameIdentifier = tally.GameIdentifier,
                 CharacterIdentifier = tally.CharacterIdentifier,
                 WeaponIdentifier = tally.WeaponIdentifier,
-                ValueA = tally.ValueA,
-                ValueB = tally.ValueB,
-                ValueC = tally.ValueC,
+                Kills = tally.Kills,
+                Headshots = tally.Headshots,
+                Faints = tally.Faints,
             });
         }
 
@@ -163,7 +217,7 @@ public sealed class RoundReportService(IDbContextFactory<Mgo2DatabaseContext> co
             .. grouped.Select(row => new MetPlayer(
                 row.CharacterIdentifier,
                 row.Name,
-                new DateTimeOffset(DateTime.SpecifyKind(row.LastMet, DateTimeKind.Utc)).ToUnixTimeSeconds(),
+                row.LastMet.ToUnixTimeSeconds(),
                 row.LobbySubtype)),
         ];
     }

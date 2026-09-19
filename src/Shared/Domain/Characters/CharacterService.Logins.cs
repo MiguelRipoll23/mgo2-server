@@ -35,7 +35,9 @@ public sealed partial class CharacterService
             return 0;
         }
 
-        var stored = new CharacterLoginTimes(character.PreviousLoginTime, character.LastLoginTime);
+        var stored = new CharacterLoginTimes(
+            SecondsOf(character.PreviousLoginTime),
+            SecondsOf(character.LastSeenAt));
         var daysSinceLastLogin = stored.DaysSinceLastLogin(now);
         var rotated = stored.RotatedTo(now);
 
@@ -44,10 +46,18 @@ public sealed partial class CharacterService
             .Where(row => row.Identifier == characterIdentifier)
             .ExecuteUpdateAsync(
                 setters => setters
-                    .SetProperty(row => row.PreviousLoginTime, rotated.PreviousLoginTime)
-                    .SetProperty(row => row.LastLoginTime, rotated.LastLoginTime),
+                    .SetProperty(row => row.PreviousLoginTime, InstantOf(rotated.PreviousLoginTime))
+                    .SetProperty(row => row.LastSeenAt, InstantOf(rotated.LastLoginTime)),
                 cancellationToken);
 
         return daysSinceLastLogin;
     }
+
+    /// <summary>Converts a stored instant to the unix seconds the client reads.</summary>
+    private static int? SecondsOf(DateTimeOffset? instant) =>
+        instant?.ToUnixTimeSeconds() is { } seconds ? (int)seconds : null;
+
+    /// <summary>Converts unix seconds carried by the client back to a stored instant.</summary>
+    private static DateTimeOffset? InstantOf(int? seconds) =>
+        seconds is { } value ? DateTimeOffset.FromUnixTimeSeconds(value) : null;
 }

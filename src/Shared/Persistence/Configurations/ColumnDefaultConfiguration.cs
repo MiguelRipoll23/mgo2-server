@@ -29,8 +29,8 @@ internal static class ColumnDefaultConfiguration
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
     {
-        ApplyDefault<User>(modelBuilder, 0, nameof(User.Role));
-        ApplyDefault<User>(modelBuilder, 3, nameof(User.Slots));
+        ApplyDefault<Account>(modelBuilder, 0, nameof(Account.Role));
+        ApplyDefault<Account>(modelBuilder, 3, nameof(Account.Slots));
     }
 
     private static void ConfigureCharacters(ModelBuilder modelBuilder)
@@ -39,8 +39,7 @@ internal static class ColumnDefaultConfiguration
             modelBuilder,
             0,
             nameof(Character.Rank),
-            nameof(Character.Experience),
-            nameof(Character.CreationTime));
+            nameof(Character.Experience));
         ApplyDefault<Character>(modelBuilder, true, nameof(Character.Active));
         ApplyDefault<Character>(modelBuilder, string.Empty, nameof(Character.Comment));
 
@@ -67,7 +66,6 @@ internal static class ColumnDefaultConfiguration
             nameof(CharacterChatMacro.Index));
         ApplyDefault<CharacterChatMacro>(modelBuilder, string.Empty, nameof(CharacterChatMacro.Text));
 
-        ZeroEveryCounter<CharacterStatistics>(modelBuilder);
         ApplyNow<CharacterConnection>(modelBuilder, nameof(CharacterConnection.UpdatedAt));
     }
 
@@ -77,19 +75,19 @@ internal static class ColumnDefaultConfiguration
         ApplyDefault<Lobby>(
             modelBuilder,
             false,
-            nameof(Lobby.BeginnerOnly),
-            nameof(Lobby.ExpansionOnly),
+            nameof(Lobby.BeginnersOnly),
+            nameof(Lobby.ExpansionRequired),
             nameof(Lobby.NoHeadshot),
-            nameof(Lobby.ReplaysOnly));        ApplyNow<Lobby>(
+            nameof(Lobby.ReplaysOnly));
+        ApplyNow<Lobby>(
             modelBuilder,
             nameof(Lobby.CreatedAt),
             nameof(Lobby.UpdatedAt));
-}
+    }
 
     private static void ConfigureClans(ModelBuilder modelBuilder)
     {
         ApplyDefault<Clan>(modelBuilder, string.Empty, nameof(Clan.Comment), nameof(Clan.Notice));
-        ApplyDefault<Clan>(modelBuilder, 0, nameof(Clan.NoticeTime));
         ApplyDefault<Clan>(modelBuilder, 1, nameof(Clan.Open));
         ApplyNow<Clan>(modelBuilder, nameof(Clan.CreatedAt));
 
@@ -133,17 +131,34 @@ internal static class ColumnDefaultConfiguration
         ApplyDefault<RoundReport>(
             modelBuilder,
             (short)0,
+            nameof(RoundReport.Rule),
             nameof(RoundReport.TeamWin),
-            nameof(RoundReport.LobbySubtype));
+            nameof(RoundReport.LobbySubtype),
+            nameof(RoundReport.Wins),
+            nameof(RoundReport.Kills),
+            nameof(RoundReport.Deaths),
+            nameof(RoundReport.Score),
+            nameof(RoundReport.Stuns),
+            nameof(RoundReport.StunsReceived),
+            nameof(RoundReport.HeadshotKills),
+            nameof(RoundReport.HeadshotDeaths),
+            nameof(RoundReport.HeadshotStuns),
+            nameof(RoundReport.HeadshotStunsReceived),
+            nameof(RoundReport.LockKills),
+            nameof(RoundReport.LockDeaths),
+            nameof(RoundReport.LockStuns),
+            nameof(RoundReport.LockStunsReceived),
+            nameof(RoundReport.ConsecutiveKills));
         ApplyDefault<RoundReport>(modelBuilder, false, nameof(RoundReport.Aborted));
         ApplyNow<RoundReport>(modelBuilder, nameof(RoundReport.CreatedAt));
 
         ApplyDefault<RoundWeaponStat>(
             modelBuilder,
             (short)0,
-            nameof(RoundWeaponStat.ValueA),
-            nameof(RoundWeaponStat.ValueB),
-            nameof(RoundWeaponStat.ValueC));
+            nameof(RoundWeaponStat.Kills),
+            nameof(RoundWeaponStat.Headshots),
+            nameof(RoundWeaponStat.Faints));
+        ApplyNow<RoundWeaponStat>(modelBuilder, nameof(RoundWeaponStat.ReportedAt));
     }
 
     private static void ConfigureMailAndNews(ModelBuilder modelBuilder)
@@ -158,7 +173,7 @@ internal static class ColumnDefaultConfiguration
         ApplyDefault<MailMessage>(
             modelBuilder,
             false,
-            nameof(MailMessage.RecipientRead),
+            nameof(MailMessage.IsRead),
             nameof(MailMessage.RecipientDeleted),
             nameof(MailMessage.SenderRead),
             nameof(MailMessage.SenderDeleted));

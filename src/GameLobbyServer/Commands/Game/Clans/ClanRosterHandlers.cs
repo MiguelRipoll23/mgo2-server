@@ -77,12 +77,14 @@ public sealed class GetClanMemberInfoHandler(
         response.WriteFixedString(string.Empty, 16);
         response.WritePadding(32);
         response.WritePadding(2);
-        response.WriteUInt8(clan.EmblemWorkInProgress is not null ? 2 : 0);
+        // No emblem is ever held half-edited: an upload is the published emblem, so
+        // the flag byte stays zero and only the on-display byte can be set.
+        response.WriteUInt8(0);
         response.WriteUInt8(clan.Emblem is not null ? 3 : 0);
         response.WriteFixedString(comment, 128);
         response.WriteUInt32((uint)emblemEditorCharacterIdentifier);
         response.WriteFixedString(clan.Notice, 512);
-        response.WriteUInt32((uint)clan.NoticeTime);
+        response.WriteUInt32((uint)(clan.NoticeAt?.ToUnixTimeSeconds() ?? 0));
         response.WriteFixedString(noticeWriterCharacterName, 16);
         response.WriteUInt32(0);
         response.WriteUInt32(0);

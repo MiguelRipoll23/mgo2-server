@@ -81,7 +81,7 @@ public static class CharacterInfoPayloadBuilder
         writer.WritePadding(FeatureByteOffset - writer.Size);
         // The parser reads this byte's four low bits as separate feature flags
         // and greys out the expansion maps and modes when they are clear.
-        writer.WriteUInt8(FeatureFlags.ExpansionByte);
+        writer.WriteUInt8(FeatureFlags.MainMenuFlags);
         return writer.Build();
     }
 }
@@ -97,11 +97,9 @@ public static class FeatureFlags
     /// each gate a one-time "welcome" help document that the main-menu state
     /// machine opens as soon as the character info is parsed: bit 2 opens help
     /// document 13 (<c>2_13.txt</c>, gate <c>0x98e208</c>) and bit 3 opens
-    /// document 6 (<c>2_6.txt</c>, gate <c>0x98e2b0</c>). Clearing both bits
-    /// keeps the map and rule catalogue fully unlocked (that is bit 0) while
-    /// suppressing both modals, which is what the official servers did.
+    /// document 6 (<c>2_6.txt</c>, gate <c>0x98e2b0</c>).
     /// </summary>
-    public const int ExpansionByte = 0x00;
+    public const int MainMenuFlags = 0x00;
 
     /// <summary>
     /// Map, rule and expansion availability mask. The client reads it as a bit

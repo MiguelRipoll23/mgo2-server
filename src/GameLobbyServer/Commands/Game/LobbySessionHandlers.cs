@@ -63,16 +63,16 @@ public sealed class GameCheckSessionHandler(
             return;
         }
 
-        session.UserIdentifier = storedSession.UserIdentifier;
+        session.AccountIdentifier = storedSession.AccountIdentifier;
 
         // The client chooses which of its characters enters, so the check is
         // ownership rather than equality with anything the server last saw.
         var character = await characterService.FindByIdAsync(claimedCharacterIdentifier, cancellationToken);
-        if (character is null || character.UserIdentifier != storedSession.UserIdentifier)
+        if (character is null || character.AccountIdentifier != storedSession.AccountIdentifier)
         {
             logger.LogInformation(
-                "In-lobby session check: account {UserIdentifier} claimed character {CharacterIdentifier}, which it does not own",
-                storedSession.UserIdentifier,
+                "In-lobby session check: account {AccountIdentifier} claimed character {CharacterIdentifier}, which it does not own",
+                storedSession.AccountIdentifier,
                 claimedCharacterIdentifier);
             await sessionHelper.SendResultAsync(session, CommandConstants.GameCheckSessionResult, ErrorCodeConstants.ResultLobbyLoginAgain, cancellationToken);
             return;
@@ -94,7 +94,7 @@ public sealed class GameCheckSessionHandler(
         // "a beginner" is operator policy rather than protocol: the game has no
         // opinion about who counts as one, only that a lobby can be marked and an
         // entry can be refused.
-        if (lobbyOptions.Value.BeginnerOnly &&
+        if (lobbyOptions.Value.BeginnersOnly &&
             LevelUtils.CalculateLevel(character.Experience) > BeginnerMaximumLevel)
         {
             logger.LogInformation(

@@ -59,8 +59,8 @@ public sealed partial class LobbyService
         registered.SubtypeIdentifier = gameType.Identifier;
         registered.Name = lobby.Name;
         registered.IpAddress = options.AnnouncedIpAddress;
-        registered.BeginnerOnly = lobby.BeginnerOnly;
-        registered.ExpansionOnly = lobby.ExpansionOnly;
+        registered.BeginnersOnly = lobby.BeginnersOnly;
+        registered.ExpansionRequired = lobby.ExpansionRequired;
         registered.NoHeadshot = lobby.NoHeadshot;
         registered.ReplaysOnly = lobby.ReplaysOnly;
         registered.UpdatedAt = now;

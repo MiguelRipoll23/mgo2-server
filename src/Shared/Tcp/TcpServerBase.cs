@@ -344,8 +344,8 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
     }
 
     private static string FormatSessionState(TcpSession session) =>
-        $"auth={(session.UserIdentifier is null ? "missing" : "ok")} " +
-        $"userId={session.UserIdentifier?.ToString() ?? "none"} " +
+        $"auth={(session.AccountIdentifier is null ? "missing" : "ok")} " +
+        $"accountId={session.AccountIdentifier?.ToString() ?? "none"} " +
         $"characterId={session.CharacterIdentifier?.ToString() ?? "none"} " +
         $"lobbyId={session.LobbyIdentifier?.ToString() ?? "none"} " +
         $"gameId={session.GameIdentifier?.ToString() ?? "none"}";

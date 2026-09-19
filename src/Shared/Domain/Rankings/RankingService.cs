@@ -39,7 +39,7 @@ public sealed class RankingService(RankingBoardService boardService)
         int key,
         int from,
         int records,
-        int characterIdentifier,
+        long characterIdentifier,
         CancellationToken cancellationToken = default)
     {
         var board = await boardService.PlayerBoardAsync(key, rule, IsPeriodic(term), cancellationToken);
@@ -58,7 +58,7 @@ public sealed class RankingService(RankingBoardService boardService)
         int key,
         int from,
         int records,
-        int clanIdentifier,
+        long clanIdentifier,
         CancellationToken cancellationToken = default)
     {
         var board = await boardService.ClanBoardAsync(key, IsPeriodic(term), cancellationToken);
@@ -74,7 +74,7 @@ public sealed class RankingService(RankingBoardService boardService)
         IReadOnlyList<RankingBoardRow> board,
         int from,
         int records,
-        int subject)
+        long subject)
     {
         var ranked = board
             .OrderByDescending(row => row.Value)

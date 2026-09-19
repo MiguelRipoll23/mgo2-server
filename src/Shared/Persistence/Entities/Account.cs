@@ -4,8 +4,8 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace Mgo2Server.Shared.Persistence.Entities;
 
 /// <summary>An account playing the game.</summary>
-[Table("users")]
-public sealed class User
+[Table("accounts")]
+public sealed class Account
 {
     /// <summary>Identifier of the account.</summary>
     [Key]
@@ -27,9 +27,9 @@ public sealed class User
     [Column("role")]
     public int Role { get; set; }
 
-    /// <summary>Unix timestamp until which the account is banned, or <c>null</c> when it is not banned.</summary>
+    /// <summary>Timestamp until which the account is banned, or <c>null</c> when it is not banned.</summary>
     [Column("banned_until")]
-    public int? BannedUntil { get; set; }
+    public DateTimeOffset? BannedUntil { get; set; }
 
     /// <summary>Reason shown to a banned account.</summary>
     [Column("ban_reason")]

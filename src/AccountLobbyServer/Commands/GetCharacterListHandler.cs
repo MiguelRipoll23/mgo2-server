@@ -26,20 +26,20 @@ public sealed class GetCharacterListHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.UserIdentifier is null)
+        if (session.AccountIdentifier is null)
         {
             await sessionHelper.SendErrorAsync(session, 0x3049, ErrorCodeConstants.ErrorInvalidSession, cancellationToken);
             return;
         }
 
-        var user = await userService.FindByIdAsync(session.UserIdentifier.Value, cancellationToken);
+        var user = await userService.FindByIdAsync(session.AccountIdentifier.Value, cancellationToken);
         if (user is null)
         {
             await sessionHelper.SendErrorAsync(session, 0x3049, ErrorCodeConstants.ErrorInvalidSession, cancellationToken);
             return;
         }
 
-        var characters = await characterService.FindByUserIdentifierAsync(session.UserIdentifier.Value, cancellationToken);
+        var characters = await characterService.FindByAccountIdentifierAsync(session.AccountIdentifier.Value, cancellationToken);
         var orderedCharacters = SelectCharacterHandler.OrderMainFirst(characters, user.MainCharacterIdentifier);
         var entries = await LoadEntriesAsync(orderedCharacters, user.MainCharacterIdentifier, cancellationToken);
 

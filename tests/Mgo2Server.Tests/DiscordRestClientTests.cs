@@ -93,6 +93,49 @@ public sealed class DiscordRestClientTests
     }
 
     [Fact]
+    public async Task TheMessageCommandIsRegisteredAgainstTheApplicationOfTheToken()
+    {
+        var rest = new RecordingRestClient();
+
+        var registered = await rest.Client.RegisterMessageCommandAsync(CancellationToken.None);
+
+        Assert.True(registered);
+        var request = Assert.Single(rest.Requests);
+        Assert.Equal("POST", request.Method);
+        Assert.Equal($"/api/v10/applications/{Application}/guilds/10/commands", request.Path);
+    }
+
+    [Fact]
+    public async Task TheRegisteredMessageCommandCarriesOneStringOption()
+    {
+        var rest = new RecordingRestClient();
+
+        await rest.Client.RegisterMessageCommandAsync(CancellationToken.None);
+
+        var request = Assert.Single(rest.Requests);
+        using var body = JsonDocument.Parse(request.Body);
+        var option = Assert.Single(body.RootElement.GetProperty("options").EnumerateArray());
+        Assert.Equal("message", body.RootElement.GetProperty("name").GetString());
+        Assert.Equal(3, option.GetProperty("type").GetInt32());
+        Assert.Equal("body", option.GetProperty("name").GetString());
+        Assert.True(option.GetProperty("required").GetBoolean());
+        Assert.Equal(2000, option.GetProperty("max_length").GetInt32());
+    }
+
+    [Fact]
+    public async Task TheRegisteredFlashCommandCapsTheOptionAtTheTickerLength()
+    {
+        var rest = new RecordingRestClient();
+
+        await rest.Client.RegisterFlashCommandAsync(CancellationToken.None);
+
+        var request = Assert.Single(rest.Requests);
+        using var body = JsonDocument.Parse(request.Body);
+        var option = Assert.Single(body.RootElement.GetProperty("options").EnumerateArray());
+        Assert.Equal(255, option.GetProperty("max_length").GetInt32());
+    }
+
+    [Fact]
     public async Task TheRenameCarriesTheNameWithoutAType()
     {
         var rest = new RecordingRestClient();

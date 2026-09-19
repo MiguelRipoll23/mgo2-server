@@ -36,7 +36,7 @@ public sealed class RegistrationService(
     {
         await using var context = await CreateContextAsync(cancellationToken);
 
-        var taken = await context.Users
+        var taken = await context.Accounts
             .AsNoTracking()
             .AnyAsync(user => user.DisplayName == displayName, cancellationToken);
 
@@ -45,13 +45,13 @@ public sealed class RegistrationService(
             throw new ServerException("CONFLICT", "Display name is already taken", 409);
         }
 
-        var user = new User
+        var user = new Account
         {
             DisplayName = displayName,
             Password = cryptographyService.ComputeMd5Hex(password),
         };
 
-        context.Users.Add(user);
+        context.Accounts.Add(user);
         try
         {
             await context.SaveChangesAsync(cancellationToken);
@@ -60,7 +60,7 @@ public sealed class RegistrationService(
         {
             // Lost the check-then-insert race against another registration.
             context.ChangeTracker.Clear();
-            var takenByRace = await context.Users
+            var takenByRace = await context.Accounts
                 .AsNoTracking()
                 .AnyAsync(existing => existing.DisplayName == displayName, cancellationToken);
 

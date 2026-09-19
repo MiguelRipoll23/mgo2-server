@@ -1,5 +1,3 @@
-using Mgo2Server.Shared.Persistence.Entities;
-
 namespace Mgo2Server.Shared.Domain.Characters;
 
 /// <summary>
@@ -21,16 +19,16 @@ public static class AnimalRankService
     {
         var totalRounds = statistics.Rounds == 0 ? 1 : statistics.Rounds;
 
-        var deathmatch = ModeStatisticsCodec.ForMode(statistics, 0);
-        var teamDeathmatch = ModeStatisticsCodec.ForMode(statistics, 1);
-        var sneaking = ModeStatisticsCodec.ForMode(statistics, 2);
-        var capture = ModeStatisticsCodec.ForMode(statistics, 3);
-        var baseMode = ModeStatisticsCodec.ForMode(statistics, 4);
-        var bomb = ModeStatisticsCodec.ForMode(statistics, 5);
-        var rescue = ModeStatisticsCodec.ForMode(statistics, 6);
-        var race = ModeStatisticsCodec.ForMode(statistics, 7);
-        var teamSneaking = ModeStatisticsCodec.ForMode(statistics, 8);
-        var survivalDeathmatch = ModeStatisticsCodec.ForMode(statistics, 9);
+        var deathmatch = statistics.ForMode(0);
+        var teamDeathmatch = statistics.ForMode(1);
+        var sneaking = statistics.ForMode(2);
+        var capture = statistics.ForMode(3);
+        var baseMode = statistics.ForMode(4);
+        var bomb = statistics.ForMode(5);
+        var rescue = statistics.ForMode(6);
+        var race = statistics.ForMode(7);
+        var teamSneaking = statistics.ForMode(8);
+        var survivalDeathmatch = statistics.ForMode(9);
 
         // Foxhound family: reached only on sustained, high-quality play. The
         // thresholds narrow as more rounds are played, and the branches are

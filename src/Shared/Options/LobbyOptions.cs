@@ -26,10 +26,10 @@ public sealed class LobbyOptions
     public int Port { get; set; }
 
     /// <summary>Whether the lobby only accepts beginners.</summary>
-    public bool BeginnerOnly { get; set; }
+    public bool BeginnersOnly { get; set; }
 
     /// <summary>Whether the lobby only accepts expansion owners.</summary>
-    public bool ExpansionOnly { get; set; }
+    public bool ExpansionRequired { get; set; }
 
     /// <summary>Whether the lobby disables headshots.</summary>
     public bool NoHeadshot { get; set; }

@@ -111,8 +111,8 @@ public static class PersonalStatisticsPayloadBuilder
         // The login this one replaced, then the login recorded for the character. Both are
         // the stamps the connect burst rotates, so this screen and the card agree; zero is
         // what a character who has never logged in sends, rather than an invented epoch.
-        header.WriteUInt32((uint)(character.PreviousLoginTime ?? 0));
-        header.WriteUInt32((uint)(character.LastLoginTime ?? 0));
+        header.WriteUInt32((uint)(character.PreviousLoginTime?.ToUnixTimeSeconds() ?? 0));
+        header.WriteUInt32((uint)(character.LastSeenAt?.ToUnixTimeSeconds() ?? 0));
         header.WriteUInt8(0);
 
         for (var index = 0; index < RelationListIdentifiers; index++)
@@ -251,7 +251,7 @@ public static class PersonalStatisticsPayloadBuilder
         // character's total rewards.
         var payload = matrix.Build();
         var summaryBase = 8 + (ModeRows - 1) * StatColumns * 4;
-        var playSeconds = character.CreationTime > 0 && statistics is not null ? statistics.TotalTime : 0;
+        var playSeconds = character.CreatedAt.ToUnixTimeSeconds() > 0 && statistics is not null ? statistics.TotalTime : 0;
         BinaryUtility.WriteUInt32BigEndian(payload, summaryBase + SummaryPlaySecondsColumn * 4, (uint)playSeconds);
         BinaryUtility.WriteUInt32BigEndian(
             payload,
@@ -304,7 +304,7 @@ public static class PersonalStatisticsPayloadBuilder
             return 0;
         }
 
-        var modeStatistics = ModeStatisticsCodec.ForMode(statistics, mode);
+        var modeStatistics = statistics.ForMode(mode);
         var values = new int[]
         {
             modeStatistics.Kills,

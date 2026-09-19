@@ -76,12 +76,8 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
         };
     }
 
-    /// <summary>First instant of the current calendar month, in the units of a timestamp without time zone.</summary>
-    public static DateTime CurrentMonthStart() =>
-        new(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
-
-    /// <summary>First instant of the current calendar month, in the units of a timestamp with time zone.</summary>
-    private static DateTimeOffset CurrentMonthStartOffset() =>
+    /// <summary>First instant of the current calendar month, in UTC.</summary>
+    public static DateTimeOffset CurrentMonthStart() =>
         new(DateTimeOffset.UtcNow.Year, DateTimeOffset.UtcNow.Month, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>
@@ -94,29 +90,22 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
         int rule,
         CancellationToken cancellationToken)
     {
-        var property = ModeStatisticsCodec.BlobNameForMode(rule);
-
-        var rows = await context.CharacterStatistics
-            .AsNoTracking()
-            .Join(
-                context.Characters.AsNoTracking().Where(character => character.Active),
-                statistics => statistics.CharacterIdentifier,
-                character => character.Identifier,
-                (statistics, character) => new
-                {
-                    character.Identifier,
-                    character.Name,
-                    Blob = EF.Property<string?>(statistics, property),
-                })
+        var rows = await (
+            from report in context.RoundReports.AsNoTracking()
+            where report.Rule == rule
+            join character in context.Characters.AsNoTracking().Where(character => character.Active)
+                on report.TargetCharacterIdentifier equals character.Identifier
+            group report by new { character.Identifier, character.Name }
+            into grouped
+            select new
+            {
+                grouped.Key.Identifier,
+                grouped.Key.Name,
+                Score = grouped.Sum(report => (long)report.Score),
+            })
             .ToListAsync(cancellationToken);
 
-        return
-        [
-            .. rows.Select(row => new RankingBoardRow(
-                row.Identifier,
-                row.Name,
-                ModeStatisticsCodec.Deserialize(row.Blob).Score)),
-        ];
+        return [.. rows.Select(row => new RankingBoardRow(row.Identifier, row.Name, row.Score))];
     }
 
     /// <summary>Grade points, the character's accumulated experience.</summary>
@@ -141,16 +130,21 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
     {
         if (!currentMonth)
         {
-            var lifetime = await context.CharacterStatistics
-                .AsNoTracking()
-                .Join(
-                    context.Characters.AsNoTracking().Where(character => character.Active),
-                    statistics => statistics.CharacterIdentifier,
-                    character => character.Identifier,
-                    (statistics, character) => new { character.Identifier, character.Name, statistics.TotalTime })
+            var lifetime = await (
+                from report in context.RoundReports.AsNoTracking()
+                join character in context.Characters.AsNoTracking().Where(character => character.Active)
+                    on report.TargetCharacterIdentifier equals character.Identifier
+                group report by new { character.Identifier, character.Name }
+                into grouped
+                select new
+                {
+                    grouped.Key.Identifier,
+                    grouped.Key.Name,
+                    Seconds = grouped.Sum(report => (long)report.Seconds),
+                })
                 .ToListAsync(cancellationToken);
 
-            return [.. lifetime.Select(row => new RankingBoardRow(row.Identifier, row.Name, row.TotalTime))];
+            return [.. lifetime.Select(row => new RankingBoardRow(row.Identifier, row.Name, row.Seconds))];
         }
 
         var since = CurrentMonthStart();
@@ -181,7 +175,7 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
         var reviews = context.HostReviews.AsNoTracking().AsQueryable();
         if (currentMonth)
         {
-            var since = CurrentMonthStartOffset();
+            var since = CurrentMonthStart();
             reviews = reviews.Where(review => review.ReviewedAt >= since);
         }
 
@@ -225,7 +219,7 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
         var reviews = context.InstructorReviews.AsNoTracking().AsQueryable();
         if (currentMonth)
         {
-            var since = CurrentMonthStartOffset();
+            var since = CurrentMonthStart();
             reviews = reviews.Where(review => review.ReviewedAt >= since);
         }
 
@@ -261,16 +255,16 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
             from member in context.ClanMembers.AsNoTracking()
             join character in context.Characters.AsNoTracking().Where(character => character.Active)
                 on member.CharacterIdentifier equals character.Identifier
-            join statistics in context.CharacterStatistics.AsNoTracking()
-                on character.Identifier equals statistics.CharacterIdentifier
+            join report in context.RoundReports.AsNoTracking()
+                on character.Identifier equals report.TargetCharacterIdentifier
             join clan in context.Clans.AsNoTracking() on member.ClanIdentifier equals clan.Identifier
-            group statistics by new { clan.Identifier, clan.Name }
+            group report by new { clan.Identifier, clan.Name }
             into grouped
             select new
             {
                 grouped.Key.Identifier,
                 grouped.Key.Name,
-                Value = grouped.Sum(statistics => (long)statistics.Score),
+                Value = grouped.Sum(report => (long)report.Score),
             })
             .ToListAsync(cancellationToken);
 
@@ -312,16 +306,16 @@ public sealed class RankingBoardService(IDbContextFactory<Mgo2DatabaseContext> c
                 from member in context.ClanMembers.AsNoTracking()
                 join character in context.Characters.AsNoTracking().Where(character => character.Active)
                     on member.CharacterIdentifier equals character.Identifier
-                join statistics in context.CharacterStatistics.AsNoTracking()
-                    on character.Identifier equals statistics.CharacterIdentifier
+                join report in context.RoundReports.AsNoTracking()
+                    on character.Identifier equals report.TargetCharacterIdentifier
                 join clan in context.Clans.AsNoTracking() on member.ClanIdentifier equals clan.Identifier
-                group statistics by new { clan.Identifier, clan.Name }
+                group report by new { clan.Identifier, clan.Name }
                 into grouped
                 select new
                 {
                     grouped.Key.Identifier,
                     grouped.Key.Name,
-                    Value = grouped.Sum(statistics => (long)statistics.TotalTime),
+                    Value = grouped.Sum(report => (long)report.Seconds),
                 })
                 .ToListAsync(cancellationToken);
 

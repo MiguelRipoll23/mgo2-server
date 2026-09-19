@@ -162,6 +162,62 @@ public sealed class MailService(IDbContextFactory<Mgo2DatabaseContext> contextFa
         await context.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Delivers a system letter once: a second call for the same recipient and
+    /// subject is a no-op. That is what makes an award announcement idempotent
+    /// without a latch column to carry the award itself.
+    /// </summary>
+    /// <param name="recipientCharacterIdentifier">Character the letter is addressed to.</param>
+    /// <param name="senderName">Name the inbox shows as the sender.</param>
+    /// <param name="subject">Subject line that identifies the letter.</param>
+    /// <param name="body">Body of the letter.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Whether this call is the one that delivered the letter.</returns>
+    public async Task<bool> SendSystemMailOnceAsync(
+        int recipientCharacterIdentifier,
+        string senderName,
+        string subject,
+        string body,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await CreateContextAsync(cancellationToken);
+
+        // Serialize on the recipient's row, so two reports in flight at once cannot
+        // both find no letter and both send one.
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        await context.Database.ExecuteSqlAsync(
+            $"SELECT id FROM characters WHERE id = {recipientCharacterIdentifier} FOR UPDATE",
+            cancellationToken);
+
+        var delivered = await context.MailMessages
+            .AsNoTracking()
+            .AnyAsync(
+                message => message.RecipientCharacterIdentifier == recipientCharacterIdentifier &&
+                    message.Subject == subject &&
+                    message.SenderCharacterIdentifier == null,
+                cancellationToken);
+
+        if (delivered)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        context.MailMessages.Add(new MailMessage
+        {
+            SenderCharacterIdentifier = null,
+            RecipientCharacterIdentifier = recipientCharacterIdentifier,
+            SenderName = senderName,
+            RecipientName = string.Empty,
+            Subject = subject,
+            Body = body,
+        });
+
+        await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
     /// <summary>Returns the undeleted inbox size of a character.</summary>
     /// <param name="characterIdentifier">Character whose mailbox is measured.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
@@ -238,7 +294,7 @@ public sealed class MailService(IDbContextFactory<Mgo2DatabaseContext> contextFa
         else
         {
             await query.ExecuteUpdateAsync(
-                setters => setters.SetProperty(message => message.RecipientRead, true),
+                setters => setters.SetProperty(message => message.IsRead, true),
                 cancellationToken);
         }
     }
@@ -295,7 +351,7 @@ public sealed class MailService(IDbContextFactory<Mgo2DatabaseContext> contextFa
             counterparty,
             row.Subject,
             row.Body,
-            new DateTimeOffset(DateTime.SpecifyKind(row.SentAt, DateTimeKind.Utc)).ToUnixTimeSeconds(),
-            sent ? row.SenderRead : row.RecipientRead,
+            row.SentAt.ToUnixTimeSeconds(),
+            sent ? row.SenderRead : row.IsRead,
             row.SenderCharacterIdentifier is null);
 }
