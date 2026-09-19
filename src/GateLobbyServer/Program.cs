@@ -13,7 +13,7 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddServerLogging(builder.Configuration);
 
 builder.Services.AddServerServices(builder.Configuration);
-builder.Services.AddServerTelemetry(builder.Configuration);
+builder.Services.AddServerTelemetry(builder.Configuration, "mgo2-gate");
 builder.Services.AddCommandHandlers();
 builder.Services.AddSingleton<GateLobbyServerRunner>();
 

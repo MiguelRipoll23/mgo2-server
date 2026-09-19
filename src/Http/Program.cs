@@ -79,7 +79,7 @@ var discordOptions = new DiscordOptions
 builder.Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(httpApiOptions));
 builder.Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(discordOptions));
 builder.Services.AddServerServices(builder.Configuration);
-builder.Services.AddServerTelemetry(builder.Configuration);
+builder.Services.AddServerTelemetry(builder.Configuration, "mgo2-http");
 
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<PolicyService>();

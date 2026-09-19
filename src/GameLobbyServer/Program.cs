@@ -18,7 +18,7 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddServerLogging(builder.Configuration);
 
 builder.Services.AddServerServices(builder.Configuration);
-builder.Services.AddServerTelemetry(builder.Configuration);
+builder.Services.AddServerTelemetry(builder.Configuration, "mgo2-game-lobby");
 builder.Services.AddCommandHandlers();
 
 // The coordination stream of this lobby. It both reports the presence of this
