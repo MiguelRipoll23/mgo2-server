@@ -1,4 +1,3 @@
-# HTTPRoute for mgo2-http service (no hostname filter)
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

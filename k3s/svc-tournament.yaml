@@ -1,14 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
-  annotations:
-    kubectl.kubernetes.io/last-applied-configuration: |
-      {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"name":"mgo2-tournament","namespace":"mgo2"},"spec":{"ports":[{"port":5742,"protocol":"TCP","targetPort":5742}],"selector":{"app":"mgo2-tournament"},"type":"ClusterIP"}}
-  creationTimestamp: "2026-09-19T01:05:22Z"
   name: mgo2-tournament
   namespace: mgo2
-  resourceVersion: "2285"
-  uid: bbaff204-94fd-48a7-bcf6-e57e75fa9938
 spec:
   clusterIP: 10.43.213.243
   clusterIPs:
@@ -25,5 +19,3 @@ spec:
     app: mgo2-tournament
   sessionAffinity: None
   type: ClusterIP
-status:
-  loadBalancer: {}

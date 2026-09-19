@@ -1,17 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    deployment.kubernetes.io/revision: '8'
-    kubectl.kubernetes.io/last-applied-configuration: '{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"name":"mgo2-automatching","namespace":"mgo2"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"mgo2-automatching"}},"template":{"metadata":{"labels":{"app":"mgo2-automatching"}},"spec":{"containers":[{"env":[{"name":"LOBBY_NAME","value":"Automatching"},{"name":"LOBBY_SUBTYPE","value":"AUTOMATCHING"},{"name":"LOBBY_PORT","value":"5740"},{"name":"LOBBY_BEGINNER_ONLY","value":"false"},{"name":"LOBBY_EXPANSION_ONLY","value":"false"},{"name":"LOBBY_NO_HEADSHOT","value":"false"},{"name":"LOBBY_REPLAYS_ONLY","value":"false"}],"image":"ghcr.io/miguelripoll23/mgo2-server/mgo2-game-lobby-server:latest","name":"lobby","ports":[{"containerPort":5740,"protocol":"TCP"}],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"add":[],"drop":["ALL"]},"runAsNonRoot":true,"runAsUser":1000,"seccompProfile":{"type":"RuntimeDefault"}},"volumeMounts":[{"mountPath":"/app/appsettings.json","name":"appsettings","readOnly":true,"subPath":"appsettings.json"}]}],"terminationGracePeriodSeconds":21600,"volumes":[{"configMap":{"name":"mgo2-appsettings"},"name":"appsettings"}]}}}}
-
-      '
-  creationTimestamp: '2026-09-19T01:05:10Z'
-  generation: 8
   name: mgo2-automatching
   namespace: mgo2
-  resourceVersion: '24848'
-  uid: 60c5d8e2-e7cb-41aa-adc6-cae642120377
 spec:
   progressDeadlineSeconds: 600
   replicas: 1
@@ -97,23 +88,3 @@ spec:
       - name: appsettings
         configMap:
           name: mgo2-appsettings
-status:
-  availableReplicas: 1
-  conditions:
-  - lastTransitionTime: '2026-09-19T01:05:32Z'
-    lastUpdateTime: '2026-09-19T01:05:32Z'
-    message: Deployment has minimum availability.
-    reason: MinimumReplicasAvailable
-    status: 'True'
-    type: Available
-  - lastTransitionTime: '2026-09-19T01:30:28Z'
-    lastUpdateTime: '2026-09-19T11:24:59Z'
-    message: ReplicaSet "mgo2-automatching-6f468c5d74" has successfully progressed.
-    reason: NewReplicaSetAvailable
-    status: 'True'
-    type: Progressing
-  observedGeneration: 8
-  readyReplicas: 1
-  replicas: 1
-  terminatingReplicas: 0
-  updatedReplicas: 1

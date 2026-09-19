@@ -1,4 +1,3 @@
-# Gateway listener on port 80 (Gateway API)
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
