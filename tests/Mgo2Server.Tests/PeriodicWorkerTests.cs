@@ -19,7 +19,7 @@ public sealed class PeriodicWorkerTests
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
 
     /// <summary>How long a test watches a worker before judging how often it ran.</summary>
-    private static readonly TimeSpan Stretch = TimeSpan.FromMilliseconds(1200);
+    private static readonly TimeSpan Stretch = TimeSpan.FromMilliseconds(2000);
 
     [Fact]
     public async Task Keeps_its_interval_while_it_succeeds()
