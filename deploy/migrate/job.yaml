@@ -20,6 +20,8 @@ kind: Job
 metadata:
   name: mgo2-migrate
   namespace: mgo2
+  labels:
+    app.kubernetes.io/part-of: mgo2-server
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
