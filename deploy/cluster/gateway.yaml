@@ -8,7 +8,14 @@ spec:
   listeners:
   - name: http
     protocol: HTTP
-    port: 80
+    # Traefik matches a listener to one of its own entryPoints by that
+    # entryPoint's port -- not by the listener's name, and not by the port a
+    # client dials. Its `web` entryPoint listens on 8000 (`websecure` on 8443),
+    # and Traefik's Service maps 80 -> 8000, so this is still port 80 to
+    # anything outside the cluster. Declaring 80 here leaves the listener
+    # unbindable: `PortUnavailable`, zero attached routes, and the HTTPRoute
+    # attached to nothing.
+    port: 8000
     allowedRoutes:
       namespaces:
         from: Same
