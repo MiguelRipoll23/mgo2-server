@@ -14,6 +14,7 @@ namespace Mgo2Server.Tests;
 /// run for the staff roles, only in the configured guild, and its outcome is
 /// written back as the answer to the interaction.
 /// </summary>
+[Trait("Category", "Http")]
 public sealed class DiscordFlashCommandTests
 {
     private const string ModeratorRole = "100000000000000001";

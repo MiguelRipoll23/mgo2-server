@@ -4,6 +4,7 @@ using Mgo2Server.Dns;
 namespace Mgo2Server.Tests;
 
 /// <summary>Exercises the query parser and the address response builder.</summary>
+[Trait("Category", "Dns")]
 public sealed class DnsMessageCodecTests
 {
     [Fact]

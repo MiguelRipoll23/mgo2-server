@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deployment.yaml
+  - service.yaml
+
+# The deploy pipeline rewrites `newTag` with the commit SHA it published. The
+# seed below only covers the window before that pipeline has run once after
+# GitOps was adopted; while it still reads `latest`, no sync is trustworthy.
+images:
+  - name: ghcr.io/miguelripoll23/mgo2-server/mgo2-gate-lobby-server
+    newTag: latest

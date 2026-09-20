@@ -1,0 +1,53 @@
+# The game lobbies' pipeline. All nine lobby roles are one image, so they build,
+# publish and pin together; the deployment mapping lives in deploy/game-lobby/.
+# See gate-lobby-server.yml for the shape of the trigger.
+name: Game lobby server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/GameLobbyServer/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/game-lobby-server.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/GameLobbyServer/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/game-lobby-server.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    name: Game lobby server
+    uses: ./.github/workflows/service.yml
+    with:
+      service: game-lobby
+      image: mgo2-game-lobby-server
+      context: src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj
+      manifests: game-lobby
+      target: runtime
+      project: src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj
+      assembly: Mgo2Server.GameLobbyServer
+      test_filter: "(Category=GameLobby|Category=Shared)"

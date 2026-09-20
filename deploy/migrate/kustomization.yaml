@@ -1,0 +1,15 @@
+# The schema change for a release, as a resource rather than a step. The job is
+# an Argo PreSync hook, so every sync of this Application runs it before any
+# workload Application at a later sync wave touches the namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - job.yaml
+
+# The bundle lives in the mgo2-postgres image, which is never deployed as a
+# workload. The deploy pipeline rewrites `newTag` with the commit SHA it
+# published; see deploy/README.md for the seed value.
+images:
+  - name: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres
+    newTag: latest

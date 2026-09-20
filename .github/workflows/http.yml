@@ -1,0 +1,52 @@
+# The HTTP API's pipeline. See gate-lobby-server.yml for the shape of the
+# trigger.
+name: HTTP API
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/Http/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/http.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/Http/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/http.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    name: HTTP API
+    uses: ./.github/workflows/service.yml
+    with:
+      service: http
+      image: mgo2-http
+      context: src/Http/Mgo2Server.Http.csproj
+      manifests: http
+      target: runtime
+      project: src/Http/Mgo2Server.Http.csproj
+      assembly: Mgo2Server.Http
+      test_filter: "(Category=Http|Category=Shared)"

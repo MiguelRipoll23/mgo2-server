@@ -1,0 +1,108 @@
+# Everything at once, for the two cases a diff cannot express: cutting a
+# version, and re-publishing the whole stack from a known commit.
+#
+# This exists as its own workflow rather than as tag filters on the per-service
+# ones, because GitHub does not evaluate `paths` for a tag push: a tag would trip
+# every service's path filters at best unpredictably, and this way the release
+# path says what it means.
+#
+# Every entry runs with `force: true`, so the affected gate is skipped — a
+# release is a decision, not a diff. Job order is otherwise identical to an
+# ordinary push: each service builds, tests, publishes its SHA tag and pins it
+# in its own manifests folder the moment it is done.
+name: Release (all services)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# A release is not cancelled by the next one; the tag bump each service commits
+# is guarded against races on its own.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  services:
+    name: ${{ matrix.service }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: gate
+            image: mgo2-gate-lobby-server
+            context: src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj
+            manifests: gate
+            target: runtime
+            project: src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj
+            assembly: Mgo2Server.GateLobbyServer
+            test_filter: "(Category=Shared)"
+          - service: account
+            image: mgo2-account-lobby-server
+            context: src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj
+            manifests: account
+            target: runtime
+            project: src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj
+            assembly: Mgo2Server.AccountLobbyServer
+            test_filter: "(Category=Account|Category=Shared)"
+          - service: game-lobby
+            image: mgo2-game-lobby-server
+            context: src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj
+            manifests: game-lobby
+            target: runtime
+            project: src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj
+            assembly: Mgo2Server.GameLobbyServer
+            test_filter: "(Category=GameLobby|Category=Shared)"
+          - service: gameplay
+            image: mgo2-gameplay-server
+            context: src/GameplayServer/Mgo2Server.GameplayServer.csproj
+            manifests: gameplay
+            target: runtime
+            project: src/GameplayServer/Mgo2Server.GameplayServer.csproj
+            assembly: Mgo2Server.GameplayServer
+            test_filter: "(Category=Shared)"
+          - service: http
+            image: mgo2-http
+            context: src/Http/Mgo2Server.Http.csproj
+            manifests: http
+            target: runtime
+            project: src/Http/Mgo2Server.Http.csproj
+            assembly: Mgo2Server.Http
+            test_filter: "(Category=Http|Category=Shared)"
+          - service: dns
+            image: mgo2-dns
+            context: src/Dns/Mgo2Server.Dns.csproj
+            manifests: dns
+            target: runtime
+            project: src/Dns/Mgo2Server.Dns.csproj
+            assembly: Mgo2Server.Dns
+            test_filter: "(Category=Dns|Category=Shared)"
+          - service: stun
+            image: mgo2-stun
+            context: src/Stun/Mgo2Server.Stun.csproj
+            manifests: stun
+            target: runtime
+            project: src/Stun/Mgo2Server.Stun.csproj
+            assembly: Mgo2Server.Stun
+            test_filter: "(Category=Stun|Category=Shared)"
+          - service: postgres
+            image: mgo2-postgres
+            context: src/Shared/Mgo2Server.Shared.csproj
+            manifests: migrate
+            target: postgres
+            project: ""
+            assembly: ""
+            test_filter: "(Category=Shared)"
+    uses: ./.github/workflows/service.yml
+    with:
+      service: ${{ matrix.service }}
+      image: ${{ matrix.image }}
+      context: ${{ matrix.context }}
+      manifests: ${{ matrix.manifests }}
+      target: ${{ matrix.target }}
+      project: ${{ matrix.project }}
+      assembly: ${{ matrix.assembly }}
+      test_filter: ${{ matrix.test_filter }}
+      force: true

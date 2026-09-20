@@ -9,6 +9,7 @@ namespace Mgo2Server.Tests;
 /// write-back are two halves of one structure, so a setting that only one of them knows
 /// about is a player's choice that never comes back.
 /// </summary>
+[Trait("Category", "GameLobby")]
 public sealed class GameplayOptionsCodecTests
 {
     /// <summary>Every setting the wire carries, which is the row minus its key.</summary>

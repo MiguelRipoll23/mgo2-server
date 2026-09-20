@@ -11,6 +11,7 @@ namespace Mgo2Server.Tests;
 /// the Grafana Alloy configuration, and a change to one of them silently stops
 /// the dashboards from updating.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class ServerMetricsServiceTests
 {
     [Fact]

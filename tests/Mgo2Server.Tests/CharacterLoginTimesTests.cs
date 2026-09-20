@@ -7,6 +7,7 @@ namespace Mgo2Server.Tests;
 /// Guards the login stamp pair: the gap the titles are evaluated against, and the
 /// rotation that has to happen after it rather than before.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class CharacterLoginTimesTests
 {
     /// <summary>Seconds in a day, so the cases below can be spelled in days.</summary>

@@ -1,0 +1,423 @@
+# One service's pipeline. Every service calls this with its own project, image
+# and manifest folder, so a service builds, tests, publishes and pins its tag
+# without sharing a job with any other service: a failure here is that service's
+# failure and cannot hold another service's deploy.
+#
+# What the pipeline does, in order:
+#
+#   affected  does this diff touch this service at all? Nothing below runs if
+#             the answer is no. This is the authoritative check — the caller's
+#             `on.push.paths` only decides whether the pipeline is started, and
+#             deliberately over-triggers on shared paths so this step can prune.
+#   test      build the solution and run this service's tests, with the
+#             flaky-tagged ones excluded.
+#   flaky     the flaky-tagged tests on their own, and non-blocking: they
+#             report, they never gate.
+#   publish   one image, tagged with the commit SHA — the only name a manifest
+#             ever records — plus the moving names the docker-compose install
+#             path pulls, which no manifest in deploy/ names.
+#   gitops    rewrite the image tag in this service's manifests folder and
+#             commit it. ArgoCD reconciles from there. The pipeline applies
+#             nothing to the cluster itself: there is no kubectl here, and no
+#             step depends on what a previous run did or did not finish.
+#
+# For an input whose project is not in this repository — the postgres image,
+# whose artifact is a migration bundle rather than a server — `context` still
+# names the project whose changes should wake the pipeline, and `project` and
+# `assembly` are left empty.
+
+name: Service pipeline
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: Name shown in run and job labels.
+        type: string
+        required: true
+      image:
+        description: Image name, without the registry or the repository prefix.
+        type: string
+        required: true
+      context:
+        description: Project whose affectedness decides whether this runs.
+        type: string
+        required: true
+      manifests:
+        description: Folder under deploy/ holding this service's image tag.
+        type: string
+        required: true
+      target:
+        description: Dockerfile stage to build.
+        type: string
+        required: true
+      project:
+        description: Project to publish. Empty when the target alone is the image.
+        type: string
+        default: ""
+      assembly:
+        description: Assembly the runtime stage runs. Empty with an empty project.
+        type: string
+        default: ""
+      test_filter:
+        description: Test filter this service's pipeline runs.
+        type: string
+        default: "Category=Shared"
+      force:
+        description: Run regardless of the diff, for a release or a manual run.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # Whether this service is affected at all. `dotnet affected` walks the MSBuild
+  # project graph from the changed files, so a change to a shared library wakes
+  # exactly the services that reference it — the path filters cannot know that,
+  # and this is why they are allowed to over-trigger.
+  affected:
+    name: Affected
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.detect.outputs.run }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          # The comparison walks back to a commit that may be far behind, so the
+          # whole history has to be there rather than a shallow slice of it.
+          fetch-depth: 0
+
+      - name: Install the .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore the local tools
+        run: dotnet tool restore
+
+      - name: Detect whether this service is affected
+        id: detect
+        shell: bash
+        env:
+          FORCE: ${{ inputs.force }}
+          CONTEXT: ${{ inputs.context }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BASE_REF: ${{ github.base_ref }}
+          SERVICE: ${{ inputs.service }}
+        run: |
+          set -euo pipefail
+
+          if [ "$FORCE" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Forced: $SERVICE runs regardless of the diff."
+            exit 0
+          fi
+
+          # Where the diff starts. A pull request compares against the branch it
+          # targets; a push compares against the commit that was there before,
+          # falling back to HEAD~1 when that is unavailable (a new branch, or a
+          # push this event payload does not carry the previous head for).
+          case "$EVENT" in
+            pull_request)
+              base="origin/$BASE_REF"
+              ;;
+            *)
+              base="$BEFORE"
+              if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+                base="HEAD~1"
+              fi
+              ;;
+          esac
+
+          # A force-push, a re-run against a commit this clone never fetched,
+          # or a tag on a branch that has moved can all name a baseline that is
+          # not here. Falling back to HEAD~1 keeps the comparison meaningful;
+          # if even that is unavailable the pipeline runs, because skipping a
+          # deploy is the more expensive mistake of the two.
+          if ! git rev-parse --verify --quiet "${base}^{commit}" > /dev/null; then
+            echo "$base is not in this clone; falling back to HEAD~1."
+            base="HEAD~1"
+          fi
+
+          if ! git rev-parse --verify --quiet "${base}^{commit}" > /dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "No commit to compare against; running the pipeline."
+            exit 0
+          fi
+
+          echo "Comparing against $base."
+
+          # `dotnet affected` only sees files that belong to a project, so a
+          # change to something every image is built from — the Dockerfile, the
+          # tool manifest the bundle stage restores, the shared build props —
+          # would map to no project at all and be silenced. Those files rebuild
+          # every image, so they wake the pipeline directly.
+          build_inputs=$(git diff --name-only "$base" HEAD -- \
+            'docker/**' \
+            '.config/**' \
+            'Directory.Build.props' \
+            'Mgo2Server.slnx' | head -n 1)
+
+          if [ -n "$build_inputs" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "$build_inputs is a build input; every image is rebuilt."
+            exit 0
+          fi
+
+          # 166 is the tool's "nothing changed" exit code, and it writes no file
+          # in that case, so it is read as "not affected" rather than as a
+          # failure. Any other non-zero code is a real error and stops the run.
+          status=0
+          dotnet affected --from "$base" --to HEAD --format json --output-name affected || status=$?
+
+          if [ "$status" -eq 166 ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No project changed since $base."
+            exit 0
+          fi
+
+          if [ "$status" -ne 0 ]; then
+            echo "::error::dotnet affected failed with exit code $status."
+            exit "$status"
+          fi
+
+          # The output is a JSON array of `{Name, FilePath}` and nothing in it
+          # is escaped, so a quoted suffix is enough to ask whether the context
+          # project is one of the affected ones — and enough to do it without
+          # depending on a JSON tool being present on the runner.
+          if grep -qF "/${CONTEXT}\"" affected.json; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "$CONTEXT is affected."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "$CONTEXT is not affected by this diff."
+          fi
+
+  # The service's own tests. The filter keeps one service's failure out of
+  # another's deploy: the suite is a single project, so each category is tagged
+  # with the service that owns it and every pipeline also runs the shared half,
+  # because shared code is a dependency of every service.
+  test:
+    name: Test
+    needs: affected
+    if: needs.affected.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Install the .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore Mgo2Server.slnx
+
+      - name: Build
+        run: dotnet build Mgo2Server.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: |
+          dotnet test Mgo2Server.slnx \
+            --configuration Release \
+            --no-build \
+            --filter "${{ inputs.test_filter }} & Category!=Flaky"
+
+  # The quarantined tests on their own. They are reported and never gate: a
+  # known-flaky test that fails here has told the pipeline nothing about the
+  # service, and letting it stop a deploy is the behaviour this job exists to
+  # remove.
+  flaky:
+    name: Flaky tests (non-blocking)
+    needs: affected
+    if: needs.affected.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Install the .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore Mgo2Server.slnx
+
+      - name: Build
+        run: dotnet build Mgo2Server.slnx --configuration Release --no-restore
+
+      - name: Run the quarantined tests
+        run: |
+          dotnet test Mgo2Server.slnx \
+            --configuration Release \
+            --no-build \
+            --filter "Category=Flaky"
+
+  # One image, tagged with the commit SHA. Nothing here reads a tag another run
+  # wrote, so this job's result does not depend on any previous run's.
+  publish:
+    name: Publish image
+    needs:
+      - affected
+      - test
+    if: >-
+      always() && !cancelled()
+      && needs.affected.outputs.run == 'true'
+      && needs.test.result == 'success'
+      && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      # The registry requires a lower-case path, and an owner may not be.
+      - name: Resolve the image name
+        id: image
+        shell: bash
+        run: echo "value=${REGISTRY}/${GITHUB_REPOSITORY,,}/${{ inputs.image }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Two audiences, two kinds of tag, and the split is deliberate.
+      #
+      # The commit SHA is what `deploy/` records, and the only kind of tag it
+      # ever names: the same YAML always resolves to the same bytes, which is
+      # what makes a deploy reproducible and a rollback a one-line commit.
+      #
+      # The moving names are what the docker-compose install path pulls —
+      # compose.yaml defaults MGO2_IMAGE_TAG to `latest`, and both install
+      # scripts inherit that default. Dropping them would leave a bare
+      # `docker compose pull` pinned to whatever `latest` last happened to be.
+      # No manifest reads them, and Argo never sees them.
+      - name: Resolve the image tags
+        id: tags
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.value }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "list<<TAGS"
+            echo "${IMAGE}:${GITHUB_SHA}"
+
+            if [ "${GITHUB_REF_TYPE}" = 'tag' ]; then
+              # The version without its `v`, which is the form the install
+              # scripts' MGO2_IMAGE_TAG is documented to take.
+              echo "${IMAGE}:${GITHUB_REF_NAME#v}"
+            elif [ "${GITHUB_REF_NAME}" = "${DEFAULT_BRANCH}" ]; then
+              echo "${IMAGE}:${GITHUB_REF_NAME}"
+              echo "${IMAGE}:latest"
+            fi
+
+            echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: ${{ inputs.target }}
+          push: true
+          platforms: linux/amd64,linux/arm64/v8
+          tags: ${{ steps.tags.outputs.list }}
+          build-args: |
+            PROJECT=${{ inputs.project }}
+            ASSEMBLY=${{ inputs.assembly }}
+          cache-from: type=gha,scope=${{ inputs.image }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.image }}
+
+  # The pipeline's last step, and the only thing it does to the world outside
+  # the registry: it records the image it just published in this service's
+  # manifests folder. ArgoCD reconciles from that commit. Applying anything
+  # directly from here is what made a deploy depend on the previous run
+  # finishing, and there is none of it left.
+  gitops:
+    name: Pin the image tag
+    needs:
+      - affected
+      - publish
+    if: >-
+      always() && !cancelled()
+      && needs.affected.outputs.run == 'true'
+      && needs.publish.result == 'success'
+      && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Pin the published image
+        shell: bash
+        env:
+          SHA: ${{ github.sha }}
+          SERVICE: ${{ inputs.service }}
+          MANIFESTS: ${{ inputs.manifests }}
+        run: |
+          set -euo pipefail
+          file="deploy/${MANIFESTS}/kustomization.yaml"
+
+          pinned="$(sed -n 's/^ *newTag: *//p' "$file")"
+
+          # A run that finished late must not overwrite a newer pin. If the
+          # commit already recorded there is a descendant of this one, a later
+          # run has already been here, and the right move is to leave it alone.
+          if git cat-file -e "${pinned}^{commit}" 2>/dev/null \
+            && git merge-base --is-ancestor "$SHA" "$pinned"; then
+            echo "Already pinned to $pinned; leaving it."
+            exit 0
+          fi
+
+          sed -i "s|^\( *newTag: \).*$|\1${SHA}|" "$file"
+
+          if git diff --quiet -- "$file"; then
+            echo "Already pinned to $SHA."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$file"
+          git commit -m "deploy: pin ${SERVICE} to ${SHA:0:7}"
+
+          # Another service's pipeline may have pushed while this one ran. Each
+          # pipeline writes only its own folder, so a rebase is always clean,
+          # and the retry covers the push losing a race with that other pipeline.
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase --autostash && git push; then
+              echo "Pinned ${SERVICE} to $SHA."
+              exit 0
+            fi
+            echo "Push attempt $attempt failed; retrying."
+            sleep $((attempt * 5))
+          done
+
+          echo "::error::Could not push the ${SERVICE} tag bump."
+          exit 1

@@ -1,0 +1,50 @@
+# The port-check responder's pipeline. See gate-lobby-server.yml for the shape
+# of the trigger.
+name: STUN server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/Stun/**"
+      - "src/Shared/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/stun.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/Stun/**"
+      - "src/Shared/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/stun.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    name: STUN server
+    uses: ./.github/workflows/service.yml
+    with:
+      service: stun
+      image: mgo2-stun
+      context: src/Stun/Mgo2Server.Stun.csproj
+      manifests: stun
+      target: runtime
+      project: src/Stun/Mgo2Server.Stun.csproj
+      assembly: Mgo2Server.Stun
+      test_filter: "(Category=Stun|Category=Shared)"

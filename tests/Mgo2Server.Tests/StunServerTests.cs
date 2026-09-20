@@ -10,6 +10,7 @@ namespace Mgo2Server.Tests;
 /// Exercises the responder over real sockets, on two loopback addresses, which is
 /// what decides which socket an answer leaves from.
 /// </summary>
+[Trait("Category", "Stun")]
 public sealed class StunServerTests
 {
     private static readonly IPAddress PrimaryAddress = IPAddress.Parse("127.0.0.1");

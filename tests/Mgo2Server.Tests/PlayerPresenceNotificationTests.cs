@@ -10,6 +10,7 @@ namespace Mgo2Server.Tests;
 /// The presence the lobbies report is what the global count and every observer
 /// are fed, so a repeated event or a failing destination must not move it.
 /// </summary>
+[Trait("Category", "Http")]
 public sealed class PlayerPresenceNotificationServiceTests
 {
     [Fact]

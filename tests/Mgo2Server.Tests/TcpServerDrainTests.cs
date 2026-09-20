@@ -13,6 +13,7 @@ namespace Mgo2Server.Tests;
 /// not hang up on the clients already inside, and hanging up waits until it is
 /// the only thing left to do.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class TcpServerDrainTests
 {
     /// <summary>How long a step of a test waits before it gives up.</summary>

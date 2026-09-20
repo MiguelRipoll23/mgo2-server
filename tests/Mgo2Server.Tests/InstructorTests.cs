@@ -9,6 +9,7 @@ namespace Mgo2Server.Tests;
 /// mistake is permanent: the client offers the prompt once and the name cannot be
 /// erased, so a false recognition is recorded forever.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class InstructorGraduationUtilityTests
 {
     [Fact]
@@ -46,6 +47,7 @@ public sealed class InstructorGraduationUtilityTests
 /// Guards the two halves of the documented instructor requirement against the level
 /// table this server actually derives levels from.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class InstructorRequirementTests
 {
     /// <summary>

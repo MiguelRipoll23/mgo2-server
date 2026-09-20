@@ -1,0 +1,41 @@
+# The one Application that is applied by hand. Everything else is a child of it:
+# it points at the folder holding one Application per service, and Argo syncs
+# those in sync-wave order.
+#
+#   wave 0  cluster   the namespace and the Gateway API resources
+#   wave 1  migrate   the PreSync migration hook, which must finish first
+#   wave 2  services  every workload, which may not roll out before it has
+#
+# Apply it once, after ArgoCD is installed on the cluster:
+#
+#   kubectl apply -f deploy/argocd/root.yaml
+#
+# From then on this repository is the deployment's source of truth: a push to
+# main changes a manifest or an image tag, and Argo reconciles it. Nothing in
+# CI applies anything to the cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mgo2-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/MiguelRipoll23/mgo2-server.git
+    targetRevision: main
+    path: deploy/argocd/applications
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

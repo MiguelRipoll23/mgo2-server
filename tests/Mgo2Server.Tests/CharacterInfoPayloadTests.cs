@@ -9,6 +9,7 @@ namespace Mgo2Server.Tests;
 /// anywhere but the character is a wrong level on every screen that shows one, and its
 /// login pair is the two timestamps the card prints.
 /// </summary>
+[Trait("Category", "GameLobby")]
 public sealed class CharacterInfoPayloadTests
 {
     /// <summary>Offset of the experience: the identifier, the name and the four dead words.</summary>

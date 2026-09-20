@@ -8,6 +8,7 @@ namespace Mgo2Server.Tests;
 /// The coordinator counts what the lobbies report, and the count is what the
 /// global total and the Discord channel are built from.
 /// </summary>
+[Trait("Category", "Http")]
 public sealed class LobbyPresenceServiceTests
 {
     [Fact]
@@ -80,6 +81,7 @@ public sealed class LobbyPresenceServiceTests
 }
 
 /// <summary>The registry is what makes the API the central point of cross-lobby communication.</summary>
+[Trait("Category", "Http")]
 public sealed class LobbyConnectionRegistryServiceTests
 {
     [Fact]

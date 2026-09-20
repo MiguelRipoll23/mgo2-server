@@ -8,6 +8,7 @@ namespace Mgo2Server.Tests;
 /// wait screen. If the two disagree the player is told one thing and refused for
 /// another, which is why the boundary is pinned rather than assumed.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class CharacterDeletionCooldownTests
 {
     /// <summary>Moment the cooldown is measured from.</summary>

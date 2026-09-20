@@ -1,0 +1,62 @@
+# The gate's pipeline. Triggered by the gate's own files or by anything it is
+# built from; the shared paths below over-trigger on purpose, so that a shared
+# library's change starts every service's pipeline and `dotnet affected` inside
+# the pipeline decides which of them the change actually reaches.
+#
+# `deploy/**` is deliberately absent from every `paths` list: a manifest change
+# is ArgoCD's to reconcile, not this pipeline's, and leaving it out is also what
+# keeps the tag bump this pipeline commits from starting another run.
+name: Gate lobby server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/GateLobbyServer/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/gate-lobby-server.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/GateLobbyServer/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/gate-lobby-server.yml"
+  workflow_dispatch:
+
+# Serialise this service's runs: a newer commit's run replaces an older one
+# rather than racing it to the same manifest file.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    name: Gate lobby server
+    uses: ./.github/workflows/service.yml
+    with:
+      service: gate
+      image: mgo2-gate-lobby-server
+      context: src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj
+      manifests: gate
+      target: runtime
+      project: src/GateLobbyServer/Mgo2Server.GateLobbyServer.csproj
+      assembly: Mgo2Server.GateLobbyServer
+      # The gate has no tests of its own, so it runs the shared half of the
+      # suite, which every service depends on.
+      test_filter: "(Category=Shared)"

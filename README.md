@@ -68,6 +68,14 @@ docker compose up                               # run the published images
 docker compose -f compose.dev.yaml up --build   # build and run from source
 ```
 
+### Deployment
+
+The k3s cluster is reconciled from `deploy/` by ArgoCD. One pipeline per service
+builds an image tagged with the commit SHA and commits that tag to the service's
+manifest folder; nothing in CI applies anything to the cluster. See
+[`deploy/README.md`](deploy/README.md) for the layout, the bootstrap and the
+migration rules, and [`docs/CICD.md`](docs/CICD.md) for the pipelines.
+
 ## Development
 
 ```sh

@@ -14,6 +14,7 @@ namespace Mgo2Server.Tests;
 /// comment slides, and the client renders whatever now sits under the offset as text.
 /// </para>
 /// </summary>
+[Trait("Category", "GameLobby")]
 public sealed class PersonalInfoPayloadTests
 {
     /// <summary>Exact size of the payload.</summary>

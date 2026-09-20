@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mgo2-http
+  namespace: mgo2
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: mgo2-http
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: mgo2-http
+    spec:
+      containers:
+      - image: ghcr.io/miguelripoll23/mgo2-server/mgo2-http:latest
+        imagePullPolicy: Always
+        name: http
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        - containerPort: 5743
+          protocol: TCP
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app/appsettings.json
+          name: appsettings
+          readOnly: true
+          subPath: appsettings.json
+        - mountPath: /root/.aspnet/DataProtection-Keys
+          name: http-keys
+        envFrom:
+        - secretRef:
+            name: mgo2-secrets
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: appsettings
+        configMap:
+          name: mgo2-appsettings
+      - emptyDir: {}
+        name: http-keys

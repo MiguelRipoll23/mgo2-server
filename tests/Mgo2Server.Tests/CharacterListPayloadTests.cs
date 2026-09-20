@@ -10,6 +10,7 @@ namespace Mgo2Server.Tests;
 /// client copies to its session, which is what leaves an account without
 /// expansion packs.
 /// </summary>
+[Trait("Category", "Account")]
 public sealed class CharacterListPayloadTests
 {
     /// <summary>Offset of the expansion bitmask inside the trailer.</summary>

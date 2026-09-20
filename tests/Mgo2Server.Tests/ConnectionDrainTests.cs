@@ -9,6 +9,7 @@ namespace Mgo2Server.Tests;
 /// the connections it has until they leave, so the two failures that matter are
 /// stopping while somebody is still connected and never stopping at all.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class ConnectionDrainTests
 {
     /// <summary>How long the drain is given to notice a change in the count.</summary>

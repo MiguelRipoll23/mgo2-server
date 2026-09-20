@@ -1,0 +1,29 @@
+# Wave 0: the namespace and the Gateway API resources every service depends on.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mgo2-cluster
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/MiguelRipoll23/mgo2-server.git
+    targetRevision: main
+    path: deploy/cluster
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mgo2
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

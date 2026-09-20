@@ -1,0 +1,31 @@
+# One image backs nine deployments: every lobby role is the same executable
+# started with a different LOBBY_NAME and LOBBY_PORT. They share an image tag,
+# so a single `newTag` below moves all nine together.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - automatching-deployment.yaml
+  - automatching-service.yaml
+  - basic-training-deployment.yaml
+  - basic-training-service.yaml
+  - combat-training-deployment.yaml
+  - combat-training-service.yaml
+  - free-battle-deployment.yaml
+  - free-battle-service.yaml
+  - registration-deployment.yaml
+  - registration-service.yaml
+  - replays-deployment.yaml
+  - replays-service.yaml
+  - survival-deployment.yaml
+  - survival-service.yaml
+  - survival-hosts-deployment.yaml
+  - survival-hosts-service.yaml
+  - tournament-deployment.yaml
+  - tournament-service.yaml
+
+# The deploy pipeline rewrites `newTag` with the commit SHA it published. See
+# deploy/README.md for the seed value and why it must not survive a sync.
+images:
+  - name: ghcr.io/miguelripoll23/mgo2-server/mgo2-game-lobby-server
+    newTag: latest

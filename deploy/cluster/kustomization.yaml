@@ -1,0 +1,12 @@
+# The resources that are not one service's to own: the namespace everything
+# lives in, the Gateway API plumbing the HTTP API is reached through, and the
+# GatewayClass Traefik provides. Each is reconciled by its own Argo Application
+# at the lowest sync wave, so a service Application never has to carry them.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - gatewayclass.yaml
+  - gateway.yaml
+  - httproute.yaml

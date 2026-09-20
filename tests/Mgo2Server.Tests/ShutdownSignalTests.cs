@@ -8,6 +8,7 @@ namespace Mgo2Server.Tests;
 /// platform that refuses the termination signal would fail the process before
 /// its first connection, which is a worse way to find out than a test.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class ShutdownSignalTests
 {
     [Fact]

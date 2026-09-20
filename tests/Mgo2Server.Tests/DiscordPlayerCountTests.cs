@@ -13,6 +13,7 @@ namespace Mgo2Server.Tests;
 /// renamed whenever the count moves, and every arrival and departure is written
 /// in it.
 /// </summary>
+[Trait("Category", "Http")]
 public sealed class DiscordPlayerCountServiceTests
 {
     [Fact]

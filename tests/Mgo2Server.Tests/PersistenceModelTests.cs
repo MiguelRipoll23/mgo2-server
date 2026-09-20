@@ -8,6 +8,7 @@ namespace Mgo2Server.Tests;
 /// validation the server runs on its first query, so a mapping mistake fails
 /// here instead of in a container at runtime.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class PersistenceModelTests
 {
     /// <summary>

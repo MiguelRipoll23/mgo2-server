@@ -10,6 +10,7 @@ namespace Mgo2Server.Tests;
 /// rejected by the client — it is silently misparsed — so the keystream and the
 /// record layout are asserted against the client's own loop.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class RankingScrambleUtilityTests
 {
     /// <summary>
@@ -59,6 +60,7 @@ public sealed class RankingScrambleUtilityTests
 }
 
 /// <summary>Guards the header and record layout of a serialised board window.</summary>
+[Trait("Category", "Shared")]
 public sealed class RankingBodyUtilityTests
 {
     /// <summary>Deserialised view of a reply, produced by reversing the scramble.</summary>

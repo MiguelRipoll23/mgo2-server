@@ -1,0 +1,53 @@
+# The gameplay host's pipeline. See gate-lobby-server.yml for the shape of the
+# trigger.
+name: Gameplay server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/GameplayServer/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/gameplay-server.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/GameplayServer/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/gameplay-server.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    name: Gameplay server
+    uses: ./.github/workflows/service.yml
+    with:
+      service: gameplay
+      image: mgo2-gameplay-server
+      context: src/GameplayServer/Mgo2Server.GameplayServer.csproj
+      manifests: gameplay
+      target: runtime
+      project: src/GameplayServer/Mgo2Server.GameplayServer.csproj
+      assembly: Mgo2Server.GameplayServer
+      # The gameplay server has no tests of its own, so it runs the shared half.
+      test_filter: "(Category=Shared)"

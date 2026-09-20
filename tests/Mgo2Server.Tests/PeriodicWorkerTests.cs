@@ -10,6 +10,8 @@ namespace Mgo2Server.Tests;
 /// hammering, and a worker whose run overruns its interval does not turn into a
 /// loop that runs back to back.
 /// </summary>
+[Trait("Category", "Shared")]
+[Trait("Category", "Flaky")]
 public sealed class PeriodicWorkerTests
 {
     /// <summary>Interval the probe worker runs at, short enough to measure.</summary>

@@ -6,6 +6,7 @@ namespace Mgo2Server.Tests;
 /// The command registration needs the application identifier, which is not a
 /// setting of the deployment but the first segment of the bot token.
 /// </summary>
+[Trait("Category", "Http")]
 public sealed class DiscordApplicationIdentifierTests
 {
     [Fact]

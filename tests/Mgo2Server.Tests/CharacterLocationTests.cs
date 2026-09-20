@@ -12,6 +12,7 @@ namespace Mgo2Server.Tests;
 /// field of every row that follows it, which reads as a screen full of columns
 /// belonging to the wrong players.
 /// </summary>
+[Trait("Category", "GameLobby")]
 public sealed class CharacterLocationTests
 {
     /// <summary>Size of one roster or search entry, header included.</summary>

@@ -10,6 +10,7 @@ namespace Mgo2Server.Tests;
 /// the badges from the mask, so a bit that should not be set draws a title nobody
 /// earned — and the reference server records paying for exactly that.
 /// </summary>
+[Trait("Category", "GameLobby")]
 public sealed class CharacterTitleMaskTests
 {
     [Fact]
@@ -49,6 +50,7 @@ public sealed class CharacterTitleMaskTests
 /// positionally, so a field added without accounting for the layout would move
 /// them and the screen would draw a different character's badges.
 /// </summary>
+[Trait("Category", "GameLobby")]
 public sealed class PersonalStatisticsTitleTests
 {
     /// <summary>Offset the worn-title byte is written at, right after the 128-byte comment.</summary>

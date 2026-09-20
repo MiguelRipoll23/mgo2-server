@@ -11,6 +11,7 @@ namespace Mgo2Server.Tests;
 /// collapsed, while the API's own paths are left alone.
 /// </para>
 /// </summary>
+[Trait("Category", "Http")]
 public sealed class LegacyPathNormalizerTests
 {
     /// <summary>A path already in the declared form is handed through untouched.</summary>

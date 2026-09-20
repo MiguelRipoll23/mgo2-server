@@ -8,6 +8,7 @@ namespace Mgo2Server.Tests;
 /// database that is briefly away has to cost a wait, not a process, and one that
 /// is really broken still has to be reported.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class StartupUtilsTests
 {
     /// <summary>Wait the tests give the retry, so a give-up path finishes in milliseconds.</summary>

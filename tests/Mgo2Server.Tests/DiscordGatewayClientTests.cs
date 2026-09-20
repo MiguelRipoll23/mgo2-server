@@ -15,6 +15,7 @@ namespace Mgo2Server.Tests;
 /// The slash command arrives as a gateway dispatch, so the client has to open
 /// the socket, identify itself and relay the interaction it is sent.
 /// </summary>
+[Trait("Category", "Http")]
 public sealed class DiscordGatewayClientTests
 {
     private const string ModeratorRole = "100000000000000001";

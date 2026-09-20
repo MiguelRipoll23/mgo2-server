@@ -11,6 +11,7 @@ namespace Mgo2Server.Tests;
 /// header the connect burst sends. The two screens are read by the same card, so a field
 /// that is right in one and wrong in the other is a difference the player can see.
 /// </summary>
+[Trait("Category", "GameLobby")]
 public sealed class PersonalStatisticsHeaderTests
 {
     /// <summary>Offset of the experience.</summary>

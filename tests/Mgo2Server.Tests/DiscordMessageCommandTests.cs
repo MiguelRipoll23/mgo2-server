@@ -13,6 +13,7 @@ namespace Mgo2Server.Tests;
 /// run for the staff roles, only in the configured guild, and it writes an
 /// official bot message in the channel it was used in.
 /// </summary>
+[Trait("Category", "Http")]
 public sealed class DiscordMessageCommandTests
 {
     private const string ModeratorRole = "100000000000000001";

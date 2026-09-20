@@ -1,0 +1,52 @@
+# The name server's pipeline. See gate-lobby-server.yml for the shape of the
+# trigger.
+name: DNS server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/Dns/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/dns.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/Dns/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/dns.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    name: DNS server
+    uses: ./.github/workflows/service.yml
+    with:
+      service: dns
+      image: mgo2-dns
+      context: src/Dns/Mgo2Server.Dns.csproj
+      manifests: dns
+      target: runtime
+      project: src/Dns/Mgo2Server.Dns.csproj
+      assembly: Mgo2Server.Dns
+      test_filter: "(Category=Dns|Category=Shared)"

@@ -13,6 +13,7 @@ namespace Mgo2Server.Tests;
 /// to an interaction, both of which the gateway socket cannot carry because it
 /// only sends what Discord pushes down.
 /// </summary>
+[Trait("Category", "Http")]
 public sealed class DiscordRestClientTests
 {
     private const string Application = "123456789012345678";

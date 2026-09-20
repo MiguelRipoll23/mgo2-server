@@ -10,6 +10,7 @@ namespace Mgo2Server.Tests;
 /// places an unauthenticated datagram is decoded. A regression here can end
 /// the UDP host, so the malformed inputs are exercised directly.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class FrameCryptoUtilityTests
 {
     [Fact]
@@ -91,6 +92,7 @@ public sealed class FrameCryptoUtilityTests
 }
 
 /// <summary>Exercises the TCP packet codec round-trip and its length guards.</summary>
+[Trait("Category", "Shared")]
 public sealed class PacketCodecServiceTests
 {
     /// <summary>A command whose payload is neither encrypted nor decrypted.</summary>
@@ -139,6 +141,7 @@ public sealed class PacketCodecServiceTests
 /// fault a handler, and the Latin-1 writer that drops characters it cannot
 /// encode rather than widening them into a wrong byte.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class PacketReaderUtilityTests
 {
     [Fact]

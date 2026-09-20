@@ -7,6 +7,7 @@ namespace Mgo2Server.Tests;
 /// server are permanent endpoints rather than gameplay lobbies, so they name
 /// themselves with a name and a port and select no game type.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class LobbyOptionsTests
 {
     [Fact]

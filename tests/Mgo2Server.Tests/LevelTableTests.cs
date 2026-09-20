@@ -10,6 +10,7 @@ namespace Mgo2Server.Tests;
 /// pins the table's inverse, which is where the starting experience of a new
 /// character is taken from.
 /// </summary>
+[Trait("Category", "Shared")]
 public sealed class LevelTableTests
 {
     /// <summary>Experience and the level a live client displayed for it.</summary>

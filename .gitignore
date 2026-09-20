@@ -2,5 +2,10 @@ appsettings.json
 bin/
 obj/
 
+# Written by `dotnet affected` when the pipelines run it locally.
+affected.json
+affected.proj
+affected.txt
+
 # Python bytecode left behind by the analysis scripts in tools/.
 __pycache__/

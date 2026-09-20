@@ -11,6 +11,7 @@ namespace Mgo2Server.Tests;
 /// 13 is the client's total-rewards cell, so a value taken from anywhere else is
 /// rendered as the player's rewards.
 /// </summary>
+[Trait("Category", "GameLobby")]
 public sealed class PersonalStatisticsSummaryRowTests
 {
     /// <summary>Number of columns in a matrix row.</summary>

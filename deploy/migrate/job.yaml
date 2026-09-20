@@ -1,0 +1,78 @@
+# The one-shot schema migration for a release.
+#
+# It is an Argo PreSync hook, which is what replaces the deploy pipeline's old
+# `kubectl apply` + poll step: Argo runs every PreSync hook before it applies
+# the rest of the Application's resources, and does not begin the rollout until
+# the hook has succeeded. A failed migration therefore leaves the previous
+# revision serving, exactly as the workflow's migration step used to.
+#
+# The hook is deleted once it succeeds, so the next sync of this Application
+# runs the migration again. It is not deleted by `prune`, and Argo keeps hooks
+# out of the Application's resource list, so a self-heal reconcile cannot be
+# mistaken for drift and start a second migration.
+#
+# The bundle is the one the mgo2-postgres image carries. There is no database
+# container in this deployment — the servers point at an external Postgres — so
+# nothing applies migrations on startup, and this job is the only thing that may
+# change the schema.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mgo2-migrate
+  namespace: mgo2
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  # A failed migration is a stop, not a retry. The whole point of migrating
+  # before the deploy is to keep an image that disagrees with the schema from
+  # starting, and a job that retries hides that until it eventually gives up.
+  backoffLimit: 0
+  # Backstop, so a hung migration releases the sync instead of holding it until
+  # Argo's own timeout expires.
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app: mgo2-migrate
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: migrate
+        image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:latest
+        imagePullPolicy: Always
+        # The postgres image's entrypoint starts a server; this job wants only
+        # the bundle it carries. `command` replaces ENTRYPOINT, and WORKDIR in
+        # that image is where the bundle sits.
+        command:
+        - sh
+        - -c
+        - exec ./efbundle --connection "${DATABASE_CONNECTION_STRING:-$DATABASE_URL}"
+        # The same secret the deployments take their whole environment from, so
+        # the connection string is never copied into a workflow or an image.
+        envFrom:
+        - secretRef:
+            name: mgo2-secrets
+        env:
+        # The bundle extracts itself before running, and the base image's HOME
+        # belongs to root, which the container is not. Without this the
+        # extraction fails before a single migration is read.
+        - name: DOTNET_BUNDLE_EXTRACT_BASE_DIR
+          value: /tmp
+        resources: {}
+        # The same posture the server deployments run under.
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30

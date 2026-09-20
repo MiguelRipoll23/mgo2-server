@@ -4,6 +4,7 @@ using Mgo2Server.Stun;
 namespace Mgo2Server.Tests;
 
 /// <summary>Exercises the binding request parser and the binding response builder.</summary>
+[Trait("Category", "Stun")]
 public sealed class StunMessageCodecTests
 {
     /// <summary>

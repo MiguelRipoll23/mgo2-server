@@ -1,0 +1,52 @@
+# The account server's pipeline. See gate-lobby-server.yml for the shape of the
+# trigger and why `deploy/**` is not in it.
+name: Account lobby server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/AccountLobbyServer/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/account-lobby-server.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/AccountLobbyServer/**"
+      - "src/Shared/**"
+      - "src/Infrastructure/**"
+      - "tests/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "appsettings.example.json"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/account-lobby-server.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    name: Account lobby server
+    uses: ./.github/workflows/service.yml
+    with:
+      service: account
+      image: mgo2-account-lobby-server
+      context: src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj
+      manifests: account
+      target: runtime
+      project: src/AccountLobbyServer/Mgo2Server.AccountLobbyServer.csproj
+      assembly: Mgo2Server.AccountLobbyServer
+      test_filter: "(Category=Account|Category=Shared)"

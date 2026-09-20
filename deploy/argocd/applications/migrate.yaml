@@ -1,0 +1,36 @@
+# Wave 1: the migration bundle, whose PreSync hook Job Argo runs before the
+# wave-2 Applications sync. This is the Application that replaces the deploy
+# pipeline's migration step, and it is why an image that disagrees with the
+# schema cannot start: the rollout has not begun when the hook runs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mgo2-migrate
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/MiguelRipoll23/mgo2-server.git
+    targetRevision: main
+    path: deploy/migrate
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mgo2
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      # A migration is the one thing here that must not be retried blindly, so
+      # the Job itself stops at the first failure (backoffLimit 0, above). The
+      # Application-level retry only covers the sync operation failing to apply
+      # the hook, not the hook's own exit code.
+      limit: 2
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 3m

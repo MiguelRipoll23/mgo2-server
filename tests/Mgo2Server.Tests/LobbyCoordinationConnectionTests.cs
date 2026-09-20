@@ -28,6 +28,7 @@ namespace Mgo2Server.Tests;
 /// endpoint of the API, reports its presence up and receives the announcements
 /// the API relays back down the same connection.
 /// </summary>
+[Trait("Category", "GameLobby")]
 public sealed class LobbyCoordinationConnectionTests : IAsyncLifetime
 {
     private const int LobbyIdentifier = 7;

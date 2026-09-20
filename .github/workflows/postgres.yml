@@ -1,0 +1,57 @@
+# The migration bundle's pipeline. The mgo2-postgres image is never deployed as
+# a workload — it carries the EF Core bundle that deploy/migrate/ runs as a
+# PreSync hook — so this pipeline publishes the image and pins it in the
+# migrate manifests folder, and nothing else.
+#
+# `dotnet-ef` is what builds the bundle, so a change to the tool manifest has to
+# wake this pipeline; the bundle stage is the only consumer of it.
+name: Migration bundle
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/Shared/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "docker/entrypoint-postgres.sh"
+      - "docker/healthcheck-postgres.sh"
+      - ".config/**"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/postgres.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/Shared/**"
+      - "Directory.Build.props"
+      - "Mgo2Server.slnx"
+      - "docker/Dockerfile"
+      - "docker/entrypoint-postgres.sh"
+      - "docker/healthcheck-postgres.sh"
+      - ".config/**"
+      - ".github/workflows/service.yml"
+      - ".github/workflows/postgres.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    name: Migration bundle
+    uses: ./.github/workflows/service.yml
+    with:
+      service: postgres
+      image: mgo2-postgres
+      # The bundle is built from the model in Shared, so that is the project
+      # whose changes decide whether there is a new bundle to publish.
+      context: src/Shared/Mgo2Server.Shared.csproj
+      manifests: migrate
+      target: postgres
+      # No PROJECT or ASSEMBLY: the postgres stage is built from the bundle
+      # stage alone.
+      test_filter: "(Category=Shared)"
