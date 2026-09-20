@@ -52,5 +52,5 @@ catch (OperationCanceledException)
 }
 finally
 {
-    await runner.StopAsync();
+    runner.Stop();
 }

@@ -29,8 +29,18 @@ public sealed class CharacterPresenceTickerService(
     CharacterPresenceService presenceService,
     ActiveGameSessionsService activeGameSessions,
     ILogger<CharacterPresenceTickerService> logger)
-    : PeriodicWorker(CharacterPresenceService.HeartbeatInterval, logger)
+    : PeriodicWorker(CharacterPresenceService.HeartbeatInterval, logger, FailureBackoffCeiling)
 {
+    /// <summary>
+    /// Longest a failing heartbeat waits before trying again: two beats, which is
+    /// half the window after which the rows it stamps are taken for stale. A
+    /// longer backoff would let this worker's own absence evict the live players
+    /// it is stamping, so the wait is bounded by the meaning of the stamp rather
+    /// than by what would keep the database quietest.
+    /// </summary>
+    private static readonly TimeSpan FailureBackoffCeiling =
+        CharacterPresenceService.HeartbeatInterval * 2;
+
     private int lobbyIdentifier;
 
     /// <summary>Starts the ticker for the lobby this instance registered.</summary>

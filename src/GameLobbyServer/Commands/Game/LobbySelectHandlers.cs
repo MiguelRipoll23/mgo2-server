@@ -20,7 +20,7 @@ public sealed class GetGameLobbyInfoHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        var lobbies = lobbyService.GetCached()
+        var lobbies = (await lobbyService.GetLobbiesAsync(cancellationToken))
             .Where(lobby => lobby.Type == LobbyType.Game)
             .ToList();
 

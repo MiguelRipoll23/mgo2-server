@@ -8,6 +8,7 @@ using Mgo2Server.Shared.Domain.Presence;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Tcp;
 using Mgo2Server.Shared.Telemetry;
+using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -31,7 +32,6 @@ public sealed class GameLobbyServerRunner(
     private readonly LobbyOptions lobbyOptions = lobbyOptions.Value;
     private GameplayLobbyServer? server;
     private LobbyCoordinationClientService? coordination;
-    private LobbyCacheRefreshService? refresh;
     private LobbyHeartbeatService? heartbeat;
     private LobbyCleanupService? cleanup;
     private GameCleanupService? gameCleanup;
@@ -52,7 +52,11 @@ public sealed class GameLobbyServerRunner(
         GameCommandHandlerRegistration.RegisterCommandHandlers(serviceProvider.GetRequiredService<CommandRegistry>());
 
         var lobbyService = serviceProvider.GetRequiredService<LobbyService>();
-        var lobby = await lobbyService.RegisterGameLobbyAsync(lobbyOptions, cancellationToken);
+        var lobby = await StartupUtils.RetryAsync(
+            "register this lobby's row",
+            token => lobbyService.RegisterGameLobbyAsync(lobbyOptions, token),
+            logger,
+            cancellationToken);
 
         logger.LogInformation(
             "Registered lobby {LobbyName} as {LobbyIdentifier} on port {Port}",
@@ -65,19 +69,27 @@ public sealed class GameLobbyServerRunner(
         // before any change can happen. Every join and leave publishes it again.
         serviceProvider.ActivateServerTelemetry();
         var lobbyTracker = serviceProvider.GetRequiredService<LobbyTrackerService>();
-        await serviceProvider.GetRequiredService<ServerMetricsService>()
-            .ReportLobbyTotalsAsync(
+        var metricsService = serviceProvider.GetRequiredService<ServerMetricsService>();
+        await StartupUtils.BestEffortAsync(
+            "publish this lobby's totals",
+            token => metricsService.ReportLobbyTotalsAsync(
                 lobby.Identifier,
                 lobbyTracker.GetPlayerCount(lobby.Identifier),
-                cancellationToken);
+                token),
+            logger,
+            cancellationToken);
 
         // Nobody is connected to a process that has just started, so every
         // presence row naming this lobby is stale by definition: they are
         // cleared exactly, rather than left for the sweep to time out. A count
         // above zero means a previous run stopped without processing its
         // departures, which is worth knowing about rather than hiding.
-        var clearedPresences = await serviceProvider.GetRequiredService<CharacterPresenceService>()
-            .ClearLobbyAsync(lobby.Identifier, cancellationToken);
+        var presenceService = serviceProvider.GetRequiredService<CharacterPresenceService>();
+        var clearedPresences = await StartupUtils.RetryAsync(
+            "clear this lobby's stale presence",
+            token => presenceService.ClearLobbyAsync(lobby.Identifier, token),
+            logger,
+            cancellationToken);
         if (clearedPresences > 0)
         {
             logger.LogWarning(
@@ -94,11 +106,11 @@ public sealed class GameLobbyServerRunner(
         // lobby died with the process it was talking to, so the population is zero,
         // and it is published before the listener opens rather than after the first
         // player arrives.
-        await lobbyService.UpdatePlayerCountAsync(lobby.Identifier, 0, cancellationToken);
-
-        // The cache decides which lobbies this instance serves, and the lobby
-        // just registered has to be in it before the listener starts.
-        await lobbyService.LoadCacheAsync(cancellationToken);
+        await StartupUtils.RetryAsync(
+            "publish this lobby's empty population",
+            token => lobbyService.UpdatePlayerCountAsync(lobby.Identifier, 0, token),
+            logger,
+            cancellationToken);
 
         // The matchmaker is bound to the lobby this instance registered before it
         // is started: it asks the game layer about rooms in that lobby, and it
@@ -114,13 +126,11 @@ public sealed class GameLobbyServerRunner(
         coordination = serviceProvider.GetRequiredService<LobbyCoordinationClientService>();
         coordination.StartFor(lobby.Identifier, lobby.Name);
 
-        refresh = serviceProvider.GetRequiredService<LobbyCacheRefreshService>();
         heartbeat = serviceProvider.GetRequiredService<LobbyHeartbeatService>();
         cleanup = serviceProvider.GetRequiredService<LobbyCleanupService>();
         gameCleanup = serviceProvider.GetRequiredService<GameCleanupService>();
         automatch = serviceProvider.GetRequiredService<AutomatchTickerService>();
         presenceTicker = serviceProvider.GetRequiredService<CharacterPresenceTickerService>();
-        refresh.Start();
         heartbeat.StartFor(lobby.Identifier);
         cleanup.Start();
         gameCleanup.Start();
@@ -152,12 +162,6 @@ public sealed class GameLobbyServerRunner(
         {
             await coordination.StopAsync();
             coordination = null;
-        }
-
-        if (refresh is not null)
-        {
-            await refresh.StopAsync();
-            refresh = null;
         }
 
         if (heartbeat is not null)

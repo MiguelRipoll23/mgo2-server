@@ -28,7 +28,10 @@ public sealed class MatchService(
     HostIdentityService hostIdentity,
     IOptions<ServerOptions> options,
     ILogger<MatchService> logger)
-    : PeriodicWorker(TimeSpan.FromSeconds(options.Value.LobbyHeartbeatIntervalSeconds), logger)
+    : PeriodicWorker(
+        TimeSpan.FromSeconds(options.Value.LobbyHeartbeatIntervalSeconds),
+        logger,
+        PeriodicWorker.NoBackoff)
 {
     /// <summary>How long to wait before looking again for the lobby of the match.</summary>
     private static readonly TimeSpan LobbyLookupRetryDelay = TimeSpan.FromSeconds(5);
@@ -39,6 +42,10 @@ public sealed class MatchService(
 
     /// <summary>Identifier of the match this host published, or zero until it exists.</summary>
     public int MatchIdentifier => matchIdentifier;
+
+    // The heartbeat of the match row does not back off: the row is removed once it
+    // goes quiet for twice the heartbeat interval, so a longer wait between two
+    // attempts would delete the match this worker is keeping alive.
 
     /// <inheritdoc />
     protected override async Task RunOnceAsync(CancellationToken cancellationToken)

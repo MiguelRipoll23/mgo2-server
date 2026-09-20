@@ -14,9 +14,9 @@ public sealed class ServerOptions
     public string? AdvertisedAddress { get; set; }
 
     /// <summary>
-    /// Interval in minutes between two lobby heartbeats, and between two
-    /// refreshes of the in-memory lobby cache. Every other timing of the lobby
-    /// lifecycle is derived from it.
+    /// Interval in minutes between two lobby heartbeats, and how long a lobby
+    /// list that was read is served before it is read again. Every other timing
+    /// of the lobby lifecycle is derived from it.
     /// </summary>
     public int LobbiesRefreshIntervalMinutes { get; set; } = 5;
 
@@ -66,17 +66,6 @@ public sealed class ServerOptions
 
     /// <summary>Interval in seconds between two heartbeats of an owned row.</summary>
     public int LobbyHeartbeatIntervalSeconds => LobbiesRefreshIntervalMinutes * 60;
-
-    /// <summary>
-    /// Interval in seconds between two refreshes of the served lobby list: a
-    /// tenth of the heartbeat interval, bounded so a deployment that shortened
-    /// the heartbeat still refreshes promptly and never floods the database.
-    /// Gameplay lobbies register themselves within seconds of a deployment
-    /// starting, so a refresh as slow as the heartbeat would leave the gate
-    /// publishing an incomplete list for minutes after every restart.
-    /// </summary>
-    public int LobbyCacheRefreshIntervalSeconds =>
-        Math.Clamp(LobbyHeartbeatIntervalSeconds / 10, 15, 60);
 
     /// <summary>
     /// Threshold in seconds after which a row is considered stale: twice the

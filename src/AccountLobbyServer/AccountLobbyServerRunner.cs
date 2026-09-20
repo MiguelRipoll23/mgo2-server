@@ -4,6 +4,7 @@ using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence.Entities;
 using Mgo2Server.Shared.Tcp;
 using Mgo2Server.Shared.Telemetry;
+using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -42,9 +43,10 @@ public sealed class AccountLobbyServerRunner(
         AccountCommandHandlerRegistration.RegisterCommandHandlers(serviceProvider.GetRequiredService<CommandRegistry>());
 
         var lobbyService = serviceProvider.GetRequiredService<LobbyService>();
-        var lobby = await lobbyService.RegisterEndpointLobbyAsync(
-            LobbyType.Account,
-            lobbyOptions,
+        var lobby = await StartupUtils.RetryAsync(
+            "register the account server's row",
+            token => lobbyService.RegisterEndpointLobbyAsync(LobbyType.Account, lobbyOptions, token),
+            logger,
             cancellationToken);
 
         logger.LogInformation(
@@ -56,8 +58,12 @@ public sealed class AccountLobbyServerRunner(
         // activated here and the totals of this lobby are published once, before
         // any change can happen. The account server tracks no players of its own.
         serviceProvider.ActivateServerTelemetry();
-        await serviceProvider.GetRequiredService<ServerMetricsService>()
-            .ReportLobbyTotalsAsync(lobby.Identifier, 0, cancellationToken);
+        var metricsService = serviceProvider.GetRequiredService<ServerMetricsService>();
+        await StartupUtils.BestEffortAsync(
+            "publish the account server's totals",
+            token => metricsService.ReportLobbyTotalsAsync(lobby.Identifier, 0, token),
+            logger,
+            cancellationToken);
 
         server = new AccountServer(serviceProvider, lobby.Port);
         await server.StartAsync(cancellationToken);

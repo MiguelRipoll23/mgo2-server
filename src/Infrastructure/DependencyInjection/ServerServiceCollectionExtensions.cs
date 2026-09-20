@@ -20,6 +20,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 
 namespace Mgo2Server.Infrastructure.DependencyInjection;
 
@@ -101,7 +102,19 @@ public static class ServerServiceCollectionExtensions
         });
 
         services.AddDbContextFactory<Mgo2DatabaseContext>(options =>
-            options.UseNpgsql(ResolveDatabaseConnectionString(configuration)));
+        {
+            var connection = ApplyConnectionPolicy(ResolveDatabaseConnectionString(configuration));
+
+            options.UseNpgsql(
+                connection.ConnectionString,
+                npgsql =>
+                {
+                    if (!connection.ContainsKey("Command Timeout"))
+                    {
+                        npgsql.CommandTimeout(CommandTimeoutSeconds);
+                    }
+                });
+        });
 
         services.AddSingleton<CryptographyService>();
         services.AddSingleton<AuthenticationService>();
@@ -110,7 +123,6 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<NewsService>();
         services.AddSingleton<LobbyService>();
         services.AddSingleton<LobbyGameTypeService>();
-        services.AddSingleton<LobbyCacheRefreshService>();
 
         // TryAdd: a server that speaks the coordination protocol registers its
         // own publisher before or after this call, and either way the tracker
@@ -156,4 +168,61 @@ public static class ServerServiceCollectionExtensions
         ?? configuration.ReadText("DATABASE_URL")
         ?? configuration.GetConnectionString("Mgo2Database")
         ?? "Host=localhost;Port=5432;Database=mgo2;Username=postgres";
+
+    /// <summary>
+    /// Seconds a single statement may run before it is abandoned. Well under the
+    /// provider's own default, because a statement that is going to fail should
+    /// fail while the caller can still be told, and because every second it is
+    /// held is a second of a worker's tick spent waiting for it.
+    /// </summary>
+    private const int CommandTimeoutSeconds = 15;
+
+    /// <summary>Connections one process may hold open at once.</summary>
+    private const int MaximumPoolSize = 20;
+
+    /// <summary>Seconds a connection attempt may take before it is abandoned.</summary>
+    private const int ConnectionTimeoutSeconds = 5;
+
+    /// <summary>Seconds between keep-alive probes on an idle pooled connection.</summary>
+    private const int KeepAliveSeconds = 30;
+
+    /// <summary>
+    /// Puts the settings this process is responsible for on the connection string.
+    /// <para>
+    /// Each one is a fact about the client rather than about the database, so it
+    /// belongs here rather than in the deployment: how many connections one process
+    /// may open, how long it waits for one, and how long a statement runs. They are
+    /// applied only when the connection string does not already set them, so an
+    /// operator who states one in the secret still has the last word.
+    /// </para>
+    /// <para>
+    /// The pool ceiling matters most when the database is failing. Every attempt to
+    /// reach a database that is away is a handshake and a certificate check, and
+    /// with the provider's default ceiling a single instance can hold a hundred
+    /// connections open at once — which, multiplied by every instance of every
+    /// role, is a CPU bill paid to learn nothing.
+    /// </para>
+    /// </summary>
+    /// <param name="connectionString">Connection string as the environment gave it.</param>
+    private static NpgsqlConnectionStringBuilder ApplyConnectionPolicy(string connectionString)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+
+        if (!builder.ContainsKey("Maximum Pool Size"))
+        {
+            builder.MaxPoolSize = MaximumPoolSize;
+        }
+
+        if (!builder.ContainsKey("Timeout"))
+        {
+            builder.Timeout = ConnectionTimeoutSeconds;
+        }
+
+        if (!builder.ContainsKey("Keepalive"))
+        {
+            builder.KeepAlive = KeepAliveSeconds;
+        }
+
+        return builder;
+    }
 }

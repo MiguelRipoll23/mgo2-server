@@ -37,7 +37,9 @@ public sealed class GetLobbyListHandler(
     {
         try
         {
-            var lobbies = lobbyService.GetCached().Take(MaximumLobbiesTotal).ToList();
+            var lobbies = (await lobbyService.GetLobbiesAsync(cancellationToken))
+                .Take(MaximumLobbiesTotal)
+                .ToList();
             var pages = new List<byte[]>();
             var baseIndex = 0;
 

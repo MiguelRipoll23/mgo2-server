@@ -34,10 +34,18 @@ public sealed class AutomatchTickerService(
     SessionHelper sessionHelper,
     IOptions<AutomatchOptions> options,
     ILogger<AutomatchTickerService> logger)
-    : PeriodicWorker(options.Value.Tick, logger)
+    : PeriodicWorker(options.Value.Tick, logger, FailureBackoffCeiling)
 {
     /// <summary>Columns of the population histogram, which is the client's own bar count.</summary>
     private const int PanelColumns = 23;
+
+    /// <summary>
+    /// Longest a failing matchmaker waits before trying again. Far shorter than the
+    /// default, because a searcher is sitting in front of this tick: a database that
+    /// comes back has to be picked up within the minute, and the panels are what a
+    /// waiting player sees.
+    /// </summary>
+    private static readonly TimeSpan FailureBackoffCeiling = TimeSpan.FromMinutes(1);
 
     /// <summary>Detail carried by the failure push when a group's host never produced a room.</summary>
     private const int NoHostDetail = 0;

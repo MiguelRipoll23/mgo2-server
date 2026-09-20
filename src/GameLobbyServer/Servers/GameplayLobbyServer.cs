@@ -1,8 +1,10 @@
 using Mgo2Server.Shared.Domain.Lobbies;
+using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Tcp;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameLobbyServer.Servers;
 
@@ -14,11 +16,9 @@ namespace Mgo2Server.GameLobbyServer.Servers;
 public sealed class GameplayLobbyServer(IServiceProvider serviceProvider, int port, string lobbyName, int lobbyIdentifier)
     : TcpServerBase(serviceProvider, port), IDisposable
 {
-    /// <summary>How long a burst of disconnects is allowed to build up before the count is republished.</summary>
-    private static readonly TimeSpan CountSyncDebounce = TimeSpan.FromSeconds(1);
-
     private readonly Lock syncGate = new();
     private Timer? countSyncTimer;
+    private TimeSpan countSyncDelay;
 
     /// <inheritdoc />
     protected override ServerType ServerType => ServerType.GameplayLobby;
@@ -51,13 +51,34 @@ public sealed class GameplayLobbyServer(IServiceProvider serviceProvider, int po
         // the heartbeat republishes every lobby anyway.
         lock (syncGate)
         {
-            countSyncTimer ??= new Timer(
-                _ => _ = SynchronizeCountsAsync(lobbyTracker),
-                null,
-                Timeout.InfiniteTimeSpan,
-                Timeout.InfiniteTimeSpan);
-            countSyncTimer.Change(CountSyncDebounce, Timeout.InfiniteTimeSpan);
+            countSyncTimer ??= CreateCountSyncTimer(lobbyTracker);
+            countSyncTimer.Change(countSyncDelay, Timeout.InfiniteTimeSpan);
         }
+    }
+
+    /// <summary>
+    /// Creates the timer that republishes the counts after a disconnect, and
+    /// settles how long a burst is allowed to build up before it does.
+    /// <para>
+    /// That wait is the lifetime of a read lobby list, which is the only thing the
+    /// count is published for: a list written more often than it is read is work
+    /// nobody can see. It used to be a second, which announced a departure to the
+    /// database hundreds of times for what a reader sees once — and republishing is
+    /// already covered by the heartbeat of this lobby, so nothing is lost by
+    /// waiting for a window that is a fraction of it.
+    /// </para>
+    /// </summary>
+    /// <param name="lobbyTracker">Tracker whose counts are republished.</param>
+    private Timer CreateCountSyncTimer(LobbyTrackerService lobbyTracker)
+    {
+        countSyncDelay = TimeSpan.FromSeconds(
+            Services.GetRequiredService<IOptions<ServerOptions>>().Value.LobbyHeartbeatIntervalSeconds);
+
+        return new Timer(
+            _ => _ = SynchronizeCountsAsync(lobbyTracker),
+            null,
+            Timeout.InfiniteTimeSpan,
+            Timeout.InfiniteTimeSpan);
     }
 
     private async Task SynchronizeCountsAsync(LobbyTrackerService lobbyTracker)

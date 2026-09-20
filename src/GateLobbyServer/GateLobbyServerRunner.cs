@@ -4,6 +4,7 @@ using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence.Entities;
 using Mgo2Server.Shared.Tcp;
 using Mgo2Server.Shared.Telemetry;
+using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -26,7 +27,6 @@ public sealed class GateLobbyServerRunner(
 {
     private readonly LobbyOptions lobbyOptions = lobbyOptions.Value;
     private GateServer? server;
-    private LobbyCacheRefreshService? refresh;
 
     /// <summary>
     /// Registers the gate and starts its listener. The schema is not this
@@ -42,7 +42,11 @@ public sealed class GateLobbyServerRunner(
         GateCommandHandlerRegistration.RegisterCommandHandlers(serviceProvider.GetRequiredService<CommandRegistry>());
 
         var lobbyService = serviceProvider.GetRequiredService<LobbyService>();
-        var lobby = await lobbyService.RegisterEndpointLobbyAsync(LobbyType.Gate, lobbyOptions, cancellationToken);
+        var lobby = await StartupUtils.RetryAsync(
+            "register the gate's row",
+            token => lobbyService.RegisterEndpointLobbyAsync(LobbyType.Gate, lobbyOptions, token),
+            logger,
+            cancellationToken);
 
         logger.LogInformation(
             "Registered the gate as {LobbyIdentifier} on port {Port}",
@@ -53,18 +57,16 @@ public sealed class GateLobbyServerRunner(
         // activated here and the totals of this lobby are published once, before
         // any change can happen. The gate tracks no players of its own.
         serviceProvider.ActivateServerTelemetry();
-        await serviceProvider.GetRequiredService<ServerMetricsService>()
-            .ReportLobbyTotalsAsync(lobby.Identifier, 0, cancellationToken);
+        var metricsService = serviceProvider.GetRequiredService<ServerMetricsService>();
+        await StartupUtils.BestEffortAsync(
+            "publish the gate's totals",
+            token => metricsService.ReportLobbyTotalsAsync(lobby.Identifier, 0, token),
+            logger,
+            cancellationToken);
 
-        // The gate serves the lobby list, so its own row has to be in the cache
-        // before the listener starts.
-        await lobbyService.LoadCacheAsync(cancellationToken);
-
-        // Gameplay lobbies register and expire while the gate runs, so the list
-        // it serves has to be rebuilt instead of being fixed at startup.
-        refresh = serviceProvider.GetRequiredService<LobbyCacheRefreshService>();
-        refresh.Start();
-
+        // Nothing is read from the lobbies table here. The list is read when a
+        // client asks for it and held for its lifetime from then on, so a gate that
+        // nobody is listing does not touch that table at all.
         server = new GateServer(serviceProvider, lobby.Port);
         await server.StartAsync(cancellationToken);
 
@@ -77,16 +79,10 @@ public sealed class GateLobbyServerRunner(
         server.CloseConnections();
     }
 
-    /// <summary>Stops the listener and the cache refresh.</summary>
-    public async Task StopAsync()
+    /// <summary>Stops the listener once the connections it was serving have left.</summary>
+    public void Stop()
     {
         server?.Stop();
         server = null;
-
-        if (refresh is not null)
-        {
-            await refresh.StopAsync();
-            refresh = null;
-        }
     }
 }

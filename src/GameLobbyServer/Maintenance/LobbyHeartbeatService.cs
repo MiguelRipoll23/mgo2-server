@@ -21,7 +21,10 @@ public sealed class LobbyHeartbeatService(
     LobbyTrackerService lobbyTracker,
     IOptions<ServerOptions> options,
     ILogger<LobbyHeartbeatService> logger)
-    : PeriodicWorker(TimeSpan.FromSeconds(options.Value.LobbyHeartbeatIntervalSeconds), logger)
+    : PeriodicWorker(
+        TimeSpan.FromSeconds(options.Value.LobbyHeartbeatIntervalSeconds),
+        logger,
+        PeriodicWorker.NoBackoff)
 {
     private int lobbyIdentifier;
 

@@ -76,8 +76,12 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     {
         // The account owns the character the host plays as, and the registered
         // endpoint references it, so it has to exist before anything is written.
-        await accountService.EnsureAccountAsync((int)hostIdentity.PeerIdentifier, cancellationToken);
-        await RegisterConnectionAsync(cancellationToken);
+        await StartupUtils.RetryAsync(
+            "publish the host account",
+            token => accountService.EnsureAccountAsync((int)hostIdentity.PeerIdentifier, token),
+            logger,
+            cancellationToken);
+        await StartupUtils.RetryAsync("register the host endpoint", RegisterConnectionAsync, logger, cancellationToken);
 
         socket = new UdpClient(new IPEndPoint(IPAddress.Any, port));
         sessions.Start();

@@ -3,6 +3,7 @@ using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence;
 using Mgo2Server.Shared.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.Shared.Domain.Lobbies;
@@ -48,44 +49,97 @@ public sealed record LobbyCreateInput(
     int PlayersCount = 0);
 
 /// <summary>
-/// Owns the lobby configuration and its in-memory cache. The cache is rebuilt
-/// from the database periodically, and player counts are summed across every
-/// non-stale instance so horizontally scaled servers publish a shared total.
+/// Owns the lobby configuration and its in-memory cache. The cache is read from
+/// the database when it is asked for and held for a lifetime of its own, so an
+/// instance that nobody is listing reads nothing, and player counts are summed
+/// across every non-stale instance so horizontally scaled servers publish a
+/// shared total.
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 /// <param name="options">Server options.</param>
 /// <param name="gameTypeService">Service that resolves the game type of a published lobby.</param>
+/// <param name="logger">Logger of the service.</param>
 public sealed partial class LobbyService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
     IOptions<ServerOptions> options,
-    LobbyGameTypeService gameTypeService) : DomainService(contextFactory)
+    LobbyGameTypeService gameTypeService,
+    ILogger<LobbyService> logger) : DomainService(contextFactory)
 {
     private readonly ServerOptions options = options.Value;
     private readonly LobbyGameTypeService gameTypeService = gameTypeService;
+    private readonly SemaphoreSlim cacheGate = new(1, 1);
     private List<LobbyResponse>? cache;
-
-    /// <summary>Replaces the cache with a set of rows.</summary>
-    /// <param name="rows">Lobbies to cache.</param>
-    public void SetCache(IReadOnlyList<LobbyResponse> rows) => cache = [.. rows];
+    private DateTimeOffset cacheReadAt = DateTimeOffset.MinValue;
 
     /// <summary>
-    /// Returns the cached lobbies, or an empty list when the cache has not been
-    /// loaded yet. Returning empty rather than throwing keeps every caller's
-    /// failure mode the same on a startup-order change.
+    /// Returns the lobbies as of the last read, without reading them. For a caller
+    /// that wants a list it can afford to be late — a label, a fallback — rather
+    /// than the list a client is waiting for.
     /// </summary>
     public IReadOnlyList<LobbyResponse> GetCached() => cache ?? [];
 
     /// <summary>
-    /// Reloads the cache from the database. Rows are ordered by type before
-    /// identifier, because the client expects the first two list entries to be
-    /// the permanent endpoints: the gate first and the account server second,
-    /// however the identifiers of those rows were generated, followed by the
-    /// gameplay lobbies. A gameplay lobby is cached only while its heartbeat is
-    /// recent, so a lobby whose server stopped stops being served; the gate and
-    /// the account server are permanent and always cached.
+    /// Returns the published lobbies, reading them from the database when the list
+    /// that is held has reached the end of its life.
+    /// <para>
+    /// The list is read when it is asked for rather than kept warm on a timer, so
+    /// an instance nobody is listing reads nothing at all, and one read serves
+    /// every caller that arrives while it is being made.
+    /// </para>
+    /// <para>
+    /// A read that fails is answered with the list already held. It is a few
+    /// minutes old at most, it still names lobbies that are running, and it is what
+    /// the client can still connect to — where an error would leave it with no
+    /// lobbies at all.
+    /// </para>
     /// </summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task LoadCacheAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<LobbyResponse>> GetLobbiesAsync(CancellationToken cancellationToken = default)
+    {
+        if (cache is { } held && IsFresh())
+        {
+            return held;
+        }
+
+        await cacheGate.WaitAsync(cancellationToken);
+        try
+        {
+            // Read again under the gate: the wait may have been for a read that a
+            // caller ahead of this one has just finished.
+            if (cache is { } reloaded && IsFresh())
+            {
+                return reloaded;
+            }
+
+            cache = await ReadLobbiesAsync(cancellationToken);
+            cacheReadAt = DateTimeOffset.UtcNow;
+            return cache;
+        }
+        catch (Exception exception) when (cache is not null && exception is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                exception,
+                "The lobby list could not be read; serving the one read {Age}s ago",
+                (int)(DateTimeOffset.UtcNow - cacheReadAt).TotalSeconds);
+            return cache;
+        }
+        finally
+        {
+            cacheGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Reads every published lobby. Rows are ordered by type before identifier,
+    /// because the client expects the first two list entries to be the permanent
+    /// endpoints: the gate first and the account server second, however the
+    /// identifiers of those rows were generated, followed by the gameplay lobbies.
+    /// A gameplay lobby is listed only while its heartbeat is recent, so a lobby
+    /// whose server stopped stops being served; the gate and the account server are
+    /// permanent and always listed.
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task<List<LobbyResponse>> ReadLobbiesAsync(CancellationToken cancellationToken)
     {
         await using var context = await CreateContextAsync(cancellationToken);
         var cutoff = DateTimeOffset.UtcNow.AddSeconds(-options.LobbyStaleSeconds);
@@ -97,8 +151,17 @@ public sealed partial class LobbyService(
             .ThenBy(lobby => lobby.Identifier)
             .ToListAsync(cancellationToken);
 
-        cache = [.. rows.Select(lobby => ToResponse(lobby, null))];
+        return [.. rows.Select(lobby => ToResponse(lobby, null))];
     }
+
+    /// <summary>
+    /// Whether the list that is held is still within its life. That life is the
+    /// heartbeat interval, which is the rate at which the rows themselves can
+    /// change: a gameplay lobby that stopped is not dropped until its heartbeat ages
+    /// out, and a list read between two heartbeats finds the same rows.
+    /// </summary>
+    private bool IsFresh() =>
+        DateTimeOffset.UtcNow - cacheReadAt < TimeSpan.FromSeconds(options.LobbyHeartbeatIntervalSeconds);
 
     /// <summary>Lists every lobby.</summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
