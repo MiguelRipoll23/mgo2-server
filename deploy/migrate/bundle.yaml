@@ -1,0 +1,12 @@
+# The bundle digest the schema was applied with, as a tracked resource. The
+# PreSync hook Job is not a managed resource, so a digest change on its own
+# would never mark this Application OutOfSync and the migration would silently
+# not run; this ConfigMap is the one thing Argo compares, and bumping it with a
+# new bundle makes the Application sync and run the hook again.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mgo2-migrate-bundle
+  namespace: mgo2
+data:
+  image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:6052ece16a2e3b09291d0c796c6c881eaf7f8d25
