@@ -119,8 +119,8 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     rank = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
                     comment = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, defaultValue: ""),
                     experience = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    total_rewards = table.Column<int>(type: "integer", nullable: false),
-                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    total_rewards = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
                     previous_login_time = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     last_seen_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     active = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true)
@@ -391,7 +391,7 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "characters_hostsettings",
+                name: "characters_host_settings",
                 columns: table => new
                 {
                     id = table.Column<int>(type: "integer", nullable: false)
@@ -443,9 +443,9 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_characters_hostsettings", x => x.id);
+                    table.PrimaryKey("PK_characters_host_settings", x => x.id);
                     table.ForeignKey(
-                        name: "FK_characters_hostsettings_characters_character_id",
+                        name: "FK_characters_host_settings_characters_character_id",
                         column: x => x.character_id,
                         principalTable: "characters",
                         principalColumn: "id",
@@ -997,8 +997,8 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 column: "target_id");
 
             migrationBuilder.CreateIndex(
-                name: "IX_characters_hostsettings_character_id",
-                table: "characters_hostsettings",
+                name: "IX_characters_host_settings_character_id",
+                table: "characters_host_settings",
                 column: "character_id");
 
             migrationBuilder.CreateIndex(
@@ -1250,7 +1250,7 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 name: "characters_friends");
 
             migrationBuilder.DropTable(
-                name: "characters_hostsettings");
+                name: "characters_host_settings");
 
             migrationBuilder.DropTable(
                 name: "characters_instructors");

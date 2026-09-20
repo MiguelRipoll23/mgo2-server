@@ -261,7 +261,7 @@ public sealed class CharacterGearSet
 }
 
 /// <summary>Host settings a character saved for a game type.</summary>
-[Table("characters_hostsettings")]
+[Table("characters_host_settings")]
 public sealed class CharacterHostSettings
 {
     /// <summary>Identifier of the row.</summary>

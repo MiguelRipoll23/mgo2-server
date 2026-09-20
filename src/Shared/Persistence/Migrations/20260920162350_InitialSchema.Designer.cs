@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mgo2Server.Shared.Persistence.Migrations
 {
     [DbContext(typeof(Mgo2DatabaseContext))]
-    [Migration("20260919233719_InitialSchema")]
+    [Migration("20260920162350_InitialSchema")]
     partial class InitialSchema
     {
         /// <inheritdoc />
@@ -115,8 +115,10 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasColumnName("comment");
 
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
 
                     b.Property<int>("Experience")
                         .ValueGeneratedOnAdd()
@@ -150,7 +152,9 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .HasColumnName("rank");
 
                     b.Property<int>("TotalRewards")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
+                        .HasDefaultValue(0)
                         .HasColumnName("total_rewards");
 
                     b.HasKey("Identifier");
@@ -1087,7 +1091,7 @@ namespace Mgo2Server.Shared.Persistence.Migrations
 
                     b.HasIndex("CharacterIdentifier");
 
-                    b.ToTable("characters_hostsettings");
+                    b.ToTable("characters_host_settings");
                 });
 
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.CharacterInstructor", b =>

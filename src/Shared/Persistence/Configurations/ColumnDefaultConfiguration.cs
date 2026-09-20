@@ -35,11 +35,18 @@ internal static class ColumnDefaultConfiguration
 
     private static void ConfigureCharacters(ModelBuilder modelBuilder)
     {
+        // The gameplay server's raw account insert names only the columns it has a
+        // value for, so every NOT NULL column the statement omits has to be fillable
+        // by the database — the same reliance the other raw upserts place on these
+        // defaults.
         ApplyDefault<Character>(
             modelBuilder,
             0,
             nameof(Character.Rank),
-            nameof(Character.Experience));
+            nameof(Character.Experience),
+            nameof(Character.TotalRewards));
+        ApplyNow<Character>(modelBuilder, nameof(Character.CreatedAt));
+
         ApplyDefault<Character>(modelBuilder, true, nameof(Character.Active));
         ApplyDefault<Character>(modelBuilder, string.Empty, nameof(Character.Comment));
 

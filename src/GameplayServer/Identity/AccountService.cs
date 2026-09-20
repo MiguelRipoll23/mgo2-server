@@ -65,8 +65,8 @@ public sealed class AccountService(
 
         await context.Database.ExecuteSqlAsync(
             $"""
-             INSERT INTO characters (id, account_id, name, comment)
-             VALUES ({characterIdentifier}, {accountIdentifier}, {characterName}, {CharacterComment})
+             INSERT INTO characters (id, account_id, name, comment, created_at)
+             VALUES ({characterIdentifier}, {accountIdentifier}, {characterName}, {CharacterComment}, {DateTimeOffset.UtcNow})
              ON CONFLICT DO NOTHING
              """,
             cancellationToken);

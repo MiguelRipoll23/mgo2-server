@@ -25,7 +25,7 @@ public sealed class PersistenceModelTests
         "characters_chatmacros",
         "characters_equipped_skills",
         "characters_friends",
-        "characters_hostsettings",
+        "characters_host_settings",
         "characters_instructors",
         "characters_sets_gear",
         "characters_sets_skills",
