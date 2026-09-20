@@ -228,3 +228,4 @@ public abstract class PeriodicWorker(
         return ceiling > interval ? ceiling : interval;
     }
 }
+// no-op
