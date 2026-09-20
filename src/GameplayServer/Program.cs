@@ -5,6 +5,7 @@ using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Udp;
+using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -40,12 +41,11 @@ logger.LogInformation(
     options.GameplayLobbyName);
 
 using var cancellation = new CancellationTokenSource();
-Console.CancelKeyPress += (_, eventArguments) =>
-{
-    eventArguments.Cancel = true;
-    logger.LogInformation("Shutdown requested");
-    cancellation.Cancel();
-};
+
+// Ends the host when a person interrupts it or a deployment asks it to terminate.
+// The gameplay server finds the second one on every rollout, and without it the
+// process is gone the moment the signal lands, taking the match with it.
+using var stopSignals = ShutdownSignalUtils.OnStopRequested(cancellation.Cancel, logger);
 
 try
 {

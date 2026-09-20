@@ -33,7 +33,10 @@ public sealed class GateLobbyServerRunner(
     /// process's business: the deployment applies the migrations before any
     /// server starts.
     /// </summary>
-    /// <param name="cancellationToken">Token that stops the listener.</param>
+    /// <param name="cancellationToken">
+    /// Token that stops the listener. The call returns once the connections that
+    /// listener was serving have left.
+    /// </param>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         GateCommandHandlerRegistration.RegisterCommandHandlers(serviceProvider.GetRequiredService<CommandRegistry>());
@@ -64,6 +67,14 @@ public sealed class GateLobbyServerRunner(
 
         server = new GateServer(serviceProvider, lobby.Port);
         await server.StartAsync(cancellationToken);
+
+        // The listener is closed and nobody new can arrive, so what is left is to
+        // let the players still connected leave on their own. That wait is what the
+        // deployment's termination grace period is for: a rollout replaces this pod
+        // on the same port, and ending it here would hang up on everyone it is
+        // waiting to replace.
+        await server.WaitForConnectionsToLeaveAsync();
+        server.CloseConnections();
     }
 
     /// <summary>Stops the listener and the cache refresh.</summary>

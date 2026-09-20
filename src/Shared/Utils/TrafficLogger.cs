@@ -49,6 +49,33 @@ public static class TrafficLogger
         return string.Join("\n", lines);
     }
 
+    /// <summary>Renders a command as the four hexadecimal digits the protocol is written in.</summary>
+    /// <param name="command">Command to render.</param>
+    public static string FormatCommand(ushort command) => command.ToString("x4");
+
+    /// <summary>Renders a payload as hex, cut short so a large frame cannot flood the log.</summary>
+    /// <param name="payload">Payload to render.</param>
+    public static string FormatPayload(byte[] payload)
+    {
+        const int MaximumBytes = 64;
+        if (payload.Length == 0)
+        {
+            return "-";
+        }
+
+        var hex = Convert.ToHexString(payload.AsSpan(0, Math.Min(MaximumBytes, payload.Length)));
+        return payload.Length <= MaximumBytes ? hex : $"{hex}..({payload.Length} bytes)";
+    }
+
+    /// <summary>Renders what a session has proved and where it has got to.</summary>
+    /// <param name="session">Session to render.</param>
+    public static string FormatSessionState(TcpSession session) =>
+        $"auth={(session.AccountIdentifier is null ? "missing" : "ok")} " +
+        $"accountId={session.AccountIdentifier?.ToString() ?? "none"} " +
+        $"characterId={session.CharacterIdentifier?.ToString() ?? "none"} " +
+        $"lobbyId={session.LobbyIdentifier?.ToString() ?? "none"} " +
+        $"gameId={session.GameIdentifier?.ToString() ?? "none"}";
+
     /// <summary>Logs a TCP client connecting.</summary>
     /// <param name="logger">Logger to write to.</param>
     /// <param name="logPrefix">Prefix of the server.</param>

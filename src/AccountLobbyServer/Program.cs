@@ -3,6 +3,7 @@ using Mgo2Server.AccountLobbyServer.Commands;
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Telemetry;
+using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -35,12 +36,11 @@ logger.LogInformation(
     options.AnnouncedIpAddress);
 
 using var cancellation = new CancellationTokenSource();
-Console.CancelKeyPress += (_, eventArguments) =>
-{
-    eventArguments.Cancel = true;
-    logger.LogInformation("Shutdown requested");
-    cancellation.Cancel();
-};
+
+// Both stops reach the runner: the interrupt a person sends from a terminal, and
+// the SIGTERM a rollout sends. The runner closes the listener on it and then waits
+// for the players it is serving to leave, instead of ending on top of them.
+using var stopSignals = ShutdownSignalUtils.OnStopRequested(cancellation.Cancel, logger);
 
 try
 {

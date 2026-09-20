@@ -96,16 +96,26 @@ public sealed partial class GameplayServerService
         var first = frame.Messages.Count > 0 ? frame.Messages[0] : null;
 
         // An unknown peer sending a handshake gets its session provisioned
-        // before the message reaches its handler.
-        if (sessions.Get(remoteAddress) is null &&
+        // before the message reaches its handler. A draining host takes none: the
+        // peers in the match it is still hosting are the ones it waits for, and a
+        // new one would only be a joiner whose host is about to leave.
+        var session = sessions.Get(remoteAddress);
+        if (session is null &&
             first is not null &&
             decoded.Length == 44 &&
             first.Type == UdpCommandConstants.Handshake)
         {
-            ProvisionSession(decoded, remote, remoteAddress);
+            if (draining)
+            {
+                logger.LogDebug("Dropping handshake from {RemoteAddress}: this host is draining", remoteAddress);
+            }
+            else
+            {
+                ProvisionSession(decoded, remote, remoteAddress);
+                session = sessions.Get(remoteAddress);
+            }
         }
 
-        var session = sessions.Get(remoteAddress);
         if (session is null)
         {
             var note = first is null ? string.Empty : $" type={first.Type:x4}";

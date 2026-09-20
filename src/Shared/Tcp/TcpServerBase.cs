@@ -22,11 +22,13 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
     /// <summary>Lower 16 bits of the XOR key, used to peek at the payload length field.</summary>
     private const ushort ExclusiveOrPayloadLengthMask = (ushort)(CryptoKeyConstants.XorKey & 0xffff);
 
+    private readonly CancellationTokenSource connectionLifetime = new();
     private PacketCodecService? packetCodec;
     private CommandRegistry? commandRegistry;
     private ServerOptions? options;
     private ILogger? logger;
     private TcpListener? listener;
+    private int liveConnections;
 
     /// <summary>Role of the server, which selects the command set it dispatches.</summary>
     protected abstract ServerType ServerType { get; }
@@ -39,6 +41,9 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
 
     /// <summary>Prefix used for the log lines of this server.</summary>
     protected virtual string LogPrefix => $"tcp:{ServerType}";
+
+    /// <summary>Number of connections this server is currently serving.</summary>
+    public int LiveConnectionCount => Volatile.Read(ref liveConnections);
 
     /// <summary>Codec used to encode and decode packets.</summary>
     protected PacketCodecService PacketCodec =>
@@ -64,24 +69,38 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
         listener.Start();
         Logger.LogInformation("[{LogPrefix}] Listening on port {Port}", LogPrefix, Port);
 
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            TcpClient client;
-            try
+            while (!cancellationToken.IsCancellationRequested)
             {
-                client = await listener.AcceptTcpClientAsync(cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (SocketException exception)
-            {
-                Logger.LogError("[{LogPrefix}] Accept failed: {Message}", LogPrefix, exception.Message);
-                continue;
-            }
+                TcpClient client;
+                try
+                {
+                    client = await listener.AcceptTcpClientAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (SocketException exception)
+                {
+                    Logger.LogError("[{LogPrefix}] Accept failed: {Message}", LogPrefix, exception.Message);
+                    continue;
+                }
 
-            _ = HandleConnectionAsync(client, cancellationToken);
+                // A connection is served on its own lifetime, never on the one that
+                // stopped the listener. Stopping closes the door: the sessions
+                // already inside keep their reads, their handlers and their writes
+                // until they leave, which is what a rollout waits for.
+                _ = HandleConnectionAsync(client, connectionLifetime.Token);
+            }
+        }
+        finally
+        {
+            // The port is released as soon as a stop is asked for, so a client
+            // arriving at an instance that is on its way out is refused instead of
+            // being queued behind work this instance is no longer taking.
+            Stop();
         }
     }
 
@@ -91,6 +110,26 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
         listener?.Stop();
         listener = null;
     }
+
+    /// <summary>
+    /// Waits until every connection being served has gone. A rollout runs this
+    /// between closing the listener and stopping the rest of the instance.
+    /// </summary>
+    /// <param name="cancellationToken">Token that abandons the wait.</param>
+    /// <returns><c>true</c> when nothing is connected any more.</returns>
+    public Task<bool> WaitForConnectionsToLeaveAsync(CancellationToken cancellationToken = default) =>
+        ConnectionDrainUtils.WaitForConnectionsToLeaveAsync(
+            LogPrefix,
+            () => LiveConnectionCount,
+            Logger,
+            cancellationToken);
+
+    /// <summary>
+    /// Hangs up on whatever is still connected. Called once the wait above is
+    /// over, so the connections that never left are closed deliberately rather
+    /// than by the process exiting under them.
+    /// </summary>
+    public void CloseConnections() => connectionLifetime.Cancel();
 
     /// <summary>Called when a session is created; overridden to track the lobby it belongs to.</summary>
     /// <param name="session">Created session.</param>
@@ -106,6 +145,21 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
 
 
     private async Task HandleConnectionAsync(TcpClient client, CancellationToken cancellationToken)
+    {
+        // Counted from the accept, not from the first packet: a connection that is
+        // still negotiating is one a stop has to wait for too.
+        Interlocked.Increment(ref liveConnections);
+        try
+        {
+            await ServeConnectionAsync(client, cancellationToken);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref liveConnections);
+        }
+    }
+
+    private async Task ServeConnectionAsync(TcpClient client, CancellationToken cancellationToken)
     {
         var remoteEndpoint = (IPEndPoint)client.Client.RemoteEndPoint!;
         var remoteAddress = $"{remoteEndpoint.Address}:{remoteEndpoint.Port}";
@@ -213,7 +267,7 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
                 Logger.LogWarning(
                     "[{LogPrefix}] 0x{Command} failed reason=decode from {RemoteAddress}",
                     LogPrefix,
-                    FormatCommand(command),
+                    TrafficLogger.FormatCommand(command),
                     session.RemoteAddress);
                 continue;
             }
@@ -286,9 +340,9 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
             Logger.LogWarning(
                 "[{LogPrefix}] 0x{Command} no-handler {State} payload={Payload}",
                 LogPrefix,
-                FormatCommand(command),
-                FormatSessionState(session),
-                FormatPayload(packet.Payload));
+                TrafficLogger.FormatCommand(command),
+                TrafficLogger.FormatSessionState(session),
+                TrafficLogger.FormatPayload(packet.Payload));
             var sequenceOut = session.NextSequenceOut();
             var bytes = PacketCodec.EncodeErrorPacket(
                 command,
@@ -301,12 +355,12 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
 
         var handler = (Interfaces.ICommandHandler)serviceProvider.GetRequiredService(handlerType);
 
-        Logger.LogDebug("[{LogPrefix}] 0x{Command} processing {State}", LogPrefix, FormatCommand(command), FormatSessionState(session));
+        Logger.LogDebug("[{LogPrefix}] 0x{Command} processing {State}", LogPrefix, TrafficLogger.FormatCommand(command), TrafficLogger.FormatSessionState(session));
 
         try
         {
             await handler.HandleAsync(session, packet, cancellationToken);
-            Logger.LogDebug("[{LogPrefix}] 0x{Command} ok {State}", LogPrefix, FormatCommand(command), FormatSessionState(session));
+            Logger.LogDebug("[{LogPrefix}] 0x{Command} ok {State}", LogPrefix, TrafficLogger.FormatCommand(command), TrafficLogger.FormatSessionState(session));
         }
         catch (Exception exception)
         {
@@ -319,37 +373,20 @@ public abstract class TcpServerBase(IServiceProvider serviceProvider, int port)
                 exception,
                 "[{LogPrefix}] 0x{Command} handler failed {State} payload={Payload}",
                 LogPrefix,
-                FormatCommand(command),
-                FormatSessionState(session),
-                FormatPayload(packet.Payload));
+                TrafficLogger.FormatCommand(command),
+                TrafficLogger.FormatSessionState(session),
+                TrafficLogger.FormatPayload(packet.Payload));
         }
 
         return !session.DisconnectRequested;
     }
 
-    private static string FormatCommand(ushort command) => command.ToString("x4");
-
-    /// <summary>Formats a payload as hex, cut short so a large frame cannot flood the log.</summary>
-    /// <param name="payload">Payload to format.</param>
-    private static string FormatPayload(byte[] payload)
-    {
-        const int MaximumBytes = 64;
-        if (payload.Length == 0)
-        {
-            return "-";
-        }
-
-        var hex = Convert.ToHexString(payload.AsSpan(0, Math.Min(MaximumBytes, payload.Length)));
-        return payload.Length <= MaximumBytes ? hex : $"{hex}..({payload.Length} bytes)";
-    }
-
-    private static string FormatSessionState(TcpSession session) =>
-        $"auth={(session.AccountIdentifier is null ? "missing" : "ok")} " +
-        $"accountId={session.AccountIdentifier?.ToString() ?? "none"} " +
-        $"characterId={session.CharacterIdentifier?.ToString() ?? "none"} " +
-        $"lobbyId={session.LobbyIdentifier?.ToString() ?? "none"} " +
-        $"gameId={session.GameIdentifier?.ToString() ?? "none"}";
-
+    /// <summary>
+    /// Whether an exception means the connection ended rather than failed. The
+    /// cancellation is in the list because hanging up on a connection is how this
+    /// server ends one, and a session it closed itself is not an error.
+    /// </summary>
+    /// <param name="exception">Exception the read loop threw.</param>
     private static bool IsConnectionClosed(Exception exception) =>
-        exception is IOException or SocketException or ObjectDisposedException;
+        exception is IOException or SocketException or ObjectDisposedException or OperationCanceledException;
 }

@@ -5,6 +5,7 @@ using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Udp;
+using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -29,8 +30,17 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly ILogger<GameplayServerService> logger;
     private readonly ServerOptions options;
     private readonly PeerSessionService sessions = new(TimeSpan.FromSeconds(60));
+    private readonly CancellationTokenSource receiveLifetime = new();
     private readonly int port;
     private UdpClient? socket;
+
+    /// <summary>
+    /// Set once a stop has been asked for. Peers already in a match keep being
+    /// served, and no further peer is taken on: a handshake answered by an
+    /// instance that is on its way out would be a joiner waiting on a host that
+    /// is going to leave.
+    /// </summary>
+    private volatile bool draining;
 
     /// <summary>Creates the gameplay server of one port.</summary>
     /// <param name="serviceProvider">Container the handlers are resolved from.</param>
@@ -58,7 +68,10 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     /// Publishes the host account, binds the port, registers the host endpoint
     /// and starts the match maintenance, then receives until it is stopped.
     /// </summary>
-    /// <param name="cancellationToken">Token that stops the host.</param>
+    /// <param name="cancellationToken">
+    /// Token that stops the host. The call returns once the peers it was serving
+    /// have left.
+    /// </param>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         // The account owns the character the host plays as, and the registered
@@ -71,7 +84,18 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         matchService.Start();
         logger.LogInformation("Listening on port {Port}", port);
 
-        await ReceiveLoopAsync(cancellationToken);
+        // Receiving does not run on the token that asks for the stop. A stop ends
+        // the matches that are playing when they end, not where they are, and a
+        // datagram nobody reads is a match that has already broken. The loop is
+        // held open until the peers have gone, and closed below instead.
+        var receiveLoop = ReceiveLoopAsync(receiveLifetime.Token);
+        await WaitForStopAsync(cancellationToken);
+
+        draining = true;
+        await ConnectionDrainUtils.WaitForConnectionsToLeaveAsync(LogPrefix, () => sessions.Count, logger);
+
+        receiveLifetime.Cancel();
+        await receiveLoop;
     }
 
     /// <inheritdoc />
@@ -81,6 +105,21 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         sessions.Stop();
         socket?.Dispose();
         socket = null;
+        receiveLifetime.Dispose();
+    }
+
+    /// <summary>Completes once a stop has been asked for.</summary>
+    /// <param name="cancellationToken">Token that stops the host.</param>
+    private static async Task WaitForStopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // The stop that was waited for.
+        }
     }
 
     private async Task RegisterConnectionAsync(CancellationToken cancellationToken)

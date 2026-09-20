@@ -43,7 +43,10 @@ public sealed class GameLobbyServerRunner(
     /// process's business: the deployment applies the migrations before any
     /// server starts.
     /// </summary>
-    /// <param name="cancellationToken">Token that stops the listener.</param>
+    /// <param name="cancellationToken">
+    /// Token that stops the listener. The call returns once the connections that
+    /// listener was serving have left, so the lobby keeps the players in it.
+    /// </param>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         GameCommandHandlerRegistration.RegisterCommandHandlers(serviceProvider.GetRequiredService<CommandRegistry>());
@@ -128,6 +131,15 @@ public sealed class GameLobbyServerRunner(
 
         server = new GameplayLobbyServer(serviceProvider, lobby.Port, lobby.Name, lobby.Identifier);
         await server.StartAsync(cancellationToken);
+
+        // The listener is closed and nobody new can arrive, so what is left is to
+        // let the players in this lobby leave on their own. It is the long wait of
+        // the four: a player can sit in a lobby for hours, and a rollout that ended
+        // this instance on the spot would drop every one of them mid-room. The
+        // workers stay up for the duration, so the lobby still answers with the
+        // population it has while it waits to be replaced.
+        await server.WaitForConnectionsToLeaveAsync();
+        server.CloseConnections();
     }
 
     /// <summary>Stops the listener and the workers of this instance.</summary>

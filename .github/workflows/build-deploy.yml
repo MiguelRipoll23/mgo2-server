@@ -15,6 +15,10 @@
 # migrations, then the k3s/ manifests, and then updates and restarts only the
 # deployments whose image this run rebuilt. The image list comes from the
 # changes job, so a push touching a single project touches a single deployment.
+# A restarted server is not waited for as a finished rollout: a lobby and a
+# gameplay server keep serving the players they have until those players leave,
+# which the pod's termination grace period allows for, so what this run waits for
+# is the new revision being up — not the previous one being gone.
 # The migrations come from the bundle in the mgo2-postgres image, which is never
 # deployed as a workload here: that image's job is to carry the bundle, and
 # k3s/migrate-job.yaml.template runs it once per deploy.
@@ -369,12 +373,35 @@ jobs:
             kubectl rollout restart "deployment/$svc" -n mgo2
           done
 
-      - name: Wait for rollouts
+      # The rollout as a whole is not what is waited for. A lobby or a gameplay
+      # server keeps serving the players it has until they leave, so its previous
+      # pod stays Terminating for as long as that takes — minutes, or hours — and
+      # `rollout status` would sit on that and eventually fail the run over a
+      # rollout that is behaving exactly as intended. What has to be true before
+      # this run is good is that the revision it just started is up and serving,
+      # which is the newest replica set having a pod that is ready.
+      - name: Wait for the new revision to serve
         if: steps.targets.outputs.list != ''
         run: |
           for t in ${{ steps.targets.outputs.list }}; do
             svc="${t%%:*}"
-            kubectl rollout status "deployment/$svc" -n mgo2 --timeout=180s
+            started=""
+            for _ in $(seq 1 60); do
+              rs=$(kubectl get replicaset -n mgo2 -l "app=$svc" \
+                --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}')
+              ready=$(kubectl get replicaset "$rs" -n mgo2 -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
+              if [ -n "$rs" ] && [ -n "$ready" ] && [ "$ready" -ge 1 ]; then
+                started="yes"
+                break
+              fi
+              sleep 3
+            done
+
+            if [ "$started" != "yes" ]; then
+              echo "::error::$svc did not get a ready pod from its new revision within 180s."
+              kubectl get pods -n mgo2 -l "app=$svc" -o wide || true
+              exit 1
+            fi
           done
 
       - name: Verify namespace health

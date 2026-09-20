@@ -33,7 +33,10 @@ public sealed class AccountLobbyServerRunner(
     /// this process's business: the deployment applies the migrations before any
     /// server starts.
     /// </summary>
-    /// <param name="cancellationToken">Token that stops the listener.</param>
+    /// <param name="cancellationToken">
+    /// Token that stops the listener. The call returns once the connections that
+    /// listener was serving have left.
+    /// </param>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         AccountCommandHandlerRegistration.RegisterCommandHandlers(serviceProvider.GetRequiredService<CommandRegistry>());
@@ -58,6 +61,13 @@ public sealed class AccountLobbyServerRunner(
 
         server = new AccountServer(serviceProvider, lobby.Port);
         await server.StartAsync(cancellationToken);
+
+        // The listener is closed and nobody new can arrive, so what is left is to
+        // let the players still connected leave on their own. Creation and deletion
+        // are long screens to be cut out of mid-step, and a rollout replaces this
+        // pod on the same port rather than taking anyone away from it.
+        await server.WaitForConnectionsToLeaveAsync();
+        server.CloseConnections();
     }
 
     /// <summary>Stops the listener.</summary>

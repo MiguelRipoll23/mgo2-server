@@ -25,6 +25,18 @@ public sealed class PeerSessionService(TimeSpan idleTimeout)
         reaper = null;
     }
 
+    /// <summary>Number of sessions currently held, reaped ones included until the reaper runs.</summary>
+    public int Count
+    {
+        get
+        {
+            lock (gate)
+            {
+                return sessions.Count;
+            }
+        }
+    }
+
     /// <summary>Returns the session of a remote endpoint, when it has one.</summary>
     /// <param name="remoteAddress">Endpoint formatted as "address:port".</param>
     public PeerSession? Get(string remoteAddress)
