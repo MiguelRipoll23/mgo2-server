@@ -49,4 +49,19 @@ public static class LevelUtils
 
         return level;
     }
+
+    /// <summary>
+    /// First experience total that displays as a level, which is the entry that level
+    /// is reached at rather than one above it: the level is the count of entries at or
+    /// below the total, so <c>CalculateLevel(ExperienceAtLevel(n))</c> is <i>n</i>.
+    /// <para>
+    /// The client carries the same inverse, which clamps a level past the table to its
+    /// last entry instead of refusing it — level 0 is below the first threshold rather
+    /// than a missing entry — and this clamps the same way.
+    /// </para>
+    /// </summary>
+    /// <param name="level">Level to find the first total of.</param>
+    public static int ExperienceAtLevel(int level) => level <= 0
+        ? 0
+        : Thresholds[Math.Min(level, Thresholds.Length) - 1];
 }

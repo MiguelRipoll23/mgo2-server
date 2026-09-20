@@ -71,7 +71,29 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
             .FirstOrDefaultAsync(character => character.Name == name, cancellationToken);
     }
 
-    /// <summary>Creates a character together with its appearance.</summary>
+    /// <summary>
+    /// Level every newly registered character starts at.
+    /// <para>
+    /// Operator policy rather than protocol, and the whole of the rule: the game owns
+    /// only the table a level is derived from, so there is no starting level in it to
+    /// read. A lobby marked beginners-only still refuses whoever is past its own
+    /// ceiling, which is three, so a character born here is past that door on purpose.
+    /// </para>
+    /// </summary>
+    public const int StartingLevel = 12;
+
+    /// <summary>
+    /// Experience a newly registered character is given: the first total that displays
+    /// as <see cref="StartingLevel"/>, so a character is the level it is meant to be
+    /// from the moment it exists rather than a value near it.
+    /// </summary>
+    public static readonly int StartingExperience = LevelUtils.ExperienceAtLevel(StartingLevel);
+
+    /// <summary>
+    /// Creates a character together with its appearance. The character is born at the
+    /// starting experience rather than at zero, which is the only place a level is
+    /// granted without a round being played for it.
+    /// </summary>
     /// <param name="input">Fields of the new character.</param>
     /// <param name="appearance">Fields of the new appearance.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
@@ -88,6 +110,7 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
             AccountIdentifier = input.AccountIdentifier,
             Name = input.Name,
             CreatedAt = input.CreatedAt,
+            Experience = StartingExperience,
         };
 
         context.Characters.Add(character);
