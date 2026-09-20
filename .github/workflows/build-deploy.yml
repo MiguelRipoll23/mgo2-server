@@ -383,14 +383,27 @@ jobs:
       - name: Wait for the new revision to serve
         if: steps.targets.outputs.list != ''
         run: |
+          # The newest pod of a deployment belongs to the new revision: a rollout
+          # creates it after everything it replaces, and a draining pod keeps the
+          # creation stamp it was born with. Asking the pod rather than its replica
+          # set keeps this to the one resource the deploy account may read, and a
+          # failed query only means "not yet" — the loop polls instead of ending
+          # the run, so every service is reported rather than the first.
+          failed=""
           for t in ${{ steps.targets.outputs.list }}; do
             svc="${t%%:*}"
             started=""
             for _ in $(seq 1 60); do
-              rs=$(kubectl get replicaset -n mgo2 -l "app=$svc" \
-                --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}')
-              ready=$(kubectl get replicaset "$rs" -n mgo2 -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
-              if [ -n "$rs" ] && [ -n "$ready" ] && [ "$ready" -ge 1 ]; then
+              pod=$(kubectl get pods -n mgo2 -l "app=$svc" \
+                --sort-by=.metadata.creationTimestamp \
+                -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | awk '{print $NF}') || pod=""
+              ready=""
+              if [ -n "$pod" ]; then
+                ready=$(kubectl get pod "$pod" -n mgo2 \
+                  -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null) || ready=""
+              fi
+
+              if [ "$ready" = "true" ]; then
                 started="yes"
                 break
               fi
@@ -400,9 +413,14 @@ jobs:
             if [ "$started" != "yes" ]; then
               echo "::error::$svc did not get a ready pod from its new revision within 180s."
               kubectl get pods -n mgo2 -l "app=$svc" -o wide || true
-              exit 1
+              failed="$failed $svc"
             fi
           done
+
+          if [ -n "$failed" ]; then
+            echo "::error::deployments without a ready new revision:$failed"
+            exit 1
+          fi
 
       - name: Verify namespace health
         run: |
