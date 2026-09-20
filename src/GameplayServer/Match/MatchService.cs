@@ -29,7 +29,7 @@ public sealed class MatchService(
     IOptions<ServerOptions> options,
     ILogger<MatchService> logger)
     : PeriodicWorker(
-        TimeSpan.FromSeconds(options.Value.LobbyHeartbeatIntervalSeconds),
+        TimeSpan.FromSeconds(options.Value.MatchHeartbeatIntervalSeconds),
         logger,
         PeriodicWorker.NoBackoff)
 {
@@ -43,9 +43,10 @@ public sealed class MatchService(
     /// <summary>Identifier of the match this host published, or zero until it exists.</summary>
     public int MatchIdentifier => matchIdentifier;
 
-    // The heartbeat of the match row does not back off: the row is removed once it
-    // goes quiet for twice the heartbeat interval, so a longer wait between two
-    // attempts would delete the match this worker is keeping alive.
+    // The heartbeat of the match row does not back off: the row leaves the window
+    // it is listed within on the same interval this worker beats at, so any wait
+    // beyond the interval would take the match off the room list before the next
+    // beat could put it back.
 
     /// <inheritdoc />
     protected override async Task RunOnceAsync(CancellationToken cancellationToken)

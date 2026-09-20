@@ -208,10 +208,19 @@ Automatch slot-in eligibility becomes possible after step 1 and is tracked separ
   `CharacterPresence` and `DropPresenceSince`), `CharacterPresenceService` in
   `Shared/Domain/Presence`, writes on `LobbyTrackerService.JoinLobby`/`LeaveLobby`, the boot clear
   and the population reset in `GameLobbyServerRunner`, `CharacterPresenceTickerService` (beat every
-  30s, repair of missing rows, sweep at 120s) in the gameplay lobby, and the location block served
+  30 s, repair of missing rows) and `CharacterPresenceCleanupService` (sweep at midnight UTC, over
+  every row past the minute-long `StaleAfter`) in the gameplay lobby, and the location block served
   by the friends roster, the player search and the clan roster. 165 tests pass; nothing is applied
   to a database until the migrations run. The deltas from the reference are listed above under the
   design.
+
+  The beat is the reference's 30 s; the window is a minute rather than its 120 s, because the
+  client's own cadence is half a minute and a player who is quiet for two beats is gone. What
+  changed with the sweep is where it runs: the reader no longer depends on it — `FindLocationsAsync`
+  drops a row whose `last_seen` has left `StaleAfter` for itself, so a ghost is off a friend list
+  the moment its stamp ages out and the delete is only what reclaims the row — which is what let
+  the sweep move off the beat and into the daily pass in `CharacterPresenceCleanupService`. See
+  `SCHEDULED_DATABASE_TASKS.md` for the schedule as a whole.
 
 - **Step 1: DONE** (2026-08-01). `V72__chara_presence.sql`, `PresenceService`, hooks in
   `ChannelRegistry`, boot-clear and the periodic heartbeat/reap. `mvn verify` 233 unit / 236

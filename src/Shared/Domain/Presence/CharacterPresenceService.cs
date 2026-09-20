@@ -32,17 +32,30 @@ namespace Mgo2Server.Shared.Domain.Presence;
 public sealed class CharacterPresenceService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
 {
     /// <summary>
-    /// How long a row may go untouched before the sweep removes it. This only
-    /// catches a process that died and never came back — one that restarts
-    /// clears its own rows at boot — so it does not need to be tight, and must
-    /// not be: a tight bound evicts live players during a pause long enough to
-    /// skip a beat or two.
+    /// How long a row may go untouched before it is taken for stale, and the only
+    /// window the table has. Two things read it and they are the same question: a
+    /// reader drops a character whose row is older than it, so nobody is listed
+    /// where they are not; and the daily sweep deletes the rows past it, since a
+    /// row that may not be listed is space and nothing else.
+    /// <para>
+    /// A minute, which is the client's own cadence: a game client is heard from
+    /// every half minute, and the beat here stamps a character on the same rhythm,
+    /// so a minute of silence is a player who is gone rather than one who is
+    /// quiet, and a friend list stops naming them while they are away. That is
+    /// why this window is the tight one of the three — a lobby and a room answer
+    /// for themselves, and their windows are measured in hours.
+    /// </para>
+    /// <para>
+    /// Twice <see cref="HeartbeatInterval"/>, so the beat lands once inside the
+    /// window and a single missed beat is still survived.
+    /// </para>
     /// </summary>
-    public static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(120);
+    public static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(1);
 
     /// <summary>
-    /// How often the heartbeat runs. Four beats fit inside <see cref="StaleAfter"/>,
-    /// so three consecutive misses are needed before a live player is evicted.
+    /// How often the heartbeat runs, and half of <see cref="StaleAfter"/>: the beat
+    /// lands once inside the window, so a live player is refreshed before their row
+    /// is either unlisted or swept.
     /// </summary>
     public static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
 
@@ -248,6 +261,11 @@ public sealed class CharacterPresenceService(IDbContextFactory<Mgo2DatabaseConte
     /// Every lobby runs it and the delete is idempotent, so whichever gets there
     /// first wins and the rest are no-ops.
     /// </para>
+    /// <para>
+    /// Called once a day rather than on the beat, so the rows it removes have
+    /// usually been unlisted for most of a day already — the readers apply
+    /// <see cref="StaleAfter"/> for themselves. What it reclaims is the space.
+    /// </para>
     /// </summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>How many stale rows were removed.</returns>
@@ -262,7 +280,7 @@ public sealed class CharacterPresenceService(IDbContextFactory<Mgo2DatabaseConte
 
     /// <summary>
     /// Where each of the given characters is, omitting those who are not
-    /// connected anywhere.
+    /// connected anywhere and those whose stamp has left the stale window.
     /// <para>
     /// The bulk form exists because every consumer is a list screen — a roster,
     /// a search result, a clan — and asking per row would be one query per entry
@@ -286,11 +304,16 @@ public sealed class CharacterPresenceService(IDbContextFactory<Mgo2DatabaseConte
         // Copied into a list so the membership test is one the provider translates
         // directly, as above.
         List<int> identifiers = [.. characterIdentifiers];
+        var cutoff = DateTimeOffset.UtcNow - StaleAfter;
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
 
+        // The stamp has to be inside the window to count as "there now": a row left
+        // by a process that died and never came back is still in the table until the
+        // daily sweep, and answering with it would list a player who is not on the
+        // server at all.
         var presences = await context.CharacterPresence
             .AsNoTracking()
-            .Where(presence => identifiers.Contains(presence.CharacterIdentifier))
+            .Where(presence => identifiers.Contains(presence.CharacterIdentifier) && presence.LastSeen > cutoff)
             .Join(
                 context.Lobbies,
                 presence => presence.LobbyIdentifier,

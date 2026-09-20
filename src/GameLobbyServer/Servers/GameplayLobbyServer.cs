@@ -1,10 +1,8 @@
 using Mgo2Server.Shared.Domain.Lobbies;
-using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Tcp;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameLobbyServer.Servers;
 
@@ -16,9 +14,22 @@ namespace Mgo2Server.GameLobbyServer.Servers;
 public sealed class GameplayLobbyServer(IServiceProvider serviceProvider, int port, string lobbyName, int lobbyIdentifier)
     : TcpServerBase(serviceProvider, port), IDisposable
 {
+    /// <summary>
+    /// How long a burst of abrupt disconnects is allowed to build up before the
+    /// published population is written again.
+    /// <para>
+    /// It is short, and it is deliberately not derived from any beat, because it is
+    /// now the only thing that republishes a count an abrupt disconnect changed: the
+    /// heartbeat no longer writes a population. It is long enough that everybody
+    /// dropping at once collapses into the one write they would have shared, and
+    /// short enough that the next list a client reads is not told about players who
+    /// are already gone.
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan CountSyncDelay = TimeSpan.FromSeconds(5);
+
     private readonly Lock syncGate = new();
     private Timer? countSyncTimer;
-    private TimeSpan countSyncDelay;
 
     /// <inheritdoc />
     protected override ServerType ServerType => ServerType.GameplayLobby;
@@ -45,41 +56,30 @@ public sealed class GameplayLobbyServer(IServiceProvider serviceProvider, int po
         var lobbyTracker = Services.GetRequiredService<LobbyTrackerService>();
         lobbyTracker.LeaveLobby(session);
 
-        // An abrupt disconnect that never sends the lobby-leave command leaves
-        // the published count stale. Republish a moment later, but coalesce a
-        // burst of disconnects into one write instead of one per disconnect;
-        // the heartbeat republishes every lobby anyway.
+        // An abrupt disconnect that never sends the lobby-leave command is the one
+        // departure nobody writes the count for: the leave path republishes it and
+        // so does every join, and the beat no longer does. So it is written a moment
+        // later, which collapses everyone dropping at once into one statement
+        // instead of one per socket.
         lock (syncGate)
         {
             countSyncTimer ??= CreateCountSyncTimer(lobbyTracker);
-            countSyncTimer.Change(countSyncDelay, Timeout.InfiniteTimeSpan);
+            countSyncTimer.Change(CountSyncDelay, Timeout.InfiniteTimeSpan);
         }
     }
 
     /// <summary>
-    /// Creates the timer that republishes the counts after a disconnect, and
-    /// settles how long a burst is allowed to build up before it does.
-    /// <para>
-    /// That wait is the lifetime of a read lobby list, which is the only thing the
-    /// count is published for: a list written more often than it is read is work
-    /// nobody can see. It used to be a second, which announced a departure to the
-    /// database hundreds of times for what a reader sees once — and republishing is
-    /// already covered by the heartbeat of this lobby, so nothing is lost by
-    /// waiting for a window that is a fraction of it.
-    /// </para>
+    /// Creates the timer that republishes the count after an abrupt disconnect. It
+    /// is armed once and re-armed by every disconnect, so a burst lands on the last
+    /// arming and costs one write.
     /// </summary>
-    /// <param name="lobbyTracker">Tracker whose counts are republished.</param>
-    private Timer CreateCountSyncTimer(LobbyTrackerService lobbyTracker)
-    {
-        countSyncDelay = TimeSpan.FromSeconds(
-            Services.GetRequiredService<IOptions<ServerOptions>>().Value.LobbyHeartbeatIntervalSeconds);
-
-        return new Timer(
+    /// <param name="lobbyTracker">Tracker whose count is republished.</param>
+    private Timer CreateCountSyncTimer(LobbyTrackerService lobbyTracker) =>
+        new(
             _ => _ = SynchronizeCountsAsync(lobbyTracker),
             null,
             Timeout.InfiniteTimeSpan,
             Timeout.InfiniteTimeSpan);
-    }
 
     private async Task SynchronizeCountsAsync(LobbyTrackerService lobbyTracker)
     {

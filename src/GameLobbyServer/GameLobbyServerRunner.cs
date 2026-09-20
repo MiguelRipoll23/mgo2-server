@@ -37,6 +37,7 @@ public sealed class GameLobbyServerRunner(
     private GameCleanupService? gameCleanup;
     private AutomatchTickerService? automatch;
     private CharacterPresenceTickerService? presenceTicker;
+    private CharacterPresenceCleanupService? presenceCleanup;
 
     /// <summary>
     /// Registers this instance's lobby and starts it. The schema is not this
@@ -131,13 +132,19 @@ public sealed class GameLobbyServerRunner(
         gameCleanup = serviceProvider.GetRequiredService<GameCleanupService>();
         automatch = serviceProvider.GetRequiredService<AutomatchTickerService>();
         presenceTicker = serviceProvider.GetRequiredService<CharacterPresenceTickerService>();
+        presenceCleanup = serviceProvider.GetRequiredService<CharacterPresenceCleanupService>();
         heartbeat.StartFor(lobby.Identifier);
         cleanup.Start();
         gameCleanup.Start();
         automatch.StartFor(lobby.Identifier, lobby.SubtypeIdentifier);
         // Bound to this lobby so a missing row can be recorded again under the right
-        // one: the ticker heals the rows it owns and sweeps everybody's.
+        // one: the ticker heals the rows it owns.
         presenceTicker.StartFor(lobby.Identifier);
+
+        // The daily sweeps do not run on start — they wait for midnight UTC — so
+        // starting them here only arms them. The rows they are for are the ones a
+        // process that is not running left behind, and those are already unlisted.
+        presenceCleanup.Start();
 
         server = new GameplayLobbyServer(serviceProvider, lobby.Port, lobby.Name, lobby.Identifier);
         await server.StartAsync(cancellationToken);
@@ -192,6 +199,12 @@ public sealed class GameLobbyServerRunner(
         {
             await presenceTicker.StopAsync();
             presenceTicker = null;
+        }
+
+        if (presenceCleanup is not null)
+        {
+            await presenceCleanup.StopAsync();
+            presenceCleanup = null;
         }
     }
 }

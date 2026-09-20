@@ -7,18 +7,22 @@ using Microsoft.Extensions.Options;
 namespace Mgo2Server.GameLobbyServer.Maintenance;
 
 /// <summary>
-/// Keeps the lobby this instance hosts alive. Every tick refreshes the
-/// heartbeat of its row, so the gate keeps serving it, and republishes the
-/// player counts of this instance, so a lobby that nobody joins or leaves for a
-/// while does not lose its population.
+/// Keeps the lobby this instance hosts alive. Every tick refreshes the heartbeat
+/// of its row, so the gate keeps serving it.
+/// <para>
+/// It writes nothing else. The published population used to be republished here,
+/// and it is not any more: a count changes when a session joins or leaves, and
+/// that is where it is written, so a beat that writes it too is writing the value
+/// it last saw rather than the value that is true. Removing it also took the last
+/// scheduled statement out of a worker whose whole job is a stamp, which is the
+/// point of a list that nobody can see being written more often than it is read.
+/// </para>
 /// </summary>
 /// <param name="lobbyService">Service that owns the lobby rows.</param>
-/// <param name="lobbyTracker">Service that counts the sessions of this instance.</param>
 /// <param name="options">Options of this instance.</param>
 /// <param name="logger">Logger of the worker.</param>
 public sealed class LobbyHeartbeatService(
     LobbyService lobbyService,
-    LobbyTrackerService lobbyTracker,
     IOptions<ServerOptions> options,
     ILogger<LobbyHeartbeatService> logger)
     : PeriodicWorker(
@@ -45,6 +49,5 @@ public sealed class LobbyHeartbeatService(
         }
 
         await lobbyService.HeartbeatAsync(lobbyIdentifier, cancellationToken);
-        await lobbyTracker.SynchronizeAllLobbyCountsAsync(cancellationToken);
     }
 }

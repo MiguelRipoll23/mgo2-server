@@ -5,7 +5,9 @@ namespace Mgo2Server.Shared.Utils;
 /// <summary>
 /// Runs one operation on a fixed interval until it is stopped. The first run
 /// happens immediately, so a worker that keeps a row alive registers it before
-/// the first interval elapses.
+/// the first interval elapses; a worker whose cadence is a time of day rather
+/// than an interval — <see cref="DailyWorker"/> — overrides that and waits for
+/// its hour instead.
 /// <para>
 /// A failing run is logged and the loop continues, because a database that is
 /// briefly unavailable must not end the process. What it must not do is keep
@@ -66,6 +68,14 @@ public abstract class PeriodicWorker(
     /// <summary>Whether the worker is running.</summary>
     public bool IsRunning => loop is not null;
 
+    /// <summary>
+    /// Whether the worker runs once as soon as it starts, before it waits out its
+    /// first delay. Every worker whose interval is what keeps a row alive wants
+    /// this; one that runs at a time of day does not, because "now" is not that
+    /// time and a restart would run it at an hour nobody asked for.
+    /// </summary>
+    protected virtual bool RunsImmediately => true;
+
     /// <summary>Starts the loop, or does nothing when it already runs.</summary>
     public void Start()
     {
@@ -109,31 +119,40 @@ public abstract class PeriodicWorker(
     private async Task RunAsync(CancellationToken cancellationToken)
     {
         var failures = 0;
+        var firstRun = true;
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            try
+            // The first turn round the loop is skipped rather than run by a worker
+            // that waits for a time of day: it goes straight to the wait below,
+            // which resolves to that time.
+            if (!firstRun || RunsImmediately)
             {
-                await RunOnceAsync(cancellationToken);
-
-                if (failures > 0)
+                try
                 {
-                    logger.LogInformation(
-                        "{Worker} recovered after {FailureCount} failed run(s)",
-                        GetType().Name,
-                        failures);
-                    failures = 0;
+                    await RunOnceAsync(cancellationToken);
+
+                    if (failures > 0)
+                    {
+                        logger.LogInformation(
+                            "{Worker} recovered after {FailureCount} failed run(s)",
+                            GetType().Name,
+                            failures);
+                        failures = 0;
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    failures++;
+                    ReportFailure(exception, failures);
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception exception)
-            {
-                failures++;
-                ReportFailure(exception, failures);
-            }
+
+            firstRun = false;
 
             if (!await WaitBeforeNextRunAsync(failures, cancellationToken))
             {
@@ -148,21 +167,37 @@ public abstract class PeriodicWorker(
     /// <returns><c>false</c> when the worker was stopped while waiting.</returns>
     private async Task<bool> WaitBeforeNextRunAsync(int failures, CancellationToken cancellationToken)
     {
-        var wait = failures == 0 ? interval : DelayAfterFailure(failures);
-
-        // Upward only, so the interval stays a floor: a worker that is keeping up
-        // never runs more often than it was configured to.
-        var jittered = wait + (wait * (Random.Shared.NextDouble() * JitterFraction));
-
         try
         {
-            await Task.Delay(jittered, cancellationToken);
+            await Task.Delay(ResolveWait(failures), cancellationToken);
             return true;
         }
         catch (OperationCanceledException)
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// How long this worker waits before its next run, given the failures the run
+    /// that just finished left behind. The wait follows the run rather than a
+    /// clock, and drifts upward by up to a tenth of itself, because every instance
+    /// of a role starts together with the same interval and would otherwise reach
+    /// the database in the same instant.
+    /// <para>
+    /// A worker whose cadence is a time of day rather than an interval overrides
+    /// this: its next run is the next occurrence of that time, not the length of a
+    /// wait from the last one.
+    /// </para>
+    /// </summary>
+    /// <param name="failures">Consecutive failures the run left behind.</param>
+    protected virtual TimeSpan ResolveWait(int failures)
+    {
+        var wait = failures == 0 ? interval : DelayAfterFailure(failures);
+
+        // Upward only, so the interval stays a floor: a worker that is keeping up
+        // never runs more often than it was configured to.
+        return wait + (wait * (Random.Shared.NextDouble() * JitterFraction));
     }
 
     /// <summary>How long a worker waits after the given number of consecutive failures.</summary>

@@ -153,13 +153,14 @@ public sealed class CharacterLocationTests
     }
 
     [Fact]
-    public void The_sweep_waits_through_several_missed_beats_before_evicting_a_live_player()
+    public void The_stamp_keeps_a_live_player_inside_the_window_through_a_missed_beat()
     {
-        // The heartbeat only has to catch a process that died and never came back — a
-        // process that restarts clears its own rows at boot — so the staleness bound is
-        // deliberately loose. Tighter than three beats would evict a player during a
-        // pause long enough to skip one.
-        Assert.True(CharacterPresenceService.HeartbeatInterval * 3 < CharacterPresenceService.StaleAfter);
+        // The window is the client's own cadence — a game client is heard from every
+        // half minute — so it is tight on purpose: the beat has to land once inside it
+        // or a reader that hides a row past the window would lose a player who is only
+        // quiet. Two beats, so one missed beat is still survived.
+        Assert.True(CharacterPresenceService.HeartbeatInterval < CharacterPresenceService.StaleAfter);
+        Assert.True(CharacterPresenceService.HeartbeatInterval * 2 <= CharacterPresenceService.StaleAfter);
     }
 
     [Theory]

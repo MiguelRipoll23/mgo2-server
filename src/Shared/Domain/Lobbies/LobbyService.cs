@@ -142,16 +142,29 @@ public sealed partial class LobbyService(
     private async Task<List<LobbyResponse>> ReadLobbiesAsync(CancellationToken cancellationToken)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        var cutoff = DateTimeOffset.UtcNow.AddSeconds(-options.LobbyStaleSeconds);
-
-        var rows = await context.Lobbies
-            .AsNoTracking()
-            .Where(lobby => lobby.Type != LobbyType.Game || lobby.UpdatedAt > cutoff)
+        var rows = await StillServed(context.Lobbies.AsNoTracking())
             .OrderBy(lobby => lobby.Type)
             .ThenBy(lobby => lobby.Identifier)
             .ToListAsync(cancellationToken);
 
         return [.. rows.Select(lobby => ToResponse(lobby, null))];
+    }
+
+    /// <summary>
+    /// Narrows a lobby query to the rows that are still being served: everything
+    /// except a gameplay lobby whose heartbeat has aged out. The gate and the
+    /// account server are permanent endpoints and are always listed.
+    /// <para>
+    /// Every list read goes through this, and it is the reason a stale lobby is
+    /// never shown even though its row is only deleted once a day: the window, not
+    /// the delete, is what keeps a lobby whose server stopped off a screen.
+    /// </para>
+    /// </summary>
+    /// <param name="lobbies">Query to narrow.</param>
+    private IQueryable<Lobby> StillServed(IQueryable<Lobby> lobbies)
+    {
+        var cutoff = DateTimeOffset.UtcNow.AddSeconds(-options.LobbyStaleSeconds);
+        return lobbies.Where(lobby => lobby.Type != LobbyType.Game || lobby.UpdatedAt > cutoff);
     }
 
     /// <summary>
@@ -163,13 +176,17 @@ public sealed partial class LobbyService(
     private bool IsFresh() =>
         DateTimeOffset.UtcNow - cacheReadAt < TimeSpan.FromSeconds(options.LobbyHeartbeatIntervalSeconds);
 
-    /// <summary>Lists every lobby.</summary>
+    /// <summary>
+    /// Lists every lobby that is still being served, ordered by identifier. This
+    /// is the HTTP view of the list the gate builds, so it applies the same
+    /// window: a gameplay lobby whose <c>updated_at</c> has left the stale window
+    /// is not returned, whether or not the daily cleanup has removed it yet.
+    /// </summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<List<LobbyResponse>> FindAllAsync(CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        var rows = await context.Lobbies
-            .AsNoTracking()
+        var rows = await StillServed(context.Lobbies.AsNoTracking())
             .OrderBy(lobby => lobby.Identifier)
             .ToListAsync(cancellationToken);
         return [.. rows.Select(lobby => ToResponse(lobby, null))];

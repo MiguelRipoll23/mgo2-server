@@ -6,20 +6,21 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameLobbyServer.Maintenance;
 
 /// <summary>
-/// Keeps the presence of this lobby's characters alive, records again the ones
-/// whose row went missing, and clears away the rows of lobbies that are no
-/// longer running.
+/// Keeps the presence of this lobby's characters alive and records again the ones
+/// whose row went missing.
 /// <para>
 /// The heartbeat covers the one case the boot clear cannot: a process that dies
-/// and never comes back, so nobody is left to drop its rows. That is why the
-/// sweep is not scoped to this lobby — cleaning up after a process that is not
-/// running is exactly what a surviving process has to do — and why it is
-/// idempotent, so several lobbies reaping at once is harmless.
+/// and never comes back, so nobody is left to drop its rows. Such a process is
+/// cleaned up by <see cref="CharacterPresenceCleanupService"/>, which is a
+/// separate daily pass rather than the tail of this beat — a row that is stale is
+/// already unlisted, since the readers drop a character whose <c>last_seen</c> is
+/// older than the stale window, so the delete is reclaiming space and not what
+/// keeps a ghost off a friend list.
 /// </para>
 /// <para>
 /// Whatever the heartbeat touches is a live channel of this process, so a
 /// character who left without a disconnect ever arriving is not kept alive by
-/// it; the sweep takes that row once the stamp ages out.
+/// it; the daily sweep takes that row once the stamp ages out.
 /// </para>
 /// </summary>
 /// <param name="presenceService">Service that owns the presence rows.</param>
@@ -70,8 +71,8 @@ public sealed class CharacterPresenceTickerService(
         {
             var repaired = await RepairMissingRowsAsync(characterIdentifiers, cancellationToken);
 
-            // Said out loud rather than only repaired: a sweep that is too aggressive
-            // has to stay visible, and so does a write path that keeps failing.
+            // Said out loud rather than only repaired: a write path that keeps
+            // failing has to stay visible, and so does a beat that keeps missing.
             logger.LogWarning(
                 "Presence heartbeat touched {TouchedCount} of {CharacterCount} rows for lobby {LobbyIdentifier}; recorded {RepairedCount} again",
                 touched,
@@ -79,19 +80,13 @@ public sealed class CharacterPresenceTickerService(
                 lobbyIdentifier,
                 repaired);
         }
-
-        var reaped = await presenceService.ReapStaleAsync(cancellationToken);
-        if (reaped > 0)
-        {
-            logger.LogInformation("Reaped {PresenceCount} stale presence rows", reaped);
-        }
     }
 
     /// <summary>
     /// Records the connected characters that have no row, logging a failure
-    /// rather than ending the tick with it: the sweep below is what cleans up
-    /// after a process that is not running, and a repair that cannot land must
-    /// not cost the tick its sweep.
+    /// rather than ending the tick with it: the repair keeps a live player visible
+    /// to every list, and a repair that cannot land must not cost the tick its
+    /// remaining work.
     /// </summary>
     /// <param name="characterIdentifiers">Characters that are connected.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>

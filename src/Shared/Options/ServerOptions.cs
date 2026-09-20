@@ -14,11 +14,14 @@ public sealed class ServerOptions
     public string? AdvertisedAddress { get; set; }
 
     /// <summary>
-    /// Interval in minutes between two lobby heartbeats, and how long a lobby
-    /// list that was read is served before it is read again. Every other timing
-    /// of the lobby lifecycle is derived from it.
+    /// Interval in minutes between two heartbeats of a lobby row, and how long a
+    /// lobby list that was read is served before it is read again. Every other
+    /// timing of the lobby lifecycle is derived from it. It is the slowest beat
+    /// this server runs, because a lobby container is a process that answers for
+    /// itself; a room is kept alive by its host's ping report and a player by a
+    /// much shorter one, so neither borrows this interval.
     /// </summary>
-    public int LobbiesRefreshIntervalMinutes { get; set; } = 5;
+    public int LobbiesRefreshIntervalMinutes { get; set; } = 60;
 
     /// <summary>Port of the dedicated UDP gameplay host, when this instance runs one.</summary>
     public int GameplayServerPort { get; set; } = 5730;
@@ -68,9 +71,31 @@ public sealed class ServerOptions
     public int LobbyHeartbeatIntervalSeconds => LobbiesRefreshIntervalMinutes * 60;
 
     /// <summary>
-    /// Threshold in seconds after which a row is considered stale: twice the
-    /// heartbeat interval. A gameplay lobby or a dedicated-host match that was
-    /// not written to within this window is no longer served, and is cleaned up.
+    /// Threshold in seconds after which a gameplay lobby is considered stale:
+    /// twice <see cref="LobbyHeartbeatIntervalSeconds"/>, which is two hours at the
+    /// default beat. One window answers two questions, and they are the same
+    /// question asked twice: a lobby whose <c>updated_at</c> is older than it is
+    /// not listed — so a client never sees a lobby whose server stopped, however
+    /// long ago that was — and it is what the daily cleanup deletes.
     /// </summary>
     public int LobbyStaleSeconds => LobbyHeartbeatIntervalSeconds * 2;
+
+    /// <summary>
+    /// Threshold in seconds after which a room is considered stale: an hour. A
+    /// populated room is kept alive by its host's ping report, which the client
+    /// sends every half minute and which stamps <c>games.updated_at</c> through
+    /// <c>UpdatePingsAsync</c>; a room hosted by a dedicated server by its own
+    /// <see cref="MatchHeartbeatIntervalSeconds"/> beat. An hour of silence is
+    /// therefore a host that is gone, whatever kind it was, and the room is both
+    /// dropped from every list and deleted once a day.
+    /// </summary>
+    public int GameStaleSeconds { get; set; } = 3600;
+
+    /// <summary>
+    /// Interval in seconds between two beats of a dedicated host's own match row,
+    /// which is half of <see cref="GameStaleSeconds"/> so the beat lands once
+    /// inside the window the room is listed within. A player-hosted room needs no
+    /// such beat: its host's ping report is the beat.
+    /// </summary>
+    public int MatchHeartbeatIntervalSeconds => GameStaleSeconds / 2;
 }

@@ -33,7 +33,12 @@ public sealed class CharacterPresence
     [Column("lobby_id")]
     public int LobbyIdentifier { get; set; }
 
-    /// <summary>Timestamp of the last heartbeat. Only the sweep reads it.</summary>
+    /// <summary>
+    /// Timestamp of the last heartbeat. It is this table's <c>updated_at</c>, under
+    /// the name that says what it means: the readers drop a row that has left
+    /// <c>CharacterPresenceService.StaleAfter</c> for themselves, and the daily sweep
+    /// deletes the rows past the same window.
+    /// </summary>
     [Column("last_seen")]
     public DateTimeOffset LastSeen { get; set; }
 
