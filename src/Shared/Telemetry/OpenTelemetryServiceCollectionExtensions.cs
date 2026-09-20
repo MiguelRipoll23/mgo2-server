@@ -12,7 +12,8 @@ namespace Mgo2Server.Shared.Telemetry;
 /// <summary>
 /// Wires the OpenTelemetry integration every server shares: the metrics service
 /// and, when telemetry is enabled, the OTLP/gRPC exporter that carries its
-/// instruments to the collector.
+/// instruments to the collector, along with the log events Serilog also writes
+/// to the console.
 /// </summary>
 public static class OpenTelemetryServiceCollectionExtensions
 {
@@ -47,13 +48,21 @@ public static class OpenTelemetryServiceCollectionExtensions
                         exporter.Endpoint = new Uri(options.Endpoint);
                         exporter.Protocol = OtlpExportProtocol.Grpc;
                     }))
-            .WithLogging(logging => logging
-                .AddOtlpExporter(
+            // IncludeFormattedMessage decides what a viewer shows as the body
+            // of an exported event. Without it the body of a structured event
+            // is the message template, with the values carried beside it as
+            // attributes and the placeholders left standing in the text
+            // ('touched {TouchedCount} of {CharacterCount}'); with it the body
+            // is the line a human reads, and the template is still on every
+            // record as the {OriginalFormat} attribute.
+            .WithLogging(
+                logging => logging.AddOtlpExporter(
                     exporter =>
                     {
                         exporter.Endpoint = new Uri(options.Endpoint);
                         exporter.Protocol = OtlpExportProtocol.Grpc;
-                    }));
+                    }),
+                loggerOptions => loggerOptions.IncludeFormattedMessage = true);
 
         return services;
     }
