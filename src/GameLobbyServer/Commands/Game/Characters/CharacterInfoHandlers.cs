@@ -185,7 +185,6 @@ public sealed class GetCharacterInfoHandler(
                 appearance,
                 skills,
                 clan,
-                characterIdentifier,
                 instructor?.InstructorCharacterIdentifier ?? CharacterPayloadBuilder.NoSavedInstructor),
             cancellationToken);
     }

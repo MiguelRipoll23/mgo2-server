@@ -27,6 +27,12 @@ public sealed class PersonalInfoPayloadTests
     /// </summary>
     private const int CommentOffset = 4 + 16 + 25 + 4 + 27 + 5 + 5 + 16 + 5 + 4;
 
+    /// <summary>
+    /// Offset of the character-figure slot directly above the comment, the destination the
+    /// personal-data screen renders as the character's own number.
+    /// </summary>
+    private const int TotalRewardsOffset = CommentOffset - 4;
+
     /// <summary>The comment is served from the record, at the offset the client reads it from.</summary>
     [Fact]
     public void The_payload_is_the_fixed_size_and_carries_the_comment_where_the_client_reads_it()
@@ -37,11 +43,37 @@ public sealed class PersonalInfoPayloadTests
             character,
             new CharacterAppearance { CharacterIdentifier = 8 },
             null,
-            null,
-            8);
+            null);
 
         Assert.Equal(PayloadSize, payload.Length);
         Assert.Equal("Hello there", StringUtility.ReadFixedString(payload, CommentOffset, 128));
+    }
+
+    /// <summary>
+    /// The slot above the comment carries the character's stored total, not the identifier.
+    /// The 0x4103 header fills the same destination from the same column, so an identifier
+    /// here makes the two screens disagree — which reads as a total rewards figure equal to
+    /// the character id on one of them.
+    /// </summary>
+    [Fact]
+    public void The_slot_above_the_comment_carries_the_total_rewards_and_not_the_identifier()
+    {
+        var character = new Character
+        {
+            Identifier = 8,
+            Name = "Someone",
+            Comment = "Hello there",
+            TotalRewards = 4321,
+        };
+
+        var payload = CharacterPayloadBuilder.BuildPersonalInfoPayload(
+            character,
+            new CharacterAppearance { CharacterIdentifier = 8 },
+            null,
+            null);
+
+        Assert.Equal(PayloadSize, payload.Length);
+        Assert.Equal(4321u, BinaryUtility.ReadUInt32BigEndian(payload, TotalRewardsOffset));
     }
 
     /// <summary>
@@ -58,8 +90,7 @@ public sealed class PersonalInfoPayloadTests
             character,
             new CharacterAppearance { CharacterIdentifier = 8 },
             null,
-            null,
-            8);
+            null);
 
         Assert.Equal(PayloadSize, payload.Length);
         Assert.Equal(string.Empty, StringUtility.ReadFixedString(payload, CommentOffset, 128));
@@ -75,7 +106,7 @@ public sealed class PersonalInfoPayloadTests
     {
         var character = new Character { Identifier = 8, Name = "Someone", Comment = "Hello there" };
 
-        var payload = CharacterPayloadBuilder.BuildPersonalInfoPayload(character, null, null, null, 8);
+        var payload = CharacterPayloadBuilder.BuildPersonalInfoPayload(character, null, null, null);
 
         Assert.Equal(PayloadSize, payload.Length);
         Assert.Equal("Hello there", StringUtility.ReadFixedString(payload, CommentOffset, 128));

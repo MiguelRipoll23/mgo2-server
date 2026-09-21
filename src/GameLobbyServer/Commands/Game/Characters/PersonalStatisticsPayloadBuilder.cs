@@ -158,7 +158,11 @@ public static class PersonalStatisticsPayloadBuilder
         }
 
         header.WriteUInt8(0);
-        header.WriteUInt32(0);
+        // The slot immediately above the comment, which the personal-data screen renders
+        // as the character's own figure. The 0x4122 write-back fills the same
+        // destination, so both carry characters.total_rewards rather than one of them
+        // carrying the character id and the other a bare zero.
+        header.WriteUInt32((uint)character.TotalRewards);
         Debug.Assert(
             header.Size <= CommentOffset,
             "The personal-stats header grew past the comment offset; adjust the hand-computed layout.");

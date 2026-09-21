@@ -127,7 +127,6 @@ public static class CharacterPayloadBuilder
         CharacterAppearance? appearance,
         CharacterEquippedSkill? skills,
         CharacterClanInformation? clan,
-        int characterIdentifier,
         int savedInstructorIdentifier = NoSavedInstructor)
     {
         var writer = new PacketWriter();
@@ -203,7 +202,12 @@ public static class CharacterPayloadBuilder
         }
 
         writer.WritePadding(5);
-        writer.WriteUInt32((uint)characterIdentifier);
+        // The slot at wire 0x6b is the character's own figure on the personal-data
+        // screen, not the identifier: the 0x4103 header writes the same destination
+        // (T+0x1E20) and serves characters.total_rewards there, so sending the
+        // character id here makes the two screens disagree and shows the id where
+        // the stored total belongs.
+        writer.WriteUInt32((uint)(character?.TotalRewards ?? 0));
         writer.WriteFixedString(character?.Comment ?? string.Empty, 128);
         writer.WriteUInt8(character?.Rank ?? 0);
         // Clan emblem flag: three when the clan published an emblem.
