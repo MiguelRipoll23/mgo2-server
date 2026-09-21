@@ -87,12 +87,13 @@ ENTRYPOINT ["sh", "-c", "exec ./efbundle --connection \"${DATABASE_CONNECTION_ST
 # server image.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 
-# Npgsql probes GSSAPI when a connection asks for Kerberos-integrated
-# security; the native library ships in libgssapi-krb5-2, without which the
-# runtime prints "Error: libgssapi_krb5.so.2: cannot open shared object file"
-# on the first database connection.
+# libgssapi-krb5-2 is for Npgsql, which probes GSSAPI when a connection asks for
+# Kerberos-integrated security; without the native library the runtime prints
+# "Error: libgssapi_krb5.so.2: cannot open shared object file" on the first
+# database connection. tini is the container's init, and the entrypoint below
+# explains why that is not optional.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 tini \
     && rm -rf /var/lib/apt/lists/*
 
 ARG ASSEMBLY
@@ -120,5 +121,24 @@ RUN [ -d /app/Static ] && chown -R 1000:1000 /app/Static || true
 # name overrides any file value, so secrets never have to be baked into an image.
 COPY appsettings.example.json ./appsettings.json
 
-# exec keeps the process as PID 1 so the container stops on SIGTERM.
-ENTRYPOINT ["sh", "-c", "exec dotnet \"$MGO2_SERVER_ASSEMBLY\".dll"]
+# tini is the container's first process, so that no server is. The init of a PID
+# namespace carries SIGNAL_UNKILLABLE, and the kernel discards any signal whose
+# disposition is the default for it — the SIGABRT the runtime raises against
+# itself when a server dies of an unhandled exception, included. So a server
+# that dies of one does not die: the runtime calls abort, the signal is
+# swallowed, and its fallback spins on the main thread for as long as the
+# container lives. Nothing restarts the pod, because the container never exits,
+# and nothing stops it either: the shutdown signal reaches a process whose only
+# live thread is already inside that fallback, so the pod sits in Terminating
+# for the whole of its grace period with a core pinned. `kubectl delete --force`
+# does not clear it; a cgroup kill, which is what `crictl stop` performs, does.
+# On a node with four cores and fifteen servers, a database that is away once
+# costs most of the node until each one is removed by hand (the runtime's own
+# report of the first half is dotnet/runtime#118049). Under an init the server is
+# an ordinary process: the fatal signal ends it, the platform restarts the
+# container, and tini forwards SIGTERM to it, so a rollout's graceful drain is
+# unchanged.
+#
+# exec is still right here: it makes the server tini's own child rather than the
+# shell's, so the signal tini forwards is the server's to handle.
+ENTRYPOINT ["/usr/bin/tini", "--", "sh", "-c", "exec dotnet \"$MGO2_SERVER_ASSEMBLY\".dll"]
