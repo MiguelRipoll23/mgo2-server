@@ -495,6 +495,96 @@ That remains true of the disc build and of the Lobby Select path in both, but **
 reads bits `0x10` and `0x08`** of the reversed byte, from four sites on a different screen. First
 evidence in either image that the byte is read at all.
 
+## SOLVED: the personal-stats burst was still the disc build's layout
+
+**Found 2026-09-21 from a live report: the personal-data screen showed an empty comment and a
+figure where the stored total belongs.** The connect burst's `0x4101` had already been fixed for
+1.36 — `CharacterInfoPayloadBuilder` walks 64 identifiers per grid and says so. The three packets
+of the `0x4102` burst had not, and all three were the disc build's shape.
+
+### Method and parser addresses
+
+```
+0x4103  0xf0b590   dispatcher stub 0xf052b8
+0x4105  0xf0b110   dispatcher stub 0xf052c8
+0x4107  0xf0a5b4   dispatcher stub 0xf052d8
+```
+
+The field maps were read out of each parser by pairing every `addi r4,rX,imm` with the stream read
+that follows it and summing sizes in program order, with loop trip counts folded in. The stream
+primitives are the disc build's at the same addresses — `0xf2e20c`/`0xf2e280` u32, `0xf2e134` u8,
+`0xf2e1bc` u16, `0xf2e5c0` memcpy — so `tools/mgo2_disasm.py` and a small pairing script are the
+whole method. The tool defaults point at `docs/MGO2.ELF`, which this checkout does not have; the
+image is `MGO2.ELF` at the repository root.
+
+### `0x4103` — the header is 909 bytes, 256 more than the disc build's 648
+
+The two relation grids hold **64** identifiers each, not 32:
+
+```
+1.36  0xf0b770  cmpdi cr6,r29,0x40   friend grid   (0xf0b7a8 is the blocked grid)
+1.36  0xf0b7cc  addi  r4,r31,0x4179  the byte between the grids and the clan record
+```
+
+Everything between the grids and the end of the packet keeps its size and its order, so every disc
+offset below them is the 1.36 offset **plus 256**, and the packet reads five bytes past the disc
+build's last field: a word at 904 and the feature byte at 908, the latter handed to the same
+splitter `0xf06450` the `0x4101` feature byte goes through.
+
+| field | disc | 1.36 |
+| --- | ---: | ---: |
+| comment (128 bytes) | 413 | **669** |
+| worn title | 541 | 797 |
+| title mask (rating entry 3) | 563 | 819 |
+| host rating num/den | 571/575 | 827/831 |
+| instructor name | 591 | 847 |
+| medal bitfield (16 bytes) | 615 | 871 |
+| clan emblem flag | 631 | 887 |
+| instructor score num/den | 632/636 | 888/892 |
+| saved instructor | 640 | 896 |
+| grade points | 644 | 900 |
+| new word / feature byte | — | 904 / 908 |
+| **packet size** | 648 | **909** |
+
+### `0x4105` — the grid is twelve rows per packet, not eight
+
+The parser clears both pages first (`memset(r28+0x238, 0, 0x1440)` — two pages of eighteen rows of
+eighteen u32) and then walks eighteen row slots, stepping over six of them:
+
+```
+0xf0b1f0  cmpwi cr7,r27,8    0xf0b1f8  cmpwi cr7,r27,9
+0xf0b200  cmpwi cr7,r27,10   0xf0b208  cmpwi cr7,r27,11
+0xf0b210  cmpwi cr7,r27,13   0xf0b1e8  cmpwi cr7,r27,14
+0xf0b538  addi r27,r27,1  ;  cmpwi cr7,r27,0x11  ;  ble
+```
+
+so the wire order is **0,1,2,3,4,5,6,7,12,15,16,17** — twelve rows of eighteen u32 after the two
+header words, 872 bytes. The disc build's eight rows are the first eight of those at the same grid
+positions, which is why the summary row the player-details card reads is still wire row 7.
+
+### `0x4107` — the tail is 82 slots per record, not 73
+
+`cmpwi cr7,r9,1` at `0xf0afec`, against a counter incremented at `0xf0b068`, bounds the record loop
+at two, and **82** u32 reads sit inside it; the parser's whole body is that unrolled run. Records sit
+`0x14C` apart in the client struct and the packet is `4 + 2 x 328 = **660**` bytes. Slots 1..73 keep
+the disc build's positions, so the three named slots this server fills (36 soldiers trained, 46/47/48
+training/instructor/student seconds) are unaffected; the nine new slots are served zero.
+
+### Why it presented as a wrong value rather than a wrong layout
+
+The parser abandons the packet at the first short read (`li r9,-0x47`, the error exit at `0xf0c104`),
+and a 648-byte header hits one inside the five-slot skill-experience grid — 664 of the 909 bytes it
+wants. Every field above it is already stored, so the screen came up populated and only what sits
+below was wrong: an empty comment and a zero where the stored total belongs. The grid and tail
+packets failed the same way, which is why the values the burst carries read as zero rather than as a
+shifted field. **A short payload here is not a hole; it moves every field below the shortfall.**
+
+### The guard
+
+`PersonalStatisticsPayloadBuilder` now asserts each of the three sizes and pins the offsets in tests
+(`PersonalStatisticsHeaderTests`, `PersonalStatisticsTitleTests`, `PersonalStatisticsSummaryRowTests`),
+so the disc and 1.36 shapes cannot be mixed silently again.
+
 ## Open
 
 - Whether 1.36 honours the `d/testhk` hostname override at all — the string is present, but presence

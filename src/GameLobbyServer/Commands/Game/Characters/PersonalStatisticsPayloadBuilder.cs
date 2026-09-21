@@ -8,8 +8,8 @@ using Mgo2Server.Shared.Utils;
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 
 /// <summary>
-/// Renders the three packets of the personal-stats burst: the record header, the
-/// mode matrices and the tail.
+/// Renders the record header and the tail of the personal-stats burst; the per-mode
+/// grid between them is built by <see cref="PersonalStatisticsMatrixBuilder"/>.
 /// <para>
 /// Every field is at a hand-computed offset the client's parsers read positionally,
 /// so each packet is padded to its fixed size and the assertions here exist to fail
@@ -18,32 +18,25 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 /// </summary>
 public static class PersonalStatisticsPayloadBuilder
 {
-    /// <summary>Exact size of the header packet.</summary>
-    private const int InfoSize = 0x288;
-
-    /// <summary>Exact size of the tail packet.</summary>
-    private const int TailSize = 0x24c;
-
-    /// <summary>Number of mode rows in a matrix.</summary>
-    private const int ModeRows = 8;
-
-    /// <summary>Number of columns in a mode row.</summary>
-    private const int StatColumns = 18;
-
-    /// <summary>Column carrying the score, the only signed one.</summary>
-    private const int ScoreColumn = 3;
-
-    /// <summary>Summary column carrying the play time.</summary>
-    private const int SummaryPlaySecondsColumn = 17;
+    /// <summary>
+    /// Exact size of the header packet: 648 on the disc build, 909 here.
+    /// <para>
+    /// The 1.36 client reads 261 bytes more. Two hundred and fifty-six of them are
+    /// the two relation grids, which it walks to 64 identifiers each instead of 32;
+    /// the remaining five are a trailing word and the feature byte the parser hands
+    /// to the same splitter the connect burst's 0x4101 feature byte goes through.
+    /// The size is asserted rather than implied because a short payload does not
+    /// leave a hole — it moves the comment and everything under it early, and the
+    /// parser abandons the packet part-way through.
+    /// </para>
+    /// </summary>
+    private const int InfoSize = 909;
 
     /// <summary>
-    /// Summary column carrying the total rewards. It is the cell the client's
-    /// character block holds at `T+0x484` — the player-details card's "TOTAL
-    /// REWARDS" figure — because the eighth wire block is the card's summary row,
-    /// not a game mode. It is deliberately not the level: the card derives that
-    /// from the experience the header carries.
+    /// Exact size of the tail packet: 660, the status word and two records of the
+    /// 82 slots the 1.36 parser's loop reads. The disc build's record holds 73.
     /// </summary>
-    private const int SummaryTotalRewardsColumn = 13;
+    private const int TailSize = 0x294;
 
     /// <summary>Rating-block entry carrying the title collection, a 22-bit mask.</summary>
     private const int TitleMaskEntry = 3;
@@ -54,8 +47,12 @@ public static class PersonalStatisticsPayloadBuilder
     /// <summary>Rating-block entry carrying the host rating denominator, the vote count.</summary>
     private const int HostRatingDenominatorEntry = 6;
 
-    /// <summary>Number of slots in one tail record.</summary>
-    private const int TailRecordSlots = 73;
+    /// <summary>
+    /// Number of slots in one tail record: 73 on the disc build, 82 here. The nine
+    /// the 1.36 client added are written as zeros, and every named slot below sits
+    /// before them, so its position is the same under either build.
+    /// </summary>
+    private const int TailRecordSlots = 82;
 
     /// <summary>Tail slot carrying the distinct students the character has graduated.</summary>
     private const int StudentsTrainedSlot = 36;
@@ -69,11 +66,20 @@ public static class PersonalStatisticsPayloadBuilder
     /// <summary>Tail slot carrying the seconds spent as a student.</summary>
     private const int StudentSecondsSlot = 48;
 
-    /// <summary>Number of identifiers in each relation array.</summary>
-    private const int RelationListIdentifiers = 32;
+    /// <summary>
+    /// Number of identifiers in each relation array. The 1.36 parser's two loops
+    /// run to 64 (`cmpdi cr6,r29,0x40`) where the disc build's run to 32, so each
+    /// grid is 256 bytes and every field after them sits 256 bytes later.
+    /// </summary>
+    private const int RelationListIdentifiers = 64;
 
-    /// <summary>Offset the comment starts at.</summary>
-    private const int CommentOffset = 413;
+    /// <summary>
+    /// Offset the comment starts at: 413 on the disc build, 669 here — the two
+    /// relation grids are 256 bytes wider, and nothing between them and the comment
+    /// changed size. The 1.36 parser reads the 128 bytes into the block's comment
+    /// slot, so a payload that keeps the disc offset leaves the screen blank.
+    /// </summary>
+    private const int CommentOffset = 669;
 
     /// <summary>The four dead 16-bit constants after the name.</summary>
     private static readonly byte[] CharacterInfoPrefix =
@@ -214,54 +220,18 @@ public static class PersonalStatisticsPayloadBuilder
         header.WriteUInt32((uint)instructorScore.Votes);
         header.WriteUInt32(0);
         header.WriteUInt32(0);
+        // The two fields the 1.36 build added below the instructor block: a word the
+        // disc build has no slot for, and the feature byte its parser hands to the
+        // same splitter the connect burst's 0x4101 feature byte goes through. The
+        // two packets therefore write that byte from one constant rather than each
+        // deciding for itself which flags the client may hold.
+        header.WriteUInt32(0);
+        header.WriteUInt8((byte)FeatureFlags.MainMenuFlags);
         Debug.Assert(
             header.Size <= InfoSize,
             "The personal-stats header grew past its fixed size; adjust the hand-computed layout.");
         header.WritePadding(InfoSize - header.Size);
         return header.Build();
-    }
-
-    /// <summary>
-    /// Builds one mode matrix.
-    /// <para>
-    /// The last row block is not a mode: it is the summary row the player-details
-    /// card reads, and only the cumulative page fills it, because the card reads
-    /// matrix zero and nothing is known to read the other.
-    /// </para>
-    /// </summary>
-    /// <param name="statistics">Statistics of the character, when it has any.</param>
-    /// <param name="page">Page selector: zero cumulative, one monthly.</param>
-    /// <param name="character">Character the matrix describes.</param>
-    public static byte[] BuildMatrix(CharacterStatistics? statistics, int page, Character character)
-    {
-        var matrix = new PacketWriter();
-        matrix.WriteUInt32(0);
-        matrix.WriteUInt32((uint)page);
-
-        for (var mode = 0; mode < ModeRows; mode++)
-        {
-            for (var column = 0; column < StatColumns; column++)
-            {
-                matrix.WriteUInt32(ReadStatistic(statistics, mode, column));
-            }
-        }
-
-        if (page != 0)
-        {
-            return matrix.Build();
-        }
-
-        // The summary row feeds the player-details card: play time and the
-        // character's total rewards.
-        var payload = matrix.Build();
-        var summaryBase = 8 + (ModeRows - 1) * StatColumns * 4;
-        var playSeconds = character.CreatedAt.ToUnixTimeSeconds() > 0 && statistics is not null ? statistics.TotalTime : 0;
-        BinaryUtility.WriteUInt32BigEndian(payload, summaryBase + SummaryPlaySecondsColumn * 4, (uint)playSeconds);
-        BinaryUtility.WriteUInt32BigEndian(
-            payload,
-            summaryBase + SummaryTotalRewardsColumn * 4,
-            (uint)character.TotalRewards);
-        return payload;
     }
 
     /// <summary>
@@ -301,42 +271,7 @@ public static class PersonalStatisticsPayloadBuilder
         return tail.Build();
     }
 
-    private static uint ReadStatistic(CharacterStatistics? statistics, int mode, int column)
-    {
-        if (statistics is null)
-        {
-            return 0;
-        }
-
-        var modeStatistics = statistics.ForMode(mode);
-        var values = new int[]
-        {
-            modeStatistics.Kills,
-            modeStatistics.Deaths,
-            modeStatistics.LockKills,
-            modeStatistics.Score,
-            modeStatistics.Stuns,
-            modeStatistics.StunsRec,
-            modeStatistics.HsKills,
-            modeStatistics.HsDeaths,
-            modeStatistics.HsStuns,
-            modeStatistics.HsStunsRec,
-            modeStatistics.LockStuns,
-            modeStatistics.LockDeaths,
-            modeStatistics.LockStunsRec,
-            modeStatistics.Score,
-            modeStatistics.Rounds,
-            0,
-            modeStatistics.Wins,
-            modeStatistics.Time,
-        };
-
-        var value = column < values.Length ? values[column] : 0;
-        // Column three carries the score, the only signed column.
-        return column == ScoreColumn ? unchecked((uint)value) : (uint)value;
-    }
-
-    /// <summary>Writes one seventy-three-slot record; the slot array is one-based, so index zero is skipped.</summary>
+    /// <summary>Writes one eighty-two-slot record; the slot array is one-based, so index zero is skipped.</summary>
     /// <param name="tail">Tail being built.</param>
     /// <param name="value">Value of a slot, zero for every slot not named.</param>
     private static void WriteTailRecord(PacketWriter tail, Func<int, long> value)

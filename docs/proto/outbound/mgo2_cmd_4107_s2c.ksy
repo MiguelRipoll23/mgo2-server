@@ -3,6 +3,10 @@ meta:
   title: "MGO2 0x4107 — personal scores (reply 4/4 of the 0x4102 burst, terminal)"
   endian: be
 doc: |
+  **This is the DISC BUILD's shape.** The 1.36 parser reads 82 slots per record, so its packet
+  is 660 bytes; see `docs/BUILD_1_36.md`, "the personal-stats burst was still the disc build's
+  layout".
+
   Two 73-slot u32 records with one shared layout: record 1 cumulative, record 2 weekly
   (the stats screen's cumulative/weekly toggle; [CONFIRMED fingerprint v9]). TERMINAL
   packet of the burst — its parser (0xd3db1c) unconditionally completes wait slot 0x16

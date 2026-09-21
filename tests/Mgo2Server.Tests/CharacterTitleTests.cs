@@ -53,14 +53,18 @@ public sealed class CharacterTitleMaskTests
 [Trait("Category", "GameLobby")]
 public sealed class PersonalStatisticsTitleTests
 {
-    /// <summary>Offset the worn-title byte is written at, right after the 128-byte comment.</summary>
-    private const int WornTitleOffset = 541;
+    /// <summary>
+    /// Offset the worn-title byte is written at, right after the 128-byte comment.
+    /// 256 past the disc build's 541, because the 1.36 client's relation grids are
+    /// 64 identifiers wide instead of 32.
+    /// </summary>
+    private const int WornTitleOffset = 797;
 
     /// <summary>Offset of rating-block entry 3, the title collection.</summary>
-    private const int TitleMaskOffset = 563;
+    private const int TitleMaskOffset = 819;
 
-    /// <summary>Fixed size of the header packet.</summary>
-    private const int HeaderSize = 0x288;
+    /// <summary>Fixed size of the header packet the 1.36 client reads.</summary>
+    private const int HeaderSize = 909;
 
     [Fact]
     public void The_worn_title_and_the_collection_land_at_their_offsets()

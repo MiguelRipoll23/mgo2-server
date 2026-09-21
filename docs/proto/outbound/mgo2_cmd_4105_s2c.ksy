@@ -3,6 +3,10 @@ meta:
   title: "MGO2 0x4105 — per-mode stat grid (replies 2/4 and 3/4 of the 0x4102 burst)"
   endian: be
 doc: |
+  **This is the DISC BUILD's shape.** The 1.36 parser walks eighteen row slots and steps over
+  six of them, so twelve rows (0..7, 12, 15, 16, 17) travel per packet instead of these eight;
+  see `docs/BUILD_1_36.md`, "the personal-stats burst was still the disc build's layout".
+
   The per-mode statistics matrix. Sent TWICE per 0x4102 burst: once with page 0
   (cumulative) and once with page 1 (weekly) — the stats screen's cumulative/weekly toggle
   switches between them [CONFIRMED, fingerprint v9]. Parser 0xd3e53c stores into

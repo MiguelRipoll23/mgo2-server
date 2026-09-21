@@ -29,8 +29,12 @@ public sealed class PersonalStatisticsSummaryRowTests
     /// <summary>Wire offset of the total-rewards cell.</summary>
     private const int TotalRewardsOffset = SummaryRowOffset + TotalRewardsColumn * 4;
 
-    /// <summary>Full size of a matrix payload.</summary>
-    private const int MatrixSize = 8 + 8 * StatColumns * 4;
+    /// <summary>
+    /// Full size of a matrix payload: the two header words and the twelve rows the
+    /// 1.36 parser walks. Its loop covers eighteen row slots and steps over six of
+    /// them, so the wire carries twelve rows where the disc build carries eight.
+    /// </summary>
+    private const int MatrixSize = 8 + 12 * StatColumns * 4;
 
     [Fact]
     public void The_summary_row_carries_the_characters_total_rewards()
@@ -44,7 +48,7 @@ public sealed class PersonalStatisticsSummaryRowTests
             CreatedAt = DateTimeOffset.FromUnixTimeSeconds(1),
         };
 
-        var payload = PersonalStatisticsPayloadBuilder.BuildMatrix(null, 0, character);
+        var payload = PersonalStatisticsMatrixBuilder.Build(null, 0, character);
 
         Assert.Equal(MatrixSize, payload.Length);
         Assert.Equal(1234u, BinaryUtility.ReadUInt32BigEndian(payload, TotalRewardsOffset));
@@ -66,7 +70,7 @@ public sealed class PersonalStatisticsSummaryRowTests
             CreatedAt = DateTimeOffset.FromUnixTimeSeconds(1),
         };
 
-        var payload = PersonalStatisticsPayloadBuilder.BuildMatrix(null, 0, character);
+        var payload = PersonalStatisticsMatrixBuilder.Build(null, 0, character);
 
         // The character's level is 20, so a cell still holding the level would
         // read 20 rather than the total rewards of 7.
@@ -86,7 +90,7 @@ public sealed class PersonalStatisticsSummaryRowTests
             CreatedAt = DateTimeOffset.FromUnixTimeSeconds(1),
         };
 
-        var payload = PersonalStatisticsPayloadBuilder.BuildMatrix(null, 1, character);
+        var payload = PersonalStatisticsMatrixBuilder.Build(null, 1, character);
 
         Assert.Equal(0u, BinaryUtility.ReadUInt32BigEndian(payload, TotalRewardsOffset));
         Assert.Equal(0u, BinaryUtility.ReadUInt32BigEndian(payload, SummaryRowOffset + PlaySecondsColumn * 4));
@@ -105,7 +109,7 @@ public sealed class PersonalStatisticsSummaryRowTests
         };
         var statistics = new CharacterStatistics { TotalTime = 60200 };
 
-        var payload = PersonalStatisticsPayloadBuilder.BuildMatrix(statistics, 0, character);
+        var payload = PersonalStatisticsMatrixBuilder.Build(statistics, 0, character);
 
         Assert.Equal(60200u, BinaryUtility.ReadUInt32BigEndian(payload, SummaryRowOffset + PlaySecondsColumn * 4));
         Assert.Equal(99u, BinaryUtility.ReadUInt32BigEndian(payload, TotalRewardsOffset));

@@ -4,6 +4,11 @@ meta:
   endian: be
   encoding: ISO-8859-1
 doc: |
+  **This is the DISC BUILD's shape.** The 1.36 client reads a different one — 64-identifier
+  relation grids instead of 32, the comment at wire 669 instead of 413, 909 bytes instead of
+  648 — and serving these offsets to it leaves the screen's comment empty. The 1.36 layout is
+  in `docs/BUILD_1_36.md`, "the personal-stats burst was still the disc build's layout".
+
   First reply to 0x4102 {u32 chara_id}. Fixed 648-byte (0x288) grid on success; a 4-byte
   error form (nonzero status, no body) makes the client error-complete wait slot 0x16 and
   skip the body (parser 0xd3e9ac, branch 0xd3ea38).

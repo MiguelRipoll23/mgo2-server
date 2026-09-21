@@ -10,8 +10,9 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 
 /// <summary>
 /// Serves the per-mode statistics grids: the record header, the two mode
-/// matrices and the tail that releases the client's wait slot. The layout of each
-/// packet lives in <see cref="PersonalStatisticsPayloadBuilder"/>.
+/// matrices and the tail that releases the client's wait slot. The layout of the
+/// header and the tail lives in <see cref="PersonalStatisticsPayloadBuilder"/>,
+/// and the grid's in <see cref="PersonalStatisticsMatrixBuilder"/>.
 /// </summary>
 /// <param name="characterService">Service that owns the character records.</param>
 /// <param name="statisticsService">Service that owns the lifetime statistics.</param>
@@ -92,12 +93,12 @@ public sealed class GetPersonalStatsHandler(
         await sessionHelper.SendPacketAsync(
             session,
             CommandConstants.GetPersonalStatsPage,
-            PersonalStatisticsPayloadBuilder.BuildMatrix(statistics, 0, character),
+            PersonalStatisticsMatrixBuilder.Build(statistics, 0, character),
             cancellationToken);
         await sessionHelper.SendPacketAsync(
             session,
             CommandConstants.GetPersonalStatsPage,
-            PersonalStatisticsPayloadBuilder.BuildMatrix(statistics, 1, character),
+            PersonalStatisticsMatrixBuilder.Build(statistics, 1, character),
             cancellationToken);
 
         // Both periods of each counter the tail carries. The training totals have no

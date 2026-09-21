@@ -23,8 +23,14 @@ public sealed class PersonalStatisticsHeaderTests
     /// <summary>Offset of the login recorded for the character.</summary>
     private const int LastLoginOffset = PreviousLoginOffset + 4;
 
-    /// <summary>Exact size of the header packet.</summary>
-    private const int InfoSize = 0x288;
+    /// <summary>Exact size of the header packet the 1.36 client reads.</summary>
+    private const int InfoSize = 909;
+
+    /// <summary>Offset the 128-byte comment starts at on the 1.36 client.</summary>
+    private const int CommentOffset = 669;
+
+    /// <summary>Offset the friend grid starts at.</summary>
+    private const int FriendGridOffset = 4 + 4 + 16 + 8 + 4 + 4 + 4 + 1;
 
     [Fact]
     public void The_header_carries_the_characters_experience_and_login_pair()
@@ -84,5 +90,66 @@ public sealed class PersonalStatisticsHeaderTests
 
         Assert.Equal(0u, BinaryUtility.ReadUInt32BigEndian(payload, PreviousLoginOffset));
         Assert.Equal(0u, BinaryUtility.ReadUInt32BigEndian(payload, LastLoginOffset));
+    }
+
+    /// <summary>
+    /// The comment has to land where the 1.36 parser reads it. Its two relation grids
+    /// are 64 identifiers wide where the disc build's are 32, so a payload built to the
+    /// disc offsets puts the comment 256 bytes early and the screen renders it empty —
+    /// which is what this pins.
+    /// </summary>
+    [Fact]
+    public void The_comment_lands_where_the_1_36_client_reads_it()
+    {
+        var character = new Character
+        {
+            Identifier = 2,
+            Name = "Someone",
+            Comment = "hi",
+            CreatedAt = DateTimeOffset.FromUnixTimeSeconds(1),
+        };
+
+        var payload = PersonalStatisticsPayloadBuilder.BuildHeader(
+            character,
+            2,
+            [],
+            [],
+            null,
+            null,
+            default,
+            default,
+            titleMask: 0);
+
+        Assert.Equal("hi", StringUtility.ReadFixedString(payload, CommentOffset, 128));
+    }
+
+    /// <summary>
+    /// A friend beyond the disc build's thirty-second slot still travels: the grid the
+    /// 1.36 client walks holds sixty-four.
+    /// </summary>
+    [Fact]
+    public void The_friend_grid_carries_more_than_thirty_two_identifiers()
+    {
+        var character = new Character
+        {
+            Identifier = 2,
+            Name = "Someone",
+            CreatedAt = DateTimeOffset.FromUnixTimeSeconds(1),
+        };
+        var friends = Enumerable.Range(5001, 40).ToList();
+
+        var payload = PersonalStatisticsPayloadBuilder.BuildHeader(
+            character,
+            2,
+            friends,
+            [],
+            null,
+            null,
+            default,
+            default,
+            titleMask: 0);
+
+        Assert.Equal(5001u, BinaryUtility.ReadUInt32BigEndian(payload, FriendGridOffset));
+        Assert.Equal(5040u, BinaryUtility.ReadUInt32BigEndian(payload, FriendGridOffset + (39 * 4)));
     }
 }
