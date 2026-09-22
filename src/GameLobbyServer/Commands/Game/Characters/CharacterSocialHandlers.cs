@@ -167,32 +167,75 @@ public sealed class SearchPlayerHandler(
     /// <summary>Length of the search query field.</summary>
     private const int SearchQueryLength = 16;
 
+    /// <summary>Size of the two toggles that precede the query.</summary>
+    private const int ToggleLength = 2;
+
+    /// <summary>
+    /// Maximum number of results. The client's own result table holds a hundred
+    /// entries and drops whatever is past them, so sending more would be work
+    /// the screen cannot draw.
+    /// </summary>
+    private const int MaximumResults = 100;
+
+    /// <summary>Entries per packet: 17 × 59 bytes of record is 1003, inside the payload.</summary>
+    private const int MaximumPerPacket = 17;
+
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        var reader = new PacketReader(packet.Payload);
-        var query = reader.ReadFixedString(SearchQueryLength);
+        // The request opens with two toggles and only then carries the name: a
+        // match-criteria byte, where zero asks for a substring and one for the whole
+        // name, then an ignore-case byte whose one is the ignoring value. Reading the
+        // name from the start of the payload takes the toggles as its first characters,
+        // and since the first is usually zero the term reads as empty and the screen
+        // comes back with nothing.
+        var query = string.Empty;
+        var fullMatch = false;
+        var ignoreCase = false;
 
+        if (packet.Payload.Length >= ToggleLength + SearchQueryLength)
+        {
+            var reader = new PacketReader(packet.Payload);
+            fullMatch = reader.ReadUInt8() != 0;
+            ignoreCase = reader.ReadUInt8() != 0;
+            query = reader.ReadFixedString(SearchQueryLength);
+        }
+
+        // The opening and closing packets carry a result word rather than a count, so
+        // the empty word here is success and the client counts the records itself.
         await sessionHelper.SendStartEndPacketAsync(session, CommandConstants.SearchPlayerStart, cancellationToken);
 
         if (query.Length > 0)
         {
-            var character = await characterService.FindByNameAsync(query, cancellationToken);
-            if (character is not null)
-            {
-                var locations = await presenceService.FindLocationsAsync(
-                    [character.Identifier],
-                    cancellationToken);
+            var matches = await characterService.SearchAsync(
+                query,
+                fullMatch,
+                ignoreCase,
+                MaximumResults,
+                cancellationToken);
 
+            // One query for the whole result set rather than one per row: a search
+            // returns up to a hundred characters, and asking per row would be a
+            // hundred round trips to draw one screen.
+            var locations = await presenceService.FindLocationsAsync(
+                [.. matches.Select(character => character.Identifier)],
+                cancellationToken);
+
+            for (var offset = 0; offset < matches.Count; offset += MaximumPerPacket)
+            {
+                var page = matches.Skip(offset).Take(MaximumPerPacket).ToList();
                 var writer = new PacketWriter();
-                writer.WriteUInt32((uint)character.Identifier);
-                writer.WriteFixedString(character.Name, 16);
-                // The tail is the same location block the friend roster carries, and
-                // it is the only tail the record has: a searched player connected to
-                // any lobby is reported where they are, and one who is not connected
-                // gets the empty block, which the client draws as a blank row rather
-                // than dropping the result.
-                CharacterLocationWriter.Write(writer, locations.GetValueOrDefault(character.Identifier));
+                foreach (var character in page)
+                {
+                    writer.WriteUInt32((uint)character.Identifier);
+                    writer.WriteFixedString(character.Name, 16);
+                    // The tail is the same location block the friend roster carries, and
+                    // it is the only tail the record has: a searched player connected to
+                    // any lobby is reported where they are, and one who is not connected
+                    // gets the empty block, which the client draws as a blank row rather
+                    // than dropping the result.
+                    CharacterLocationWriter.Write(writer, locations.GetValueOrDefault(character.Identifier));
+                }
 
                 await sessionHelper.SendPacketAsync(session, CommandConstants.SearchPlayerPage, writer.Build(), cancellationToken);
             }
