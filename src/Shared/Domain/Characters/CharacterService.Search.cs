@@ -31,7 +31,9 @@ public sealed partial class CharacterService
     /// </summary>
     /// <param name="name">Term to match against character names.</param>
     /// <param name="fullMatch">Whether the term has to be the whole name rather than a fragment.</param>
-    /// <param name="ignoreCase">Whether the match ignores letter case; the client's own polarity is 1 = ignore.</param>
+    /// <param name="ignoreCase">Whether the match ignores letter case. The client's second toggle is
+    /// the case-SENSITIVE flag: it sends zero for the screen's "Case Insensitive" option, so the
+    /// caller inverts it before arriving here.</param>
     /// <param name="limit">Maximum number of characters to return.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<List<Character>> SearchAsync(

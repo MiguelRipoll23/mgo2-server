@@ -6,67 +6,63 @@ using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 
-/// <summary>Serves another character's card.</summary>
+/// <summary>
+/// Serves another character's card: the reply to the player-details request (<c>0x4220</c>).
+/// A character that no longer exists gets the client's own deleted code rather than a card
+/// built from whatever the row still holds — see <see cref="CharacterCardPayloadBuilder"/>.
+/// </summary>
 /// <param name="characterService">Service that owns the character records.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class GetCharacterCardHandler(
     CharacterService characterService,
     SessionHelper sessionHelper) : ICommandHandler
 {
-    /// <summary>Exact size of the card payload.</summary>
-    private const int CardBufferSize = 207;
-
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         var reader = new PacketReader(packet.Payload);
-        var targetIdentifier = (int)reader.ReadUInt32();
+        if (reader.Remaining < sizeof(uint))
+        {
+            // A request that names nobody gets the generic refusal, never the deleted one:
+            // a truncated packet is this side's fault, and the client would print it as the
+            // player's character having been deleted — a specific lie in place of a vague
+            // truth. The client's code for a character that is not there is -266.
+            await sessionHelper.SendPacketAsync(
+                session,
+                CommandConstants.GetCharacterCardResult,
+                CharacterCardPayloadBuilder.BuildResult(ErrorCodeConstants.ResultGeneral),
+                cancellationToken);
+            return;
+        }
 
+        var targetIdentifier = (int)reader.ReadUInt32();
         var character = targetIdentifier > 0
             ? await characterService.FindByIdAsync(targetIdentifier, cancellationToken)
             : null;
-        var clan = targetIdentifier > 0
-            ? await characterService.GetClanInformationAsync(targetIdentifier, cancellationToken)
-            : null;
 
-        var experience = character?.Experience ?? 0;
-        // Wire 0x1e is the client's total_rewards slot, the card's bit-2-gated
-        // "TOTAL REWARDS" figure. It is the character's own reward total and not
-        // the round score, which is what used to land here.
-        var totalRewards = character?.TotalRewards ?? 0;
-        var hasClan = clan is not null;
-        var clanTag = hasClan ? $";{clan!.ClanName}" : string.Empty;
-
-        var writer = new PacketWriter();
-        writer.WriteUInt32(0);
-        writer.WriteUInt32((uint)targetIdentifier);
-        writer.WriteFixedString(character?.Name ?? string.Empty, 16);
-        writer.WriteUInt16(0);
-        writer.WriteUInt16(experience);
-        writer.WriteUInt16(0);
-        writer.WriteUInt32((uint)totalRewards);
-        writer.WriteUInt32(0);
-        writer.WriteUInt8(0);
-        writer.WriteFixedString(character?.Comment ?? string.Empty, 127);
-        writer.WriteUInt16(0);
-        writer.WriteUInt8(0);
-        writer.WriteUInt8(hasClan ? 0x12 : 0x00);
-        writer.WriteFixedString(clanTag, 13);
-        writer.WriteUInt8(0);
-        writer.WriteUInt32(hasClan ? 1u : 0u);
-        writer.WriteUInt32(0);
-        writer.WriteUInt32(0);
-        writer.WriteUInt8(hasClan && clan!.HasEmblem ? 3 : 0);
-        writer.WriteUInt32((uint)experience);
-        writer.WriteUInt32(0x0F00);
-        writer.WriteUInt16(0x0100);
-
-        if (writer.Size < CardBufferSize)
+        // A deleted character keeps its row: the soft delete clears the active flag and
+        // renames the character, so the lookup finds one and the flag is the only thing that
+        // says it is no longer a player. Both a deleted character and an identifier that was
+        // never issued get the client's own "has been deleted and no longer exists" — the
+        // one value it renders as a sentence of its own, so a stale roster row or a search
+        // result from before the deletion says something true rather than "unable to
+        // acquire character information" over an empty card.
+        if (character is null || !character.Active)
         {
-            writer.WritePadding(CardBufferSize - writer.Size);
+            await sessionHelper.SendPacketAsync(
+                session,
+                CommandConstants.GetCharacterCardResult,
+                CharacterCardPayloadBuilder.BuildResult(ErrorCodeConstants.ResultCharacterGone),
+                cancellationToken);
+            return;
         }
 
-        await sessionHelper.SendPacketAsync(session, CommandConstants.GetCharacterCardResult, writer.Build(), cancellationToken);
+        var clan = await characterService.GetClanInformationAsync(targetIdentifier, cancellationToken);
+        await sessionHelper.SendPacketAsync(
+            session,
+            CommandConstants.GetCharacterCardResult,
+            CharacterCardPayloadBuilder.Build(character, targetIdentifier, clan),
+            cancellationToken);
     }
 }
 

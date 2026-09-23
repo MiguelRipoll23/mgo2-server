@@ -7,6 +7,14 @@ doc: |
   0xD467C0 (ends 0xD469BC), dispatcher stub 0xD39350. PROTOCOL.md records 59-byte records with
   "only id and name of known meaning"; the ELF confirms the widths and the order.
 
+  **THIS IS THE DISC BUILD'S RECORD. 1.36 DELETED `lobby_name` AND ITS ENTRY IS 43 BYTES.**
+  1.36's parser is `0xF14570` and reads `u32 id, 16B name, u16 lobby_id, u32 game_id,
+  16B game_name, u8` into the same struct slots with `0x18` left zeroed; its cap is 64, not 32.
+  Serving this 59-byte entry to a 1.36 client shifts every record after it and grows a blank
+  row — see `docs/BUILD_1_36.md`, "the friend/blocked roster entry is 43 bytes on 1.36". The
+  table below describes the disc build only; the server writes whichever the configured client
+  version reads.
+
   **THE TAIL IS A LOCATION BLOCK — NAMED 2026-07-31 (batch 3b).** The last five fields are
   `{lobby_id, lobby_name, game_id, game_name, lobby_type}` — where the player currently is. Every
   one has a renderer; see each field. The evidence stack, weakest to strongest:
@@ -87,7 +95,10 @@ seq:
       cursor and the client keeps the running count itself.
 types:
   entry:
-    doc: "59 bytes on the wire, 68 in the client struct."
+    doc: |
+      59 bytes on the wire, 68 in the client struct — **on the disc build**. 1.36 drops
+      `lobby_name` and the entry is 43 bytes; see the top-level doc and
+      `docs/BUILD_1_36.md`.
     seq:
       - id: chara_id
         type: u4
