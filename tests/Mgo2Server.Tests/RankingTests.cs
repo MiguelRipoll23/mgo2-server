@@ -126,6 +126,23 @@ public sealed class RankingBodyUtilityTests
         Assert.Equal(0, field[15]);
     }
 
+    /// <summary>
+    /// The reply is serialised in the clear and then scrambled, and the service
+    /// runs those two steps itself so it can log between them. This pins the two
+    /// paths together: <see cref="RankingBodyUtils.EncodeClear"/> scrambled by
+    /// hand is what <see cref="RankingBodyUtils.Encode"/> hands the client.
+    /// </summary>
+    [Fact]
+    public void EncodeClear_is_the_stage_before_the_scramble()
+    {
+        var page = new RankingPage([new RankingEntry(1, 42, "Snake", 900)], Total: 1);
+
+        var clear = RankingBodyUtils.EncodeClear(page);
+        RankingScrambleUtils.Apply(clear);
+
+        Assert.Equal(RankingBodyUtils.Encode(page), clear);
+    }
+
     /// <summary>Reverses the scramble and reads the header back.</summary>
     /// <param name="page">Window to serialise.</param>
     private static Reply Decode(RankingPage page)

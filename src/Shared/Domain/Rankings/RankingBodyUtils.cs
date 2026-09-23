@@ -36,9 +36,22 @@ public static class RankingBodyUtils
     /// </summary>
     private const int MaximumNameLength = NameSize - 1;
 
-    /// <summary>Serialises a board window and scrambles it.</summary>
+    /// <summary>Serialises a board window and scrambles it into the wire reply.</summary>
     /// <param name="page">Window to serialise.</param>
     public static byte[] Encode(RankingPage page)
+    {
+        var body = EncodeClear(page);
+        RankingScrambleUtils.Apply(body);
+        return body;
+    }
+
+    /// <summary>
+    /// Serialises a board window in the clear: the stage before the scramble. It is
+    /// split out of <see cref="Encode"/> so a caller that has to observe the bytes
+    /// before and after the scramble can run the two steps itself.
+    /// </summary>
+    /// <param name="page">Window to serialise.</param>
+    public static byte[] EncodeClear(RankingPage page)
     {
         var body = new byte[HeaderSize + (RecordSize * page.Entries.Count)];
 
@@ -56,7 +69,6 @@ public static class RankingBodyUtils
             offset += RecordSize;
         }
 
-        RankingScrambleUtils.Apply(body);
         return body;
     }
 
