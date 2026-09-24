@@ -129,28 +129,44 @@ public sealed class SearchClanHandler(
     ClanService clanService,
     SessionHelper sessionHelper) : ICommandHandler
 {
+    /// <summary>Length of the search query field.</summary>
+    private const int SearchQueryLength = 16;
+
+    /// <summary>Size of the two toggles that precede the query.</summary>
+    private const int ToggleLength = 2;
+
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
+        // The request carries the same two search settings the player search sends,
+        // in the same order and with the same polarity: a match-criteria byte, where
+        // zero asks for a partial match and one for the whole name, then a case byte
+        // whose one is CASE SENSITIVE and whose zero is the ignoring value. Reading
+        // the name from the start of the payload would take the toggles as its first
+        // characters, so the toggles have to be consumed first.
         var query = string.Empty;
         var exactOnly = false;
+        var ignoreCase = false;
 
-        if (packet.Payload.Length >= 18)
+        if (packet.Payload.Length >= ToggleLength + SearchQueryLength)
         {
             var reader = new PacketReader(packet.Payload);
             exactOnly = reader.ReadUInt8() != 0;
-            reader.Skip(1);
-            query = reader.ReadFixedString(16);
+            ignoreCase = reader.ReadUInt8() == 0;
+            query = reader.ReadFixedString(SearchQueryLength);
         }
 
         await sessionHelper.SendStartEndPacketAsync(session, CommandConstants.SearchClanStart, cancellationToken);
 
         if (query.Length > 0)
         {
+            var comparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
             var allWithLeader = await clanService.FindAllWithLeaderAsync(cancellationToken: cancellationToken);
-            var clans = exactOnly
-                ? allWithLeader.Where(clan => clan.ClanName == query).ToList()
-                : allWithLeader.Where(clan => clan.ClanName.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+            var clans = allWithLeader
+                .Where(clan => exactOnly
+                    ? clan.ClanName.Equals(query, comparison)
+                    : clan.ClanName.Contains(query, comparison))
+                .ToList();
 
             for (var offset = 0; offset < clans.Count; offset += ClanEntryWriter.MaximumPerPacket)
             {
