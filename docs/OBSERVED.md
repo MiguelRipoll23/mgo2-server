@@ -5030,3 +5030,35 @@ Only that last one survived scrutiny.
 The create-game initialiser writes `std r9,1032(r31)` at `0x89B620` — a **64-bit** store covering
 struct `924`..`931`. Our notes describe a 32-bit flags word at `+928`. Same low byte, wider
 container; only bytes 929, 930 and 931 reach the wire (`0x142`, `0x143`, `0x144`).
+
+## The clan application list was a query that never compiled — 2026-09-24
+
+**CONFIRMED FIXED.** Opening Clan Affiliation as a clan leader failed with *Unable to acquire clan
+entry application list* (**`197E:FFFFFF60`**), and the lobby log for that session holds one `0x4821`
+and no `0x4822` or `0x4823` — the reply stopped after its opening marker, so the screen waited out
+the usual forty seconds.
+
+The request is mail, exactly as the "applicants are a roster concept" footnote says: `0x4820` with
+selector `0x10`. What the log adds is the half that footnote could not: the server *reached* the
+list and threw while answering it.
+
+```
+[tcp:survival_hosts] 0x4820 handler failed auth=ok accountId=3 characterId=2 lobbyId=2 gameId=none payload=10
+System.InvalidOperationException: No coercion operator is defined between types
+    'System.DateTimeOffset' and 'System.Nullable`1[System.DateTime]'.
+    at ...RelationalShapedQueryCompilingExpressionVisitor.ShaperProcessingExpressionVisitor.CreateGetValueExpression
+    at Mgo2Server.Shared.Domain.Clans.ClanService.GetApplicantsAsync
+```
+
+`clan_applications.applied_at` is `timestamp with time zone`, so the provider reads it as a
+`DateTimeOffset`, and the projection asked for `application.AppliedAt.UtcDateTime` — a conversion the
+provider has no translation for. It fails while the query is **compiled**, before a connection is
+opened, which is why it fires for every leader whose clan has *no* applications at all: nothing was
+ever being waited on that an empty table could explain. `ClanApplicant.AppliedAt` now carries the
+`DateTimeOffset` the column stores, and the epoch the mail list renders comes from
+`ToUnixTimeSeconds()` after the rows are read — the route `MailEntry.SentAtEpoch` already takes.
+
+The transferable part is the shape of the failure, not the type. A `FFFFFF60` means a reply never
+arrived, and "the handler threw" and "the command was unknown" look identical to the client. The
+handler-failure line above the stack trace is the one that separates them, and it is the line to read
+before assuming the command is unimplemented.

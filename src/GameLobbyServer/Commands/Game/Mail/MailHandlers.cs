@@ -200,7 +200,7 @@ public sealed class GetMessagesHandler(
                     application.Name,
                     string.Empty,
                     string.Empty,
-                    new DateTimeOffset(DateTime.SpecifyKind(application.AppliedAt, DateTimeKind.Utc)).ToUnixTimeSeconds(),
+                    application.AppliedAt.ToUnixTimeSeconds(),
                     false,
                     false))));
             }
