@@ -105,6 +105,35 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
     /// <summary>Which lobby each character is in right now.</summary>
     public DbSet<CharacterPresence> CharacterPresence => Set<CharacterPresence>();
 
+    /// <summary>Teams formed on the event screens.</summary>
+    public DbSet<EventTeam> EventTeams => Set<EventTeam>();
+
+    /// <summary>Roster slots of the event teams.</summary>
+    public DbSet<EventTeamMember> EventTeamMembers => Set<EventTeamMember>();
+
+    /// <summary>Pairings of two event teams.</summary>
+    public DbSet<EventMatch> EventMatches => Set<EventMatch>();
+
+    /// <summary>Gameplay rooms leased to event matches.</summary>
+    public DbSet<EventHostLease> EventHostLeases => Set<EventHostLease>();
+
+    /// <summary>Rewards paid for completed event matches.</summary>
+    public DbSet<EventRoundReward> EventRoundRewards => Set<EventRoundReward>();
+
+    /// <summary>Reserved and registered Tournament places.</summary>
+    public DbSet<EventStatReport> EventStatReports => Set<EventStatReport>();
+
+    public DbSet<TournamentRegistration> TournamentRegistrations => Set<TournamentRegistration>();
+
+    /// <summary>Seeded Tournament brackets.</summary>
+    public DbSet<TournamentBracket> TournamentBrackets => Set<TournamentBracket>();
+
+    /// <summary>Entrants of a Tournament bracket.</summary>
+    public DbSet<TournamentSeed> TournamentSeeds => Set<TournamentSeed>();
+
+    /// <summary>Played Tournament fixtures.</summary>
+    public DbSet<TournamentResult> TournamentResults => Set<TournamentResult>();
+
     /// <summary>Maps every entity onto its table.</summary>
     /// <param name="modelBuilder">Model being built.</param>
     protected override void OnModelCreating(ModelBuilder modelBuilder)

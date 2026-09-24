@@ -21,6 +21,7 @@ internal static partial class EntityModelConfiguration
         ConfigureMail(modelBuilder);
         ConfigureMatchHistory(modelBuilder);
         ConfigureInstructors(modelBuilder);
+        ConfigureEvents(modelBuilder);
         ColumnDefaultConfiguration.Apply(modelBuilder);
     }
 }

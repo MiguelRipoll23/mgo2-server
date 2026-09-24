@@ -1413,6 +1413,343 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     b.ToTable("clans_members");
                 });
 
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventHostLease", b =>
+                {
+                    b.Property<int>("Identifier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Identifier"));
+
+                    b.Property<int>("ActiveStateIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("active_state_id");
+
+                    b.Property<int>("ActiveStateSequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("active_state_sequence");
+
+                    b.Property<int>("GameIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("game_id");
+
+                    b.Property<DateTimeOffset>("LeasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("leased_at");
+
+                    b.Property<int>("LobbyIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("lobby_id");
+
+                    b.Property<int>("LobbySubtype")
+                        .HasColumnType("integer")
+                        .HasColumnName("lobby_subtype");
+
+                    b.Property<int>("MatchIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("match_id");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Identifier");
+
+                    b.HasIndex("GameIdentifier")
+                        .IsUnique()
+                        .HasFilter("status = 1");
+
+                    b.HasIndex("MatchIdentifier")
+                        .IsUnique();
+
+                    b.ToTable("event_host_leases");
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventMatch", b =>
+                {
+                    b.Property<int>("Identifier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Identifier"));
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("FirstTeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("first_team_id");
+
+                    b.Property<int>("LobbyIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("lobby_id");
+
+                    b.Property<int>("MatchType")
+                        .HasColumnType("integer")
+                        .HasColumnName("match_type");
+
+                    b.Property<int>("SecondTeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("second_team_id");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer")
+                        .HasColumnName("state");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int?>("WinnerTeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("winner_team_id");
+
+                    b.HasKey("Identifier");
+
+                    b.HasIndex("FirstTeamIdentifier")
+                        .IsUnique()
+                        .HasFilter("state in (1, 2)");
+
+                    b.HasIndex("LobbyIdentifier");
+
+                    b.HasIndex("SecondTeamIdentifier")
+                        .IsUnique()
+                        .HasFilter("state in (1, 2)");
+
+                    b.ToTable("event_matches");
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventRoundReward", b =>
+                {
+                    b.Property<int>("Identifier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Identifier"));
+
+                    b.Property<int>("CharacterIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("character_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsParticipation")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_participation");
+
+                    b.Property<int>("MatchIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("match_id");
+
+                    b.Property<int>("Reward")
+                        .HasColumnType("integer")
+                        .HasColumnName("reward");
+
+                    b.Property<int>("TeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("team_id");
+
+                    b.HasKey("Identifier");
+
+                    b.HasIndex("MatchIdentifier", "CharacterIdentifier")
+                        .IsUnique();
+
+                    b.ToTable("event_round_rewards");
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventStatReport", b =>
+                {
+                    b.Property<int>("Identifier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Identifier"));
+
+                    b.Property<bool>("Aborted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("aborted");
+
+                    b.Property<int>("CharacterIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("character_id");
+
+                    b.Property<int>("Deaths")
+                        .HasColumnType("integer")
+                        .HasColumnName("deaths");
+
+                    b.Property<int>("Kills")
+                        .HasColumnType("integer")
+                        .HasColumnName("kills");
+
+                    b.Property<int>("MatchIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("match_id");
+
+                    b.Property<DateTimeOffset>("ReportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at");
+
+                    b.Property<int>("RoundsWon")
+                        .HasColumnType("integer")
+                        .HasColumnName("rounds_won");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("integer")
+                        .HasColumnName("score");
+
+                    b.Property<int>("TeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("team_id");
+
+                    b.HasKey("Identifier");
+
+                    b.HasIndex("MatchIdentifier");
+
+                    b.HasIndex("MatchIdentifier", "CharacterIdentifier")
+                        .IsUnique();
+
+                    b.ToTable("event_stat_reports");
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventTeam", b =>
+                {
+                    b.Property<int>("Identifier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Identifier"));
+
+                    b.Property<string>("Comment")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("comment");
+
+                    b.Property<int>("ConsecutiveWins")
+                        .HasColumnType("integer")
+                        .HasColumnName("consecutive_wins");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("EventIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_id");
+
+                    b.Property<int>("FlagBits")
+                        .HasColumnType("integer")
+                        .HasColumnName("flag_bits");
+
+                    b.Property<int>("LobbyIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("lobby_id");
+
+                    b.Property<int>("MatchType")
+                        .HasColumnType("integer")
+                        .HasColumnName("match_type");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("OwnerCharacterIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("owner_character_id");
+
+                    b.Property<int>("PaidReward")
+                        .HasColumnType("integer")
+                        .HasColumnName("paid_reward");
+
+                    b.Property<string>("Password")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("password");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer")
+                        .HasColumnName("state");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Identifier");
+
+                    b.HasIndex("LobbyIdentifier", "MatchType");
+
+                    b.ToTable("event_teams");
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventTeamMember", b =>
+                {
+                    b.Property<int>("TeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("team_id");
+
+                    b.Property<int>("Slot")
+                        .HasColumnType("integer")
+                        .HasColumnName("slot");
+
+                    b.Property<int>("CharacterIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("character_id");
+
+                    b.Property<int>("Experience")
+                        .HasColumnType("integer")
+                        .HasColumnName("experience");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer")
+                        .HasColumnName("state");
+
+                    b.HasKey("TeamIdentifier", "Slot");
+
+                    b.HasIndex("TeamIdentifier", "CharacterIdentifier")
+                        .IsUnique();
+
+                    b.ToTable("event_team_members");
+                });
+
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.Game", b =>
                 {
                     b.Property<int>("Identifier")
@@ -2217,6 +2554,144 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     b.ToTable("round_weapon_stats");
                 });
 
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.TournamentBracket", b =>
+                {
+                    b.Property<int>("EventIdentifier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("event_id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("EventIdentifier"));
+
+                    b.Property<int?>("ChampionTeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("champion_team_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("CurrentRound")
+                        .HasColumnType("integer")
+                        .HasColumnName("current_round");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("EventIdentifier");
+
+                    b.ToTable("tournament_brackets");
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.TournamentRegistration", b =>
+                {
+                    b.Property<int>("Identifier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Identifier"));
+
+                    b.Property<int>("CharacterIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("character_id");
+
+                    b.Property<int>("EventIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_id");
+
+                    b.Property<DateTimeOffset>("ReservedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reserved_at");
+
+                    b.Property<int>("SlotIndex")
+                        .HasColumnType("integer")
+                        .HasColumnName("slot_index");
+
+                    b.Property<int?>("TeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("team_id");
+
+                    b.HasKey("Identifier");
+
+                    b.HasIndex("EventIdentifier", "CharacterIdentifier")
+                        .IsUnique();
+
+                    b.ToTable("tournament_registrations");
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.TournamentResult", b =>
+                {
+                    b.Property<int>("Identifier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Identifier"));
+
+                    b.Property<int>("EventIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_id");
+
+                    b.Property<int>("FirstTeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("first_team_id");
+
+                    b.Property<int>("MatchIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("match_id");
+
+                    b.Property<DateTimeOffset>("ReportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at");
+
+                    b.Property<int>("RoundIndex")
+                        .HasColumnType("integer")
+                        .HasColumnName("round_index");
+
+                    b.Property<int>("SecondTeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("second_team_id");
+
+                    b.Property<int>("WinnerTeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("winner_team_id");
+
+                    b.HasKey("Identifier");
+
+                    b.HasIndex("EventIdentifier", "MatchIdentifier")
+                        .IsUnique();
+
+                    b.ToTable("tournament_results");
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.TournamentSeed", b =>
+                {
+                    b.Property<int>("EventIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_id");
+
+                    b.Property<int>("SeedIndex")
+                        .HasColumnType("integer")
+                        .HasColumnName("seed_index");
+
+                    b.Property<int>("TeamIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("team_id");
+
+                    b.HasKey("EventIdentifier", "SeedIndex");
+
+                    b.HasIndex("EventIdentifier", "TeamIdentifier")
+                        .IsUnique();
+
+                    b.ToTable("tournament_seeds");
+                });
+
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.TrainingTime", b =>
                 {
                     b.Property<int>("CharacterIdentifier")
@@ -2509,6 +2984,26 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     b.Navigation("Clan");
                 });
 
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventHostLease", b =>
+                {
+                    b.HasOne("Mgo2Server.Shared.Persistence.Entities.Game", null)
+                        .WithMany()
+                        .HasForeignKey("GameIdentifier")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventTeamMember", b =>
+                {
+                    b.HasOne("Mgo2Server.Shared.Persistence.Entities.EventTeam", "Team")
+                        .WithMany("Members")
+                        .HasForeignKey("TeamIdentifier")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Team");
+                });
+
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.Game", b =>
                 {
                     b.HasOne("Mgo2Server.Shared.Persistence.Entities.Character", "Host")
@@ -2688,6 +3183,17 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     b.Navigation("Game");
                 });
 
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.TournamentSeed", b =>
+                {
+                    b.HasOne("Mgo2Server.Shared.Persistence.Entities.TournamentBracket", "Bracket")
+                        .WithMany()
+                        .HasForeignKey("EventIdentifier")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Bracket");
+                });
+
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.TrainingTime", b =>
                 {
                     b.HasOne("Mgo2Server.Shared.Persistence.Entities.Character", "Character")
@@ -2712,6 +3218,11 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.Clan", b =>
+                {
+                    b.Navigation("Members");
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventTeam", b =>
                 {
                     b.Navigation("Members");
                 });

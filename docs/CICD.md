@@ -171,8 +171,34 @@ Known-flaky tests carry two traits — their service, and `Flaky`:
 ```csharp
 [Trait("Category", "Shared")]
 [Trait("Category", "Flaky")]
-public sealed class PeriodicWorkerTests
+public sealed class SomeTimingDependentTests
 ```
+
+Nothing is quarantined at the moment. The trait is kept documented because the
+job below is what a quarantined test needs, and the way out of quarantine is
+worth writing down while it is fresh.
+
+### The quarantine this had, and how it was left
+
+`PeriodicWorkerTests` carried the trait for a while. The tests were not timing
+out; they were measuring the wrong machine. They watched the **gaps between the
+worker's runs**, and a gap is the wait the worker chose *plus* however long the
+test host took to get back to the thread — so an upper bound on a gap is a bound
+on the machine's load, and it failed under load while the worker paced itself
+perfectly.
+
+The fix was not a longer patience. `PeriodicWorker.ResolveWait` is
+`protected virtual`, so the probe worker records the waits it **resolved**, and
+the assertions moved onto those: a wait is at least the interval and at most it
+plus the drift, and it grew while failing and came back once the run succeeded.
+Those are the claims the test was always trying to make, and the load is no
+longer part of them. The trait came off with the fix, as the paragraph above
+asks.
+
+Where a gap *is* the right measure, it is only safe as a **lower** bound:
+`Waits_after_a_run_that_took_longer_than_its_interval` asserts a gap is at least
+the run plus its interval, which load can inflate but never shrink. An upper
+bound on a wall-clock gap has no such refuge.
 
 The service category decides *which* pipelines run the test; the `Flaky`
 category decides that it never gates one. Each pipeline's `test` job excludes
@@ -182,7 +208,8 @@ them (`--filter "<service> & Category!=Flaky"`), and a separate, non-blocking
 cannot stop a deploy.
 
 To quarantine a test, add the trait. To release one, remove it and let it run in
-the gating job again.
+the gating job again — a quarantined test that stays quarantined is a claim
+nobody is checking.
 
 ## Tests are partitioned by trait, not by project
 

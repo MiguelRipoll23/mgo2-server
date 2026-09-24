@@ -37,6 +37,8 @@ public sealed class GameLobbyServerRunner(
     private GameCleanupService? gameCleanup;
     private AutomatchTickerService? automatch;
     private CharacterPresenceTickerService? presenceTicker;
+    private EventOutcomeTickerService? outcomeTicker;
+    private EventAssignmentTickerService? assignmentTicker;
     private CharacterPresenceCleanupService? presenceCleanup;
 
     /// <summary>
@@ -132,6 +134,8 @@ public sealed class GameLobbyServerRunner(
         gameCleanup = serviceProvider.GetRequiredService<GameCleanupService>();
         automatch = serviceProvider.GetRequiredService<AutomatchTickerService>();
         presenceTicker = serviceProvider.GetRequiredService<CharacterPresenceTickerService>();
+        outcomeTicker = serviceProvider.GetRequiredService<EventOutcomeTickerService>();
+        assignmentTicker = serviceProvider.GetRequiredService<EventAssignmentTickerService>();
         presenceCleanup = serviceProvider.GetRequiredService<CharacterPresenceCleanupService>();
         heartbeat.StartFor(lobby.Identifier);
         cleanup.Start();
@@ -140,6 +144,16 @@ public sealed class GameLobbyServerRunner(
         // Bound to this lobby so a missing row can be recorded again under the right
         // one: the ticker heals the rows it owns.
         presenceTicker.StartFor(lobby.Identifier);
+
+        // The event sweep decides matches whose reports have settled. It is bound
+        // to this lobby for the same reason the others are: a match belongs to one
+        // lobby, and the sessions its outcome is pushed to are this lobby's.
+        outcomeTicker.StartFor(lobby.Identifier);
+
+        // The assignment sweep looks for a room for every match that is waiting
+        // for one, and it is told this lobby's mode because a host is dedicated
+        // to one mode and may not host another.
+        assignmentTicker.StartFor(lobby.Identifier, lobby.SubtypeIdentifier);
 
         // The daily sweeps do not run on start — they wait for midnight UTC — so
         // starting them here only arms them. The rows they are for are the ones a
@@ -199,6 +213,18 @@ public sealed class GameLobbyServerRunner(
         {
             await presenceTicker.StopAsync();
             presenceTicker = null;
+        }
+
+        if (outcomeTicker is not null)
+        {
+            await outcomeTicker.StopAsync();
+            outcomeTicker = null;
+        }
+
+        if (assignmentTicker is not null)
+        {
+            await assignmentTicker.StopAsync();
+            assignmentTicker = null;
         }
 
         if (presenceCleanup is not null)

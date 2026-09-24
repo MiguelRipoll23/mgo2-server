@@ -56,6 +56,24 @@ public sealed class TcpSession
     public int? GameIdentifier { get; set; }
 
     /// <summary>
+    /// Event team the connection currently belongs to, when it belongs to one.
+    /// Only routing context: the team itself lives in the database, so this is
+    /// how a roster push finds the sockets of a team without making the team
+    /// itself resident in one process.
+    /// </summary>
+    public int? EventTeamIdentifier { get; set; }
+
+    /// <summary>
+    /// Event whose detail the connection last opened. It is routing context for
+    /// the commands that follow a detail screen and carry no event of their own,
+    /// such as entering the event: the client states which screen it is on by the
+    /// order it asks in, so the server has to remember that order rather than
+    /// requiring the identifier again. It is cleared whenever the connection's
+    /// event routing changes, so it can never be carried across events.
+    /// </summary>
+    public int? SelectedEventIdentifier { get; set; }
+
+    /// <summary>
     /// Set once a handler has decided the connection should end. A handler
     /// returns nothing, so this is how the disconnect command reaches the read
     /// loop that owns the socket: dispatch stops as soon as the handler returns.

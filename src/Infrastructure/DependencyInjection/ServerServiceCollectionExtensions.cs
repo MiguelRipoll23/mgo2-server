@@ -3,6 +3,7 @@ using Mgo2Server.Shared.Domain.Authentication;
 using Mgo2Server.Shared.Domain.Automatch;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Clans;
+using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Domain.Instructors;
 using Mgo2Server.Shared.Domain.Lobbies;
@@ -101,6 +102,34 @@ public static class ServerServiceCollectionExtensions
                 options.ModeRelaxSeconds);
         });
 
+        services.Configure<EventOptions>(options =>
+        {
+            options.Enabled = configuration.ReadFlag("EVENT_ENABLED", options.Enabled);
+            options.Title = configuration.ReadText("EVENT_TITLE") ?? options.Title;
+            options.Description = configuration.ReadText("EVENT_DESCRIPTION") ?? options.Description;
+            options.TimeZone = configuration.ReadText("EVENT_SCHEDULE_TIMEZONE") ?? options.TimeZone;
+            options.StartMinute = configuration.ReadNumber(
+                "EVENT_SCHEDULE_START_MINUTE",
+                options.StartMinute);
+            options.EndMinute = configuration.ReadNumber(
+                "EVENT_SCHEDULE_END_MINUTE",
+                options.EndMinute);
+            options.ParticipationReward = configuration.ReadNumber(
+                "EVENT_PARTICIPATION_REWARD",
+                options.ParticipationReward);
+            options.WinRewards = configuration.ReadText("EVENT_WIN_REWARDS") ?? options.WinRewards;
+            options.InformationRuleFlags = configuration.ReadNumber(
+                "EVENT_INFORMATION_RULE_FLAGS",
+                options.InformationRuleFlags);
+            options.DisplayedWinCount = configuration.ReadNumber(
+                "EVENT_DISPLAYED_WIN_COUNT",
+                options.DisplayedWinCount);
+            options.TournamentCapacity = configuration.ReadNumber(
+                "TOURNAMENT_CAPACITY",
+                options.TournamentCapacity);
+            options.PrizeLabels = configuration.ReadText("TOURNAMENT_PRIZE_LABELS") ?? options.PrizeLabels;
+        });
+
         services.AddDbContextFactory<Mgo2DatabaseContext>(options =>
         {
             var connection = ApplyConnectionPolicy(ResolveDatabaseConnectionString(configuration));
@@ -141,6 +170,24 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<RegistrationService>();
         services.AddSingleton<AutomatchService>();
         services.AddSingleton<AutomatchHooksService>();
+        services.AddSingleton<EventInformationService>();
+        services.AddSingleton<EventTeamService>();
+        services.AddSingleton<EventTeamPushService>();
+        services.AddSingleton<EventInvitationService>();
+        services.AddSingleton<EventSessionDirectoryService>();
+        services.AddSingleton<EventMatchService>();
+        services.AddSingleton<EventMatchmakingService>();
+        services.AddSingleton<EventHostLeaseService>();
+        services.AddSingleton<EventAssignmentService>();
+        services.AddSingleton<TournamentRegistrationService>();
+        services.AddSingleton<TournamentBracketService>();
+        services.AddSingleton<TournamentMatchService>();
+        services.AddSingleton<EventRewardService>();
+        services.AddSingleton<EventOutcomeService>();
+        services.AddSingleton<EventOutcomePushService>();
+        services.AddSingleton<EventBracketPushService>();
+        services.AddSingleton<EventGameEntryService>();
+        services.AddSingleton<EventEntryService>();
         services.AddSingleton<RankingBoardService>();
         services.AddSingleton<RankingService>();
 

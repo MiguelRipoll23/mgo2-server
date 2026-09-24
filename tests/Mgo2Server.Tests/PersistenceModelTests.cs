@@ -33,6 +33,12 @@ public sealed class PersistenceModelTests
         "clan_applications",
         "clans",
         "clans_members",
+        "event_host_leases",
+        "event_matches",
+        "event_round_rewards",
+        "event_stat_reports",
+        "event_team_members",
+        "event_teams",
         "game_master_mail",
         "game_players",
         "game_rounds",
@@ -46,6 +52,10 @@ public sealed class PersistenceModelTests
         "round_reports",
         "round_weapon_stats",
         "sessions",
+        "tournament_brackets",
+        "tournament_registrations",
+        "tournament_results",
+        "tournament_seeds",
         "accounts",
     ];
 

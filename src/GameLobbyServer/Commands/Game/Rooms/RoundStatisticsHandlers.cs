@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
+using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Domain.Instructors;
 using Mgo2Server.Shared.Interfaces;
@@ -10,6 +11,33 @@ using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 
+/// <summary>
+/// What one end-of-round report described: the player, the room, and the
+/// counters an event outcome is inferred from.
+/// </summary>
+/// <param name="TargetIdentifier">Character the report described, or zero.</param>
+/// <param name="GameIdentifier">Room the report was for, or zero.</param>
+/// <param name="RoundsWon">Rounds the character's team won in the match.</param>
+/// <param name="Aborted">Whether the report was for an aborted match.</param>
+/// <param name="Score">Score the character reported.</param>
+/// <param name="Kills">Kills the character reported.</param>
+/// <param name="Deaths">Deaths the character reported.</param>
+public sealed record RoundStatisticsOutcome(
+    int TargetIdentifier,
+    int GameIdentifier,
+    int RoundsWon,
+    bool Aborted,
+    int Score,
+    int Kills,
+    int Deaths)
+{
+    /// <summary>The report applied to nobody.</summary>
+    public static readonly RoundStatisticsOutcome None = new(0, 0, 0, false, 0, 0, 0);
+
+    /// <summary>Whether the report described a player.</summary>
+    public bool Applied => TargetIdentifier > 0;
+}
+
 /// <summary>Stores the statistics the host reports for one player.</summary>
 /// <param name="roundStatisticsProcessor">Processor that applies the round.</param>
 /// <param name="instructorService">Service that awards a pending instructor graduation.</param>
@@ -18,13 +46,15 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 public sealed class HostUpdateStatsHandler(
     RoundStatisticsProcessor roundStatisticsProcessor,
     InstructorService instructorService,
+    EventOutcomeService eventOutcomeService,
     SessionHelper sessionHelper,
     ILogger<HostUpdateStatsHandler> logger) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        var targetIdentifier = await roundStatisticsProcessor.ProcessAsync(session, packet, cancellationToken);
+        var applied = await roundStatisticsProcessor.ProcessAsync(session, packet, cancellationToken);
+        var targetIdentifier = applied.TargetIdentifier;
 
         // The host reports every player as they leave, combat training included, so
         // the instructor award rides the session ending rather than the graduation
@@ -40,7 +70,57 @@ public sealed class HostUpdateStatsHandler(
                 targetIdentifier);
         }
 
+        await RecordEventReportAsync(applied, cancellationToken);
+
         await sessionHelper.SendResultAsync(session, CommandConstants.HostUpdateStatsResult, ErrorCodeConstants.ResultNone, cancellationToken);
+    }
+
+    /// <summary>
+    /// Hands a report for a leased event game to the event subsystem. The match
+    /// is looked up from the room rather than from the reporter, so a report is
+    /// only ever filed against the game it was played in.
+    /// </summary>
+    /// <param name="applied">Report that was applied.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task RecordEventReportAsync(
+        RoundStatisticsOutcome applied,
+        CancellationToken cancellationToken)
+    {
+        if (!applied.Applied || applied.GameIdentifier <= 0)
+        {
+            return;
+        }
+
+        // Nothing to do for an ordinary room: only a leased event game has a
+        // match, and the lookup is what decides that.
+        var matchIdentifier = await eventOutcomeService.FindMatchForGameAsync(
+            applied.GameIdentifier,
+            cancellationToken);
+        if (matchIdentifier <= 0)
+        {
+            return;
+        }
+
+        var outcome = await eventOutcomeService.RecordAsync(
+            matchIdentifier,
+            applied.TargetIdentifier,
+            applied.RoundsWon,
+            applied.Aborted,
+            applied.Score,
+            applied.Kills,
+            applied.Deaths,
+            cancellationToken);
+
+        if (outcome == EventReportOutcome.Conflicting)
+        {
+            // A second, different report for a player who already reported is
+            // refused: the first one is what the match was played with, and a
+            // late correction cannot flip a decided result.
+            logger.LogWarning(
+                "Event match {MatchIdentifier}: a conflicting report arrived for character {TargetIdentifier} and was refused",
+                matchIdentifier,
+                applied.TargetIdentifier);
+        }
     }
 }
 
@@ -85,17 +165,17 @@ public sealed class RoundStatisticsProcessor(
     /// <param name="packet">Report to process.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The character the report described, or zero when nothing was applied.</returns>
-    public async Task<int> ProcessAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
+    public async Task<RoundStatisticsOutcome> ProcessAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         if (session.CharacterIdentifier is not { } reporterIdentifier)
         {
-            return 0;
+            return RoundStatisticsOutcome.None;
         }
 
         var payload = packet.Payload;
         if (payload.Length < ExperienceOffset + 4)
         {
-            return 0;
+            return RoundStatisticsOutcome.None;
         }
 
         short ReadInt16(int offset) =>
@@ -130,7 +210,7 @@ public sealed class RoundStatisticsProcessor(
                 "Room {GameIdentifier}: a statistics report named character {TargetIdentifier}, who neither is in the room nor played the round; dropped",
                 game.Identifier,
                 targetIdentifier);
-            return 0;
+            return RoundStatisticsOutcome.None;
         }
 
         var gameMode = ResolveGameMode(game);
@@ -186,7 +266,14 @@ public sealed class RoundStatisticsProcessor(
                 string.Join(',', unlocked));
         }
 
-        return (int)targetIdentifier;
+        return new RoundStatisticsOutcome(
+            (int)targetIdentifier,
+            game?.Identifier ?? 0,
+            round.Wins,
+            round.Aborted,
+            round.Score,
+            round.Kills,
+            round.Deaths);
     }
 
     private async Task<int> ResolveLobbySubtypeAsync(

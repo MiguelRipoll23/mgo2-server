@@ -11,7 +11,6 @@ namespace Mgo2Server.Tests;
 /// loop that runs back to back.
 /// </summary>
 [Trait("Category", "Shared")]
-[Trait("Category", "Flaky")]
 public sealed class PeriodicWorkerTests
 {
     /// <summary>Interval the probe worker runs at, short enough to measure.</summary>
@@ -31,12 +30,16 @@ public sealed class PeriodicWorkerTests
         await WaitForRunsAsync(worker, 4);
         await worker.StopAsync();
 
-        var gaps = worker.Gaps();
+        // The waits the worker resolved, not the gaps between its runs. A gap
+        // carries however long the machine took to come back to the thread, so
+        // bounding it bounds the test host rather than the worker.
+        var waits = worker.Waits();
+        Assert.NotEmpty(waits);
 
-        // Never faster than the interval, and never far past it: the jitter may
-        // only drift upward.
-        Assert.All(gaps, gap => Assert.True(gap >= Interval * 0.9, $"a gap of {gap} is under the interval"));
-        Assert.All(gaps, gap => Assert.True(gap <= Interval * 2, $"a gap of {gap} is well over the interval"));
+        // Never shorter than the interval, and never past it by more than the
+        // drift, which may only go upward.
+        Assert.All(waits, wait => Assert.True(wait >= Interval, $"a wait of {wait} is under the interval"));
+        Assert.All(waits, wait => Assert.True(wait <= Interval * 1.15, $"a wait of {wait} is over the interval"));
     }
 
     [Fact]
@@ -53,10 +56,10 @@ public sealed class PeriodicWorkerTests
         // whatever else the machine is doing.
         Assert.True(worker.RunCount is >= 3 and <= 6, $"the failing worker ran {worker.RunCount} times");
 
-        var gaps = worker.Gaps();
+        var waits = worker.Waits();
         Assert.True(
-            gaps[^1] > gaps[0],
-            $"the last wait of {gaps[^1]} was not longer than the first of {gaps[0]}");
+            waits[^1] > waits[0],
+            $"the last wait of {waits[^1]} was not longer than the first of {waits[0]}");
     }
 
     [Fact]
@@ -67,14 +70,15 @@ public sealed class PeriodicWorkerTests
         await Task.Delay(Stretch);
         await worker.StopAsync();
 
-        // Twice the interval is the most this worker may wait however often it
-        // fails, so it keeps running about twice as often as one that doubles
-        // without end — which needs twice the runs to show the cap held.
-        Assert.True(worker.RunCount >= 6, $"the capped worker ran only {worker.RunCount} times");
-
-        var gaps = worker.Gaps();
-        Assert.All(gaps, gap => Assert.True(gap <= Interval * 4, $"a gap of {gap} went past the ceiling"));
-        Assert.True(gaps[^1] >= Interval, $"the last gap of {gaps[^1]} was under the interval");
+        // The resolved waits, which are where the cap is visible: a worker that
+        // doubled without end would resolve a wait of four intervals or more within
+        // a few failures. Asserting on the waits rather than on how many runs fitted
+        // into the stretch keeps the claim about the worker's pacing and not about
+        // how much of the two seconds this machine gave it.
+        var waits = worker.Waits();
+        Assert.True(waits.Count >= 3, $"only {waits.Count} waits were resolved");
+        Assert.All(waits, wait => Assert.True(wait <= Interval * 2.2, $"a wait of {wait} went past the ceiling"));
+        Assert.True(waits[^1] >= Interval, $"the last wait of {waits[^1]} was under the interval");
     }
 
     [Fact]
@@ -85,17 +89,28 @@ public sealed class PeriodicWorkerTests
         await Task.Delay(Stretch);
         await worker.StopAsync();
 
-        var gaps = worker.Gaps();
+        // The waits the worker resolved, not the gaps between its runs. A gap
+        // carries however long the machine took to get back to the thread, so
+        // asserting on it measures the test host under load rather than the
+        // worker's pacing. The claim is about the pacing, so it is read from the
+        // pacing.
+        var waits = worker.Waits();
 
         // Two failures pushed a wait out, and the run that succeeded brought it
         // back: a worker that recovered is not left slow. Both claims are compared
         // against the interval rather than against each other.
         Assert.True(
-            gaps.Max() > Interval * 1.5,
-            $"no wait of {string.Join(", ", gaps)} grew while the worker was failing");
+            waits.Count >= 2,
+            $"only {waits.Count} waits were resolved, so the failure was never reached");
         Assert.True(
-            gaps[^1] < Interval * 3,
-            $"the wait after a successful run was {gaps[^1]}, which is still the failure backoff");
+            waits.Max() > Interval * 1.5,
+            $"no wait of {string.Join(", ", waits)} grew while the worker was failing");
+
+        // The wait after the successful run is the interval plus its drift, which
+        // is a tenth, so this is a bound rather than an exact value.
+        Assert.True(
+            waits[^1] < Interval * 1.5,
+            $"the wait after a successful run was {waits[^1]}, which is still the failure backoff");
     }
 
     [Fact]
@@ -206,6 +221,29 @@ public sealed class PeriodicWorkerTests
         }
 
         private int runIndexForFailure;
+
+        /// <summary>The waits the worker resolved, in the order it resolved them.</summary>
+        public List<TimeSpan> Waits()
+        {
+            lock (gate)
+            {
+                return [.. waits];
+            }
+        }
+
+        /// <inheritdoc />
+        protected override TimeSpan ResolveWait(int failures)
+        {
+            var wait = base.ResolveWait(failures);
+            lock (gate)
+            {
+                waits.Add(wait);
+            }
+
+            return wait;
+        }
+
+        private readonly List<TimeSpan> waits = [];
 
         /// <summary>Waits between each run and the one after it.</summary>
         public List<TimeSpan> Gaps()
