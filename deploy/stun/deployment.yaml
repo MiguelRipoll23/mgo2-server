@@ -1,6 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    # Reloader rolls this pod when mgo2-appsettings changes; see deploy/README.md.
+    configmap.reloader.stakater.com/reload: "mgo2-appsettings"
   name: mgo2-stun
   namespace: mgo2
 spec:

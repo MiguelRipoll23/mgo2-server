@@ -70,6 +70,30 @@ because they carry environment-specific values that do not belong in git:
 
 Create them before the first sync, or the pods will not start.
 
+### Reloader
+
+Both of those carry values that do not belong in this folder, so nothing Argo
+reconciles can connect a change in them to the pods that mount them. Reloader
+does: it watches ConfigMaps and Secrets and rolls the workloads that name them.
+
+It is installed on the cluster once, the way ArgoCD itself is, and it is pinned
+to a version for the same reason an image tag is:
+
+```sh
+helm repo add stakater https://stakater.github.io/stakater-charts
+helm upgrade --install reloader stakater/reloader \
+  --namespace reloader --create-namespace \
+  --version 2.2.17 \
+  --set reloader.reloadStrategy=annotations
+```
+
+`reloadStrategy=annotations` is not cosmetic. The default injects a hash of the
+ConfigMap into the container's `env`, and the only `ignoreDifferences` that would
+cover it is the whole `env` list — which would also stop Argo correcting every
+variable this folder declares. The annotations strategy writes a single
+annotation into the pod template instead, which an Application can ignore by
+name without blinding itself to anything else.
+
 ### The seed tag
 
 Each kustomization's `images:` entry is seeded with `newTag: latest`, because
@@ -109,6 +133,45 @@ The schema rules the migration has to obey:
    pipeline.** No service reads another's tables, so no migration here has to
    coordinate with another service's release.
 
+## Changing the ConfigMap
+
+Editing `mgo2-appsettings` does nothing on its own. Argo has no view of it, every
+mount is a `subPath` that kubelet never refreshes, and each server reads its
+options once at startup — so a pod only takes a new file by being replaced.
+
+Reloader is what replaces it. Write the change and wait:
+
+```sh
+kubectl create configmap mgo2-appsettings --namespace mgo2 \
+  --from-file=appsettings.json=appsettings.json \
+  --dry-run=client --output yaml | kubectl apply --filename -
+```
+
+Each workload rolls if, and only if, its Deployment names the ConfigMap:
+
+```yaml
+configmap.reloader.stakater.com/reload: "mgo2-appsettings"
+```
+
+All fifteen do, so a change to any value is a rollout of the whole stack — the
+nine lobbies included, and a lobby with players in it closes its listener,
+refuses anyone new and waits for the players it has, up to its six hour grace
+period. The trigger is the ConfigMap rather than the setting, so a key only the
+name server reads still restarts the lobbies. Splitting the ConfigMap per service
+is what narrows that.
+
+Three things worth knowing:
+
+- **Whitespace counts.** Reloader hashes the ConfigMap's data, so reindenting the
+  document rolls the stack exactly as a changed value does.
+- **The annotation sits on the Deployment's metadata, not its pod template.**
+  Adding it, or moving it, rolls nothing by itself.
+- **Reloader restarts by writing into the pod template**, which is a manifest
+  Argo owns. Every Application holding a workload therefore ignores the one path
+  it writes, and sets `RespectIgnoreDifferences=true` so a sync cannot strip it
+  again. The pointer names the annotation rather than the pod template, so Argo
+  still corrects everything else about it.
+
 ## Rolling back
 
 Point `newTag` at the previous commit's SHA and commit it. That is the entire
@@ -126,4 +189,6 @@ is the reason for the expand/contract rule above, rather than a down script.
 - **No CI step that applies anything.** The pipelines stop at a commit.
 - **No `kubectl.kubernetes.io/restartedAt` annotations.** They used to be how a
   rollout was forced from the outside; changing a tag now does that, and a
-  static annotation would only be drift.
+  static annotation would only be drift. The one annotation written into a pod
+  template is the exception, and it is ignored by name in every Application that
+  holds a workload — see [Changing the ConfigMap](#changing-the-configmap).
