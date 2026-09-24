@@ -5,7 +5,7 @@ namespace Mgo2Server.Http.Endpoints.Public;
 
 /// <summary>
 /// The Rankings screens. These are not lobby commands: the screen posts to the two
-/// endpoints and parses a scrambled binary reply, so the answer is served as an
+/// endpoints and parses a binary reply, so the answer is served as an
 /// opaque body rather than JSON.
 /// </summary>
 internal static class RankingEndpoints

@@ -1697,7 +1697,7 @@ u32            read at 0x912BE0 and discarded
 N * { u32 rank, u32 id, char[16] name, u32 value }
 ```
 
-The whole body is XOR-scrambled — see `CRYPTO.md`, "The ranking scramble".
+The body is **sent in the clear**. An earlier revision of this line claimed a XOR scramble (see `CRYPTO.md`, "The ranking scramble — retracted"): a scrambled body reads as a bogus record count, voiding the `N > records` rule below and reaching the client as `1120:00000001`.
 
 Only two things make the client reject a reply: an HTTP status other than 200 (`0xBB2D14`), and
 `N` greater than the `records` it asked for (`0x912AF4`). There is no magic prefix, no checksum

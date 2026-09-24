@@ -406,7 +406,7 @@ is the `lbz r0,-27972(r9)` after `addis r9,r3,1` seen at each snapshot site.
 | `0xD3C9A8` | the **`0x4129` parser** (dispatch `0xD387C8`, `cmpwi 16681` at `0xD388B4`). Writes 13 profile fields at `r27+22488` and clears none — including the emblem flag at `0xD3CC0C`, the **last byte of the payload**. A non-zero `result` skips the whole body |
 | `0xD584B0` / `0xAD4724` / `0xD3DA90` | the other writers of the emblem flag: `0x4b47`, the upload commit, and `0x4221` (the last against the *viewed player's* record, not the local profile) |
 | `0xAB0074` | the clan coroutine that ands the privilege word and refuses to advance unless it is zero |
-| `0xBC2D78` | the ranking scramble |
+| `0xBC2D78` | a ranking-body XOR routine — **not applied to the ranking reply**, which the retail service sends in the clear (see `CRYPTO.md`, "The ranking scramble — retracted") |
 | `0x305A60` | a per-object 896-bit flag API |
 | `0x6FC760` | the objective notifier, `f(id, slot)` |
 | `0xDDEE30` | the Scanning skill's S. PLUG item |

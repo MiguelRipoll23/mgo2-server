@@ -9,17 +9,16 @@ namespace Mgo2Server.Http.Services;
 /// Builds the binary replies of the two Rankings endpoints.
 /// <para>
 /// These are not lobby commands: the screen posts six form fields and parses a
-/// scrambled binary body, so the answer is served as an opaque blob rather than
-/// JSON. The body itself is assembled by <see cref="RankingBodyUtils"/>.
+/// binary body, so the answer is served as an opaque blob rather than JSON. The
+/// body is assembled by <see cref="RankingBodyUtils"/>.
 /// </para>
 /// <para>
 /// The request is logged at information level with the window it was answered
 /// with, because the client reports every failure with the same code and no
 /// detail: a board that came back empty and a board that was never asked about
 /// look identical on screen, and this line is what tells them apart. At debug
-/// level the posted parameters are logged and the reply is dumped in hex both
-/// before and after the scramble, so the one transform the body carries can be
-/// checked against the key without reversing it by hand.
+/// level the posted parameters are logged and the reply is dumped in hex, so the
+/// framing can be checked on the wire.
 /// </para>
 /// </summary>
 /// <param name="rankingService">Service that sources and ranks the boards.</param>
@@ -107,25 +106,17 @@ public sealed class RankingResponseService(
     }
 
     /// <summary>
-    /// Serialises a board window, logs both stages of the reply in hex at debug
-    /// level and returns the scrambled bytes the client receives.
+    /// Serialises a board window, logs the reply in hex at debug level and
+    /// returns the bytes the client receives.
     /// </summary>
     /// <param name="page">Window to serialise.</param>
-    /// <param name="board">Board the window belongs to, for the log lines.</param>
+    /// <param name="board">Board the window belongs to, for the log line.</param>
     private byte[] EncodeReply(RankingPage page, string board)
     {
-        var body = RankingBodyUtils.EncodeClear(page);
+        var body = RankingBodyUtils.Encode(page);
 
         logger.LogDebug(
-            "{Board} ranking reply before the scramble, {Length} bytes: {Bytes}",
-            board,
-            body.Length,
-            TrafficLogger.FormatHex(body));
-
-        RankingScrambleUtils.Apply(body);
-
-        logger.LogDebug(
-            "{Board} ranking reply after the scramble, {Length} bytes: {Bytes}",
+            "{Board} ranking reply, {Length} bytes: {Bytes}",
             board,
             body.Length,
             TrafficLogger.FormatHex(body));
