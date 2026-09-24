@@ -62,8 +62,8 @@ public sealed record ClanMembership(
 /// <summary>A pending application to join a clan.</summary>
 /// <param name="CharacterIdentifier">Character that applied.</param>
 /// <param name="Name">Name of the applicant.</param>
-/// <param name="AppliedAt">Moment the application was submitted.</param>
-public sealed record ClanApplicant(int CharacterIdentifier, string Name, DateTime AppliedAt);
+/// <param name="AppliedAt">Moment the application was submitted, in the offset it was stored with.</param>
+public sealed record ClanApplicant(int CharacterIdentifier, string Name, DateTimeOffset AppliedAt);
 
 /// <summary>
 /// Owns the clans, their membership rows, their emblems and the pending

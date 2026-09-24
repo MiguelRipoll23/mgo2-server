@@ -54,6 +54,10 @@ public sealed partial class ClanService
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
+        // The column is `timestamp with time zone`, so the offset is read as it
+        // was stored. Converting to a plain DateTime inside the projection has
+        // no provider translation and fails while the query is compiled, which
+        // the asking screen can only show as a timeout.
         return await context.ClanApplications
             .AsNoTracking()
             .Where(application => application.ClanIdentifier == clanIdentifier)
@@ -61,7 +65,7 @@ public sealed partial class ClanService
             .Select(application => new ClanApplicant(
                 application.CharacterIdentifier,
                 application.Character != null ? application.Character.Name : string.Empty,
-                application.AppliedAt.UtcDateTime))
+                application.AppliedAt))
             .ToListAsync(cancellationToken);
     }
 

@@ -283,58 +283,71 @@ public sealed class SetEmblemEditorHandler(
     }
 }
 
-/// <summary>Stores the clan comment.</summary>
+/// <summary>
+/// Stores the clan comment. The whole payload is the 128-byte text block — there
+/// is no clan id on the wire — so the clan written to is the caller's own, and the
+/// reply is the single result word the client's parser reads.
+/// </summary>
 /// <param name="clanService">Service that owns the clans.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class UpdateClanCommentHandler(
     ClanService clanService,
     SessionHelper sessionHelper) : ICommandHandler
 {
+    /// <summary>Length of the comment, which is the whole payload.</summary>
+    private const int CommentLength = 128;
+
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (packet.Payload.Length >= 4 && session.CharacterIdentifier is { } characterIdentifier)
+        if (packet.Payload.Length >= CommentLength && session.CharacterIdentifier is { } characterIdentifier)
         {
             var reader = new PacketReader(packet.Payload);
-            var clanIdentifier = (int)reader.ReadUInt32();
-            var comment = reader.ReadFixedString(128);
+            var comment = reader.ReadFixedString(CommentLength);
 
             // Only a member may edit the clan card.
-            if (await clanService.GetMemberAsync(clanIdentifier, characterIdentifier, cancellationToken) is not null)
+            var membership = await clanService.FindMembershipByCharacterAsync(characterIdentifier, cancellationToken);
+            if (membership is not null)
             {
-                await clanService.UpdateCommentAsync(clanIdentifier, comment, cancellationToken);
+                await clanService.UpdateCommentAsync(membership.ClanIdentifier, comment, cancellationToken);
             }
         }
 
-        await sessionHelper.SendPacketAsync(session, CommandConstants.UpdateClanCommentResult, null, cancellationToken);
+        await sessionHelper.SendResultAsync(session, CommandConstants.UpdateClanCommentResult, ErrorCodeConstants.ResultNone, cancellationToken);
     }
 }
 
-/// <summary>Stores the clan notice and the member that wrote it.</summary>
+/// <summary>
+/// Stores the clan notice and the member that wrote it. Like the comment, the
+/// payload is the fixed-width text block alone, so the clan comes from the
+/// caller's membership and the author column from the caller's membership row.
+/// </summary>
 /// <param name="clanService">Service that owns the clans.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class UpdateClanNoticeHandler(
     ClanService clanService,
     SessionHelper sessionHelper) : ICommandHandler
 {
+    /// <summary>Length of the notice, which is the whole payload.</summary>
+    private const int NoticeLength = 512;
+
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (packet.Payload.Length >= 4 && session.CharacterIdentifier is { } characterIdentifier)
+        if (packet.Payload.Length >= NoticeLength && session.CharacterIdentifier is { } characterIdentifier)
         {
             var reader = new PacketReader(packet.Payload);
-            var clanIdentifier = (int)reader.ReadUInt32();
-            var notice = reader.ReadFixedString(512);
+            var notice = reader.ReadFixedString(NoticeLength);
 
             // Only a member may write the notice, and the author column records
             // the membership row, not the character.
-            var member = await clanService.GetMemberAsync(clanIdentifier, characterIdentifier, cancellationToken);
-            if (member is not null)
+            var membership = await clanService.FindMembershipByCharacterAsync(characterIdentifier, cancellationToken);
+            if (membership is not null)
             {
-                await clanService.UpdateNoticeAsync(clanIdentifier, notice, member.Identifier, cancellationToken);
+                await clanService.UpdateNoticeAsync(membership.ClanIdentifier, notice, membership.MemberIdentifier, cancellationToken);
             }
         }
 
-        await sessionHelper.SendPacketAsync(session, CommandConstants.UpdateClanNoticeResult, null, cancellationToken);
+        await sessionHelper.SendResultAsync(session, CommandConstants.UpdateClanNoticeResult, ErrorCodeConstants.ResultNone, cancellationToken);
     }
 }

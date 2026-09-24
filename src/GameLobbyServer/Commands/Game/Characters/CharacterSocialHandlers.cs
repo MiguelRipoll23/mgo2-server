@@ -84,10 +84,15 @@ public sealed class GetFriendsBlockedListHandler(
     CharacterPresenceService presenceService,
     SessionHelper sessionHelper) : ICommandHandler
 {
-    /// <summary>Maximum number of entries the client's roster holds.</summary>
-    private const int MaximumEntries = 32;
+    /// <summary>
+    /// Maximum number of entries the client's roster holds. The client's record loop
+    /// refuses a row once the array already holds 64 (<c>cmpwi 0x3f</c> before the store),
+    /// which is the same 64 slots the connect burst's friend and blocked grids carry —
+    /// one roster row per grid identifier.
+    /// </summary>
+    private const int MaximumEntries = 64;
 
-    /// <summary>Entries per packet: 17 × 59 bytes of record is 1003, inside the payload.</summary>
+    /// <summary>Entries per packet: 17 × 43 bytes of record is 731, inside the payload.</summary>
     private const int MaximumPerPacket = 17;
 
     /// <inheritdoc />
@@ -134,11 +139,14 @@ public sealed class GetFriendsBlockedListHandler(
     /// <summary>
     /// Writes one entry: the target, their name, then where they are.
     /// <para>
-    /// The record is 59 bytes and carries no state byte of its own, because the state
-    /// is the transaction rather than the row. A character who is not connected
-    /// anywhere keeps their row and gets a zeroed location, which the client draws as
-    /// the lobby column's placeholder rather than dropping the entry — an offline
-    /// friend still belongs on the list.
+    /// The record is 43 bytes and carries no state byte of its own, because the state
+    /// is the transaction rather than the row. It ends with the shorter roster tail
+    /// — no lobby name — which is the shape the 1.36 client reads here; sending the
+    /// 59-byte search record instead left the client's record loop to parse the extra
+    /// bytes, and the zeros past the payload, as a second, empty row. A character who
+    /// is not connected anywhere keeps their row and gets a zeroed location, which the
+    /// client draws as the lobby column's placeholder rather than dropping the entry
+    /// — an offline friend still belongs on the list.
     /// </para>
     /// </summary>
     /// <param name="writer">Writer the entry is appended to.</param>
@@ -151,7 +159,7 @@ public sealed class GetFriendsBlockedListHandler(
     {
         writer.WriteUInt32((uint)entry.TargetIdentifier);
         writer.WriteFixedString(entry.TargetName, 16);
-        CharacterLocationWriter.Write(writer, locations.GetValueOrDefault(entry.TargetIdentifier));
+        CharacterLocationWriter.WriteRoster(writer, locations.GetValueOrDefault(entry.TargetIdentifier));
     }
 }
 
@@ -185,10 +193,13 @@ public sealed class SearchPlayerHandler(
     {
         // The request opens with two toggles and only then carries the name: a
         // match-criteria byte, where zero asks for a substring and one for the whole
-        // name, then an ignore-case byte whose one is the ignoring value. Reading the
-        // name from the start of the payload takes the toggles as its first characters,
-        // and since the first is usually zero the term reads as empty and the screen
-        // comes back with nothing.
+        // name, then a case byte whose one is CASE SENSITIVE and whose zero is the
+        // ignoring value. The polarity is the client's and is easy to get backwards:
+        // the screen's "Case Insensitive" option sends zero, so reading one as the
+        // ignoring value ran a case-sensitive query for a case-insensitive request and
+        // the screen came back empty for a term that matched. Reading the name from the
+        // start of the payload would also take the toggles as its first characters, so
+        // the toggles have to be consumed first.
         var query = string.Empty;
         var fullMatch = false;
         var ignoreCase = false;
@@ -197,7 +208,7 @@ public sealed class SearchPlayerHandler(
         {
             var reader = new PacketReader(packet.Payload);
             fullMatch = reader.ReadUInt8() != 0;
-            ignoreCase = reader.ReadUInt8() != 0;
+            ignoreCase = reader.ReadUInt8() == 0;
             query = reader.ReadFixedString(SearchQueryLength);
         }
 

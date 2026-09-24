@@ -5,6 +5,9 @@ It provides the gate, account and gameplay lobby TCP servers, the UDP peer-to-pe
 gameplay host, an HTTP API, a name server for domain redirection, a port-check
 responder for NAT discovery and a PostgreSQL-backed persistence layer.
 
+> [!NOTE]
+> [Join our Discord and play on this server!](https://discord.gg/pg5fZRUnB)
+
 ## Quick start
 
 The install scripts pull the published images and bring up the whole

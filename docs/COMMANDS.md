@@ -191,7 +191,7 @@ handler exists, because answering it properly needs a broadcast mechanism the se
 the block has three list replies, so it has been guessed at more than once. It is not: the
 `0x4A24`/`0x4A31` records embed the 204-byte game-settings sub-record, which puts the family with
 games. **Rankings are not in the command protocol at all** — the screen POSTs to
-`rank/mgogetrank.html` and `rank/mgogetrank_clan.html` and parses a little-endian, XOR-scrambled
+`rank/mgogetrank.html` and `rank/mgogetrank_clan.html` and parses a little-endian, cleartext
 binary body. Implemented in `web/controller/RankingWebController`; the wire format is in
 `OBSERVED.md`, "Rankings — an HTTP feature, not a command". Nothing in this file needs to serve it.
 

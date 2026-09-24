@@ -585,6 +585,120 @@ shifted field. **A short payload here is not a hole; it moves every field below 
 (`PersonalStatisticsHeaderTests`, `PersonalStatisticsTitleTests`, `PersonalStatisticsSummaryRowTests`),
 so the disc and 1.36 shapes cannot be mixed silently again.
 
+## SOLVED: the friend/blocked roster entry is 43 bytes on 1.36, 59 on 1.0
+
+**Found 2026-09-23 from a live report: adding a friend put a blank row under them in the
+Friend List, and selecting a row in the Black List raised dialog 4150 (`0x1036`), *"Unable to
+acquire character information."***
+
+### The difference
+
+1.36's `0x4582` parser does **not** read the 16-byte lobby name that the disc build's record
+carries between `lobby_id` and `game_id`. It is the same deletion the hub-list entry suffered
+(99 -> 35, above) and for the same kind of reason: the field's reader went away.
+
+```
+disc 0xD467C0 : u32 id, 16B name, u16 lobby_id, 16B lobby_name, u32 game_id, 16B game_name, u8  -> 59
+1.36 0xF14570 : u32 id, 16B name, u16 lobby_id,                u32 game_id, 16B game_name, u8  -> 43
+```
+
+Read the same way as `0x4103`/`0x4105`/`0x4107` above, by pairing every `addi r4,rX,imm` with
+the stream read that follows it. The struct destinations are the proof it is the same record
+minus one field, not a different record: the disc build writes `0/4/22/24/44/48/65` and 1.36
+writes `0/4/22/44/48/65` — the `0x18` slot (`lobby_name`) is simply left as the `memset` left
+it. The remaining six land on the same slots, in the same order.
+
+**`0xF14570` is the only instruction in the whole image that compares against `0x4582`**, so the
+parser is not in doubt. The two neighbours did NOT change and were checked rather than assumed:
+the search `0xF13CD0` still reads all seven fields (59 bytes, cap `0x63` -> 100) and the clan
+roster `0xF28AB4` still reads its five-field tail after the 29-byte header (68 bytes).
+
+### The cap also doubled
+
+The count check before the store is `cmpwi 0x3f` at `0xF1467C` (64 rows) where the disc build
+uses `cmpwi 31` (32). That is not a coincidence and does not need its own toggle: 1.36's connect
+burst already carries **64** identifiers in each of the friend and blocked grids — the same 64
+`CharacterInfoPayloadBuilder.MaximumListIdentifiers` was corrected to for 1.36 on 2026-09-21 —
+so the roster table has one row per grid slot in both builds. A friend count the grid can hold,
+the roster can now show.
+
+### Why it presented as a blank row and a bogus error
+
+This is the hub-entry failure mode again, and it is worth stating in one place because it is the
+recurring shape of every one of these divergences: **the record loop bounds against the
+1024-byte receive buffer, never against the payload length** (`0xf2e458`'s test is the loop
+test; the field reads check `cursor + n > 0x400`). So a wrong width never errors — it shifts.
+
+With our one 59-byte record in a 59-byte payload, the 43-byte loop read:
+
+| row | bytes | result |
+| --- | --- | --- |
+| 1 | 0..42 | the real friend: `id`, `name` and `lobby_id` all coincide, because `lobby_id` is at wire 20 in both layouts |
+| 2 | 43..58 (16 bytes) + 59..71 (**zeroes past the payload**) | `id` 0, empty `name` — **the blank row** |
+
+`id` 0 is also why the error follows the row: the row-occupied test refuses with dialog `0x1036`
+when a row's `chara_id` or `name` is zero, and the refusal is local — no `0x4220` is sent, which
+is why the bug report's log shows a request for the real player and none for the row that
+raised the dialog.
+
+The fix is a value on our side: `CharacterLocationWriter.WriteRoster` for the friends/blocked
+roster, `Write` for the search and the clan roster, and the roster cap 32 -> 64. `0x4582` now
+sends 43-byte records and the roster draws exactly the friends it holds.
+
+## SOLVED: the player-details card is 207 bytes and its clan was one byte out
+
+**Found 2026-09-23, in the same pass as the roster row above: the card's clan could not render,
+and the cause was a comment field one byte short.** Each of these divergences keeps arriving as
+*"a value is wrong"* rather than *"a layout is wrong"*, because a misaligned field still lands
+somewhere plausible.
+
+### The layout
+
+1.36's reply is `0xf0a2ec`. Read by pairing every `addi r4,rX,imm` with the stream read after it:
+
+| wire | size | field | parser destination |
+| ---: | ---: | --- | --- |
+| `0x00` | 4 | result code | stack; nonzero skips every field and ends the transaction |
+| `0x04` | 4 | character id | block `+0x000` |
+| `0x08` | 16 | name | block `+0x004` |
+| `0x18` | 4 | experience | block `+0x220` |
+| `0x1c` | 1 | privilege nibble | block `+0x4178` |
+| `0x1d` | 1 | beginner flag | block `+0x4179` |
+| `0x1e` | 4 | total rewards | block `+0x734` |
+| `0x22` | 4 | play time | block `+0x744` |
+| `0x26` | 1 | worn title | block `+0x2705` |
+| `0x27` | 128 | comment | block `+0x2684` |
+| `0xa7` | 4 | clan id | block `+0x2300` |
+| `0xab` | 16 | clan name | block `+0x2304` |
+| `0xbb` | 1 | clan state | block `+0x2315` |
+| `0xbc` | 4 | host-rating numerator | block `+0x4128` |
+| `0xc0` | 4 | host-rating denominator | block `+0x412c` |
+| `0xc4` | 1 | clan emblem flag | block `+0x2338` |
+| `0xc5` | 4 | grade points | block `+0x224` |
+| `0xc9` | 4 | **1.36 only** | block `+0x4180` |
+| `0xcd` | 1 | **1.36 only** | block `+0x2640` |
+| `0xce` | 1 | **1.36 only** — the feature byte | `0xf06450`, the same splitter `0x4101`'s feature byte uses |
+
+**Everything through `0xc8` is the disc build's layout at the same offsets**, field for field, so
+this is not a replaced grammar: 1.36 appends six bytes. The disc build's packet is 201, this one
+is **207**, and the size wants pinning — the parser abandons the record at the first read past its
+end (`li r9,-0x47`), so a 201-byte payload here leaves the screen unusable rather than half-filled.
+
+### The server's bug
+
+The card wrote its comment as **127** bytes, so every field after it was read one byte early. The
+clan is what made that visible: the triple sits at `0xa7` / `0xab` / `0xbb`, and with the shift the
+client read a clan id assembled out of the tail of the comment, a name one byte on, and a state
+from an unrelated word. **A clan id is not decoration — every reader of the triple tests it first
+and treats zero as "no clan", so an invented one is looked up and fails while the real clan sits
+one byte away, unread.** The two fields the disc build appends were also served as `0x0F00` and
+`0x0100` rather than zero, which is a guess in a field with no known consumer.
+
+The card now builds from `CharacterCardPayloadBuilder`, which pins `Size = 207` and the field map,
+and `CharacterCardPayloadTests` holds each offset — including a full-length comment, which is the
+regression the shift came from, and an experience above 65535, which the old two-half write
+truncated.
+
 ## Open
 
 - Whether 1.36 honours the `d/testhk` hostname override at all — the string is present, but presence

@@ -20,7 +20,6 @@ check (which uses none of this).
 | Blowfish (`session.key`) + custom chaining | the check-session field | `SessionField` |
 | MD5 | account passwords, hashed by the client | `AccountService.findByCredentials` |
 | TLS | the HTTPS login and version-check endpoints | `probe-https` container |
-| Rolling 8-byte XOR | the body of every ranking HTTP reply | `RankingScramble` |
 | Path-keyed asset cipher | disc stage data, HDD saves, `d/testhk` | `dev/tools/solideye/Solideye.exe` |
 
 The port check (STUN) uses none of these. Its packets are plaintext.
@@ -79,20 +78,23 @@ Three things worth knowing before using it:
   that the shapes match and that `stage/lobby` works in the field. If a new key ever fails, that
   gap is the first place to look.
 
-## The ranking scramble
+## The ranking scramble — retracted
 
-The Rankings screens fetch over HTTP, not over the lobby protocol, and their replies carry their
-own obfuscation — unrelated to the packet XOR above, and applied to a plain HTTP body.
+The Rankings screens fetch over HTTP, not over the lobby protocol. This section used to describe an
+XOR obfuscation (`0xBC2D78`, key `8b 75 2c 90 3a 5e 4d f1`, byte `i` against
+`key[((i / 4) % 5) + (i % 4)]`) that a cleartext reply would silently misparse. **That is wrong.**
 
-Key `8b 75 2c 90 3a 5e 4d f1`, read from the immediates the client stores inline at `0xBC2D80`.
-Byte `i` is XORed with `key[((i / 4) % 5) + (i % 4)]`: the offset walks a four-byte block, the
-block index advances every four bytes and wraps at five, so the keystream repeats every twenty
-bytes and touches all eight key bytes. The client applies it at `0xBC2D78` before reading a single
-field, so a **cleartext reply is not rejected — it is silently misparsed**, and every column shows
-garbage with no error.
+A capture of a working third-party server's `mgogetrank.html` reply settles it: the body is plain
+little-endian records with readable ASCII names, and it is the *scrambled* reply that fails. The
+client reads the body as it arrives, so `count` is whatever the first four bytes say — and a body
+scrambled with that key reads as `count = 0x902C758B`, which is past any `records` the screen asked
+for, so the whole reply is dropped and the screen shows `1120:00000001`. Send the reply in the
+clear.
 
-XOR is its own inverse, so the server scrambles with the same routine. [ELF] throughout; no
-capture of a genuine Konami ranking response exists to corroborate it.
+The routine at `0xBC2D78` is real, and `0xBC3CE8` really is a little-endian u32 reader, but the
+ranking reply does not travel through the scramble. The lesson is the one this file keeps
+re-teaching: a key traced out of the binary is only half the claim — the other half is a capture,
+and none existed when the scramble was written up.
 
 ## Whole-packet XOR
 

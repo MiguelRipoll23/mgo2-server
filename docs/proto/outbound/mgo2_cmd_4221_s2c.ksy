@@ -13,6 +13,12 @@ doc: |
   fingerprint pass the same day (u32s 95xx, u8s 6x, FP-DTL-* strings served), and the card
   has since been filled in with real data (live 2026-07-27).
 
+  **THIS IS THE DISC BUILD'S LAYOUT. 1.36'S REPLY IS 207 BYTES.** 1.36's parser is `0xF0A2EC`
+  and every field below sits at the same offset through `0xc8`; 1.36 then appends a word at
+  `0xc9`, a byte at `0xcd` and the feature byte at `0xce`, the last of which it puts through
+  the `0xf06450` splitter. See `docs/BUILD_1_36.md`, "the player-details card is 207 bytes".
+  A 201-byte payload abandons the client's record at the first read past its end.
+
   The card renders NAME, CLAN, LEVEL, PLAY TIME, COMMENTS, and a square-button "more
   details" that requests the 0x4102 personal-stats burst for this card's character id.
   NAME, CLAN, PLAY TIME and COMMENTS are all confirmed rendering correctly with real data.
@@ -72,7 +78,18 @@ doc-ref: dev/docs/PROTOCOL.md "0x4220 — player details"
 seq:
   - id: result
     type: u4
-    doc: "[CONFIRMED] Wire 0x00. Result code: 0 = success; nonzero skips all fields and raises the error dialog (parser 0xd3d8e8 branch)."
+    doc: |
+      [CONFIRMED] Wire 0x00. Result code: 0 = success; nonzero skips all fields and raises the
+      error dialog (parser 0xd3d8e8 branch).
+
+      What the server sends: **0** for a character it can show; **`-266`** (`0xfffffef6`) for one
+      that no longer exists — the client's own literal, and the only nonzero value it renders as
+      a sentence of its own, *"Designated character has been deleted and no longer exists."*; and
+      the generic for a request that names nobody at all, which must not borrow `-266` because a
+      short packet is not a deletion. Note that a deleted character **keeps its row** — the soft
+      delete clears the active flag and renames it — so the lookup succeeds and the flag is what
+      decides. Sent unmasked: a code of the server's own making matches nothing in the client's
+      table and falls through to the generic sentence.
   - id: chara_id
     type: u4
     doc: |
@@ -278,11 +295,13 @@ seq:
       `0x906270`, `0x906320`, `0x915D3C`, `0x916AFC`, and this parser's write at `0xD3D9B8`.
       So the field's whole life is visible.
 
-      **We send 0, so the card's title badge is blank for every player.** The value is
-      available — `0x4122` already carries the real one. PROTOCOL.md's "0x4103 and 0x4221 write
-      their own +0x1EA5 into a scratch block, not the local character record" is correct and is
-      exactly why this is a separate, still-unfilled slot. Values must be 1..22; the readers'
-      match loop runs 21 iterations over a 22-entry table.
+      **FILLED since 2026-09-23**: the server writes the rank the title service latched, which is
+      the same value `0x4122` carries and the personal-stats header writes, so the card and the
+      stats screen cannot disagree about which title is worn. Before that it sent 0, which left
+      the badge blank for every player. PROTOCOL.md's "0x4103 and 0x4221 write their own +0x1EA5
+      into a scratch block, not the local character record" is correct and is exactly why this is
+      a separate slot with its own writer. Values must be 1..22; the readers' match loop runs 21
+      iterations over a 22-entry table.
   - id: comment
     type: str
     size: 128

@@ -178,7 +178,7 @@ mattered; this table says what the port actually did.
 |---|---|---|
 | 3.1 | Skill progression not persisted | **Not ported — intentional.** Every skill is served at its maximum level, so a stored report could never change what the client sees; persisting it would only add a table nothing reads. |
 | 3.2 | No awards or titles | **Ported (titles).** `characters_titles` plus `CharacterTitleService`, evaluated at round end and on lobby entry, with the best latched rank written into the `0x4122` payload. There is still no separate awards table. |
-| 3.3 | Rankings unimplemented | **Ported.** Two POST endpoints, `RankingScrambleUtils` and `RankingBodyUtils`; see §3.11. |
+| 3.3 | Rankings unimplemented | **Ported.** Two POST endpoints, `RankingBodyUtils`; see §3.11. |
 | 3.4 | Clan statistics wrong shape | **Ported.** `0x4b70` answers the grid + blocks pair. |
 | 3.5 | Clan list paging | **Ported.** `0x4b10` reads `{u8 kind, s32 amount, u8}`, pages 100 at a time, and emits the `0x4b11` list header. |
 | 3.6 | Beginners-only never enforced | **Ported.** `0x3003` refuses with `LOBBY_ENTRY_REFUSED` when the character is above the measured level-4 threshold. |
@@ -228,8 +228,9 @@ measured. Concretely:
 * A `rule` outside 0–10 answers an empty board rather than silently falling back to the
   deathmatch blob.
 
-The reply is `12 + 28×N` bytes, little-endian, every byte XORed with the eight-byte key and
-period-20 keystream. `N` is the number of rows actually serialised, never what the client
+The reply is `12 + 28×N` bytes, little-endian, and **sent in the clear** — the client reads it as it
+arrives. A scrambled body reads as `count = 0x902C758B`, past any `records` the screen asked for, so
+the screen bails with `1120:00000001`. `N` is the number of rows actually serialised, never what the client
 asked for, and the window is clamped to 100. A name that fills all sixteen bytes is
 clamped to fifteen characters so the field keeps a NUL, because the client reads it with
 `strlen` into a buffer it never clears.
@@ -335,8 +336,8 @@ payload. This server has no award or title model at all. Its closest equivalent,
 
 The reference serves the Rankings screens: a **POST** to `rank/mgogetrank.html` and
 `rank/mgogetrank_clan.html` with a form body of six parameters, answered with a
-little-endian binary blob whose entire body is XOR-scrambled with an eight-byte key
-(`RankingScramble`, traced instruction-by-instruction, period 20 bytes). The reference is
+little-endian binary blob sent in the clear. The reference XOR-scrambles the same body
+(`RankingScramble`) — following it there is what broke this port; see §3.11.
 explicit that this is *not* lobby protocol — the rankings screens do not touch `0x4xxx`.
 
 This server has no ranking endpoints; its `src/Http` serves files, help, policy, version,

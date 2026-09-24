@@ -19,10 +19,18 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: mgo2
+  # Reloader rolls these workloads when mgo2-appsettings changes; see deploy/README.md.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/template/metadata/annotations/reloader.stakater.com~1last-reloaded-from
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:

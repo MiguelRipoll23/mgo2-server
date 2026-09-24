@@ -15,14 +15,20 @@ namespace Mgo2Server.Tests;
 [Trait("Category", "GameLobby")]
 public sealed class CharacterLocationTests
 {
-    /// <summary>Size of one roster or search entry, header included.</summary>
+    /// <summary>Size of one search entry, header included.</summary>
     private const int EntrySize = 59;
+
+    /// <summary>Size of one friends/blocked roster entry, header included.</summary>
+    private const int RosterEntrySize = 43;
 
     /// <summary>Size of one clan roster entry, header included.</summary>
     private const int ClanEntrySize = 68;
 
-    /// <summary>Offset the location block starts at in a roster or search entry.</summary>
+    /// <summary>Offset the location block starts at in a search or clan entry.</summary>
     private const int BlockOffset = 4 + 16;
+
+    /// <summary>Offset the shorter roster tail starts at in a friends/blocked entry.</summary>
+    private const int RosterTailOffset = 4 + 16;
 
     [Fact]
     public void A_connected_character_is_written_with_their_lobby_and_room()
@@ -77,7 +83,7 @@ public sealed class CharacterLocationTests
     }
 
     [Fact]
-    public void A_roster_entry_is_the_target_then_the_location_block()
+    public void A_search_entry_is_the_target_then_the_full_location_block()
     {
         var location = new CharacterLocation(42, "Free Battle 01", 1, 7, "Deathmatch");
 
@@ -94,6 +100,51 @@ public sealed class CharacterLocationTests
         // it: a record whose word at 0x14 is zero is the one it treats as
         // absent, so the word has to be the lobby and not a flag of our own.
         Assert.Equal((ushort)42, BinaryUtility.ReadUInt16BigEndian(payload, BlockOffset));
+        Assert.Equal("Free Battle 01", ReadFixedString(payload, BlockOffset + 2, 16));
+    }
+
+    [Fact]
+    public void A_friends_roster_entry_ends_with_the_tail_the_1_36_client_reads()
+    {
+        // The 1.36 client's 0x4582 record loop reads a 43-byte record with no
+        // lobby name: lobby id, game id, game name and the label. Writing the
+        // 59-byte search block here left 16 bytes over, which the loop parsed as
+        // a second all-zero row — an extra blank friend, and an action popup that
+        // refuses to open on it with 1036:FFFFFFE8.
+        var location = new CharacterLocation(42, "Free Battle 01", 1, 7, "Deathmatch");
+
+        var writer = new PacketWriter();
+        writer.WriteUInt32(99u);
+        writer.WriteFixedString("Somebody", 16);
+        CharacterLocationWriter.WriteRoster(writer, location);
+        var payload = writer.Build();
+
+        Assert.Equal(RosterEntrySize, payload.Length);
+        Assert.Equal(99u, BinaryUtility.ReadUInt32BigEndian(payload, 0));
+        Assert.Equal("Somebody", ReadFixedString(payload, 4, 16));
+        Assert.Equal((ushort)42, BinaryUtility.ReadUInt16BigEndian(payload, RosterTailOffset));
+        Assert.Equal(7u, BinaryUtility.ReadUInt32BigEndian(payload, RosterTailOffset + 2));
+        Assert.Equal("Deathmatch", ReadFixedString(payload, RosterTailOffset + 6, 16));
+        Assert.Equal((byte)1, payload[RosterEntrySize - 1]);
+        // The lobby name the search block carries has no home here: the record ends at
+        // the label, and a name written after it would be read as the next row's id.
+        Assert.Equal(RosterEntrySize, RosterTailOffset + 6 + 16 + 1);
+    }
+
+    [Fact]
+    public void An_offline_friend_keeps_a_zeroed_tail_rather_than_losing_their_row()
+    {
+        var writer = new PacketWriter();
+        writer.WriteUInt32(99u);
+        writer.WriteFixedString("Somebody", 16);
+        CharacterLocationWriter.WriteRoster(writer, null);
+        var payload = writer.Build();
+
+        Assert.Equal(RosterEntrySize, payload.Length);
+        Assert.Equal((ushort)0, BinaryUtility.ReadUInt16BigEndian(payload, RosterTailOffset));
+        Assert.Equal(0u, BinaryUtility.ReadUInt32BigEndian(payload, RosterTailOffset + 2));
+        Assert.Equal(string.Empty, ReadFixedString(payload, RosterTailOffset + 6, 16));
+        Assert.Equal((byte)0, payload[RosterEntrySize - 1]);
     }
 
     [Fact]
@@ -142,13 +193,15 @@ public sealed class CharacterLocationTests
     }
 
     [Fact]
-    public void The_block_is_the_width_the_three_records_leave_for_it()
+    public void The_block_is_the_width_the_records_leave_for_it()
     {
-        // Both records are a fixed width the client counts on: 59 for the roster and
-        // the search (a u32 identifier and a 16-byte name in front of the block) and 68
-        // for the clan roster (a 29-byte header). A block of another width does not
-        // fail a parse, it moves every field of every row that follows it.
+        // Every record is a fixed width the client counts on: 59 for the search (a
+        // u32 identifier and a 16-byte name in front of the full block), 43 for the
+        // friends/blocked roster (the same header in front of the shorter tail) and
+        // 68 for the clan roster (a 29-byte header). A block of another width does
+        // not fail a parse, it moves every field of every row that follows it.
         Assert.Equal(EntrySize - (4 + 16), CharacterLocationWriter.Size);
+        Assert.Equal(RosterEntrySize - (4 + 16), CharacterLocationWriter.RosterSize);
         Assert.Equal(ClanEntrySize - 29, CharacterLocationWriter.Size);
     }
 

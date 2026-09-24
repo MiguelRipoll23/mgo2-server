@@ -8,9 +8,7 @@ namespace Mgo2Server.Shared.Domain.Rankings;
 /// The reply is little-endian, which is the opposite order from every lobby
 /// packet: a twelve-byte header (record count, board total, and a word the parser
 /// reads and discards), then one twenty-eight-byte record per row (rank, subject
-/// identifier, a sixteen-byte name and the value). The whole body is then
-/// scrambled, because a cleartext reply is not rejected by the client — it is
-/// silently misparsed.
+/// identifier, a sixteen-byte name and the value). The body is sent in the clear.
 /// </para>
 /// <para>
 /// The record count is taken from the rows actually serialised, never from what
@@ -36,7 +34,7 @@ public static class RankingBodyUtils
     /// </summary>
     private const int MaximumNameLength = NameSize - 1;
 
-    /// <summary>Serialises a board window and scrambles it.</summary>
+    /// <summary>Serialises a board window into the wire reply.</summary>
     /// <param name="page">Window to serialise.</param>
     public static byte[] Encode(RankingPage page)
     {
@@ -56,7 +54,6 @@ public static class RankingBodyUtils
             offset += RecordSize;
         }
 
-        RankingScrambleUtils.Apply(body);
         return body;
     }
 
