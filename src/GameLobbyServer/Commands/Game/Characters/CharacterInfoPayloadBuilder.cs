@@ -105,13 +105,14 @@ public static class FeatureFlags
     /// Map, rule and expansion availability mask. The client reads it as a bit
     /// field in which bit 0 through bit 55 each stand for one selectable map or
     /// rule, and it offers the real row for a set bit and a greyed row whose
-    /// name is the shipped <c>????</c> translation for a clear one. Every bit is
-    /// set so the whole catalogue is offered; the trailing nine bytes are past
-    /// the highest bit the client ever tests.
+    /// name is the shipped <c>????</c> translation for a clear one. Every bit
+    /// is set except bit 20 while the script gate behind the MGO EYES main-menu
+    /// row is being pinned down; the trailing nine bytes are past the highest
+    /// bit the client ever tests.
     /// </summary>
     public static readonly byte[] ContentMask =
     [
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xef, 0xff, 0xff, 0xff, 0xff,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
 }
