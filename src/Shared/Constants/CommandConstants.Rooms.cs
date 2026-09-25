@@ -77,12 +77,6 @@ public static partial class CommandConstants
     /// <summary>Carries the host's peer-table index after a finished connect.</summary>
     public const ushort HostPlayerConnectFinishResult = 0x4347;
 
-    /// <summary>Hands host ownership to another player.</summary>
-    public const ushort HostPass = 0x4348;
-
-    /// <summary>Carries the result of a host hand-off.</summary>
-    public const ushort HostPassResult = 0x4349;
-
     /// <summary>Leaves the current room.</summary>
     public const ushort QuitGame = 0x4380;
 

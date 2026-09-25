@@ -67,15 +67,6 @@ public sealed class HostPlayerConnectFinishHandler(SessionHelper sessionHelper) 
         HostPeerRegistrationHandler.ReplyAsync(session, CommandConstants.HostPlayerConnectFinishResult, packet, sessionHelper, cancellationToken);
 }
 
-/// <summary>Acknowledges a host hand-off.</summary>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
-public sealed class HostPassHandler(SessionHelper sessionHelper) : ICommandHandler
-{
-    /// <inheritdoc />
-    public Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken) =>
-        sessionHelper.SendResultAsync(session, CommandConstants.HostPassResult, ErrorCodeConstants.ResultNone, cancellationToken);
-}
-
 /// <summary>
 /// Migrates the room to the successor the client elected when the host leaves.
 /// </summary>

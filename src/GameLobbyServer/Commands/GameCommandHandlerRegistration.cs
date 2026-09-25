@@ -80,7 +80,6 @@ public static class GameCommandHandlerRegistration
         services.AddTransient<HostPlayerDisconnectedHandler>();
         services.AddTransient<HostSetPlayerTeamHandler>();
         services.AddTransient<HostPlayerConnectFinishHandler>();
-        services.AddTransient<HostPassHandler>();
         services.AddTransient<PassRoundHandler>();
         services.AddTransient<SetGameHandler>();
         services.AddTransient<UpdatePingsHandler>();
@@ -206,7 +205,6 @@ public static class GameCommandHandlerRegistration
         registry.Register<HostPlayerDisconnectedHandler>(ServerType.GameplayLobby, CommandConstants.HostPlayerDisconnected);
         registry.Register<HostSetPlayerTeamHandler>(ServerType.GameplayLobby, CommandConstants.HostSetPlayerTeam);
         registry.Register<HostPlayerConnectFinishHandler>(ServerType.GameplayLobby, CommandConstants.HostPlayerConnectFinish);
-        registry.Register<HostPassHandler>(ServerType.GameplayLobby, CommandConstants.HostPass);
         registry.Register<PassRoundHandler>(ServerType.GameplayLobby, CommandConstants.PassRound);
         registry.Register<SetGameHandler>(ServerType.GameplayLobby, CommandConstants.SetGame);
         registry.Register<UpdatePingsHandler>(ServerType.GameplayLobby, CommandConstants.UpdatePings);

@@ -699,6 +699,39 @@ and `CharacterCardPayloadTests` holds each offset — including a full-length co
 regression the shift came from, and an experience above 65535, which the old two-half write
 truncated.
 
+## SOLVED: `0x4348` is the team-creation card, not a host pass
+
+The disc build's notes leave `0x4348` unidentified and record its sender as dead code, so the only
+name it ever had came from the reference server — *host pass*, tier 4 and unadopted there, and
+contradicted by the reply parser, which reads a 16-byte name and a 128-byte comment rather than a
+host-transfer acknowledgement (`PACKETS_NOT_OBSERVED.md`, `dev/proto/outbound/mgo2_cmd_4349_s2c.ksy`).
+
+**On 1.36 the sender is live, and it is not in the room code.** Scanning every `li r4,<id>` in the
+image gives one sender per command across `0x43xx`–`0x4Fxx`, and `0x4348` has exactly one:
+
+| | |
+| --- | --- |
+| wrapper | `0xF18688`, its `li r4,0x4348` at `0xF186F0` |
+| request body | **empty** — no field write sits between the identifier and the send, where a request that carries one has its writes there (`0x49B0`'s wrapper at `0xF182AC` writes two words) |
+| only caller | `0x9A373C`, a menu action of the dispatcher at `0x9A31C8` |
+| wrappers beside it | `0x49B0`, `0x4984`, `0x4980`, `0x4914`, `0x49D0`, `0x49A0` |
+
+Those wrappers are one bank, `0xF182AC`–`0xF18998`, and every one of them is a team or event
+request. The room requests (`0x4300`, `0x4316`, `0x4320`, `0x4340`–`0x4346`, `0x4380`, `0x4390`,
+`0x43a0`) are a different bank, `0xF0E2xx`–`0xF12xxx` — where a host-transfer command would sit, and
+where no `0x4348` sender exists.
+
+**The reply is a card.** `0x4349` is dispatched at `0xF04AB0` to the parser `0xF1DDD4`, which clears
+`0x2F0` bytes and reads a `result`, then — only while that result is zero — a 16-byte name, a
+128-byte comment and a flag byte. The shape is the disc build's shape, and it makes a nonzero result
+a complete reply rather than a truncated one.
+
+One consequence is on the server's side. `0x4348`/`0x4349` are **one command**, so exactly one
+handler can serve them; the event domain's reading of it and the room domain's *host pass* name were
+both registered, and the registry's refusal to hold two handlers for one identifier stopped every
+gameplay lobby at startup. The room host hand-off is `0x43a0` (`PassRoundHandler`), live-confirmed
+2026-07-22, and it was never this identifier.
+
 ## Open
 
 - Whether 1.36 honours the `d/testhk` hostname override at all — the string is present, but presence

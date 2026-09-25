@@ -144,7 +144,7 @@ reference logs a warning and replies nothing.
 | `0x4304` / `0x4310` | `GetHostSettingsHandler` / `CheckHostSettingsHandler` | `getHostSettings` / `checkHostSettings` |
 | `0x4316` / `0x4320` / `0x4322` | `CreateGameHandler` / `JoinGameHandler` / `JoinGameFailedHandler` | `createGame` / `joinGame` / `joinFailed` |
 | `0x4340`–`0x4347` | `HostPeerRegistrationHandler`, `HostPlayerDisconnectedHandler`, `HostSetPlayerTeamHandler`, `HostPlayerConnectFinishHandler` | `playerConnection` (one handler for all four) |
-| `0x4348` | `HostPassHandler` | — |
+| `0x4348` | `GetTeamCreateInformationHandler` | — |
 | `0x4350` | — (was `UpdateStatsHandler`; the id does not exist in the client) | — |
 | `0x4380` | `QuitGameHandler` | `quitGame` |
 | `0x4390` / `0x43a2` | `HostUpdateStatsHandler` / `HostWeaponTalliesHandler` | `updateStats` / `roundEnd` |
@@ -488,11 +488,12 @@ the deployment's logs show all five leaving the server, and none arriving.
 
 ### 4.3 Extra opcodes answered
 
-`0x4348` (`HostPassHandler`). The reference registers nothing for it, on the reference a
-stray `0x4348` gets a hex dump in the log and no reply, and the client genuinely sends it
-(`0xd4a8a4` in its own list). This is the one place the two servers' answered sets differ,
-and it is deliberate: matching the reference exactly would mean removing the answer to a
-command the client issues.
+`0x4348` (`GetTeamCreateInformationHandler`). The reference registers nothing for it, on the
+reference a stray `0x4348` gets a hex dump in the log and no reply, and the client genuinely
+sends it — on 1.36 from the team-creation menu, which is what named it, and which is the only
+sender the image has (`BUILD_1_36.md`, "SOLVED: `0x4348` is the team-creation card"). This is
+the one place the two servers' answered sets differ, and it is deliberate: matching the
+reference exactly would mean removing the answer to a command the client issues.
 
 One former entry here is gone. `0x4350` (`UpdateStatsHandler`) is not in the id space —
 no builder, no parser, no inbound sighting — so its registration is gone; the round statistics

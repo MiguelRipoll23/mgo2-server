@@ -26,10 +26,30 @@ public static partial class CommandConstants
     /// <summary>Carries the 905-byte event information record for one identifier.</summary>
     public const ushort GetEventInformationByIdResult = 0x4905;
 
-    /// <summary>Asks for a saved team-creation preset.</summary>
+    /// <summary>
+    /// Asks for the team-creation card the client prefills its Create Team
+    /// screen with: the request is empty and the reply is the set of fields the
+    /// screen opens with.
+    /// <para>
+    /// In the 1.36 client this identifier has exactly one sender, the wrapper at
+    /// <c>0xF18688</c> whose <c>li r4,0x4348</c> sits at <c>0xF186F0</c>, and that
+    /// wrapper is banked with the event and team requests (<c>0x49B0</c>,
+    /// <c>0x4984</c>, <c>0x4980</c>, <c>0x4914</c>, <c>0x49D0</c>, <c>0x49A0</c>) —
+    /// the room requests all live a bank earlier, in the <c>0xF0E2xx</c>-
+    /// <c>0xF12xxx</c> range. It writes no field between the identifier and the
+    /// send, which is what makes the request empty, and the reply parser reads a
+    /// result, a 16-byte name and a 128-byte comment.
+    /// </para>
+    /// <para>
+    /// The "host pass" name the disc build's notes give this identifier is the
+    /// reference server's own, marked there as unadopted, comes from a binary in
+    /// which the sender is dead code, and is contradicted by that same parser,
+    /// which reads a descriptive card rather than a host-transfer acknowledgement.
+    /// </para>
+    /// </summary>
     public const ushort GetTeamCreateInformation = 0x4348;
 
-    /// <summary>Carries the saved team-creation preset, or its absence.</summary>
+    /// <summary>Carries the team-creation card, or the absence of one.</summary>
     public const ushort GetTeamCreateInformationResult = 0x4349;
 
     // Survival battle list --------------------------------------------------

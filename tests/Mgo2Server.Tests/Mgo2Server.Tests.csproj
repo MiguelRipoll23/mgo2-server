@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\src\Stun\Mgo2Server.Stun.csproj" />
     <ProjectReference Include="..\..\src\AccountLobbyServer\Mgo2Server.AccountLobbyServer.csproj" />
     <ProjectReference Include="..\..\src\GameLobbyServer\Mgo2Server.GameLobbyServer.csproj" />
+    <ProjectReference Include="..\..\src\GateLobbyServer\Mgo2Server.GateLobbyServer.csproj" />
     <ProjectReference Include="..\..\src\Http\Mgo2Server.Http.csproj" />
   </ItemGroup>
 
