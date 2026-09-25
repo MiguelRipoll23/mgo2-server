@@ -11,4 +11,4 @@ metadata:
   name: mgo2-migrate-bundle
   namespace: mgo2
 data:
-  image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:543049009c6972d75d17071880588f0148b7b393
+  image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:1181deace1ec748a288edd19ab649465771e4559
