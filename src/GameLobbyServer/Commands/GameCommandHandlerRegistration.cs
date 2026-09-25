@@ -2,6 +2,7 @@ using Mgo2Server.GameLobbyServer.Commands.Game;
 using Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 using Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 using Mgo2Server.GameLobbyServer.Commands.Game.Clans;
+using Mgo2Server.GameLobbyServer.Commands.Game.Events;
 using Mgo2Server.GameLobbyServer.Commands.Game.Mail;
 using Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 using Mgo2Server.Shared.Constants;
@@ -26,6 +27,7 @@ public static class GameCommandHandlerRegistration
         RegisterRoomCommands(registry);
         RegisterMailCommands(registry);
         RegisterClanCommands(registry);
+        RegisterEventCommands(registry);
     }
 
     /// <summary>Registers every gameplay lobby handler with the container.</summary>
@@ -43,7 +45,6 @@ public static class GameCommandHandlerRegistration
         services.AddTransient<GetLobbyDisconnectHandler>();
         services.AddTransient<TrainingConnectHandler>();
         services.AddTransient<GetGameLobbyInfoHandler>();
-        services.AddTransient<GetGameEntryInfoHandler>();
         services.AddTransient<ChatEchoHandler>();
         services.AddTransient<SendChatHandler>();
 
@@ -98,6 +99,36 @@ public static class GameCommandHandlerRegistration
         services.AddTransient<GetMessageContentsHandler>();
         services.AddTransient<DeleteMessageHandler>();
 
+        // Events.
+        services.AddTransient<GetEventInformationHandler>();
+        services.AddTransient<GetEventInformationByIdHandler>();
+        services.AddTransient<GetTeamCreateInformationHandler>();
+        services.AddTransient<EventAdjacentRequestHandler>();
+        services.AddTransient<CreateEventTeamHandler>();
+        services.AddTransient<JoinEventTeamHandler>();
+        services.AddTransient<LeaveEventTeamHandler>();
+        services.AddTransient<SetEventEntryDecisionHandler>();
+        services.AddTransient<GetEventTeamListHandler>();
+        services.AddTransient<GetEventTeamDetailsHandler>();
+        services.AddTransient<InviteEventTeamMembersHandler>();
+        services.AddTransient<AnswerEventTeamInvitationHandler>();
+        services.AddTransient<ReportEventInvitationStatusHandler>();
+        services.AddTransient<GetSurvivalBattleListHandler>();
+        services.AddTransient<GetBattleTeamInformationHandler>();
+        services.AddTransient<GetAssignedGameSnapshotHandler>();
+        services.AddTransient<ConfirmEventAssignmentHandler>();
+        services.AddTransient<RemoveEventGameEntryHandler>();
+        services.AddTransient<GetAssignedMemberInformationHandler>();
+        services.AddTransient<GetEventListHandler>();
+        services.AddTransient<GetEventDetailHandler>();
+        services.AddTransient<GetAssignedGameDetailHandler>();
+        services.AddTransient<ReserveTournamentEntryHandler>();
+        services.AddTransient<ReportEventGameResultHandler>();
+        services.AddTransient<EnterEventHandler>();
+
+        // The same screen the lobby select opens, serving a pending entry.
+        services.AddTransient<GetGameEntryInfoHandler>();
+
         // Clans.
         services.AddTransient<CreateClanHandler>();
         services.AddTransient<DisbandClanHandler>();
@@ -134,7 +165,6 @@ public static class GameCommandHandlerRegistration
         registry.Register<GetLobbyDisconnectHandler>(ServerType.GameplayLobby, CommandConstants.GetLobbyDisconnect);
         registry.Register<TrainingConnectHandler>(ServerType.GameplayLobby, CommandConstants.TrainingConnect);
         registry.Register<GetGameLobbyInfoHandler>(ServerType.GameplayLobby, CommandConstants.GetGameLobbyInfo);
-        registry.Register<GetGameEntryInfoHandler>(ServerType.GameplayLobby, CommandConstants.GetGameEntryInfo);
         registry.Register<ChatEchoHandler>(ServerType.GameplayLobby, CommandConstants.ChatEcho);
         registry.Register<SendChatHandler>(ServerType.GameplayLobby, CommandConstants.SendChat);
         registry.Register<DisconnectHandler>(ServerType.GameplayLobby, CommandConstants.Disconnect);
@@ -196,6 +226,46 @@ public static class GameCommandHandlerRegistration
         registry.Register<GetMessagesHandler>(ServerType.GameplayLobby, CommandConstants.GetMessages);
         registry.Register<GetMessageContentsHandler>(ServerType.GameplayLobby, CommandConstants.GetMessageContents);
         registry.Register<DeleteMessageHandler>(ServerType.GameplayLobby, CommandConstants.DeleteMessage);
+    }
+
+    private static void RegisterEventCommands(CommandRegistry registry)
+    {
+        registry.Register<GetEventInformationHandler>(ServerType.GameplayLobby, CommandConstants.GetEventInformation);
+        registry.Register<GetEventInformationByIdHandler>(ServerType.GameplayLobby, CommandConstants.GetEventInformationById);
+        registry.Register<GetTeamCreateInformationHandler>(ServerType.GameplayLobby, CommandConstants.GetTeamCreateInformation);
+
+        // One handler answers all seven unrecovered screens; the registry refuses
+        // two handlers for one command, not one handler for many.
+        registry.Register<EventAdjacentRequestHandler>(ServerType.GameplayLobby, CommandConstants.GetSurvivalAdjacentList);
+        registry.Register<EventAdjacentRequestHandler>(ServerType.GameplayLobby, CommandConstants.GetTournamentAdjacentList);
+        registry.Register<EventAdjacentRequestHandler>(ServerType.GameplayLobby, CommandConstants.GetEventAdjacentDetail);
+        registry.Register<EventAdjacentRequestHandler>(ServerType.GameplayLobby, CommandConstants.GetEventAdjacentState);
+        registry.Register<EventAdjacentRequestHandler>(ServerType.GameplayLobby, CommandConstants.GetEventAdjacentEntry);
+        registry.Register<EventAdjacentRequestHandler>(ServerType.GameplayLobby, CommandConstants.GetEventAdjacentTeam);
+        registry.Register<EventAdjacentRequestHandler>(ServerType.GameplayLobby, CommandConstants.SyncEventViewState);
+
+        registry.Register<CreateEventTeamHandler>(ServerType.GameplayLobby, CommandConstants.CreateEventTeam);
+        registry.Register<JoinEventTeamHandler>(ServerType.GameplayLobby, CommandConstants.JoinEventTeam);
+        registry.Register<LeaveEventTeamHandler>(ServerType.GameplayLobby, CommandConstants.LeaveEventTeam);
+        registry.Register<SetEventEntryDecisionHandler>(ServerType.GameplayLobby, CommandConstants.SetEventEntryDecision);
+        registry.Register<GetEventTeamListHandler>(ServerType.GameplayLobby, CommandConstants.GetEventTeamList);
+        registry.Register<GetEventTeamDetailsHandler>(ServerType.GameplayLobby, CommandConstants.GetEventTeamDetails);
+        registry.Register<InviteEventTeamMembersHandler>(ServerType.GameplayLobby, CommandConstants.InviteEventTeamMembers);
+        registry.Register<AnswerEventTeamInvitationHandler>(ServerType.GameplayLobby, CommandConstants.AnswerEventTeamInvitation);
+        registry.Register<ReportEventInvitationStatusHandler>(ServerType.GameplayLobby, CommandConstants.ReportEventInvitationStatus);
+        registry.Register<GetSurvivalBattleListHandler>(ServerType.GameplayLobby, CommandConstants.GetSurvivalBattleList);
+        registry.Register<GetBattleTeamInformationHandler>(ServerType.GameplayLobby, CommandConstants.GetBattleTeamInformation);
+        registry.Register<GetAssignedGameSnapshotHandler>(ServerType.GameplayLobby, CommandConstants.GetActiveGameSnapshot);
+        registry.Register<ConfirmEventAssignmentHandler>(ServerType.GameplayLobby, CommandConstants.ConfirmActiveGameAssignment);
+        registry.Register<RemoveEventGameEntryHandler>(ServerType.GameplayLobby, CommandConstants.RemoveEventGameEntry);
+        registry.Register<GetAssignedMemberInformationHandler>(ServerType.GameplayLobby, CommandConstants.GetAssignedMemberInformation);
+        registry.Register<GetEventListHandler>(ServerType.GameplayLobby, CommandConstants.GetEventList);
+        registry.Register<GetEventDetailHandler>(ServerType.GameplayLobby, CommandConstants.GetEventDetail);
+        registry.Register<GetAssignedGameDetailHandler>(ServerType.GameplayLobby, CommandConstants.GetAssignedGameDetail);
+        registry.Register<ReserveTournamentEntryHandler>(ServerType.GameplayLobby, CommandConstants.ReserveTournamentEntry);
+        registry.Register<ReportEventGameResultHandler>(ServerType.GameplayLobby, CommandConstants.ReportEventGameResult);
+        registry.Register<EnterEventHandler>(ServerType.GameplayLobby, CommandConstants.EnterEvent);
+        registry.Register<GetGameEntryInfoHandler>(ServerType.GameplayLobby, CommandConstants.GetGameEntryInfo);
     }
 
     private static void RegisterClanCommands(CommandRegistry registry)

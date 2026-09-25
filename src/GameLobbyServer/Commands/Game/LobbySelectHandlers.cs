@@ -55,18 +55,3 @@ public sealed class GetGameLobbyInfoHandler(
         await sessionHelper.SendStartEndPacketAsync(session, CommandConstants.GetGameLobbyInfoEnd, cancellationToken);
     }
 }
-
-/// <summary>Serves the fixed game-entry information grid.</summary>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
-public sealed class GetGameEntryInfoHandler(SessionHelper sessionHelper) : ICommandHandler
-{
-    /// <inheritdoc />
-    public Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
-    {
-        var writer = new PacketWriter();
-        writer.WriteUInt32(ErrorCodeConstants.ResultNone);
-        writer.WriteUInt32(4);
-        writer.WritePadding(4 * 57);
-        return sessionHelper.SendPacketAsync(session, CommandConstants.GetGameEntryInfoResult, writer.Build(), cancellationToken);
-    }
-}

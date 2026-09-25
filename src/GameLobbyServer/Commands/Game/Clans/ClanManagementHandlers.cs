@@ -25,11 +25,13 @@ public sealed class CreateClanHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await sessionHelper.SendPacketAsync(session, CommandConstants.CreateClanResult, null, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         var reader = new PacketReader(packet.Payload);
         var name = reader.ReadFixedString(ClanNameLength);
@@ -163,11 +165,13 @@ public sealed class UpdateClanStateHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await sessionHelper.SendPacketAsync(session, CommandConstants.UpdateClanStateResult, null, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         var membership = await clanService.FindMembershipByCharacterAsync(characterIdentifier, cancellationToken);
 

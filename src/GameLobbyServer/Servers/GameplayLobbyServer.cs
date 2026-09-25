@@ -1,3 +1,4 @@
+using Mgo2Server.GameLobbyServer.Maintenance;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Tcp;
 using Mgo2Server.Shared.Types;
@@ -55,6 +56,13 @@ public sealed class GameplayLobbyServer(IServiceProvider serviceProvider, int po
         Services.GetRequiredService<ActiveGameSessionsService>().Remove(session);
         var lobbyTracker = Services.GetRequiredService<LobbyTrackerService>();
         lobbyTracker.LeaveLobby(session);
+
+        // The event state is reclaimed after the session leaves the registry, so
+        // the pushes its team receives are addressed to the players still here and
+        // not to the socket that is gone. It runs unawaited because this callback
+        // cannot wait: the socket is already closed, and the work is for the
+        // players remaining.
+        _ = Services.GetRequiredService<EventSessionCleanupService>().CleanupAsync(session);
 
         // An abrupt disconnect that never sends the lobby-leave command is the one
         // departure nobody writes the count for: the leave path republishes it and

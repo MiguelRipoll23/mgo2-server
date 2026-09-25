@@ -142,4 +142,12 @@ public static class ErrorCodeConstants
 
     /// <summary>Character-specific failure code (masked, 0xc0ffee20).</summary>
     public const uint ResultCharacterDoesNotExist = 0xc0ffee20;
+
+    /// <summary>
+    /// Masked result marking a screen the server accepts but cannot answer,
+    /// because its success body has not been recovered. Distinct from the
+    /// generic failure so the two are separable in a log, while both present the
+    /// client's generic error sentence.
+    /// </summary>
+    public const uint ResultFeatureNotImplemented = 0xc0ffee30;
 }

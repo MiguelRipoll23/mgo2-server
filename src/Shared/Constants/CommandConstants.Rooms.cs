@@ -125,6 +125,12 @@ public static partial class CommandConstants
     /// <summary>Carries the result of a client-setting write.</summary>
     public const ushort PutClientSettingResult = 0x43a7;
 
+    /// <summary>Reports the terminal result of a leased event game.</summary>
+    public const ushort ReportEventGameResult = 0x43b0;
+
+    /// <summary>Carries the result of a terminal event-game report.</summary>
+    public const ushort ReportEventGameResultAck = 0x43b1;
+
     /// <summary>Edits the details of the caller's room in place.</summary>
     public const ushort HostInGameInfo = 0x43c0;
 

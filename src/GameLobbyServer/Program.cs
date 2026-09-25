@@ -36,6 +36,9 @@ builder.Services.AddSingleton<LobbyCleanupService>();
 builder.Services.AddSingleton<GameCleanupService>();
 builder.Services.AddSingleton<AutomatchTickerService>();
 builder.Services.AddSingleton<CharacterPresenceTickerService>();
+builder.Services.AddSingleton<EventOutcomeTickerService>();
+builder.Services.AddSingleton<EventSessionCleanupService>();
+builder.Services.AddSingleton<EventAssignmentTickerService>();
 builder.Services.AddSingleton<CharacterPresenceCleanupService>();
 builder.Services.AddSingleton<GameLobbyServerRunner>();
 
@@ -44,6 +47,7 @@ var host = builder.Build();
 var runner = host.Services.GetRequiredService<GameLobbyServerRunner>();
 var lobbyOptions = host.Services.GetRequiredService<IOptions<LobbyOptions>>().Value;
 var automatchOptions = host.Services.GetRequiredService<IOptions<AutomatchOptions>>().Value;
+var eventOptions = host.Services.GetRequiredService<IOptions<EventOptions>>().Value;
 var options = host.Services.GetRequiredService<IOptions<ServerOptions>>().Value;
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("GameLobbyServer");
 
@@ -52,6 +56,11 @@ lobbyOptions.Validate();
 // Refused here rather than at first use, so a schedule that cannot be honoured
 // stops the process instead of closing the feature in a way that looks deliberate.
 automatchOptions.Validate();
+
+// The same reasoning as the schedule above: a zone or reward table that cannot
+// be honoured stops the process rather than advertising a wrong window or paying
+// a prize that never applies.
+eventOptions.Validate();
 
 logger.LogInformation(
     "Automatching is {State} ({Schedule})",

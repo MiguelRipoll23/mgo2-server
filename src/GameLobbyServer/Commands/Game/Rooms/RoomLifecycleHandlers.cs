@@ -25,8 +25,9 @@ public sealed class CreateGameHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier ||
-            session.LobbyIdentifier is not { } lobbyIdentifier)
+        // Both halves are one refusal: a session missing either fact cannot create
+        // a game.
+        if (session.CharacterIdentifier is null || session.LobbyIdentifier is null)
         {
             await sessionHelper.SendResultAsync(
                 session,
@@ -35,6 +36,9 @@ public sealed class CreateGameHandler(
                 cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
+        var lobbyIdentifier = session.LobbyIdentifier.Value;
 
         var settings = await characterService.GetHostSettingsAsync(characterIdentifier, cancellationToken);
         var pushed = settings.FirstOrDefault(row => row.Type == HostSettingsType.Value);
@@ -54,6 +58,16 @@ public sealed class CreateGameHandler(
             room.Comment = comment;
             room.MaximumPlayers = defaultMaximumPlayers;
             room.Games = JsonSerializer.Serialize(rotation);
+
+            // A room the host flagged as dedicated is the one the event hosts are
+            // chosen from, so the flag travels into the room settings the event
+            // host-eligibility reads; a plain room keeps the empty default.
+            var isDedicatedRoom = pushed is { Dedicated: true };
+
+            if (isDedicatedRoom)
+            {
+                room.Common = """{"dedicated":true}""";
+            }
         }, cancellationToken);
 
         // The host is the room's first roster member: the roster row carries
