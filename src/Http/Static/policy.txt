@@ -3,4 +3,7 @@ Welcome to AltMGO!
 This is a playground server for experimenting
 with the game’s protocols, researching how things work,
 and testing modifications in a closed environment
-with other people like you!
+with other people like you.
+
+Please report any issues in our Discord server and
+have fun.
