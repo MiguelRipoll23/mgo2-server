@@ -120,9 +120,13 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
     /// <summary>Rewards paid for completed event matches.</summary>
     public DbSet<EventRoundReward> EventRoundRewards => Set<EventRoundReward>();
 
-    /// <summary>Reserved and registered Tournament places.</summary>
+    /// <summary>Per-player reports of a played event match.</summary>
     public DbSet<EventStatReport> EventStatReports => Set<EventStatReport>();
 
+    /// <summary>Scheduled events a client may name when it enters one.</summary>
+    public DbSet<EventSchedule> EventSchedules => Set<EventSchedule>();
+
+    /// <summary>Reserved and registered Tournament places.</summary>
     public DbSet<TournamentRegistration> TournamentRegistrations => Set<TournamentRegistration>();
 
     /// <summary>Seeded Tournament brackets.</summary>

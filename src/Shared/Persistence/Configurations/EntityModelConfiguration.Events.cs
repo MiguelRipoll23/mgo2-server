@@ -77,6 +77,17 @@ internal static partial class EntityModelConfiguration
             entity.HasIndex(report => report.MatchIdentifier);
         });
 
+        modelBuilder.Entity<EventSchedule>(entity =>
+        {
+            // The published events are listed by mode, so that is the axis a
+            // lobby screen reads rather than an index over the whole table.
+            entity.HasIndex(schedule => schedule.LobbySubtype);
+            entity.Property(schedule => schedule.PublishStart).HasDefaultValue(0L);
+            entity.Property(schedule => schedule.PublishEnd).HasDefaultValue(0L);
+            entity.Property(schedule => schedule.TeamCapacity)
+                .HasDefaultValue(Domain.Events.EventConstants.BracketMaximumEntrants);
+        });
+
         modelBuilder.Entity<TournamentRegistration>(entity =>
         {
             entity.HasIndex(registration => new { registration.EventIdentifier, registration.CharacterIdentifier })

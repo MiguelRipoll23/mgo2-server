@@ -50,7 +50,14 @@ public sealed class EventBracketPushService(
         }
 
         var tree = await bracketService.RebuildAsync(advance.EventIdentifier, cancellationToken);
-        var seeds = await bracketService.LoadSeedOrderAsync(advance.EventIdentifier, cancellationToken);
+
+        // The order the bracket was drawn in, not the order teams were submitted
+        // in: a field that has been decided has released its places, and what is
+        // being pushed is the draw that was made rather than a field that can no
+        // longer be enumerated.
+        var seeds = await bracketService.LoadFrozenSeedOrderAsync(
+            advance.EventIdentifier,
+            cancellationToken);
         if (tree is null || seeds.Count == 0)
         {
             return 0;

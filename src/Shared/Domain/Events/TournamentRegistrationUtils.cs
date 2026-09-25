@@ -49,9 +49,16 @@ public static class TournamentRegistrationUtils
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        return PlaceCapacity(TeamCapacity(options));
+    }
+
+    /// <summary>Total player places a field of the given team count holds.</summary>
+    /// <param name="teamCapacity">Number of teams the field holds.</param>
+    public static int PlaceCapacity(int teamCapacity)
+    {
         // Six players per team is the roster the event screens advertise, so the
         // capacity is stated in teams and counted in players.
-        return options.TournamentCapacity * EventConstants.TeamMemberLimit;
+        return teamCapacity * EventConstants.TeamMemberLimit;
     }
 
     /// <summary>

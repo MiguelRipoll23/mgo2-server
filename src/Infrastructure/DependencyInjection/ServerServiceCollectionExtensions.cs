@@ -191,6 +191,7 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<EventHostLeaseService>();
         services.AddSingleton<EventAssignmentService>();
         services.AddSingleton<EventAssignmentPushService>();
+        services.AddSingleton<EventScheduleService>();
         services.AddSingleton<TournamentRegistrationService>();
         services.AddSingleton<TournamentBracketService>();
         services.AddSingleton<TournamentMatchService>();

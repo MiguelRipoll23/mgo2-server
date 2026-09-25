@@ -143,6 +143,7 @@ public sealed class TournamentBracketService(IDbContextFactory<Mgo2DatabaseConte
         var eventIdentifier = await context.EventTeams
             .Where(team => team.Identifier == match.FirstTeamIdentifier
                 || team.Identifier == match.SecondTeamIdentifier)
+            .OrderBy(team => team.Identifier)
             .Select(team => (int?)team.EventIdentifier)
             .FirstOrDefaultAsync(cancellationToken);
         // A team with no event, and one naming a zero event, both hold no bracket.
@@ -213,6 +214,38 @@ public sealed class TournamentBracketService(IDbContextFactory<Mgo2DatabaseConte
             .ToListAsync(cancellationToken);
 
         return TournamentSeedingUtils.OrderTeamSeeds(entrants);
+    }
+
+    /// <summary>
+    /// Reads the frozen seed order of a drawn bracket.
+    /// <para>
+    /// This is not the same read as <see cref="LoadSeedOrderAsync"/>, and the
+    /// difference matters once the field has been released: the submitted teams
+    /// are what the field was drawn from, while the seeds are what it was drawn
+    /// as. A bracket that has been played out no longer has its submissions, and
+    /// the bracket it was still describes itself in its seeds.
+    /// </para>
+    /// </summary>
+    /// <param name="eventIdentifier">Event to read.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Team identifiers in the order they were drawn, or an empty list.</returns>
+    public async Task<IReadOnlyList<int>> LoadFrozenSeedOrderAsync(
+        int eventIdentifier,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventIdentifier <= 0)
+        {
+            return [];
+        }
+
+        await using var context = await CreateContextAsync(cancellationToken);
+        var seeds = await context.TournamentSeeds
+            .Where(seed => seed.EventIdentifier == eventIdentifier)
+            .OrderBy(seed => seed.SeedIndex)
+            .Select(seed => seed.TeamIdentifier)
+            .ToListAsync(cancellationToken);
+
+        return seeds;
     }
 
     /// <summary>Finds a frozen bracket.</summary>
@@ -299,6 +332,25 @@ public sealed class TournamentBracketService(IDbContextFactory<Mgo2DatabaseConte
             return TournamentResultOutcome.NotAFixture;
         }
 
+        // A match that already reported a result is answered from the ledger
+        // before the tree is consulted, because a resolved fixture is no longer
+        // a ready one: without this a repeated report would be indistinguishable
+        // from a match that was never part of the draw.
+        var recorded = await context.TournamentResults
+            .FirstOrDefaultAsync(
+                result => result.EventIdentifier == eventIdentifier
+                    && result.MatchIdentifier == matchIdentifier,
+                cancellationToken);
+        if (recorded is not null)
+        {
+            // The same claim again is the same report. A different one is not a
+            // replay of anything, and a decided fixture is not this call's to
+            // reopen, so a conflicting claim records nothing.
+            return recorded.WinnerTeamIdentifier == winnerTeamIdentifier
+                ? TournamentResultOutcome.Replayed
+                : TournamentResultOutcome.NotAFixture;
+        }
+
         var tree = await RebuildAsync(eventIdentifier, cancellationToken);
         if (tree is null)
         {
@@ -331,30 +383,16 @@ public sealed class TournamentBracketService(IDbContextFactory<Mgo2DatabaseConte
         }
 
         var now = DateTimeOffset.UtcNow;
-        var existing = await context.TournamentResults
-            .FirstOrDefaultAsync(
-                result => result.EventIdentifier == eventIdentifier
-                    && result.MatchIdentifier == matchIdentifier,
-                cancellationToken);
-        if (existing is null)
+        context.TournamentResults.Add(new TournamentResult
         {
-            context.TournamentResults.Add(new TournamentResult
-            {
-                EventIdentifier = eventIdentifier,
-                MatchIdentifier = matchIdentifier,
-                RoundIndex = fixture.Round,
-                FirstTeamIdentifier = fixture.FirstTeamIdentifier,
-                SecondTeamIdentifier = fixture.SecondTeamIdentifier,
-                WinnerTeamIdentifier = winnerTeamIdentifier,
-                ReportedAt = now,
-            });
-        }
-        else
-        {
-            // The match already reported a result of its own, so the tree's
-            // advance is not this call's to record.
-            return TournamentResultOutcome.Replayed;
-        }
+            EventIdentifier = eventIdentifier,
+            MatchIdentifier = matchIdentifier,
+            RoundIndex = fixture.Round,
+            FirstTeamIdentifier = fixture.FirstTeamIdentifier,
+            SecondTeamIdentifier = fixture.SecondTeamIdentifier,
+            WinnerTeamIdentifier = winnerTeamIdentifier,
+            ReportedAt = now,
+        });
 
         var champion = tree.Champion();
         bracket.CurrentRound = Math.Max(1, tree.NextRound());

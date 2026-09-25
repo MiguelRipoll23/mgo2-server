@@ -1,8 +1,6 @@
 using Mgo2Server.Shared.Domain;
-using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.Shared.Domain.Events;
 
@@ -26,12 +24,12 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 /// <param name="bracketService">Service that owns the seeds and the bracket.</param>
 /// <param name="matchService">Service that persists the pairings.</param>
-/// <param name="options">Event configuration, which carries the field capacity.</param>
+/// <param name="scheduleService">Service that states each event's field size.</param>
 public sealed class TournamentMatchService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
     TournamentBracketService bracketService,
     EventMatchService matchService,
-    IOptions<EventOptions> options)
+    EventScheduleService scheduleService)
     : DomainService(contextFactory)
 {
     /// <summary>Pairs every fixture the brackets of every field are ready to play.</summary>
@@ -133,6 +131,22 @@ public sealed class TournamentMatchService(
         int eventIdentifier,
         CancellationToken cancellationToken)
     {
+        // The field size is the event's own, read from the same schedule the
+        // submission admitted teams against. A field the submissions would have
+        // filled is a full field, and a full field is closed; reading the size
+        // from anywhere else would let a draw wait on an entrant the event
+        // itself has no place for.
+        var schedule = await scheduleService.FindOpenAsync(
+            eventIdentifier,
+            EventConstants.TournamentRegistrationSelector,
+            cancellationToken);
+        if (schedule is null)
+        {
+            // An event nobody may enter has no field to close, so there is
+            // nothing here to draw.
+            return false;
+        }
+
         await using var context = await CreateContextAsync(cancellationToken);
         var teamIdentifiers = await context.TournamentRegistrations
             .Where(registration => registration.EventIdentifier == eventIdentifier
@@ -154,7 +168,7 @@ public sealed class TournamentMatchService(
 
         return TournamentSeedingUtils.EntriesClosed(
             teams.Count,
-            TournamentRegistrationUtils.TeamCapacity(options.Value),
+            EventScheduleService.TeamCapacityOf(schedule),
             readiness);
     }
 

@@ -88,6 +88,21 @@ public sealed class TournamentRegistrationTests
     }
 
     [Fact]
+    public void A_field_states_its_own_places_rather_than_inheriting_the_configured_ones()
+    {
+        // Two events running at once each have their own field, so the places a
+        // schedule states are counted from that schedule and not from the
+        // deployment-wide bracket size.
+        Assert.Equal(4 * EventConstants.TeamMemberLimit, TournamentRegistrationUtils.PlaceCapacity(4));
+
+        // The configured size is the fallback, and states the same number.
+        var options = CreateOptions(capacity: 8);
+        Assert.Equal(
+            TournamentRegistrationUtils.PlaceCapacity(TournamentRegistrationUtils.TeamCapacity(options)),
+            TournamentRegistrationUtils.PlaceCapacity(options));
+    }
+
+    [Fact]
     public void Next_slot_reuses_the_lowest_released_place()
     {
         Assert.Equal(0, TournamentRegistrationUtils.NextSlot([], capacity: 8));

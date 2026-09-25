@@ -8,66 +8,25 @@ using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.Shared.Domain.Events;
 
-/// <summary>Outcome of asking for a Tournament place.</summary>
-public enum TournamentReserveOutcome
-{
-    /// <summary>The character holds the place now.</summary>
-    Reserved,
-
-    /// <summary>The character already held a place in this event.</summary>
-    AlreadyReserved,
-
-    /// <summary>The character holds a place in a different event.</summary>
-    ReservedElsewhere,
-
-    /// <summary>Every place in the event is taken.</summary>
-    NoPlacesLeft,
-
-    /// <summary>The character does not exist.</summary>
-    CharacterMissing,
-
-    /// <summary>The character's level is outside the configured limits.</summary>
-    LevelNotEligible,
-}
-
-/// <summary>Outcome of submitting a team for a Tournament event.</summary>
-public enum TournamentSubmitOutcome
-{
-    /// <summary>The team now holds a place in the bracket field.</summary>
-    Registered,
-
-    /// <summary>The team already held a place in this event.</summary>
-    AlreadyRegistered,
-
-    /// <summary>No such team, or the character is not its leader.</summary>
-    NotTheLeader,
-
-    /// <summary>The field is frozen and can no longer accept a team.</summary>
-    BracketFrozen,
-
-    /// <summary>A member already plays for another team in this event.</summary>
-    MemberRegisteredElsewhere,
-
-    /// <summary>Every team place is taken.</summary>
-    TournamentFull,
-}
-
 /// <summary>
 /// Owns the Tournament places a character holds before it has a team. A
 /// reservation is a registration row with no team, which is why the two are one
 /// table: a place becomes a registration when a team is submitted, and until
 /// then it is the same claim with a null team.
 /// <para>
-/// A place is live while the event window is open, so ending the window releases
-/// every place without a sweep having to run, and a restart cannot lose the
-/// claim because the row is the claim.
+/// A place belongs to an event, and the event's own schedule decides whether it
+/// is still live — so a place can only be held in an event somebody published,
+/// and capacity is counted per event, because two events running at once each
+/// have their own field and neither fills the other's.
 /// </para>
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
-/// <param name="informationService">Source of the configured event window.</param>
+/// <param name="scheduleService">Service that resolves a named event to its schedule.</param>
+/// <param name="informationService">Source of the advertised daily window.</param>
 /// <param name="options">Event configuration.</param>
 public sealed class TournamentRegistrationService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
+    EventScheduleService scheduleService,
     EventInformationService informationService,
     IOptions<EventOptions> options)
     : DomainService(contextFactory)
@@ -82,9 +41,21 @@ public sealed class TournamentRegistrationService(
         int eventIdentifier,
         CancellationToken cancellationToken = default)
     {
-        if (characterIdentifier <= 0 || eventIdentifier <= 0)
+        if (characterIdentifier <= 0)
         {
             return TournamentReserveOutcome.CharacterMissing;
+        }
+
+        // The event a client names is resolved before anything is written, so a
+        // place is never held in an event that does not exist, is unpublished,
+        // or whose window is shut.
+        var schedule = await scheduleService.FindOpenAsync(
+            eventIdentifier,
+            EventConstants.TournamentRegistrationSelector,
+            cancellationToken);
+        if (schedule is null)
+        {
+            return TournamentReserveOutcome.EventUnavailable;
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -105,7 +76,7 @@ public sealed class TournamentRegistrationService(
             return TournamentReserveOutcome.LevelNotEligible;
         }
 
-        var live = await FindLiveRowsAsync(context, now, cancellationToken);
+        var live = await FindLiveRowsAsync(context, cancellationToken);
         var existing = live.FirstOrDefault(row => row.CharacterIdentifier == characterIdentifier);
         if (existing is not null)
         {
@@ -116,8 +87,14 @@ public sealed class TournamentRegistrationService(
                 : TournamentReserveOutcome.ReservedElsewhere;
         }
 
-        var capacity = TournamentRegistrationUtils.PlaceCapacity(options.Value);
-        if (live.Count >= capacity)
+        // The field being filled is this event's, not the server's.
+        var capacity = TournamentRegistrationUtils.PlaceCapacity(
+            EventScheduleService.TeamCapacityOf(schedule));
+        var taken = live
+            .Where(row => row.EventIdentifier == eventIdentifier)
+            .Select(row => row.SlotIndex)
+            .ToList();
+        if (taken.Count >= capacity)
         {
             return TournamentReserveOutcome.NoPlacesLeft;
         }
@@ -135,7 +112,7 @@ public sealed class TournamentRegistrationService(
             return TournamentReserveOutcome.AlreadyReserved;
         }
 
-        var slot = TournamentRegistrationUtils.NextSlot(live.Select(row => row.SlotIndex), capacity);
+        var slot = TournamentRegistrationUtils.NextSlot(taken, capacity);
         context.TournamentRegistrations.Add(new TournamentRegistration
         {
             EventIdentifier = eventIdentifier,
@@ -179,9 +156,19 @@ public sealed class TournamentRegistrationService(
         int characterIdentifier,
         CancellationToken cancellationToken = default)
     {
-        if (eventIdentifier <= 0 || teamIdentifier <= 0 || characterIdentifier <= 0)
+        if (teamIdentifier <= 0 || characterIdentifier <= 0)
         {
             return TournamentSubmitOutcome.NotTheLeader;
+        }
+
+        var schedule = await scheduleService.FindOpenAsync(
+            eventIdentifier,
+            EventConstants.TournamentRegistrationSelector,
+            cancellationToken);
+        if (schedule is null)
+        {
+            // A team may only enter an event players are still being admitted to.
+            return TournamentSubmitOutcome.EventUnavailable;
         }
 
         await using var context = await CreateContextAsync(cancellationToken);
@@ -237,7 +224,7 @@ public sealed class TournamentRegistrationService(
             }
         }
 
-        var capacity = TournamentRegistrationUtils.TeamCapacity(options.Value);
+        var capacity = EventScheduleService.TeamCapacityOf(schedule);
         var takenSlots = registrations
             .Where(registration => registration.EventIdentifier == eventIdentifier
                 && registration.TeamIdentifier is not null)
@@ -286,7 +273,7 @@ public sealed class TournamentRegistrationService(
         return TournamentSubmitOutcome.Registered;
     }
 
-    /// <summary>Finds the place a character holds, when the window is open.</summary>
+    /// <summary>Finds the place a character holds, when its event is still open.</summary>
     /// <param name="characterIdentifier">Character to look for.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<TournamentRegistration?> FindLiveAsync(
@@ -298,71 +285,116 @@ public sealed class TournamentRegistrationService(
             return null;
         }
 
-        var now = DateTimeOffset.UtcNow;
         await using var context = await CreateContextAsync(cancellationToken);
-        var live = await FindLiveRowsAsync(context, now, cancellationToken);
+        var live = await FindLiveRowsAsync(context, cancellationToken);
         return live.FirstOrDefault(row => row.CharacterIdentifier == characterIdentifier);
     }
 
     /// <summary>Releases the place a character holds.</summary>
     /// <param name="characterIdentifier">Character whose place is released.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    /// <returns>Whether a place was released.</returns>
-    public async Task<bool> CancelAsync(
+    /// <returns>What happened.</returns>
+    public async Task<TournamentCancelOutcome> CancelAsync(
         int characterIdentifier,
         CancellationToken cancellationToken = default)
     {
         if (characterIdentifier <= 0)
         {
-            return false;
+            return TournamentCancelOutcome.NotHeld;
         }
 
-        var now = DateTimeOffset.UtcNow;
         await using var context = await CreateContextAsync(cancellationToken);
-        var live = await FindLiveRowsAsync(context, now, cancellationToken);
+        var live = await FindLiveRowsAsync(context, cancellationToken);
         var existing = live.FirstOrDefault(row => row.CharacterIdentifier == characterIdentifier);
         if (existing is null)
         {
-            return false;
+            return TournamentCancelOutcome.NotHeld;
+        }
+
+        // A drawn field is playing: the seed order names this team, and the next
+        // round is waiting for it.
+        if (await context.TournamentBrackets
+                .AnyAsync(
+                    bracket => bracket.EventIdentifier == existing.EventIdentifier,
+                    cancellationToken))
+        {
+            return TournamentCancelOutcome.AlreadyFrozen;
         }
 
         context.TournamentRegistrations.Remove(existing);
         await context.SaveChangesAsync(cancellationToken);
-        return true;
-    }
-
-    /// <summary>Counts the places taken in an event.</summary>
-    /// <param name="eventIdentifier">Event to count.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<int> CountPlacesAsync(
-        int eventIdentifier,
-        CancellationToken cancellationToken = default)
-    {
-        var now = DateTimeOffset.UtcNow;
-        await using var context = await CreateContextAsync(cancellationToken);
-        var live = await FindLiveRowsAsync(context, now, cancellationToken);
-        return live.Count(row => row.EventIdentifier == eventIdentifier);
+        return TournamentCancelOutcome.Released;
     }
 
     /// <summary>
-    /// Returns the reservations whose window is still open. The window is the
-    /// configured daily one, so a reservation taken yesterday does not hold a
-    /// place in today's event.
+    /// Releases every place an event holds, which is what a decided bracket owes
+    /// its field: the entries have all been drawn, so holding them serves nothing
+    /// and keeping them would let a finished event refuse the next one a seat.
+    /// The frozen seeds and the result ledger are untouched, so the bracket can
+    /// still be read back after its places are gone.
     /// </summary>
+    /// <param name="eventIdentifier">Event whose field is finished.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Places released.</returns>
+    public async Task<int> ReleaseEventAsync(
+        int eventIdentifier,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventIdentifier <= 0)
+        {
+            return 0;
+        }
+
+        await using var context = await CreateContextAsync(cancellationToken);
+        var rows = await context.TournamentRegistrations
+            .Where(registration => registration.EventIdentifier == eventIdentifier)
+            .ToListAsync(cancellationToken);
+        if (rows.Count == 0)
+        {
+            return 0;
+        }
+
+        context.TournamentRegistrations.RemoveRange(rows);
+        await context.SaveChangesAsync(cancellationToken);
+        return rows.Count;
+    }
+
+    /// <summary>
+    /// Returns the places that are still live: those in an event the schedule
+    /// still publishes, and those taken inside the current advertised window.
+    /// The two answer different questions — the schedule says whether the event
+    /// is one anybody may enter at all, the window whether a place taken in an
+    /// earlier run of the day's event is still a place in this one — so a place
+    /// failing either is not held.
+    /// </summary>
+    /// <param name="context">Context to read through.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
     private async Task<List<TournamentRegistration>> FindLiveRowsAsync(
         Mgo2DatabaseContext context,
-        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        var now = DateTimeOffset.UtcNow;
+        var nowSeconds = now.ToUnixTimeSeconds();
+        var open = await context.EventSchedules
+            .Where(schedule => schedule.LobbySubtype == EventConstants.TournamentRegistrationSelector)
+            .ToListAsync(cancellationToken);
+        var openEvents = open
+            .Where(schedule => EventScheduleService.IsPublished(schedule, nowSeconds))
+            .Select(schedule => schedule.Identifier)
+            .ToList();
+        if (openEvents.Count == 0)
+        {
+            return [];
+        }
         var (start, end) = informationService.ScheduleFor(now);
-        var startTime = DateTimeOffset.FromUnixTimeSeconds(start);
-        var endTime = DateTimeOffset.FromUnixTimeSeconds(end);
+        var windowStart = DateTimeOffset.FromUnixTimeSeconds(start);
+        var windowEnd = DateTimeOffset.FromUnixTimeSeconds(end);
 
         return await context.TournamentRegistrations
-            .Where(registration => registration.ReservedAt >= startTime
-                && registration.ReservedAt < endTime)
+            .Where(registration => openEvents.Contains(registration.EventIdentifier)
+                && registration.ReservedAt >= windowStart
+                && registration.ReservedAt < windowEnd)
             .OrderBy(registration => registration.Identifier)
             .ToListAsync(cancellationToken);
     }
-
 }

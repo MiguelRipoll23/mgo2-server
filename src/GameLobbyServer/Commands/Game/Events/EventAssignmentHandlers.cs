@@ -182,7 +182,17 @@ public sealed class RemoveEventGameEntryHandler(
             var reservation = await registrationService.FindLiveAsync(characterIdentifier, cancellationToken);
             if (reservation is not null)
             {
-                await registrationService.CancelAsync(characterIdentifier, cancellationToken);
+                var released = await registrationService.CancelAsync(
+                    characterIdentifier,
+                    cancellationToken);
+                if (released != TournamentCancelOutcome.Released)
+                {
+                    // The place belongs to a field that has been drawn. Reporting
+                    // success would tell the client its entry is gone while the
+                    // bracket is still waiting for it.
+                    await RefuseAsync(session, cancellationToken);
+                    return;
+                }
 
                 // The reply names the lobby directory key the client matches its
                 // cached rows against, so the released place is cleared by the

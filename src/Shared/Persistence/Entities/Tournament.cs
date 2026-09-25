@@ -117,7 +117,7 @@ public sealed class TournamentResult
     [Column("match_id")]
     public int MatchIdentifier { get; set; }
 
-    /// <summary>Round the fixture was played in, counted from zero.</summary>
+    /// <summary>Round the fixture was played in, counted from one.</summary>
     [Column("round_index")]
     public int RoundIndex { get; set; }
 

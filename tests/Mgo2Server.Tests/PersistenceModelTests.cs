@@ -36,6 +36,7 @@ public sealed class PersistenceModelTests
         "event_host_leases",
         "event_matches",
         "event_round_rewards",
+        "event_schedules",
         "event_stat_reports",
         "event_team_members",
         "event_teams",

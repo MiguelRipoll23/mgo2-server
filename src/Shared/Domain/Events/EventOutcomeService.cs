@@ -55,6 +55,7 @@ public enum EventReportOutcome
 /// <param name="outcomePushService">Service that tells both teams how the match ended.</param>
 /// <param name="bracketService">Service that advances a Tournament bracket.</param>
 /// <param name="bracketPushService">Service that shows the advanced bracket to its entrants.</param>
+/// <param name="registrationService">Service that owns the places a field holds.</param>
 /// <param name="options">Event configuration, which carries the settling grace.</param>
 public sealed class EventOutcomeService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
@@ -62,6 +63,7 @@ public sealed class EventOutcomeService(
     EventOutcomePushService outcomePushService,
     TournamentBracketService bracketService,
     EventBracketPushService bracketPushService,
+    TournamentRegistrationService registrationService,
     IOptions<EventOptions> options)
     : DomainService(contextFactory)
 {
@@ -304,9 +306,22 @@ public sealed class EventOutcomeService(
             matchIdentifier,
             winnerTeamIdentifier,
             cancellationToken);
-        var bracketDelivered = bracket is { } advance
-            ? await bracketPushService.PushAdvanceAsync(advance, cancellationToken)
-            : 0;
+        var bracketDelivered = 0;
+        if (bracket is { } advance)
+        {
+            // A decided bracket owes its field nothing further: the entries have
+            // all been drawn, so their places are released before the bracket is
+            // shown, and the seeds the bracket push reads outlive them.
+            if (advance.Outcome == TournamentResultOutcome.Recorded
+                && advance.ChampionTeamIdentifier != 0)
+            {
+                await registrationService.ReleaseEventAsync(
+                    advance.EventIdentifier,
+                    cancellationToken);
+            }
+
+            bracketDelivered = await bracketPushService.PushAdvanceAsync(advance, cancellationToken);
+        }
 
         return new EventOutcomeDecision(
             winnerTeamIdentifier,
