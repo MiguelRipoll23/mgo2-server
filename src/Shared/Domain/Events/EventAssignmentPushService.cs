@@ -139,10 +139,12 @@ public sealed class EventAssignmentPushService(
         var delivered = 0;
         foreach (TcpSession session in sessions)
         {
-            if (session.CharacterIdentifier is not { } characterIdentifier)
+            if (session.CharacterIdentifier is null)
             {
                 continue;
             }
+
+            var characterIdentifier = session.CharacterIdentifier.Value;
 
             var snapshotWriter = new PacketWriter();
             EventSnapshotUtils.WriteFull(snapshotWriter, team);

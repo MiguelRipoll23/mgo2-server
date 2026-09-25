@@ -19,11 +19,13 @@ public sealed class StartAutomatchHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await sessionHelper.SendResultAsync(session, CommandConstants.StartAutomatchResult, ErrorCodeConstants.ResultInvalidSession, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         var rule = packet.Payload.Length >= 1 ? packet.Payload[0] : -1;
         if (!AutomatchConstants.RuleFilters.Contains(rule))
@@ -70,11 +72,13 @@ public sealed class CancelAutomatchHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await sessionHelper.SendResultAsync(session, CommandConstants.CancelAutomatchResult, ErrorCodeConstants.ResultInvalidSession, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         var outcome = automatchService.Cancel(characterIdentifier);
         await sessionHelper.SendResultAsync(

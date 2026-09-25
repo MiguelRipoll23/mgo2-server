@@ -213,12 +213,14 @@ public sealed class EventOutcomeService(
             match.SecondTeamIdentifier,
             EventOutcomeUtils.Aggregate(EventTeamService.BuildSnapshot(first), byCharacter),
             EventOutcomeUtils.Aggregate(EventTeamService.BuildSnapshot(second), byCharacter));
-        if (inferred is not { } result)
+        if (inferred is null)
         {
             // The reports do not separate the teams. Leaving the match open is
             // deliberate: inventing a winner here would advance the wrong team.
             return null;
         }
+
+        var result = inferred.Value;
 
         return await FinishAsync(matchIdentifier, result.Winner, result.Loser, cancellationToken);
     }

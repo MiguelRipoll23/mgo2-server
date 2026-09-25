@@ -50,11 +50,13 @@ public sealed class SendMessageHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await sessionHelper.SendResultAsync(session, CommandConstants.SendMessageResult, ErrorCodeConstants.ResultMailRecipientUnknown, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         var payload = packet.Payload;
         if (payload.Length < BodyOffset + BodyLength)
@@ -240,11 +242,13 @@ public sealed class GetMessageContentsHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await sessionHelper.SendResultAsync(session, CommandConstants.GetMessageContentsResult, ErrorCodeConstants.ResultMailNotFound, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         var (category, index) = ParseCategoryIndex(packet.Payload);
         var letter = await FindLetterAsync(mailService, characterIdentifier, category, index, cancellationToken);
@@ -299,11 +303,13 @@ public sealed class DeleteMessageHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await sessionHelper.SendResultAsync(session, CommandConstants.DeleteMessageResult, ErrorCodeConstants.ResultMailNotFound, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         var (category, index) = GetMessageContentsHandler.ParseCategoryIndex(packet.Payload);
         var letter = await GetMessageContentsHandler.FindLetterAsync(mailService, characterIdentifier, category, index, cancellationToken);

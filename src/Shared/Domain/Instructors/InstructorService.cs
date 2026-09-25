@@ -221,7 +221,10 @@ public sealed class InstructorService(
             .Select(character => (int?)character.Experience)
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (experience is not { } experienceValue || experienceValue < MinimumLevelExperience)
+        // A character that has never reported experience has never reached the
+        // level an instructor is held to.
+        var experienceValue = experience ?? 0;
+        if (experienceValue < MinimumLevelExperience)
         {
             return false;
         }

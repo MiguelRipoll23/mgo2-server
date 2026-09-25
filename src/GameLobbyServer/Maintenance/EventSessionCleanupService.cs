@@ -35,10 +35,12 @@ public sealed class EventSessionCleanupService(
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task CleanupAsync(TcpSession session, CancellationToken cancellationToken = default)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         try
         {
@@ -46,10 +48,12 @@ public sealed class EventSessionCleanupService(
             // are the state that can only be wrong while the socket is gone.
             invitationService.RemoveForCharacter(characterIdentifier);
 
-            if (session.EventTeamIdentifier is not { } teamIdentifier)
+            if (session.EventTeamIdentifier is null)
             {
                 return;
             }
+
+            var teamIdentifier = session.EventTeamIdentifier.Value;
 
             var team = await teamService.FindAsync(teamIdentifier, cancellationToken);
             if (team is null)

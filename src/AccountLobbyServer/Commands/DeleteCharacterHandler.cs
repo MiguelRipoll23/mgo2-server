@@ -29,11 +29,13 @@ public sealed class DeleteCharacterHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.AccountIdentifier is not { } accountIdentifier)
+        if (session.AccountIdentifier is null)
         {
             await sessionHelper.SendErrorAsync(session, 0x3106, ErrorCodeConstants.ErrorInvalidSession, cancellationToken);
             return;
         }
+
+        var accountIdentifier = session.AccountIdentifier.Value;
 
         var reader = new PacketReader(packet.Payload);
         var slotIndex = reader.ReadUInt8();

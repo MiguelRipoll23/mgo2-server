@@ -145,7 +145,9 @@ public sealed class TournamentBracketService(IDbContextFactory<Mgo2DatabaseConte
                 || team.Identifier == match.SecondTeamIdentifier)
             .Select(team => (int?)team.EventIdentifier)
             .FirstOrDefaultAsync(cancellationToken);
-        if (eventIdentifier is not { } eventId || eventId <= 0)
+        // A team with no event, and one naming a zero event, both hold no bracket.
+        var eventId = eventIdentifier ?? 0;
+        if (eventId <= 0)
         {
             return null;
         }

@@ -25,8 +25,9 @@ public sealed class CreateGameHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier ||
-            session.LobbyIdentifier is not { } lobbyIdentifier)
+        // Both halves are one refusal: a session missing either fact cannot create
+        // a game.
+        if (session.CharacterIdentifier is null || session.LobbyIdentifier is null)
         {
             await sessionHelper.SendResultAsync(
                 session,
@@ -35,6 +36,9 @@ public sealed class CreateGameHandler(
                 cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
+        var lobbyIdentifier = session.LobbyIdentifier.Value;
 
         var settings = await characterService.GetHostSettingsAsync(characterIdentifier, cancellationToken);
         var pushed = settings.FirstOrDefault(row => row.Type == HostSettingsType.Value);

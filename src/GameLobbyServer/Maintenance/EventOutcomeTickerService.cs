@@ -90,10 +90,12 @@ public sealed class EventOutcomeTickerService(
             }
 
             var decision = await outcomeService.TryCompleteAsync(match.Identifier, cancellationToken);
-            if (decision is not { } finished)
+            if (decision is null)
             {
                 continue;
             }
+
+            var finished = decision.Value;
 
             logger.LogInformation(
                 "Event match {MatchIdentifier} decided from reports: team {WinnerIdentifier} won, team "

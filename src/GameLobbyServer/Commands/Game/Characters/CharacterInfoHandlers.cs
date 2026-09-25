@@ -36,7 +36,10 @@ public sealed class GetCharacterInfoHandler(
         // symptom is a timeout on the connect screen, so the reason is logged here.
         // The check-session refuses these conditions first, which makes reaching one
         // a race or lost connection state rather than an ordinary rejection.
-        if (session.CharacterIdentifier is not { } characterIdentifier || characterIdentifier <= 0)
+        // A session with no character and one holding a zero identifier are the
+        // same refusal, because neither names a character to serve.
+        var characterIdentifier = session.CharacterIdentifier ?? 0;
+        if (characterIdentifier <= 0)
         {
             logger.LogWarning(
                 "0x4100 cannot be served: the session holds no character. Answering nothing; the client will time out on the connect screen");

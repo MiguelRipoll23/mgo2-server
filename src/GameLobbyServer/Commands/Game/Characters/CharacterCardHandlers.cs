@@ -79,11 +79,13 @@ public sealed class GetPostGameInfoHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await sessionHelper.SendPacketAsync(session, CommandConstants.GetPostGameInfoResult, null, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         var character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken);
         var clan = await characterService.GetClanInformationAsync(characterIdentifier, cancellationToken);

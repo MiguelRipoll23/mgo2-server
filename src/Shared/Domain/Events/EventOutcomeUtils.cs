@@ -191,10 +191,12 @@ public static class EventOutcomeUtils
         DateTimeOffset? lastReportedAt,
         TimeSpan grace)
     {
-        if (lastReportedAt is not { } reportedAt)
+        if (lastReportedAt is null)
         {
             return false;
         }
+
+        var reportedAt = lastReportedAt.Value;
 
         return now - reportedAt >= grace;
     }

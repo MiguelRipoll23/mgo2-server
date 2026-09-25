@@ -167,10 +167,12 @@ public sealed class RoundStatisticsProcessor(
     /// <returns>The character the report described, or zero when nothing was applied.</returns>
     public async Task<RoundStatisticsOutcome> ProcessAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } reporterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             return RoundStatisticsOutcome.None;
         }
+
+        var reporterIdentifier = session.CharacterIdentifier.Value;
 
         var payload = packet.Payload;
         if (payload.Length < ExperienceOffset + 4)
