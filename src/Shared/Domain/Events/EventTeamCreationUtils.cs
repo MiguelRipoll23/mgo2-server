@@ -17,25 +17,28 @@ namespace Mgo2Server.Shared.Domain.Events;
 public static class EventTeamCreationUtils
 {
     /// <summary>
-    /// Size of the create request, in bytes. The record is the first 168 bytes
-    /// of the shared team record and stops there.
+    /// Size of the create record, in bytes: the first 168 bytes of the shared
+    /// team record, which is every field the request carries.
     /// </summary>
-    public const int CreateRequestWireSize = 168;
+    public const int CreateRequestRecordSize = 168;
 
     /// <summary>
-    /// Whether an arrival is the create record.
+    /// Whether an arrival is long enough to hold the create record.
     /// <para>
-    /// The size is exact, and it is the whole request. The client zeroes the
-    /// lobby id and the rule before sending and appends nothing after the last
-    /// field, so a longer arrival is not this command's record — and a refusal
-    /// is silent, so accepting a wrong shape would file a team from whatever
-    /// the length happened to contain.
+    /// This is a lower bound, not an equality. Every field the request carries
+    /// is inside the first 168 bytes, so bytes past that are trailing and
+    /// unread — and the exact size has been misjudged twice: a layout that
+    /// demanded 178 read three fields at struct offsets 0x2E0 and 0x2E8, which
+    /// are positions 736 and 744 and cannot be in a request of any length, and
+    /// a later reading of 168 came from the send path and was not confirmed on
+    /// the wire either. A refusal here is the client's "Unable to create team",
+    /// so the bound is drawn where the record actually ends and no further.
     /// </para>
     /// </summary>
     /// <param name="payloadLength">Length of the request payload.</param>
-    /// <returns><c>true</c> when the arrival is the create record.</returns>
-    public static bool IsExpectedCreateRequestShape(int payloadLength) =>
-        payloadLength == CreateRequestWireSize;
+    /// <returns><c>true</c> when the record can be read out of the arrival.</returns>
+    public static bool CanReadCreateRecord(int payloadLength) =>
+        payloadLength >= CreateRequestRecordSize;
 
     /// <summary>Decides which event a team formed in a lobby belongs to.</summary>
     /// <param name="lobbySubtype">Subtype of the lobby the team forms in.</param>

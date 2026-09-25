@@ -13,25 +13,32 @@ namespace Mgo2Server.Tests;
 public sealed class EventTeamCreationTests
 {
     [Fact]
-    public void The_create_request_is_exactly_the_shared_record_prefix()
+    public void The_create_record_is_the_shared_record_prefix()
     {
         // name 16 + comment 128 + flags 1 + password 16 + match type 1
         // + the six constant-zero bytes the record ends on.
-        Assert.Equal(168, EventTeamCreationUtils.CreateRequestWireSize);
-        Assert.True(EventTeamCreationUtils.IsExpectedCreateRequestShape(168));
+        Assert.Equal(168, EventTeamCreationUtils.CreateRequestRecordSize);
+        Assert.True(EventTeamCreationUtils.CanReadCreateRecord(168));
     }
 
     [Theory]
     [InlineData(178)]
     [InlineData(184)]
+    public void Bytes_past_the_record_are_trailing_and_tolerated(int payloadLength)
+    {
+        // The exact size has been misjudged twice - once at 178, once at 168 -
+        // and a refusal here is the player's "Unable to create team". Every
+        // field the request carries is inside the record, so the bound is drawn
+        // where the record ends and no further.
+        Assert.True(EventTeamCreationUtils.CanReadCreateRecord(payloadLength));
+    }
+
+    [Theory]
     [InlineData(167)]
     [InlineData(0)]
-    public void Anything_but_the_record_is_not_the_create_request(int payloadLength)
+    public void An_arrival_too_short_to_hold_the_record_is_refused(int payloadLength)
     {
-        // 178 and 184 are the sizes the reference server reads. Its layout is
-        // the shared team's struct offsets carried past the end of the request,
-        // so a build that trusted them refused every real create.
-        Assert.False(EventTeamCreationUtils.IsExpectedCreateRequestShape(payloadLength));
+        Assert.False(EventTeamCreationUtils.CanReadCreateRecord(payloadLength));
     }
 
     [Theory]

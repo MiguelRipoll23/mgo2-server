@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Events;
@@ -13,7 +14,8 @@ public sealed class CreateEventTeamHandler(
     EventTeamService teamService,
     CharacterService characterService,
     LobbyService lobbyService,
-    SessionHelper sessionHelper) : ICommandHandler
+    SessionHelper sessionHelper,
+    ILogger<CreateEventTeamHandler> logger) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
@@ -21,7 +23,7 @@ public sealed class CreateEventTeamHandler(
         // A team is formed by a character.
         if (session.CharacterIdentifier is null)
         {
-            await RefuseAsync(session, cancellationToken);
+            await RefuseAsync(session, "no-character", cancellationToken);
             return;
         }
 
@@ -30,16 +32,19 @@ public sealed class CreateEventTeamHandler(
         // It is formed in the lobby the connection landed in.
         if (session.LobbyIdentifier is null)
         {
-            await RefuseAsync(session, cancellationToken);
+            await RefuseAsync(session, "no-lobby", cancellationToken);
             return;
         }
 
         var lobbyIdentifier = session.LobbyIdentifier.Value;
 
-        // The request is the create record, and nothing follows it.
-        if (!EventTeamCreationUtils.IsExpectedCreateRequestShape(packet.Payload.Length))
+        // The request has to carry the whole create record.
+        if (!EventTeamCreationUtils.CanReadCreateRecord(packet.Payload.Length))
         {
-            await RefuseAsync(session, cancellationToken);
+            await RefuseAsync(
+                session,
+                $"short-record/{packet.Payload.Length}",
+                cancellationToken);
             return;
         }
 
@@ -58,7 +63,10 @@ public sealed class CreateEventTeamHandler(
         if (!EventTeamTextUtils.IsValidTeamName(name)
             || !EventTeamTextUtils.IsValidPassword(flagBits, password))
         {
-            await RefuseAsync(session, cancellationToken);
+            await RefuseAsync(
+                session,
+                $"rejected-text/{packet.Payload.Length}/{name.Length}",
+                cancellationToken);
             return;
         }
 
@@ -67,7 +75,10 @@ public sealed class CreateEventTeamHandler(
         var lobby = await lobbyService.FindByIdAsync(lobbyIdentifier, cancellationToken);
         if (matchType != lobby.SubtypeIdentifier)
         {
-            await RefuseAsync(session, cancellationToken);
+            await RefuseAsync(
+                session,
+                $"match-type/{matchType}-in-{lobby.SubtypeIdentifier}",
+                cancellationToken);
             return;
         }
 
@@ -78,9 +89,22 @@ public sealed class CreateEventTeamHandler(
                 session.SelectedEventIdentifier,
                 out var eventIdentifier))
         {
-            await RefuseAsync(session, cancellationToken);
+            await RefuseAsync(
+                session,
+                $"no-event/{lobby.SubtypeIdentifier}",
+                cancellationToken);
             return;
         }
+
+        logger.LogInformation(
+            "Character {CharacterIdentifier} is forming team \"{TeamName}\" in lobby {LobbyIdentifier} (subtype {LobbySubtype}, match type {MatchType}, event {EventIdentifier}) from a {PayloadLength}-byte request",
+            characterIdentifier,
+            name,
+            lobbyIdentifier,
+            lobby.SubtypeIdentifier,
+            matchType,
+            eventIdentifier,
+            packet.Payload.Length);
 
         var character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken);
         var team = await teamService.CreateAsync(
@@ -95,6 +119,12 @@ public sealed class CreateEventTeamHandler(
             lobbyIdentifier,
             eventIdentifier,
             cancellationToken);
+
+        logger.LogInformation(
+            "Team {TeamIdentifier} formed in lobby {LobbyIdentifier} under event {EventIdentifier}",
+            team.Identifier,
+            lobbyIdentifier,
+            eventIdentifier);
 
         session.EventTeamIdentifier = team.Identifier;
 
@@ -115,12 +145,33 @@ public sealed class CreateEventTeamHandler(
             cancellationToken);
     }
 
-    private Task RefuseAsync(TcpSession session, CancellationToken cancellationToken) =>
-        sessionHelper.SendResultAsync(
+    /// <summary>
+    /// Refuses the request, recording why.
+    /// <para>
+    /// The refusal is the client's "Unable to create team", carrying
+    /// <see cref="ErrorCodeConstants.ResultGeneral"/> as its result word, so it
+    /// reaches the player as a dialog and leaves nothing behind on the server.
+    /// Every reason is logged with the request that caused it, because a create
+    /// that fails this way is otherwise indistinguishable from one that was
+    /// never sent.
+    /// </para>
+    /// </summary>
+    /// <param name="session">Connection the request arrived on.</param>
+    /// <param name="reason">Why the request was refused.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private Task RefuseAsync(TcpSession session, string reason, CancellationToken cancellationToken)
+    {
+        logger.LogWarning(
+            "Refused a team creation for {LogPrefix} because {Reason}; answered 0x{Result:x8}",
+            session.LogPrefix,
+            reason,
+            ErrorCodeConstants.ResultGeneral);
+        return sessionHelper.SendResultAsync(
             session,
             CommandConstants.CreateEventTeamResult,
             ErrorCodeConstants.ResultGeneral,
             cancellationToken);
+    }
 }
 
 /// <summary>Joins a team, commits the membership and pushes the new roster slot.</summary>
