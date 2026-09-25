@@ -26,8 +26,17 @@ public sealed class GetEventInformationHandler(
             return;
         }
 
+        // The byte names which of the three event screens is being opened.
         var selector = packet.Payload[0];
-        if (!EventConstants.IsEventSelector(selector) || session.LobbyIdentifier is not { } lobbyIdentifier)
+        if (!EventConstants.IsEventSelector(selector))
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The record describes a lobby, so a connection in none has none to
+        // describe.
+        if (session.LobbyIdentifier is not { } lobbyIdentifier)
         {
             await RefuseAsync(session, cancellationToken);
             return;

@@ -14,14 +14,19 @@ public sealed class GetEventTeamListHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.LobbyIdentifier is not { } lobbyIdentifier
-            || packet.Payload.Length != 0)
+        // The list belongs to a lobby, so a connection in none has nothing to
+        // stream.
+        if (session.LobbyIdentifier is not { } lobbyIdentifier)
         {
-            await sessionHelper.SendResultAsync(
-                session,
-                CommandConstants.GetEventTeamListStart,
-                ErrorCodeConstants.ResultGeneral,
-                cancellationToken);
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The command carries no body; one that does is asking for something the
+        // list does not answer.
+        if (packet.Payload.Length != 0)
+        {
+            await RefuseAsync(session, cancellationToken);
             return;
         }
 
@@ -48,6 +53,13 @@ public sealed class GetEventTeamListHandler(
             CommandConstants.GetEventTeamListEnd,
             cancellationToken);
     }
+
+    private Task RefuseAsync(TcpSession session, CancellationToken cancellationToken) =>
+        sessionHelper.SendResultAsync(
+            session,
+            CommandConstants.GetEventTeamListStart,
+            ErrorCodeConstants.ResultGeneral,
+            cancellationToken);
 }
 
 /// <summary>Returns the detail of one joinable team.</summary>

@@ -24,9 +24,24 @@ public sealed class CreateEventTeamHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier
-            || session.LobbyIdentifier is not { } lobbyIdentifier
-            || (packet.Payload.Length != LogicalWireSize && packet.Payload.Length != PaddedWireSize))
+        // A team is formed by a character.
+        if (session.CharacterIdentifier is not { } characterIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // It is formed in the lobby the connection landed in.
+        if (session.LobbyIdentifier is not { } lobbyIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The request is the create record, with or without the transport
+        // padding the client may append.
+        var hasAcceptedSize = packet.Payload.Length is LogicalWireSize or PaddedWireSize;
+        if (!hasAcceptedSize)
         {
             await RefuseAsync(session, cancellationToken);
             return;
@@ -125,9 +140,24 @@ public sealed class JoinEventTeamHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier
-            || session.LobbyIdentifier is not { } lobbyIdentifier
-            || (packet.Payload.Length != LogicalWireSize && packet.Payload.Length != PaddedWireSize))
+        // A join comes from a character.
+        if (session.CharacterIdentifier is not { } characterIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // It joins a team in the lobby the connection landed in.
+        if (session.LobbyIdentifier is not { } lobbyIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The request is the join record, with or without the transport padding
+        // the client may append.
+        var hasAcceptedSize = packet.Payload.Length is LogicalWireSize or PaddedWireSize;
+        if (!hasAcceptedSize)
         {
             await RefuseAsync(session, cancellationToken);
             return;
@@ -200,9 +230,22 @@ public sealed class LeaveEventTeamHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier
-            || session.EventTeamIdentifier is not { } teamIdentifier
-            || packet.Payload.Length != 0)
+        // A leave comes from a character.
+        if (session.CharacterIdentifier is not { } characterIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // It leaves the team the connection is attached to.
+        if (session.EventTeamIdentifier is not { } teamIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The command carries no body.
+        if (packet.Payload.Length != 0)
         {
             await RefuseAsync(session, cancellationToken);
             return;
@@ -272,16 +315,35 @@ public sealed class SetEventEntryDecisionHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier
-            || session.EventTeamIdentifier is not { } teamIdentifier
-            || packet.Payload.Length != 1
-            || packet.Payload[0] > 1)
+        // A decision is recorded for a character.
+        if (session.CharacterIdentifier is not { } characterIdentifier)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
 
+        // It decides for the team the connection is attached to.
+        if (session.EventTeamIdentifier is not { } teamIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The request is one decision byte.
+        if (packet.Payload.Length != 1)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The byte is a decision the client can make: yes or no.
         var decision = packet.Payload[0];
+        if (decision > 1)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
         var slot = await teamService.SetDecisionAsync(
             teamIdentifier,
             characterIdentifier,

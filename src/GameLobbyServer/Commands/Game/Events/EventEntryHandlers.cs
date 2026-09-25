@@ -31,23 +31,30 @@ public sealed class EnterEventHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
+        // An entry is made by a character, so there is nothing to enter without
+        // one.
+        if (session.CharacterIdentifier is not { } characterIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
         // A body means the client asked for something this command does not do,
         // and answering it as an entry would act on the wrong request.
-        if (session.CharacterIdentifier is not { } characterIdentifier
-            || packet.Payload.Length != 0)
+        if (packet.Payload.Length != 0)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
 
-        var lobbyIdentifier = session.LobbyIdentifier;
-        if (lobbyIdentifier is null)
+        // The entry is made in the lobby the connection landed in.
+        if (session.LobbyIdentifier is not { } lobbyIdentifier)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
 
-        var lobby = await lobbyService.FindByIdAsync(lobbyIdentifier.Value, cancellationToken);
+        var lobby = await lobbyService.FindByIdAsync(lobbyIdentifier, cancellationToken);
         var route = EventEntryUtils.Resolve(
             lobby.SubtypeIdentifier,
             hasTeam: session.EventTeamIdentifier is not null,
@@ -60,7 +67,7 @@ public sealed class EnterEventHandler(
                 return;
 
             case EventEntryRoute.EnterEventSolo:
-                await EnterEventAsync(session, characterIdentifier, lobbyIdentifier.Value, lobby.SubtypeIdentifier, cancellationToken);
+                await EnterEventAsync(session, characterIdentifier, lobbyIdentifier, lobby.SubtypeIdentifier, cancellationToken);
                 return;
 
             case EventEntryRoute.CancelSurvivalEntry:
@@ -88,9 +95,16 @@ public sealed class EnterEventHandler(
         int characterIdentifier,
         CancellationToken cancellationToken)
     {
-        var eventIdentifier = session.SelectedEventIdentifier;
-        var teamIdentifier = session.EventTeamIdentifier;
-        if (eventIdentifier is not { } eventId || teamIdentifier is not { } teamId)
+        // The event submitted to is the one whose detail screen the connection
+        // last opened.
+        if (session.SelectedEventIdentifier is not { } eventId)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The team submitted is the one the connection is attached to.
+        if (session.EventTeamIdentifier is not { } teamId)
         {
             await RefuseAsync(session, cancellationToken);
             return;

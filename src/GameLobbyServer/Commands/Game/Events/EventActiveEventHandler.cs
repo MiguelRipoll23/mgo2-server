@@ -21,14 +21,19 @@ public sealed class GetEventListHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.LobbyIdentifier is not { } lobbyIdentifier
-            || packet.Payload.Length != 0)
+        // The list belongs to a lobby, so a connection in none has nothing to
+        // stream.
+        if (session.LobbyIdentifier is not { } lobbyIdentifier)
         {
-            await sessionHelper.SendResultAsync(
-                session,
-                CommandConstants.GetEventListStart,
-                ErrorCodeConstants.ResultGeneral,
-                cancellationToken);
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The command carries no body; one that does is asking for something the
+        // list does not answer.
+        if (packet.Payload.Length != 0)
+        {
+            await RefuseAsync(session, cancellationToken);
             return;
         }
 
@@ -79,6 +84,13 @@ public sealed class GetEventListHandler(
             endWriter.Build(),
             cancellationToken);
     }
+
+    private Task RefuseAsync(TcpSession session, CancellationToken cancellationToken) =>
+        sessionHelper.SendResultAsync(
+            session,
+            CommandConstants.GetEventListStart,
+            ErrorCodeConstants.ResultGeneral,
+            cancellationToken);
 }
 
 /// <summary>
@@ -170,8 +182,16 @@ public sealed class GetAssignedGameDetailHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier
-            || packet.Payload.Length < sizeof(int))
+        // Without a character the detail has no owner to be read from.
+        if (session.CharacterIdentifier is not { } characterIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The request names an event or a room, so a body too short to hold that
+        // identifier cannot be one.
+        if (packet.Payload.Length < sizeof(int))
         {
             await RefuseAsync(session, cancellationToken);
             return;

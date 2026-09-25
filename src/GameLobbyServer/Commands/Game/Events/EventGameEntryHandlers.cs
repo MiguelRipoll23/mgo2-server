@@ -29,17 +29,20 @@ public sealed class GetGameEntryInfoHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier
-            || session.LobbyIdentifier is not { } lobbyIdentifier)
+        // Without a character there is nothing to describe, and an answer of
+        // empty slots would claim the caller holds no entry when the server does
+        // not know who is asking.
+        if (session.CharacterIdentifier is not { } characterIdentifier)
         {
-            // Without a character there is nothing to describe, and an answer of
-            // empty slots would claim the caller holds no entry when the server
-            // does not know who is asking.
-            await sessionHelper.SendResultAsync(
-                session,
-                CommandConstants.GetGameEntryInfoResult,
-                EventConstants.ResultActiveStateMismatch,
-                cancellationToken);
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The entries are the lobby's, so a connection that is in none has no
+        // grid to fill.
+        if (session.LobbyIdentifier is not { } lobbyIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
             return;
         }
 
@@ -57,4 +60,11 @@ public sealed class GetGameEntryInfoHandler(
             writer.Build(),
             cancellationToken);
     }
+
+    private Task RefuseAsync(TcpSession session, CancellationToken cancellationToken) =>
+        sessionHelper.SendResultAsync(
+            session,
+            CommandConstants.GetGameEntryInfoResult,
+            EventConstants.ResultActiveStateMismatch,
+            cancellationToken);
 }

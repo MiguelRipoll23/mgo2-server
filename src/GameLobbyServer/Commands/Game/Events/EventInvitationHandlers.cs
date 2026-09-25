@@ -18,31 +18,47 @@ public sealed class InviteEventTeamMembersHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        var leaderIdentifier = session.CharacterIdentifier;
-        var teamIdentifier = session.EventTeamIdentifier;
-        var lobbyIdentifier = session.LobbyIdentifier;
+        // An invitation is sent by a character.
+        if (session.CharacterIdentifier is not { } leader)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
 
-        if (leaderIdentifier is not { } leader
-            || teamIdentifier is not { } team
-            || lobbyIdentifier is not { } lobby
-            || !TryParse(packet.Payload, out var mode, out var targets)
+        // It is sent for the team the sender is in.
+        if (session.EventTeamIdentifier is not { } team)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // It is sent in the lobby the sender is in.
+        if (session.LobbyIdentifier is not { } lobby)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The request is a target count, a mode byte and that many identifiers,
+        // and Survival is the only mode this command invites to.
+        if (!TryParse(packet.Payload, out var mode, out var targets)
             || mode != EventInvitationService.SurvivalMode)
         {
-            await ReplyAsync(session, ErrorCodeConstants.ResultGeneral, [], cancellationToken);
+            await RefuseAsync(session, cancellationToken);
             return;
         }
 
         var projection = await teamService.FindAsync(team, cancellationToken);
         if (projection is null)
         {
-            await ReplyAsync(session, ErrorCodeConstants.ResultGeneral, [], cancellationToken);
+            await RefuseAsync(session, cancellationToken);
             return;
         }
 
         var snapshot = EventTeamService.BuildSnapshot(projection);
         if (snapshot.Participants[0].CharacterIdentifier != leader)
         {
-            await ReplyAsync(session, ErrorCodeConstants.ResultGeneral, [], cancellationToken);
+            await RefuseAsync(session, cancellationToken);
             return;
         }
 
@@ -100,6 +116,9 @@ public sealed class InviteEventTeamMembersHandler(
                 cancellationToken);
         }
     }
+
+    private Task RefuseAsync(TcpSession session, CancellationToken cancellationToken) =>
+        ReplyAsync(session, ErrorCodeConstants.ResultGeneral, [], cancellationToken);
 
     private Task ReplyAsync(
         TcpSession session,
@@ -182,9 +201,15 @@ public sealed class AnswerEventTeamInvitationHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        var targetIdentifier = session.CharacterIdentifier;
-        if (targetIdentifier is not { } target
-            || packet.Payload.Length != 5)
+        // An answer comes from the character the invitation was sent to.
+        if (session.CharacterIdentifier is not { } target)
+        {
+            await WriteAnswerAsync(session, ErrorCodeConstants.ResultGeneral, 0, 0, cancellationToken);
+            return;
+        }
+
+        // The request is one invitation identifier and a choice byte.
+        if (packet.Payload.Length != 5)
         {
             await WriteAnswerAsync(session, ErrorCodeConstants.ResultGeneral, 0, 0, cancellationToken);
             return;
@@ -280,27 +305,37 @@ public sealed class ReportEventInvitationStatusHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        var result = ErrorCodeConstants.ResultGeneral;
-
-        if (session.EventTeamIdentifier is { } teamIdentifier
-            && packet.Payload.Length == ReportWireSize)
+        // The report comes from the screen of a team the sender is in.
+        if (session.EventTeamIdentifier is not { } teamIdentifier)
         {
-            var team = await teamService.FindAsync(teamIdentifier, cancellationToken);
-
-            // Only the leader's own screen may acknowledge the state it is showing.
-            var isReportedByOwner = team is not null
-                && session.CharacterIdentifier == team.OwnerCharacterIdentifier;
-
-            if (isReportedByOwner)
-            {
-                result = ErrorCodeConstants.ResultNone;
-            }
+            await RefuseAsync(session, cancellationToken);
+            return;
         }
+
+        // The screen sends a fixed record; another length is not one.
+        if (packet.Payload.Length != ReportWireSize)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        var team = await teamService.FindAsync(teamIdentifier, cancellationToken);
+
+        // Only the leader's own screen may acknowledge the state it is showing.
+        var isReportedByOwner = team is not null
+            && session.CharacterIdentifier == team.OwnerCharacterIdentifier;
 
         await sessionHelper.SendResultAsync(
             session,
             CommandConstants.ReportEventInvitationStatusResult,
-            result,
+            isReportedByOwner ? ErrorCodeConstants.ResultNone : ErrorCodeConstants.ResultGeneral,
             cancellationToken);
     }
+
+    private Task RefuseAsync(TcpSession session, CancellationToken cancellationToken) =>
+        sessionHelper.SendResultAsync(
+            session,
+            CommandConstants.ReportEventInvitationStatusResult,
+            ErrorCodeConstants.ResultGeneral,
+            cancellationToken);
 }

@@ -23,8 +23,16 @@ public sealed class ReserveTournamentEntryHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier
-            || packet.Payload.Length != RequestWireSize)
+        // A place is held for a character, so there is nothing to reserve without
+        // one.
+        if (session.CharacterIdentifier is not { } characterIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The request is one event identifier and nothing else.
+        if (packet.Payload.Length != RequestWireSize)
         {
             await RefuseAsync(session, cancellationToken);
             return;
@@ -32,14 +40,13 @@ public sealed class ReserveTournamentEntryHandler(
 
         // A place is taken from the registration lobby only: the same command
         // reached from a Survival lobby would otherwise reserve a Tournament seat.
-        var lobbyIdentifier = session.LobbyIdentifier;
-        if (lobbyIdentifier is null)
+        if (session.LobbyIdentifier is not { } lobbyIdentifier)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
 
-        var lobby = await lobbyService.FindByIdAsync(lobbyIdentifier.Value, cancellationToken);
+        var lobby = await lobbyService.FindByIdAsync(lobbyIdentifier, cancellationToken);
         if (lobby.SubtypeIdentifier != EventConstants.TournamentRegistrationSelector)
         {
             await RefuseAsync(session, cancellationToken);

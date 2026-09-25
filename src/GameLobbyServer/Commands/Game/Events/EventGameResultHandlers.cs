@@ -24,8 +24,15 @@ public sealed class ReportEventGameResultHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is not { } characterIdentifier
-            || packet.Payload.Length != EventConstants.EventGameResultWireSize)
+        // Without a character there is no host to attribute the report to.
+        if (session.CharacterIdentifier is not { } characterIdentifier)
+        {
+            await RefuseAsync(session, EventConstants.EventGameResultMalformed, cancellationToken);
+            return;
+        }
+
+        // A report of another length is not the record a host sends.
+        if (packet.Payload.Length != EventConstants.EventGameResultWireSize)
         {
             await RefuseAsync(session, EventConstants.EventGameResultMalformed, cancellationToken);
             return;

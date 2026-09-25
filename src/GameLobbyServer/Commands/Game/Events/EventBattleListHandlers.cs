@@ -22,14 +22,19 @@ public sealed class GetSurvivalBattleListHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.LobbyIdentifier is not { } lobbyIdentifier
-            || packet.Payload.Length != 0)
+        // The battle list belongs to a lobby, so a connection in none has nothing
+        // to stream.
+        if (session.LobbyIdentifier is not { } lobbyIdentifier)
         {
-            await sessionHelper.SendResultAsync(
-                session,
-                CommandConstants.GetSurvivalBattleListStart,
-                ErrorCodeConstants.ResultGeneral,
-                cancellationToken);
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The command carries no body; one that does is asking for something the
+        // list does not answer.
+        if (packet.Payload.Length != 0)
+        {
+            await RefuseAsync(session, cancellationToken);
             return;
         }
 
@@ -95,6 +100,13 @@ public sealed class GetSurvivalBattleListHandler(
             writer.Build(),
             cancellationToken);
     }
+
+    private Task RefuseAsync(TcpSession session, CancellationToken cancellationToken) =>
+        sessionHelper.SendResultAsync(
+            session,
+            CommandConstants.GetSurvivalBattleListStart,
+            ErrorCodeConstants.ResultGeneral,
+            cancellationToken);
 }
 
 /// <summary>Returns the detail of one team listed in the battle list.</summary>
@@ -116,9 +128,17 @@ public sealed class GetBattleTeamInformationHandler(
             ? (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(packet.Payload.AsSpan(4))
             : 0;
 
+        // Zero names no team, and any correlation but the transient one names a
+        // list this server never published.
         if (selectedTeamIdentifier == 0
-            || correlationIdentifier != EventConstants.TransientEventIdentifier
-            || session.LobbyIdentifier is not { } lobbyIdentifier)
+            || correlationIdentifier != EventConstants.TransientEventIdentifier)
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // The roster belongs to the caller's own lobby.
+        if (session.LobbyIdentifier is not { } lobbyIdentifier)
         {
             await RefuseAsync(session, cancellationToken);
             return;
