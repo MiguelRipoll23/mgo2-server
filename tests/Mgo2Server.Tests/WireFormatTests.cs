@@ -170,6 +170,48 @@ public sealed class PacketCodecServiceTests
     {
         Assert.Contains((ushort)0x4349, BlowfishEncryptedCommandConstants.Outbound.ToArray());
     }
+
+    /// <summary>
+    /// A real Create Team request, captured on the Survival lobby on 2026-09-25
+    /// as it came off the wire, command and length obfuscation included.
+    /// <para>
+    /// The request carries the team the player typed, so reading it as plaintext
+    /// is not a small error: the name arrives as sixteen bytes of ciphertext with
+    /// no terminator, which the name check rejects, and the client is answered
+    /// with the generic refusal. It never sees a team, and the reason names a
+    /// length rather than the cipher. The comment field is the tell - an
+    /// eight-byte block repeating fourteen times is an all-zero plaintext seen
+    /// through this cipher, and no typed comment looks like that.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void The_create_team_request_is_decrypted_into_the_record_the_player_typed()
+    {
+        const ushort createEventTeam = 0x4910;
+        var wire = Convert.FromHexString(
+            "136085175a7085a7bafe210d8b3e0c1ac2213495d7f4fdc3354a2a119dcf3171ca3482844b3b61698351bc1a" +
+            "766ba3136398648d86b4a0080b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c" +
+            "0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b493238" +
+            "3c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4cf0de4f508d026470" +
+            "0b4932383c6b8d4c157b920ebdc86e4a0b4932383c6b8d4c0b4932383c6b8d4c");
+
+        var packet = Codec.DecodePacket(wire);
+
+        Assert.NotNull(packet);
+        Assert.Equal(createEventTeam, packet.Header.Command);
+        Assert.Equal(184, packet.Payload.Length);
+
+        var reader = new PacketReader(packet.Payload);
+        Assert.Equal("phildunphy23", reader.ReadFixedString(16));
+        Assert.Equal("Good luck.", reader.ReadFixedString(128));
+
+        // The option bits, as the client repacked them: 0x28 carries the two bits
+        // the create screen has no writer for, and not the password-lock bit, so
+        // the empty password below is not tested for length.
+        Assert.Equal(0x28, reader.ReadUInt8());
+        Assert.Equal(string.Empty, reader.ReadFixedString(16));
+        Assert.Equal(LobbySubtypeConstants.Survival, reader.ReadUInt8());
+    }
 }
 
 /// <summary>

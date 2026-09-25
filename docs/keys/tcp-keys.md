@@ -27,7 +27,11 @@ PPC memory layout). Nomad loads these with `Crypto.instancePacket()` /
 ## Which payloads are Blowfish-crypted
 
 Only these command ids decrypt with the packet instance:
-`0x3003, 0x4310, 0x4320, 0x43c0, 0x4700, 0x4990`.
+`0x3003, 0x4310, 0x4320, 0x43c0, 0x4700, 0x4990, 0x4910`.
+
+`0x4910` (Create Team) is not from the builder scan that produced the rest — it is from a
+live capture on 2026-09-25, because the `0x49xx` event family was never exercised by a
+shipped client. See `../protocol/TCP_GAME_SERVER_PROTOCOL.md` §4.3.
 
 The auth instance is used for login/account command payloads
 (`Users.java: Crypto.instanceAuth().encrypt(...)`).

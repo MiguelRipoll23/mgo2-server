@@ -19,7 +19,7 @@ open-source **`GHzGangster/Nomad`** server (SaveMGO) cloned to
 | Whole-frame cipher | **XOR** with 4-byte key **`0x5a7085af`** (repeating), applied to header **and** payload |
 | Frame checksum | **16-byte HMAC-MD5** at offset `0x08`, key = ASCII **`"Z7/biJ46TzGF-8yx"`** |
 | Payload cipher | **Blowfish** (standard, π-init) on *selected* command ids only |
-| Crypted command ids | `0x3003, 0x4310, 0x4320, 0x43c0, 0x4700, 0x4990` (0x43xx = session block, e.g. check-session) **[C]** |
+| Crypted command ids | `0x3003, 0x4310, 0x4320, 0x43c0, 0x4700, 0x4990, 0x4910` (0x43xx = session block, e.g. check-session; `0x4910` from a live capture, see §4.3) **[C]** |
 | Max payload | `0x3ff` bytes |
 | Nomad refs | `Util.KEY_XOR`, `Util.KEY_HMAC`, `Constants.CRYPTO_PACKET` / `CRYPTO_AUTH`, `Packet.java`, `PacketDecoder.java` |
 
@@ -95,9 +95,21 @@ in the receive path of the codec **[V]**.
 
 ### 4.3 Blowfish payload encryption (selected commands)
 
-Only payloads of `{0x3003, 0x4310, 0x4320, 0x43c0, 0x4700, 0x4990}` are decrypted with the
+Only payloads of `{0x3003, 0x4310, 0x4320, 0x43c0, 0x4700, 0x4990, 0x4910}` are decrypted with the
 `CRYPTO_PACKET` instance (16-round Feistel over 8-byte blocks, schedule layout: P-array at
 `0x00`, four S-boxes at `0x48/0x448/0x848/0xc48`) **[C]**.
+
+`0x4910` (Create Team) is the one entry the builder scan did not produce, and it is worth
+recording why. The scan enumerated the client's own payload-builder call sites, and the
+`0x49xx` event family was absent from them because no shipped client build served a
+Tournament or Survival lobby — the same gap the `0x4910` `.ksy` records as "not served in
+v1". A capture on 2026-09-25, from a real Create Team request in the Survival lobby, shows
+the 184-byte payload arriving as ciphertext: the comment field is an 8-byte block repeating
+fourteen times, which is an all-zero plaintext seen through this cipher, and no typed comment
+has that shape. Decrypted, the record is well formed — the typed name, the typed comment,
+and `lobby_subtype` 4 for Survival. Read as plaintext, the name arrives as sixteen
+non-terminated bytes and the request is refused. So the absence was a gap in the evidence,
+not a property of the command.
 
 A second instance, `CRYPTO_AUTH`, is used for **auth payloads** (`Users.java:
 Crypto.instanceAuth().encrypt(...)`), i.e. login/account command payloads **[C]**.
