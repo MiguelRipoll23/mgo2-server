@@ -22,8 +22,7 @@ public sealed class GetSurvivalBattleListHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.LobbyIdentifier is not { } lobbyIdentifier
+        if (session.LobbyIdentifier is not { } lobbyIdentifier
             || packet.Payload.Length != 0)
         {
             await sessionHelper.SendResultAsync(
@@ -102,13 +101,12 @@ public sealed class GetSurvivalBattleListHandler(
 public sealed class GetBattleTeamInformationHandler(
     EventTeamService teamService,
     EventMatchService matchService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        var selectedTeamIdentifier = options.Value.Enabled && packet.Payload.Length == 8
+        var selectedTeamIdentifier = packet.Payload.Length == 8
             ? (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(packet.Payload)
             : 0;
 

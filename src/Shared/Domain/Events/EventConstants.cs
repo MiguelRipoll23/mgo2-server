@@ -111,6 +111,14 @@ public static class EventConstants
     /// <summary>Size of the Survival match-found push.</summary>
     public const int MatchFoundWireSize = 53;
 
+    /// <summary>
+    /// Size of the next-match card push (<c>0x4A13</c>): the card identity, the
+    /// lobby triple, the win-count pair, two 52-byte team blocks and the
+    /// rotation index. It is wider than the match-found push because each block
+    /// carries the full eight character identifiers the ladder record renders.
+    /// </summary>
+    public const int NextMatchCardWireSize = 123;
+
     /// <summary>Size of a Survival state-update push.</summary>
     public const int StateUpdateWireSize = 15;
 

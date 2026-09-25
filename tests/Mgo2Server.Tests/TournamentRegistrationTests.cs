@@ -18,7 +18,6 @@ public sealed class TournamentRegistrationTests
         int capacity = 32) =>
         new()
         {
-            Enabled = true,
             TournamentMinimumLevel = minimumLevel,
             TournamentMaximumLevel = maximumLevel,
             TournamentCapacity = capacity,

@@ -5,25 +5,22 @@ using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 
 /// <summary>Serves the event information record for the connected lobby's selector.</summary>
 /// <param name="informationService">Service that builds the record.</param>
 /// <param name="lobbyService">Service that owns the lobby metadata.</param>
-/// <param name="options">Event configuration, for the enabled flag.</param>
 /// <param name="sessionHelper">Helper used to write the reply.</param>
 public sealed class GetEventInformationHandler(
     EventInformationService informationService,
     LobbyService lobbyService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled || packet.Payload.Length != 1)
+        if (packet.Payload.Length != 1)
         {
             await RefuseAsync(session, cancellationToken);
             return;
@@ -60,11 +57,9 @@ public sealed class GetEventInformationHandler(
 
 /// <summary>Serves the event information record for one cached event identifier.</summary>
 /// <param name="informationService">Service that builds the record.</param>
-/// <param name="options">Event configuration, for the enabled flag.</param>
 /// <param name="sessionHelper">Helper used to write the reply.</param>
 public sealed class GetEventInformationByIdHandler(
     EventInformationService informationService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
@@ -76,7 +71,7 @@ public sealed class GetEventInformationByIdHandler(
 
         // The reply echoes the record the client cached, so only the transient
         // correlation this server publishes is answerable.
-        if (!options.Value.Enabled || eventIdentifier != EventConstants.TransientEventIdentifier)
+        if (eventIdentifier != EventConstants.TransientEventIdentifier)
         {
             await sessionHelper.SendResultAsync(
                 session,
@@ -99,16 +94,14 @@ public sealed class GetEventInformationByIdHandler(
 /// client's own not-found path builds localized defaults, so the documented
 /// not-found result is returned rather than a synthesized empty preset.
 /// </summary>
-/// <param name="options">Event configuration, for the enabled flag.</param>
 /// <param name="sessionHelper">Helper used to write the reply.</param>
 public sealed class GetTeamCreateInformationHandler(
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        var result = options.Value.Enabled && packet.Payload.Length == 0
+        var result = packet.Payload.Length == 0
             ? EventConstants.TeamCreatePresetNotFound
             : ErrorCodeConstants.ResultGeneral;
 
@@ -123,19 +116,16 @@ public sealed class GetTeamCreateInformationHandler(
 /// <summary>
 /// Answers a directly reachable event screen whose success body is not
 /// recovered. One handler serves all seven commands, because they differ only in
-/// their identifiers and the exact request size the screen sends.
+/// their identifiers and the shape the screen sends.
 /// </summary>
-/// <param name="options">Event configuration, for the enabled flag.</param>
 /// <param name="sessionHelper">Helper used to write the reply.</param>
 public sealed class EventAdjacentRequestHandler(
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || !EventAdjacentRequestUtils.TryResolve(packet.Header.Command, out var request))
+        if (!EventAdjacentRequestUtils.TryResolve(packet.Header.Command, out var request))
         {
             // A command with no mapping has no reply id either, so it is left
             // alone rather than answered with an identifier the client may not
@@ -143,7 +133,7 @@ public sealed class EventAdjacentRequestHandler(
             return Task.CompletedTask;
         }
 
-        var result = packet.Payload.Length == request.ExpectedRequestSize
+        var result = request.IsExpectedShape(packet.Payload.Length)
             ? ErrorCodeConstants.ResultFeatureNotImplemented
             : ErrorCodeConstants.ResultGeneral;
 

@@ -40,8 +40,23 @@ public sealed class EventOutcomeTickerService(
 
     /// <summary>Starts the sweep for the lobby this instance registered.</summary>
     /// <param name="lobbyIdentifier">Identifier of the registered lobby.</param>
-    public void StartFor(int lobbyIdentifier)
+    /// <param name="lobbySubtype">
+    /// Mode of that lobby. Only an event lobby starts the sweep; the tournament
+    /// draw it runs walks every field, so a deployment running any event lobby
+    /// keeps every bracket advancing.
+    /// </param>
+    public void StartFor(int lobbyIdentifier, int lobbySubtype)
     {
+        // A lobby that cannot hold a match has no match to decide, and a
+        // non-event lobby nothing to draw for.
+        var lobbyHoldsMatches = lobbyIdentifier > 0
+            && EventConstants.IsEventSelector(lobbySubtype);
+
+        if (!lobbyHoldsMatches)
+        {
+            return;
+        }
+
         this.lobbyIdentifier = lobbyIdentifier;
         Start();
     }
@@ -49,7 +64,7 @@ public sealed class EventOutcomeTickerService(
     /// <inheritdoc />
     protected override async Task RunOnceAsync(CancellationToken cancellationToken)
     {
-        if (lobbyIdentifier <= 0 || !options.Value.Enabled)
+        if (lobbyIdentifier <= 0)
         {
             return;
         }

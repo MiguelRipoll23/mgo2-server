@@ -10,7 +10,8 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// The order within a recipient is not arbitrary. The snapshot reply clears the
 /// client's event caches, so the live state is restored immediately after it; the
 /// event-game cache clears itself before reading its body, so it arrives before
-/// the notification that names the two teams; and the notification is written
+/// the notification that names the two teams; the next-match card seeds the
+/// shared ladder record the notification fills; and the notification is written
 /// last because it is the one the client acts on.
 /// </para>
 /// <para>
@@ -72,6 +73,55 @@ public sealed class EventAssignmentPushService(
         return delivered;
     }
 
+    /// <summary>
+    /// Tears a live assignment down on both teams. Each team is told with its own
+    /// state-update record under the teardown command, which empties the Survival
+    /// event record and sends the client back to the battle list.
+    /// </summary>
+    /// <param name="assignment">Assignment that was cancelled.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Sessions the teardown reached.</returns>
+    public async Task<int> PushTeardownAsync(
+        EventAssignment assignment,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(assignment);
+
+        var delivered = 0;
+        delivered += await PushTeardownToTeamAsync(assignment, assignment.FirstTeam, cancellationToken);
+        delivered += await PushTeardownToTeamAsync(assignment, assignment.SecondTeam, cancellationToken);
+        return delivered;
+    }
+
+    private async Task<int> PushTeardownToTeamAsync(
+        EventAssignment assignment,
+        EventSnapshot team,
+        CancellationToken cancellationToken)
+    {
+        var sessions = sessionDirectory.TeamSessions(team.SnapshotIdentifier, excludedSession: null);
+        if (sessions.Count == 0)
+        {
+            // A team whose members have all left needs no teardown; the match is
+            // already cancelled, and nothing is owed to a disconnected screen.
+            return 0;
+        }
+
+        var writer = new PacketWriter();
+        EventAssignmentUtils.WriteStateUpdate(
+            writer,
+            assignment.ActiveStateIdentifier,
+            assignment.Sequence,
+            team);
+        var payload = writer.Build();
+
+        foreach (TcpSession session in sessions)
+        {
+            await sessionHelper.SendPacketAsync(session, CommandConstants.EventStateUpdate, payload, cancellationToken);
+        }
+
+        return sessions.Count;
+    }
+
     private async Task<int> PushToTeamAsync(
         EventAssignment assignment,
         EventSnapshot team,
@@ -126,6 +176,21 @@ public sealed class EventAssignmentPushService(
                 session,
                 CommandConstants.EventGameInitialize,
                 gameWriter.Build(),
+                cancellationToken);
+
+            // The next-match card seeds the shared ladder record the notification
+            // below names from, so it lands before the client acts on the pairing.
+            var cardWriter = new PacketWriter();
+            EventAssignmentUtils.WriteNextMatchCard(
+                cardWriter,
+                assignment.ActiveStateIdentifier,
+                team,
+                opponent,
+                characterIdentifier);
+            await sessionHelper.SendPacketAsync(
+                session,
+                CommandConstants.EventNextMatchCard,
+                cardWriter.Build(),
                 cancellationToken);
 
             var matchWriter = new PacketWriter();

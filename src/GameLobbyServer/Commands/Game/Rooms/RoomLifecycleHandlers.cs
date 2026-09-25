@@ -54,6 +54,16 @@ public sealed class CreateGameHandler(
             room.Comment = comment;
             room.MaximumPlayers = defaultMaximumPlayers;
             room.Games = JsonSerializer.Serialize(rotation);
+
+            // A room the host flagged as dedicated is the one the event hosts are
+            // chosen from, so the flag travels into the room settings the event
+            // host-eligibility reads; a plain room keeps the empty default.
+            var isDedicatedRoom = pushed is { Dedicated: true };
+
+            if (isDedicatedRoom)
+            {
+                room.Common = """{"dedicated":true}""";
+            }
         }, cancellationToken);
 
         // The host is the room's first roster member: the roster row carries

@@ -40,6 +40,16 @@ public sealed class EventAssignmentTickerService(
     /// <param name="lobbySubtype">Mode of that lobby, which a host has to match.</param>
     public void StartFor(int lobbyIdentifier, int lobbySubtype)
     {
+        // A lobby that cannot hold a match has no match to look for a host for,
+        // and no room it could qualify as one.
+        var lobbyHoldsMatches = lobbyIdentifier > 0
+            && EventConstants.IsEventSelector(lobbySubtype);
+
+        if (!lobbyHoldsMatches)
+        {
+            return;
+        }
+
         this.lobbyIdentifier = lobbyIdentifier;
         this.lobbySubtype = lobbySubtype;
         Start();
@@ -48,7 +58,7 @@ public sealed class EventAssignmentTickerService(
     /// <inheritdoc />
     protected override async Task RunOnceAsync(CancellationToken cancellationToken)
     {
-        if (lobbyIdentifier <= 0 || !options.Value.Enabled)
+        if (lobbyIdentifier <= 0)
         {
             return;
         }

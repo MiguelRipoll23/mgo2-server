@@ -265,7 +265,7 @@ public sealed class EventActiveEventTests
         Assert.Equal(EventConstants.EventListBoundaryWireSize, boundary.Build().Length);
 
         var result = new PacketWriter();
-        EventActiveEventUtils.WriteEventResult(
+        EventRecordUtils.WriteEventResult(
             result,
             activeStateIdentifier: 500,
             sequence: 7,
@@ -278,7 +278,7 @@ public sealed class EventActiveEventTests
         Assert.Equal(EventConstants.EventResultWireSize, result.Build().Length);
 
         var eventState = new PacketWriter();
-        EventActiveEventUtils.WriteEventState(
+        EventRecordUtils.WriteEventState(
             eventState,
             activeStateIdentifier: 500,
             sequence: 7,
@@ -288,7 +288,7 @@ public sealed class EventActiveEventTests
         Assert.Equal(EventConstants.EventStateWireSize, eventState.Build().Length);
 
         var rosterState = new PacketWriter();
-        EventActiveEventUtils.WriteRosterState(
+        EventRecordUtils.WriteRosterState(
             rosterState,
             activeStateIdentifier: 500,
             sequence: 7,
@@ -297,19 +297,19 @@ public sealed class EventActiveEventTests
         Assert.Equal(EventConstants.RosterStateWireSize, rosterState.Build().Length);
 
         var counterPair = new PacketWriter();
-        EventActiveEventUtils.WriteCounterPair(counterPair, EventConstants.TransientEventIdentifier, 1, 2);
+        EventRecordUtils.WriteCounterPair(counterPair, EventConstants.TransientEventIdentifier, 1, 2);
         Assert.Equal(EventConstants.CounterPairWireSize, counterPair.Build().Length);
 
         var prefixed = new PacketWriter();
-        EventActiveEventUtils.WritePrefixedValue(prefixed, 500, 7, 42);
+        EventRecordUtils.WritePrefixedValue(prefixed, 500, 7, 42);
         Assert.Equal(EventConstants.PrefixedValueWireSize, prefixed.Build().Length);
 
         var advance = new PacketWriter();
-        EventActiveEventUtils.WriteAdvance(advance, 500, 7, 42, 1, 2);
+        EventRecordUtils.WriteAdvance(advance, 500, 7, 42, 1, 2);
         Assert.Equal(EventConstants.AdvanceWireSize, advance.Build().Length);
 
         var sequence = new PacketWriter();
-        EventActiveEventUtils.WriteSequenceUpdate(sequence, 500, 7, 8);
+        EventRecordUtils.WriteSequenceUpdate(sequence, 500, 7, 8);
         Assert.Equal(EventConstants.SequenceUpdateWireSize, sequence.Build().Length);
     }
 

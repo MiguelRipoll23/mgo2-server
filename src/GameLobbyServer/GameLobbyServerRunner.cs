@@ -3,6 +3,7 @@ using Mgo2Server.GameLobbyServer.Coordination;
 using Mgo2Server.GameLobbyServer.Maintenance;
 using Mgo2Server.GameLobbyServer.Servers;
 using Mgo2Server.Shared.Domain.Automatch;
+using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Domain.Presence;
 using Mgo2Server.Shared.Options;
@@ -134,8 +135,6 @@ public sealed class GameLobbyServerRunner(
         gameCleanup = serviceProvider.GetRequiredService<GameCleanupService>();
         automatch = serviceProvider.GetRequiredService<AutomatchTickerService>();
         presenceTicker = serviceProvider.GetRequiredService<CharacterPresenceTickerService>();
-        outcomeTicker = serviceProvider.GetRequiredService<EventOutcomeTickerService>();
-        assignmentTicker = serviceProvider.GetRequiredService<EventAssignmentTickerService>();
         presenceCleanup = serviceProvider.GetRequiredService<CharacterPresenceCleanupService>();
         heartbeat.StartFor(lobby.Identifier);
         cleanup.Start();
@@ -145,15 +144,29 @@ public sealed class GameLobbyServerRunner(
         // one: the ticker heals the rows it owns.
         presenceTicker.StartFor(lobby.Identifier);
 
-        // The event sweep decides matches whose reports have settled. It is bound
-        // to this lobby for the same reason the others are: a match belongs to one
-        // lobby, and the sessions its outcome is pushed to are this lobby's.
-        outcomeTicker.StartFor(lobby.Identifier);
+        // The event sweeps are only started in a lobby that can hold event rows.
+        // A team's match type must equal the lobby that forms it, so matches are
+        // born in a survival or tournament lobby and nowhere else; a registration
+        // lobby holds entries, never a match. Resolving the services here rather
+        // than above keeps a broken event registration from taking down a lobby
+        // that would never use them.
+        if (EventConstants.IsEventSelector(lobby.SubtypeIdentifier))
+        {
+            outcomeTicker = serviceProvider.GetRequiredService<EventOutcomeTickerService>();
+            assignmentTicker = serviceProvider.GetRequiredService<EventAssignmentTickerService>();
 
-        // The assignment sweep looks for a room for every match that is waiting
-        // for one, and it is told this lobby's mode because a host is dedicated
-        // to one mode and may not host another.
-        assignmentTicker.StartFor(lobby.Identifier, lobby.SubtypeIdentifier);
+            // The event sweep decides matches whose reports have settled. It is
+            // bound to this lobby for the same reason the others are: a match
+            // belongs to one lobby, and the sessions its outcome is pushed to are
+            // this lobby's. Its tournament draw is not bound to a lobby: it walks
+            // every field, so any event lobby that is running keeps it advancing.
+            outcomeTicker.StartFor(lobby.Identifier, lobby.SubtypeIdentifier);
+
+            // The assignment sweep looks for a room for every match that is
+            // waiting for one, and it is told this lobby's mode because a host is
+            // dedicated to one mode and may not host another.
+            assignmentTicker.StartFor(lobby.Identifier, lobby.SubtypeIdentifier);
+        }
 
         // The daily sweeps do not run on start — they wait for midnight UTC — so
         // starting them here only arms them. The rows they are for are the ones a

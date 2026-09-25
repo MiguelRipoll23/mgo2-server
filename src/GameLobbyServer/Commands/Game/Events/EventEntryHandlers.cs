@@ -2,10 +2,8 @@ using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Interfaces;
-using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 
@@ -28,7 +26,6 @@ public sealed class EnterEventHandler(
     EventInvitationService invitationService,
     EventMatchmakingService matchmakingService,
     LobbyService lobbyService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
@@ -36,8 +33,7 @@ public sealed class EnterEventHandler(
     {
         // A body means the client asked for something this command does not do,
         // and answering it as an entry would act on the wrong request.
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || packet.Payload.Length != 0)
         {
             await RefuseAsync(session, cancellationToken);

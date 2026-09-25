@@ -242,6 +242,7 @@ public static class GameCommandHandlerRegistration
         registry.Register<EventAdjacentRequestHandler>(ServerType.GameplayLobby, CommandConstants.GetEventAdjacentState);
         registry.Register<EventAdjacentRequestHandler>(ServerType.GameplayLobby, CommandConstants.GetEventAdjacentEntry);
         registry.Register<EventAdjacentRequestHandler>(ServerType.GameplayLobby, CommandConstants.GetEventAdjacentTeam);
+        registry.Register<EventAdjacentRequestHandler>(ServerType.GameplayLobby, CommandConstants.SyncEventViewState);
 
         registry.Register<CreateEventTeamHandler>(ServerType.GameplayLobby, CommandConstants.CreateEventTeam);
         registry.Register<JoinEventTeamHandler>(ServerType.GameplayLobby, CommandConstants.JoinEventTeam);

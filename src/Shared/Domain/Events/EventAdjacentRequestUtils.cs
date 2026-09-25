@@ -4,8 +4,21 @@ namespace Mgo2Server.Shared.Domain.Events;
 
 /// <summary>The response a directly reachable but unimplemented event screen expects.</summary>
 /// <param name="ResponseCommand">Command the rejection is written as.</param>
-/// <param name="ExpectedRequestSize">Exact request size the screen sends.</param>
-public readonly record struct EventAdjacentRequest(ushort ResponseCommand, int ExpectedRequestSize);
+/// <param name="ExpectedRequestSize">Exact request size the screen sends, or unknown.</param>
+public readonly record struct EventAdjacentRequest(ushort ResponseCommand, int ExpectedRequestSize)
+{
+    /// <summary>Whether an arrival has the shape the known screen sends.</summary>
+    /// <param name="payloadLength">Length of the arrival's payload.</param>
+    /// <returns>Whether the arrival may be answered as this screen.</returns>
+    public bool IsExpectedShape(int payloadLength)
+    {
+        // A screen whose shape was never established accepts every arrival: with
+        // no length to compare against, there is nothing that could be the wrong
+        // screen.
+        var shapeWasEstablished = ExpectedRequestSize != EventAdjacentRequestUtils.UnknownRequestSize;
+        return !shapeWasEstablished || payloadLength == ExpectedRequestSize;
+    }
+}
 
 /// <summary>
 /// The seven event screens whose success body has not been recovered. Each one
@@ -17,6 +30,13 @@ public readonly record struct EventAdjacentRequest(ushort ResponseCommand, int E
 /// </summary>
 public static class EventAdjacentRequestUtils
 {
+    /// <summary>
+    /// Marks an unrecovered screen whose request shape is not established either.
+    /// Every arrival is answered as the screen, because with no shape to compare
+    /// against there is nothing to tell apart.
+    /// </summary>
+    public const int UnknownRequestSize = -1;
+
     /// <summary>Returns the rejection one command expects, when it is a known screen.</summary>
     /// <param name="command">Inbound command identifier.</param>
     /// <param name="request">Resolved rejection, when the command is known.</param>
@@ -28,8 +48,6 @@ public static class EventAdjacentRequestUtils
                 new EventAdjacentRequest(CommandConstants.GetSurvivalAdjacentListResult, 8),
             CommandConstants.GetTournamentAdjacentList =>
                 new EventAdjacentRequest(CommandConstants.GetTournamentAdjacentListResult, 9),
-            CommandConstants.ReserveTournamentEntry =>
-                new EventAdjacentRequest(CommandConstants.ReserveTournamentEntryResult, 4),
             CommandConstants.GetEventAdjacentDetail =>
                 new EventAdjacentRequest(CommandConstants.GetEventAdjacentDetailResult, 5),
             CommandConstants.GetEventAdjacentState =>
@@ -38,6 +56,8 @@ public static class EventAdjacentRequestUtils
                 new EventAdjacentRequest(CommandConstants.GetEventAdjacentEntryResult, 4),
             CommandConstants.GetEventAdjacentTeam =>
                 new EventAdjacentRequest(CommandConstants.GetEventAdjacentTeamResult, 1),
+            CommandConstants.SyncEventViewState =>
+                new EventAdjacentRequest(CommandConstants.SyncEventViewStateResult, UnknownRequestSize),
             _ => default,
         };
 

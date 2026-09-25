@@ -104,7 +104,6 @@ public static class ServerServiceCollectionExtensions
 
         services.Configure<EventOptions>(options =>
         {
-            options.Enabled = configuration.ReadFlag("EVENT_ENABLED", options.Enabled);
             options.Title = configuration.ReadText("EVENT_TITLE") ?? options.Title;
             options.Description = configuration.ReadText("EVENT_DESCRIPTION") ?? options.Description;
             options.TimeZone = configuration.ReadText("EVENT_SCHEDULE_TIMEZONE") ?? options.TimeZone;
@@ -128,6 +127,18 @@ public static class ServerServiceCollectionExtensions
                 "TOURNAMENT_CAPACITY",
                 options.TournamentCapacity);
             options.PrizeLabels = configuration.ReadText("TOURNAMENT_PRIZE_LABELS") ?? options.PrizeLabels;
+            options.TournamentMinimumLevel = configuration.ReadNumber(
+                "TOURNAMENT_MINIMUM_LEVEL",
+                options.TournamentMinimumLevel);
+            options.TournamentMaximumLevel = configuration.ReadNumber(
+                "TOURNAMENT_MAXIMUM_LEVEL",
+                options.TournamentMaximumLevel);
+            options.ReportGraceMilliseconds = configuration.ReadNumber(
+                "EVENT_REPORT_GRACE_MILLISECONDS",
+                options.ReportGraceMilliseconds);
+            options.OutcomeSweepMilliseconds = configuration.ReadNumber(
+                "EVENT_OUTCOME_SWEEP_MILLISECONDS",
+                options.OutcomeSweepMilliseconds);
         });
 
         services.AddDbContextFactory<Mgo2DatabaseContext>(options =>
@@ -179,6 +190,7 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<EventMatchmakingService>();
         services.AddSingleton<EventHostLeaseService>();
         services.AddSingleton<EventAssignmentService>();
+        services.AddSingleton<EventAssignmentPushService>();
         services.AddSingleton<TournamentRegistrationService>();
         services.AddSingleton<TournamentBracketService>();
         services.AddSingleton<TournamentMatchService>();

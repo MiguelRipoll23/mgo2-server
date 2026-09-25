@@ -2,10 +2,8 @@ using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Interfaces;
-using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 
@@ -21,14 +19,12 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 public sealed class ReportEventGameResultHandler(
     EventOutcomeService outcomeService,
     GameService gameService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || packet.Payload.Length != EventConstants.EventGameResultWireSize)
         {
             await RefuseAsync(session, EventConstants.EventGameResultMalformed, cancellationToken);

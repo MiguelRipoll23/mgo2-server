@@ -16,14 +16,12 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 /// </summary>
 public sealed class GetEventListHandler(
     EventTeamService teamService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.LobbyIdentifier is not { } lobbyIdentifier
+        if (session.LobbyIdentifier is not { } lobbyIdentifier
             || packet.Payload.Length != 0)
         {
             await sessionHelper.SendResultAsync(
@@ -89,14 +87,12 @@ public sealed class GetEventListHandler(
 /// and the bytes are written together rather than independently.
 /// </summary>
 public sealed class GetEventDetailHandler(
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || packet.Payload.Length < sizeof(int))
+        if (packet.Payload.Length < sizeof(int))
         {
             await RefuseAsync(session, cancellationToken);
             return;
@@ -174,8 +170,7 @@ public sealed class GetAssignedGameDetailHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || packet.Payload.Length < sizeof(int))
         {
             await RefuseAsync(session, cancellationToken);

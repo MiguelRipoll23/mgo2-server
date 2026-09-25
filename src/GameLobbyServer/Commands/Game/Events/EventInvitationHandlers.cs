@@ -2,10 +2,8 @@ using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Interfaces;
-using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 
@@ -15,7 +13,6 @@ public sealed class InviteEventTeamMembersHandler(
     EventTeamService teamService,
     EventSessionDirectoryService sessionDirectory,
     CharacterService characterService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
@@ -25,8 +22,7 @@ public sealed class InviteEventTeamMembersHandler(
         var teamIdentifier = session.EventTeamIdentifier;
         var lobbyIdentifier = session.LobbyIdentifier;
 
-        if (!options.Value.Enabled
-            || leaderIdentifier is not { } leader
+        if (leaderIdentifier is not { } leader
             || teamIdentifier is not { } team
             || lobbyIdentifier is not { } lobby
             || !TryParse(packet.Payload, out var mode, out var targets)
@@ -181,15 +177,13 @@ public sealed class InviteEventTeamMembersHandler(
 public sealed class AnswerEventTeamInvitationHandler(
     EventInvitationService invitationService,
     EventSessionDirectoryService sessionDirectory,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         var targetIdentifier = session.CharacterIdentifier;
-        if (!options.Value.Enabled
-            || targetIdentifier is not { } target
+        if (targetIdentifier is not { } target
             || packet.Payload.Length != 5)
         {
             await WriteAnswerAsync(session, ErrorCodeConstants.ResultGeneral, 0, 0, cancellationToken);
@@ -278,7 +272,6 @@ public sealed class AnswerEventTeamInvitationHandler(
 /// <summary>Acknowledges the invitation state the leader's screen is showing.</summary>
 public sealed class ReportEventInvitationStatusHandler(
     EventTeamService teamService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <summary>Size of the status report the screen sends.</summary>
@@ -289,14 +282,16 @@ public sealed class ReportEventInvitationStatusHandler(
     {
         var result = ErrorCodeConstants.ResultGeneral;
 
-        if (options.Value.Enabled
-            && session.EventTeamIdentifier is { } teamIdentifier
+        if (session.EventTeamIdentifier is { } teamIdentifier
             && packet.Payload.Length == ReportWireSize)
         {
             var team = await teamService.FindAsync(teamIdentifier, cancellationToken);
-            if (team is not null
-                && session.CharacterIdentifier is { } characterIdentifier
-                && team.OwnerCharacterIdentifier == characterIdentifier)
+
+            // Only the leader's own screen may acknowledge the state it is showing.
+            var isReportedByOwner = team is not null
+                && session.CharacterIdentifier == team.OwnerCharacterIdentifier;
+
+            if (isReportedByOwner)
             {
                 result = ErrorCodeConstants.ResultNone;
             }

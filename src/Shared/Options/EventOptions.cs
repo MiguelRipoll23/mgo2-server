@@ -19,9 +19,6 @@ public sealed class EventOptions
     /// <summary>Number of win-reward slots the information record carries.</summary>
     public const int WinRewardSlots = 10;
 
-    /// <summary>Whether the event lobbies and their commands are served at all.</summary>
-    public bool Enabled { get; set; }
-
     /// <summary>Title shown on the event information screen.</summary>
     public string Title { get; set; } = "SURVIVAL & TOURNAMENT";
 

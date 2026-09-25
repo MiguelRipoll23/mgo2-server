@@ -1,10 +1,8 @@
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Interfaces;
-using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 
@@ -15,14 +13,12 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 /// </summary>
 public sealed class GetAssignedGameSnapshotHandler(
     EventAssignmentService assignmentService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || packet.Payload.Length != EventConstants.SnapshotSelectorRequestWireSize)
         {
             await RefuseAsync(session, cancellationToken);
@@ -88,14 +84,12 @@ public sealed class GetAssignedGameSnapshotHandler(
 /// </summary>
 public sealed class ConfirmEventAssignmentHandler(
     EventAssignmentService assignmentService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || packet.Payload.Length != EventConstants.ConfirmationRequestWireSize)
         {
             await RefuseAsync(session, cancellationToken);
@@ -140,14 +134,12 @@ public sealed class ConfirmEventAssignmentHandler(
 public sealed class RemoveEventGameEntryHandler(
     EventAssignmentService assignmentService,
     TournamentRegistrationService registrationService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || packet.Payload.Length != EventConstants.GameEntryRemoveRequestWireSize)
         {
             await RefuseAsync(session, cancellationToken);
@@ -227,14 +219,12 @@ public sealed class RemoveEventGameEntryHandler(
 /// </summary>
 public sealed class GetAssignedMemberInformationHandler(
     EventAssignmentService assignmentService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || packet.Payload.Length != EventConstants.AssignedMemberInformationRequestWireSize)
         {
             await RefuseAsync(session, cancellationToken);

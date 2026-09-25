@@ -61,6 +61,67 @@ public static class EventAssignmentUtils
     }
 
     /// <summary>
+    /// Writes the next-match card. It is the wider sibling of the match-found
+    /// notification: the same two identities and names, each padded out to a
+    /// full team block, and the lobby triple that lets the client route the
+    /// record to the Survival or Tournament screen family.
+    /// <para>
+    /// The card identity must echo the active-event start's identity, because
+    /// the client drops a card whose identifier does not match the one it has
+    /// been holding open.
+    /// </para>
+    /// </summary>
+    /// <param name="writer">Writer to append to.</param>
+    /// <param name="cardIdentifier">Identity the active event was opened with; never zero.</param>
+    /// <param name="ownTeam">Recipient's team.</param>
+    /// <param name="opponentTeam">Opposing team.</param>
+    /// <param name="recipientCharacterIdentifier">Character the record is written for.</param>
+    public static void WriteNextMatchCard(
+        PacketWriter writer,
+        int cardIdentifier,
+        EventSnapshot ownTeam,
+        EventSnapshot opponentTeam,
+        int recipientCharacterIdentifier)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(ownTeam);
+        ArgumentNullException.ThrowIfNull(opponentTeam);
+        if (cardIdentifier == 0)
+        {
+            throw new ArgumentException(
+                "A next-match card requires the identity the event opened with.",
+                nameof(cardIdentifier));
+        }
+
+        // The first identity is recipient-relative exactly as in the match-found
+        // notification, because both fill the same shared record and the client
+        // picks the block that is not its own to render.
+        var ownTeamIdentity = recipientCharacterIdentifier;
+        var opponentTeamIdentity = opponentTeam.Participants[0].CharacterIdentifier;
+        var bothIdentitiesAreKnown = ownTeamIdentity != 0 && opponentTeamIdentity != 0;
+        var identitiesAreDistinct = ownTeamIdentity != opponentTeamIdentity;
+
+        if (!bothIdentitiesAreKnown || !identitiesAreDistinct)
+        {
+            throw new InvalidOperationException(
+                "A next-match card requires two distinct team identities.");
+        }
+
+        var start = writer.Size;
+        writer.WriteInt32(cardIdentifier);
+        writer.WriteInt32(ownTeam.LobbyIdentifier);
+        writer.WriteUInt8(ownTeam.MatchType);
+        writer.WriteUInt8(ownTeam.PrimaryEquipmentType);
+        writer.WriteInt32(Clamped(ownTeam.ConsecutiveWins));
+        writer.WriteInt32(Clamped(opponentTeam.ConsecutiveWins));
+        WriteTeamBlock(writer, ownTeamIdentity, ownTeam);
+        WriteTeamBlock(writer, opponentTeamIdentity, opponentTeam);
+        writer.WriteUInt8(EventConstants.EventGameRotationIndex);
+
+        AssertSize(writer, start, EventConstants.NextMatchCardWireSize, "next match card");
+    }
+
+    /// <summary>
     /// Writes the state-update notification. It is the body of both outcomes:
     /// the winner's continue view and the loser's return to team creation differ
     /// only in the command they are sent under.
@@ -290,6 +351,16 @@ public static class EventAssignmentUtils
         {
             writer.WriteInt32(participant.CharacterIdentifier);
         }
+    }
+
+    private static void WriteTeamBlock(
+        PacketWriter writer,
+        int teamIdentity,
+        EventSnapshot team)
+    {
+        writer.WriteInt32(teamIdentity);
+        writer.WriteFixedString(team.Name, 16);
+        WriteParticipantIdentifiers(writer, team);
     }
 
     private static void ValidateSameMatch(

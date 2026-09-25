@@ -261,6 +261,9 @@ public sealed class EventAssignmentService(
         CancellationToken cancellationToken = default)
     {
         var lease = await leaseService.FindActiveByMatchAsync(matchIdentifier, cancellationToken);
+        var assignment = lease is null
+            ? null
+            : await LoadAsync(matchIdentifier, lease, cancellationToken);
         var cancelled = await matchService.SetStateAsync(
             matchIdentifier,
             EventConstants.MatchCancelledState,
@@ -269,6 +272,21 @@ public sealed class EventAssignmentService(
         if (lease is not null)
         {
             await leaseService.ReleaseAsync(lease.GameIdentifier, cancellationToken);
+
+            // A Survival match that was live is a pair of teams holding a
+            // match-found screen; the teardown empties the event record on both
+            // so neither is left waiting. Tournament teardown belongs to the
+            // bracket family rather than to this record, so only a Survival
+            // assignment is a target at all.
+            var teardownTarget = assignment is not null
+                && assignment.LobbySubtype == EventConstants.SurvivalSelector
+                    ? assignment
+                    : null;
+
+            if (cancelled && teardownTarget is not null)
+            {
+                await pushService.PushTeardownAsync(teardownTarget, cancellationToken);
+            }
         }
 
         return cancelled;

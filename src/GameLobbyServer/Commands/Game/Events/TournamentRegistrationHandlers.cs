@@ -2,10 +2,8 @@ using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Interfaces;
-using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 
@@ -17,7 +15,6 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 public sealed class ReserveTournamentEntryHandler(
     TournamentRegistrationService registrationService,
     LobbyService lobbyService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <summary>Logical size of the request: one event identifier.</summary>
@@ -26,8 +23,7 @@ public sealed class ReserveTournamentEntryHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || packet.Payload.Length != RequestWireSize)
         {
             await RefuseAsync(session, cancellationToken);

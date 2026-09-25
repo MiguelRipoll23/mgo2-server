@@ -1,66 +1,18 @@
-using System.Text;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Interfaces;
-using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
-
-/// <summary>Validation of the text fields the team commands carry.</summary>
-internal static class EventTeamTextUtils
-{
-    /// <summary>
-    /// Retail accepts three to sixteen encoded bytes. A shorter or longer string
-    /// is refused rather than padded, because the slot is the client's own field
-    /// and padding would change what was typed.
-    /// </summary>
-    /// <param name="value">Text to test.</param>
-    public static bool IsValidTeamName(string value) => IsValidText(value, 3, 16);
-
-    /// <summary>Validates the password of a protected team.</summary>
-    /// <param name="flagBits">Option bits of the team.</param>
-    /// <param name="password">Password to test.</param>
-    public static bool IsValidPassword(int flagBits, string password) =>
-        (flagBits & EventTeamService.PasswordProtectedFlag) == 0 || IsValidText(password, 3, 16);
-
-    private static bool IsValidText(string value, int minimum, int maximum)
-    {
-        if (value is null)
-        {
-            return false;
-        }
-
-        // Encoded length, because the client measures the wire field rather than
-        // the character count, and the control-byte rule is about encoded bytes.
-        var encoded = Encoding.Latin1.GetBytes(value);
-        if (encoded.Length < minimum || encoded.Length > maximum)
-        {
-            return false;
-        }
-
-        foreach (var item in encoded)
-        {
-            if (item is >= 0x01 and <= 0x1f)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-}
 
 /// <summary>Creates an event team and answers with its active-game snapshot.</summary>
 public sealed class CreateEventTeamHandler(
     EventTeamService teamService,
     CharacterService characterService,
     LobbyService lobbyService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <summary>Logical size of a create request.</summary>
@@ -72,8 +24,7 @@ public sealed class CreateEventTeamHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || session.LobbyIdentifier is not { } lobbyIdentifier
             || (packet.Payload.Length != LogicalWireSize && packet.Payload.Length != PaddedWireSize))
         {
@@ -163,7 +114,6 @@ public sealed class JoinEventTeamHandler(
     EventInvitationService invitationService,
     EventMatchmakingService matchmakingService,
     CharacterService characterService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <summary>Logical size of a join request.</summary>
@@ -175,8 +125,7 @@ public sealed class JoinEventTeamHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || session.LobbyIdentifier is not { } lobbyIdentifier
             || (packet.Payload.Length != LogicalWireSize && packet.Payload.Length != PaddedWireSize))
         {
@@ -246,14 +195,12 @@ public sealed class LeaveEventTeamHandler(
     EventTeamPushService pushService,
     EventInvitationService invitationService,
     EventMatchmakingService matchmakingService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || session.EventTeamIdentifier is not { } teamIdentifier
             || packet.Payload.Length != 0)
         {
@@ -320,14 +267,12 @@ public sealed class SetEventEntryDecisionHandler(
     EventTeamService teamService,
     EventTeamPushService pushService,
     EventMatchmakingService matchmakingService,
-    IOptions<EventOptions> options,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (!options.Value.Enabled
-            || session.CharacterIdentifier is not { } characterIdentifier
+        if (session.CharacterIdentifier is not { } characterIdentifier
             || session.EventTeamIdentifier is not { } teamIdentifier
             || packet.Payload.Length != 1
             || packet.Payload[0] > 1)
@@ -375,87 +320,4 @@ public sealed class SetEventEntryDecisionHandler(
             CommandConstants.SetEventEntryDecisionResult,
             ErrorCodeConstants.ResultGeneral,
             cancellationToken);
-}
-
-/// <summary>Streams the joinable teams of the lobby the caller is in.</summary>
-public sealed class GetEventTeamListHandler(
-    EventTeamService teamService,
-    IOptions<EventOptions> options,
-    SessionHelper sessionHelper) : ICommandHandler
-{
-    /// <inheritdoc />
-    public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
-    {
-        if (!options.Value.Enabled
-            || session.LobbyIdentifier is not { } lobbyIdentifier
-            || packet.Payload.Length != 0)
-        {
-            await sessionHelper.SendResultAsync(
-                session,
-                CommandConstants.GetEventTeamListStart,
-                ErrorCodeConstants.ResultGeneral,
-                cancellationToken);
-            return;
-        }
-
-        var teams = await teamService.FindJoinableAsync(lobbyIdentifier, cancellationToken);
-
-        await sessionHelper.SendStartEndPacketAsync(
-            session,
-            CommandConstants.GetEventTeamListStart,
-            cancellationToken);
-
-        foreach (var team in teams)
-        {
-            var writer = new PacketWriter();
-            EventTeamListUtils.WriteItem(writer, EventTeamService.BuildSnapshot(team));
-            await sessionHelper.SendPacketAsync(
-                session,
-                CommandConstants.GetEventTeamListPage,
-                writer.Build(),
-                cancellationToken);
-        }
-
-        await sessionHelper.SendStartEndPacketAsync(
-            session,
-            CommandConstants.GetEventTeamListEnd,
-            cancellationToken);
-    }
-}
-
-/// <summary>Returns the detail of one joinable team.</summary>
-public sealed class GetEventTeamDetailsHandler(
-    EventTeamService teamService,
-    IOptions<EventOptions> options,
-    SessionHelper sessionHelper) : ICommandHandler
-{
-    /// <inheritdoc />
-    public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
-    {
-        var teamIdentifier = options.Value.Enabled && packet.Payload.Length == 4
-            ? (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(packet.Payload)
-            : 0;
-
-        var team = teamIdentifier > 0
-            ? await teamService.FindAsync(teamIdentifier, cancellationToken)
-            : null;
-
-        if (team is null)
-        {
-            await sessionHelper.SendResultAsync(
-                session,
-                CommandConstants.GetEventTeamDetailsResult,
-                ErrorCodeConstants.ResultGeneral,
-                cancellationToken);
-            return;
-        }
-
-        var writer = new PacketWriter();
-        EventSnapshotUtils.WriteCompact(writer, EventTeamService.BuildSnapshot(team));
-        await sessionHelper.SendPacketAsync(
-            session,
-            CommandConstants.GetEventTeamDetailsResult,
-            writer.Build(),
-            cancellationToken);
-    }
 }

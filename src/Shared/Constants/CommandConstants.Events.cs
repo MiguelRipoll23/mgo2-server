@@ -183,7 +183,11 @@ public static partial class CommandConstants
     /// <summary>Carries the Survival event detail.</summary>
     public const ushort GetEventDetailResult = 0x4A31;
 
-    /// <summary>Syncs the event view state the client is showing.</summary>
+    /// <summary>
+    /// Syncs the event view state the client is showing. Its success body is
+    /// unrecovered, so it is answered as a known-but-unimplemented screen rather
+    /// than left for the generic no-handler reply.
+    /// </summary>
     public const ushort SyncEventViewState = 0x49D0;
 
     /// <summary>Carries the result of syncing the event view state.</summary>
@@ -214,6 +218,13 @@ public static partial class CommandConstants
 
     /// <summary>Pushes a Survival state update to one team.</summary>
     public const ushort EventStateUpdate = 0x4E23;
+
+    /// <summary>
+    /// Serves <see cref="EventMatchFound"/>'s sibling card: the two teams of the
+    /// next match, written into the same shared record. It is a carry of the
+    /// pairing rather than a distinct announcement.
+    /// </summary>
+    public const ushort EventNextMatchCard = 0x4A13;
 
     /// <summary>Starts the assigned active event in the client.</summary>
     public const ushort ActiveEventStart = 0x4A00;
