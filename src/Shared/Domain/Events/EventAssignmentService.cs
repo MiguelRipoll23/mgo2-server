@@ -21,6 +21,7 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// <param name="leaseService">Service that owns the room claims.</param>
 /// <param name="rewardService">Service that pays a completed match.</param>
 /// <param name="gameService">Service that owns the rooms a host is chosen from.</param>
+/// <param name="rosterService">Service that owns the frozen rosters a pairing names.</param>
 /// <param name="pushService">Service that tells the teams their match was found.</param>
 public sealed class EventAssignmentService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
@@ -28,6 +29,7 @@ public sealed class EventAssignmentService(
     EventHostLeaseService leaseService,
     EventRewardService rewardService,
     GameService gameService,
+    TournamentRosterService rosterService,
     EventAssignmentPushService pushService)
     : DomainService(contextFactory)
 {
@@ -177,6 +179,8 @@ public sealed class EventAssignmentService(
             LobbySubtype = match.MatchType,
             FirstTeam = EventTeamService.BuildSnapshot(firstTeam),
             SecondTeam = EventTeamService.BuildSnapshot(secondTeam),
+            FirstRoster = await rosterService.LoadAsync(EventOf(firstTeam), firstTeam.Identifier, cancellationToken),
+            SecondRoster = await rosterService.LoadAsync(EventOf(secondTeam), secondTeam.Identifier, cancellationToken),
         };
     }
 
@@ -328,6 +332,17 @@ public sealed class EventAssignmentService(
             LobbySubtype = match.MatchType,
             FirstTeam = EventTeamService.BuildSnapshot(firstTeam),
             SecondTeam = EventTeamService.BuildSnapshot(secondTeam),
+            FirstRoster = await rosterService.LoadAsync(EventOf(firstTeam), firstTeam.Identifier, cancellationToken),
+            SecondRoster = await rosterService.LoadAsync(EventOf(secondTeam), secondTeam.Identifier, cancellationToken),
         };
     }
+
+    /// <summary>
+    /// Returns the event a team's roster was frozen against. A team formed on
+    /// the event screens carries the event it was formed for, and a team that
+    /// carries none has no frozen roster to read.
+    /// </summary>
+    /// <param name="team">Team to read.</param>
+    private static int EventOf(Persistence.Entities.EventTeam team) => team.EventIdentifier;
+
 }

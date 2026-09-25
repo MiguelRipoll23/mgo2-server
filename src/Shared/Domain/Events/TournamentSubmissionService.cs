@@ -18,9 +18,11 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 /// <param name="scheduleService">Service that resolves a named event to its schedule.</param>
+/// <param name="rosterService">Service that freezes the roster the draw is made with.</param>
 public sealed class TournamentSubmissionService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
-    EventScheduleService scheduleService)
+    EventScheduleService scheduleService,
+    TournamentRosterService rosterService)
     : DomainService(contextFactory)
 {
 
@@ -191,6 +193,11 @@ public sealed class TournamentSubmissionService(
             // Another lobby submitted a team into the same place first.
             return TournamentSubmitOutcome.TournamentFull;
         }
+
+        // The roster is copied here, at the moment the team enters the field.
+        // Everything the draw later names is read from the copy rather than
+        // from the team, which is live and may change before the field closes.
+        await rosterService.FreezeAsync(eventIdentifier, teamIdentifier, cancellationToken);
 
         return TournamentSubmitOutcome.Registered;
     }

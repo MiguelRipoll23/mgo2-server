@@ -76,12 +76,16 @@ public static class EventAssignmentUtils
     /// <param name="ownTeam">Recipient's team.</param>
     /// <param name="opponentTeam">Opposing team.</param>
     /// <param name="recipientCharacterIdentifier">Character the record is written for.</param>
+    /// <param name="ownRoster">Frozen roster of the recipient's team, when the mode has one.</param>
+    /// <param name="opponentRoster">Frozen roster of the opposing team, when the mode has one.</param>
     public static void WriteNextMatchCard(
         PacketWriter writer,
         int cardIdentifier,
         EventSnapshot ownTeam,
         EventSnapshot opponentTeam,
-        int recipientCharacterIdentifier)
+        int recipientCharacterIdentifier,
+        EventRoster? ownRoster = null,
+        EventRoster? opponentRoster = null)
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(ownTeam);
@@ -107,6 +111,18 @@ public static class EventAssignmentUtils
                 "A next-match card requires two distinct team identities.");
         }
 
+        // A Tournament card names the roster the draw was made with, not the
+        // live team: the pairings are settled, and a card naming whoever has
+        // joined or left since would describe a team the bracket never matched.
+        // A Survival match has no frozen roster and is written from the snapshot
+        // it was paired from, which is the only record of it there is.
+        var ownBlock = ownRoster is { } frozen
+            ? (Name: frozen.Name, Members: frozen.MemberIdentifiers)
+            : (Name: ownTeam.Name, Members: EventTeamBlockUtils.Participants(ownTeam));
+        var opponentBlock = opponentRoster is { } frozenOpponent
+            ? (Name: frozenOpponent.Name, Members: frozenOpponent.MemberIdentifiers)
+            : (Name: opponentTeam.Name, Members: EventTeamBlockUtils.Participants(opponentTeam));
+
         var start = writer.Size;
         writer.WriteInt32(cardIdentifier);
         writer.WriteInt32(ownTeam.LobbyIdentifier);
@@ -114,8 +130,8 @@ public static class EventAssignmentUtils
         writer.WriteUInt8(ownTeam.PrimaryEquipmentType);
         writer.WriteInt32(Clamped(ownTeam.ConsecutiveWins));
         writer.WriteInt32(Clamped(opponentTeam.ConsecutiveWins));
-        WriteTeamBlock(writer, ownTeamIdentity, ownTeam);
-        WriteTeamBlock(writer, opponentTeamIdentity, opponentTeam);
+        EventTeamBlockUtils.WriteTeamBlock(writer, ownTeamIdentity, ownBlock.Name, ownBlock.Members);
+        EventTeamBlockUtils.WriteTeamBlock(writer, opponentTeamIdentity, opponentBlock.Name, opponentBlock.Members);
         writer.WriteUInt8(EventConstants.EventGameRotationIndex);
 
         AssertSize(writer, start, EventConstants.NextMatchCardWireSize, "next match card");
@@ -178,8 +194,8 @@ public static class EventAssignmentUtils
         writer.WriteUInt8(ownTeam.PrimaryEquipmentType);
         writer.WriteInt32(NonNegative(ownTeam.ConsecutiveWins));
         writer.WriteInt32(NonNegative(opponentTeam.ConsecutiveWins));
-        WriteParticipantIdentifiers(writer, ownTeam);
-        WriteParticipantIdentifiers(writer, opponentTeam);
+        EventTeamBlockUtils.WriteParticipantIdentifiers(writer, ownTeam);
+        EventTeamBlockUtils.WriteParticipantIdentifiers(writer, opponentTeam);
 
         AssertSize(writer, start, EventConstants.EventGameInitializeWireSize, "event game initialize");
     }
@@ -343,24 +359,6 @@ public static class EventAssignmentUtils
             start,
             EventConstants.AssignedMemberInformationWireSize,
             "assigned member information");
-    }
-
-    private static void WriteParticipantIdentifiers(PacketWriter writer, EventSnapshot team)
-    {
-        foreach (var participant in team.Participants)
-        {
-            writer.WriteInt32(participant.CharacterIdentifier);
-        }
-    }
-
-    private static void WriteTeamBlock(
-        PacketWriter writer,
-        int teamIdentity,
-        EventSnapshot team)
-    {
-        writer.WriteInt32(teamIdentity);
-        writer.WriteFixedString(team.Name, 16);
-        WriteParticipantIdentifiers(writer, team);
     }
 
     private static void ValidateSameMatch(

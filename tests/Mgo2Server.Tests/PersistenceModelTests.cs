@@ -56,6 +56,7 @@ public sealed class PersistenceModelTests
         "tournament_brackets",
         "tournament_registrations",
         "tournament_results",
+        "tournament_roster",
         "tournament_seeds",
         "accounts",
     ];

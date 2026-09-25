@@ -77,6 +77,47 @@ public sealed class EventNextMatchCardTests
     }
 
     [Fact]
+    public void Next_match_card_names_the_frozen_roster_rather_than_the_live_team()
+    {
+        var ownTeam = CreateTeam(7, 42);
+        var opponentTeam = CreateTeam(9, 77);
+
+        // The live teams have moved on since the draw: a member has left, and
+        // the team has been renamed. The card must still name the roster the
+        // bracket was settled with, or it describes a team nobody matched.
+        ownTeam.Participants[1].CharacterIdentifier = 43;
+        ownTeam.Name = "RENAMED7";
+
+        var ownRoster = new EventRoster(7, "FROZEN7", [42, 43]);
+        var opponentRoster = new EventRoster(9, "FROZEN9", [77, 88, 99]);
+
+        var writer = new PacketWriter();
+        EventAssignmentUtils.WriteNextMatchCard(
+            writer,
+            500,
+            ownTeam,
+            opponentTeam,
+            42,
+            ownRoster,
+            opponentRoster);
+        var payload = writer.Build();
+
+        Assert.Equal(EventConstants.NextMatchCardWireSize, payload.Length);
+
+        // Both blocks carry the frozen name and the frozen member list, in the
+        // same layout the live snapshot would have filled.
+        Assert.Equal("FROZEN7", StringUtility.ReadFixedString(payload, 22, 16));
+        Assert.Equal(42, BinaryPrimitives.ReadInt32BigEndian(payload.AsSpan(38)));
+        Assert.Equal(43, BinaryPrimitives.ReadInt32BigEndian(payload.AsSpan(42)));
+        Assert.Equal(0, BinaryPrimitives.ReadInt32BigEndian(payload.AsSpan(46)));
+
+        Assert.Equal("FROZEN9", StringUtility.ReadFixedString(payload, 74, 16));
+        Assert.Equal(77, BinaryPrimitives.ReadInt32BigEndian(payload.AsSpan(90)));
+        Assert.Equal(88, BinaryPrimitives.ReadInt32BigEndian(payload.AsSpan(94)));
+        Assert.Equal(99, BinaryPrimitives.ReadInt32BigEndian(payload.AsSpan(98)));
+    }
+
+    [Fact]
     public void Next_match_card_refuses_a_missing_identity()
     {
         Assert.Throws<ArgumentException>(

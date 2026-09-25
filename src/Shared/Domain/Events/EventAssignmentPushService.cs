@@ -188,7 +188,13 @@ public sealed class EventAssignmentPushService(
                 assignment.ActiveStateIdentifier,
                 team,
                 opponent,
-                characterIdentifier);
+                characterIdentifier,
+                ReferenceEquals(team, assignment.FirstTeam)
+                    ? assignment.FirstRoster
+                    : assignment.SecondRoster,
+                ReferenceEquals(team, assignment.FirstTeam)
+                    ? assignment.SecondRoster
+                    : assignment.FirstRoster);
             await sessionHelper.SendPacketAsync(
                 session,
                 CommandConstants.EventNextMatchCard,

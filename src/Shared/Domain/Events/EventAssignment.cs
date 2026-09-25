@@ -40,6 +40,18 @@ public sealed class EventAssignment
     /// <summary>Second of the paired teams.</summary>
     public EventSnapshot SecondTeam { get; init; } = new();
 
+    /// <summary>
+    /// Frozen roster of the first team, when it has one. A Tournament team is
+    /// drawn with the roster it entered the field with, so the pairing card is
+    /// written from this rather than from <see cref="FirstTeam"/>, which is
+    /// rebuilt from the live team and may since have changed. Null for a
+    /// Survival match and for a team that predates the frozen roster.
+    /// </summary>
+    public EventRoster? FirstRoster { get; init; }
+
+    /// <summary>Frozen roster of the second team, when it has one.</summary>
+    public EventRoster? SecondRoster { get; init; }
+
     /// <summary>Returns the team a character plays for, or null when they are not in the match.</summary>
     /// <param name="characterIdentifier">Character to look for.</param>
     public EventSnapshot? TeamOfCharacter(int characterIdentifier)

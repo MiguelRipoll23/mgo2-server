@@ -108,5 +108,21 @@ internal static partial class EntityModelConfiguration
         {
             entity.HasIndex(result => new { result.EventIdentifier, result.MatchIdentifier }).IsUnique();
         });
+
+        modelBuilder.Entity<TournamentRosterMember>(entity =>
+        {
+            // The position is the natural key inside the roster, and a character
+            // holds at most one place in it: a roster that named somebody twice
+            // would put them in their own pairing.
+            entity.HasKey(member => new { member.EventIdentifier, member.TeamIdentifier, member.MemberIndex });
+            entity.HasIndex(member => new { member.EventIdentifier, member.CharacterIdentifier })
+                .IsUnique();
+            // The roster goes with the bracket it was submitted for, so a bracket
+            // that is removed takes the roster the draw was made with with it.
+            entity.HasOne<TournamentBracket>()
+                .WithMany()
+                .HasForeignKey(member => member.EventIdentifier)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }

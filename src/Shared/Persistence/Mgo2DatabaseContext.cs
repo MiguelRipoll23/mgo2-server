@@ -135,6 +135,9 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
     /// <summary>Entrants of a Tournament bracket.</summary>
     public DbSet<TournamentSeed> TournamentSeeds => Set<TournamentSeed>();
 
+    /// <summary>Rosters a Tournament team was drawn and shown with.</summary>
+    public DbSet<TournamentRosterMember> TournamentRosterMembers => Set<TournamentRosterMember>();
+
     /// <summary>Played Tournament fixtures.</summary>
     public DbSet<TournamentResult> TournamentResults => Set<TournamentResult>();
 
