@@ -175,16 +175,18 @@ right. Its `0x4910` sender makes no `0xD5D124` call, so the request arrives in t
 (`dev/proto/inbound/mgo2_cmd_4910_c2s.ksy`, which reads the whole send path). Taking the
 reference at its word is what made Create Team fail on 2026-09-25 — see that file's handler.
 
-The outbound set is **half-swept, and `0x4349` is the live half.** `0x4305` is never sent, so the
-encrypt direction has never put a byte in front of the client and its membership is untested.
-`0x4349` (`GetTeamCreateInformationResult`) *is* sent, in the clear, and Nomad encrypts it. There
-*is* first-party evidence on the client side here: `dev/proto/outbound/mgo2_cmd_4349_s2c.ksy`
-records the parser opening with `0xD5D124(ctx+6408, pkt, 1)`, "a pre-read hook shared with
-`0x4305`" — the same routine, called to decrypt rather than encrypt. So the membership looks
-right, but the direction has never been exercised against a real client, which is the whole of
-what is missing. The frame is a 4-byte result, and encrypted that becomes 8; the client would
-have to be reading an 8-byte frame today, so if the Create Team screen prefills correctly in play,
-treat the cleartext reply as observed-correct and change nothing.
+The outbound set is **derived the other way round, from the reply parsers.** `0x4305` and `0x4349`
+are the two parsers recorded as opening with `0xD5D124`, called to decrypt rather than encrypt
+(`dev/proto/outbound/mgo2_cmd_4349_s2c.ksy` calls it "a pre-read hook shared with `0x4305`").
+That is the mirror of the inbound sweep, and the two derivations agree on both members.
+
+**`0x4349` was sent in the clear until 2026-09-25, and the Create Team screen never opened.** A
+live capture settles it: the client sends `0x4348`, the server answers `0x4349`, and the client
+then reports a network error and never sends `0x4910` — the create request is downstream of a card
+the client could not read. The reply is a 4-byte result, which is not a whole number of Blowfish
+blocks, so a client running it through the cipher cannot read the result word at all. Encrypted,
+the same reply is 8 bytes, which is what the client expects. `0x4305` is still never sent, so
+that half remains untested in play.
 
 A request being encrypted says nothing about its reply. `0x3003` arrives encrypted and `0x3004`
 goes back in the clear; likewise `0x4700`/`0x4701` and `0x4990`/`0x4991`.

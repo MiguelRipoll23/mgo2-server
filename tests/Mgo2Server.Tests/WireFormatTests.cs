@@ -134,6 +134,42 @@ public sealed class PacketCodecServiceTests
         Assert.Throws<InvalidOperationException>(
             () => Codec.EncodePacket(PlainCommand, oversized, sequenceOut: 1));
     }
+
+    /// <summary>
+    /// The team-creation card is a 4-byte result the client reads through the
+    /// packet cipher. In the clear the reply is 4 bytes, which is not a whole
+    /// number of Blowfish blocks, so the client cannot read the result word out
+    /// of it and the Create Team screen never opens - a live capture on
+    /// 2026-09-25 showed 0x4348 answered and 0x4910 never sent.
+    /// </summary>
+    [Fact]
+    public void The_team_creation_card_is_padded_out_to_a_cipher_block()
+    {
+        const ushort teamCreationCard = 0x4349;
+        const uint notFound = unchecked((uint)-1006);
+        var payload = new byte[sizeof(uint)];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(payload, notFound);
+
+        var wire = Codec.EncodePacket(teamCreationCard, payload, sequenceOut: 3);
+
+        // Four bytes of result become eight on the wire.
+        Assert.Equal(8, wire.Length - PacketConstants.HeaderSize);
+
+        // The frame is obfuscated, so read the length field back through the
+        // same transform the decoder applies before it can be believed.
+        var readable = wire.ToArray();
+        CryptoUtility.ApplyExclusiveOr(readable);
+        Assert.Equal(8, (readable[2] << 8) | readable[3]);
+
+        // The plaintext is not on the wire in the clear.
+        Assert.NotEqual(payload, readable[PacketConstants.HeaderSize..(PacketConstants.HeaderSize + 4)]);
+    }
+
+    [Fact]
+    public void The_team_creation_card_is_in_the_encrypted_outbound_set()
+    {
+        Assert.Contains((ushort)0x4349, BlowfishEncryptedCommandConstants.Outbound.ToArray());
+    }
 }
 
 /// <summary>

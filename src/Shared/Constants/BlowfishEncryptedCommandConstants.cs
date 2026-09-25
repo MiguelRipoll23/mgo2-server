@@ -14,7 +14,7 @@ public static class BlowfishEncryptedCommandConstants
     /// <summary>Command identifiers whose outbound payloads are Blowfish-encrypted.</summary>
     public static ReadOnlySpan<ushort> Outbound =>
     [
-        0x4305,
+        0x4305, 0x4349,
     ];
 
     /// <summary>Returns whether the payload of <paramref name="command"/> is Blowfish-encrypted.</summary>
