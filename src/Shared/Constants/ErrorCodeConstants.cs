@@ -111,10 +111,15 @@ public static class ErrorCodeConstants
     public const uint ResultAutomatchNotOpen = 0xfffffc36;
 
     // Clan application refusals (0x4b43/0x4b31/0x4b33) and mail send failures
-    // (0x4801) — official client-table codes, sent verbatim.
-
-    /// <summary>Official -1207: "Unable to locate designated clan, or clan may be disbanded."</summary>
+    // (0x4801) — official client-table codes, sent verbatim.    /// <summary>Official -1207: "Unable to locate designated clan, or clan may be disbanded."</summary>
     public const uint ResultClanNotFound = 0xfffffb49;
+
+    /// <summary>
+    /// Official -1202: "Unable to update clan emblem", the upload failure code the
+    /// emblem screen's dispatcher raises a dialog for. Unmasked, because a masked
+    /// code matches nothing in the client's table.
+    /// </summary>
+    public const uint ResultClanEmblemUpdateFailed = 0xfffffb4e;
 
     /// <summary>Official -1201: "You are already a member of another clan."</summary>
     public const uint ResultAlreadyInClan = 0xfffffb4f;

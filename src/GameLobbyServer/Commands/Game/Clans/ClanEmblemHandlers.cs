@@ -10,6 +10,13 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Clans;
 /// Serves the published emblem of a clan. There is one emblem, not a draft and a
 /// published copy: an upload replaces it, so every fetch answers with the same bytes.
 /// </summary>
+/// <remarks>
+/// <para>The client's emblem decoder (0xA9B3E8) reads a 768-byte block: a 4-byte "EMBD" magic,
+/// a negative flag byte, a 48-byte palette, 512 packed 4-bit pixels and 203 bytes of padding.</para>
+/// <para>That size is also the wire size: the 0x4b50 sender (0xD5804C) memcpy's exactly 0x300
+/// bytes into the packet, and both reply parsers NUL-terminate at +768, so a truncated reply
+/// loses the tail of the image.</para>
+/// </remarks>
 public abstract class ClanEmblemHandlerBase : ICommandHandler
 {
     private readonly ClanService clanService;
@@ -25,7 +32,7 @@ public abstract class ClanEmblemHandlerBase : ICommandHandler
     }
 
     /// <summary>Bytes one emblem occupies on the wire.</summary>
-    public const int EmblemSize = 565;
+    public const int EmblemSize = 768;
 
     /// <summary>Reply the handler answers on.</summary>
     protected abstract ushort ReplyCommand { get; }
@@ -110,7 +117,11 @@ public sealed class GetClanDetailHandler(ClanService clanService, SessionHelper 
     protected override ushort ReplyCommand => CommandConstants.GetClanDetailResult;
 }
 
-/// <summary>Stores the emblem the client submits.</summary>
+/// <summary>
+/// Stores the emblem the client submits. The 0x4b50 payload is <c>{u8 mode, byte[768]}</c> —
+/// the sender (0xD5804C) writes a u8 from stack 0x5A0 and then a fixed 0x300-byte block, so
+/// the clan is the caller's own and there is no length field to honour.
+/// </summary>
 /// <param name="clanService">Service that owns the clans.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class SetClanEmblemHandler(
@@ -120,23 +131,45 @@ public sealed class SetClanEmblemHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (packet.Payload.Length >= 8 && session.CharacterIdentifier is { } characterIdentifier)
+        // 0x4b51 is one s4 result word, not an empty body: the client's parser (0xD555D4)
+        // reads it and publishes it as the emblem request's result.
+        var result = ErrorCodeConstants.ResultNone;
+
+        if (packet.Payload.Length >= 1 + ClanEmblemHandlerBase.EmblemSize && session.CharacterIdentifier is { } characterIdentifier)
         {
             var reader = new PacketReader(packet.Payload);
-            var clanIdentifier = (int)reader.ReadUInt32();
-            var emblemLength = (int)reader.ReadUInt32();
+            var mode = reader.ReadUInt8();
 
             // Publishing an emblem is a clan-member operation; without this an
             // arbitrary player could overwrite any clan's published emblem.
-            if (emblemLength > 0 &&
-                reader.Remaining >= emblemLength &&
-                await clanService.GetMemberAsync(clanIdentifier, characterIdentifier, cancellationToken) is not null)
+            var membership = await clanService.FindMembershipByCharacterAsync(characterIdentifier, cancellationToken);
+            if (membership is null)
             {
-                var emblemBytes = reader.ReadBytes(emblemLength);
-                await clanService.SetEmblemAsync(clanIdentifier, emblemBytes, cancellationToken);
+                result = ErrorCodeConstants.ResultClanEmblemUpdateFailed;
+            }
+            else
+            {
+                var emblemBytes = reader.ReadBytes(ClanEmblemHandlerBase.EmblemSize);
+
+                // Mode 3 is "put on display" and the only value the client post-processes;
+                // it is also the emblem flag the profile replies carry. The other modes
+                // observed (2 and 4) are stored as uploads and nothing else, and mode 0
+                // clears the emblem instead.
+                if (mode == 0)
+                {
+                    await clanService.ClearEmblemAsync(membership.ClanIdentifier, cancellationToken);
+                }
+                else
+                {
+                    await clanService.SetEmblemAsync(membership.ClanIdentifier, emblemBytes, cancellationToken);
+                }
             }
         }
+        else
+        {
+            result = ErrorCodeConstants.ResultClanEmblemUpdateFailed;
+        }
 
-        await sessionHelper.SendPacketAsync(session, CommandConstants.SetClanEmblemResult, null, cancellationToken);
+        await sessionHelper.SendResultAsync(session, CommandConstants.SetClanEmblemResult, result, cancellationToken);
     }
 }

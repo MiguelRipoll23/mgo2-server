@@ -190,4 +190,21 @@ public sealed partial class ClanService
                     .SetProperty(clan => clan.EmblemAt, DateTimeOffset.UtcNow),
                 cancellationToken);
     }
+
+    /// <summary>Clears the published emblem of a clan.</summary>
+    /// <param name="clanIdentifier">Identifier of the clan.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task ClearEmblemAsync(
+        int clanIdentifier,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await CreateContextAsync(cancellationToken);
+        await context.Clans
+            .Where(clan => clan.Identifier == clanIdentifier)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(clan => clan.Emblem, (byte[]?)null)
+                    .SetProperty(clan => clan.EmblemAt, (DateTimeOffset?)null),
+                cancellationToken);
+    }
 }
