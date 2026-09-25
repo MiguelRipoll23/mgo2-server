@@ -33,11 +33,13 @@ public sealed class EnterEventHandler(
     {
         // An entry is made by a character, so there is nothing to enter without
         // one.
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         // A body means the client asked for something this command does not do,
         // and answering it as an entry would act on the wrong request.
@@ -48,11 +50,13 @@ public sealed class EnterEventHandler(
         }
 
         // The entry is made in the lobby the connection landed in.
-        if (session.LobbyIdentifier is not { } lobbyIdentifier)
+        if (session.LobbyIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var lobbyIdentifier = session.LobbyIdentifier.Value;
 
         var lobby = await lobbyService.FindByIdAsync(lobbyIdentifier, cancellationToken);
         var route = EventEntryUtils.Resolve(
@@ -97,18 +101,22 @@ public sealed class EnterEventHandler(
     {
         // The event submitted to is the one whose detail screen the connection
         // last opened.
-        if (session.SelectedEventIdentifier is not { } eventId)
+        if (session.SelectedEventIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
 
+        var eventId = session.SelectedEventIdentifier.Value;
+
         // The team submitted is the one the connection is attached to.
-        if (session.EventTeamIdentifier is not { } teamId)
+        if (session.EventTeamIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var teamId = session.EventTeamIdentifier.Value;
 
         var outcome = await registrationService.SubmitTeamAsync(
             eventId,
@@ -150,11 +158,13 @@ public sealed class EnterEventHandler(
         int lobbySubtype,
         CancellationToken cancellationToken)
     {
-        if (session.SelectedEventIdentifier is not { } eventIdentifier)
+        if (session.SelectedEventIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var eventIdentifier = session.SelectedEventIdentifier.Value;
 
         var result = await entryService.EnterAsync(
             characterIdentifier,
@@ -196,11 +206,13 @@ public sealed class EnterEventHandler(
         int characterIdentifier,
         CancellationToken cancellationToken)
     {
-        if (session.EventTeamIdentifier is not { } teamIdentifier)
+        if (session.EventTeamIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var teamIdentifier = session.EventTeamIdentifier.Value;
 
         var team = await teamService.FindAsync(teamIdentifier, cancellationToken);
         if (team is null)

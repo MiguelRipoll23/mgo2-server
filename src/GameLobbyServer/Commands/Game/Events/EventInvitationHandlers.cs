@@ -19,25 +19,31 @@ public sealed class InviteEventTeamMembersHandler(
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         // An invitation is sent by a character.
-        if (session.CharacterIdentifier is not { } leader)
+        if (session.CharacterIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var leader = session.CharacterIdentifier.Value;
 
         // It is sent for the team the sender is in.
-        if (session.EventTeamIdentifier is not { } team)
+        if (session.EventTeamIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
 
+        var team = session.EventTeamIdentifier.Value;
+
         // It is sent in the lobby the sender is in.
-        if (session.LobbyIdentifier is not { } lobby)
+        if (session.LobbyIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var lobby = session.LobbyIdentifier.Value;
 
         // The request is a target count, a mode byte and that many identifiers,
         // and Survival is the only mode this command invites to.
@@ -202,11 +208,13 @@ public sealed class AnswerEventTeamInvitationHandler(
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         // An answer comes from the character the invitation was sent to.
-        if (session.CharacterIdentifier is not { } target)
+        if (session.CharacterIdentifier is null)
         {
             await WriteAnswerAsync(session, ErrorCodeConstants.ResultGeneral, 0, 0, cancellationToken);
             return;
         }
+
+        var target = session.CharacterIdentifier.Value;
 
         // The request is one invitation identifier and a choice byte.
         if (packet.Payload.Length != 5)
@@ -306,11 +314,13 @@ public sealed class ReportEventInvitationStatusHandler(
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         // The report comes from the screen of a team the sender is in.
-        if (session.EventTeamIdentifier is not { } teamIdentifier)
+        if (session.EventTeamIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var teamIdentifier = session.EventTeamIdentifier.Value;
 
         // The screen sends a fixed record; another length is not one.
         if (packet.Payload.Length != ReportWireSize)

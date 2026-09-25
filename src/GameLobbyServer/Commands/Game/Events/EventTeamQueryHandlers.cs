@@ -16,11 +16,13 @@ public sealed class GetEventTeamListHandler(
     {
         // The list belongs to a lobby, so a connection in none has nothing to
         // stream.
-        if (session.LobbyIdentifier is not { } lobbyIdentifier)
+        if (session.LobbyIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var lobbyIdentifier = session.LobbyIdentifier.Value;
 
         // The command carries no body; one that does is asking for something the
         // list does not answer.

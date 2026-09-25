@@ -19,11 +19,13 @@ public sealed class GetAssignedGameSnapshotHandler(
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         // Without a character there is no assignment to build a snapshot of.
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         // The request is one selector word and nothing else.
         if (packet.Payload.Length != EventConstants.SnapshotSelectorRequestWireSize)
@@ -97,11 +99,13 @@ public sealed class ConfirmEventAssignmentHandler(
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         // Without a character there is no confirmation to attribute.
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         // A confirmation of another length is not the record the client sends.
         if (packet.Payload.Length != EventConstants.ConfirmationRequestWireSize)
@@ -154,11 +158,13 @@ public sealed class RemoveEventGameEntryHandler(
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         // Without a character there is no entry to remove.
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         // The request is one selector and nothing else.
         if (packet.Payload.Length != EventConstants.GameEntryRemoveRequestWireSize)
@@ -246,11 +252,13 @@ public sealed class GetAssignedMemberInformationHandler(
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         // Without a character there is no roster to read.
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         // The request is the pair of selectors and nothing else.
         if (packet.Payload.Length != EventConstants.AssignedMemberInformationRequestWireSize)
@@ -313,10 +321,12 @@ internal static class EventAssignmentSupport
         EventAssignmentService assignmentService,
         CancellationToken cancellationToken)
     {
-        if (session.EventTeamIdentifier is not { } teamIdentifier)
+        if (session.EventTeamIdentifier is null)
         {
             return null;
         }
+
+        var teamIdentifier = session.EventTeamIdentifier.Value;
 
         var assignment = await assignmentService.FindByTeamAsync(teamIdentifier, cancellationToken);
         return assignment?.TeamOfCharacter(characterIdentifier) is null ? null : assignment;

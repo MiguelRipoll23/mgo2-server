@@ -36,11 +36,13 @@ public sealed class GetEventInformationHandler(
 
         // The record describes a lobby, so a connection in none has none to
         // describe.
-        if (session.LobbyIdentifier is not { } lobbyIdentifier)
+        if (session.LobbyIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var lobbyIdentifier = session.LobbyIdentifier.Value;
 
         var lobby = await lobbyService.FindByIdAsync(lobbyIdentifier, cancellationToken);
         if (lobby.SubtypeIdentifier != selector)

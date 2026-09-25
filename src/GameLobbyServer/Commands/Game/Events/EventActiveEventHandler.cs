@@ -23,11 +23,13 @@ public sealed class GetEventListHandler(
     {
         // The list belongs to a lobby, so a connection in none has nothing to
         // stream.
-        if (session.LobbyIdentifier is not { } lobbyIdentifier)
+        if (session.LobbyIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var lobbyIdentifier = session.LobbyIdentifier.Value;
 
         // The command carries no body; one that does is asking for something the
         // list does not answer.
@@ -183,11 +185,13 @@ public sealed class GetAssignedGameDetailHandler(
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         // Without a character the detail has no owner to be read from.
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         // The request names an event or a room, so a body too short to hold that
         // identifier cannot be one.

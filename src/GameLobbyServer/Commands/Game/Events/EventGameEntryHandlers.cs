@@ -32,19 +32,23 @@ public sealed class GetGameEntryInfoHandler(
         // Without a character there is nothing to describe, and an answer of
         // empty slots would claim the caller holds no entry when the server does
         // not know who is asking.
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
 
+        var characterIdentifier = session.CharacterIdentifier.Value;
+
         // The entries are the lobby's, so a connection that is in none has no
         // grid to fill.
-        if (session.LobbyIdentifier is not { } lobbyIdentifier)
+        if (session.LobbyIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var lobbyIdentifier = session.LobbyIdentifier.Value;
 
         var entries = await gameEntryService.ListForCharacterAsync(
             characterIdentifier,

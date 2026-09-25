@@ -24,11 +24,13 @@ public sealed class GetSurvivalBattleListHandler(
     {
         // The battle list belongs to a lobby, so a connection in none has nothing
         // to stream.
-        if (session.LobbyIdentifier is not { } lobbyIdentifier)
+        if (session.LobbyIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var lobbyIdentifier = session.LobbyIdentifier.Value;
 
         // The command carries no body; one that does is asking for something the
         // list does not answer.
@@ -138,11 +140,13 @@ public sealed class GetBattleTeamInformationHandler(
         }
 
         // The roster belongs to the caller's own lobby.
-        if (session.LobbyIdentifier is not { } lobbyIdentifier)
+        if (session.LobbyIdentifier is null)
         {
             await RefuseAsync(session, cancellationToken);
             return;
         }
+
+        var lobbyIdentifier = session.LobbyIdentifier.Value;
 
         var match = await matchService.FindActiveByTeamAsync(selectedTeamIdentifier, cancellationToken);
         var team = match is not null && match.LobbyIdentifier == lobbyIdentifier

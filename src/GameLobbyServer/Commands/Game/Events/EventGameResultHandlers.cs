@@ -25,11 +25,13 @@ public sealed class ReportEventGameResultHandler(
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
         // Without a character there is no host to attribute the report to.
-        if (session.CharacterIdentifier is not { } characterIdentifier)
+        if (session.CharacterIdentifier is null)
         {
             await RefuseAsync(session, EventConstants.EventGameResultMalformed, cancellationToken);
             return;
         }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
 
         // A report of another length is not the record a host sends.
         if (packet.Payload.Length != EventConstants.EventGameResultWireSize)
@@ -40,11 +42,13 @@ public sealed class ReportEventGameResultHandler(
 
         // The result is the host's own statement, so only the connection hosting
         // the room may make it, and it may only make it about the room it holds.
-        if (session.GameIdentifier is not { } gameIdentifier)
+        if (session.GameIdentifier is null)
         {
             await RefuseAsync(session, EventConstants.EventGameResultNoRoom, cancellationToken);
             return;
         }
+
+        var gameIdentifier = session.GameIdentifier.Value;
 
         var game = await gameService.FindByIdAsync(gameIdentifier, cancellationToken);
         if (game is null)
