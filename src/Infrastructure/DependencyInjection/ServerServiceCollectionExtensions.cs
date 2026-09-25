@@ -123,9 +123,6 @@ public static class ServerServiceCollectionExtensions
             options.DisplayedWinCount = configuration.ReadNumber(
                 "EVENT_DISPLAYED_WIN_COUNT",
                 options.DisplayedWinCount);
-            options.TournamentCapacity = configuration.ReadNumber(
-                "TOURNAMENT_CAPACITY",
-                options.TournamentCapacity);
             options.PrizeLabels = configuration.ReadText("TOURNAMENT_PRIZE_LABELS") ?? options.PrizeLabels;
             options.TournamentMinimumLevel = configuration.ReadNumber(
                 "TOURNAMENT_MINIMUM_LEVEL",

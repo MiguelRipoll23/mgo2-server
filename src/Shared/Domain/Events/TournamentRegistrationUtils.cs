@@ -1,7 +1,6 @@
 using Mgo2Server.Shared.Options;
 
 namespace Mgo2Server.Shared.Domain.Events;
-
 /// <summary>
 /// The pure rules of Tournament registration: who may reserve, and which place
 /// they get. They are separated from the service because they are decisions
@@ -28,28 +27,6 @@ public static class TournamentRegistrationUtils
     {
         ArgumentNullException.ThrowIfNull(options);
         return IsLevelEligible(level, options.TournamentMinimumLevel, options.TournamentMaximumLevel);
-    }
-
-    /// <summary>
-    /// Number of team places an event holds. It is the configured bracket size,
-    /// which is a different count from the player places above: a reservation
-    /// occupies one player's place, while a submitted team occupies one team's.
-    /// </summary>
-    /// <param name="options">Configuration carrying the capacity.</param>
-    public static int TeamCapacity(EventOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-
-        return options.TournamentCapacity;
-    }
-
-    /// <summary>Total player places a bracket of the configured size holds.</summary>
-    /// <param name="options">Configuration carrying the capacity.</param>
-    public static int PlaceCapacity(EventOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-
-        return PlaceCapacity(TeamCapacity(options));
     }
 
     /// <summary>Total player places a field of the given team count holds.</summary>

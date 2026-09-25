@@ -63,14 +63,8 @@ public sealed class EventOptions
     public int DisplayedWinCount { get; set; } = 5;
 
     /// <summary>
-    /// Maximum number of teams a Tournament bracket may hold. The default is the
-    /// largest field the client can draw, because the validation below refuses
-    /// anything above it: a larger default would stop the server at startup with
-    /// a capacity nobody asked for.
+    /// Prize labels shown by the Tournament screen, comma-separated.
     /// </summary>
-    public int TournamentCapacity { get; set; } = Domain.Events.EventConstants.BracketMaximumEntrants;
-
-    /// <summary>Prize labels shown by the Tournament screen, comma-separated.</summary>
     public string PrizeLabels { get; set; } = string.Empty;
 
     /// <summary>
@@ -164,15 +158,6 @@ public sealed class EventOptions
         {
             throw new InvalidOperationException(
                 $"EVENT_PARTICIPATION_REWARD must not be negative (got {ParticipationReward}).");
-        }
-
-        if (TournamentCapacity < 2 || TournamentCapacity > Domain.Events.EventConstants.BracketMaximumEntrants)
-        {
-            // The ceiling is the client's bracket, not a server limit: a larger
-            // field would be seeded into rows the screen cannot draw.
-            throw new InvalidOperationException(
-                $"TOURNAMENT_CAPACITY must be 2..{Domain.Events.EventConstants.BracketMaximumEntrants} "
-                + $"(got {TournamentCapacity}).");
         }
 
         if (TournamentMinimumLevel < 0 || TournamentMaximumLevel < 0)

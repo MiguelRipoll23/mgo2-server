@@ -1,5 +1,6 @@
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Options;
+using Mgo2Server.Shared.Persistence.Entities;
 
 namespace Mgo2Server.Tests;
 
@@ -14,13 +15,20 @@ public sealed class TournamentRegistrationTests
 {
     private static EventOptions CreateOptions(
         int minimumLevel = 0,
-        int maximumLevel = 0,
-        int capacity = 32) =>
+        int maximumLevel = 0) =>
         new()
         {
             TournamentMinimumLevel = minimumLevel,
             TournamentMaximumLevel = maximumLevel,
-            TournamentCapacity = capacity,
+        };
+
+    private static EventSchedule CreateSchedule(int teamCapacity) =>
+        new()
+        {
+            Identifier = EventConstants.TransientEventIdentifier,
+            LobbySubtype = EventConstants.TournamentRegistrationSelector,
+            Enabled = true,
+            TeamCapacity = teamCapacity,
         };
 
     [Fact]
@@ -56,20 +64,20 @@ public sealed class TournamentRegistrationTests
     [Fact]
     public void Team_places_and_player_places_are_different_counts()
     {
-        var options = CreateOptions(capacity: 8);
-
         // A submitted team takes one team place however many players it brings,
         // while reservations are counted in players. Sharing one number would
         // either fill the bracket with one team's roster or over-admit teams.
-        Assert.Equal(8, TournamentRegistrationUtils.TeamCapacity(options));
-        Assert.Equal(8 * EventConstants.TeamMemberLimit, TournamentRegistrationUtils.PlaceCapacity(options));
+        Assert.Equal(8, EventScheduleService.TeamCapacityOf(CreateSchedule(teamCapacity: 8)));
+        Assert.Equal(
+            8 * EventConstants.TeamMemberLimit,
+            TournamentRegistrationUtils.PlaceCapacity(
+                EventScheduleService.TeamCapacityOf(CreateSchedule(teamCapacity: 8))));
     }
 
     [Fact]
     public void Team_slots_are_allocated_over_team_places()
     {
-        var options = CreateOptions(capacity: 3);
-        var capacity = TournamentRegistrationUtils.TeamCapacity(options);
+        var capacity = EventScheduleService.TeamCapacityOf(CreateSchedule(teamCapacity: 3));
 
         Assert.Equal(0, TournamentRegistrationUtils.NextSlot([], capacity));
         Assert.Equal(1, TournamentRegistrationUtils.NextSlot([0], capacity));
@@ -82,24 +90,16 @@ public sealed class TournamentRegistrationTests
     [Fact]
     public void Place_capacity_is_stated_in_teams_and_counted_in_players()
     {
-        var options = CreateOptions(capacity: 32);
-
-        Assert.Equal(32 * EventConstants.TeamMemberLimit, TournamentRegistrationUtils.PlaceCapacity(options));
+        Assert.Equal(32 * EventConstants.TeamMemberLimit, TournamentRegistrationUtils.PlaceCapacity(32));
     }
 
     [Fact]
     public void A_field_states_its_own_places_rather_than_inheriting_the_configured_ones()
     {
         // Two events running at once each have their own field, so the places a
-        // schedule states are counted from that schedule and not from the
-        // deployment-wide bracket size.
+        // schedule states are counted from that schedule and not from a
+        // deployment-wide bracket size the events would otherwise share.
         Assert.Equal(4 * EventConstants.TeamMemberLimit, TournamentRegistrationUtils.PlaceCapacity(4));
-
-        // The configured size is the fallback, and states the same number.
-        var options = CreateOptions(capacity: 8);
-        Assert.Equal(
-            TournamentRegistrationUtils.PlaceCapacity(TournamentRegistrationUtils.TeamCapacity(options)),
-            TournamentRegistrationUtils.PlaceCapacity(options));
     }
 
     [Fact]
