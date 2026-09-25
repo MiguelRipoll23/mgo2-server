@@ -1,6 +1,6 @@
 Welcome to AltMGO!
 
-Just like the official server, there’s no ban
-policy at all.
-
-Have fun!
+This is a playground server for experimenting
+with the game’s protocols, researching how things work,
+and testing modifications in a closed environment
+with other people like you!
