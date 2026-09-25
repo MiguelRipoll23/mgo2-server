@@ -94,4 +94,21 @@ public sealed class EventScheduleTests
         // largest drawable field rather than as a field too large to show.
         Assert.Equal(expected, EventScheduleService.TeamCapacityOf(Create(teamCapacity: stated)));
     }
+
+    [Theory]
+    [InlineData(0, 0, true)]
+    [InlineData(100, 0, true)]
+    [InlineData(100, 101, true)]
+    [InlineData(100, 100, false)]
+    [InlineData(100, 99, false)]
+    [InlineData(-1, 0, false)]
+    [InlineData(0, -1, false)]
+    public void A_window_must_contain_a_moment_or_mean_never(long start, long end, bool enterable)
+    {
+        // Zero at the closing end is how an operator states an open-ended event,
+        // so it is a window rather than a missing one. Any other closing moment
+        // has to be strictly later than the opening one: a window that closes
+        // as it opens contains no moment at all, which is a mistake.
+        Assert.Equal(enterable, EventScheduleService.IsWindowEnterable(start, end));
+    }
 }

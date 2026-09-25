@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Mgo2Server.Http.Contracts;
 using Mgo2Server.Http.Options;
+using Mgo2Server.Shared.Domain.Events;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -55,7 +56,7 @@ public interface IDiscordInteractionResponder
 /// <param name="httpClientFactory">Factory the HTTP client is created with.</param>
 /// <param name="options">Options of the integration.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class DiscordRestClientService(
+public sealed partial class DiscordRestClientService(
     IHttpClientFactory httpClientFactory,
     IOptions<DiscordOptions> options,
     ILogger<DiscordRestClientService> logger) : IDiscordMessageService, IDiscordInteractionResponder
@@ -65,6 +66,12 @@ public sealed class DiscordRestClientService(
 
     /// <summary>Option type of a free-text command option.</summary>
     private const int StringOptionType = 3;
+
+    /// <summary>Option type of an integer option.</summary>
+    private const int IntegerOptionType = 4;
+
+    /// <summary>Option type of a boolean option.</summary>
+    private const int BooleanOptionType = 5;
 
     /// <summary>Response that writes a message in the channel of the interaction.</summary>
     private const int ChannelMessageResponseType = 4;
@@ -116,75 +123,6 @@ public sealed class DiscordRestClientService(
             MaximumChannelMessageLength,
             "register the message command",
             cancellationToken);
-
-    /// <summary>
-    /// Registers one command of the application. Discord only takes a command
-    /// over its REST API, so this is the one setup call the WebSocket
-    /// integration keeps.
-    /// </summary>
-    /// <remarks>
-    /// The registration is a POST: Discord treats it as an upsert, so the same
-    /// call creates the command once and updates it on every later start. The
-    /// bulk overwrite the collection answers with expects a list of commands,
-    /// and refuses a single one with 400.
-    /// </remarks>
-    /// <param name="name">Name the command is registered with.</param>
-    /// <param name="description">Description Discord shows for the command.</param>
-    /// <param name="optionDescription">Description of the option that carries the text.</param>
-    /// <param name="optionName">Name of the option that carries the text.</param>
-    /// <param name="maximumOptionLength">Longest text the option accepts.</param>
-    /// <param name="callDescription">Description of the call, used in the log.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    /// <returns>Whether Discord accepted the command.</returns>
-    private async Task<bool> RegisterCommandAsync(
-        string name,
-        string description,
-        string optionDescription,
-        string optionName,
-        int maximumOptionLength,
-        string callDescription,
-        CancellationToken cancellationToken)
-    {
-        var applicationIdentifier = DiscordApplicationIdentifierUtils.FromBotToken(options.BotToken);
-        if (applicationIdentifier is null)
-        {
-            logger.LogWarning(
-                "The {Command} command is not registered; the bot token does not carry an application identifier",
-                name);
-            return false;
-        }
-
-        var command = new
-        {
-            name,
-            description,
-            options = new[]
-            {
-                new
-                {
-                    type = StringOptionType,
-                    name = optionName,
-                    description = optionDescription,
-                    required = true,
-                    max_length = maximumOptionLength,
-                },
-            },
-        };
-
-        // A guild command is registered against the guild and is available at
-        // once; a global command may take an hour to appear, which would make
-        // the integration look broken right after it was configured.
-        var path = string.IsNullOrWhiteSpace(options.GuildIdentifier)
-            ? $"applications/{applicationIdentifier}/commands"
-            : $"applications/{applicationIdentifier}/guilds/{options.GuildIdentifier}/commands";
-
-        return await SendAsync(
-            HttpMethod.Post,
-            path,
-            command,
-            callDescription,
-            cancellationToken) is not null;
-    }
 
     /// <summary>Lists the channels of the guild.</summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>

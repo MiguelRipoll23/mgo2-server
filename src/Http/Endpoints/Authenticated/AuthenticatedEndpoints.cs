@@ -10,6 +10,7 @@ internal static class AuthenticatedEndpoints
         var group = app.MapGroup("/").RequireAuthorization();
 
         group.MapNewsEndpoints();
+        group.MapEventScheduleEndpoints();
         group.MapLobbyEndpoints();
         group.MapFlashNewsEndpoints();
         group.MapGameEndpoints();

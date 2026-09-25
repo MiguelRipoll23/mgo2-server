@@ -19,12 +19,19 @@ namespace Mgo2Server.Http.Discord;
 /// <param name="flashNewsDispatcher">Service every flash is relayed through.</param>
 /// <param name="options">Options of the integration.</param>
 /// <param name="logger">Logger of this service.</param>
+/// <param name="scheduleCommands">
+/// Service that runs the event scheduling command. It is last and optional
+/// because it is the only command that writes, and a deployment that has not
+/// wired it up should still answer the two that do not.
+/// </param>
+/// <param name="logger">Logger of this service.</param>
 public sealed class DiscordCommandService(
     IDiscordInteractionResponder responder,
     IDiscordMessageService messageService,
     FlashNewsDispatcherService flashNewsDispatcher,
     IOptions<DiscordOptions> options,
-    ILogger<DiscordCommandService> logger)
+    ILogger<DiscordCommandService> logger,
+    DiscordEventScheduleCommandService? scheduleCommands = null)
 {
     /// <summary>Interaction of a command a member used.</summary>
     private const int ApplicationCommandInteractionType = 2;
@@ -65,6 +72,11 @@ public sealed class DiscordCommandService(
         else if (IsMessageCommand(interaction))
         {
             await HandleMessageCommandAsync(interaction, cancellationToken);
+        }
+        else if (scheduleCommands is not null
+            && DiscordEventScheduleCommandService.IsEventCommand(interaction))
+        {
+            await scheduleCommands.HandleAsync(interaction, cancellationToken);
         }
     }
 

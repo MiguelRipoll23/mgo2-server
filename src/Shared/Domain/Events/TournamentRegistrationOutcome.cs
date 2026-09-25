@@ -44,8 +44,20 @@ public enum TournamentSubmitOutcome
     /// <summary>The field is frozen and can no longer accept a team.</summary>
     BracketFrozen,
 
-    /// <summary>A member already plays for another team in this event.</summary>
+    /// <summary>A member already plays for another team in another event.</summary>
     MemberRegisteredElsewhere,
+
+    /// <summary>
+    /// The roster is empty or larger than a team may be, so the team is not one
+    /// anybody can field.
+    /// </summary>
+    RosterNotPlayable,
+
+    /// <summary>
+    /// A member named by the roster does not exist or is not connected, so the
+    /// match would be decided by forfeit rather than played.
+    /// </summary>
+    MemberNotOnline,
 
     /// <summary>Every team place is taken.</summary>
     TournamentFull,

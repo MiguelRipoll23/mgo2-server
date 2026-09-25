@@ -52,14 +52,14 @@ public readonly record struct EventEntryResult(EventEntryOutcome Outcome, int Te
 /// </para>
 /// </summary>
 /// <param name="teamService">Service that owns the entrant teams.</param>
-/// <param name="registrationService">Service that holds the Tournament field.</param>
+/// <param name="submissionService">Service that submits a team into the Tournament field.</param>
 /// <param name="matchmakingService">Service that pairs the Survival field.</param>
 /// <param name="characterService">Service that owns the characters entering.</param>
 /// <param name="informationService">Source of the configured event window.</param>
 /// <param name="options">Event configuration, which carries the level limits.</param>
 public sealed class EventEntryService(
     EventTeamService teamService,
-    TournamentRegistrationService registrationService,
+    TournamentSubmissionService submissionService,
     EventMatchmakingService matchmakingService,
     CharacterService characterService,
     EventInformationService informationService,
@@ -160,7 +160,7 @@ public sealed class EventEntryService(
         int teamIdentifier,
         CancellationToken cancellationToken)
     {
-        var outcome = await registrationService.SubmitTeamAsync(
+        var outcome = await submissionService.SubmitTeamAsync(
             eventIdentifier,
             teamIdentifier,
             characterIdentifier,

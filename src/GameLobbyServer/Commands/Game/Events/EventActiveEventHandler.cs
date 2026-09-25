@@ -1,6 +1,8 @@
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Events;
+using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Interfaces;
+using Mgo2Server.Shared.Persistence.Entities;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
@@ -13,9 +15,19 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 /// boundary record, then expands each row it receives, so the whole stream is
 /// built before the first packet is written: a failure part-way through would
 /// otherwise leave the client waiting for a closing boundary it never gets.
+/// <para>
+/// The list is built from the schedules the lobby is publishing, one event at a
+/// time, and each event is bracketed by its own pair of boundaries. A boundary
+/// names the event its rows belong to, so a lobby running two events cannot
+/// answer with one event's entrants under the other's name. A lobby with nothing
+/// scheduled streams nothing: an empty field is what an unscheduled lobby is,
+/// not a refusal.
+/// </para>
 /// </summary>
 public sealed class GetEventListHandler(
     EventTeamService teamService,
+    EventScheduleService scheduleService,
+    LobbyService lobbyService,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
@@ -39,52 +51,80 @@ public sealed class GetEventListHandler(
             return;
         }
 
-        var eventIdentifier = EventConstants.TransientEventIdentifier;
-        var rows = new List<byte[]>();
-        var index = 0;
-        foreach (var team in await teamService.FindByLobbyAsync(lobbyIdentifier, cancellationToken))
+        // The events are the lobby's own, so the mode comes from the lobby row
+        // rather than from the connection, which only says where it is.
+        var lobby = await lobbyService.FindByIdAsync(lobbyIdentifier, cancellationToken);
+        if (!EventConstants.IsEventSelector(lobby.SubtypeIdentifier))
         {
-            var snapshot = EventTeamService.BuildSnapshot(team);
-            var writer = new PacketWriter();
-            EventActiveEventUtils.WriteEventListItem(
-                writer,
-                index++,
-                team.Identifier,
-                snapshot.Name,
-                rowState: snapshot.State,
-                discardedByte: 0,
-                leaderName: snapshot.HostName,
-                opaqueByte: 0,
-                memberCount: snapshot.OccupiedParticipantCount(),
-                statusFlags: snapshot.State,
-                averageExperience: EventBattleListUtils.AverageParticipantExperience(snapshot));
-            rows.Add(writer.Build());
+            await RefuseAsync(session, cancellationToken);
+            return;
         }
 
-        var startWriter = new PacketWriter();
-        EventActiveEventUtils.WriteEventListBoundary(startWriter, eventIdentifier);
-        await sessionHelper.SendPacketAsync(
-            session,
-            CommandConstants.GetEventListStart,
-            startWriter.Build(),
-            cancellationToken);
-
-        foreach (var row in rows)
+        foreach (var schedule in await scheduleService.ListPublishedAsync(
+            lobby.SubtypeIdentifier,
+            cancellationToken))
         {
-            await sessionHelper.SendPacketAsync(
+            var rows = new List<byte[]>();
+            var index = 0;
+            foreach (var team in await teamService.FindByLobbyAndEventAsync(
+                lobbyIdentifier,
+                schedule.Identifier,
+                cancellationToken))
+            {
+                rows.Add(BuildRow(index++, team));
+            }
+
+            await WriteBoundaryAsync(
                 session,
-                CommandConstants.GetEventListPage,
-                row,
+                CommandConstants.GetEventListStart,
+                schedule.Identifier,
+                cancellationToken);
+            foreach (var row in rows)
+            {
+                await sessionHelper.SendPacketAsync(
+                    session,
+                    CommandConstants.GetEventListPage,
+                    row,
+                    cancellationToken);
+            }
+
+            await WriteBoundaryAsync(
+                session,
+                CommandConstants.GetEventListEnd,
+                schedule.Identifier,
                 cancellationToken);
         }
+    }
 
-        var endWriter = new PacketWriter();
-        EventActiveEventUtils.WriteEventListBoundary(endWriter, eventIdentifier);
-        await sessionHelper.SendPacketAsync(
-            session,
-            CommandConstants.GetEventListEnd,
-            endWriter.Build(),
-            cancellationToken);
+    private static byte[] BuildRow(int index, EventTeam team)
+    {
+        var snapshot = EventTeamService.BuildSnapshot(team);
+        var writer = new PacketWriter();
+        EventActiveEventUtils.WriteEventListItem(
+            writer,
+            index,
+            team.Identifier,
+            snapshot.Name,
+            rowState: snapshot.State,
+            discardedByte: 0,
+            leaderName: snapshot.HostName,
+            opaqueByte: 0,
+            memberCount: snapshot.OccupiedParticipantCount(),
+            statusFlags: snapshot.State,
+            averageExperience: EventBattleListUtils.AverageParticipantExperience(snapshot));
+
+        return writer.Build();
+    }
+
+    private Task WriteBoundaryAsync(
+        TcpSession session,
+        ushort command,
+        int eventIdentifier,
+        CancellationToken cancellationToken)
+    {
+        var writer = new PacketWriter();
+        EventActiveEventUtils.WriteEventListBoundary(writer, eventIdentifier);
+        return sessionHelper.SendPacketAsync(session, command, writer.Build(), cancellationToken);
     }
 
     private Task RefuseAsync(TcpSession session, CancellationToken cancellationToken) =>
@@ -112,7 +152,14 @@ public sealed class GetEventDetailHandler(
             return;
         }
 
-        var eventIdentifier = new PacketReader(packet.Payload).ReadInt32();
+        // Zero is the client's name for "whichever event is current", and it is
+        // answered with the same event the screens advertise rather than
+        // refused: it is a request the client makes routinely, not an
+        // identifier it invented.
+        var requested = new PacketReader(packet.Payload).ReadInt32();
+        var eventIdentifier = requested == 0
+            ? EventConstants.TransientEventIdentifier
+            : requested;
         if (eventIdentifier != EventConstants.TransientEventIdentifier)
         {
             // The routing context is cleared on a refusal so the commands that

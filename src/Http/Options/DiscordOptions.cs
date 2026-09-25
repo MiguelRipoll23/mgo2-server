@@ -18,6 +18,9 @@ public sealed class DiscordOptions
     /// <summary>Name of the command the moderators send an official message with.</summary>
     public const string MessageCommandName = "message";
 
+    /// <summary>Name of the command the moderators schedule events with.</summary>
+    public const string ScheduleCommandName = "event";
+
     /// <summary>Gateway the client connects to by default.</summary>
     public const string DefaultGatewayUrl = "wss://gateway.discord.gg/?v=10&encoding=json";
 

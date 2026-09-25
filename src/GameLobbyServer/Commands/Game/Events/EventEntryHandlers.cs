@@ -19,7 +19,7 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 /// </para>
 /// </summary>
 public sealed class EnterEventHandler(
-    TournamentRegistrationService registrationService,
+    TournamentSubmissionService submissionService,
     EventEntryService entryService,
     EventTeamService teamService,
     EventTeamPushService pushService,
@@ -118,7 +118,7 @@ public sealed class EnterEventHandler(
 
         var teamId = session.EventTeamIdentifier.Value;
 
-        var outcome = await registrationService.SubmitTeamAsync(
+        var outcome = await submissionService.SubmitTeamAsync(
             eventId,
             teamId,
             characterIdentifier,

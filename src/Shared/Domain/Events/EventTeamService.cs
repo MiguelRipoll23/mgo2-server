@@ -167,14 +167,24 @@ public sealed class EventTeamService(IDbContextFactory<Mgo2DatabaseContext> cont
     /// <summary>Lists every team of a lobby, in any state.</summary>
     /// <param name="lobbyIdentifier">Lobby to list.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<List<EventTeam>> FindByLobbyAsync(
+    /// <summary>
+    /// Lists the teams one event's list is made of. The lobby alone is not
+    /// enough: a lobby may be publishing several events, and each is shown with
+    /// its own entrants.
+    /// </summary>
+    /// <param name="lobbyIdentifier">Lobby the teams were formed in.</param>
+    /// <param name="eventIdentifier">Event whose list is being built.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task<List<EventTeam>> FindByLobbyAndEventAsync(
         int lobbyIdentifier,
+        int eventIdentifier,
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
         return await context.EventTeams
             .Include(team => team.Members)
-            .Where(team => team.LobbyIdentifier == lobbyIdentifier)
+            .Where(team => team.LobbyIdentifier == lobbyIdentifier
+                && team.EventIdentifier == eventIdentifier)
             .OrderBy(team => team.Identifier)
             .ToListAsync(cancellationToken);
     }

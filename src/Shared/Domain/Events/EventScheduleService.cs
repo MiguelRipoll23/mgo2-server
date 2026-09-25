@@ -65,6 +65,201 @@ public sealed class EventScheduleService(IDbContextFactory<Mgo2DatabaseContext> 
     }
 
     /// <summary>
+    /// Lists the events a lobby is currently publishing, oldest identifier
+    /// first, so the order a client is shown them is the order they were
+    /// scheduled in rather than the order rows happened to be read.
+    /// </summary>
+    /// <param name="mode">Lobby mode to list.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task<List<EventSchedule>> ListPublishedAsync(
+        int mode,
+        CancellationToken cancellationToken = default)
+    {
+        var nowSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        await using var context = await CreateContextAsync(cancellationToken);
+        var schedules = await context.EventSchedules
+            .Where(schedule => schedule.LobbySubtype == mode)
+            .OrderBy(schedule => schedule.Identifier)
+            .ToListAsync(cancellationToken);
+
+        return
+        [
+            .. schedules.Where(schedule => IsPublished(schedule, nowSeconds)),
+        ];
+    }
+
+    /// <summary>
+    /// Lists every scheduled event, published or not. This is the operator's
+    /// view: an event that has closed or was unpublished is still a schedule
+    /// somebody wrote, and hiding it would make it impossible to reopen.
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task<List<EventSchedule>> ListAllAsync(CancellationToken cancellationToken = default)
+    {
+        await using var context = await CreateContextAsync(cancellationToken);
+        return await context.EventSchedules
+            .OrderBy(schedule => schedule.Identifier)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Schedules a new event. The identifier is chosen by the database, because
+    /// it is the value a client will name and a hand-issued one is a collision
+    /// waiting to happen.
+    /// </summary>
+    /// <param name="mode">Lobby mode the event is played in.</param>
+    /// <param name="teamCapacity">Number of teams its field holds.</param>
+    /// <param name="publishStart">Epoch second it is published from.</param>
+    /// <param name="publishEnd">Epoch second it stops being published, or zero.</param>
+    /// <param name="enabled">Whether it is published at all.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The schedule that was written.</returns>
+    public async Task<EventSchedule> ScheduleAsync(
+        int mode,
+        int teamCapacity,
+        long publishStart,
+        long publishEnd,
+        bool enabled,
+        CancellationToken cancellationToken = default)
+    {
+        if (!EventConstants.IsEventSelector(mode))
+        {
+            // Only the three event lobbies hold an event, so a mode outside them
+            // is not one an event can be played in.
+            throw new ArgumentException(
+                $"Lobby mode {mode} does not hold events.",
+                nameof(mode));
+        }
+
+        if (publishStart < 0 || publishEnd < 0)
+        {
+            throw new ArgumentException("A schedule window cannot be negative.", nameof(publishStart));
+        }
+
+        if (!IsWindowEnterable(publishStart, publishEnd))
+        {
+            throw new ArgumentException(
+                "A schedule that closes must close after it opens.",
+                nameof(publishEnd));
+        }
+
+        var schedule = new EventSchedule
+        {
+            LobbySubtype = mode,
+            Enabled = enabled,
+            PublishStart = publishStart,
+            PublishEnd = publishEnd,
+            TeamCapacity = Math.Clamp(teamCapacity, 1, EventConstants.BracketMaximumEntrants),
+        };
+
+        await using var context = await CreateContextAsync(cancellationToken);
+        context.EventSchedules.Add(schedule);
+        await context.SaveChangesAsync(cancellationToken);
+        return schedule;
+    }
+
+    /// <summary>
+    /// Changes a schedule in place. Every column is written, because the caller
+    /// states the whole window rather than a difference: a schedule is a
+    /// statement of when an event runs, and a partial one is a schedule nobody
+    /// can read.
+    /// </summary>
+    /// <param name="eventIdentifier">Event to change.</param>
+    /// <param name="enabled">Whether it is published at all.</param>
+    /// <param name="publishStart">Epoch second it is published from.</param>
+    /// <param name="publishEnd">Epoch second it stops being published, or zero.</param>
+    /// <param name="teamCapacity">Number of teams its field holds.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>What happened.</returns>
+    public async Task<ScheduleWriteOutcome> UpdateAsync(
+        int eventIdentifier,
+        bool enabled,
+        long publishStart,
+        long publishEnd,
+        int teamCapacity,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventIdentifier <= 0)
+        {
+            return ScheduleWriteOutcome.NotFound;
+        }
+
+        if (publishStart < 0 || publishEnd < 0
+            || !IsWindowEnterable(publishStart, publishEnd))
+        {
+            return ScheduleWriteOutcome.InvalidWindow;
+        }
+
+        await using var context = await CreateContextAsync(cancellationToken);
+        var schedule = await context.EventSchedules
+            .FirstOrDefaultAsync(
+                candidate => candidate.Identifier == eventIdentifier,
+                cancellationToken);
+        if (schedule is null)
+        {
+            return ScheduleWriteOutcome.NotFound;
+        }
+
+        schedule.Enabled = enabled;
+        schedule.PublishStart = publishStart;
+        schedule.PublishEnd = publishEnd;
+        schedule.TeamCapacity = Math.Clamp(teamCapacity, 1, EventConstants.BracketMaximumEntrants);
+        await context.SaveChangesAsync(cancellationToken);
+        return ScheduleWriteOutcome.Written;
+    }
+
+    /// <summary>
+    /// Withdraws a schedule. An event that has already been entered is not
+    /// refused here: the window that decides whether it is still live is the
+    /// one this closes, and a bracket already drawn keeps its seeds whatever
+    /// happens to the row.
+    /// </summary>
+    /// <param name="eventIdentifier">Event to withdraw.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Whether a schedule was withdrawn.</returns>
+    public async Task<bool> WithdrawAsync(
+        int eventIdentifier,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventIdentifier <= 0)
+        {
+            return false;
+        }
+
+        await using var context = await CreateContextAsync(cancellationToken);
+        var schedule = await context.EventSchedules
+            .FirstOrDefaultAsync(
+                candidate => candidate.Identifier == eventIdentifier,
+                cancellationToken);
+        if (schedule is null)
+        {
+            return false;
+        }
+
+        context.EventSchedules.Remove(schedule);
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a stated window can ever be entered.
+    /// <para>
+    /// A closing moment of zero is the way an operator states an open-ended
+    /// event, so it is a window rather than a missing one. Anything else has to
+    /// close strictly after it opens: a window that closes at the moment it
+    /// opens contains no moment at all, which is a mistake rather than a
+    /// schedule.
+    /// </para>
+    /// </summary>
+    /// <param name="publishStart">Epoch second the window opens.</param>
+    /// <param name="publishEnd">Epoch second it closes, or zero for never.</param>
+    public static bool IsWindowEnterable(long publishStart, long publishEnd) =>
+        publishStart >= 0
+        && publishEnd >= 0
+        && (publishEnd == 0 || publishEnd > publishStart);
+
+    /// <summary>
     /// Whether a schedule is one a player may enter through the given lobby
     /// mode at the given moment.
     /// </summary>
