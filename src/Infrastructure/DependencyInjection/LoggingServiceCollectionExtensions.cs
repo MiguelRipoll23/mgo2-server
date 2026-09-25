@@ -12,7 +12,9 @@ namespace Mgo2Server.Infrastructure.DependencyInjection;
 /// exporter registered by AddServerTelemetry carries the same events to the
 /// collector. The minimum level defaults to Warning; set LOG_LEVEL to override
 /// (Debug, Information, Warning, Error). The run scripts export LOG_LEVEL=Debug
-/// outright.
+/// outright. Entity Framework is held at Information regardless, so that a
+/// server asked for Debug still says what it did without narrating its
+/// connections.
 /// </summary>
 public static class LoggingServiceCollectionExtensions
 {
@@ -21,6 +23,33 @@ public static class LoggingServiceCollectionExtensions
 
     /// <summary>Level applied when LOG_LEVEL is unset or names no level.</summary>
     private const LogLevel DefaultLevel = LogLevel.Warning;
+
+    /// <summary>
+    /// Category prefix whose events are held at <see cref="EntityFrameworkLevel"/>
+    /// when LOG_LEVEL asks for something noisier.
+    /// </summary>
+    private const string EntityFrameworkCategoryPrefix = "Microsoft.EntityFrameworkCore";
+
+    /// <summary>
+    /// The level the Entity Framework categories are never written below.
+    /// <para>
+    /// A lobby running at Debug writes almost nothing else: on the Survival pod a
+    /// six-minute sample was 4,644 lines of which 3,131 were Debug events from
+    /// this namespace and 1,298 were the SQL text those events carry across
+    /// further lines. That is what rotated a team-creation refusal out of the
+    /// container log inside half an hour, and it is what made the log unusable
+    /// for the one thing it is for.
+    /// </para>
+    /// <para>
+    /// Information is the level that keeps the record of what the server did —
+    /// one "Executed DbCommand" per query, with its text — and drops the
+    /// connection, command and reader chatter around it, which is roughly a
+    /// seven-fold reduction. It is a floor and not a ceiling: LOG_LEVEL still
+    /// governs everything else, and a deployment that asks for less than this
+    /// gets what it asked for.
+    /// </para>
+    /// </summary>
+    private const LogLevel EntityFrameworkLevel = LogLevel.Information;
 
     /// <summary>Output template of the console sink.</summary>
     private const string OutputTemplate =
@@ -39,14 +68,33 @@ public static class LoggingServiceCollectionExtensions
     {
         var level = ResolveLevel(configuration);
 
+        // LogLevel orders from Trace (0) upwards, so the stricter of the two is
+        // the larger. Serilog's override is absolute rather than a clamp - it
+        // would happily make this namespace chattier than a LOG_LEVEL that asked
+        // for less - so the floor is resolved here instead of being applied
+        // blind. A deployment at Warning or above is left alone; only a
+        // Trace or Debug is capped, at Information.
+        var entityFrameworkLevel = level > EntityFrameworkLevel ? level : EntityFrameworkLevel;
+
         // Serilog is the only console output. The providers the host wires by
         // default are dropped, so a container's log is exactly what Serilog
         // writes and no event is written twice.
         logging.ClearProviders();
         logging.SetMinimumLevel(level);
 
+        // Set on the builder as well as on the Serilog logger, because the two
+        // cover different providers and neither covers the other's. AddSerilog
+        // registers a catch-all rule at Trace for its own provider, and a
+        // provider-specific rule outranks a category-only one, so the filter
+        // below is never consulted for the console sink - that is what the
+        // Serilog override is for. What the filter is for is every provider
+        // that is not Serilog, the OTLP logging provider above all, which would
+        // otherwise export the same spam to the collector.
+        logging.AddFilter(EntityFrameworkCategoryPrefix, entityFrameworkLevel);
+
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Is(ToEventLevel(level))
+            .MinimumLevel.Override(EntityFrameworkCategoryPrefix, ToEventLevel(entityFrameworkLevel))
             .Enrich.FromLogContext()
             .WriteTo.Console(outputTemplate: OutputTemplate)
             .CreateLogger();
