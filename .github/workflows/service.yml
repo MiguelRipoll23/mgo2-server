@@ -397,14 +397,28 @@ jobs:
 
           sed -i "s|^\( *newTag: \).*$|\1${SHA}|" "$file"
 
-          if git diff --quiet -- "$file"; then
+          # The migrate folder also carries the bundle marker ConfigMap, the
+          # tracked resource that makes the mgo2-migrate Application sync and
+          # run its PreSync hook. It has to move with the pin: a pin to a
+          # bundle Argo never ran is what left a release serving a schema its
+          # migrations never reached. No other folder holds one; the guard
+          # skips them.
+          marker="deploy/${MANIFESTS}/bundle.yaml"
+          if [ -f "$marker" ]; then
+            sed -i "s|^\( *image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:\).*$|\1${SHA}|" "$marker"
+            files="$file $marker"
+          else
+            files="$file"
+          fi
+
+          if git diff --quiet -- $files; then
             echo "Already pinned to $SHA."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$file"
+          git add $files
           git commit -m "deploy: pin ${SERVICE} to ${SHA:0:7}"
 
           # Another service's pipeline may have pushed while this one ran. Each

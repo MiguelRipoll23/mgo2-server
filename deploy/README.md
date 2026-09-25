@@ -32,7 +32,12 @@ deployments share one image, so they share one tag and move together.
    image tagged with the commit SHA.
 3. The pipeline's last step rewrites `newTag` in that service's
    `kustomization.yaml` and commits it. That is the whole deploy: one line in
-   one folder, on `main`.
+   one folder, on `main`. The `migrate` folder is the one exception: it also
+   carries `bundle.yaml`, the marker ConfigMap the `mgo2-migrate` Application
+   compares, and the pipeline rewrites its digest in the same commit. The
+   marker is what makes the Application sync and run the PreSync hook — the
+   pin alone does not — so a marker that lags the pin is a migration that
+   never runs, and a release serving a schema its code was never migrated to.
 4. ArgoCD notices the commit and syncs the Application for that folder. Sync is
    automated and self-healing, so the folder and the cluster cannot drift.
 
