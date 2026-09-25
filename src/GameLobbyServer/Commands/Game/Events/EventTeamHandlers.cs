@@ -15,12 +15,6 @@ public sealed class CreateEventTeamHandler(
     LobbyService lobbyService,
     SessionHelper sessionHelper) : ICommandHandler
 {
-    /// <summary>Logical size of a create request.</summary>
-    private const int LogicalWireSize = 178;
-
-    /// <summary>Logical size plus the transport padding the client may append.</summary>
-    private const int PaddedWireSize = 184;
-
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
@@ -42,10 +36,8 @@ public sealed class CreateEventTeamHandler(
 
         var lobbyIdentifier = session.LobbyIdentifier.Value;
 
-        // The request is the create record, with or without the transport
-        // padding the client may append.
-        var hasAcceptedSize = packet.Payload.Length is LogicalWireSize or PaddedWireSize;
-        if (!hasAcceptedSize)
+        // The request is the create record, and nothing follows it.
+        if (!EventTeamCreationUtils.IsExpectedCreateRequestShape(packet.Payload.Length))
         {
             await RefuseAsync(session, cancellationToken);
             return;
@@ -57,12 +49,11 @@ public sealed class CreateEventTeamHandler(
         var flagBits = reader.ReadUInt8();
         var password = reader.ReadFixedString(16);
         var matchType = reader.ReadUInt8();
-        var field0a8 = reader.ReadUInt8();
-        var field0a9 = reader.ReadUInt8();
-        var field0ac = (int)reader.ReadUInt32();
-        var eventIdentifier = (int)reader.ReadUInt32();
-        var field2e0 = (int)reader.ReadUInt32();
-        var field2e8 = reader.ReadUInt16();
+
+        // The record ends here. Its last six bytes are a provable constant zero
+        // — the screen memsets its instance on entry, no site writes them, and
+        // the reply parser has no field for them either — so nothing is read
+        // past the match type, and the size above is what bounds the request.
 
         if (!EventTeamTextUtils.IsValidTeamName(name)
             || !EventTeamTextUtils.IsValidPassword(flagBits, password))
@@ -80,6 +71,17 @@ public sealed class CreateEventTeamHandler(
             return;
         }
 
+        // The request names no event, so the team is placed by the lobby it was
+        // formed in rather than by anything the client could have asked for.
+        if (!EventTeamCreationUtils.TryResolveEventIdentifier(
+                lobby.SubtypeIdentifier,
+                session.SelectedEventIdentifier,
+                out var eventIdentifier))
+        {
+            await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
         var character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken);
         var team = await teamService.CreateAsync(
             characterIdentifier,
@@ -91,7 +93,7 @@ public sealed class CreateEventTeamHandler(
             password,
             matchType,
             lobbyIdentifier,
-            eventIdentifier == 0 ? EventConstants.TransientEventIdentifier : eventIdentifier,
+            eventIdentifier,
             cancellationToken);
 
         session.EventTeamIdentifier = team.Identifier;
@@ -103,11 +105,6 @@ public sealed class CreateEventTeamHandler(
         session.SelectedEventIdentifier = null;
 
         var snapshot = EventTeamService.BuildSnapshot(team);
-        snapshot.Field0A8 = field0a8;
-        snapshot.Field0A9 = field0a9;
-        snapshot.Field0AC = field0ac;
-        snapshot.Field2E0 = field2e0;
-        snapshot.Field2E8 = field2e8;
 
         var writer = new PacketWriter();
         EventSnapshotUtils.WriteCompact(writer, snapshot);

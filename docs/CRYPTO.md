@@ -156,19 +156,35 @@ checked against our copy before deletion and matched exactly, all 4168 bytes.
 
 ```
 inbound  (client -> server):  0x3003, 0x4310, 0x4320, 0x43c0, 0x4700, 0x4990
-outbound (server -> client):  0x4305
+outbound (server -> client):  0x4305, 0x4349
 ```
 
-**Both sets come from the reference servers, not the binary.** The client decides per call site
-rather than consulting a table, so there is nothing to read off — searching the image for these ids
-as a contiguous table finds nothing, and they do not cluster.
+**The sets were first taken from the reference servers, but the binary settles them.** The client
+decides per call site rather than consulting a table, so there is nothing to read off; instead
+every send and parse path is swept for a `bl 0xD5D124`, the in-place Blowfish
+(`COMMANDS.md` §builder addresses), and that presence **reproduces inbound membership exactly**.
+The outbound set has no such sweep behind it — see below.
 
-Of the inbound set we handle `0x3003`, `0x4700` and `0x4990`, and only `0x3003` is confirmed: its
-payload decrypts to a correct account id, which neither a wrong list nor a wrong key could produce.
+Of the inbound set we handle `0x3003`, `0x4310`, `0x4320`, `0x43c0`, `0x4700` and `0x4990`, and
+only `0x3003` is confirmed: its payload decrypts to a correct account id, which neither a wrong
+list nor a wrong key could produce.
 
-The outbound set is **entirely unverified**. Nothing here sends `0x4305`, so this cipher has never
-encrypted a byte the client has seen, and whether the client expects it encrypted is unknown. The
-encrypt direction of `packet.key` is therefore exercised only by unit vectors, never in production.
+**A reference's list is not evidence, and `0x4910` is the case that proved it.** Nomad's
+`PacketDecoder` lists `0x4910` as an encrypted inbound command; ours does not, and ours is
+right. Its `0x4910` sender makes no `0xD5D124` call, so the request arrives in the clear
+(`dev/proto/inbound/mgo2_cmd_4910_c2s.ksy`, which reads the whole send path). Taking the
+reference at its word is what made Create Team fail on 2026-09-25 — see that file's handler.
+
+The outbound set is **half-swept, and `0x4349` is the live half.** `0x4305` is never sent, so the
+encrypt direction has never put a byte in front of the client and its membership is untested.
+`0x4349` (`GetTeamCreateInformationResult`) *is* sent, in the clear, and Nomad encrypts it. There
+*is* first-party evidence on the client side here: `dev/proto/outbound/mgo2_cmd_4349_s2c.ksy`
+records the parser opening with `0xD5D124(ctx+6408, pkt, 1)`, "a pre-read hook shared with
+`0x4305`" — the same routine, called to decrypt rather than encrypt. So the membership looks
+right, but the direction has never been exercised against a real client, which is the whole of
+what is missing. The frame is a 4-byte result, and encrypted that becomes 8; the client would
+have to be reading an 8-byte frame today, so if the Create Team screen prefills correctly in play,
+treat the cleartext reply as observed-correct and change nothing.
 
 A request being encrypted says nothing about its reply. `0x3003` arrives encrypted and `0x3004`
 goes back in the clear; likewise `0x4700`/`0x4701` and `0x4990`/`0x4991`.
