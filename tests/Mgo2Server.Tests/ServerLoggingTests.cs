@@ -41,12 +41,13 @@ public sealed class ServerLoggingTests
     [Theory]
     [InlineData("Trace")]
     [InlineData("Debug")]
-    public void The_console_sink_drops_entity_framework_debug_whatever_log_level_says(string logLevel)
+    [InlineData("Information")]
+    public void The_console_sink_drops_entity_framework_chatter_whatever_log_level_says(string logLevel)
     {
         Build(logLevel);
 
-        Assert.False(ConsoleSinkWrites(LogEventLevel.Debug, EfCommandCategory));
-        Assert.True(ConsoleSinkWrites(LogEventLevel.Information, EfCommandCategory));
+        Assert.False(ConsoleSinkWrites(LogEventLevel.Information, EfCommandCategory));
+        Assert.True(ConsoleSinkWrites(LogEventLevel.Warning, EfCommandCategory));
     }
 
     [Fact]
@@ -61,10 +62,11 @@ public sealed class ServerLoggingTests
     public void The_floor_does_not_raise_a_quiet_log_level_for_entity_framework()
     {
         // Serilog's override is absolute, so applying the floor blind would hand
-        // a Warning deployment Information. A floor is only ever a floor.
-        Build("Warning");
+        // an Error deployment a Warning it never asked for. A floor is only ever
+        // a floor.
+        Build("Error");
 
-        Assert.False(ConsoleSinkWrites(LogEventLevel.Information, EfCommandCategory));
+        Assert.False(ConsoleSinkWrites(LogEventLevel.Warning, EfCommandCategory));
     }
 
     /// <summary>
@@ -85,21 +87,24 @@ public sealed class ServerLoggingTests
             .Rules;
 
         Assert.Contains(rules, rule =>
-            rule.CategoryName == EfPrefix && rule.LogLevel == LogLevel.Information);
+            rule.CategoryName == EfPrefix && rule.LogLevel == LogLevel.Warning);
     }
 
     [Fact]
     public void The_rule_on_the_builder_does_not_raise_a_quiet_log_level_either()
     {
-        using var provider = BuildProvider("Warning");
+        using var provider = BuildProvider("Error");
 
         var rules = provider
             .GetRequiredService<IOptions<LoggerFilterOptions>>()
             .Value
             .Rules;
 
+        // The catch-all rule SetMinimumLevel writes also carries the prefix as
+        // its category, so the floor is identified by its level and not by the
+        // category alone.
         Assert.DoesNotContain(rules, rule =>
-            rule.CategoryName == EfPrefix && rule.LogLevel == LogLevel.Information);
+            rule.CategoryName == EfPrefix && rule.LogLevel == LogLevel.Warning);
     }
 
     /// <summary>
