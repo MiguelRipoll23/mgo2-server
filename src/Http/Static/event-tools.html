@@ -216,6 +216,83 @@
           </div>
         </form>
 
+        <form
+          id="member-state-form"
+          class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl backdrop-blur"
+        >
+          <h2 class="text-lg font-semibold">Ready a stored team's fake players</h2>
+          <p class="mt-1 text-xs text-slate-500">
+            Fake players added to a stored team are written in whatever state that
+            team's own state implies — for an open team, the one the client paints
+            <strong class="font-semibold text-slate-400">NG</strong> — and nobody
+            else can change it: a fake player has no button, and a real player only
+            decides for themselves. This moves the fake ones. A real member's
+            decision and the team's own state are left alone.
+          </p>
+          <div class="mt-4 space-y-4">
+            <div>
+              <label for="member-team" class="block text-sm font-medium text-slate-300">Team</label>
+              <select
+                id="member-team"
+                class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
+              ></select>
+            </div>
+            <div>
+              <label for="member-state" class="block text-sm font-medium text-slate-300">Member state</label>
+              <select
+                id="member-state"
+                class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
+              ></select>
+            </div>
+            <button
+              type="submit"
+              class="w-full rounded-lg bg-mgo-500 px-4 py-2.5 text-sm font-bold uppercase tracking-widest text-slate-950 transition hover:bg-mgo-400"
+            >
+              Set member state
+            </button>
+          </div>
+        </form>
+
+        <section
+          class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl backdrop-blur"
+        >
+          <h2 class="text-lg font-semibold">A pairing needs somewhere to go</h2>
+          <p class="mt-1 text-xs text-slate-500">
+            A pairing is written when two teams are queued, but it is not announced
+            until a room has been leased for it — and a room is only leased from one
+            that is named for the role, says it is dedicated and is sitting idle with
+            its host present. All of that is something a real host client does just by
+            existing, so a pairing made from this page waits for a room nobody has
+            opened. This creates one, which is the difference between
+            <strong class="font-semibold text-slate-400">paired — waiting for a host room</strong>
+            and a match the client is actually told about.
+          </p>
+          <div class="mt-4 space-y-4">
+            <div>
+              <label for="host-room-character" class="block text-sm font-medium text-slate-300">Hosted by character</label>
+              <input
+                id="host-room-character"
+                type="number"
+                min="0"
+                placeholder="0 — let the lobby pick one"
+                class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
+              />
+              <p class="mt-1 text-xs text-slate-500">
+                The room's host is a real character: the column is a foreign key and
+                the host has to be present in the room. Leave it at 0 to take the
+                first character there is.
+              </p>
+            </div>
+            <button
+              id="host-room"
+              type="button"
+              class="w-full rounded-lg bg-mgo-500 px-4 py-2.5 text-sm font-bold uppercase tracking-widest text-slate-950 transition hover:bg-mgo-400"
+            >
+              Create a host room
+            </button>
+          </div>
+        </section>
+
         <section
           class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl backdrop-blur"
         >

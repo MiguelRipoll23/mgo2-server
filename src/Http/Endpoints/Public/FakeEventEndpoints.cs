@@ -66,6 +66,26 @@ internal static class FakeEventEndpoints
                 + "seeded into a bracket and frozen into a roster, which a team that existed only in "
                 + "memory has neither of.");
 
+        fakeTeams.MapPost("/member-state", ChangeMemberStateAsync)
+            .WithSummary("Set the member state of a stored team's fake players")
+            .WithDescription(
+                "Asks the running lobby of a mode to set the entry-decision byte on the fake players of "
+                + "a team that has a row. Those players are added in whatever state the team's own state "
+                + "implies, which for an open team is the one the client paints NG, and nobody else can "
+                + "change it: a fake player has no button, and a real player only decides for themselves. "
+                + "Only the fake players move — a real member's decision and the team's own state are "
+                + "left alone, so the testing device cannot accept an entry on a real player's behalf.");
+
+        fakeTeams.MapPost("/host-room", CreateHostRoomAsync)
+            .WithSummary("Create a dedicated event host room")
+            .WithDescription(
+                "Asks the running lobby of a mode to create the dedicated room its matches are hosted in. "
+                + "A pairing is written when two teams are queued but is not announced until a room has "
+                + "been leased for it, and a room is only leased from one that is named for the role, "
+                + "says it is dedicated and is sitting idle with its host present — all things a real "
+                + "host client does merely by existing. Without this, a pairing made from these tools "
+                + "waits for a room nobody has opened. Survival and Tournament only.");
+
         fakeTeams.MapGet("/", ListAsync)
             .WithSummary("List the in-memory teams of a lobby")
             .WithDescription(
@@ -212,6 +232,70 @@ internal static class FakeEventEndpoints
             _ => Results.Json(
                 new FakeEventResult(
                     $"The {EventScheduleService.ModeName(request.Mode)} lobby is not connected, so \"{request.TeamName}\" was not written out."),
+                statusCode: StatusCodes.Status503ServiceUnavailable),
+        };
+    }
+
+    /// <summary>Relays a request to change a stored team's fake member state.</summary>
+    /// <param name="dispatch">Service the request is carried through.</param>
+    /// <param name="request">Member state to store.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private static async Task<IResult> ChangeMemberStateAsync(
+        FakeTeamDispatchService dispatch,
+        FakeTeamMemberStateChangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await dispatch.DispatchMemberStateAsync(
+            request.Mode,
+            request.TeamName,
+            request.MemberState,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            FakeTeamDispatchService.DispatchOutcome.Sent => Results.Json(
+                new FakeEventResult(
+                    $"Asked {EventScheduleService.ModeName(request.Mode)} to set the fake players of \"{request.TeamName}\" to member state {request.MemberState}."),
+                statusCode: StatusCodes.Status202Accepted),
+            FakeTeamDispatchService.DispatchOutcome.InvalidState => Results.BadRequest(
+                new FakeEventResult(
+                    $"A state is a byte between 0 and {FakeTeamDispatchService.MaximumStateByte}.")),
+            FakeTeamDispatchService.DispatchOutcome.NoTeamName => Results.BadRequest(
+                new FakeEventResult("Name the team whose fake players change.")),
+            FakeTeamDispatchService.DispatchOutcome.NoSuchLobby => Results.NotFound(
+                new FakeEventResult($"There is no {EventScheduleService.ModeName(request.Mode)} lobby running.")),
+            _ => Results.Json(
+                new FakeEventResult(
+                    $"The {EventScheduleService.ModeName(request.Mode)} lobby is not connected, so no member state was changed."),
+                statusCode: StatusCodes.Status503ServiceUnavailable),
+        };
+    }
+
+    /// <summary>Relays a request to create a dedicated event host room.</summary>
+    /// <param name="dispatch">Service the request is carried through.</param>
+    /// <param name="request">Room to create.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private static async Task<IResult> CreateHostRoomAsync(
+        FakeTeamDispatchService dispatch,
+        FakeHostRoomCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await dispatch.DispatchHostRoomAsync(
+            request.Mode,
+            request.HostCharacterIdentifier,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            FakeTeamDispatchService.DispatchOutcome.Sent => Results.Json(
+                new FakeEventResult(
+                    $"Asked {EventScheduleService.ModeName(request.Mode)} to create a dedicated host room."),
+                statusCode: StatusCodes.Status202Accepted),
+            FakeTeamDispatchService.DispatchOutcome.NoSuchLobby => Results.NotFound(
+                new FakeEventResult($"There is no {EventScheduleService.ModeName(request.Mode)} lobby running.")),
+            _ => Results.Json(
+                new FakeEventResult(
+                    $"The {EventScheduleService.ModeName(request.Mode)} lobby is not connected, so no host room was created."),
                 statusCode: StatusCodes.Status503ServiceUnavailable),
         };
     }

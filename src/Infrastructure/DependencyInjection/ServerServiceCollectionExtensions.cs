@@ -183,6 +183,8 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<EventTeamListingService>();
         services.AddSingleton<FakeTeamService>();
         services.AddSingleton<FakeTeamPairingService>();
+        services.AddSingleton<FakeTeamMemberStateService>();
+        services.AddSingleton<FakeHostRoomService>();
         services.AddSingleton<EventTeamStateService>();
         services.AddSingleton<EventTeamPushService>();
         services.AddSingleton<EventInvitationService>();

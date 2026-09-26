@@ -42,6 +42,14 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 /// Service that writes an in-memory team out as a row so it can be paired.
 /// Left null by a host that runs no event lobby, for the same reason.
 /// </param>
+/// <param name="fakeTeamMemberStates">
+/// Service that changes the entry-decision byte of a team's fake players.
+/// Left null by a host that runs no event lobby, for the same reason.
+/// </param>
+/// <param name="fakeHostRooms">
+/// Service that writes the dedicated event host room a pairing needs.
+/// Left null by a host that runs no event lobby, for the same reason.
+/// </param>
 public sealed class LobbyCommandApplyService(
     FlashNewsService flashNewsService,
     ILogger<LobbyCommandApplyService> logger,
@@ -49,7 +57,9 @@ public sealed class LobbyCommandApplyService(
     FakeTeamRequestHandlerService? fakeTeamRequests = null,
     FakeTeamStateRequestHandlerService? fakeTeamStateRequests = null,
     FakeTeamQueryRequestHandlerService? fakeTeamQueries = null,
-    FakeTeamPairingRequestHandlerService? fakeTeamPairings = null)
+    FakeTeamPairingRequestHandlerService? fakeTeamPairings = null,
+    FakeTeamMemberStateRequestHandlerService? fakeTeamMemberStates = null,
+    FakeHostRoomRequestHandlerService? fakeHostRooms = null)
 {
     /// <summary>Applies one message the coordinator sent.</summary>
     /// <param name="message">Message to act on.</param>
@@ -106,6 +116,26 @@ public sealed class LobbyCommandApplyService(
                         : () => fakeTeamPairings.HandleAsync(pairing, cancellationToken),
                     "This host cannot make a fake team pairable; the request was refused",
                     "A fake team pairing request could not be carried out",
+                    cancellationToken);
+
+            case HttpEvent.EventOneofCase.FakeTeamMemberState:
+                var memberState = message.FakeTeamMemberState;
+                return GuardAsync(
+                    fakeTeamMemberStates is null
+                        ? null
+                        : () => fakeTeamMemberStates.HandleAsync(memberState, cancellationToken),
+                    "This host cannot change fake member state; the request was refused",
+                    "A fake team member state request could not be carried out",
+                    cancellationToken);
+
+            case HttpEvent.EventOneofCase.FakeHostRoom:
+                var hostRoom = message.FakeHostRoom;
+                return GuardAsync(
+                    fakeHostRooms is null
+                        ? null
+                        : () => fakeHostRooms.HandleAsync(hostRoom, cancellationToken),
+                    "This host cannot create a dedicated host room; the request was refused",
+                    "A host room request could not be carried out",
                     cancellationToken);
 
             case HttpEvent.EventOneofCase.FlashNews:

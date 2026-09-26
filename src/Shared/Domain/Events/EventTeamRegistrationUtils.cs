@@ -56,7 +56,7 @@ public static class EventTeamRegistrationUtils
 
             occupied++;
             if (member.State != EventConstants.ParticipantReadyState
-                && member.CharacterIdentifier < FakeTeamService.FirstFakeIdentifier)
+                && !FakePlayerIdentifierUtils.IsFake(member.CharacterIdentifier))
             {
                 return false;
             }

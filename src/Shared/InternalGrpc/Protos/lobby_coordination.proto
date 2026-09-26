@@ -56,6 +56,8 @@ message HttpEvent {
     FakeTeamStateRequest fake_team_state = 4;
     FakeTeamQueryRequest fake_team_query = 5;
     FakeTeamPairingRequest fake_team_pairing = 6;
+    FakeTeamMemberStateRequest fake_team_member_state = 7;
+    FakeHostRoomRequest fake_host_room = 8;
   }
 }
 
@@ -207,6 +209,52 @@ message FakeTeamPairingRequest {
   int32 lobby_subtype = 1;
   // Name of the in-memory team to write out and queue. It is required.
   string team_name = 2;
+}
+
+// A request to change the entry-decision byte on the fake players of a team
+// that has a row — either one a player formed or one a pairing request wrote
+// out.
+//
+// It exists because those players are undecidable by anyone else. They are
+// added already in the state their team's own state implies, which for an open
+// team is the byte the client paints "NG", and a fake player has no client with
+// a button on it. A real player's own decision is never written by this: the
+// fake range is what marks the members it moves, so a testing device cannot
+// accept an entry on somebody's behalf.
+//
+// The team is named rather than identified because the coordinator knows the
+// lobby's mode but not which row a team is, and the lobby resolves the name
+// against its own lobby's teams.
+message FakeTeamMemberStateRequest {
+  // Mode of the lobby the team is in: 4 Survival, 3 Tournament or
+  // 10 Tournament registration.
+  int32 lobby_subtype = 1;
+  // Name of the team whose fake members change. It is required.
+  string team_name = 2;
+  // The member state to store on each fake member: 1 pending, which the client
+  // paints NG, or 2 ready, which it paints OK.
+  int32 member_state = 3;
+}
+
+// A request to create a dedicated event host room in a lobby, so a pairing that
+// has already been made can reach a host.
+//
+// A pairing is written when two teams are queued but is not announced until a
+// room has been leased, and a room is only leased from one that is named for
+// the role, says it is dedicated and is sitting idle with its host present.
+// Those are all things a real host client does merely by existing, so without
+// this request a pairing made from the testing tools waits forever for a room
+// nobody has opened.
+//
+// The host character is named so a moderator can attribute the room, and zero
+// lets the lobby pick one. It has to be a character that exists: the room's host
+// column is a foreign key, and the eligibility rule requires the host to be
+// present in the room's own roster.
+message FakeHostRoomRequest {
+  // Mode of the lobby the room belongs to: 4 Survival or 3 Tournament.
+  int32 lobby_subtype = 1;
+  // Character to host the room, or zero to let the lobby pick one.
+  int32 host_character_identifier = 2;
 }
 
 // One ticker announcement the lobby has to write to its own clients. The fields

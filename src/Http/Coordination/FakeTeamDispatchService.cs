@@ -26,7 +26,7 @@ namespace Mgo2Server.Http.Coordination;
 /// <param name="modes">Service that resolves the lobby a mode names.</param>
 /// <param name="queries">Service that holds the questions a lobby is answering.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class FakeTeamDispatchService(
+public sealed partial class FakeTeamDispatchService(
     LobbyConnectionRegistryService registry,
     LobbyModeResolverService modes,
     LobbyTeamQueryService queries,

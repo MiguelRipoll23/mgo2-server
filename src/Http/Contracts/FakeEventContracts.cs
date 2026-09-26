@@ -108,6 +108,66 @@ public sealed class FakeTeamPromotionRequest
     public required string TeamName { get; set; }
 }
 
+/// <summary>
+/// Fields of a request to change the entry-decision byte on the fake players of
+/// a team that has a row.
+/// <para>
+/// It is a request of its own rather than a mode of the in-memory state one,
+/// because a stored team has a state the entry pipeline owns: a testing device
+/// may move a fake player's decision, which nobody else can, and may not move
+/// the team's own state or a real member's.
+/// </para>
+/// <para>
+/// It is called <c>FakeTeamMemberStateChangeRequest</c> rather than
+/// <c>FakeTeamMemberStateRequest</c> for the reason
+/// <see cref="FakeTeamPromotionRequest"/> gives: the coordination protocol
+/// already has a message of the shorter name, and a contract that shadowed it
+/// would force every file holding both to disambiguate a name it did not
+/// choose.
+/// </para>
+/// </summary>
+public sealed class FakeTeamMemberStateChangeRequest
+{
+    /// <summary>Lobby mode the team is in: 4 Survival, 3 Tournament or 10 registration.</summary>
+    [Range(1, 255)]
+    public int Mode { get; set; } = EventConstants.SurvivalSelector;
+
+    /// <summary>Name of the team whose fake players change. It is required.</summary>
+    [Required]
+    [StringLength(64, MinimumLength = 1)]
+    public required string TeamName { get; set; }
+
+    /// <summary>
+    /// Member state to store on each fake player: 1 pending, which the client
+    /// paints NG, or 2 ready, which it paints OK.
+    /// </summary>
+    [Range(0, 255)]
+    public int MemberState { get; set; } = EventConstants.ParticipantReadyState;
+}
+
+/// <summary>
+/// Fields of a request to create a dedicated event host room in a lobby.
+/// <para>
+/// A pairing is written when two teams are queued but is not announced until a
+/// room has been leased for it, so this is what carries a testing pairing from
+/// "paired" to the point where the client is actually told about it.
+/// </para>
+/// </summary>
+public sealed class FakeHostRoomCreateRequest
+{
+    /// <summary>Mode of the lobby the room belongs to: 4 Survival or 3 Tournament.</summary>
+    [Range(1, 255)]
+    public int Mode { get; set; } = EventConstants.SurvivalSelector;
+
+    /// <summary>
+    /// Character to host the room, or zero to let the lobby pick one. The room's
+    /// host is a real character, because the column is a foreign key and the
+    /// host-eligibility rule requires the host to be in the room.
+    /// </summary>
+    [Range(0, int.MaxValue)]
+    public int HostCharacterIdentifier { get; set; }
+}
+
 /// <summary>What a fake-event request did, as the caller is told it.</summary>
 /// <param name="Message">Sentence describing the outcome.</param>
 public sealed record FakeEventResult(string Message);

@@ -56,16 +56,13 @@ public sealed class FakeTeamService(IDbContextFactory<Mgo2DatabaseContext> conte
     public const int MaximumPerTeam = EventConstants.TeamMemberLimit;
 
     /// <summary>
-    /// First identifier a fake team or player is given. It sits far above any
-    /// character a client could have been assigned, so a fake identifier in a
-    /// roster is never mistaken for a real one and never collides with one.
-    /// <para>
-    /// It is public so the parts that decide whether a roster may enter — the
-    /// matchmaking readiness rule in particular — can tell a player who has no
-    /// button to press from one who does.
-    /// </para>
+    /// First identifier a fake team or player is given, and the range that makes
+    /// one recognisable as a testing device. The range itself and the question
+    /// every part of the event subsystem asks about it live in
+    /// <see cref="FakePlayerIdentifierUtils"/>, which is where a reader should
+    /// go; this stays as the name the rest of the codebase already uses.
     /// </summary>
-    public const int FirstFakeIdentifier = 1_000_000_000;
+    public const int FirstFakeIdentifier = FakePlayerIdentifierUtils.FirstFakeIdentifier;
 
     private readonly Lock gate = new();
     private readonly Dictionary<int, FakeTeam> teams = [];

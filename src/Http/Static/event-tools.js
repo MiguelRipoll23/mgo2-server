@@ -29,6 +29,7 @@
   const playersTeamOther = byId("players-team-other");
   const playersTeamName = byId("players-team-name");
   const stateTeam = byId("state-team");
+  const memberTeam = byId("member-team");
 
   // The teams the last refresh returned, held so the menus and the lists on the
   // page agree with each other without asking twice.
@@ -146,6 +147,11 @@
     // would be overwritten rather than tested, and offering it would suggest
     // otherwise.
     teams.fillMenu(stateTeam, [], memoryTeams, null);
+
+    // The member-state form is the other way round: it offers stored teams,
+    // because a fake player that landed in a row is the one nobody else can
+    // decide for. An in-memory team's roster is changed by the form above.
+    teams.fillMenu(memberTeam, realTeams, [], null);
   }
 
   // A refresh asks all three sources. They are asked together rather than one
@@ -283,6 +289,15 @@
   fillCounts(byId("players-count"), 1);
   teams.fillStates(byId("state-team-state"), teams.teamStates, "Another state byte…");
   teams.fillStates(byId("state-member"), teams.memberStates, "Another member state byte…");
+  // The stored-team form does not offer "let each member follow the team":
+  // that escape hatch only means anything for a team whose roster is projected
+  // at read time, and a stored roster carries one state per member that the
+  // client reads literally. Zero is not a member state at all.
+  teams.fillStates(
+    byId("member-state"),
+    teams.memberStates.filter((candidate) => candidate.value !== 0),
+    "Another member state byte…"
+  );
 
   onSubmit("create-form", () =>
     send("/fake-teams", {
@@ -341,6 +356,44 @@
 
   playersTeam.addEventListener("change", () => {
     playersTeamOther.classList.toggle("hidden", playersTeam.value !== "other");
+  });
+
+  onSubmit("member-state-form", () => {
+    const memberSelect = byId("member-state");
+    const memberState =
+      memberSelect.value === "custom" ? customState(memberSelect) : Number(memberSelect.value);
+    if (memberState === null) {
+      return;
+    }
+
+    if (!memberTeam.value) {
+      showStatus("error", "This lobby is holding no stored teams; form one first.");
+      return;
+    }
+
+    send("/fake-teams/member-state", {
+      mode: Number(modeSelect.value),
+      teamName: memberTeam.value,
+      memberState: memberState,
+    });
+  });
+
+  // The room is created on a click rather than a submit because there is
+  // nothing to fill in that a caller has to decide: it is a room for this
+  // lobby's matches, and its only field is which character hosts it, which
+  // zero answers without asking.
+  byId("host-room").addEventListener("click", async () => {
+    const character = Number(byId("host-room-character").value.trim() || "0");
+    if (!Number.isInteger(character) || character < 0) {
+      showStatus("error", "A character identifier is a whole number, or 0 to let the lobby pick.");
+      return;
+    }
+
+    showStatus("pending", "Asking the lobby for a dedicated host room…");
+    await send("/fake-teams/host-room", {
+      mode: Number(modeSelect.value),
+      hostCharacterIdentifier: character,
+    });
   });
 
   byId("refresh").addEventListener("click", refresh);
