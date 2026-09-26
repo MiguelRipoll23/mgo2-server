@@ -4,7 +4,10 @@ metadata:
   name: mgo2-tournament
   namespace: mgo2
 spec:
-  externalTrafficPolicy: Cluster
+  # Local, so the pod sees the console's real address instead of the load
+  # balancer's. See deploy/game-lobby/survival-service.yaml for why, which is the
+  # same for all nine; deploy/README.md, "externalTrafficPolicy: Local".
+  externalTrafficPolicy: Local
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

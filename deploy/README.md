@@ -177,6 +177,101 @@ Three things worth knowing:
   again. The pointer names the annotation rather than the pod template, so Argo
   still corrects everything else about it.
 
+## Source addresses and the load balancer
+
+A pod behind a proxying load balancer sees the load balancer's address, not the
+console's. `TcpServerBase` reads the address off the accepted socket and puts it
+in `TcpSession.RemoteAddress`, so the question is not how to read it but whether
+anything has already rewritten it. The answer differs per service, and the three
+cases below are not interchangeable.
+
+### TCP — `externalTrafficPolicy: Local`
+
+Every TCP Service here sets `externalTrafficPolicy: Local`. With the default
+`Cluster`, kube-proxy masquerades the traffic and the pod sees the load
+balancer. With `Local`, a node forwards only to its own pods and does not
+masquerade, so `RemoteAddress` is the console's real address. The Kubernetes
+reference states the trade exactly: *preserves the source IP … by routing only to
+endpoints on the same node … (dropping the traffic if there are no local
+endpoints).*
+
+That is the whole cost, and it is a real one. So each Local Service's Deployment
+carries what makes the drop window as small as it can be made:
+
+| Setting | What it prevents |
+| --- | --- |
+| `readinessProbe` (`tcpSocket`) | The pod is Ready before it has bound, so the LB sends to a listener that is not there yet. **The most important one.** |
+| `maxUnavailable: 0` | The rollout taking the ready count below the serving count. |
+| `maxSurge: 1` | Nothing. `25%` of one replica rounds to zero, so the surge a Local rollout depends on would not happen at all. |
+| `minReadySeconds: 10` | The old pod dying before the LB has health-checked the new pod's node. |
+| `topologySpreadConstraints` | Replicas sharing a node, and so sharing its exposure. |
+
+`healthCheckNodePort` is allocated automatically and is what tells the LB to stop
+sending to a node with no local endpoint; the OVHcloud CCM wires up the
+health monitor for it when the policy is `Local`.
+
+Two things this does **not** give you, both from the upstream sources rather than
+from here:
+
+- **It narrows the race; it does not close it.** The window between the last pod
+  on a node terminating and the LB noticing still exists. Kubernetes 1.26's
+  ProxyTerminatingEndpoints closes most of it — kube-proxy routes to terminating
+  pods by readiness and fails the health check port when a node has only
+  terminating pods — so **the cluster must be 1.26 or newer** for this to hold.
+- **Replicas still need to fit the nodes.** With one replica, a node failure is
+  an outage, and `Local` does not change that. `topologySpreadConstraints` only
+  helps once there is more than one.
+
+Verify the return path once, on a real console, before trusting it: with `Local`
+the pod replies to the console directly rather than through the load balancer,
+and the AWS equivalent has a documented history of asymmetric-routing failures
+that look exactly like an application bug.
+
+### UDP gameplay and the name server — `Cluster`, deliberately
+
+Neither needs the console's address. Gameplay relays, and `docs/STUN.md` traces
+the peer descriptor as built **client-side** at `0x9444BC` from the port check
+result — so the server never has to see the raw address for peer to peer to work.
+The name server answers queries and has no use for it either.
+
+### The port check — not behind a load balancer at all
+
+`stun/` is the exception, and it is the reason the other two cases can be simple.
+MAPPED-ADDRESS is how the console learns its own public address, and a proxying
+load balancer hands the datagram over on a port of its own — so the responder
+would observe the load balancer as the console, every player would be given the
+same address, and peer to peer would fail **silently**, as the "Adjusting port
+settings" hang `docs/STUN.md` describes.
+
+`externalTrafficPolicy: Local` does not rescue it. The pod would see the right
+address, but its reply would leave from the pod rather than from the address the
+console dialled, and the console identifies the responder by where an answer came
+from. So the responder runs on the node's own network instead:
+
+- `hostNetwork: true`, so the datagram arrives with the console's real address
+  and port and the reply leaves from the address the console dialled;
+- `dnsPolicy: ClusterFirstWithHostNet`, without which it loses cluster DNS;
+- a `nodeSelector` on `mgo2.io/stun-node`, because the node is chosen by whoever
+  owns the public address, not by the scheduler;
+- `type: Recreate`, not `RollingUpdate`: the pod owns the host's ports, so a surge
+  would start the replacement while the old pod still holds 3478.
+
+Two consequences worth stating plainly:
+
+- **The console is reached by a DNS A record pointing at that node's public IP.**
+  There is no load balancer, so there is nothing to hand out a stable address.
+- **There is no invisible failover.** The pod rescheduling onto another labelled
+  node changes the address the console is told, so the A record has to change
+  with it. A second responder needs a second address and a second record. A
+  health check cannot fix this, because there is no load balancer left to ask.
+
+`STUN_SECONDARY_ADDRESS` is the second address a change-address request is
+answered from, and without one a restricted-cone NAT is read as a full-cone one
+— which passes the console's check and then fails to connect, so it is a worse
+failure than it looks. It has to be a second address of the same node
+(`ip addr add …`), which does not survive a reboot and so wants a node bootstrap
+script rather than a manifest here.
+
 ## Rolling back
 
 Point `newTag` at the previous commit's SHA and commit it. That is the entire
@@ -197,3 +292,25 @@ is the reason for the expand/contract rule above, rather than a down script.
   static annotation would only be drift. The one annotation written into a pod
   template is the exception, and it is ignored by name in every Application that
   holds a workload — see [Changing the ConfigMap](#changing-the-configmap).
+- **No load balancer in front of the port check**, and none to be added — see
+  [Source addresses and the load balancer](#source-addresses-and-the-load-balancer).
+
+## Checking this folder
+
+`tools/check_deploy_source_addresses.py` parses every manifest and asserts
+the invariants the source-address decisions depend on: each Service's traffic
+policy matches what its protocol allows, each Local Service has the probe and
+rollout settings that make `Local` survivable, and the port check is host-networked
+on a chosen node.
+
+It exists because there is no `kubectl` in the loop to say so, and because one of
+these files briefly carried two `dnsPolicy` keys — PyYAML takes the last silently,
+so the wrong one would have taken effect and nothing would have reported it. The
+loader it uses rejects a repeated key for that reason.
+
+```sh
+python tools/check_deploy_source_addresses.py
+```
+
+Wire it into the pipeline if these manifests ever stop being reviewed by a human
+who already knows all this.

@@ -301,6 +301,7 @@ working because that stall is an open question, not because anything depends on 
 | --- | --- |
 | `ipswap_editor.py` | Editor for RPCS3's IP swap list — the host → IP redirect map. An alternative to `testhk`, and a worse one. |
 | `stun_selftest.py` | Asserts the STUN reply format against a running responder. A regression there produces no error, just a hung game. |
+| `check_deploy_source_addresses.py` | Parses every `deploy/` manifest and asserts the source-address and rollout invariants: each Service's traffic policy against its protocol, and that every `externalTrafficPolicy: Local` Service has the readiness probe and rollout settings that make `Local` survivable. Run it after touching anything in `deploy/` — see `deploy/README.md`. |
 | `upnp_probe.py` | Answers the client's own UPnP discovery. |
 | `field_scoreboard.py` | Derives the field-mapping coverage numbers from `dev/proto/` directly. Run it rather than quoting a number from memory. |
 | `seed.sql` | Inserts the lobby rows, a test account and a news item. Required — an empty `lobby` table is a silent dead end. |

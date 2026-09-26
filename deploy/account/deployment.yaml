@@ -10,13 +10,23 @@ spec:
   progressDeadlineSeconds: 600
   replicas: 1
   revisionHistoryLimit: 10
+  # A pod is only counted available once it has been Ready this long, which is
+  # what keeps a rollout from killing the old pod before the load balancer has
+  # health-checked the new pod's node. See deploy/README.md,
+  # "externalTrafficPolicy: Local".
+  minReadySeconds: 10
   selector:
     matchLabels:
       app: mgo2-account
   strategy:
     rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
+      # Never below the current count. With Local, a node whose pods are all
+      # gone drops its traffic rather than forwarding it elsewhere, so a rollout
+      # that dips below the ready count dips below serving capacity.
+      maxUnavailable: 0
+      # Exactly one, not a percentage: 25% of a single replica rounds to zero, so
+      # the surge that a Local rollout depends on would not happen at all.
+      maxSurge: 1
     type: RollingUpdate
   template:
     metadata:
@@ -42,6 +52,18 @@ spec:
         ports:
         - containerPort: 5732
           protocol: TCP
+        # This probe is not optional under externalTrafficPolicy: Local. Without
+        # one the pod is Ready the moment the container starts, kube-proxy
+        # believes the node has a local endpoint, and the load balancer sends a
+        # connection to a listener that has not bound yet. A tcpSocket probe
+        # reports the truth, and the server tolerates it: the probe connects and
+        # drops, which TcpServerBase reads as zero bytes and closes quietly.
+        readinessProbe:
+          tcpSocket:
+            port: 5732
+          periodSeconds: 5
+          failureThreshold: 3
+          timeoutSeconds: 3
         resources: {}
         securityContext:
           allowPrivilegeEscalation: false
@@ -62,6 +84,19 @@ spec:
         envFrom:
         - secretRef:
             name: mgo2-secrets
+      # Keep replicas on different nodes, and preferably off a node already
+      # running one. Under Local, a node with no local endpoint drops the traffic
+      # the load balancer sends it rather than forwarding it elsewhere, so
+      # replicas sharing a node share that exposure. ScheduleAnyway rather than
+      # DoNotSchedule: on a single-node cluster a hard requirement would leave
+      # the pod Pending forever, and a pod that never starts serves nobody.
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: mgo2-account
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler

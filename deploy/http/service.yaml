@@ -4,7 +4,16 @@ metadata:
   name: mgo2-http
   namespace: mgo2
 spec:
-  externalTrafficPolicy: Cluster
+  # Local, so the pod sees the console's real address instead of the load
+  # balancer's. TcpServerBase reads it off the accepted socket, so nothing
+  # downstream has to change to use it.
+  #
+  # The cost is that a node forwards only to its own pods and DROPS traffic to a
+  # node that has none, so the load balancer has to stop sending there before
+  # the last pod goes. That is what healthCheckNodePort is for, and the paired
+  # Deployment's rollout settings are built around it. See deploy/README.md,
+  # "externalTrafficPolicy: Local".
+  externalTrafficPolicy: Local
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

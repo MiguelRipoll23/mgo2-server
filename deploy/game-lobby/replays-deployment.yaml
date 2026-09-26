@@ -10,13 +10,23 @@ spec:
   progressDeadlineSeconds: 600
   replicas: 1
   revisionHistoryLimit: 10
+  # A pod is only counted available once it has been Ready this long, which is
+  # what keeps a rollout from killing the old pod before the load balancer has
+  # health-checked the new pod's node. See deploy/README.md,
+  # "externalTrafficPolicy: Local".
+  minReadySeconds: 10
   selector:
     matchLabels:
       app: mgo2-replays
   strategy:
     rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
+      # Never below the current count. With Local, a node whose pods are all
+      # gone drops its traffic rather than forwarding it elsewhere, so a rollout
+      # that dips below the ready count dips below serving capacity.
+      maxUnavailable: 0
+      # Exactly one, not a percentage: 25% of a single replica rounds to zero, so
+      # the surge that a Local rollout depends on would not happen at all.
+      maxSurge: 1
     type: RollingUpdate
   template:
     metadata:
@@ -52,6 +62,14 @@ spec:
         ports:
         - containerPort: 5734
           protocol: TCP
+        # Not optional under externalTrafficPolicy: Local; see the note in
+        # deploy/gate/deployment.yaml, which is the same case.
+        readinessProbe:
+          tcpSocket:
+            port: 5734
+          periodSeconds: 5
+          failureThreshold: 3
+          timeoutSeconds: 3
         resources: {}
         securityContext:
           allowPrivilegeEscalation: false
@@ -72,6 +90,13 @@ spec:
         envFrom:
         - secretRef:
             name: mgo2-secrets
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: mgo2-replays
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
