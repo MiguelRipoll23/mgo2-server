@@ -131,8 +131,14 @@ public sealed class FakeHostRoomService(
         CancellationToken cancellationToken)
     {
         await using var context = await CreateContextAsync(cancellationToken);
+
+        // A named host has to exist and has to be able to host: see the note on
+        // FindFirstHostAsync for why zero is not one of those.
         var exists = await context.Characters
-            .AnyAsync(character => character.Identifier == characterIdentifier, cancellationToken);
+            .AnyAsync(
+                character => character.Identifier == characterIdentifier
+                    && character.Identifier > 0,
+                cancellationToken);
         return exists ? characterIdentifier : 0;
     }
 
@@ -140,11 +146,20 @@ public sealed class FakeHostRoomService(
     {
         await using var context = await CreateContextAsync(cancellationToken);
 
-        // The lowest identifier is used because the room needs a character that
-        // exists and nothing else about it: the sweep only asks whether the
-        // host is in the room, and this row is what puts it there. Zero is the
-        // "there is no character at all" answer, which the caller refuses on.
+        // The lowest identifier that can actually host a room, which is the
+        // lowest one above zero. Zero is excluded deliberately: AddPlayerAsync
+        // treats a character at or below zero as absent and writes no roster
+        // row for it, and IsIdle reads a roster without the host in it as a
+        // room that is not idle, so a room hosted by character zero would be
+        // created and then never eligible — a failure that looks exactly like
+        // the pairing that never reached a host. Skipping it here is also what
+        // keeps zero usable as the "no character found" answer below.
+        //
+        // The gameplay server's own character is the one this lands on in
+        // practice, since it is created first and carries the host's peer
+        // identifier, but nothing here depends on that being true.
         return await context.Characters
+            .Where(character => character.Identifier > 0)
             .OrderBy(character => character.Identifier)
             .Select(character => character.Identifier)
             .FirstOrDefaultAsync(cancellationToken);

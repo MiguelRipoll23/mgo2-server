@@ -114,6 +114,23 @@ public sealed class FakeHostRoomTests
         Assert.IsAssignableFrom<DbException>(exception.InnerException);
     }
 
+    [Fact]
+    public void A_room_hosted_by_character_zero_would_never_be_idle()
+    {
+        // This is why the host lookup skips zero rather than taking the lowest
+        // identifier it finds. A roster is a list of characters, and zero is
+        // how the roster spells "nobody here", so a host of zero is
+        // indistinguishable from an absent one: the row that would say the host
+        // is present is the very row the room cannot carry.
+        Assert.False(EventHostEligibilityUtils.IsIdle(0, []));
+
+        // Which is why AddPlayerAsync declines to write one, and why a room
+        // created this way would sit ineligible forever — looking exactly like
+        // the pairing that never reached a host. A real host identifier is
+        // idle as soon as it is in its own room.
+        Assert.True(EventHostEligibilityUtils.IsIdle(1, [1]));
+    }
+
     private static GameService CreateGameService(IDbContextFactory<Mgo2DatabaseContext> factory) =>
         new(factory, new ServerMetricsService(factory), Options.Create(new ServerOptions()));
 

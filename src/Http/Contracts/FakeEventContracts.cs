@@ -162,7 +162,9 @@ public sealed class FakeHostRoomCreateRequest
     /// <summary>
     /// Character to host the room, or zero to let the lobby pick one. The room's
     /// host is a real character, because the column is a foreign key and the
-    /// host-eligibility rule requires the host to be in the room.
+    /// host-eligibility rule requires the host to be in the room. Character zero
+    /// cannot host a room in either sense, so asking for it by name picks
+    /// instead rather than furnishing a room nothing would ever lease.
     /// </summary>
     [Range(0, int.MaxValue)]
     public int HostCharacterIdentifier { get; set; }
