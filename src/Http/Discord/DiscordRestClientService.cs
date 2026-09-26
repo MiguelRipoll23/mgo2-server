@@ -82,8 +82,12 @@ public sealed partial class DiscordRestClientService(
     /// <summary>Longest message the command accepts, which is what the ticker of the game holds.</summary>
     private const int MaximumMessageOptionLength = 255;
 
-    /// <summary>Longest channel message Discord accepts.</summary>
-    private const int MaximumChannelMessageLength = 2000;
+    /// <summary>
+    /// Longest text Discord accepts in one command option. The cap belongs to
+    /// the option rather than to the channel, which holds less: a body that
+    /// reaches it is written as several channel messages.
+    /// </summary>
+    private const int MaximumCommandOptionLength = 6000;
 
     /// <summary>Serializer the request bodies and the channel responses are read and written with.</summary>
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
@@ -118,9 +122,9 @@ public sealed partial class DiscordRestClientService(
         RegisterCommandAsync(
             DiscordOptions.MessageCommandName,
             "Sends an official message from the bot into this channel.",
-            "Text of the official message.",
+            "Text of the official message. A long body is written as several messages.",
             "body",
-            MaximumChannelMessageLength,
+            MaximumCommandOptionLength,
             "register the message command",
             cancellationToken);
 

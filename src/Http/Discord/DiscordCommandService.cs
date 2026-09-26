@@ -51,6 +51,13 @@ public sealed class DiscordCommandService(
     /// <summary>Longest channel message Discord accepts.</summary>
     private const int MaximumChannelMessageLength = 2000;
 
+    /// <summary>
+    /// Longest text Discord accepts in one command option. The option holds
+    /// three times what a channel message does, so a long body is written as
+    /// several messages rather than cut short.
+    /// </summary>
+    private const int MaximumCommandOptionLength = 6000;
+
     private readonly DiscordOptions options = options.Value;
 
     /// <summary>Handles one interaction the gateway delivered.</summary>
@@ -194,40 +201,103 @@ public sealed class DiscordCommandService(
         }
 
         // The command is answered and the message is written into the channel,
-        // where the whole guild sees it. A text longer than Discord accepts is
-        // trimmed to what the channel can hold.
-        if (message.Length > MaximumChannelMessageLength)
+        // where the whole guild sees it. A body longer than one channel message
+        // holds is written as several messages, because a moderator writing an
+        // announcement is not helped by the tail of it being dropped.
+        var parts = SplitIntoChannelMessages(message);
+        var sent = 0;
+        foreach (var part in parts)
         {
-            message = message[..MaximumChannelMessageLength];
+            // Every part is attempted even after one is refused: a rate limited
+            // chunk should not swallow the rest of the announcement.
+            if (await messageService.SendChannelMessageAsync(
+                channelIdentifier,
+                part,
+                cancellationToken))
+            {
+                sent++;
+            }
         }
 
-        var sent = await messageService.SendChannelMessageAsync(
-            channelIdentifier,
-            message,
-            cancellationToken);
-        if (!sent)
+        if (sent != parts.Count)
         {
             logger.LogWarning(
-                "The {Command} command could not write in the channel of the interaction",
-                DiscordOptions.MessageCommandName);
+                "The {Command} command wrote {Sent} of {Parts} messages in the channel of the interaction",
+                DiscordOptions.MessageCommandName,
+                sent,
+                parts.Count);
             await ReplyAsync(
                 interactionIdentifier,
                 interactionToken,
-                "The message could not be sent. Try again later.",
+                $"The message could not be sent in full: {sent} of {parts.Count} parts arrived. Try again later.",
                 cancellationToken);
             return;
         }
 
         logger.LogInformation(
-            "The {Command} command wrote an official message in the channel {ChannelIdentifier}",
+            "The {Command} command wrote an official message of {Parts} part(s) in the channel {ChannelIdentifier}",
             DiscordOptions.MessageCommandName,
+            parts.Count,
             channelIdentifier);
 
         await ReplyAsync(
             interactionIdentifier,
             interactionToken,
-            "Official message sent in this channel.",
+            parts.Count == 1
+                ? "Official message sent in this channel."
+                : $"Official message sent in this channel as {parts.Count} messages.",
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Splits the body into the parts a channel message holds. The parts are cut
+    /// on a line where there is one and on a space where there is not, so a long
+    /// announcement is not cut through the middle of a word.
+    /// </summary>
+    /// <param name="body">Text the command was used with.</param>
+    /// <returns>The parts to write, in the order they were typed.</returns>
+    private static List<string> SplitIntoChannelMessages(string body)
+    {
+        var parts = new List<string>();
+        var remaining = body.Trim();
+        if (remaining.Length > MaximumCommandOptionLength)
+        {
+            remaining = remaining[..MaximumCommandOptionLength];
+        }
+
+        while (remaining.Length > MaximumChannelMessageLength)
+        {
+            var length = BreakAt(remaining, MaximumChannelMessageLength);
+            parts.Add(remaining[..length]);
+            remaining = remaining[length..].TrimStart();
+        }
+
+        if (remaining.Length > 0)
+        {
+            parts.Add(remaining);
+        }
+
+        return parts;
+    }
+
+    /// <summary>Finds where the text may be cut without losing a word.</summary>
+    /// <param name="text">Text being split.</param>
+    /// <param name="limit">Longest part allowed.</param>
+    /// <returns>Length of the first part.</returns>
+    private static int BreakAt(string text, int limit)
+    {
+        // A boundary in the second half of the part is the one a reader would
+        // have chosen; a boundary in the first half would throw away more text
+        // than it keeps the message readable, so the limit is used instead.
+        var window = text[..limit];
+        var lineBreak = window.LastIndexOfAny(['\n', '\r']);
+        if (lineBreak > limit / 2)
+        {
+            return lineBreak + 1;
+        }
+
+        var space = window.LastIndexOf(' ');
+        return space > limit / 2 ? space + 1 : limit;
     }
 
     /// <summary>Reports whether the interaction carries the flash command.</summary>

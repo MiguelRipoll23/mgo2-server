@@ -120,7 +120,7 @@ public sealed class DiscordRestClientTests
         Assert.Equal(3, option.GetProperty("type").GetInt32());
         Assert.Equal("body", option.GetProperty("name").GetString());
         Assert.True(option.GetProperty("required").GetBoolean());
-        Assert.Equal(2000, option.GetProperty("max_length").GetInt32());
+        Assert.Equal(6000, option.GetProperty("max_length").GetInt32());
     }
 
     [Fact]

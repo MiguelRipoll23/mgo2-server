@@ -101,7 +101,7 @@ public sealed class DiscordMessageCommandTests
     }
 
     [Fact]
-    public async Task AMessageLongerThanDiscordAcceptsIsTrimmed()
+    public async Task ABodyLongerThanAChannelMessageIsWrittenAsSeveralMessages()
     {
         var messageService = new RecordingMessageService();
         var responder = new RecordingResponder();
@@ -110,8 +110,60 @@ public sealed class DiscordMessageCommandTests
             CommandInteraction(new string('x', 3000), ModeratorRole),
             CancellationToken.None);
 
-        var message = Assert.Single(messageService.Messages);
-        Assert.Equal(2000, message.Content.Length);
+        Assert.Equal(2, messageService.Messages.Count);
+        Assert.All(messageService.Messages, message =>
+        {
+            Assert.Equal(Channel, message.ChannelIdentifier);
+            Assert.InRange(message.Content.Length, 1, 2000);
+        });
+
+        Assert.Equal(3000, string.Concat(messageService.Messages.Select(m => m.Content)).Length);
+        Assert.Contains("2 messages", Assert.Single(responder.Answers).Content);
+    }
+
+    [Fact]
+    public async Task ALongBodyIsBrokenOnALineWhereThereIsOne()
+    {
+        var messageService = new RecordingMessageService();
+        var responder = new RecordingResponder();
+        var firstParagraph = string.Join(' ', Enumerable.Repeat("word", 300));
+        var secondParagraph = string.Join(' ', Enumerable.Repeat("word", 300));
+
+        await CreateService(responder, messageService).HandleInteractionAsync(
+            CommandInteraction($"{firstParagraph}\n{secondParagraph}", ModeratorRole),
+            CancellationToken.None);
+
+        Assert.Equal(
+            [$"{firstParagraph}\n", secondParagraph],
+            messageService.Messages.Select(message => message.Content).ToArray());
+    }
+
+    [Fact]
+    public async Task ABodyWithoutABreakIsCutAtTheChannelLength()
+    {
+        var messageService = new RecordingMessageService();
+        var responder = new RecordingResponder();
+
+        await CreateService(responder, messageService).HandleInteractionAsync(
+            CommandInteraction(new string('x', 4500), ModeratorRole),
+            CancellationToken.None);
+
+        Assert.Equal(
+            [2000, 2000, 500],
+            messageService.Messages.Select(message => message.Content.Length).ToArray());
+    }
+
+    [Fact]
+    public async Task ABodyLongerThanTheOptionIsTrimmedToWhatDiscordTakes()
+    {
+        var messageService = new RecordingMessageService();
+        var responder = new RecordingResponder();
+
+        await CreateService(responder, messageService).HandleInteractionAsync(
+            CommandInteraction(new string('x', 7000), ModeratorRole),
+            CancellationToken.None);
+
+        Assert.Equal(6000, string.Concat(messageService.Messages.Select(m => m.Content)).Length);
     }
 
     [Fact]
