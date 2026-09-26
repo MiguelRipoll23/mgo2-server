@@ -24,6 +24,7 @@
   const statusText = byId("status-text");
   const memoryList = byId("team-list");
   const realList = byId("real-team-list");
+  const matchList = byId("match-list");
   const playersTeam = byId("players-team");
   const playersTeamOther = byId("players-team-other");
   const playersTeamName = byId("players-team-name");
@@ -65,14 +66,18 @@
   // A refusal is reported rather than thrown away: a moderator who asked for a
   // mode with no lobby needs to know that, and it is the common case while a
   // lobby is restarting.
-  async function readTeams(url) {
+  async function readList(url, key) {
     const response = await fetch(url);
     if (response.ok) {
-      return (await response.json()).teams || [];
+      return (await response.json())[key] || [];
     }
 
     showStatus("error", await readMessage(response));
     return null;
+  }
+
+  function readTeams(url) {
+    return readList(url, "teams");
   }
 
   function renderRealList() {
@@ -104,6 +109,30 @@
     }
   }
 
+  // The pairings are listed apart from the teams because they answer the
+  // question the team lists cannot: a pairing is only announced to its teams
+  // once a room has been leased for it, so a pair that has matched and a pair
+  // waiting for a host both show nothing at all in game. Without this list a
+  // moderator cannot tell them apart.
+  function renderMatchList(matches) {
+    if (matches === null) {
+      return;
+    }
+
+    if (matches.length === 0) {
+      teams.emptyList(
+        matchList,
+        "No two teams have been paired in this lobby yet."
+      );
+      return;
+    }
+
+    matchList.replaceChildren();
+    for (const match of matches) {
+      matchList.append(teams.matchRow(match));
+    }
+  }
+
   function fillMenus() {
     teams.fillMenu(
       playersTeam,
@@ -119,16 +148,17 @@
     teams.fillMenu(stateTeam, [], memoryTeams, null);
   }
 
-  // A refresh asks both sources. They are asked together rather than one after
-  // the other because neither is slow and a moderator watching the page should
-  // not see one list update while the other waits.
+  // A refresh asks all three sources. They are asked together rather than one
+  // after the other because none is slow and a moderator watching the page
+  // should not see one list update while the others wait.
   async function refresh() {
     showStatus("pending", "Asking the lobby and the database what they hold…");
 
     const mode = modeSelect.value;
-    const [stored, memory] = await Promise.all([
+    const [stored, memory, pairings] = await Promise.all([
       readTeams("/event-teams?mode=" + mode),
       readTeams("/fake-teams?mode=" + mode),
+      readList("/event-matches?mode=" + mode, "matches"),
     ]);
 
     // A failure in either is not a failure of the other: one list can still be
@@ -138,6 +168,7 @@
       memoryTeams = [];
       renderRealList();
       renderMemoryList();
+      renderMatchList(pairings);
       fillMenus();
       return;
     }
@@ -150,6 +181,7 @@
       memoryTeams = memory;
       renderMemoryList();
     }
+    renderMatchList(pairings);
     fillMenus();
 
     const held = realTeams.length + memoryTeams.length;

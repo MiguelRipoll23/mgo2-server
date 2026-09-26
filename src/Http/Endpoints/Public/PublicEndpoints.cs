@@ -12,6 +12,7 @@ internal static class PublicEndpoints
         group.MapHomeEndpoint();
         group.MapEventToolEndpoints();
         group.MapEventTeamEndpoints();
+        group.MapEventMatchEndpoints();
         group.MapFakeEventEndpoints();
         group.MapLoginEndpoints();
         group.MapAccountEndpoints();

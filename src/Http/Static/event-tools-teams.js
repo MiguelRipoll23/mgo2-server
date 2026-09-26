@@ -37,6 +37,15 @@
     { value: 2, label: "Ready — painted OK, offers accept entry" },
   ];
 
+  // The pairing states, which say what a match is waiting for rather than what
+  // the client does with it: a pairing is only announced to its teams once a
+  // room has been leased, so "paired" and "assigned" are the difference between
+  // a match that is stuck and one that is about to start.
+  const matchStates = [
+    { value: 1, label: "Paired — waiting for a host room" },
+    { value: 2, label: "Assigned — a room is holding it" },
+  ];
+
   const byId = (id) => document.getElementById(id);
 
   // A team's name in a menu has to say which kind it is, because the two kinds
@@ -160,13 +169,49 @@
     return button;
   }
 
+  // One half of a pairing, named the way a team of that kind is named in a menu:
+  // a stored team and a testing one are different things paired against each
+  // other, and a row that hid that would be read as two real teams playing.
+  function matchSide(side) {
+    return `${side.name} — ${side.members}/${maximumPlayers}, ${side.isFake ? "made here" : "stored"}`;
+  }
+
+  // A pairing row. The room is named when there is one, because the name is the
+  // only thing that says which room is holding the match, and its absence is
+  // the answer to "why has nothing happened yet".
+  function matchRow(match) {
+    const element = document.createElement("div");
+    element.className =
+      "flex items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3";
+
+    const detail = document.createElement("div");
+    const name = document.createElement("p");
+    name.className = "text-sm font-semibold text-slate-100";
+    name.textContent = `Match ${match.identifier}`;
+
+    const state = matchStates.find((candidate) => candidate.value === match.state);
+    const room = match.room ? ` in ${match.room}` : "";
+    const meta = document.createElement("p");
+    meta.className = "text-xs text-slate-500";
+    meta.textContent =
+      `${matchSide(match.first)} against ${matchSide(match.second)} — ` +
+      `${state ? state.label.toLowerCase() : `state ${match.state}`}${room}.`;
+
+    detail.append(name, meta);
+    element.append(detail);
+
+    return element;
+  }
+
   window.EventToolTeams = {
     maximumPlayers,
     teamStates,
     memberStates,
+    matchStates,
     byId,
     label,
     row,
+    matchRow,
     emptyList,
     fillMenu,
     fillStates,
