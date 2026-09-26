@@ -38,9 +38,11 @@ public readonly record struct MatchmakingResult(
 /// </summary>
 /// <param name="matchService">Service that persists pairings.</param>
 /// <param name="teamService">Service that owns the teams.</param>
+/// <param name="teamStateService">Service that marks a team as queued or joinable.</param>
 public sealed class EventMatchmakingService(
     EventMatchService matchService,
-    EventTeamService teamService)
+    EventTeamService teamService,
+    EventTeamStateService teamStateService)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<(int Lobby, int MatchType), Queue<int>> waiting = [];
@@ -125,6 +127,16 @@ public sealed class EventMatchmakingService(
             queue.Enqueue(teamIdentifier);
         }
 
+        // The team is marked before the pairing is attempted, because a team that
+        // finds no opponent is still waiting rather than joinable, and the
+        // joinable list is served from another process. It is written outside the
+        // lock for the same reason the pairing is: a database round trip is not
+        // something to hold a queue lock across.
+        await teamStateService.SetAsync(
+            teamIdentifier,
+            EventTeamRegistrationUtils.QueuedState,
+            cancellationToken);
+
         if (opponentIdentifier == 0)
         {
             return new MatchmakingResult(MatchmakingStatus.Waiting, 0, 0);
@@ -134,7 +146,12 @@ public sealed class EventMatchmakingService(
         // not something to hold a queue lock across. If the candidate is no longer
         // eligible the team simply stays queued.
         var opponent = await teamService.FindAsync(opponentIdentifier, cancellationToken);
-        if (opponent is null || !IsReady(opponent) || opponent.LobbyIdentifier != team.LobbyIdentifier)
+        if (opponent is null
+            || !EventTeamRegistrationUtils.IsPairableCandidate(
+                opponent.State,
+                IsReady(opponent),
+                opponent.LobbyIdentifier,
+                team.LobbyIdentifier))
         {
             return new MatchmakingResult(MatchmakingStatus.Waiting, 0, 0);
         }
@@ -197,6 +214,16 @@ public sealed class EventMatchmakingService(
             {
                 matchIdentifier = 0;
             }
+        }
+
+        // A team that leaves the queue is joinable again, so it stops being hidden
+        // from the list the client offers to join. Only a team this queue actually
+        // marked is written back, so a team that was never queued is left alone.
+        var team = await teamService.FindAsync(teamIdentifier, cancellationToken);
+        var releasedState = team is null ? null : EventTeamRegistrationUtils.ReleasedState(team.State);
+        if (releasedState is int state)
+        {
+            await teamStateService.SetAsync(teamIdentifier, state, cancellationToken);
         }
 
         if (matchIdentifier > 0)

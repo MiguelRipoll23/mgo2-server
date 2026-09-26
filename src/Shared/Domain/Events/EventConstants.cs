@@ -42,6 +42,14 @@ public static class EventConstants
     /// <summary>State a team must be in to appear in the joinable list.</summary>
     public const int TeamJoinableState = 1;
 
+    /// <summary>
+    /// State a team holds while it is queued waiting for an opponent. It is
+    /// deliberately not <see cref="TeamJoinableState"/>: a team that has decided
+    /// to play is not up for grabs, and the joinable list is what the client
+    /// offers to join.
+    /// </summary>
+    public const int TeamRegisteredState = 9;
+
     /// <summary>Participant state of a member that has not decided yet.</summary>
     public const int ParticipantPendingState = 1;
 
