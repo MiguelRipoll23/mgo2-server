@@ -251,7 +251,11 @@ public sealed class EventTeamService(IDbContextFactory<Mgo2DatabaseContext> cont
             State = EventConstants.ParticipantPendingState,
             Experience = Math.Max(0, experience),
         });
-        team.Sequence++;
+
+        // The sequence is left alone. It is the serial the members' clients are
+        // holding, and the notification that fills this slot is discarded unless
+        // it carries exactly that one — see EventTeam.Sequence. The roster
+        // changes; the identity the client reconciles it against does not.
         team.UpdatedAt = DateTimeOffset.UtcNow;
 
         await context.SaveChangesAsync(cancellationToken);
@@ -291,7 +295,9 @@ public sealed class EventTeamService(IDbContextFactory<Mgo2DatabaseContext> cont
         }
 
         context.EventTeamMembers.Remove(member);
-        team.Sequence++;
+
+        // Left alone for the same reason a join leaves it alone: the removal is
+        // announced against the serial the remaining members are holding.
         team.UpdatedAt = DateTimeOffset.UtcNow;
         await context.SaveChangesAsync(cancellationToken);
         return EventLeaveOutcome.MemberLeft;

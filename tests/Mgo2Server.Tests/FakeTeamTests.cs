@@ -147,4 +147,25 @@ public sealed class FakeTeamTests
         Assert.Null(service.RemoveTeam(9, "   "));
         Assert.Single(service.ListTeams(9));
     }
+
+    [Fact]
+    public async Task A_roster_or_state_change_leaves_the_serial_the_clients_hold_alone()
+    {
+        var service = CreateService();
+        var team = service.CreateTeam(
+            EventConstants.SurvivalSelector, 9, 1, "TESTERS", "Sim", 1);
+        var listed = team!.BuildSnapshot().Sequence;
+
+        var filled = await service.FillTeamAsync(9, "TESTERS", 3, "Sim", CancellationToken.None);
+        service.SetState(9, "TESTERS", EventConstants.TeamRegisteredState, 0);
+
+        // Every 0x4918 about this team is gated on the u16 in its head matching
+        // the serial the client cached from the reply that listed the team, and
+        // a mismatch is dropped with no dialog. So neither filling the roster nor
+        // moving the team may move the serial: that is what an added player
+        // being invisible looks like from the server side.
+        Assert.Equal(FakeTeamFillOutcome.Filled, filled.Outcome);
+        Assert.Equal(listed, filled.Snapshot!.Sequence);
+        Assert.Equal(listed, team.BuildSnapshot().Sequence);
+    }
 }

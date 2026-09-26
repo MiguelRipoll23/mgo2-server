@@ -54,8 +54,14 @@ public sealed class FakeTeam
     /// </summary>
     public int? ParticipantStateOverride { get; private set; }
 
-    /// <summary>Sequence the client echoes back on roster mutations.</summary>
-    public int Sequence { get; private set; } = 1;
+    /// <summary>
+    /// The serial the client caches for this team and echoes in the head of
+    /// every notification about it. It never moves: a team that existed only in
+    /// memory is announced by the replies that list it, and the only packet that
+    /// moves a client's copy is 0x49A8, which this server does not send. See
+    /// <see cref="EventTeam.Sequence"/>.
+    /// </summary>
+    public int Sequence { get; } = 1;
 
     /// <summary>Character leading the team, which is slot zero.</summary>
     public int OwnerCharacterIdentifier { get; private set; }
@@ -80,7 +86,6 @@ public sealed class FakeTeam
             OwnerCharacterIdentifier = playerIdentifier;
         }
 
-        Sequence++;
         return true;
     }
 
@@ -89,7 +94,6 @@ public sealed class FakeTeam
     public void SetState(int state)
     {
         State = state;
-        Sequence++;
     }
 
     /// <summary>Forces a state on the whole roster, or lets it follow the team.</summary>
@@ -97,7 +101,6 @@ public sealed class FakeTeam
     public void SetParticipantState(int? participantState)
     {
         ParticipantStateOverride = participantState;
-        Sequence++;
     }
 
     /// <summary>Projects the team into the active-game snapshot the client reads.</summary>

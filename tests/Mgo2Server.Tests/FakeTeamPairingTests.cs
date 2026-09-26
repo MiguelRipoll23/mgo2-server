@@ -41,6 +41,24 @@ public sealed class FakeTeamPairingTests
     }
 
     [Fact]
+    public async Task The_row_keeps_the_serial_the_team_was_listed_under()
+    {
+        var teams = CreateFakeTeams();
+        var created = teams.CreateTeam(
+            EventConstants.SurvivalSelector, 9, 1, "TESTERS", "Sim", 1);
+        await teams.FillTeamAsync(9, "TESTERS", 3, "Sim", CancellationToken.None);
+        var listed = created!.BuildSnapshot().Sequence;
+
+        var row = FakeTeamPairingService.BuildRow(created, 9);
+
+        // The team was announced to clients under this serial when it was
+        // listed, and every packet about it afterwards is discarded unless it
+        // carries the same one. A row that moved it would leave a client that
+        // saw the team unable to read anything the pairing sends it.
+        Assert.Equal(listed, row.Sequence);
+    }
+
+    [Fact]
     public void The_row_is_queued_as_a_survival_team_of_its_own_lobby()
     {
         var teams = CreateFakeTeams();

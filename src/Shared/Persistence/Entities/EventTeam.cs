@@ -60,7 +60,19 @@ public sealed class EventTeam
     [Column("state")]
     public int State { get; set; }
 
-    /// <summary>Sequence the client echoes back on roster mutations.</summary>
+    /// <summary>
+    /// The serial of the team's record, which every client caches from the last
+    /// team-record reply and echoes in the head of every later notification.
+    /// <para>
+    /// It is not a revision counter. The client compares the u16 it is given
+    /// against its own copy and discards the packet with <c>-1018</c>, silently
+    /// and with no dialog, when the two differ — so a value that moves here
+    /// without the client being told drops every notification the team is sent
+    /// from that point on, the roster additions included. The one packet that
+    /// moves a client's copy is <c>0x49A8</c>, which carries the current serial
+    /// in its head and the new one in its body, and nothing here sends it.
+    /// </para>
+    /// </summary>
     [Column("sequence")]
     public int Sequence { get; set; }
 

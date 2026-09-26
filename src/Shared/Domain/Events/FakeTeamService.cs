@@ -331,7 +331,11 @@ public sealed class FakeTeamService(IDbContextFactory<Mgo2DatabaseContext> conte
             return new FakeTeamFillResult(FakeTeamFillOutcome.TeamFull, null, [], team.Identifier, false);
         }
 
-        team.Sequence++;
+        // The sequence is not advanced for the roster change. The clients
+        // holding this team cached its serial from the reply that created it,
+        // and every 0x4918 is discarded unless it carries that same serial, so
+        // moving it here is what makes an added player invisible. See
+        // EventTeam.Sequence.
         team.UpdatedAt = DateTimeOffset.UtcNow;
         await context.SaveChangesAsync(cancellationToken);
 
