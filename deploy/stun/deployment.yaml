@@ -1,3 +1,18 @@
+# The port-check responder, and the one workload in this folder that is not behind
+# a load balancer. The reason is in deploy/README.md, "Source addresses and the
+# load balancer"; the short version is that MAPPED-ADDRESS is how the console
+# learns its own public address, and a proxying load balancer makes every player
+# look like the load balancer, which breaks peer to peer silently.
+#
+# Before the first sync, label the node that holds the public address the console
+# dials. Until it is labelled this pod stays Pending, and a Pending port check
+# looks exactly like a broken one:
+#
+#   kubectl label node <node> mgo2.io/stun-node=true
+#
+# Then point the console's DNS at that node's public IP. There is no load
+# balancer here to hand out an address, and no health check to fall over to
+# another node: see the README section before changing anything about this file.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,16 +28,51 @@ spec:
   selector:
     matchLabels:
       app: mgo2-stun
+  # Recreate, not RollingUpdate. This pod owns the host's addresses and its two
+  # ports, so a surge would start the replacement while the old pod still holds
+  # 3478 and the new one would fail to bind. A rolling update of a host-networked
+  # responder cannot succeed; the gap between the two is the price of the only
+  # arrangement in which the console is told its true mapped address.
   strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
-    type: RollingUpdate
+    type: Recreate
   template:
     metadata:
       labels:
         app: mgo2-stun
     spec:
+      # The responder has to see the console's real public address and port, and
+      # has to answer from the address the console dialled. A proxying L4 load
+      # balancer destroys both: it hands the request over on a port of its own,
+      # so MAPPED-ADDRESS names the load balancer instead of the player, every
+      # player is given the same address, and peer to peer fails with no error.
+      # docs/STUN.md traces that failure as the "Adjusting port settings" hang.
+      # On the host's network there is no such hop: the datagram arrives with
+      # the console's own address and port, which is the whole point of a port
+      # check. See deploy/README.md, "Source addresses and the load balancer".
+      hostNetwork: true
+      # With the host's network, `ClusterFirst` would resolve through the pod's
+      # own resolv.conf and miss the cluster DNS entirely.
+      dnsPolicy: ClusterFirstWithHostNet
+      # The node this lands on is the node whose public IP the console dials, so
+      # it is chosen by an operator rather than by the scheduler. Label the node
+      # that holds the public address and the responder's addresses:
+      #   kubectl label node <node> mgo2.io/stun-node=true
+      # A rollout onto a different node changes the address the console is told,
+      # so the DNS record and STUN_SECONDARY_ADDRESS move with it. See
+      # deploy/README.md.
+      nodeSelector:
+        mgo2.io/stun-node: "true"
+      # The console is told this address, so it is the node's public one and not
+      # anything the pod can discover about itself. It is read from the same
+      # ConfigMap as every other setting, which is why changing it rolls the
+      # responder (see deploy/README.md, "Changing the ConfigMap").
+      #
+      # STUN_SECONDARY_ADDRESS is the second address a change-address request is
+      # answered from, and without one a restricted-cone NAT is read as a
+      # full-cone one. It has to be a second address of this same node:
+      #   ip addr add <second-public-ip>/32 dev <interface>
+      # which does not survive a reboot, so it wants a DaemonSet or a node
+      # bootstrap script rather than a manifest.
       containers:
       - env:
         - name: STUN_PORT
@@ -32,10 +82,25 @@ spec:
         imagePullPolicy: Always
         name: stun
         ports:
+        # On the host's network these are the node's ports, and they must be free
+        # on it. Nothing else may bind 3478 or 3479 on this node.
         - containerPort: 3478
+          hostPort: 3478
           protocol: UDP
         - containerPort: 3479
+          hostPort: 3479
           protocol: UDP
+        # A datagram in flight when the pod is asked to stop is lost, and the
+        # console's port check fails on it. The port check is four attempts with
+        # a growing timeout (docs/STUN.md, "Classification"), so a lost answer is
+        # retried, but there is no reason to lose one deliberately.
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 5
         resources: {}
         securityContext:
           allowPrivilegeEscalation: false
@@ -56,10 +121,11 @@ spec:
         envFrom:
         - secretRef:
             name: mgo2-secrets
-      dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
+      # The preStop sleep, plus room for the sockets to close. Nothing drains
+      # here: a STUN exchange is a single datagram each way.
       terminationGracePeriodSeconds: 30
       volumes:
       - name: appsettings

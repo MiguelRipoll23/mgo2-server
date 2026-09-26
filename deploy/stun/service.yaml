@@ -1,3 +1,26 @@
+# The port check is the one service that must not sit behind a load balancer.
+#
+# A proxying L4 load balancer hands the datagram to the responder on a port of
+# its own, so the address the responder observes as the console's is the load
+# balancer's. Every player is then given the same mapped address and peer to
+# peer fails, silently: the console sits on "Adjusting port settings" with no
+# error and no timeout, which docs/STUN.md traces. Setting
+# externalTrafficPolicy: Local does not rescue it either, because the reply
+# still leaves from the pod rather than from the address the console dialled,
+# and the console identifies the responder by where an answer came from.
+#
+# So the responder runs on a node's own network (hostNetwork, see
+# deployment.yaml) and this Service is headless: no virtual IP, no proxying, and
+# DNS answers with the endpoint address, which on a host-networked pod is the
+# node's. The console is pointed at that node's public IP by a DNS A record,
+# which is the only thing that can carry a real address onto the wire.
+#
+# There is deliberately no healthCheckNodePort, because there is no load
+# balancer left to ask. Node failure is a reschedule onto another labelled node,
+# and that changes the address the console is told, so the A record has to change
+# with it: one responder, one address, and no failover that is invisible. A
+# second responder needs a second address and a second A record. See
+# deploy/README.md, "Source addresses and the load balancer".
 apiVersion: v1
 kind: Service
 metadata:
@@ -9,6 +32,7 @@ spec:
   ipFamilies:
   - IPv4
   ipFamilyPolicy: SingleStack
+  clusterIP: None
   ports:
   - name: stun
     port: 3478
@@ -21,4 +45,4 @@ spec:
   selector:
     app: mgo2-stun
   sessionAffinity: None
-  type: LoadBalancer
+  type: ClusterIP
