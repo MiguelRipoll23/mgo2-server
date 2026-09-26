@@ -7,30 +7,30 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.Http.Discord;
 
 /// <summary>
-/// Sends a request to add fake players to a team to the one lobby that holds it.
+/// Sends a request to create a team that exists only in a lobby's memory to the
+/// one lobby that will show it.
 /// <para>
-/// The command is answered by the HTTP API but the players have to exist in the
-/// lobby that holds the team, and the two are separate processes. This is the
-/// step in between: it turns the lobby a moderator named into the identifier
-/// the coordination registry is keyed by, and hands the request down that
-/// lobby's open stream.
+/// The command is answered by the HTTP API but the team has to exist in the
+/// lobby that lists it, and the two are separate processes. This is the step in
+/// between: it turns the lobby a moderator named into the identifier the
+/// coordination registry is keyed by, and hands the request down that lobby's
+/// open stream.
 /// </para>
 /// <para>
-/// The team is the one the request names, whether it is a real row a player
-/// formed or an in-memory team the fake-team command created. The players
-/// themselves are never rows in the accounts table — they live in the lobby's
-/// memory and go away with it.
+/// Nothing is written: the team lives in the lobby's memory and goes away with
+/// it, which is what makes it a testing device rather than a second source of
+/// teams.
 /// </para>
 /// </summary>
 /// <param name="registry">Registry of the connected lobbies.</param>
 /// <param name="lobbyService">Service that resolves the lobby a mode names.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class FakePlayerDispatchService(
+public sealed class FakeTeamDispatchService(
     LobbyConnectionRegistryService registry,
     LobbyService lobbyService,
-    ILogger<FakePlayerDispatchService> logger)
+    ILogger<FakeTeamDispatchService> logger)
 {
-    /// <summary>How many fake players one request may ask for.</summary>
+    /// <summary>How many players one fake team may hold, leader included.</summary>
     public const int MaximumCount = EventConstants.TeamMemberLimit;
 
     /// <summary>Why a request could not be carried out.</summary>
@@ -42,9 +42,6 @@ public sealed class FakePlayerDispatchService(
         /// <summary>The count was outside what a team can hold.</summary>
         InvalidCount,
 
-        /// <summary>The request named no team to fill.</summary>
-        NoTeamName,
-
         /// <summary>No lobby of that mode exists.</summary>
         NoSuchLobby,
 
@@ -52,12 +49,12 @@ public sealed class FakePlayerDispatchService(
         LobbyOffline,
     }
 
-    /// <summary>Carries a request to the lobby that will add the players.</summary>
-    /// <param name="mode">Lobby mode the team is in.</param>
-    /// <param name="count">How many players to add.</param>
-    /// <param name="teamName">Name of the existing team to fill.</param>
-    /// <param name="playerPrefix">Name the players are shown with, or blank.</param>
+    /// <summary>Carries a request to the lobby that will hold the team.</summary>
     /// <param name="outcome">What happened.</param>
+    /// <param name="mode">Lobby mode the team is created in.</param>
+    /// <param name="count">How many players the team holds.</param>
+    /// <param name="teamName">Name the team is given, or blank for a composed one.</param>
+    /// <param name="playerPrefix">Name the players are shown with, or blank.</param>
     /// <param name="lobbyIdentifier">Lobby the request went to, when it went anywhere.</param>
     public readonly record struct Result(
         DispatchOutcome Outcome,
@@ -67,12 +64,10 @@ public sealed class FakePlayerDispatchService(
         string PlayerPrefix,
         int LobbyIdentifier);
 
-    /// <summary>
-    /// Routes a request to the lobby that runs the named mode.
-    /// </summary>
-    /// <param name="mode">Lobby mode the players are put into.</param>
-    /// <param name="count">How many players to add.</param>
-    /// <param name="teamName">Name of the existing team to fill.</param>
+    /// <summary>Routes a request to the lobby that runs the named mode.</summary>
+    /// <param name="mode">Lobby mode the team is created in.</param>
+    /// <param name="count">How many players the team holds, leader included.</param>
+    /// <param name="teamName">Name the team is given, or blank for a composed one.</param>
     /// <param name="playerPrefix">Name the players are shown with, or blank.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<Result> DispatchAsync(
@@ -87,14 +82,6 @@ public sealed class FakePlayerDispatchService(
             return new Result(DispatchOutcome.InvalidCount, mode, count, teamName, playerPrefix, 0);
         }
 
-        // A request with no team has nothing to fill, and the lobby would refuse
-        // it just the same; refusing it here is what lets the moderator be told
-        // which option was missing rather than only that nothing happened.
-        if (string.IsNullOrWhiteSpace(teamName))
-        {
-            return new Result(DispatchOutcome.NoTeamName, mode, count, teamName, playerPrefix, 0);
-        }
-
         var lobby = await ResolveLobbyAsync(mode, cancellationToken);
         if (lobby is null)
         {
@@ -103,7 +90,7 @@ public sealed class FakePlayerDispatchService(
 
         var message = new HttpEvent
         {
-            FakePlayers = new FakePlayerRequest
+            FakeTeam = new FakeTeamRequest
             {
                 LobbySubtype = mode,
                 Count = count,
@@ -115,16 +102,14 @@ public sealed class FakePlayerDispatchService(
         if (!registry.SendTo(lobby.Identifier, message))
         {
             logger.LogWarning(
-                "Lobby {LobbyIdentifier} has no open coordination stream, so its fake players were not added",
+                "Lobby {LobbyIdentifier} has no open coordination stream, so its fake team was not created",
                 lobby.Identifier);
             return new Result(DispatchOutcome.LobbyOffline, mode, count, teamName, playerPrefix, lobby.Identifier);
         }
 
         logger.LogInformation(
-            "Asked lobby {LobbyIdentifier} to add {Count} fake players to team {TeamName} in mode {Mode}",
+            "Asked lobby {LobbyIdentifier} to create an in-memory team in mode {Mode}",
             lobby.Identifier,
-            count,
-            teamName,
             mode);
 
         return new Result(DispatchOutcome.Sent, mode, count, teamName, playerPrefix, lobby.Identifier);
@@ -133,8 +118,10 @@ public sealed class FakePlayerDispatchService(
     /// <summary>
     /// Finds the running lobby of a mode. Several lobbies may share a mode, so
     /// the first is taken rather than insisting a deployment only ever runs
-    /// one: the players go to a lobby that exists rather than to none.
+    /// one. The team goes to a lobby that exists rather than to none.
     /// </summary>
+    /// <param name="mode">Lobby mode to resolve.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
     private async Task<LobbyResponse?> ResolveLobbyAsync(int mode, CancellationToken cancellationToken)
     {
         if (!EventConstants.IsEventSelector(mode))

@@ -51,25 +51,51 @@ message HttpEvent {
   oneof event {
     FlashNewsBroadcast flash_news = 1;
     FakePlayerRequest fake_players = 2;
+    FakeTeamRequest fake_team = 3;
   }
 }
 
-// A request to fill an event with players who are not really there.
+// A request to add players who are not really there to a team that already
+// exists in a lobby. The team may be a real row a player formed, or an
+// in-memory team a FakeTeamRequest created; the name is what tells the two
+// apart, because the lobby resolves it against its own teams first and then
+// against the rows.
 //
 // The characters are named here and nowhere else: the lobby holds them in
 // memory and never gives them a row in the accounts table, so they can play an
-// event and leave no trace of having existed. The team they form is a real row,
-// because matchmaking pairs teams and the pairing is what a real client has to
-// be able to see.
+// event and leave no trace of having existed.
 //
 // The lobby is named by its mode rather than by its identifier because the
 // coordinator does not know the identifiers; the lobby that answers is the one
 // whose mode matches.
 message FakePlayerRequest {
-  // Mode of the lobby the players are put into: 4 Survival, 3 Tournament or
+  // Mode of the lobby the team is in: 4 Survival, 3 Tournament or
   // 10 Tournament registration.
   int32 lobby_subtype = 1;
-  // How many players to create.
+  // How many players to add.
+  int32 count = 2;
+  // Name of the existing team the players join. It is required: a request that
+  // names no team has nothing to fill.
+  string team_name = 3;
+  // Name the players are shown with, when one was asked for. A blank one lets
+  // the lobby compose a name per player.
+  string player_prefix = 4;
+}
+
+// A request to create a team that exists only in the lobby's memory, for
+// testing a team list or a roster without writing a row. Its players are fake
+// in the same way as a FakePlayerRequest's: no account, no character, gone with
+// the process. Unlike a FakePlayerRequest, nothing here names an existing team;
+// the team is the thing being created.
+//
+// The lobby is named by its mode rather than by its identifier because the
+// coordinator does not know the identifiers; the lobby that answers is the one
+// whose mode matches.
+message FakeTeamRequest {
+  // Mode of the lobby the team is created in: 4 Survival, 3 Tournament or
+  // 10 Tournament registration.
+  int32 lobby_subtype = 1;
+  // How many players the team holds, leader included.
   int32 count = 2;
   // Display name the team is given, when one was asked for.
   string team_name = 3;

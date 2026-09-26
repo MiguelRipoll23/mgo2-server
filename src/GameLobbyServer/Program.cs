@@ -27,7 +27,9 @@ builder.Services.AddCommandHandlers();
 // the publisher the lobby tracker reports a player through. Replacing rather
 // than adding keeps the tracker and the stream on the same instance.
 builder.Services.AddSingleton<FlashNewsService>();
+builder.Services.AddSingleton<LobbyIdentityService>();
 builder.Services.AddSingleton<FakePlayerRequestHandlerService>();
+builder.Services.AddSingleton<FakeTeamRequestHandlerService>();
 builder.Services.AddSingleton<LobbyCoordinationClientService>();
 builder.Services.Replace(ServiceDescriptor.Singleton<ILobbyPresencePublisher>(
     provider => provider.GetRequiredService<LobbyCoordinationClientService>()));

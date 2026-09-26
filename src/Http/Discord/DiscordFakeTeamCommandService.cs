@@ -8,30 +8,25 @@ using static Mgo2Server.Http.Discord.DiscordInteractionOptionUtils;
 namespace Mgo2Server.Http.Discord;
 
 /// <summary>
-/// Runs the staff command that adds fake players to a team.
+/// Runs the staff command that creates a team which exists only in a lobby's
+/// memory.
 /// <para>
-/// A Survival team with one player in it cannot be tested: the team forms, it
-/// enters, and then it waits for an opponent that nobody is going to join. This
-/// command fills the team a player is already sitting in, so the roster screens
-/// and the matchmaking that follow are exercised with a real team.
-/// </para>
-/// <para>
-/// The team must already exist — a real team a player formed, or an in-memory
-/// team the fake-team command created. Filling a real team is what tells the
-/// game: every slot the command adds is pushed to the team's clients, so a
-/// leader holding the roster open sees the players arrive instead of the team
-/// they cached, which is themselves and nobody else.
+/// A team list or a roster screen cannot be tested without a team to look at,
+/// and forming one by hand takes a real client and real players. This command
+/// creates the team in the lobby itself: it is listed, it can be filled by
+/// fake-player, and it is gone when the lobby restarts, so nothing a moderator
+/// makes here can be mistaken for a team somebody formed.
 /// </para>
 /// </summary>
 /// <param name="responder">Service that answers the interactions.</param>
 /// <param name="dispatch">Service that carries the request to the lobby.</param>
 /// <param name="options">Options of the integration.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class DiscordFakePlayerCommandService(
+public sealed class DiscordFakeTeamCommandService(
     IDiscordInteractionResponder responder,
-    FakePlayerDispatchService dispatch,
+    FakeTeamDispatchService dispatch,
     IOptions<DiscordOptions> options,
-    ILogger<DiscordFakePlayerCommandService> logger)
+    ILogger<DiscordFakeTeamCommandService> logger)
 {
     /// <summary>Interaction of a command a member used.</summary>
     private const int ApplicationCommandInteractionType = 2;
@@ -39,11 +34,17 @@ public sealed class DiscordFakePlayerCommandService(
     /// <summary>Option naming the lobby.</summary>
     private const string ModeOptionName = "mode";
 
-    /// <summary>Option naming how many players to add.</summary>
+    /// <summary>Option naming how many players the team holds.</summary>
     private const string CountOptionName = "count";
 
-    /// <summary>Option naming the team the players are put in.</summary>
+    /// <summary>Option naming the team.</summary>
     private const string TeamOptionName = "team";
+
+    /// <summary>Option naming the players.</summary>
+    private const string PrefixOptionName = "prefix";
+
+    /// <summary>Players a team is created with when none are asked for.</summary>
+    private const int DefaultCount = 1;
 
     private readonly DiscordOptions options = options.Value;
 
@@ -60,7 +61,7 @@ public sealed class DiscordFakePlayerCommandService(
         {
             logger.LogWarning(
                 "The {Command} command arrived without a way to answer it",
-                DiscordOptions.FakePlayerCommandName);
+                DiscordOptions.FakeTeamCommandName);
             return;
         }
 
@@ -69,7 +70,7 @@ public sealed class DiscordFakePlayerCommandService(
         {
             logger.LogWarning(
                 "A member without the moderator or manager role used the {Command} command",
-                DiscordOptions.FakePlayerCommandName);
+                DiscordOptions.FakeTeamCommandName);
             await ReplyAsync(
                 interactionIdentifier,
                 interactionToken,
@@ -91,39 +92,32 @@ public sealed class DiscordFakePlayerCommandService(
             return "The lobby is required: Survival or Tournament.";
         }
 
-        // The count is bounded by the team rather than by the option: a request
-        // for more players than a roster holds would be quietly truncated, and a
-        // moderator who asked for eight and got six would be looking for two
-        // that were never created.
-        var count = BoundedNumber(interaction, CountOptionName, 1, FakePlayerDispatchService.MaximumCount);
-        if (count is null)
+        // A team is created with a leader even when no count is given, because a
+        // roster with no slot at all is not a team any screen can show.
+        var count = Number(interaction, CountOptionName) ?? DefaultCount;
+        if (count < 1 || count > FakeTeamDispatchService.MaximumCount)
         {
-            return $"Say how many players to add, from 1 to {FakePlayerDispatchService.MaximumCount}.";
+            return $"Ask for between 1 and {FakeTeamDispatchService.MaximumCount} players, "
+                + "or leave it out for a leader.";
         }
 
-        // The team is the whole request: a team that does not exist cannot be
-        // filled, so the name is asked for rather than composed.
         var teamName = Text(interaction, TeamOptionName)?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(teamName))
-        {
-            return "Say which team to add the players to. The team must already exist.";
-        }
+        var prefix = Text(interaction, PrefixOptionName)?.Trim() ?? string.Empty;
+        var result = await dispatch.DispatchAsync(mode, count, teamName, prefix, cancellationToken);
 
-        var result = await dispatch.DispatchAsync(mode, count.Value, teamName, string.Empty, cancellationToken);
-
+        var displayName = string.IsNullOrWhiteSpace(teamName) ? "a made-up name" : $"**{teamName}**";
         return result.Outcome switch
         {
-            FakePlayerDispatchService.DispatchOutcome.Sent =>
-                $"Adding {count} fake {(count == 1 ? "player" : "players")} to "
-                + $"**{teamName}** in {EventScheduleService.ModeName(mode)}.",
-            FakePlayerDispatchService.DispatchOutcome.InvalidCount =>
-                $"Ask for between 1 and {FakePlayerDispatchService.MaximumCount} players.",
-            FakePlayerDispatchService.DispatchOutcome.NoTeamName =>
-                "Say which team to add the players to. The team must already exist.",
-            FakePlayerDispatchService.DispatchOutcome.NoSuchLobby =>
+            FakeTeamDispatchService.DispatchOutcome.Sent =>
+                $"Creating an in-memory team called {displayName} with "
+                + $"{count} {(count == 1 ? "player" : "players")} in "
+                + $"{EventScheduleService.ModeName(mode)}.",
+            FakeTeamDispatchService.DispatchOutcome.InvalidCount =>
+                $"Ask for between 1 and {FakeTeamDispatchService.MaximumCount} players.",
+            FakeTeamDispatchService.DispatchOutcome.NoSuchLobby =>
                 $"There is no {EventScheduleService.ModeName(mode)} lobby running.",
             _ =>
-                $"The {EventScheduleService.ModeName(mode)} lobby is not connected, so nobody was added. "
+                $"The {EventScheduleService.ModeName(mode)} lobby is not connected, so no team was created. "
                 + "Try again in a moment.",
         };
     }
@@ -160,10 +154,10 @@ public sealed class DiscordFakePlayerCommandService(
 
     /// <summary>Reports whether the interaction carries this command.</summary>
     /// <param name="interaction">Interaction to look at.</param>
-    public static bool IsFakePlayerCommand(Contracts.DiscordInteraction interaction) =>
+    public static bool IsFakeTeamCommand(Contracts.DiscordInteraction interaction) =>
         interaction.Type == ApplicationCommandInteractionType &&
         string.Equals(
             interaction.Data?.Name,
-            DiscordOptions.FakePlayerCommandName,
+            DiscordOptions.FakeTeamCommandName,
             StringComparison.OrdinalIgnoreCase);
 }

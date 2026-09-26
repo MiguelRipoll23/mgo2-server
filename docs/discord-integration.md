@@ -85,7 +85,8 @@ role:
 | `/flash <message>` | Relays a ticker announcement to every lobby. |
 | `/message <body>` | Sends an official channel message. |
 | `/event <action> …` | Schedules, changes, lists or withdraws a Survival or Tournament event. |
-| `/fake-player <mode> <count> [team]` | Fills a lobby with players that exist only in memory. |
+| `/fake-player <mode> <count> <team>` | Adds players that exist only in memory to an existing team. |
+| `/fake-team <mode> [team] [count] [prefix]` | Creates a team that exists only in a lobby's memory. |
 
 #### `/event`
 
@@ -113,29 +114,42 @@ carries, but the number is computed by the server and never asked for. The
 
 #### `/fake-player`
 
-A Survival lobby with one player in it cannot be tested: the team forms, it
+A Survival team with one player in it cannot be tested: the team forms, it
 enters, and it then waits for an opponent nobody is going to join. This command
-puts enough players in the lobby for that to actually happen.
+adds enough players to the team for that to actually happen.
 
-The players are the one part of an event that is **not** a row. They have no
+The team is the one the `team` option names, and it **must already exist** — a
+real team a player formed in the game, or an in-memory team `/fake-team` made.
+The players are the one part of an event that is **not** a row: they have no
 account, no character, and nothing anybody could log in as, and they are gone
 when the lobby restarts. Their identifiers are handed out from a range no
-character row can occupy, and the roster is held in the lobby's memory
-(`FakePlayerService`) rather than in the database.
+character row can occupy, so a fake identifier in a roster is never mistaken for
+a real one.
 
-Their **team is a real row**, and that is the deliberate half: matchmaking pairs
-teams, the battle list is built from them, and the host lease is drawn against a
-match between them. A team that existed only in memory would be a pairing no
-real client could see or be drawn against. The team is created already entered
-and already queued, because there is nobody to press the button that enters a
-team and a fake team that waited for one would look exactly like the bug the
-command exists to test for.
+The added slots are pushed to the team's own clients as each is filled, which is
+what the command exists to fix: a leader holding the roster screen open sees the
+players arrive instead of the team they cached, which was themselves and nobody
+else. A real team is written as roster slots the client would have filled by
+joining, already ready, because there is nobody to press the decision button;
+an in-memory team is extended where it lives. A real team is then reconciled in
+the matchmaking queue, because a roster change can be what makes a team eligible.
 
-The request travels over the coordination stream the lobbies already hold, as a
-new `FakePlayerRequest` arm of `HttpEvent`. It names a lobby **mode** rather than
-an identifier, because the HTTP API does not know the lobby identifiers; the
-lobby whose own game type matches answers it, and one asked for a mode it is not
-running refuses rather than filling the wrong event.
+#### `/fake-team`
+
+Tests a team list or a roster without a real client forming anything. It creates
+a team that lives only in the lobby's memory (`FakeTeamService`): the same shape
+the team screens read, listed alongside the real teams and gone when the lobby
+restarts, so nothing it makes can be mistaken for a team somebody formed. The
+`count` is how many players it holds, leader included, and the `prefix` is what
+they are named with; both are optional, and a team without them is one leader
+named `Fake 1` under a made-up name.
+
+Both requests travel over the coordination stream the lobbies already hold, as
+new arms of `HttpEvent` (`FakePlayerRequest` and `FakeTeamRequest`). They name a
+lobby **mode** rather than an identifier, because the HTTP API does not know the
+lobby identifiers; the lobby whose own game type matches answers it, and one
+asked for a mode it is not running refuses rather than acting on the wrong
+lobby.
 
 ## Discord
 
@@ -181,9 +195,9 @@ token.
    `DISCORD_GUILD_ID`.
 3. Set `DISCORD_MODERATOR_ROLE_ID` and `DISCORD_MANAGER_ROLE_ID` to the roles
    that may use the staff commands. Without them nobody may use them.
-4. Start the deployment. The API registers `/flash`, `/message`, `/event` and
-   `/fake-player` in the guild, connects the bot to the gateway and finds or
-   creates the channel of the player count.
+4. Start the deployment. The API registers `/flash`, `/message`, `/event`,
+   `/fake-player` and `/fake-team` in the guild, connects the bot to the gateway
+   and finds or creates the channel of the player count.
 
 Both commands take one required option — `/flash` a `message`, `/message` a
 `body` — and are registered per guild, so they are available immediately instead

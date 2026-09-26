@@ -1,14 +1,12 @@
 using Mgo2Server.Shared.Domain.Events;
-using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.InternalGrpc.Contracts;
-using Mgo2Server.Shared.Options;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameLobbyServer.Coordination;
 
 /// <summary>
-/// Acts on the coordinator's request to fill this lobby with fake players.
+/// Acts on the coordinator's request to add fake players to a team in this
+/// lobby, and tells the team's clients about every slot it filled.
 /// <para>
 /// The request names a lobby mode rather than an identifier because the
 /// coordinator does not know this lobby's identifier. A lobby asked for a mode
@@ -17,35 +15,34 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 /// bracket it does not belong to.
 /// </para>
 /// <para>
-/// The players are created already entered into the open event, because there is
-/// nobody to press the button that enters a team, and a fake team that waited
-/// for one would look exactly like the bug the command exists to test for.
+/// The team is the one the request names, whether it is a real row a player
+/// formed or an in-memory team a fake-team request created. The players go in
+/// already ready, because there is nobody to press the decision button — and the
+/// roster is pushed to the team's sessions afterwards, because a client that is
+/// holding the team open otherwise shows the roster it cached, which is the
+/// leader and no players.
 /// </para>
 /// </summary>
-/// <param name="fakePlayerService">Service that holds the players.</param>
-/// <param name="scheduleService">Service that says which event is open.</param>
-/// <param name="lobbyService">Service that knows this lobby's own row.</param>
-/// <param name="gameTypeService">Service that resolves the configured game type.</param>
-/// <param name="options">Options that name this lobby.</param>
+/// <param name="fakeTeamService">Service that holds the fake teams and players.</param>
+/// <param name="identityService">Service that knows this lobby's own mode and row.</param>
+/// <param name="pushService">Service that tells the team's clients.</param>
+/// <param name="matchmakingService">Service that re-queues a real team that changed.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class FakePlayerRequestHandlerService(
-    FakePlayerService fakePlayerService,
-    EventScheduleService scheduleService,
-    LobbyService lobbyService,
-    LobbyGameTypeService gameTypeService,
-    IOptions<LobbyOptions> options,
+    FakeTeamService fakeTeamService,
+    LobbyIdentityService identityService,
+    EventTeamPushService pushService,
+    EventMatchmakingService matchmakingService,
     ILogger<FakePlayerRequestHandlerService> logger)
 {
-    private readonly LobbyOptions options = options.Value;
-
-    /// <summary>Creates the players a coordinator request asked for.</summary>
+    /// <summary>Adds the players a coordinator request asked for.</summary>
     /// <param name="request">Request the coordinator sent.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task HandleAsync(
         FakePlayerRequest request,
         CancellationToken cancellationToken)
     {
-        var mode = await ResolveOwnModeAsync(cancellationToken);
+        var mode = await identityService.ResolveModeAsync(cancellationToken);
         if (mode is null || mode.Value != request.LobbySubtype)
         {
             logger.LogInformation(
@@ -55,94 +52,78 @@ public sealed class FakePlayerRequestHandlerService(
             return;
         }
 
-        if (request.Count < 1 || request.Count > FakePlayerService.MaximumPerTeam)
+        if (request.Count < 1 || request.Count > FakeTeamService.MaximumPerTeam)
         {
             logger.LogWarning(
                 "A fake player request asked for {Count} players, which is outside 1..{Maximum}; refused",
                 request.Count,
-                FakePlayerService.MaximumPerTeam);
+                FakeTeamService.MaximumPerTeam);
             return;
         }
 
-        // The players join whichever event is open, so an event nobody opened is
-        // a request that cannot be placed rather than one to guess at. Several
-        // may be open at once, and the oldest is the one a player joining now
-        // would be put into, because that is the order the lobby shows them in.
-        var open = await scheduleService.ListPublishedAsync(mode.Value, cancellationToken);
-        if (open.Count == 0)
+        if (string.IsNullOrWhiteSpace(request.TeamName))
         {
-            logger.LogInformation(
-                "A fake player request arrived while no {Mode} event was open; refused",
-                EventScheduleService.ModeName(mode.Value));
+            logger.LogWarning(
+                "A fake player request named no team, so there was nothing to fill; refused");
             return;
         }
 
-        var schedule = open[0];
-
-        var lobbyIdentifier = await ResolveOwnIdentifierAsync(mode.Value, cancellationToken);
+        var lobbyIdentifier = await identityService.ResolveIdentifierAsync(mode.Value, cancellationToken);
         if (lobbyIdentifier <= 0)
         {
             logger.LogWarning("This lobby's own row could not be found; no fake players were created");
             return;
         }
 
-        var team = await fakePlayerService.CreateTeamAsync(
-            mode.Value,
+        var result = await fakeTeamService.FillTeamAsync(
             lobbyIdentifier,
-            schedule.Identifier,
-            request.Count,
             request.TeamName,
+            request.Count,
             request.PlayerPrefix,
             cancellationToken);
 
-        if (team is null)
+        switch (result.Outcome)
         {
-            logger.LogWarning("A fake player request could not be written; refused");
-            return;
+            case FakeTeamFillOutcome.TeamNotFound:
+                logger.LogInformation(
+                    "No team named \"{TeamName}\" is in lobby {LobbyIdentifier}; refused",
+                    request.TeamName,
+                    lobbyIdentifier);
+                return;
+
+            case FakeTeamFillOutcome.TeamFull:
+                logger.LogInformation(
+                    "Team {TeamIdentifier} has no free slot; refused",
+                    result.TeamIdentifier);
+                return;
+        }
+
+        // The push is what makes the roster appear: a client holding the team
+        // open is told about each filled slot rather than left with the cached
+        // leader, and the team's own members are the recipients.
+        var snapshot = result.Snapshot!;
+        foreach (var slot in result.AddedSlots)
+        {
+            await pushService.PushParticipantAddedAsync(
+                snapshot,
+                slot,
+                excludedSession: null,
+                cancellationToken);
         }
 
         logger.LogInformation(
-            "Created team {TeamName} with {Count} fake players for event {EventIdentifier} in lobby {LobbyIdentifier}",
-            team.Name,
-            request.Count,
-            schedule.Identifier,
+            "Added {Count} fake players to team {TeamName} ({TeamIdentifier}) in lobby {LobbyIdentifier}",
+            result.AddedSlots.Count,
+            snapshot.Name,
+            result.TeamIdentifier,
             lobbyIdentifier);
-    }
 
-    /// <summary>
-    /// Resolves the game type this lobby was configured with, which is the mode
-    /// a request has to name for this lobby to answer it.
-    /// </summary>
-    private async Task<int?> ResolveOwnModeAsync(CancellationToken cancellationToken)
-    {
-        try
+        if (!result.InMemory)
         {
-            var gameType = await gameTypeService.ResolveAsync(options.Subtype, cancellationToken);
-            return gameType.Identifier;
+            // A real team's roster changed, so a team that is already queued is
+            // re-checked: the new members are ready, and a team that was not
+            // eligible may now be.
+            await matchmakingService.ReconcileAsync(result.TeamIdentifier, cancellationToken);
         }
-        catch (InvalidOperationException exception)
-        {
-            // The lobby's own configuration is broken, which is worth saying
-            // once and then refusing rather than throwing out of the stream loop.
-            logger.LogWarning(
-                "This lobby's game type could not be resolved: {Reason}",
-                exception.Message);
-            return null;
-        }
-    }
-
-    /// <summary>Finds the identifier of the lobby row this process registered.</summary>
-    private async Task<int> ResolveOwnIdentifierAsync(int mode, CancellationToken cancellationToken)
-    {
-        var lobbies = await lobbyService.FindActiveGameLobbiesAsync(cancellationToken);
-        foreach (var lobby in lobbies)
-        {
-            if (lobby.SubtypeIdentifier == mode)
-            {
-                return lobby.Identifier;
-            }
-        }
-
-        return 0;
     }
 }

@@ -59,10 +59,10 @@ public sealed class EventServiceRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // The schedule service took a dependency on the name service when events
-        // became addressable by name, and the fake players are resolved by the
-        // coordination handler on a lobby that has an event to put them in.
+        // became addressable by name, and the fake teams are resolved by the
+        // coordination handlers on a lobby that holds the team they act on.
         Assert.NotNull(provider.GetRequiredService<EventScheduleNameService>());
         Assert.NotNull(provider.GetRequiredService<EventScheduleService>());
-        Assert.NotNull(provider.GetRequiredService<FakePlayerService>());
+        Assert.NotNull(provider.GetRequiredService<FakeTeamService>());
     }
 }

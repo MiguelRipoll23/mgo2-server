@@ -21,8 +21,11 @@ public sealed class DiscordOptions
     /// <summary>Name of the command the moderators schedule events with.</summary>
     public const string ScheduleCommandName = "event";
 
-    /// <summary>Name of the command the moderators fill an event with.</summary>
+    /// <summary>Name of the command the moderators fill an existing team with.</summary>
     public const string FakePlayerCommandName = "fake-player";
+
+    /// <summary>Name of the command the moderators create an in-memory team with.</summary>
+    public const string FakeTeamCommandName = "fake-team";
 
     /// <summary>Gateway the client connects to by default.</summary>
     public const string DefaultGatewayUrl = "wss://gateway.discord.gg/?v=10&encoding=json";

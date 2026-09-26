@@ -141,7 +141,7 @@ public sealed partial class DiscordRestClientService
         var command = new
         {
             name = DiscordOptions.FakePlayerCommandName,
-            description = "Fills a Survival or Tournament lobby with players who are only in memory.",
+            description = "Adds players that exist only in memory to a team in a lobby.",
             options = new object[]
             {
                 new
@@ -160,7 +160,7 @@ public sealed partial class DiscordRestClientService
                 {
                     type = IntegerOptionType,
                     name = "count",
-                    description = "How many players to add, from 1 to 24.",
+                    description = "How many fake players to add to the team.",
                     required = true,
                     min_value = 1,
                     max_value = FakePlayerDispatchService.MaximumCount,
@@ -169,8 +169,8 @@ public sealed partial class DiscordRestClientService
                 {
                     type = StringOptionType,
                     name = "team",
-                    description = "Name to give the team they are put in. Leave blank for a made-up one.",
-                    required = false,
+                    description = "Name of the existing team to add the players to.",
+                    required = true,
                     max_length = 16,
                 },
             },
@@ -181,6 +181,80 @@ public sealed partial class DiscordRestClientService
             CommandsPath(applicationIdentifier),
             command,
             "register the fake player command",
+            cancellationToken) is not null
+            ? Task.FromResult(true)
+            : Task.FromResult(false);
+    }
+
+    /// <summary>
+    /// Registers the fake team command. Its options are a lobby, a name, a count
+    /// and a player prefix, because a moderator may want a team of a size they
+    /// choose and to see whose roster it is at a glance.
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Whether Discord accepted the command.</returns>
+    public Task<bool> RegisterFakeTeamCommandAsync(CancellationToken cancellationToken)
+    {
+        var applicationIdentifier = DiscordApplicationIdentifierUtils.FromBotToken(options.BotToken);
+        if (applicationIdentifier is null)
+        {
+            logger.LogWarning(
+                "The {Command} command is not registered; the bot token does not carry an application identifier",
+                DiscordOptions.FakeTeamCommandName);
+            return Task.FromResult(false);
+        }
+
+        var command = new
+        {
+            name = DiscordOptions.FakeTeamCommandName,
+            description = "Creates a team that exists only in a lobby's memory, for testing.",
+            options = new object[]
+            {
+                new
+                {
+                    type = StringOptionType,
+                    name = "mode",
+                    description = "Which lobby to create the team in.",
+                    required = true,
+                    choices = new[]
+                    {
+                        new { name = "Survival", value = "survival" },
+                        new { name = "Tournament", value = "tournament" },
+                    },
+                },
+                new
+                {
+                    type = StringOptionType,
+                    name = "team",
+                    description = "Name to give the team. Leave blank for a made-up one.",
+                    required = false,
+                    max_length = 16,
+                },
+                new
+                {
+                    type = IntegerOptionType,
+                    name = "count",
+                    description = "How many players it holds, leader included. Leave out for a leader.",
+                    required = false,
+                    min_value = 1,
+                    max_value = FakeTeamDispatchService.MaximumCount,
+                },
+                new
+                {
+                    type = StringOptionType,
+                    name = "prefix",
+                    description = "Name to show the players with. Leave blank for a made-up one.",
+                    required = false,
+                    max_length = 16,
+                },
+            },
+        };
+
+        return SendAsync(
+            HttpMethod.Post,
+            CommandsPath(applicationIdentifier),
+            command,
+            "register the fake team command",
             cancellationToken) is not null
             ? Task.FromResult(true)
             : Task.FromResult(false);

@@ -26,6 +26,7 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 /// </summary>
 public sealed class GetEventListHandler(
     EventTeamService teamService,
+    FakeTeamService fakeTeamService,
     EventScheduleService scheduleService,
     LobbyService lobbyService,
     SessionHelper sessionHelper) : ICommandHandler
@@ -71,7 +72,17 @@ public sealed class GetEventListHandler(
                 schedule.Identifier,
                 cancellationToken))
             {
-                rows.Add(BuildRow(index++, team));
+                rows.Add(BuildRow(index++, EventTeamService.BuildSnapshot(team)));
+            }
+
+            // An in-memory team is an entrant of the event it was created for,
+            // so it is streamed with the row list rather than kept to the
+            // joinable list: that is where a moderator looks for the field it
+            // is testing.
+            foreach (var fakeTeam in fakeTeamService.ListTeams(lobbyIdentifier)
+                .Where(team => team.EventIdentifier == schedule.Identifier))
+            {
+                rows.Add(BuildRow(index++, fakeTeam.BuildSnapshot()));
             }
 
             await WriteBoundaryAsync(
@@ -96,14 +107,13 @@ public sealed class GetEventListHandler(
         }
     }
 
-    private static byte[] BuildRow(int index, EventTeam team)
+    private static byte[] BuildRow(int index, EventSnapshot snapshot)
     {
-        var snapshot = EventTeamService.BuildSnapshot(team);
         var writer = new PacketWriter();
         EventActiveEventUtils.WriteEventListItem(
             writer,
             index,
-            team.Identifier,
+            snapshot.SnapshotIdentifier,
             snapshot.Name,
             rowState: snapshot.State,
             discardedByte: 0,
