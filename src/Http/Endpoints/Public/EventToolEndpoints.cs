@@ -15,8 +15,15 @@ internal static class EventToolEndpoints
     /// <summary>File the tool page is served from.</summary>
     private const string ToolFileName = "event-tools.html";
 
-    /// <summary>File the page's script is served from.</summary>
+    /// <summary>File the page's main script is served from.</summary>
     private const string ToolScriptFileName = "event-tools.js";
+
+    /// <summary>
+    /// File the team rendering is served from. It is a second file because the
+    /// page draws two kinds of team and the rule for telling them apart is worth
+    /// keeping in one place rather than spread through the event handlers.
+    /// </summary>
+    private const string ToolTeamsScriptFileName = "event-tools-teams.js";
 
     /// <summary>Maps the event tool page endpoints.</summary>
     /// <param name="group">Group the endpoints are added to.</param>
@@ -30,6 +37,7 @@ internal static class EventToolEndpoints
         group.MapGet("/tournament", GetToolPageAsync);
         group.MapGet("/survival", GetToolPageAsync);
         group.MapGet("/event-tools.js", GetToolScriptAsync);
+        group.MapGet("/event-tools-teams.js", GetToolTeamsScriptAsync);
     }
 
     private static Task<IResult> GetToolPageAsync(
@@ -41,6 +49,15 @@ internal static class EventToolEndpoints
         IOptions<HttpApiOptions> options,
         CancellationToken cancellationToken) =>
         GetToolFileAsync(options, ToolScriptFileName, "text/javascript; charset=utf-8", cancellationToken);
+
+    private static Task<IResult> GetToolTeamsScriptAsync(
+        IOptions<HttpApiOptions> options,
+        CancellationToken cancellationToken) =>
+        GetToolFileAsync(
+            options,
+            ToolTeamsScriptFileName,
+            "text/javascript; charset=utf-8",
+            cancellationToken);
 
     /// <summary>Reads one file of the tools out of the static directory.</summary>
     /// <param name="options">Options that name the static directory.</param>

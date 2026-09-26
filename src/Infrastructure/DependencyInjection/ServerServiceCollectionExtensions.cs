@@ -180,7 +180,9 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<AutomatchHooksService>();
         services.AddSingleton<EventInformationService>();
         services.AddSingleton<EventTeamService>();
+        services.AddSingleton<EventTeamListingService>();
         services.AddSingleton<FakeTeamService>();
+        services.AddSingleton<FakeTeamPairingService>();
         services.AddSingleton<EventTeamStateService>();
         services.AddSingleton<EventTeamPushService>();
         services.AddSingleton<EventInvitationService>();

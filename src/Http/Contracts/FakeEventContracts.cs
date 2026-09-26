@@ -1,7 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.InternalGrpc.Contracts;
-using Mgo2Server.Shared.InternalGrpc.Contracts;
 
 namespace Mgo2Server.Http.Contracts;
 
@@ -75,6 +74,38 @@ public sealed class FakeTeamStateChangeRequest
     /// <summary>Member state to force on the roster, or zero to let each member follow the team state.</summary>
     [Range(0, 255)]
     public int MemberState { get; set; }
+}
+
+/// <summary>
+/// Fields of a request to make one in-memory team pairable by writing it out
+/// as a row.
+/// <para>
+/// It is the only request here that persists anything, and the reason is
+/// downstream of it rather than in it: a pairing is a durable row naming two
+/// teams, and every service that reads one re-reads both sides as rows. The
+/// request itself is as narrow as the others — a team and a mode.
+/// </para>
+/// <para>
+/// It is called <c>FakeTeamPromotionRequest</c> rather than
+/// <c>FakeTeamPairingRequest</c> because the coordination protocol already has
+/// a message of that name, and a contract that shadowed it would force every
+/// file holding both to disambiguate a name it did not choose.
+/// </para>
+/// </summary>
+public sealed class FakeTeamPromotionRequest
+{
+    /// <summary>
+    /// Mode of the lobby the team is in. Only 4, Survival, is served: a
+    /// Tournament entrant is seeded and frozen, which a memory-only team cannot
+    /// be.
+    /// </summary>
+    [Range(1, 255)]
+    public int Mode { get; set; } = EventConstants.SurvivalSelector;
+
+    /// <summary>Name of the in-memory team to write out and queue. It is required.</summary>
+    [Required]
+    [StringLength(64, MinimumLength = 1)]
+    public required string TeamName { get; set; }
 }
 
 /// <summary>What a fake-event request did, as the caller is told it.</summary>

@@ -38,13 +38,18 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 /// Service that answers a question about the in-memory teams of this lobby.
 /// Left null by a host that runs no event lobby, for the same reason.
 /// </param>
+/// <param name="fakeTeamPairings">
+/// Service that writes an in-memory team out as a row so it can be paired.
+/// Left null by a host that runs no event lobby, for the same reason.
+/// </param>
 public sealed class LobbyCommandApplyService(
     FlashNewsService flashNewsService,
     ILogger<LobbyCommandApplyService> logger,
     FakePlayerRequestHandlerService? fakePlayerRequests = null,
     FakeTeamRequestHandlerService? fakeTeamRequests = null,
     FakeTeamStateRequestHandlerService? fakeTeamStateRequests = null,
-    FakeTeamQueryRequestHandlerService? fakeTeamQueries = null)
+    FakeTeamQueryRequestHandlerService? fakeTeamQueries = null,
+    FakeTeamPairingRequestHandlerService? fakeTeamPairings = null)
 {
     /// <summary>Applies one message the coordinator sent.</summary>
     /// <param name="message">Message to act on.</param>
@@ -91,6 +96,16 @@ public sealed class LobbyCommandApplyService(
                         : () => fakeTeamQueries.HandleAsync(query, cancellationToken),
                     "This host cannot answer a team query; the question was refused",
                     "A fake team query could not be answered",
+                    cancellationToken);
+
+            case HttpEvent.EventOneofCase.FakeTeamPairing:
+                var pairing = message.FakeTeamPairing;
+                return GuardAsync(
+                    fakeTeamPairings is null
+                        ? null
+                        : () => fakeTeamPairings.HandleAsync(pairing, cancellationToken),
+                    "This host cannot make a fake team pairable; the request was refused",
+                    "A fake team pairing request could not be carried out",
                     cancellationToken);
 
             case HttpEvent.EventOneofCase.FlashNews:

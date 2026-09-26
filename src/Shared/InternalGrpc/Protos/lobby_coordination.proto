@@ -55,6 +55,7 @@ message HttpEvent {
     FakeTeamRequest fake_team = 3;
     FakeTeamStateRequest fake_team_state = 4;
     FakeTeamQueryRequest fake_team_query = 5;
+    FakeTeamPairingRequest fake_team_pairing = 6;
   }
 }
 
@@ -182,6 +183,30 @@ message FakeTeamStateRequest {
   // The member state to force on the whole roster, or zero to let each member
   // follow the team state.
   int32 member_state = 4;
+}
+
+// A request to make one in-memory team of a lobby pairable, by writing it out
+// as a real event_teams row and queueing it.
+//
+// This is the one request in the group that writes a row, and it is deliberate.
+// A pairing is a durable row naming two team identifiers, and every consumer
+// downstream of it — the host lease, the assignment packets, the outcome
+// inference and the reward ledger — re-reads both sides as rows. A team that
+// exists only in memory therefore cannot take part in a pairing at all: the
+// match would be created and then silently never reach a host.
+//
+// The team is named rather than identified for the same reason every other
+// request here names one: it has no row, so there is no identifier the
+// coordinator could know.
+//
+// Only Survival is served. A Tournament entrant is seeded into a bracket and
+// frozen into a roster, and a memory-only team has neither, so admitting one
+// would put a team the bracket cannot read into real tournament state.
+message FakeTeamPairingRequest {
+  // Mode of the lobby the team is in: 4 Survival.
+  int32 lobby_subtype = 1;
+  // Name of the in-memory team to write out and queue. It is required.
+  string team_name = 2;
 }
 
 // One ticker announcement the lobby has to write to its own clients. The fields

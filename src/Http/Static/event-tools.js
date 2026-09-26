@@ -1,52 +1,38 @@
 // The behaviour of the event testing tools page.
 //
-// Everything here talks to the public fake-team endpoints, so there is no token
-// and nothing to sign in with. The page is served at both /survival and
-// /tournament and is the same code either way: the path only picks the lobby
-// the page opens on.
+// The page shows two kinds of team and asks two different servers about them.
+// A real team is a row, so it is read from the database by mode; an in-memory
+// team lives in one lobby's process, so the only way to see it is to ask that
+// lobby and wait for its answer. They are kept apart everywhere below because
+// the difference decides what can be done to them: only a real team is ever
+// queued and paired, and only an in-memory team can have its state set or be
+// forgotten from here.
+//
+// Everything talks to the public endpoints, so there is no token and nothing to
+// sign in with. The page is served at both /survival and /tournament and is the
+// same code either way: the path only picks the lobby the page opens on.
 (function () {
   "use strict";
 
-  // The largest roster a team can hold, which is what the count menus are built
-  // from. It is the same limit the server enforces.
-  const maximumPlayers = 6;
+  const teams = window.EventToolTeams;
+  const maximumPlayers = teams.maximumPlayers;
 
-  // The team states worth offering by name. The rest of the byte range is
-  // reachable through the custom entry, because the client reads it and a
-  // moderator testing a screen may need a value nobody thought to label.
-  const teamStates = [
-    { value: 1, label: "Joinable — shows in the team list" },
-    { value: 9, label: "Registered — queued for an opponent" },
-    { value: 3, label: "Entering" },
-    { value: 5, label: "Playing" },
-    { value: 6, label: "Finished" },
-  ];
-
-  // The member states a moderator exercises with, plus the one value that means
-  // "let each member follow the team".
-  const memberStates = [
-    { value: 0, label: "Follow the team" },
-    { value: 1, label: "Pending — has not decided" },
-    { value: 2, label: "Ready" },
-    { value: 4, label: "Approved" },
-    { value: 5, label: "Closed" },
-    { value: 6, label: "Refused" },
-  ];
-
-  const byId = (id) => document.getElementById(id);
+  const byId = teams.byId;
 
   const modeSelect = byId("mode");
   const status = byId("status");
   const statusText = byId("status-text");
-  const teamList = byId("team-list");
+  const memoryList = byId("team-list");
+  const realList = byId("real-team-list");
   const playersTeam = byId("players-team");
   const playersTeamOther = byId("players-team-other");
   const playersTeamName = byId("players-team-name");
   const stateTeam = byId("state-team");
 
-  // The teams the last listing returned, held so the menus and the list on the
-  // page agree with each other without asking the lobby twice.
-  let teams = [];
+  // The teams the last refresh returned, held so the menus and the lists on the
+  // page agree with each other without asking twice.
+  let realTeams = [];
+  let memoryTeams = [];
 
   function showStatus(kind, message) {
     statusText.textContent = message;
@@ -66,14 +52,6 @@
     return (data && data.message) || response.statusText || "The request was refused.";
   }
 
-  function fillStates(select, options, customLabel) {
-    select.replaceChildren();
-    for (const option of options) {
-      select.append(new Option(option.label, String(option.value)));
-    }
-    select.append(new Option(customLabel, "custom"));
-  }
-
   function fillCounts(select, chosen) {
     select.replaceChildren();
     for (let count = 1; count <= maximumPlayers; count++) {
@@ -84,60 +62,108 @@
     select.value = String(chosen);
   }
 
-  // A team is named, so both menus that act on a team are built from the
-  // listing rather than asking for a name nobody can check.
-  function fillTeamMenu(select, otherOption) {
-    const chosen = select.value;
-    select.replaceChildren();
-    for (const team of teams) {
-      const label = `${team.name} — ${team.members}/${maximumPlayers}, state ${team.state}`;
-      select.append(new Option(label, team.name));
+  // A refusal is reported rather than thrown away: a moderator who asked for a
+  // mode with no lobby needs to know that, and it is the common case while a
+  // lobby is restarting.
+  async function readTeams(url) {
+    const response = await fetch(url);
+    if (response.ok) {
+      return (await response.json()).teams || [];
     }
-    if (otherOption) {
-      select.append(new Option(otherOption, "other"));
-    }
-    if (teams.some((team) => team.name === chosen)) {
-      select.value = chosen;
-    }
+
+    showStatus("error", await readMessage(response));
+    return null;
   }
 
-  function renderList() {
-    teamList.replaceChildren();
-    if (teams.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm text-slate-400";
-      empty.textContent = "This lobby is holding no teams in memory.";
-      teamList.append(empty);
+  function renderRealList() {
+    if (realTeams.length === 0) {
+      teams.emptyList(realList, "No player has formed a team in this lobby.");
       return;
     }
 
-    for (const team of teams) {
-      const row = document.createElement("div");
-      row.className =
-        "flex items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3";
-
-      const detail = document.createElement("div");
-      const name = document.createElement("p");
-      name.className = "text-sm font-semibold text-slate-100";
-      name.textContent = team.name;
-      const meta = document.createElement("p");
-      meta.className = "text-xs text-slate-500";
-      meta.textContent = `${team.members}/${maximumPlayers} players · state ${team.state}`;
-      detail.append(name, meta);
-
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className =
-        "rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:bg-red-500/10";
-      remove.textContent = "Remove";
-      remove.addEventListener("click", () => removeTeam(team.name));
-
-      row.append(detail, remove);
-      teamList.append(row);
+    realList.replaceChildren();
+    for (const team of realTeams) {
+      realList.append(teams.row(team, "real", []));
     }
   }
 
-  async function removeTeam(name) {
+  function renderMemoryList() {
+    if (memoryTeams.length === 0) {
+      teams.emptyList(memoryList, "This lobby is holding no teams in memory.");
+      return;
+    }
+
+    memoryList.replaceChildren();
+    for (const team of memoryTeams) {
+      memoryList.append(
+        teams.row(team, "memory", [
+          teams.promoteButton(team.name, promoteTeam),
+          teams.removeButton(team.name, forgetTeam),
+        ])
+      );
+    }
+  }
+
+  function fillMenus() {
+    teams.fillMenu(
+      playersTeam,
+      realTeams,
+      memoryTeams,
+      "Another team this lobby does not list…"
+    );
+
+    // The state form offers in-memory teams only. A real team's state is
+    // written by the entry pipeline on every decision, so a value set here
+    // would be overwritten rather than tested, and offering it would suggest
+    // otherwise.
+    teams.fillMenu(stateTeam, [], memoryTeams, null);
+  }
+
+  // A refresh asks both sources. They are asked together rather than one after
+  // the other because neither is slow and a moderator watching the page should
+  // not see one list update while the other waits.
+  async function refresh() {
+    showStatus("pending", "Asking the lobby and the database what they hold…");
+
+    const mode = modeSelect.value;
+    const [stored, memory] = await Promise.all([
+      readTeams("/event-teams?mode=" + mode),
+      readTeams("/fake-teams?mode=" + mode),
+    ]);
+
+    // A failure in either is not a failure of the other: one list can still be
+    // shown, which is more useful than emptying both.
+    if (stored === null && memory === null) {
+      realTeams = [];
+      memoryTeams = [];
+      renderRealList();
+      renderMemoryList();
+      fillMenus();
+      return;
+    }
+
+    if (stored !== null) {
+      realTeams = stored;
+      renderRealList();
+    }
+    if (memory !== null) {
+      memoryTeams = memory;
+      renderMemoryList();
+    }
+    fillMenus();
+
+    const held = realTeams.length + memoryTeams.length;
+    if (stored !== null && memory !== null) {
+      showStatus(
+        "success",
+        held === 1
+          ? "This lobby holds 1 team."
+          : `This lobby holds ${held} teams: ${realTeams.length} stored, ${memoryTeams.length} in memory.`
+      );
+    }
+  }
+
+  async function forgetTeam(name) {
     showStatus("pending", `Asking the lobby to forget "${name}"…`);
     const response = await fetch(
       "/fake-teams/" + encodeURIComponent(name) + "?mode=" + modeSelect.value,
@@ -151,33 +177,25 @@
     await refresh();
   }
 
-  // Asking the lobby is the only way to see the teams: they live in that
-  // process, so the page cannot work them out for itself.
-  async function refresh() {
-    showStatus("pending", "Asking the lobby what it is holding…");
+  // Writes one in-memory team out as a stored team and queues it. The team then
+  // leaves the memory list and appears in the stored one, because that is what
+  // it has become: a pairing is a row naming two teams, and everything
+  // downstream of one re-reads both sides as rows.
+  async function promoteTeam(name) {
+    showStatus("pending", `Asking the lobby to write "${name}" out and queue it…`);
     try {
-      const response = await fetch("/fake-teams?mode=" + modeSelect.value);
-      if (!response.ok) {
-        teams = [];
-        renderList();
-        showStatus("error", await readMessage(response));
-        return;
-      }
+      const response = await fetch("/fake-teams/pairing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: Number(modeSelect.value), teamName: name }),
+      });
 
-      const data = await response.json();
-      teams = data.teams || [];
-      fillTeamMenu(playersTeam, "Another team a player formed…");
-      fillTeamMenu(stateTeam, null);
-      renderList();
-      showStatus(
-        "success",
-        teams.length === 1
-          ? "The lobby is holding 1 team."
-          : `The lobby is holding ${teams.length} teams.`
-      );
+      const message = await readMessage(response);
+      showStatus(response.ok ? "success" : "error", message);
+      if (response.ok) {
+        await refresh();
+      }
     } catch (error) {
-      teams = [];
-      renderList();
       showStatus("error", "Could not reach the server. Is it running?");
     }
   }
@@ -231,8 +249,8 @@
 
   fillCounts(byId("create-count"), maximumPlayers);
   fillCounts(byId("players-count"), 1);
-  fillStates(byId("state-team-state"), teamStates, "Another state byte…");
-  fillStates(byId("state-member"), memberStates, "Another member state byte…");
+  teams.fillStates(byId("state-team-state"), teams.teamStates, "Another state byte…");
+  teams.fillStates(byId("state-member"), teams.memberStates, "Another member state byte…");
 
   onSubmit("create-form", () =>
     send("/fake-teams", {
@@ -247,10 +265,13 @@
     const chosen = playersTeam.value;
     const name = chosen === "other" ? playersTeamName.value.trim() : chosen;
     if (!name) {
-      showStatus("error", "Choose a team, or name the one a player formed.");
+      showStatus("error", "Choose a team, or name the one this lobby does not list.");
       return;
     }
 
+    // A roster that is already full is refused by the server, which answers
+    // with the reason. The page does not second-guess it: the count the client
+    // shows is a column, and what a team can hold is the server's rule.
     send("/fake-teams/players", {
       mode: Number(modeSelect.value),
       count: Number(byId("players-count").value),

@@ -34,6 +34,7 @@ public sealed class EventServiceRegistrationTests
         Assert.NotNull(provider.GetRequiredService<EventMatchService>());
         Assert.NotNull(provider.GetRequiredService<EventMatchmakingService>());
         Assert.NotNull(provider.GetRequiredService<EventTeamService>());
+        Assert.NotNull(provider.GetRequiredService<EventTeamListingService>());
         Assert.NotNull(provider.GetRequiredService<EventTeamPushService>());
         Assert.NotNull(provider.GetRequiredService<EventInvitationService>());
         Assert.NotNull(provider.GetRequiredService<EventSessionDirectoryService>());
@@ -64,5 +65,6 @@ public sealed class EventServiceRegistrationTests
         Assert.NotNull(provider.GetRequiredService<EventScheduleNameService>());
         Assert.NotNull(provider.GetRequiredService<EventScheduleService>());
         Assert.NotNull(provider.GetRequiredService<FakeTeamService>());
+        Assert.NotNull(provider.GetRequiredService<FakeTeamPairingService>());
     }
 }

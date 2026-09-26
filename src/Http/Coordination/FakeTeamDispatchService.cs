@@ -211,6 +211,61 @@ public sealed class FakeTeamDispatchService(
         return new StateResult(DispatchOutcome.Sent, mode, teamName, state, memberState, lobby.Identifier);
     }
 
+    /// <summary>
+    /// Routes a request to write one in-memory team out as a row so the queue
+    /// can pair it.
+    /// <para>
+    /// This is the one request in the group that writes, and it is the pairing
+    /// service on the lobby that decides what it writes rather than this one:
+    /// the coordinator names a team and a mode, and the lobby holds both the
+    /// team and the rule about which modes it can pair.
+    /// </para>
+    /// </summary>
+    /// <param name="mode">Mode of the lobby the team is in.</param>
+    /// <param name="teamName">Name of the in-memory team.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task<StateResult> DispatchPairingAsync(
+        int mode,
+        string teamName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(teamName))
+        {
+            return new StateResult(DispatchOutcome.NoTeamName, mode, teamName, 0, 0, 0);
+        }
+
+        var lobby = await modes.ResolveAsync(mode, cancellationToken);
+        if (lobby is null)
+        {
+            return new StateResult(DispatchOutcome.NoSuchLobby, mode, teamName, 0, 0, 0);
+        }
+
+        var message = new HttpEvent
+        {
+            FakeTeamPairing = new FakeTeamPairingRequest
+            {
+                LobbySubtype = mode,
+                TeamName = teamName.Trim(),
+            },
+        };
+
+        if (!registry.SendTo(lobby.Identifier, message))
+        {
+            logger.LogWarning(
+                "Lobby {LobbyIdentifier} has no open coordination stream, so its fake team was not made pairable",
+                lobby.Identifier);
+            return new StateResult(DispatchOutcome.LobbyOffline, mode, teamName, 0, 0, lobby.Identifier);
+        }
+
+        logger.LogInformation(
+            "Asked lobby {LobbyIdentifier} to make in-memory team {TeamName} pairable in mode {Mode}",
+            lobby.Identifier,
+            teamName,
+            mode);
+
+        return new StateResult(DispatchOutcome.Sent, mode, teamName, 0, 0, lobby.Identifier);
+    }
+
     /// <summary>What a question about a lobby's in-memory teams did.</summary>
     /// <param name="Outcome">What happened.</param>
     /// <param name="Mode">Lobby mode that was asked about.</param>

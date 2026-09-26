@@ -56,6 +56,16 @@ internal static class FakeEventEndpoints
                 "Asks the running lobby of a mode to move one of its in-memory teams to a state, and "
                 + "optionally to force a member state on its whole roster. Nothing is written.");
 
+        fakeTeams.MapPost("/pairing", PairAsync)
+            .WithSummary("Make an in-memory team pairable")
+            .WithDescription(
+                "Asks the running lobby of a mode to write one of its in-memory teams out as a row and "
+                + "queue it, which is what lets a real team be paired against it. This is the only "
+                + "fake-team request that writes anything, and the row it writes outlives the match so "
+                + "the pairing can be inspected afterwards. Survival only: a Tournament entrant is "
+                + "seeded into a bracket and frozen into a roster, which a team that existed only in "
+                + "memory has neither of.");
+
         fakeTeams.MapGet("/", ListAsync)
             .WithSummary("List the in-memory teams of a lobby")
             .WithDescription(
@@ -171,6 +181,37 @@ internal static class FakeEventEndpoints
             _ => Results.Json(
                 new FakeEventResult(
                     $"The {EventScheduleService.ModeName(request.Mode)} lobby is not connected, so no state was changed."),
+                statusCode: StatusCodes.Status503ServiceUnavailable),
+        };
+    }
+
+    /// <summary>Relays a request to make one in-memory team pairable.</summary>
+    /// <param name="dispatch">Service the request is carried through.</param>
+    /// <param name="request">Team to write out.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private static async Task<IResult> PairAsync(
+        FakeTeamDispatchService dispatch,
+        FakeTeamPromotionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await dispatch.DispatchPairingAsync(
+            request.Mode,
+            request.TeamName,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            FakeTeamDispatchService.DispatchOutcome.Sent => Results.Json(
+                new FakeEventResult(
+                    $"Asked {EventScheduleService.ModeName(request.Mode)} to write \"{request.TeamName}\" out as a team and queue it."),
+                statusCode: StatusCodes.Status202Accepted),
+            FakeTeamDispatchService.DispatchOutcome.NoTeamName => Results.BadRequest(
+                new FakeEventResult("Name the in-memory team to write out.")),
+            FakeTeamDispatchService.DispatchOutcome.NoSuchLobby => Results.NotFound(
+                new FakeEventResult($"There is no {EventScheduleService.ModeName(request.Mode)} lobby running.")),
+            _ => Results.Json(
+                new FakeEventResult(
+                    $"The {EventScheduleService.ModeName(request.Mode)} lobby is not connected, so \"{request.TeamName}\" was not written out."),
                 statusCode: StatusCodes.Status503ServiceUnavailable),
         };
     }
