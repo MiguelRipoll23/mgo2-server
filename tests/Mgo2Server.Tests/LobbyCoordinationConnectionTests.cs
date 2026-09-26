@@ -40,6 +40,7 @@ public sealed class LobbyCoordinationConnectionTests : IAsyncLifetime
 
     private WebApplication application = null!;
     private LobbyCoordinationClientService client = null!;
+    private LobbyEventQueueService outgoingEvents = null!;
 
     public async Task InitializeAsync()
     {
@@ -57,6 +58,7 @@ public sealed class LobbyCoordinationConnectionTests : IAsyncLifetime
         builder.Services.AddSingleton(presence);
         builder.Services.AddSingleton(sessions);
         builder.Services.AddSingleton<PlayerPresenceNotificationService>();
+        builder.Services.AddSingleton<LobbyTeamQueryService>();
 
         // The names of the characters are read from a database this test does
         // not have, which is precisely the state the coordination must survive.
@@ -73,13 +75,20 @@ public sealed class LobbyCoordinationConnectionTests : IAsyncLifetime
             .Features.Get<IServerAddressesFeature>()!
             .Addresses.First();
 
+        var flashNews = new FlashNewsService(
+            sessions,
+            new SessionHelper(new PacketCodecService(NullLogger<PacketCodecService>.Instance)));
+
+        outgoingEvents = new LobbyEventQueueService();
+
         client = new LobbyCoordinationClientService(
-            new FlashNewsService(sessions, new SessionHelper(new PacketCodecService(NullLogger<PacketCodecService>.Instance))),
             Options.Create(new CoordinationOptions
             {
                 ServerUrl = address,
                 ReconnectInterval = TimeSpan.FromMilliseconds(250),
             }),
+            outgoingEvents,
+            new LobbyCommandApplyService(flashNews, NullLogger<LobbyCommandApplyService>.Instance),
             NullLogger<LobbyCoordinationClientService>.Instance);
 
         client.StartFor(LobbyIdentifier, "Free Battle");
@@ -157,6 +166,32 @@ public sealed class LobbyCoordinationConnectionTests : IAsyncLifetime
         var read = await stream.ReadAsync(buffer, timeout.Token);
 
         Assert.True(read > 0, "the ticker packet never reached the client");
+    }
+
+    [Fact]
+    public async Task ATeamListingTravelsUpTheStreamAndWakesTheCallerThatAsked()
+    {
+        Assert.True(await WaitUntilAsync(() => registry.Count == 1));
+
+        var queries = application.Services.GetRequiredService<LobbyTeamQueryService>();
+        var requestIdentifier = queries.NextRequestIdentifier();
+        Assert.True(queries.Expect(requestIdentifier, out var answer));
+
+        // The lobby is the side that answers, so the answer is put on the queue
+        // it shares with the presence events and the stream carries it up.
+        outgoingEvents.TryEnqueue(new LobbyEvent
+        {
+            FakeTeamListing = new FakeTeamListing
+            {
+                RequestIdentifier = requestIdentifier,
+                Teams = { new FakeTeamSummary { TeamName = "TESTERS", MemberCount = 3, State = 1 } },
+            },
+        });
+
+        var listing = await answer.WaitAsync(TimeSpan.FromSeconds(15));
+        var team = Assert.Single(listing.Teams);
+        Assert.Equal("TESTERS", team.TeamName);
+        Assert.Equal(3, team.MemberCount);
     }
 
     /// <summary>Waits for a condition a stream fulfils asynchronously.</summary>

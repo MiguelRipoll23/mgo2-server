@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Threading.Channels;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Mgo2Server.Shared.Domain.Lobbies;
@@ -22,29 +21,15 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 /// again on an interval; only the reporting and the reception of flash news are
 /// missing until the connection is back.
 /// </remarks>
-/// <param name="flashNewsService">Service that writes an announcement to this lobby's clients.</param>
 /// <param name="options">Options that hold the endpoint of the coordinator.</param>
+/// <param name="outgoingEvents">Queue of the messages this lobby sends up.</param>
+/// <param name="commands">Service that acts on what the coordinator sends down.</param>
 /// <param name="logger">Logger of this service.</param>
-/// <param name="fakePlayerRequests">
-/// Service that acts on a request to add fake players to a team of this lobby.
-/// Left null by a host that runs no event lobby, which is told so rather than
-/// having the request dropped without a word.
-/// </param>
-/// <param name="fakeTeamRequests">
-/// Service that acts on a request to create an in-memory team in this lobby.
-/// Left null by a host that runs no event lobby, for the same reason.
-/// </param>
-/// <param name="fakeTeamStateRequests">
-/// Service that acts on a request to change the state of an in-memory team of
-/// this lobby. Left null by a host that runs no event lobby, for the same reason.
-/// </param>
 public sealed class LobbyCoordinationClientService(
-    FlashNewsService flashNewsService,
     IOptions<CoordinationOptions> options,
-    ILogger<LobbyCoordinationClientService> logger,
-    FakePlayerRequestHandlerService? fakePlayerRequests = null,
-    FakeTeamRequestHandlerService? fakeTeamRequests = null,
-    FakeTeamStateRequestHandlerService? fakeTeamStateRequests = null) : ILobbyPresencePublisher
+    LobbyEventQueueService outgoingEvents,
+    LobbyCommandApplyService commands,
+    ILogger<LobbyCoordinationClientService> logger) : ILobbyPresencePublisher
 {
     /// <summary>
     /// The characters this lobby has reported as connected. It is kept here
@@ -54,19 +39,7 @@ public sealed class LobbyCoordinationClientService(
     /// </summary>
     private readonly ConcurrentDictionary<int, byte> connectedCharacters = new();
 
-    /// <summary>Events a lobby may queue for the coordinator before it is considered stuck.</summary>
-    private const int OutgoingCapacity = 1024;
-
     private readonly CoordinationOptions options = options.Value;
-    private readonly Channel<LobbyEvent> outgoing = Channel.CreateBounded<LobbyEvent>(
-        new BoundedChannelOptions(OutgoingCapacity)
-        {
-            // The snapshot a new stream starts from is the truth, so an event
-            // that arrives while the queue is full may be dropped: it is not
-            // worth stalling a lobby that is still serving its players.
-            FullMode = BoundedChannelFullMode.DropWrite,
-            SingleReader = true,
-        });
 
     private CancellationTokenSource? cancellation;
     private Task? loop;
@@ -155,7 +128,7 @@ public sealed class LobbyCoordinationClientService(
             },
         };
 
-        if (!outgoing.Writer.TryWrite(message))
+        if (!outgoingEvents.TryEnqueue(message))
         {
             logger.LogDebug(
                 "The coordination queue of lobby {LobbyIdentifier} is full; a presence event was dropped",
@@ -213,9 +186,7 @@ public sealed class LobbyCoordinationClientService(
         // coordinator never saw. The registration below carries the population
         // as it is now, which makes the reclaimed deltas both unnecessary and
         // wrong to replay.
-        while (outgoing.Reader.TryRead(out _))
-        {
-        }
+        outgoingEvents.DiscardQueued();
 
         await call.RequestStream.WriteAsync(BuildRegistration(), cancellationToken);
         logger.LogInformation(
@@ -266,7 +237,7 @@ public sealed class LobbyCoordinationClientService(
         IClientStreamWriter<LobbyEvent> requestStream,
         CancellationToken cancellationToken)
     {
-        await foreach (var message in outgoing.Reader.ReadAllAsync(cancellationToken))
+        await foreach (var message in outgoingEvents.ReadAllAsync(cancellationToken))
         {
             await requestStream.WriteAsync(message, cancellationToken);
         }
@@ -281,156 +252,7 @@ public sealed class LobbyCoordinationClientService(
     {
         await foreach (var message in responseStream.ReadAllAsync(cancellationToken))
         {
-            await ApplyAsync(message, cancellationToken);
-        }
-    }
-
-    /// <summary>Writes one relayed announcement to the clients of this lobby.</summary>
-    /// <param name="message">Message the coordinator sent.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    private async Task ApplyAsync(HttpEvent message, CancellationToken cancellationToken)
-    {
-        if (message.EventCase == HttpEvent.EventOneofCase.FakePlayers)
-        {
-            await ApplyFakePlayersAsync(message.FakePlayers, cancellationToken);
-            return;
-        }
-
-        if (message.EventCase == HttpEvent.EventOneofCase.FakeTeam)
-        {
-            await ApplyFakeTeamAsync(message.FakeTeam, cancellationToken);
-            return;
-        }
-
-        if (message.EventCase == HttpEvent.EventOneofCase.FakeTeamState)
-        {
-            await ApplyFakeTeamStateAsync(message.FakeTeamState, cancellationToken);
-            return;
-        }
-
-        if (message.EventCase != HttpEvent.EventOneofCase.FlashNews)
-        {
-            logger.LogDebug("The coordinator sent an unknown {EventCase}; ignored", message.EventCase);
-            return;
-        }
-
-        var broadcast = message.FlashNews;
-
-        try
-        {
-            // The payload is the client protocol, so the announcement is
-            // rebuilt here and encoded the way the lobby always encoded it.
-            var result = await flashNewsService.BroadcastAsync(
-                new FlashNewsAnnouncement(
-                    broadcast.Message,
-                    (byte)broadcast.Unknown1,
-                    (byte)broadcast.Unknown2,
-                    (ushort)broadcast.Subcommand,
-                    (byte)broadcast.Unknown5,
-                    (byte)broadcast.MaintenanceTime),
-                cancellationToken);
-
-            logger.LogInformation(
-                "Relayed flash news reached {Recipients} clients of lobby {LobbyIdentifier}",
-                result.Recipients,
-                lobbyIdentifier);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            // One client that cannot be written to must not end the stream of
-            // the whole lobby.
-            logger.LogError(exception, "A relayed flash news could not be written to the clients");
-        }
-    }
-
-    /// <summary>Creates the fake players the coordinator asked this lobby for.</summary>
-    /// <param name="request">Request the coordinator sent.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    private async Task ApplyFakePlayersAsync(
-        FakePlayerRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (fakePlayerRequests is null)
-        {
-            logger.LogWarning("This host cannot create fake players; the request was refused");
-            return;
-        }
-
-        try
-        {
-            await fakePlayerRequests.HandleAsync(request, cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            // A request that cannot be carried out must not end the stream of
-            // the whole lobby: the next flash news still has to arrive.
-            logger.LogError(exception, "A fake player request could not be carried out");
-        }
-    }
-
-    /// <summary>Creates the in-memory team the coordinator asked this lobby for.</summary>
-    /// <param name="request">Request the coordinator sent.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    private async Task ApplyFakeTeamAsync(
-        FakeTeamRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (fakeTeamRequests is null)
-        {
-            logger.LogWarning("This host cannot create fake teams; the request was refused");
-            return;
-        }
-
-        try
-        {
-            await fakeTeamRequests.HandleAsync(request, cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            // A request that cannot be carried out must not end the stream of
-            // the whole lobby: the next flash news still has to arrive.
-            logger.LogError(exception, "A fake team request could not be carried out");
-        }
-    }
-
-    /// <summary>Changes the state of the in-memory team the coordinator asked about.</summary>
-    /// <param name="request">Request the coordinator sent.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    private async Task ApplyFakeTeamStateAsync(
-        FakeTeamStateRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (fakeTeamStateRequests is null)
-        {
-            logger.LogWarning("This host cannot change fake team state; the request was refused");
-            return;
-        }
-
-        try
-        {
-            await fakeTeamStateRequests.HandleAsync(request, cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            // A request that cannot be carried out must not end the stream of
-            // the whole lobby: the next flash news still has to arrive.
-            logger.LogError(exception, "A fake team state request could not be carried out");
+            await commands.ApplyAsync(message, cancellationToken);
         }
     }
 

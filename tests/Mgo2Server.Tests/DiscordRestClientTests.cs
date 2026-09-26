@@ -116,7 +116,10 @@ public sealed class DiscordRestClientTests
         var request = Assert.Single(rest.Requests);
         using var body = JsonDocument.Parse(request.Body);
         var option = Assert.Single(body.RootElement.GetProperty("options").EnumerateArray());
-        Assert.Equal("message", body.RootElement.GetProperty("name").GetString());
+
+        // The command is named for what it does rather than for the option it
+        // takes: a plain /message read as though it were the flash command.
+        Assert.Equal("official-message", body.RootElement.GetProperty("name").GetString());
         Assert.Equal(3, option.GetProperty("type").GetInt32());
         Assert.Equal("body", option.GetProperty("name").GetString());
         Assert.True(option.GetProperty("required").GetBoolean());

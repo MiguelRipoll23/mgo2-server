@@ -11,8 +11,8 @@ namespace Mgo2Server.Http.Discord;
 /// <summary>
 /// Runs the commands the gateway delivers. The flash command relays its message
 /// through the same dispatcher the broadcast endpoints of the API use, and the
-/// message command writes an official bot message in the channel it was used
-/// in; each interaction is answered so the command does not time out.
+/// official message command writes a bot message in the channel it was used in;
+/// each interaction is answered so the command does not time out.
 /// </summary>
 /// <param name="responder">Service that answers the interactions.</param>
 /// <param name="messageService">Service that writes the channel messages.</param>
@@ -24,16 +24,13 @@ namespace Mgo2Server.Http.Discord;
 /// because it is the only command that writes, and a deployment that has not
 /// wired it up should still answer the two that do not.
 /// </param>
-/// <param name="logger">Logger of this service.</param>
 public sealed class DiscordCommandService(
     IDiscordInteractionResponder responder,
     IDiscordMessageService messageService,
     FlashNewsDispatcherService flashNewsDispatcher,
     IOptions<DiscordOptions> options,
     ILogger<DiscordCommandService> logger,
-    DiscordEventScheduleCommandService? scheduleCommands = null,
-    DiscordFakePlayerCommandService? fakePlayerCommands = null,
-    DiscordFakeTeamCommandService? fakeTeamCommands = null)
+    DiscordEventScheduleCommandService? scheduleCommands = null)
 {
     /// <summary>Interaction of a command a member used.</summary>
     private const int ApplicationCommandInteractionType = 2;
@@ -86,16 +83,6 @@ public sealed class DiscordCommandService(
             && DiscordEventScheduleCommandService.IsEventCommand(interaction))
         {
             await scheduleCommands.HandleAsync(interaction, cancellationToken);
-        }
-        else if (fakePlayerCommands is not null
-            && DiscordFakePlayerCommandService.IsFakePlayerCommand(interaction))
-        {
-            await fakePlayerCommands.HandleAsync(interaction, cancellationToken);
-        }
-        else if (fakeTeamCommands is not null
-            && DiscordFakeTeamCommandService.IsFakeTeamCommand(interaction))
-        {
-            await fakeTeamCommands.HandleAsync(interaction, cancellationToken);
         }
     }
 

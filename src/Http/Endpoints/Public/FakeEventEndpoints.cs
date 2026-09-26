@@ -1,22 +1,32 @@
 using Mgo2Server.Http.Contracts;
-using Mgo2Server.Http.Discord;
+using Mgo2Server.Http.Coordination;
 using Mgo2Server.Shared.Domain.Events;
+using Mgo2Server.Shared.InternalGrpc.Contracts;
 
-namespace Mgo2Server.Http.Endpoints.Authenticated;
+namespace Mgo2Server.Http.Endpoints.Public;
 
 /// <summary>
-/// The testing endpoints of the authenticated API surface: creating teams and
-/// players that exist only in a lobby's memory, and moving an in-memory team
-/// through the entry pipeline.
+/// The testing endpoints of the in-memory teams: creating teams and players
+/// that exist only in a lobby's memory, moving such a team through the entry
+/// pipeline, and listing and removing the ones a lobby is holding.
 /// <para>
-/// They are the HTTP twin of the staff Discord commands and carry the same
-/// requests down the same lobby streams. Nothing here writes a row: the team and
-/// its players live in the lobby's memory and go away with it, which is what
-/// makes them a testing device rather than a second source of teams.
+/// They are the HTTP twin of what the staff commands used to do, and they carry
+/// the same requests down the same lobby streams. Nothing here writes a row: the
+/// team and its players live in the lobby's memory and go away with it, which
+/// is what makes them a testing device rather than a second source of teams.
+/// </para>
+/// <para>
+/// They are public because they are a testing device and the page that drives
+/// them is public: a page that asked for a bearer token would only move the
+/// token from the URL bar into a form. What an unauthenticated caller can reach
+/// is therefore exactly what a testing device should offer — teams that no
+/// client can mistake for real ones, in the lobby the mode names.
 /// </para>
 /// <para>
 /// A request is a push, so the answer says what was handed to which lobby rather
 /// than what the client then rendered; the lobby that was named logs the rest.
+/// The list is the exception: it asks the lobby and waits for its answer, since
+/// the teams are the lobby's own and nothing else can enumerate them.
 /// </para>
 /// </summary>
 internal static class FakeEventEndpoints
@@ -26,26 +36,37 @@ internal static class FakeEventEndpoints
     public static void MapFakeEventEndpoints(this RouteGroupBuilder group)
     {
         var fakeTeams = group.MapGroup("/fake-teams")
-            .WithTags("Fake teams")
-            .RequireAuthorization();
+            .WithTags("Fake teams");
 
         fakeTeams.MapPost("/", CreateAsync)
             .WithSummary("Create an in-memory team")
             .WithDescription(
-                "Asks the running lobby of a mode to create a team that exists only in its memory. " +
-                "The team is listed and can be filled, and it is gone when the lobby restarts.");
+                "Asks the running lobby of a mode to create a team that exists only in its memory. "
+                + "The team is listed and can be filled, and it is gone when the lobby restarts.");
 
         fakeTeams.MapPost("/players", AddPlayersAsync)
             .WithSummary("Add fake players to a team")
             .WithDescription(
-                "Asks the running lobby of a mode to add players who are not really there to a team " +
-                "that already exists, whether it is a real team or an in-memory one.");
+                "Asks the running lobby of a mode to add players who are not really there to a team "
+                + "that already exists, whether it is a real team or an in-memory one.");
 
         fakeTeams.MapPost("/state", ChangeStateAsync)
             .WithSummary("Change an in-memory team's state")
             .WithDescription(
-                "Asks the running lobby of a mode to move one of its in-memory teams to a state, and " +
-                "optionally to force a member state on its whole roster. Nothing is written.");
+                "Asks the running lobby of a mode to move one of its in-memory teams to a state, and "
+                + "optionally to force a member state on its whole roster. Nothing is written.");
+
+        fakeTeams.MapGet("/", ListAsync)
+            .WithSummary("List the in-memory teams of a lobby")
+            .WithDescription(
+                "Asks the running lobby of a mode what teams it holds in its memory, and answers with "
+                + "them. The teams live in the lobby's process, so this is the only way to see them.");
+
+        fakeTeams.MapDelete("/{teamName}", RemoveAsync)
+            .WithSummary("Remove an in-memory team")
+            .WithDescription(
+                "Asks the running lobby of a mode to forget one of the teams it holds in its memory, "
+                + "which is what a lobby restart would do to it anyway.");
     }
 
     /// <summary>Relays a request to create an in-memory team.</summary>
@@ -151,6 +172,70 @@ internal static class FakeEventEndpoints
                 new FakeEventResult(
                     $"The {EventScheduleService.ModeName(request.Mode)} lobby is not connected, so no state was changed."),
                 statusCode: StatusCodes.Status503ServiceUnavailable),
+        };
+    }
+
+    /// <summary>Asks a lobby what in-memory teams it is holding.</summary>
+    /// <param name="dispatch">Service the question is carried through.</param>
+    /// <param name="mode">Lobby mode to ask about.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private static async Task<IResult> ListAsync(
+        FakeTeamDispatchService dispatch,
+        int mode,
+        CancellationToken cancellationToken)
+    {
+        var result = await dispatch.ListAsync(mode, cancellationToken);
+
+        return result.Outcome switch
+        {
+            FakeTeamDispatchService.DispatchOutcome.Sent => Results.Ok(
+                new FakeTeamListingResult(mode, [.. result.Teams.Select(FakeTeamEntry.Of)])),
+            FakeTeamDispatchService.DispatchOutcome.NoSuchLobby => Results.NotFound(
+                new FakeEventResult($"There is no {EventScheduleService.ModeName(mode)} lobby running.")),
+            FakeTeamDispatchService.DispatchOutcome.LobbyOffline => Results.Json(
+                new FakeEventResult(
+                    $"The {EventScheduleService.ModeName(mode)} lobby is not connected, so no teams could be listed."),
+                statusCode: StatusCodes.Status503ServiceUnavailable),
+            _ => Results.Json(
+                new FakeEventResult(
+                    $"The {EventScheduleService.ModeName(mode)} lobby did not answer, so no teams could be listed."),
+                statusCode: StatusCodes.Status504GatewayTimeout),
+        };
+    }
+
+    /// <summary>Asks a lobby to forget one of the teams it holds in memory.</summary>
+    /// <param name="dispatch">Service the request is carried through.</param>
+    /// <param name="teamName">Name of the in-memory team to remove.</param>
+    /// <param name="mode">Lobby mode the team is in.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private static async Task<IResult> RemoveAsync(
+        FakeTeamDispatchService dispatch,
+        string teamName,
+        int mode,
+        CancellationToken cancellationToken)
+    {
+        var result = await dispatch.RemoveAsync(mode, teamName, cancellationToken);
+
+        return result.Outcome switch
+        {
+            FakeTeamDispatchService.DispatchOutcome.Sent when result.Teams.Count == 0 => Results.NotFound(
+                new FakeEventResult(
+                    $"No in-memory team called \"{teamName}\" is in the {EventScheduleService.ModeName(mode)} lobby.")),
+            FakeTeamDispatchService.DispatchOutcome.Sent => Results.Json(
+                new FakeEventResult(
+                    $"Asked the {EventScheduleService.ModeName(mode)} lobby to forget \"{teamName}\".")),
+            FakeTeamDispatchService.DispatchOutcome.NoTeamName => Results.BadRequest(
+                new FakeEventResult("Name the in-memory team to remove.")),
+            FakeTeamDispatchService.DispatchOutcome.NoSuchLobby => Results.NotFound(
+                new FakeEventResult($"There is no {EventScheduleService.ModeName(mode)} lobby running.")),
+            FakeTeamDispatchService.DispatchOutcome.LobbyOffline => Results.Json(
+                new FakeEventResult(
+                    $"The {EventScheduleService.ModeName(mode)} lobby is not connected, so nothing was removed."),
+                statusCode: StatusCodes.Status503ServiceUnavailable),
+            _ => Results.Json(
+                new FakeEventResult(
+                    $"The {EventScheduleService.ModeName(mode)} lobby did not answer, so nothing was removed."),
+                statusCode: StatusCodes.Status504GatewayTimeout),
         };
     }
 }

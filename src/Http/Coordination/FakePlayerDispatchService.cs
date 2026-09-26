@@ -1,10 +1,9 @@
-using Mgo2Server.Http.Coordination;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.InternalGrpc.Contracts;
 using Microsoft.Extensions.Logging;
 
-namespace Mgo2Server.Http.Discord;
+namespace Mgo2Server.Http.Coordination;
 
 /// <summary>
 /// Sends a request to add fake players to a team to the one lobby that holds it.
@@ -23,11 +22,11 @@ namespace Mgo2Server.Http.Discord;
 /// </para>
 /// </summary>
 /// <param name="registry">Registry of the connected lobbies.</param>
-/// <param name="lobbyService">Service that resolves the lobby a mode names.</param>
+/// <param name="modes">Service that resolves the lobby a mode names.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class FakePlayerDispatchService(
     LobbyConnectionRegistryService registry,
-    LobbyService lobbyService,
+    LobbyModeResolverService modes,
     ILogger<FakePlayerDispatchService> logger)
 {
     /// <summary>How many fake players one request may ask for.</summary>
@@ -95,7 +94,7 @@ public sealed class FakePlayerDispatchService(
             return new Result(DispatchOutcome.NoTeamName, mode, count, teamName, playerPrefix, 0);
         }
 
-        var lobby = await ResolveLobbyAsync(mode, cancellationToken);
+        var lobby = await modes.ResolveAsync(mode, cancellationToken);
         if (lobby is null)
         {
             return new Result(DispatchOutcome.NoSuchLobby, mode, count, teamName, playerPrefix, 0);
@@ -128,29 +127,5 @@ public sealed class FakePlayerDispatchService(
             mode);
 
         return new Result(DispatchOutcome.Sent, mode, count, teamName, playerPrefix, lobby.Identifier);
-    }
-
-    /// <summary>
-    /// Finds the running lobby of a mode. Several lobbies may share a mode, so
-    /// the first is taken rather than insisting a deployment only ever runs
-    /// one: the players go to a lobby that exists rather than to none.
-    /// </summary>
-    private async Task<LobbyResponse?> ResolveLobbyAsync(int mode, CancellationToken cancellationToken)
-    {
-        if (!EventConstants.IsEventSelector(mode))
-        {
-            return null;
-        }
-
-        var lobbies = await lobbyService.GetLobbiesAsync(cancellationToken);
-        foreach (var lobby in lobbies)
-        {
-            if (lobby.SubtypeIdentifier == mode)
-            {
-                return lobby;
-            }
-        }
-
-        return null;
     }
 }

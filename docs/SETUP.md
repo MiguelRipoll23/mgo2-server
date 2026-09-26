@@ -243,6 +243,41 @@ more — mode 6's blob is zeroed on disc, so it requires a memory dump from a ru
 - **A hang with no error is a missing reply.** The client stalls and then fails with `FFFFFF60`
   under whatever screen was open. Read `No handler for command …` from the lobby log.
 
+## Event testing tools
+
+A Survival or Tournament lobby cannot be tested with one player: the team forms, it enters, and then it
+waits for an opponent nobody is going to join. Two pages exist for that, and they need no account and
+no token:
+
+| Page | What it is |
+| --- | --- |
+| `/survival` | The tools, opening on the Survival lobby. |
+| `/tournament` | The same page, opening on the Tournament registration lobby. |
+
+Both are one page of code: the path picks the lobby the page opens on, and the lobby menu at the top
+changes it. From there you can create a team that exists only in the lobby's memory, fill a team with
+players who are not really there, move such a team through the entry pipeline, and list and remove
+the teams the lobby is holding. Everything a team needs is a menu, so a name is the only thing ever
+typed.
+
+**Nothing here is written to the database.** A team and its players live in the lobby's memory and go
+away when it restarts, which is what makes them a testing device rather than a second source of
+teams. The fake players have no account and no character, and their identifiers are handed out from a
+range no character row can occupy.
+
+**The endpoints behind the page are public, deliberately.** They are a testing device, so what an
+unauthenticated caller can reach is a team no client can mistake for a real one. Filling a *real*
+team is the one part that writes: it appends roster slots the client would have filled by joining,
+already ready, because there is nobody to press the decision button. Do not point the page at a lobby
+whose teams you would not want a stranger to be able to fill.
+
+The requests travel over the coordination stream the lobbies already hold, as arms of `HttpEvent`.
+They name a lobby **mode** rather than an identifier, because the API does not know the lobby
+identifiers; the lobby whose own game type matches answers, and one asked for a mode it is not running
+refuses rather than acting on the wrong lobby. Listing and removing are the exception to the
+one-way push: they carry a correlation and the answer comes back up the same stream, because the
+teams are the lobby's own and nothing else can enumerate them.
+
 ## Verifying the pieces
 
 | symptom | check |

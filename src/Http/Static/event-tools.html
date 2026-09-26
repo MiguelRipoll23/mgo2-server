@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Event tools</title>
+    <title>Event testing tools</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -24,63 +24,57 @@
   <body
     class="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,rgba(56,189,248,0.12),transparent_55%),radial-gradient(ellipse_at_bottom_right,rgba(30,64,175,0.18),transparent_60%)] text-slate-100 antialiased"
   >
-    <main class="mx-auto w-full max-w-4xl px-4 py-10">
+    <main class="mx-auto w-full max-w-5xl px-4 py-10">
       <header class="mb-8">
         <h1 class="text-3xl font-extrabold tracking-tight">
           <span class="text-sky-400" id="title">Event</span> testing tools
         </h1>
-        <p class="mt-2 text-sm text-slate-400">
-          Create teams and players that exist only in a lobby's memory, and move an
-          in-memory team through the entry pipeline. Nothing here is written to the
-          database. Every request is authenticated with the bearer token below.
+        <p class="mt-2 max-w-2xl text-sm text-slate-400">
+          Create teams and players that exist only in a lobby's memory, and move
+          an in-memory team through the entry pipeline. Nothing here is written
+          to the database, and a team a lobby forgets is gone for good. Pick a
+          lobby, then use the menus — there is nothing to type but a name.
         </p>
       </header>
 
       <section
         class="mb-6 rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl backdrop-blur"
       >
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label for="token" class="block text-sm font-medium text-slate-300">Bearer token (JWT)</label>
-            <input
-              type="password"
-              id="token"
-              autocomplete="off"
-              placeholder="paste the token"
-              class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-            />
-            <p class="mt-1.5 text-xs text-slate-500">
-              Stored in this browser only, and sent as <code>Authorization: Bearer …</code>.
-            </p>
-          </div>
-          <div>
-            <label for="mode" class="block text-sm font-medium text-slate-300">Lobby mode</label>
-            <select
-              id="mode"
-              class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-            >
-              <option value="4">Survival (4)</option>
-              <option value="3">Tournament (3)</option>
-              <option value="10">Tournament registration (10)</option>
-            </select>
-            <p class="mt-1.5 text-xs text-slate-500">
-              The running lobby of this mode answers; a mode with no lobby refuses.
-            </p>
-          </div>
+        <label for="mode" class="block text-sm font-medium text-slate-300">Lobby</label>
+        <div class="mt-2 flex flex-wrap items-center gap-3">
+          <select
+            id="mode"
+            class="w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30 sm:w-72"
+          >
+            <option value="4">Survival</option>
+            <option value="10">Tournament registration</option>
+            <option value="3">Tournament</option>
+          </select>
+          <button
+            type="button"
+            id="refresh"
+            class="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-mgo-500 hover:text-white"
+          >
+            Refresh teams
+          </button>
         </div>
+        <p class="mt-2 text-xs text-slate-500" id="mode-hint">
+          The running lobby of this mode answers; a mode with no lobby says so
+          rather than failing later.
+        </p>
       </section>
 
       <div id="status" class="mb-6 hidden">
         <p id="status-text" class="rounded-lg px-4 py-3 text-sm font-medium"></p>
       </div>
 
-      <div class="grid gap-6 lg:grid-cols-3">
+      <div class="grid gap-6 lg:grid-cols-2">
         <form
           id="create-form"
           class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl backdrop-blur"
         >
-          <h2 class="text-lg font-semibold">Create an in-memory team</h2>
-          <p class="mt-1 text-xs text-slate-500">POST /fake-teams</p>
+          <h2 class="text-lg font-semibold">Create a team</h2>
+          <p class="mt-1 text-xs text-slate-500">A team that lives in the lobby's memory only.</p>
           <div class="mt-4 space-y-4">
             <div>
               <label for="create-team" class="block text-sm font-medium text-slate-300">Team name</label>
@@ -88,34 +82,31 @@
                 type="text"
                 id="create-team"
                 maxlength="64"
-                placeholder="blank for a composed one"
+                placeholder="leave blank and one is made up"
                 class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
               />
             </div>
             <div>
               <label for="create-count" class="block text-sm font-medium text-slate-300">Players</label>
-              <input
-                type="number"
+              <select
                 id="create-count"
-                min="1"
-                max="6"
-                value="6"
                 class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-              />
+              ></select>
+              <p class="mt-1.5 text-xs text-slate-500">The leader is one of them.</p>
             </div>
             <div>
-              <label for="create-prefix" class="block text-sm font-medium text-slate-300">Player prefix</label>
+              <label for="create-prefix" class="block text-sm font-medium text-slate-300">Player names</label>
               <input
                 type="text"
                 id="create-prefix"
                 maxlength="64"
-                placeholder="blank for a composed one"
+                placeholder="leave blank and they are numbered"
                 class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
               />
             </div>
             <button
               type="submit"
-              class="w-full rounded-lg bg-mgo-500 px-4 py-2.5 text-sm font-bold uppercase tracking-widest text-slate-950 transition hover:bg-mgo-400 disabled:cursor-not-allowed disabled:opacity-60"
+              class="w-full rounded-lg bg-mgo-500 px-4 py-2.5 text-sm font-bold uppercase tracking-widest text-slate-950 transition hover:bg-mgo-400"
             >
               Create team
             </button>
@@ -126,44 +117,48 @@
           id="players-form"
           class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl backdrop-blur"
         >
-          <h2 class="text-lg font-semibold">Add fake players</h2>
-          <p class="mt-1 text-xs text-slate-500">POST /fake-teams/players</p>
+          <h2 class="text-lg font-semibold">Add players to a team</h2>
+          <p class="mt-1 text-xs text-slate-500">Fills a team that already exists.</p>
           <div class="mt-4 space-y-4">
             <div>
-              <label for="players-team" class="block text-sm font-medium text-slate-300">Team name</label>
-              <input
-                type="text"
+              <label for="players-team" class="block text-sm font-medium text-slate-300">Team</label>
+              <select
                 id="players-team"
-                required
-                maxlength="64"
-                class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-              />
-              <p class="mt-1.5 text-xs text-slate-500">An in-memory team, or a real team of that lobby.</p>
-            </div>
-            <div>
-              <label for="players-count" class="block text-sm font-medium text-slate-300">Players</label>
-              <input
-                type="number"
-                id="players-count"
-                min="1"
-                max="6"
-                value="1"
                 class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-              />
+              ></select>
+              <div id="players-team-other" class="mt-2 hidden">
+                <input
+                  type="text"
+                  id="players-team-name"
+                  maxlength="64"
+                  placeholder="name of a team a player formed"
+                  class="w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
+                />
+              </div>
+              <p class="mt-1.5 text-xs text-slate-500">
+                The teams of this lobby, or the name of one a real player formed.
+              </p>
             </div>
             <div>
-              <label for="players-prefix" class="block text-sm font-medium text-slate-300">Player prefix</label>
+              <label for="players-count" class="block text-sm font-medium text-slate-300">Players to add</label>
+              <select
+                id="players-count"
+                class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
+              ></select>
+            </div>
+            <div>
+              <label for="players-prefix" class="block text-sm font-medium text-slate-300">Player names</label>
               <input
                 type="text"
                 id="players-prefix"
                 maxlength="64"
-                placeholder="blank for a composed one"
+                placeholder="leave blank and they are numbered"
                 class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
               />
             </div>
             <button
               type="submit"
-              class="w-full rounded-lg bg-mgo-500 px-4 py-2.5 text-sm font-bold uppercase tracking-widest text-slate-950 transition hover:bg-mgo-400 disabled:cursor-not-allowed disabled:opacity-60"
+              class="w-full rounded-lg bg-mgo-500 px-4 py-2.5 text-sm font-bold uppercase tracking-widest text-slate-950 transition hover:bg-mgo-400"
             >
               Add players
             </button>
@@ -174,170 +169,51 @@
           id="state-form"
           class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl backdrop-blur"
         >
-          <h2 class="text-lg font-semibold">Change a team's state</h2>
-          <p class="mt-1 text-xs text-slate-500">POST /fake-teams/state</p>
+          <h2 class="text-lg font-semibold">Move a team to a state</h2>
+          <p class="mt-1 text-xs text-slate-500">How a client renders each phase of the entry pipeline.</p>
           <div class="mt-4 space-y-4">
             <div>
-              <label for="state-team" class="block text-sm font-medium text-slate-300">In-memory team name</label>
-              <input
-                type="text"
+              <label for="state-team" class="block text-sm font-medium text-slate-300">Team</label>
+              <select
                 id="state-team"
-                required
-                maxlength="64"
-                class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-              />
+                class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
+              ></select>
             </div>
             <div>
               <label for="state-team-state" class="block text-sm font-medium text-slate-300">Team state</label>
-              <input
-                type="number"
+              <select
                 id="state-team-state"
-                min="0"
-                max="255"
-                value="1"
                 class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-              />
-              <p class="mt-1.5 text-xs text-slate-500">1 joinable, 9 registered/queued, and so on.</p>
+              ></select>
             </div>
             <div>
               <label for="state-member" class="block text-sm font-medium text-slate-300">Member state</label>
-              <input
-                type="number"
+              <select
                 id="state-member"
-                min="0"
-                max="255"
-                value="0"
                 class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-              />
-              <p class="mt-1.5 text-xs text-slate-500">
-                0 lets each member follow the team state. 1 pending, 2 ready, 4 approved, 5/6 closed.
-              </p>
+              ></select>
             </div>
             <button
               type="submit"
-              class="w-full rounded-lg bg-mgo-500 px-4 py-2.5 text-sm font-bold uppercase tracking-widest text-slate-950 transition hover:bg-mgo-400 disabled:cursor-not-allowed disabled:opacity-60"
+              class="w-full rounded-lg bg-mgo-500 px-4 py-2.5 text-sm font-bold uppercase tracking-widest text-slate-950 transition hover:bg-mgo-400"
             >
               Change state
             </button>
           </div>
         </form>
+
+        <section
+          class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl backdrop-blur"
+        >
+          <h2 class="text-lg font-semibold">Teams in this lobby</h2>
+          <p class="mt-1 text-xs text-slate-500">
+            What the lobby holds in memory right now. A restart empties this list.
+          </p>
+          <div class="mt-4 space-y-2" id="team-list"></div>
+        </section>
       </div>
     </main>
 
-    <script>
-      const tokenInput = document.getElementById("token");
-      const modeSelect = document.getElementById("mode");
-      const status = document.getElementById("status");
-      const statusText = document.getElementById("status-text");
-      const storageKey = "mgo2.event-tools.token";
-
-      // The page is the same code at both routes; the path picks the lobby the
-      // mode select starts on, so the tournament page opens on registration and
-      // the survival page on Survival.
-      const path = window.location.pathname.replace(/\/$/, "");
-      const isTournament = path.endsWith("/tournament");
-      document.getElementById("title").textContent = isTournament ? "Tournament" : "Survival";
-      modeSelect.value = isTournament ? "10" : "4";
-
-      tokenInput.value = window.localStorage.getItem(storageKey) || "";
-      tokenInput.addEventListener("change", () => {
-        window.localStorage.setItem(storageKey, tokenInput.value.trim());
-      });
-
-      function showStatus(kind, message) {
-        statusText.textContent = message;
-        statusText.className =
-          kind === "error"
-            ? "rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-300"
-            : kind === "pending"
-              ? "rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm font-medium text-slate-300"
-              : "rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300";
-        status.classList.remove("hidden");
-      }
-
-      async function send(path, body) {
-        const token = tokenInput.value.trim();
-        if (!token) {
-          showStatus("error", "Paste a bearer token first; every request below is authenticated.");
-          return;
-        }
-
-        window.localStorage.setItem(storageKey, token);
-        showStatus("pending", "Sending…");
-
-        try {
-          const response = await fetch(path, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: "Bearer " + token,
-            },
-            body: JSON.stringify(body),
-          });
-
-          const data = await response.json().catch(() => null);
-          const message = (data && data.message) || response.statusText;
-
-          if (response.status === 401 || response.status === 403) {
-            showStatus("error", "The token was refused. Paste a valid, unexpired token.");
-          } else if (response.ok) {
-            showStatus("success", message);
-          } else {
-            showStatus("error", message);
-          }
-        } catch (error) {
-          showStatus("error", "Could not reach the server. Is it running?");
-        }
-      }
-
-      function submit(handler) {
-        return (event) => {
-          event.preventDefault();
-          handler(event.currentTarget);
-        };
-      }
-
-      document
-        .getElementById("create-form")
-        .addEventListener(
-          "submit",
-          submit(() =>
-            send("/fake-teams", {
-              mode: Number(modeSelect.value),
-              count: Number(document.getElementById("create-count").value),
-              teamName: document.getElementById("create-team").value.trim(),
-              playerPrefix: document.getElementById("create-prefix").value.trim(),
-            }),
-          ),
-        );
-
-      document
-        .getElementById("players-form")
-        .addEventListener(
-          "submit",
-          submit(() =>
-            send("/fake-teams/players", {
-              mode: Number(modeSelect.value),
-              count: Number(document.getElementById("players-count").value),
-              teamName: document.getElementById("players-team").value.trim(),
-              playerPrefix: document.getElementById("players-prefix").value.trim(),
-            }),
-          ),
-        );
-
-      document
-        .getElementById("state-form")
-        .addEventListener(
-          "submit",
-          submit(() =>
-            send("/fake-teams/state", {
-              mode: Number(modeSelect.value),
-              teamName: document.getElementById("state-team").value.trim(),
-              state: Number(document.getElementById("state-team-state").value),
-              memberState: Number(document.getElementById("state-member").value),
-            }),
-          ),
-        );
-    </script>
+    <script src="/event-tools.js"></script>
   </body>
 </html>

@@ -125,6 +125,35 @@ public sealed class FakeTeamService(IDbContextFactory<Mgo2DatabaseContext> conte
         return team;
     }
 
+    /// <summary>Removes an in-memory team of a lobby and forgets its players.</summary>
+    /// <param name="lobbyIdentifier">Lobby the team is in.</param>
+    /// <param name="teamName">Name of the in-memory team.</param>
+    /// <returns>The team that was removed, or null when no in-memory team of that name is held.</returns>
+    public FakeTeam? RemoveTeam(int lobbyIdentifier, string teamName)
+    {
+        if (string.IsNullOrWhiteSpace(teamName))
+        {
+            return null;
+        }
+
+        var team = FindTeamByName(lobbyIdentifier, teamName);
+        if (team is null)
+        {
+            return null;
+        }
+
+        lock (gate)
+        {
+            teams.Remove(team.Identifier);
+            foreach (var member in team.Members)
+            {
+                players.Remove(member.CharacterIdentifier);
+            }
+        }
+
+        return team;
+    }
+
     /// <summary>Creates a team that lives only in this process.</summary>
     /// <param name="mode">Lobby mode the team is formed in.</param>
     /// <param name="lobbyIdentifier">Lobby the team is formed in.</param>

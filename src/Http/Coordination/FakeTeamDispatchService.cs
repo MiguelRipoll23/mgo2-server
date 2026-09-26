@@ -1,18 +1,18 @@
-using Mgo2Server.Http.Coordination;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.InternalGrpc.Contracts;
 using Microsoft.Extensions.Logging;
 
-namespace Mgo2Server.Http.Discord;
+namespace Mgo2Server.Http.Coordination;
 
 /// <summary>
 /// Sends a request to create a team that exists only in a lobby's memory to the
-/// one lobby that will show it.
+/// one lobby that will show it, and carries the questions about the teams a
+/// lobby is already holding.
 /// <para>
-/// The command is answered by the HTTP API but the team has to exist in the
+/// The request is answered by the HTTP API but the team has to exist in the
 /// lobby that lists it, and the two are separate processes. This is the step in
-/// between: it turns the lobby a moderator named into the identifier the
+/// between: it turns the lobby a caller named into the identifier the
 /// coordination registry is keyed by, and hands the request down that lobby's
 /// open stream.
 /// </para>
@@ -23,11 +23,13 @@ namespace Mgo2Server.Http.Discord;
 /// </para>
 /// </summary>
 /// <param name="registry">Registry of the connected lobbies.</param>
-/// <param name="lobbyService">Service that resolves the lobby a mode names.</param>
+/// <param name="modes">Service that resolves the lobby a mode names.</param>
+/// <param name="queries">Service that holds the questions a lobby is answering.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class FakeTeamDispatchService(
     LobbyConnectionRegistryService registry,
-    LobbyService lobbyService,
+    LobbyModeResolverService modes,
+    LobbyTeamQueryService queries,
     ILogger<FakeTeamDispatchService> logger)
 {
     /// <summary>How many players one fake team may hold, leader included.</summary>
@@ -53,6 +55,9 @@ public sealed class FakeTeamDispatchService(
 
         /// <summary>The lobby exists but its stream is not open.</summary>
         LobbyOffline,
+
+        /// <summary>The lobby did not answer in time.</summary>
+        NoAnswer,
     }
 
     /// <summary>Largest value a state byte the client reads can carry.</summary>
@@ -91,7 +96,7 @@ public sealed class FakeTeamDispatchService(
             return new Result(DispatchOutcome.InvalidCount, mode, count, teamName, playerPrefix, 0);
         }
 
-        var lobby = await ResolveLobbyAsync(mode, cancellationToken);
+        var lobby = await modes.ResolveAsync(mode, cancellationToken);
         if (lobby is null)
         {
             return new Result(DispatchOutcome.NoSuchLobby, mode, count, teamName, playerPrefix, 0);
@@ -171,7 +176,7 @@ public sealed class FakeTeamDispatchService(
             return new StateResult(DispatchOutcome.InvalidState, mode, teamName, state, memberState, 0);
         }
 
-        var lobby = await ResolveLobbyAsync(mode, cancellationToken);
+        var lobby = await modes.ResolveAsync(mode, cancellationToken);
         if (lobby is null)
         {
             return new StateResult(DispatchOutcome.NoSuchLobby, mode, teamName, state, memberState, 0);
@@ -206,29 +211,114 @@ public sealed class FakeTeamDispatchService(
         return new StateResult(DispatchOutcome.Sent, mode, teamName, state, memberState, lobby.Identifier);
     }
 
+    /// <summary>What a question about a lobby's in-memory teams did.</summary>
+    /// <param name="Outcome">What happened.</param>
+    /// <param name="Mode">Lobby mode that was asked about.</param>
+    /// <param name="Teams">Teams the lobby reported, empty when it reported none.</param>
+    public readonly record struct QueryResult(
+        DispatchOutcome Outcome,
+        int Mode,
+        IReadOnlyList<FakeTeamSummary> Teams);
+
     /// <summary>
-    /// Finds the running lobby of a mode. Several lobbies may share a mode, so
-    /// the first is taken rather than insisting a deployment only ever runs
-    /// one. The team goes to a lobby that exists rather than to none.
+    /// Asks the lobby of a mode what it holds in memory.
+    /// <para>
+    /// This is the one request of the group that waits for an answer rather
+    /// than handing something over and moving on: the teams live in the lobby's
+    /// process, so the API cannot list them itself, and a caller that was told
+    /// about a team that is not there would be told about a team it cannot
+    /// change either.
+    /// </para>
     /// </summary>
-    /// <param name="mode">Lobby mode to resolve.</param>
+    /// <param name="mode">Lobby mode to ask about.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    private async Task<LobbyResponse?> ResolveLobbyAsync(int mode, CancellationToken cancellationToken)
+    /// <returns>The teams the lobby holds, or why there are none.</returns>
+    public async Task<QueryResult> ListAsync(int mode, CancellationToken cancellationToken = default) =>
+        await AskAsync(mode, FakeTeamQueryAction.List, teamName: string.Empty, cancellationToken);
+
+    /// <summary>
+    /// Asks the lobby of a mode to forget one of the teams it holds in memory.
+    /// </summary>
+    /// <param name="mode">Lobby mode the team is in.</param>
+    /// <param name="teamName">Name of the in-memory team to remove.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The team that was removed, or why nothing was.</returns>
+    public async Task<QueryResult> RemoveAsync(
+        int mode,
+        string teamName,
+        CancellationToken cancellationToken = default)
     {
-        if (!EventConstants.IsEventSelector(mode))
+        if (string.IsNullOrWhiteSpace(teamName))
         {
-            return null;
+            return new QueryResult(DispatchOutcome.NoTeamName, mode, []);
         }
 
-        var lobbies = await lobbyService.GetLobbiesAsync(cancellationToken);
-        foreach (var lobby in lobbies)
+        return await AskAsync(mode, FakeTeamQueryAction.Remove, teamName.Trim(), cancellationToken);
+    }
+
+    private async Task<QueryResult> AskAsync(
+        int mode,
+        FakeTeamQueryAction action,
+        string teamName,
+        CancellationToken cancellationToken)
+    {
+        var lobby = await modes.ResolveAsync(mode, cancellationToken);
+        if (lobby is null)
         {
-            if (lobby.SubtypeIdentifier == mode)
+            return new QueryResult(DispatchOutcome.NoSuchLobby, mode, []);
+        }
+
+        var requestIdentifier = queries.NextRequestIdentifier();
+        if (!queries.Expect(requestIdentifier, out var answer))
+        {
+            return new QueryResult(DispatchOutcome.NoAnswer, mode, []);
+        }
+
+        var message = new HttpEvent
+        {
+            FakeTeamQuery = new FakeTeamQueryRequest
             {
-                return lobby;
-            }
+                RequestIdentifier = requestIdentifier,
+                LobbySubtype = mode,
+                Action = action,
+                TeamName = teamName,
+            },
+        };
+
+        if (!registry.SendTo(lobby.Identifier, message))
+        {
+            queries.Abandon(requestIdentifier);
+            logger.LogWarning(
+                "Lobby {LobbyIdentifier} has no open coordination stream, so it was not asked about its teams",
+                lobby.Identifier);
+            return new QueryResult(DispatchOutcome.LobbyOffline, mode, []);
         }
 
-        return null;
+        try
+        {
+            var listing = await answer.WaitAsync(LobbyTeamQueryService.Timeout, cancellationToken);
+            logger.LogInformation(
+                "Lobby {LobbyIdentifier} reported {Count} in-memory team(s) for {Action} in mode {Mode}",
+                lobby.Identifier,
+                listing.Teams.Count,
+                action,
+                mode);
+
+            return new QueryResult(DispatchOutcome.Sent, mode, listing.Teams);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            queries.Abandon(requestIdentifier);
+            throw;
+        }
+        catch (Exception)
+        {
+            queries.Abandon(requestIdentifier);
+            logger.LogWarning(
+                "Lobby {LobbyIdentifier} did not answer the team query in mode {Mode} in time",
+                lobby.Identifier,
+                mode);
+            return new QueryResult(DispatchOutcome.NoAnswer, mode, []);
+        }
     }
 }

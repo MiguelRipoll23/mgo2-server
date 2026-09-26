@@ -21,6 +21,7 @@ message LobbyEvent {
   oneof event {
     LobbyRegistration registration = 1;
     PlayerPresenceChange player_presence = 2;
+    FakeTeamListing fake_team_listing = 3;
   }
 }
 
@@ -53,7 +54,63 @@ message HttpEvent {
     FakePlayerRequest fake_players = 2;
     FakeTeamRequest fake_team = 3;
     FakeTeamStateRequest fake_team_state = 4;
+    FakeTeamQueryRequest fake_team_query = 5;
   }
+}
+
+// A question the coordinator asks one lobby about the teams it holds only in
+// memory, and the answer it sends back up the stream it arrived on.
+//
+// Every other arm of the two messages is a one-way push: the API hands a lobby
+// something to do and the lobby logs what it did. Listing and removing an
+// in-memory team is the first thing the API has to be told the answer to, since
+// the team has no row and no identifier any other part of the deployment could
+// look up. The correlation is therefore carried on the wire, and the answer
+// travels back on the direction the question did not: up the request stream.
+message FakeTeamQueryRequest {
+  // Correlation the answer carries back. The coordinator reads it off the
+  // reply and hands the reply to the caller that is waiting for it.
+  int64 request_identifier = 1;
+  // Mode of the lobby being asked: 4 Survival, 3 Tournament or 10 Tournament
+  // registration. A lobby asked for a mode it is not running refuses.
+  int32 lobby_subtype = 2;
+  // What to do with the teams the lobby holds.
+  FakeTeamQueryAction action = 3;
+  // Name of the team to remove, for the remove action.
+  string team_name = 4;
+}
+
+// What the coordinator asked the lobby to do.
+enum FakeTeamQueryAction {
+  // No action was asked for; the lobby answers with an empty listing.
+  FAKE_TEAM_QUERY_ACTION_UNSPECIFIED = 0;
+  // List the in-memory teams of the lobby.
+  FAKE_TEAM_QUERY_ACTION_LIST = 1;
+  // Remove one in-memory team, named by the request.
+  FAKE_TEAM_QUERY_ACTION_REMOVE = 2;
+}
+
+// The answer to one FakeTeamQueryRequest.
+message FakeTeamListing {
+  // Correlation of the request this answers.
+  int64 request_identifier = 1;
+  // Teams the lobby holds in memory, for the list action. A remove answers
+  // with the team that was removed, so a caller can see what it removed.
+  repeated FakeTeamSummary teams = 2;
+}
+
+// One in-memory team as the lobby reports it.
+message FakeTeamSummary {
+  // Identifier the client caches, from the fake range.
+  int32 team_identifier = 1;
+  // Display name of the team.
+  string team_name = 2;
+  // Lifecycle state the client reads.
+  int32 state = 3;
+  // How many players the roster holds, leader included.
+  int32 member_count = 4;
+  // Event the team is filed under.
+  int32 event_identifier = 5;
 }
 
 // A request to add players who are not really there to a team that already

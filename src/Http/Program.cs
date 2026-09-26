@@ -94,6 +94,8 @@ builder.Services.AddSingleton<RankingResponseService>();
 builder.Services.AddGrpc();
 builder.Services.AddSingleton<LobbyPresenceService>();
 builder.Services.AddSingleton<LobbyConnectionRegistryService>();
+builder.Services.AddSingleton<LobbyModeResolverService>();
+builder.Services.AddSingleton<LobbyTeamQueryService>();
 builder.Services.AddSingleton<PlayerPresenceNotificationService>();
 builder.Services.AddSingleton<FlashNewsDispatcherService>();
 
@@ -111,9 +113,7 @@ builder.Services.AddSingleton<IPlayerPresenceObserver>(
     provider => provider.GetRequiredService<DiscordPlayerCountService>());
 builder.Services.AddSingleton<DiscordEventScheduleCommandService>();
 builder.Services.AddSingleton<FakePlayerDispatchService>();
-builder.Services.AddSingleton<DiscordFakePlayerCommandService>();
 builder.Services.AddSingleton<FakeTeamDispatchService>();
-builder.Services.AddSingleton<DiscordFakeTeamCommandService>();
 builder.Services.AddSingleton<DiscordCommandService>();
 builder.Services.AddSingleton<DiscordGatewayClientService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<DiscordGatewayClientService>());

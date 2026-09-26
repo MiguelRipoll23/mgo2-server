@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Mgo2Server.Shared.Domain.Events;
+using Mgo2Server.Shared.InternalGrpc.Contracts;
+using Mgo2Server.Shared.InternalGrpc.Contracts;
 
 namespace Mgo2Server.Http.Contracts;
 
@@ -78,3 +80,25 @@ public sealed class FakeTeamStateChangeRequest
 /// <summary>What a fake-event request did, as the caller is told it.</summary>
 /// <param name="Message">Sentence describing the outcome.</param>
 public sealed record FakeEventResult(string Message);
+
+/// <summary>
+/// One in-memory team as a caller is told about it. It carries the name rather
+/// than the identifier, because the name is what the other requests take.
+/// </summary>
+/// <param name="Name">Display name of the team.</param>
+/// <param name="State">Lifecycle state the client reads.</param>
+/// <param name="Members">How many players the roster holds, leader included.</param>
+public sealed record FakeTeamEntry(string Name, int State, int Members)
+{
+    /// <summary>Projects the answer a lobby gave into what a caller reads.</summary>
+    /// <param name="summary">Team the lobby reported.</param>
+    public static FakeTeamEntry Of(FakeTeamSummary summary) =>
+        new(summary.TeamName, summary.State, summary.MemberCount);
+}
+
+/// <summary>
+/// The in-memory teams one lobby is holding, as a caller is told about them.
+/// </summary>
+/// <param name="Mode">Lobby mode that was asked about.</param>
+/// <param name="Teams">Teams the lobby reported, in the order it holds them.</param>
+public sealed record FakeTeamListingResult(int Mode, IReadOnlyList<FakeTeamEntry> Teams);

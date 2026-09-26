@@ -17,10 +17,12 @@ namespace Mgo2Server.Http.Coordination;
 /// </remarks>
 /// <param name="registry">Registry the open streams are held in.</param>
 /// <param name="notifications">Service the presence events are applied to.</param>
+/// <param name="queries">Service the questions a lobby answers are handed to.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class LobbyCoordinationGrpcService(
     LobbyConnectionRegistryService registry,
     PlayerPresenceNotificationService notifications,
+    LobbyTeamQueryService queries,
     ILogger<LobbyCoordinationGrpcService> logger)
     : LobbyCoordination.LobbyCoordinationBase
 {
@@ -119,6 +121,13 @@ public sealed class LobbyCoordinationGrpcService(
                         cancellationToken);
                 }
 
+                break;
+
+            case LobbyEvent.EventOneofCase.FakeTeamListing:
+                // The one arm that answers rather than reports: the caller that
+                // asked is parked in the query service, and this is what wakes
+                // it up. The teams themselves are never held here.
+                queries.Complete(message.FakeTeamListing);
                 break;
 
             default:

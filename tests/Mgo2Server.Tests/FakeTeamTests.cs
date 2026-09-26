@@ -105,4 +105,46 @@ public sealed class FakeTeamTests
 
         Assert.Equal(FakeTeamFillOutcome.TeamNotFound, result.Outcome);
     }
+
+    [Fact]
+    public void A_lobby_lists_only_the_in_memory_teams_of_its_own()
+    {
+        var service = CreateService();
+        service.CreateTeam(EventConstants.SurvivalSelector, 9, 1, "SURVIVAL", string.Empty, 2);
+        service.CreateTeam(EventConstants.SurvivalSelector, 9, 1, "ALSO SURVIVAL", string.Empty, 1);
+        service.CreateTeam(EventConstants.TournamentSelector, 10, 1, "TOURNAMENT", string.Empty, 1);
+
+        var listed = service.ListTeams(9);
+
+        Assert.Equal(["SURVIVAL", "ALSO SURVIVAL"], listed.Select(team => team.Name));
+    }
+
+    [Fact]
+    public void A_removed_team_is_forgotten_with_its_players()
+    {
+        var service = CreateService();
+        service.CreateTeam(EventConstants.SurvivalSelector, 9, 1, "TESTERS", "Sim", 2);
+
+        var removed = service.RemoveTeam(9, "  testers  ");
+
+        Assert.NotNull(removed);
+        Assert.Equal("TESTERS", removed.Name);
+        Assert.Empty(service.ListTeams(9));
+
+        // The players go with the team: an identifier left behind in the fake
+        // range would still be a player a roster could name.
+        Assert.Empty(service.ListPlayers());
+    }
+
+    [Fact]
+    public void Removing_a_team_of_another_lobby_or_a_name_nobody_holds_removes_nothing()
+    {
+        var service = CreateService();
+        service.CreateTeam(EventConstants.SurvivalSelector, 9, 1, "TESTERS", string.Empty, 1);
+
+        Assert.Null(service.RemoveTeam(10, "TESTERS"));
+        Assert.Null(service.RemoveTeam(9, "NOBODY"));
+        Assert.Null(service.RemoveTeam(9, "   "));
+        Assert.Single(service.ListTeams(9));
+    }
 }

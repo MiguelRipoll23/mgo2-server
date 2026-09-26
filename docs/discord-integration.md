@@ -24,7 +24,7 @@ GameLobbyServer (one per lobby)                  Http (one)
 
       Discord ──(gateway events)──▶ DiscordCommandService
         ├─ /flash   ──▶ FlashNewsDispatcherService
-        └─ /message ──▶ IDiscordMessageService (channel message over REST)
+        └─ /official-message ──▶ IDiscordMessageService (channel message over REST)
 ```
 
 * **Http owns the coordination.** It keeps the streams, the per-lobby counts and
@@ -77,16 +77,14 @@ lobby holds 64 announcements.
 
 ### The staff commands
 
-Four commands are registered, all of them gated on the moderator or manager
+Three commands are registered, all of them gated on the moderator or manager
 role:
 
 | Command | What it does |
 | --- | --- |
 | `/flash <message>` | Relays a ticker announcement to every lobby. |
-| `/message <body>` | Sends an official channel message. |
+| `/official-message <body>` | Sends an official channel message. |
 | `/event <action> …` | Schedules, changes, lists or withdraws a Survival or Tournament event. |
-| `/fake-player <mode> <count> <team>` | Adds players that exist only in memory to an existing team. |
-| `/fake-team <mode> [team] [count] [prefix]` | Creates a team that exists only in a lobby's memory. |
 
 #### `/event`
 
@@ -112,52 +110,13 @@ The window is still stored in epoch seconds, because that is what the protocol
 carries, but the number is computed by the server and never asked for. The
 `name` column and its unique index are migration `EventScheduleNames`.
 
-#### `/fake-player`
-
-A Survival team with one player in it cannot be tested: the team forms, it
-enters, and it then waits for an opponent nobody is going to join. This command
-adds enough players to the team for that to actually happen.
-
-The team is the one the `team` option names, and it **must already exist** — a
-real team a player formed in the game, or an in-memory team `/fake-team` made.
-The players are the one part of an event that is **not** a row: they have no
-account, no character, and nothing anybody could log in as, and they are gone
-when the lobby restarts. Their identifiers are handed out from a range no
-character row can occupy, so a fake identifier in a roster is never mistaken for
-a real one.
-
-The added slots are pushed to the team's own clients as each is filled, which is
-what the command exists to fix: a leader holding the roster screen open sees the
-players arrive instead of the team they cached, which was themselves and nobody
-else. A real team is written as roster slots the client would have filled by
-joining, already ready, because there is nobody to press the decision button;
-an in-memory team is extended where it lives. A real team is then reconciled in
-the matchmaking queue, because a roster change can be what makes a team eligible.
-
-#### `/fake-team`
-
-Tests a team list or a roster without a real client forming anything. It creates
-a team that lives only in the lobby's memory (`FakeTeamService`): the same shape
-the team screens read, listed alongside the real teams and gone when the lobby
-restarts, so nothing it makes can be mistaken for a team somebody formed. The
-`count` is how many players it holds, leader included, and the `prefix` is what
-they are named with; both are optional, and a team without them is one leader
-named `Fake 1` under a made-up name.
-
-Both requests travel over the coordination stream the lobbies already hold, as
-new arms of `HttpEvent` (`FakePlayerRequest` and `FakeTeamRequest`). They name a
-lobby **mode** rather than an identifier, because the HTTP API does not know the
-lobby identifiers; the lobby whose own game type matches answers it, and one
-asked for a mode it is not running refuses rather than acting on the wrong
-lobby.
-
 ## Discord
 
 Discord is switched on with `DISCORD_ENABLED=true` and never becomes a
 requirement of anything:
 
 * The bot connects to the Discord gateway over a WebSocket, which is where the
-  `/flash` and `/message` commands and the events arrive. The gateway only
+  `/flash` and `/official-message` commands and the events arrive. The gateway only
   carries what Discord pushes down, so the command registration, the answers to
   the interactions and the channel messages go over the REST API.
 * Every call to Discord is wrapped, and a failure is logged and forgotten. An
@@ -195,13 +154,13 @@ token.
    `DISCORD_GUILD_ID`.
 3. Set `DISCORD_MODERATOR_ROLE_ID` and `DISCORD_MANAGER_ROLE_ID` to the roles
    that may use the staff commands. Without them nobody may use them.
-4. Start the deployment. The API registers `/flash`, `/message`, `/event`,
-   `/fake-player` and `/fake-team` in the guild, connects the bot to the gateway
-   and finds or creates the channel of the player count.
+4. Start the deployment. The API registers `/flash`, `/official-message` and
+   `/event` in the guild, connects the bot to the gateway and finds or creates
+   the channel of the player count.
 
-Both commands take one required option — `/flash` a `message`, `/message` a
-`body` — and are registered per guild, so they are available immediately instead
-of waiting for Discord to publish a global command. They arrive over the gateway
+`/flash` and `/official-message` take one required option — a `message` and a
+`body` respectively — and are registered per guild, so they are available
+immediately instead of waiting for Discord to publish a global command. They arrive over the gateway
 socket: a member runs one, the API sees the interaction and answers the member
 alone, so the channel is not cluttered with the outcome. A command from a guild
 that is not `DISCORD_GUILD_ID` is ignored.
@@ -210,7 +169,7 @@ that is not `DISCORD_GUILD_ID` is ignored.
 
 The bot has two ways to write a channel message:
 
-* The Discord `/message` command writes an official message from the bot into
+* The Discord `/official-message` command writes an official message from the bot into
   the channel it was used in, with the text of its `body` option. It is only run
   for the moderator and manager roles, and the message is never allowed to ping
   a role or everyone in the guild.
