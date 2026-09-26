@@ -34,12 +34,17 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 /// Service that acts on a request to create an in-memory team in this lobby.
 /// Left null by a host that runs no event lobby, for the same reason.
 /// </param>
+/// <param name="fakeTeamStateRequests">
+/// Service that acts on a request to change the state of an in-memory team of
+/// this lobby. Left null by a host that runs no event lobby, for the same reason.
+/// </param>
 public sealed class LobbyCoordinationClientService(
     FlashNewsService flashNewsService,
     IOptions<CoordinationOptions> options,
     ILogger<LobbyCoordinationClientService> logger,
     FakePlayerRequestHandlerService? fakePlayerRequests = null,
-    FakeTeamRequestHandlerService? fakeTeamRequests = null) : ILobbyPresencePublisher
+    FakeTeamRequestHandlerService? fakeTeamRequests = null,
+    FakeTeamStateRequestHandlerService? fakeTeamStateRequests = null) : ILobbyPresencePublisher
 {
     /// <summary>
     /// The characters this lobby has reported as connected. It is kept here
@@ -297,6 +302,12 @@ public sealed class LobbyCoordinationClientService(
             return;
         }
 
+        if (message.EventCase == HttpEvent.EventOneofCase.FakeTeamState)
+        {
+            await ApplyFakeTeamStateAsync(message.FakeTeamState, cancellationToken);
+            return;
+        }
+
         if (message.EventCase != HttpEvent.EventOneofCase.FlashNews)
         {
             logger.LogDebug("The coordinator sent an unknown {EventCase}; ignored", message.EventCase);
@@ -391,6 +402,35 @@ public sealed class LobbyCoordinationClientService(
             // A request that cannot be carried out must not end the stream of
             // the whole lobby: the next flash news still has to arrive.
             logger.LogError(exception, "A fake team request could not be carried out");
+        }
+    }
+
+    /// <summary>Changes the state of the in-memory team the coordinator asked about.</summary>
+    /// <param name="request">Request the coordinator sent.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task ApplyFakeTeamStateAsync(
+        FakeTeamStateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (fakeTeamStateRequests is null)
+        {
+            logger.LogWarning("This host cannot change fake team state; the request was refused");
+            return;
+        }
+
+        try
+        {
+            await fakeTeamStateRequests.HandleAsync(request, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // A request that cannot be carried out must not end the stream of
+            // the whole lobby: the next flash news still has to arrive.
+            logger.LogError(exception, "A fake team state request could not be carried out");
         }
     }
 

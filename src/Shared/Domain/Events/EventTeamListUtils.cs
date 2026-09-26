@@ -23,7 +23,9 @@ public static class EventTeamListUtils
         writer.WriteUInt8(snapshot.FlagBits);
         writer.WriteFixedString(snapshot.HostName, 16);
         writer.WriteInt32(0);
-        writer.WriteUInt8(EventConstants.TeamRosterSize);
+        // The column shows "n / m" and gates the join on it, so it is the number
+        // of members a team may hold rather than the number of roster slots.
+        writer.WriteUInt8(EventConstants.TeamMemberLimit);
         writer.WriteUInt8(snapshot.OccupiedParticipantCount());
         writer.WriteUInt8(snapshot.State);
         writer.WriteInt32(snapshot.HostIdentifier);

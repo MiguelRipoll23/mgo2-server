@@ -94,8 +94,10 @@ public sealed class EventSnapshotTests
         Assert.Equal(EventConstants.TeamListItemWireSize, row.Length);
         Assert.Equal(7, BinaryPrimitives.ReadInt32BigEndian(row.AsSpan(0)));
         Assert.Equal("TEAM", StringUtility.ReadFixedString(row, 4, 16));
-        // Host name, then the zero word, then max players, occupied count and state.
-        Assert.Equal(EventConstants.TeamRosterSize, row[42]);
+        // Host name, then the zero word, then the member capacity, the occupied
+        // count and the state. The capacity is what a team may hold, not the
+        // number of roster slots, because the client gates joining on it.
+        Assert.Equal(EventConstants.TeamMemberLimit, row[42]);
         Assert.Equal(1, row[43]);
         Assert.Equal(EventConstants.TeamJoinableState, row[44]);
     }

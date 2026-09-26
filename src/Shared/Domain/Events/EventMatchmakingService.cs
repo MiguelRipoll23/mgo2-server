@@ -253,25 +253,8 @@ public sealed class EventMatchmakingService(
     /// occupied slot has decided to play.
     /// </summary>
     /// <param name="team">Team to test.</param>
-    private static bool IsReady(Persistence.Entities.EventTeam team)
-    {
-        var occupied = 0;
-        foreach (var member in team.Members)
-        {
-            if (member.CharacterIdentifier == 0)
-            {
-                continue;
-            }
-
-            occupied++;
-            if (member.State != EventConstants.ParticipantReadyState)
-            {
-                return false;
-            }
-        }
-
-        return occupied > 0;
-    }
+    private static bool IsReady(Persistence.Entities.EventTeam team) =>
+        EventTeamRegistrationUtils.IsReady(team.Members);
 
     private bool IsWaitingLocked(int teamIdentifier) =>
         waiting.Values.Any(queue => queue.Contains(teamIdentifier));

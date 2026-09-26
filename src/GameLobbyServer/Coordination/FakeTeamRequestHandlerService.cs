@@ -27,6 +27,7 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 public sealed class FakeTeamRequestHandlerService(
     FakeTeamService fakeTeamService,
     LobbyIdentityService identityService,
+    EventScheduleService scheduleService,
     ILogger<FakeTeamRequestHandlerService> logger)
 {
     /// <summary>Creates the team a coordinator request asked for.</summary>
@@ -57,17 +58,26 @@ public sealed class FakeTeamRequestHandlerService(
 
         // The team is filed under the event the lobby publishes. Survival and
         // Tournament carry one standing event, so the transient correlation is
-        // what the list screens read; a registration lobby's teams belong to a
-        // scheduled event nobody here selected, so the request is refused rather
-        // than filed under an event the bracket never knew about.
+        // what the list screens read. A registration lobby's teams belong to a
+        // scheduled event, and the request selected none, so the first event the
+        // lobby is currently publishing is used: a team the bracket never knew
+        // about would not appear next to the entrants it is meant to be tested
+        // with. With nothing published there is no event to file it under, so
+        // the request is refused.
         if (!EventTeamCreationUtils.TryResolveEventIdentifier(
                 mode.Value,
                 selectedEventIdentifier: null,
                 out var eventIdentifier))
         {
-            logger.LogInformation(
-                "A fake team request named a lobby with no standing event; refused");
-            return;
+            var published = await scheduleService.ListPublishedAsync(mode.Value, cancellationToken);
+            if (published.Count == 0)
+            {
+                logger.LogInformation(
+                    "A fake team request named a lobby with no published event to file a team under; refused");
+                return;
+            }
+
+            eventIdentifier = published[0].Identifier;
         }
 
         var lobbyIdentifier = await identityService.ResolveIdentifierAsync(mode.Value, cancellationToken);

@@ -59,13 +59,18 @@ public sealed class FakeTeamService(IDbContextFactory<Mgo2DatabaseContext> conte
     /// First identifier a fake team or player is given. It sits far above any
     /// character a client could have been assigned, so a fake identifier in a
     /// roster is never mistaken for a real one and never collides with one.
+    /// <para>
+    /// It is public so the parts that decide whether a roster may enter — the
+    /// matchmaking readiness rule in particular — can tell a player who has no
+    /// button to press from one who does.
+    /// </para>
     /// </summary>
-    private const int FirstIdentifier = 1_000_000_000;
+    public const int FirstFakeIdentifier = 1_000_000_000;
 
     private readonly Lock gate = new();
     private readonly Dictionary<int, FakeTeam> teams = [];
     private readonly Dictionary<int, FakePlayer> players = [];
-    private int nextIdentifier = FirstIdentifier;
+    private int nextIdentifier = FirstFakeIdentifier;
 
     /// <summary>Teams this process is holding in one lobby, in the order they were created.</summary>
     /// <param name="lobbyIdentifier">Lobby to list.</param>
@@ -87,6 +92,37 @@ public sealed class FakeTeamService(IDbContextFactory<Mgo2DatabaseContext> conte
         {
             return teams.TryGetValue(teamIdentifier, out var team) ? team : null;
         }
+    }
+
+    /// <summary>
+    /// Changes the state of an in-memory team of a lobby, and optionally forces a
+    /// state on its whole roster.
+    /// </summary>
+    /// <param name="lobbyIdentifier">Lobby the team is in.</param>
+    /// <param name="teamName">Name of the in-memory team.</param>
+    /// <param name="state">Team state to store.</param>
+    /// <param name="participantState">Member state to force, or null to let each member follow the team.</param>
+    /// <returns>The changed team, or null when no in-memory team of that name is held.</returns>
+    public FakeTeam? SetState(
+        int lobbyIdentifier,
+        string teamName,
+        int state,
+        int? participantState)
+    {
+        if (string.IsNullOrWhiteSpace(teamName))
+        {
+            return null;
+        }
+
+        var team = FindTeamByName(lobbyIdentifier, teamName);
+        if (team is null)
+        {
+            return null;
+        }
+
+        team.SetState(state);
+        team.SetParticipantState(participantState);
+        return team;
     }
 
     /// <summary>Creates a team that lives only in this process.</summary>
@@ -254,7 +290,7 @@ public sealed class FakeTeamService(IDbContextFactory<Mgo2DatabaseContext> conte
                 Slot = slot,
                 CharacterIdentifier = identifier,
                 Name = name,
-                State = EventConstants.ParticipantReadyState,
+                State = EventTeamRegistrationUtils.ParticipantStateFor(team.State),
                 Experience = FakeTeam.DefaultExperience,
             });
             addedSlots.Add(slot);

@@ -1,3 +1,5 @@
+using Mgo2Server.Shared.Persistence.Entities;
+
 namespace Mgo2Server.Shared.Domain.Events;
 
 /// <summary>
@@ -27,6 +29,60 @@ public static class EventTeamRegistrationUtils
         currentState == EventConstants.TeamRegisteredState
             ? EventConstants.TeamJoinableState
             : null;
+
+    /// <summary>
+    /// Whether every occupied slot of a roster has decided to play.
+    /// <para>
+    /// A fake player counts as ready: it has no client and no button to press,
+    /// and it exists precisely so a team can be tested in the queue. Its roster
+    /// byte still carries the value the client accepts, because the two
+    /// questions — what the client is shown and what the queue may pair — are
+    /// not the same one.
+    /// </para>
+    /// </summary>
+    /// <param name="members">Roster of the team.</param>
+    /// <returns>Whether the roster holds at least one member and all are ready.</returns>
+    public static bool IsReady(IEnumerable<EventTeamMember> members)
+    {
+        ArgumentNullException.ThrowIfNull(members);
+
+        var occupied = 0;
+        foreach (var member in members)
+        {
+            if (member.CharacterIdentifier == 0)
+            {
+                continue;
+            }
+
+            occupied++;
+            if (member.State != EventConstants.ParticipantReadyState
+                && member.CharacterIdentifier < FakeTeamService.FirstFakeIdentifier)
+            {
+                return false;
+            }
+        }
+
+        return occupied > 0;
+    }
+
+    /// <summary>
+    /// The member state a team notification may carry for a team in the given
+    /// state.
+    /// <para>
+    /// The client's <c>0x4918</c> parser refuses a member whose state byte is not
+    /// the one the team's own state expects — <c>1</c> on a team that is open and
+    /// <c>2</c> on one that was formed automatically — so a roster addition that
+    /// arrives with any other value is dropped with no error and no visible
+    /// change. Deriving the byte here keeps every writer of a roster notification
+    /// in step with that rule.
+    /// </para>
+    /// </summary>
+    /// <param name="teamState">State the team is recorded in.</param>
+    /// <returns>The member state the client accepts for that team state.</returns>
+    public static int ParticipantStateFor(int teamState) =>
+        teamState == EventConstants.TeamRegisteredState
+            ? EventConstants.ParticipantReadyState
+            : EventConstants.ParticipantPendingState;
 
     /// <summary>
     /// Whether a queued team may be handed to an opponent that has just entered

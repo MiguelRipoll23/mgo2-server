@@ -18,6 +18,18 @@ public sealed class EventTeamRegistrationTests
         Assert.NotEqual(EventConstants.TeamJoinableState, EventTeamRegistrationUtils.QueuedState);
     }
 
+    [Theory]
+    [InlineData(EventConstants.TeamJoinableState, EventConstants.ParticipantPendingState)]
+    [InlineData(0, EventConstants.ParticipantPendingState)]
+    [InlineData(EventConstants.TeamRegisteredState, EventConstants.ParticipantReadyState)]
+    public void A_roster_notification_carries_the_state_its_team_expects(int teamState, int expected)
+    {
+        // The client's 0x4918 parser drops a member row whose state is not the
+        // one the team's own state allows, so this byte cannot be chosen by the
+        // writer's intent alone.
+        Assert.Equal(expected, EventTeamRegistrationUtils.ParticipantStateFor(teamState));
+    }
+
     [Fact]
     public void Releasing_a_waiting_team_makes_it_joinable_again()
     {

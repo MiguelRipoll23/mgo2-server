@@ -42,12 +42,21 @@ public sealed class FakeTeamDispatchService(
         /// <summary>The count was outside what a team can hold.</summary>
         InvalidCount,
 
+        /// <summary>The request named no team.</summary>
+        NoTeamName,
+
+        /// <summary>A state byte was outside the range the client reads.</summary>
+        InvalidState,
+
         /// <summary>No lobby of that mode exists.</summary>
         NoSuchLobby,
 
         /// <summary>The lobby exists but its stream is not open.</summary>
         LobbyOffline,
     }
+
+    /// <summary>Largest value a state byte the client reads can carry.</summary>
+    public const int MaximumStateByte = 255;
 
     /// <summary>Carries a request to the lobby that will hold the team.</summary>
     /// <param name="outcome">What happened.</param>
@@ -113,6 +122,88 @@ public sealed class FakeTeamDispatchService(
             mode);
 
         return new Result(DispatchOutcome.Sent, mode, count, teamName, playerPrefix, lobby.Identifier);
+    }
+
+    /// <summary>Carries a request to change an in-memory team's state.</summary>
+    /// <param name="Outcome">What happened.</param>
+    /// <param name="Mode">Lobby mode the team is in.</param>
+    /// <param name="TeamName">Name of the in-memory team.</param>
+    /// <param name="State">Team state that was asked for.</param>
+    /// <param name="MemberState">Member state that was asked for, zero to follow the team.</param>
+    /// <param name="LobbyIdentifier">Lobby the request went to, when it went anywhere.</param>
+    public readonly record struct StateResult(
+        DispatchOutcome Outcome,
+        int Mode,
+        string TeamName,
+        int State,
+        int MemberState,
+        int LobbyIdentifier);
+
+    /// <summary>
+    /// Routes a request to change the state of an in-memory team to the lobby that
+    /// holds it.
+    /// <para>
+    /// The team has no row and so no identifier the API could name; the request
+    /// carries its display name and the lobby resolves it against the teams it
+    /// holds itself. Nothing is written: the change is visible in the lobby's own
+    /// list and detail replies until the lobby restarts.
+    /// </para>
+    /// </summary>
+    /// <param name="mode">Lobby mode the team is in.</param>
+    /// <param name="teamName">Name of the in-memory team whose state changes.</param>
+    /// <param name="state">Team state to store, as the client's own phase byte.</param>
+    /// <param name="memberState">Member state to force on the roster, or zero to follow the team.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task<StateResult> DispatchStateAsync(
+        int mode,
+        string teamName,
+        int state,
+        int memberState,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(teamName))
+        {
+            return new StateResult(DispatchOutcome.NoTeamName, mode, teamName, state, memberState, 0);
+        }
+
+        if (state < 0 || state > MaximumStateByte || memberState < 0 || memberState > MaximumStateByte)
+        {
+            return new StateResult(DispatchOutcome.InvalidState, mode, teamName, state, memberState, 0);
+        }
+
+        var lobby = await ResolveLobbyAsync(mode, cancellationToken);
+        if (lobby is null)
+        {
+            return new StateResult(DispatchOutcome.NoSuchLobby, mode, teamName, state, memberState, 0);
+        }
+
+        var message = new HttpEvent
+        {
+            FakeTeamState = new FakeTeamStateRequest
+            {
+                LobbySubtype = mode,
+                TeamName = teamName,
+                State = state,
+                MemberState = memberState,
+            },
+        };
+
+        if (!registry.SendTo(lobby.Identifier, message))
+        {
+            logger.LogWarning(
+                "Lobby {LobbyIdentifier} has no open coordination stream, so its fake team state was not changed",
+                lobby.Identifier);
+            return new StateResult(DispatchOutcome.LobbyOffline, mode, teamName, state, memberState, lobby.Identifier);
+        }
+
+        logger.LogInformation(
+            "Asked lobby {LobbyIdentifier} to set in-memory team {TeamName} to state {State} in mode {Mode}",
+            lobby.Identifier,
+            teamName,
+            state,
+            mode);
+
+        return new StateResult(DispatchOutcome.Sent, mode, teamName, state, memberState, lobby.Identifier);
     }
 
     /// <summary>

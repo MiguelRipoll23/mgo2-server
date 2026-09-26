@@ -52,6 +52,7 @@ message HttpEvent {
     FlashNewsBroadcast flash_news = 1;
     FakePlayerRequest fake_players = 2;
     FakeTeamRequest fake_team = 3;
+    FakeTeamStateRequest fake_team_state = 4;
   }
 }
 
@@ -102,6 +103,28 @@ message FakeTeamRequest {
   // Name the players are shown with, when one was asked for. A blank one lets
   // the lobby compose a name per player.
   string player_prefix = 4;
+}
+
+// A request to change the state of a team that exists only in a lobby's memory.
+// The team is named rather than identified because, having no row, it has no
+// identifier the coordinator could know; the lobby resolves the name against the
+// teams it holds itself.
+//
+// Changing the state is what lets a moderator see how a client renders a team at
+// each phase of the entry pipeline, and changing the roster's member state is
+// what exercises the per-member decision byte without a second player.
+message FakeTeamStateRequest {
+  // Mode of the lobby the team is in: 4 Survival, 3 Tournament or
+  // 10 Tournament registration.
+  int32 lobby_subtype = 1;
+  // Name of the in-memory team whose state is changed. It is required.
+  string team_name = 2;
+  // The team state to store, as the client's own phase byte (1 open, 9 auto,
+  // and so on).
+  int32 state = 3;
+  // The member state to force on the whole roster, or zero to let each member
+  // follow the team state.
+  int32 member_state = 4;
 }
 
 // One ticker announcement the lobby has to write to its own clients. The fields

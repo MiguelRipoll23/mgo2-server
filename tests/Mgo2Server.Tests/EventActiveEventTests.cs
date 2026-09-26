@@ -227,37 +227,6 @@ public sealed class EventActiveEventTests
     }
 
     [Fact]
-    public void Event_list_item_is_47_bytes_and_places_its_fields()
-    {
-        var writer = new PacketWriter();
-        EventActiveEventUtils.WriteEventListItem(
-            writer,
-            index: 3,
-            entityIdentifier: 42,
-            primaryName: "TEAM",
-            rowState: 1,
-            discardedByte: 9,
-            leaderName: "LEADER",
-            opaqueByte: 8,
-            memberCount: 4,
-            statusFlags: 3,
-            averageExperience: 1234);
-
-        var payload = writer.Build();
-        Assert.Equal(EventConstants.EventListItemWireSize, payload.Length);
-        Assert.Equal((ushort)3, BinaryPrimitives.ReadUInt16BigEndian(payload));
-        Assert.Equal(42, BinaryPrimitives.ReadInt32BigEndian(payload.AsSpan(2)));
-        Assert.Equal("TEAM", StringUtility.ReadFixedString(payload, 6, 16));
-        Assert.Equal(1, payload[22]);
-        Assert.Equal(9, payload[23]);
-        Assert.Equal("LEADER", StringUtility.ReadFixedString(payload, 24, 16));
-        Assert.Equal(8, payload[40]);
-        Assert.Equal(4, payload[41]);
-        Assert.Equal(3, payload[42]);
-        Assert.Equal(1234, BinaryPrimitives.ReadInt32BigEndian(payload.AsSpan(43)));
-    }
-
-    [Fact]
     public void Remaining_records_keep_their_recovered_sizes()
     {
         var boundary = new PacketWriter();

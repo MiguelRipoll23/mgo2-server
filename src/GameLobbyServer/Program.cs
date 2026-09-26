@@ -30,6 +30,7 @@ builder.Services.AddSingleton<FlashNewsService>();
 builder.Services.AddSingleton<LobbyIdentityService>();
 builder.Services.AddSingleton<FakePlayerRequestHandlerService>();
 builder.Services.AddSingleton<FakeTeamRequestHandlerService>();
+builder.Services.AddSingleton<FakeTeamStateRequestHandlerService>();
 builder.Services.AddSingleton<LobbyCoordinationClientService>();
 builder.Services.Replace(ServiceDescriptor.Singleton<ILobbyPresencePublisher>(
     provider => provider.GetRequiredService<LobbyCoordinationClientService>()));

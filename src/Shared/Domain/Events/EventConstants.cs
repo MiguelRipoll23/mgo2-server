@@ -209,8 +209,12 @@ public static class EventConstants
     /// </summary>
     public const int EventDetailBaseWireSize = 96;
 
-    /// <summary>Size of one event-list row.</summary>
-    public const int EventListItemWireSize = 47;
+    /// <summary>
+    /// Size of one row of the Tournament/Survival browse list (<c>0x4A42</c>):
+    /// the event identifier, its kind and name, eight u16 capacity/remainder
+    /// fields, two timestamps, two kind bytes, a flag byte and the lobby id.
+    /// </summary>
+    public const int EventScheduleListItemWireSize = 98;
 
     /// <summary>Size of an event-list boundary record.</summary>
     public const int EventListBoundaryWireSize = 4;

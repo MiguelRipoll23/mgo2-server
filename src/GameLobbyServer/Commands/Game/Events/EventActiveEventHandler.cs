@@ -11,22 +11,17 @@ using Microsoft.Extensions.Options;
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 
 /// <summary>
-/// Lists the events of the connected lobby. The client opens the list with a
-/// boundary record, then expands each row it receives, so the whole stream is
-/// built before the first packet is written: a failure part-way through would
-/// otherwise leave the client waiting for a closing boundary it never gets.
+/// Lists the events the connected lobby is publishing. The client opens the
+/// browse list with <c>0x4A40</c>, receives one <c>0x4A42</c> row per event and
+/// closes it with <c>0x4A43</c>.
 /// <para>
-/// The list is built from the schedules the lobby is publishing, one event at a
-/// time, and each event is bracketed by its own pair of boundaries. A boundary
-/// names the event its rows belong to, so a lobby running two events cannot
-/// answer with one event's entrants under the other's name. A lobby with nothing
-/// scheduled streams nothing: an empty field is what an unscheduled lobby is,
-/// not a refusal.
+/// The whole stream is built before the first packet is written, and the two
+/// markers are always sent: a lobby with nothing scheduled answers with an
+/// empty list rather than with no packets at all, which the client renders as a
+/// screen that never finishes loading.
 /// </para>
 /// </summary>
 public sealed class GetEventListHandler(
-    EventTeamService teamService,
-    FakeTeamService fakeTeamService,
     EventScheduleService scheduleService,
     LobbyService lobbyService,
     SessionHelper sessionHelper) : ICommandHandler
@@ -61,80 +56,30 @@ public sealed class GetEventListHandler(
             return;
         }
 
-        foreach (var schedule in await scheduleService.ListPublishedAsync(
+        var schedules = await scheduleService.ListPublishedAsync(
             lobby.SubtypeIdentifier,
-            cancellationToken))
+            cancellationToken);
+
+        await sessionHelper.SendStartEndPacketAsync(
+            session,
+            CommandConstants.GetEventListStart,
+            cancellationToken);
+
+        foreach (var schedule in schedules)
         {
-            var rows = new List<byte[]>();
-            var index = 0;
-            foreach (var team in await teamService.FindByLobbyAndEventAsync(
-                lobbyIdentifier,
-                schedule.Identifier,
-                cancellationToken))
-            {
-                rows.Add(BuildRow(index++, EventTeamService.BuildSnapshot(team)));
-            }
-
-            // An in-memory team is an entrant of the event it was created for,
-            // so it is streamed with the row list rather than kept to the
-            // joinable list: that is where a moderator looks for the field it
-            // is testing.
-            foreach (var fakeTeam in fakeTeamService.ListTeams(lobbyIdentifier)
-                .Where(team => team.EventIdentifier == schedule.Identifier))
-            {
-                rows.Add(BuildRow(index++, fakeTeam.BuildSnapshot()));
-            }
-
-            await WriteBoundaryAsync(
+            var writer = new PacketWriter();
+            EventScheduleListUtils.WriteItem(writer, schedule);
+            await sessionHelper.SendPacketAsync(
                 session,
-                CommandConstants.GetEventListStart,
-                schedule.Identifier,
-                cancellationToken);
-            foreach (var row in rows)
-            {
-                await sessionHelper.SendPacketAsync(
-                    session,
-                    CommandConstants.GetEventListPage,
-                    row,
-                    cancellationToken);
-            }
-
-            await WriteBoundaryAsync(
-                session,
-                CommandConstants.GetEventListEnd,
-                schedule.Identifier,
+                CommandConstants.GetEventListPage,
+                writer.Build(),
                 cancellationToken);
         }
-    }
 
-    private static byte[] BuildRow(int index, EventSnapshot snapshot)
-    {
-        var writer = new PacketWriter();
-        EventActiveEventUtils.WriteEventListItem(
-            writer,
-            index,
-            snapshot.SnapshotIdentifier,
-            snapshot.Name,
-            rowState: snapshot.State,
-            discardedByte: 0,
-            leaderName: snapshot.HostName,
-            opaqueByte: 0,
-            memberCount: snapshot.OccupiedParticipantCount(),
-            statusFlags: snapshot.State,
-            averageExperience: EventBattleListUtils.AverageParticipantExperience(snapshot));
-
-        return writer.Build();
-    }
-
-    private Task WriteBoundaryAsync(
-        TcpSession session,
-        ushort command,
-        int eventIdentifier,
-        CancellationToken cancellationToken)
-    {
-        var writer = new PacketWriter();
-        EventActiveEventUtils.WriteEventListBoundary(writer, eventIdentifier);
-        return sessionHelper.SendPacketAsync(session, command, writer.Build(), cancellationToken);
+        await sessionHelper.SendStartEndPacketAsync(
+            session,
+            CommandConstants.GetEventListEnd,
+            cancellationToken);
     }
 
     private Task RefuseAsync(TcpSession session, CancellationToken cancellationToken) =>
@@ -283,18 +228,19 @@ public sealed class GetAssignedGameDetailHandler(
                 reservationWriter.Build(),
                 cancellationToken);
 
-            // The list around the detail is opened and closed with the event
-            // identifier, which is what tells the client the detail is complete.
+            // The entrant table around the detail is opened and closed with the
+            // event identifier, which is what tells the client the detail is
+            // complete. This is the per-event list, not the browse list.
             var boundaryWriter = new PacketWriter();
             EventActiveEventUtils.WriteEventListBoundary(boundaryWriter, requested);
             await sessionHelper.SendPacketAsync(
                 session,
-                CommandConstants.GetEventListStart,
+                CommandConstants.EventEntrantListStart,
                 boundaryWriter.Build(),
                 cancellationToken);
             await sessionHelper.SendPacketAsync(
                 session,
-                CommandConstants.GetEventListEnd,
+                CommandConstants.EventEntrantListEnd,
                 boundaryWriter.Build(),
                 cancellationToken);
             return;

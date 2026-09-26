@@ -39,6 +39,10 @@ public sealed class FakeTeamTests
         Assert.Equal(team.Members[0].Name, snapshot.HostName);
         Assert.Equal("Sim 1", snapshot.Participants[0].Name);
         Assert.Equal("Sim 4", snapshot.Participants[3].Name);
+
+        // The team is open, so its roster carries members that have not decided:
+        // the client refuses any other state on 0x4918 and the players never show.
+        Assert.Equal(EventConstants.ParticipantPendingState, snapshot.Participants[0].State);
     }
 
     [Fact]

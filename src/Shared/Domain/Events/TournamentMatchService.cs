@@ -161,9 +161,7 @@ public sealed class TournamentMatchService(
             .ToListAsync(cancellationToken);
 
         var readiness = teams
-            .Select(team => team.Members
-                .Where(member => member.CharacterIdentifier != 0)
-                .All(member => member.State == EventConstants.ParticipantReadyState))
+            .Select(team => EventTeamRegistrationUtils.IsReady(team.Members))
             .ToList();
 
         return TournamentSeedingUtils.EntriesClosed(

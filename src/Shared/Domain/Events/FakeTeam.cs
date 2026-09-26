@@ -45,7 +45,14 @@ public sealed class FakeTeam
     public required string Name { get; init; }
 
     /// <summary>Lifecycle state the client reads.</summary>
-    public int State { get; init; } = EventConstants.TeamJoinableState;
+    public int State { get; private set; } = EventConstants.TeamJoinableState;
+
+    /// <summary>
+    /// Member state forced on the whole roster, or null when each member follows
+    /// the team's own state. It exists so a moderator can exercise the client's
+    /// per-member decision byte without a second player to press the button.
+    /// </summary>
+    public int? ParticipantStateOverride { get; private set; }
 
     /// <summary>Sequence the client echoes back on roster mutations.</summary>
     public int Sequence { get; private set; } = 1;
@@ -77,6 +84,22 @@ public sealed class FakeTeam
         return true;
     }
 
+    /// <summary>Moves the team to a new lifecycle state.</summary>
+    /// <param name="state">State to store, as the client's own phase byte.</param>
+    public void SetState(int state)
+    {
+        State = state;
+        Sequence++;
+    }
+
+    /// <summary>Forces a state on the whole roster, or lets it follow the team.</summary>
+    /// <param name="participantState">State to force, or null to follow the team state.</param>
+    public void SetParticipantState(int? participantState)
+    {
+        ParticipantStateOverride = participantState;
+        Sequence++;
+    }
+
     /// <summary>Projects the team into the active-game snapshot the client reads.</summary>
     public EventSnapshot BuildSnapshot()
     {
@@ -92,14 +115,20 @@ public sealed class FakeTeam
             HostIdentifier = OwnerCharacterIdentifier,
         };
 
+        // The member state is the one the client accepts for the team's own
+        // state: a roster addition to an open team is carrying a member that has
+        // not decided yet, and the client drops the notification otherwise. A
+        // moderator may override it to exercise each value directly.
+        var memberState = ParticipantStateOverride
+            ?? EventTeamRegistrationUtils.ParticipantStateFor(State);
         for (var slot = 0; slot < members.Count && slot < snapshot.Participants.Length; slot++)
         {
             var participant = snapshot.Participants[slot];
             participant.CharacterIdentifier = members[slot].CharacterIdentifier;
             participant.Name = members[slot].Name;
-            participant.State = EventConstants.ParticipantReadyState;
+            participant.State = memberState;
             participant.Experience = DefaultExperience;
-            snapshot.ParticipantStates[slot] = EventConstants.ParticipantReadyState;
+            snapshot.ParticipantStates[slot] = (byte)memberState;
 
             if (slot == 0)
             {

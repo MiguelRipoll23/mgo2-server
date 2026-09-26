@@ -241,52 +241,6 @@ public static class EventActiveEventUtils
         AssertSize(writer, start, EventConstants.EventListBoundaryWireSize, "event list boundary");
     }
 
-    /// <summary>
-    /// Writes one event-list row. The client expands this compact record into
-    /// the wider row its list screen holds, so the field order here is the
-    /// expansion's source rather than the screen's own layout.
-    /// </summary>
-    /// <param name="writer">Writer to append to.</param>
-    /// <param name="index">Row index.</param>
-    /// <param name="entityIdentifier">Team or participant the row names.</param>
-    /// <param name="primaryName">Primary name of the row.</param>
-    /// <param name="rowState">Row state.</param>
-    /// <param name="discardedByte">Byte the client parses into scratch and discards.</param>
-    /// <param name="leaderName">Name of the row's leader.</param>
-    /// <param name="opaqueByte">Byte whose meaning is not established.</param>
-    /// <param name="memberCount">Members the row represents.</param>
-    /// <param name="statusFlags">Status flags of the row.</param>
-    /// <param name="averageExperience">Average experience of its members.</param>
-    public static void WriteEventListItem(
-        PacketWriter writer,
-        int index,
-        int entityIdentifier,
-        string primaryName,
-        int rowState,
-        int discardedByte,
-        string leaderName,
-        int opaqueByte,
-        int memberCount,
-        int statusFlags,
-        int averageExperience)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-
-        var start = writer.Size;
-        writer.WriteUInt16(index);
-        writer.WriteInt32(entityIdentifier);
-        writer.WriteFixedString(primaryName ?? string.Empty, 16);
-        writer.WriteUInt8(rowState);
-        writer.WriteUInt8(discardedByte);
-        writer.WriteFixedString(leaderName ?? string.Empty, 16);
-        writer.WriteUInt8(opaqueByte);
-        writer.WriteUInt8(memberCount);
-        writer.WriteUInt8(statusFlags);
-        writer.WriteInt32(averageExperience);
-
-        AssertSize(writer, start, EventConstants.EventListItemWireSize, "event list item");
-    }
-
     private static void WritePrefix(PacketWriter writer, int activeStateIdentifier, int sequence)
     {
         if (activeStateIdentifier == 0)

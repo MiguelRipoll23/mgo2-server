@@ -189,13 +189,26 @@ public static partial class CommandConstants
     public const ushort GetEventList = 0x4A40;
 
     /// <summary>Opens the event-list reply stream.</summary>
-    public const ushort GetEventListStart = 0x4A10;
+    public const ushort GetEventListStart = 0x4A41;
 
     /// <summary>Carries one event-list row.</summary>
-    public const ushort GetEventListPage = 0x4A11;
+    public const ushort GetEventListPage = 0x4A42;
 
     /// <summary>Closes the event-list reply stream.</summary>
-    public const ushort GetEventListEnd = 0x4A12;
+    public const ushort GetEventListEnd = 0x4A43;
+
+    /// <summary>
+    /// Opens the reply stream that fills one event record's entrant table. It is
+    /// a different list from <see cref="GetEventListStart"/>: this one belongs to
+    /// the event a connection has open rather than to the browse list.
+    /// </summary>
+    public const ushort EventEntrantListStart = 0x4A10;
+
+    /// <summary>Carries one entrant-table row.</summary>
+    public const ushort EventEntrantListPage = 0x4A11;
+
+    /// <summary>Closes the entrant-table reply stream.</summary>
+    public const ushort EventEntrantListEnd = 0x4A12;
 
     /// <summary>Requests the detail of one event.</summary>
     public const ushort GetEventDetail = 0x4A30;
