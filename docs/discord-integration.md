@@ -75,6 +75,70 @@ lobby holds 64 announcements.
 
 ## Discord
 
+### The staff commands
+
+Four commands are registered, all of them gated on the moderator or manager
+role:
+
+| Command | What it does |
+| --- | --- |
+| `/flash <message>` | Relays a ticker announcement to every lobby. |
+| `/message <body>` | Sends an official channel message. |
+| `/event <action> …` | Schedules, changes, lists or withdraws a Survival or Tournament event. |
+| `/fake-player <mode> <count> [team]` | Fills a lobby with players that exist only in memory. |
+
+#### `/event`
+
+Every option is something a person can read. The command used to ask for an
+event identifier and a pair of epoch seconds, which put two numbers nobody can
+check in front of the person scheduling the event; both are gone.
+
+* `action` is one of `list`, `create`, `update` or `withdraw`.
+* `event` is the **name** of the event, such as `Survival Night 3`. Names are
+  unique, matched without regard to case, and a blank name on `create` is
+  refused rather than composed: an operator who did not choose one will not
+  remember which of "Survival 4" and "Survival 5" they meant. A name that names
+  nothing is answered with the list, because that is the answer to "I do not know
+  what to call it".
+* `mode` is `Survival`, `Tournament` or `Registration`, not 4, 3 or 10.
+* `from` and `until` are clock times — `20:00`, `23:00`, or `never`. An opening
+  time that has already passed today means tomorrow, because that is what
+  somebody scheduling an event for later tonight means. A closing time does not
+  roll forward: an event that closes at 23:00 and is asked for at 23:30 has
+  closed, and moving it would turn a finished event into a running one.
+
+The window is still stored in epoch seconds, because that is what the protocol
+carries, but the number is computed by the server and never asked for. The
+`name` column and its unique index are migration `EventScheduleNames`.
+
+#### `/fake-player`
+
+A Survival lobby with one player in it cannot be tested: the team forms, it
+enters, and it then waits for an opponent nobody is going to join. This command
+puts enough players in the lobby for that to actually happen.
+
+The players are the one part of an event that is **not** a row. They have no
+account, no character, and nothing anybody could log in as, and they are gone
+when the lobby restarts. Their identifiers are handed out from a range no
+character row can occupy, and the roster is held in the lobby's memory
+(`FakePlayerService`) rather than in the database.
+
+Their **team is a real row**, and that is the deliberate half: matchmaking pairs
+teams, the battle list is built from them, and the host lease is drawn against a
+match between them. A team that existed only in memory would be a pairing no
+real client could see or be drawn against. The team is created already entered
+and already queued, because there is nobody to press the button that enters a
+team and a fake team that waited for one would look exactly like the bug the
+command exists to test for.
+
+The request travels over the coordination stream the lobbies already hold, as a
+new `FakePlayerRequest` arm of `HttpEvent`. It names a lobby **mode** rather than
+an identifier, because the HTTP API does not know the lobby identifiers; the
+lobby whose own game type matches answers it, and one asked for a mode it is not
+running refuses rather than filling the wrong event.
+
+## Discord
+
 Discord is switched on with `DISCORD_ENABLED=true` and never becomes a
 requirement of anything:
 
@@ -100,8 +164,8 @@ requirement of anything:
 | `DISCORD_GATEWAY_URL`              | WebSocket URL of the gateway; defaults to the public Discord gateway.   |
 | `DISCORD_GUILD_ID`                 | Guild the commands are registered in, the channel lives in, and the guild the staff commands are honored in. |
 | `DISCORD_PLAYER_COUNT_CHANNEL_ID`  | Channel of the player count; found by name and created when empty.      |
-| `DISCORD_MODERATOR_ROLE_ID`        | Role that may use `/flash` and `/message`.                             |
-| `DISCORD_MANAGER_ROLE_ID`          | Other role that may use `/flash` and `/message`.                       |
+| `DISCORD_MODERATOR_ROLE_ID`        | Role that may use the staff commands.                                    |
+| `DISCORD_MANAGER_ROLE_ID`          | Other role that may use the staff commands.                              |
 
 The integration does nothing until `DISCORD_BOT_TOKEN` is set, and publishes no
 count until `DISCORD_GUILD_ID` is set as well. Nothing else is needed: the
@@ -116,10 +180,10 @@ token.
 2. Put the bot token in `DISCORD_BOT_TOKEN` and the guild identifier in
    `DISCORD_GUILD_ID`.
 3. Set `DISCORD_MODERATOR_ROLE_ID` and `DISCORD_MANAGER_ROLE_ID` to the roles
-   that may broadcast. Without them nobody may use the commands.
-4. Start the deployment. The API registers `/flash` and `/message` in the guild,
-   connects the bot to the gateway and finds or creates the channel of the
-   player count.
+   that may use the staff commands. Without them nobody may use them.
+4. Start the deployment. The API registers `/flash`, `/message`, `/event` and
+   `/fake-player` in the guild, connects the bot to the gateway and finds or
+   creates the channel of the player count.
 
 Both commands take one required option — `/flash` a `message`, `/message` a
 `body` — and are registered per guild, so they are available immediately instead

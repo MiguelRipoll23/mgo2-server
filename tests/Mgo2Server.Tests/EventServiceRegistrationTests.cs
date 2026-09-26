@@ -47,4 +47,22 @@ public sealed class EventServiceRegistrationTests
         Assert.NotNull(provider.GetRequiredService<EventGameEntryService>());
         Assert.NotNull(provider.GetRequiredService<EventEntryService>());
     }
+
+    [Fact]
+    public void The_schedule_and_fake_player_services_resolve_from_the_container()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddServerServices(
+            new ConfigurationBuilder().AddInMemoryCollection().Build());
+
+        using var provider = services.BuildServiceProvider();
+
+        // The schedule service took a dependency on the name service when events
+        // became addressable by name, and the fake players are resolved by the
+        // coordination handler on a lobby that has an event to put them in.
+        Assert.NotNull(provider.GetRequiredService<EventScheduleNameService>());
+        Assert.NotNull(provider.GetRequiredService<EventScheduleService>());
+        Assert.NotNull(provider.GetRequiredService<FakePlayerService>());
+    }
 }

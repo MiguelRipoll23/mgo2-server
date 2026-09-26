@@ -27,6 +27,17 @@ public sealed class EventSchedule
     public int Identifier { get; set; }
 
     /// <summary>
+    /// Name an operator gives the event, and the only handle a client or a
+    /// moderator needs to name it. The identifier stays the value the protocol
+    /// carries, but it is not something a person is asked to type: a schedule
+    /// is announced as "Survival Night 3", and an operator who has to look the
+    /// row up to change it will not look it up.
+    /// </summary>
+    [Column("name")]
+    [MaxLength(64)]
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>
     /// Lobby mode the event is played in, which is also what makes it a
     /// Tournament: a Tournament is only ever held in the registration lobby, so
     /// a row naming any other mode is not one a player may enter.

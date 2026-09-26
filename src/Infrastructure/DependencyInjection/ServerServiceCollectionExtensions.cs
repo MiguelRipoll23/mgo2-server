@@ -180,6 +180,7 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<AutomatchHooksService>();
         services.AddSingleton<EventInformationService>();
         services.AddSingleton<EventTeamService>();
+        services.AddSingleton<FakePlayerService>();
         services.AddSingleton<EventTeamStateService>();
         services.AddSingleton<EventTeamPushService>();
         services.AddSingleton<EventInvitationService>();
@@ -189,6 +190,7 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<EventHostLeaseService>();
         services.AddSingleton<EventAssignmentService>();
         services.AddSingleton<EventAssignmentPushService>();
+        services.AddSingleton<EventScheduleNameService>();
         services.AddSingleton<EventScheduleService>();
         services.AddSingleton<TournamentRegistrationService>();
         services.AddSingleton<TournamentSubmissionService>();

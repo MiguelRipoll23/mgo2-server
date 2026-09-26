@@ -25,10 +25,16 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 /// <param name="flashNewsService">Service that writes an announcement to this lobby's clients.</param>
 /// <param name="options">Options that hold the endpoint of the coordinator.</param>
 /// <param name="logger">Logger of this service.</param>
+/// <param name="fakePlayerRequests">
+/// Service that acts on a request to fill this lobby with fake players. Left
+/// null by a host that runs no event lobby, which is told so rather than
+/// having the request dropped without a word.
+/// </param>
 public sealed class LobbyCoordinationClientService(
     FlashNewsService flashNewsService,
     IOptions<CoordinationOptions> options,
-    ILogger<LobbyCoordinationClientService> logger) : ILobbyPresencePublisher
+    ILogger<LobbyCoordinationClientService> logger,
+    FakePlayerRequestHandlerService? fakePlayerRequests = null) : ILobbyPresencePublisher
 {
     /// <summary>
     /// The characters this lobby has reported as connected. It is kept here
@@ -274,6 +280,12 @@ public sealed class LobbyCoordinationClientService(
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     private async Task ApplyAsync(HttpEvent message, CancellationToken cancellationToken)
     {
+        if (message.EventCase == HttpEvent.EventOneofCase.FakePlayers)
+        {
+            await ApplyFakePlayersAsync(message.FakePlayers, cancellationToken);
+            return;
+        }
+
         if (message.EventCase != HttpEvent.EventOneofCase.FlashNews)
         {
             logger.LogDebug("The coordinator sent an unknown {EventCase}; ignored", message.EventCase);
@@ -310,6 +322,35 @@ public sealed class LobbyCoordinationClientService(
             // One client that cannot be written to must not end the stream of
             // the whole lobby.
             logger.LogError(exception, "A relayed flash news could not be written to the clients");
+        }
+    }
+
+    /// <summary>Creates the fake players the coordinator asked this lobby for.</summary>
+    /// <param name="request">Request the coordinator sent.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task ApplyFakePlayersAsync(
+        FakePlayerRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (fakePlayerRequests is null)
+        {
+            logger.LogWarning("This host cannot create fake players; the request was refused");
+            return;
+        }
+
+        try
+        {
+            await fakePlayerRequests.HandleAsync(request, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // A request that cannot be carried out must not end the stream of
+            // the whole lobby: the next flash news still has to arrive.
+            logger.LogError(exception, "A fake player request could not be carried out");
         }
     }
 

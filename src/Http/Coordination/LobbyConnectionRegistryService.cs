@@ -83,4 +83,20 @@ public sealed class LobbyConnectionRegistryService(ILogger<LobbyConnectionRegist
 
         return recipients;
     }
+
+    /// <summary>
+    /// Queues a message for one lobby and reports whether its stream took it.
+    /// <para>
+    /// A message that is about one lobby's own contents is not broadcast: a
+    /// flash news belongs to every client, but a set of players belongs to the
+    /// one lobby that will show them, and sending it to the others would have
+    /// each of them answer for a lobby it is not.
+    /// </para>
+    /// </summary>
+    /// <param name="lobbyIdentifier">Lobby the message is for.</param>
+    /// <param name="message">Message to write to that stream.</param>
+    /// <returns>Whether a connected lobby took the message.</returns>
+    public bool SendTo(int lobbyIdentifier, HttpEvent message) =>
+        connections.TryGetValue(lobbyIdentifier, out var connection)
+        && connection.TryEnqueue(message);
 }

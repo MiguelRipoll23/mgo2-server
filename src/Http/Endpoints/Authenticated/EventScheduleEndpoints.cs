@@ -93,6 +93,7 @@ internal static class EventScheduleEndpoints
                 request.PublishStart,
                 request.PublishEnd,
                 request.Enabled,
+                request.Name,
                 cancellationToken);
             return Results.Json(schedule.ToContract(), statusCode: StatusCodes.Status201Created);
         }

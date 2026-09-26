@@ -110,6 +110,8 @@ builder.Services.AddSingleton<DiscordPlayerCountService>();
 builder.Services.AddSingleton<IPlayerPresenceObserver>(
     provider => provider.GetRequiredService<DiscordPlayerCountService>());
 builder.Services.AddSingleton<DiscordEventScheduleCommandService>();
+builder.Services.AddSingleton<FakePlayerDispatchService>();
+builder.Services.AddSingleton<DiscordFakePlayerCommandService>();
 builder.Services.AddSingleton<DiscordCommandService>();
 builder.Services.AddSingleton<DiscordGatewayClientService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<DiscordGatewayClientService>());

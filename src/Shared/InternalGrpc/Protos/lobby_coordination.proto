@@ -50,7 +50,32 @@ message PlayerPresenceChange {
 message HttpEvent {
   oneof event {
     FlashNewsBroadcast flash_news = 1;
+    FakePlayerRequest fake_players = 2;
   }
+}
+
+// A request to fill an event with players who are not really there.
+//
+// The characters are named here and nowhere else: the lobby holds them in
+// memory and never gives them a row in the accounts table, so they can play an
+// event and leave no trace of having existed. The team they form is a real row,
+// because matchmaking pairs teams and the pairing is what a real client has to
+// be able to see.
+//
+// The lobby is named by its mode rather than by its identifier because the
+// coordinator does not know the identifiers; the lobby that answers is the one
+// whose mode matches.
+message FakePlayerRequest {
+  // Mode of the lobby the players are put into: 4 Survival, 3 Tournament or
+  // 10 Tournament registration.
+  int32 lobby_subtype = 1;
+  // How many players to create.
+  int32 count = 2;
+  // Display name the team is given, when one was asked for.
+  string team_name = 3;
+  // Name the players are shown with, when one was asked for. A blank one lets
+  // the lobby compose a name per player.
+  string player_prefix = 4;
 }
 
 // One ticker announcement the lobby has to write to its own clients. The fields

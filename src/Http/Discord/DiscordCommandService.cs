@@ -31,7 +31,8 @@ public sealed class DiscordCommandService(
     FlashNewsDispatcherService flashNewsDispatcher,
     IOptions<DiscordOptions> options,
     ILogger<DiscordCommandService> logger,
-    DiscordEventScheduleCommandService? scheduleCommands = null)
+    DiscordEventScheduleCommandService? scheduleCommands = null,
+    DiscordFakePlayerCommandService? fakePlayerCommands = null)
 {
     /// <summary>Interaction of a command a member used.</summary>
     private const int ApplicationCommandInteractionType = 2;
@@ -84,6 +85,11 @@ public sealed class DiscordCommandService(
             && DiscordEventScheduleCommandService.IsEventCommand(interaction))
         {
             await scheduleCommands.HandleAsync(interaction, cancellationToken);
+        }
+        else if (fakePlayerCommands is not null
+            && DiscordFakePlayerCommandService.IsFakePlayerCommand(interaction))
+        {
+            await fakePlayerCommands.HandleAsync(interaction, cancellationToken);
         }
     }
 

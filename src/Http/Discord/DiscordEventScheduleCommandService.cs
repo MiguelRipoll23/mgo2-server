@@ -1,8 +1,10 @@
-using System.Text.Json;
 using Mgo2Server.Http.Options;
 using Mgo2Server.Shared.Domain.Events;
+using Mgo2Server.Shared.Persistence.Entities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+
+using static Mgo2Server.Http.Discord.DiscordInteractionOptionUtils;
 
 namespace Mgo2Server.Http.Discord;
 
@@ -18,6 +20,13 @@ namespace Mgo2Server.Http.Discord;
 /// It is a separate service from the message commands because it is the only one
 /// that writes: everything it does goes through the same service the API uses, so
 /// the two surfaces cannot disagree about what a schedule means.
+/// </para>
+/// <para>
+/// Every option is something a person can read. An event is named rather than
+/// numbered, a lobby is "Survival" rather than 4, and the window is a clock time
+/// rather than an epoch second. The epoch seconds the row stores are a detail of
+/// the storage; a moderator who has to produce one will get it wrong, and the
+/// wrong one is silent — the event simply does not open.
 /// </para>
 /// </summary>
 /// <param name="responder">Service that answers the interactions.</param>
@@ -56,6 +65,15 @@ public sealed class DiscordEventScheduleCommandService(
 
     private readonly DiscordOptions options = options.Value;
 
+    /// <summary>
+    /// Zone the clock times are read in. A schedule is announced in the lobby's
+    /// own clock, so this is where the times a moderator typed belong.
+    /// </summary>
+    private static TimeZoneInfo EventTimeZone =>
+        TimeZoneInfo.TryFindSystemTimeZoneById("Europe/Madrid", out var zone)
+            ? zone
+            : TimeZoneInfo.Utc;
+
     /// <summary>Handles one interaction of the scheduling command.</summary>
     /// <param name="interaction">Interaction to answer.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
@@ -87,7 +105,7 @@ public sealed class DiscordEventScheduleCommandService(
             return;
         }
 
-        var action = TextOption(interaction, ActionOptionName);
+        var action = Text(interaction, ActionOptionName);
         var reply = action?.ToLowerInvariant() switch
         {
             "list" => await ListAsync(cancellationToken),
@@ -121,14 +139,15 @@ public sealed class DiscordEventScheduleCommandService(
             return "No events are scheduled.";
         }
 
+        var now = DateTimeOffset.UtcNow;
         var lines = new List<string>(schedules.Count);
         foreach (var schedule in schedules)
         {
             lines.Add(
-                $"`{schedule.Identifier}` mode {schedule.LobbySubtype} "
-                + $"{(schedule.Enabled ? "published" : "unpublished")}, "
+                $"**{schedule.Name}** — {EventScheduleService.ModeName(schedule.LobbySubtype)}, "
+                + $"{DescribeWindow(schedule, now)}, "
                 + $"{EventScheduleService.TeamCapacityOf(schedule)} teams, "
-                + $"window {schedule.PublishStart}..{schedule.PublishEnd}");
+                + $"{(EventScheduleService.IsPublished(schedule, now.ToUnixTimeSeconds()) ? "open" : "closed")}");
         }
 
         return string.Join('\n', lines);
@@ -138,27 +157,42 @@ public sealed class DiscordEventScheduleCommandService(
         Contracts.DiscordInteraction interaction,
         CancellationToken cancellationToken)
     {
-        var mode = IntOption(interaction, ModeOptionName);
-        if (mode is null || !EventConstants.IsEventSelector(mode.Value))
+        if (!TryReadMode(interaction, out var mode))
         {
-            return "The mode is required: 4 Survival, 3 Tournament or 10 registration.";
+            return "The mode is required: Survival, Tournament or Registration.";
+        }
+
+        var name = Text(interaction, EventOptionName)?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            // A name is the only handle the event will have, so it is asked for
+            // rather than invented: an operator who did not choose one will not
+            // remember which of "Survival 4" and "Survival 5" they meant.
+            return "Give the event a name, for example `Survival Night 3`.";
+        }
+
+        if (!TryReadWindow(interaction, out var from, out var until))
+        {
+            return "The times must look like `20:00` and `23:00`, or `never` for an event that never closes.";
         }
 
         try
         {
             var schedule = await scheduleService.ScheduleAsync(
-                mode.Value,
-                IntOption(interaction, TeamsOptionName) ?? EventConstants.BracketMaximumEntrants,
-                NumberOption(interaction, FromOptionName) ?? 0,
-                NumberOption(interaction, UntilOptionName) ?? 0,
-                FlagOption(interaction, EnabledOptionName) ?? true,
+                mode,
+                Number(interaction, TeamsOptionName) ?? EventConstants.BracketMaximumEntrants,
+                from,
+                until,
+                Flag(interaction, EnabledOptionName) ?? true,
+                name,
                 cancellationToken);
 
             logger.LogInformation(
-                "Event {EventIdentifier} was scheduled in mode {Mode}",
-                schedule.Identifier,
-                mode.Value);
-            return $"Scheduled event {schedule.Identifier} in mode {mode.Value}.";
+                "Event {EventName} was scheduled in mode {Mode}",
+                schedule.Name,
+                mode);
+            return $"Scheduled **{schedule.Name}** ({EventScheduleService.ModeName(mode)}), "
+                + $"{DescribeWindow(schedule, DateTimeOffset.UtcNow)}.";
         }
         catch (ArgumentException exception)
         {
@@ -170,35 +204,51 @@ public sealed class DiscordEventScheduleCommandService(
         Contracts.DiscordInteraction interaction,
         CancellationToken cancellationToken)
     {
-        var eventIdentifier = IntOption(interaction, EventOptionName);
-        if (eventIdentifier is null)
+        var existing = await FindNamedAsync(interaction, cancellationToken);
+        if (existing is null)
         {
-            return "The event option is required.";
+            return await NoSuchEventAsync(interaction, cancellationToken);
         }
 
         // A change states the whole window, so the parts the moderator left out
         // are read from the schedule rather than defaulted: a default would
         // silently close an event somebody meant to leave running.
-        var existing = await scheduleService.FindAsync(eventIdentifier.Value, cancellationToken);
-        if (existing is null)
+        var enabled = Flag(interaction, EnabledOptionName) ?? existing.Enabled;
+        var teams = Number(interaction, TeamsOptionName) ?? EventScheduleService.TeamCapacityOf(existing);
+
+        var from = existing.PublishStart;
+        if (Text(interaction, FromOptionName) is { Length: > 0 } fromText)
         {
-            return $"There is no event {eventIdentifier.Value}.";
+            if (!EventClockTimeUtils.TryParse(fromText, DateTimeOffset.UtcNow, EventTimeZone, true, out from))
+            {
+                return "The opening time must look like `20:00`.";
+            }
+        }
+
+        var until = existing.PublishEnd;
+        if (Text(interaction, UntilOptionName) is { Length: > 0 } untilText)
+        {
+            if (!EventClockTimeUtils.TryParse(untilText, DateTimeOffset.UtcNow, EventTimeZone, false, out until))
+            {
+                return "The closing time must look like `23:00`, or `never`.";
+            }
         }
 
         var outcome = await scheduleService.UpdateAsync(
-            eventIdentifier.Value,
-            FlagOption(interaction, EnabledOptionName) ?? existing.Enabled,
-            NumberOption(interaction, FromOptionName) ?? existing.PublishStart,
-            NumberOption(interaction, UntilOptionName) ?? existing.PublishEnd,
-            IntOption(interaction, TeamsOptionName) ?? EventScheduleService.TeamCapacityOf(existing),
+            existing.Identifier,
+            enabled,
+            from,
+            until,
+            teams,
             cancellationToken);
 
         return outcome switch
         {
-            ScheduleWriteOutcome.Written => $"Updated event {eventIdentifier.Value}.",
+            ScheduleWriteOutcome.Written =>
+                $"Updated **{existing.Name}**, {DescribeWindow(existing, DateTimeOffset.UtcNow)}, {teams} teams.",
             ScheduleWriteOutcome.InvalidWindow =>
-                "The window must close after it opens, or state 0 for an open-ended event.",
-            _ => $"There is no event {eventIdentifier.Value}.",
+                "The event has to close after it opens. Give a closing time later than the opening one.",
+            _ => $"There is no event called {Quote(EventOptionName)}.",
         };
     }
 
@@ -206,61 +256,123 @@ public sealed class DiscordEventScheduleCommandService(
         Contracts.DiscordInteraction interaction,
         CancellationToken cancellationToken)
     {
-        var eventIdentifier = IntOption(interaction, EventOptionName);
-        if (eventIdentifier is null)
+        var existing = await FindNamedAsync(interaction, cancellationToken);
+        if (existing is null)
         {
-            return "The event option is required.";
+            return await NoSuchEventAsync(interaction, cancellationToken);
         }
 
-        return await scheduleService.WithdrawAsync(eventIdentifier.Value, cancellationToken)
-            ? $"Withdrew event {eventIdentifier.Value}."
-            : $"There is no event {eventIdentifier.Value}.";
+        return await scheduleService.WithdrawAsync(existing.Identifier, cancellationToken)
+            ? $"Withdrew **{existing.Name}**."
+            : $"There is no event called {Quote(EventOptionName)}.";
     }
-
-    private static string? TextOption(Contracts.DiscordInteraction interaction, string name) =>
-        RawOption(interaction, name) is { ValueKind: JsonValueKind.String } option
-            ? option.GetString()
-            : null;
 
     /// <summary>
-    /// Reads an option Discord declares as an integer. Discord sends integers
-    /// as JSON numbers, so a window's epoch second arrives the same way a team
-    /// count does; the two are read apart because the one is bounded and the
-    /// other is not.
+    /// Resolves the event the moderator named, and says so when they named none.
     /// </summary>
-    private static long? NumberOption(Contracts.DiscordInteraction interaction, string name)
+    private async Task<EventSchedule?> FindNamedAsync(
+        Contracts.DiscordInteraction interaction,
+        CancellationToken cancellationToken)
     {
-        var value = RawOption(interaction, name);
-        return value is { ValueKind: JsonValueKind.Number } number && number.TryGetInt64(out var parsed)
-            ? parsed
-            : null;
-    }
-
-    /// <summary>Reads a numeric option that has to fit an identifier or a count.</summary>
-    private static int? IntOption(Contracts.DiscordInteraction interaction, string name)
-    {
-        var value = NumberOption(interaction, name);
-        return value is >= int.MinValue and <= int.MaxValue ? (int)value.Value : null;
-    }
-
-    private static bool? FlagOption(Contracts.DiscordInteraction interaction, string name)
-    {
-        var value = RawOption(interaction, name);
-        return value?.ValueKind switch
+        var name = Text(interaction, EventOptionName);
+        if (string.IsNullOrWhiteSpace(name))
         {
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            _ => null,
-        };
+            return null;
+        }
+
+        return await scheduleService.FindByNameAsync(name, cancellationToken);
     }
 
-    private static JsonElement? RawOption(Contracts.DiscordInteraction interaction, string name) =>
-        interaction.Data?.Options?
-            .FirstOrDefault(candidate => string.Equals(
-                candidate.Name,
-                name,
-                StringComparison.OrdinalIgnoreCase))?
-            .Value;
+    private async Task<string> NoSuchEventAsync(
+        Contracts.DiscordInteraction interaction,
+        CancellationToken cancellationToken)
+    {
+        var name = Text(interaction, EventOptionName);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "Say which event: run `/event list` to see the names.";
+        }
+
+        // The list is the answer to "I do not know what to call it", so it is
+        // sent along rather than leaving the moderator to ask again.
+        var schedules = await scheduleService.ListAllAsync(cancellationToken);
+        return schedules.Count == 0
+            ? $"There is no event called **{name.Trim()}**, and nothing is scheduled yet."
+            : $"There is no event called **{name.Trim()}**.\n{string.Join('\n', schedules.Select(schedule => $"• **{schedule.Name}**"))}";
+    }
+
+    /// <summary>
+    /// Reads the lobby as the word the moderator chose, rather than as the
+    /// number the row stores.
+    /// </summary>
+    private static bool TryReadMode(Contracts.DiscordInteraction interaction, out int mode)
+    {
+        mode = 0;
+        var text = Text(interaction, ModeOptionName);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        mode = text.Trim().ToLowerInvariant() switch
+        {
+            "survival" => EventConstants.SurvivalSelector,
+            "tournament" => EventConstants.TournamentSelector,
+            "registration" => EventConstants.TournamentRegistrationSelector,
+            _ => 0,
+        };
+
+        return mode != 0;
+    }
+
+    /// <summary>
+    /// Reads the window as the two clock times it was stated as, and refuses a
+    /// pair that cannot describe a window rather than writing one that cannot be
+    /// entered.
+    /// </summary>
+    private static bool TryReadWindow(
+        Contracts.DiscordInteraction interaction,
+        out long from,
+        out long until)
+    {
+        from = 0;
+        until = 0;
+        var now = DateTimeOffset.UtcNow;
+
+        if (!EventClockTimeUtils.TryParse(
+                Text(interaction, FromOptionName),
+                now,
+                EventTimeZone,
+                rollToTomorrow: true,
+                out from))
+        {
+            return false;
+        }
+
+        // A closing time does not roll forward: an event that closes at 23:00
+        // and is asked for at 23:30 has closed, and moving it to tomorrow would
+        // turn a finished event into a running one.
+        if (!EventClockTimeUtils.TryParse(
+                Text(interaction, UntilOptionName),
+                now,
+                EventTimeZone,
+                rollToTomorrow: false,
+                out until))
+        {
+            return false;
+        }
+
+        return EventScheduleService.IsWindowEnterable(from, until);
+    }
+
+    /// <summary>Writes a window back as the clock times it was stated as.</summary>
+    private static string DescribeWindow(EventSchedule schedule, DateTimeOffset now) =>
+        schedule.PublishEnd == 0
+            ? $"open from {EventClockTimeUtils.Describe(schedule.PublishStart, EventTimeZone)}, never closes"
+            : $"{EventClockTimeUtils.Describe(schedule.PublishStart, EventTimeZone)}"
+                + $" to {EventClockTimeUtils.Describe(schedule.PublishEnd, EventTimeZone)}";
+
+    private static string Quote(string optionName) => $"`{optionName}`";
 
     private Task ReplyAsync(
         string interactionIdentifier,

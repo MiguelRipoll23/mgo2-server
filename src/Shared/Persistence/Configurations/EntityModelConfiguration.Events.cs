@@ -82,6 +82,13 @@ internal static partial class EntityModelConfiguration
             // The published events are listed by mode, so that is the axis a
             // lobby screen reads rather than an index over the whole table.
             entity.HasIndex(schedule => schedule.LobbySubtype);
+
+            // The name is how an operator addresses an event, so two schedules
+            // sharing one would make the name ambiguous. The service refuses a
+            // duplicate it can see; this is the backstop against the race two
+            // operators would otherwise both win.
+            entity.HasIndex(schedule => schedule.Name).IsUnique();
+
             entity.Property(schedule => schedule.PublishStart).HasDefaultValue(0L);
             entity.Property(schedule => schedule.PublishEnd).HasDefaultValue(0L);
             entity.Property(schedule => schedule.TeamCapacity)

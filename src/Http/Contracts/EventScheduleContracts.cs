@@ -29,6 +29,13 @@ public sealed class EventScheduleRequest
     [Range(EventConstants.SurvivalSelector, EventConstants.TournamentRegistrationSelector)]
     public int LobbySubtypeId { get; set; } = EventConstants.TournamentRegistrationSelector;
 
+    /// <summary>
+    /// Name the event is addressed by, such as "Survival Night 3". Left blank,
+    /// the service composes one from the mode and the names already taken.
+    /// </summary>
+    [MaxLength(EventScheduleNameService.MaximumLength)]
+    public string Name { get; set; } = string.Empty;
+
     /// <summary>Whether the event is published at all.</summary>
     public bool Enabled { get; set; } = true;
 

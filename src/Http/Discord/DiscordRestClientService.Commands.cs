@@ -15,9 +15,13 @@ public sealed partial class DiscordRestClientService
     /// <summary>
     /// Registers the event scheduling command. Unlike the message commands it
     /// carries typed options rather than one block of text, because a schedule
-    /// is a window and a field size rather than a sentence, and asking a
-    /// moderator to express an epoch second as prose would be a way of getting
-    /// it wrong.
+    /// is a window and a field size rather than a sentence.
+    /// <para>
+    /// Every option is a word or a clock time a moderator can read. The command
+    /// used to ask for an event identifier and a pair of epoch seconds, which
+    /// put two numbers nobody can check in front of the person scheduling the
+    /// event; both are now the name the event was given and the hours it runs.
+    /// </para>
     /// </summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>Whether Discord accepted the command.</returns>
@@ -35,14 +39,14 @@ public sealed partial class DiscordRestClientService
         var command = new
         {
             name = DiscordOptions.ScheduleCommandName,
-            description = "Schedules a Tournament or Survival event.",
+            description = "Schedules a Survival or Tournament event.",
             options = new object[]
             {
                 new
                 {
                     type = StringOptionType,
                     name = "action",
-                    description = "list, create, update or withdraw.",
+                    description = "What to do with the event.",
                     required = true,
                     choices = new[]
                     {
@@ -54,44 +58,53 @@ public sealed partial class DiscordRestClientService
                 },
                 new
                 {
-                    type = IntegerOptionType,
+                    type = StringOptionType,
                     name = "event",
-                    description = "Identifier of the event.",
+                    description = "Name of the event, for example Survival Night 3. Run list to see them.",
                     required = false,
+                    max_length = EventScheduleNameService.MaximumLength,
                 },
                 new
                 {
-                    type = IntegerOptionType,
+                    type = StringOptionType,
                     name = "mode",
-                    description = "Lobby mode: 4 Survival, 3 Tournament, 10 registration.",
+                    description = "Which lobby the event is played in.",
                     required = false,
+                    choices = new[]
+                    {
+                        new { name = "Survival", value = "survival" },
+                        new { name = "Tournament", value = "tournament" },
+                        new { name = "Registration", value = "registration" },
+                    },
                 },
                 new
                 {
                     type = IntegerOptionType,
                     name = "teams",
-                    description = $"Number of teams the field holds, at most {EventConstants.BracketMaximumEntrants}.",
+                    description = $"How many teams fit in the event, up to {EventConstants.BracketMaximumEntrants}.",
                     required = false,
+                    min_value = 1,
+                    max_value = EventConstants.BracketMaximumEntrants,
                 },
                 new
                 {
-                    type = IntegerOptionType,
+                    type = StringOptionType,
                     name = "from",
-                    description = "Epoch second the event is published from.",
+                    description = "Hour the event opens, like 20:00. An hour already past means tomorrow.",
                     required = false,
                 },
                 new
                 {
-                    type = IntegerOptionType,
+                    type = StringOptionType,
                     name = "until",
-                    description = "Epoch second it stops being published, or 0 for never.",
+                    description = "Hour the event closes, like 23:00, or never.",
                     required = false,
                 },
                 new
                 {
                     type = BooleanOptionType,
                     name = "enabled",
-                    description = "Whether the event is published at all.",
+                    description = "Whether players can see and enter the event.",
                     required = false,
                 },
             },
@@ -102,6 +115,72 @@ public sealed partial class DiscordRestClientService
             CommandsPath(applicationIdentifier),
             command,
             "register the event command",
+            cancellationToken) is not null
+            ? Task.FromResult(true)
+            : Task.FromResult(false);
+    }
+
+    /// <summary>
+    /// Registers the fake player command. Its options are a lobby, a count and
+    /// a team name, because that is all a moderator needs to put players into an
+    /// event they are about to look at.
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Whether Discord accepted the command.</returns>
+    public Task<bool> RegisterFakePlayerCommandAsync(CancellationToken cancellationToken)
+    {
+        var applicationIdentifier = DiscordApplicationIdentifierUtils.FromBotToken(options.BotToken);
+        if (applicationIdentifier is null)
+        {
+            logger.LogWarning(
+                "The {Command} command is not registered; the bot token does not carry an application identifier",
+                DiscordOptions.FakePlayerCommandName);
+            return Task.FromResult(false);
+        }
+
+        var command = new
+        {
+            name = DiscordOptions.FakePlayerCommandName,
+            description = "Fills a Survival or Tournament lobby with players who are only in memory.",
+            options = new object[]
+            {
+                new
+                {
+                    type = StringOptionType,
+                    name = "mode",
+                    description = "Which lobby to put the players in.",
+                    required = true,
+                    choices = new[]
+                    {
+                        new { name = "Survival", value = "survival" },
+                        new { name = "Tournament", value = "tournament" },
+                    },
+                },
+                new
+                {
+                    type = IntegerOptionType,
+                    name = "count",
+                    description = "How many players to add, from 1 to 24.",
+                    required = true,
+                    min_value = 1,
+                    max_value = FakePlayerDispatchService.MaximumCount,
+                },
+                new
+                {
+                    type = StringOptionType,
+                    name = "team",
+                    description = "Name to give the team they are put in. Leave blank for a made-up one.",
+                    required = false,
+                    max_length = 16,
+                },
+            },
+        };
+
+        return SendAsync(
+            HttpMethod.Post,
+            CommandsPath(applicationIdentifier),
+            command,
+            "register the fake player command",
             cancellationToken) is not null
             ? Task.FromResult(true)
             : Task.FromResult(false);

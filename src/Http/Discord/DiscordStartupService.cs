@@ -56,6 +56,7 @@ public sealed class DiscordStartupService(
             await restClient.RegisterFlashCommandAsync(cancellationToken);
             await restClient.RegisterMessageCommandAsync(cancellationToken);
             await restClient.RegisterEventScheduleCommandAsync(cancellationToken);
+            await restClient.RegisterFakePlayerCommandAsync(cancellationToken);
 
             if (!options.Value.IsPlayerCountConfigured)
             {

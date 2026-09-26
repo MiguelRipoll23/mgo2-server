@@ -15,7 +15,10 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// </para>
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
-public sealed class EventScheduleService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
+/// <param name="nameService">Service that owns the name a schedule is addressed by.</param>
+public sealed class EventScheduleService(
+    IDbContextFactory<Mgo2DatabaseContext> contextFactory,
+    EventScheduleNameService nameService)
     : DomainService(contextFactory)
 {
     /// <summary>
@@ -63,6 +66,16 @@ public sealed class EventScheduleService(IDbContextFactory<Mgo2DatabaseContext> 
                 schedule => schedule.Identifier == eventIdentifier,
                 cancellationToken);
     }
+
+    /// <summary>
+    /// Finds an event's schedule by the name an operator gave it.
+    /// </summary>
+    /// <param name="name">Name the event was given.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public Task<EventSchedule?> FindByNameAsync(
+        string? name,
+        CancellationToken cancellationToken = default) =>
+        nameService.FindAsync(name, cancellationToken);
 
     /// <summary>
     /// Lists the events a lobby is currently publishing, oldest identifier
@@ -113,6 +126,7 @@ public sealed class EventScheduleService(IDbContextFactory<Mgo2DatabaseContext> 
     /// <param name="publishStart">Epoch second it is published from.</param>
     /// <param name="publishEnd">Epoch second it stops being published, or zero.</param>
     /// <param name="enabled">Whether it is published at all.</param>
+    /// <param name="name">Name to address the event by, or blank to compose one.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The schedule that was written.</returns>
     public async Task<EventSchedule> ScheduleAsync(
@@ -121,6 +135,7 @@ public sealed class EventScheduleService(IDbContextFactory<Mgo2DatabaseContext> 
         long publishStart,
         long publishEnd,
         bool enabled,
+        string name = "",
         CancellationToken cancellationToken = default)
     {
         if (!EventConstants.IsEventSelector(mode))
@@ -144,8 +159,24 @@ public sealed class EventScheduleService(IDbContextFactory<Mgo2DatabaseContext> 
                 nameof(publishEnd));
         }
 
+        var eventName = EventScheduleNameService.Normalise(name);
+        if (eventName.Length == 0)
+        {
+            eventName = await nameService.ComposeAsync(mode, cancellationToken);
+        }
+
+        if (await nameService.FindAsync(eventName, cancellationToken) is not null)
+        {
+            // Two events sharing a name would make the name address two of them,
+            // so this is refused here rather than caught as a constraint later.
+            throw new ArgumentException(
+                $"An event named '{eventName}' already exists.",
+                nameof(name));
+        }
+
         var schedule = new EventSchedule
         {
+            Name = eventName,
             LobbySubtype = mode,
             Enabled = enabled,
             PublishStart = publishStart,
@@ -158,6 +189,10 @@ public sealed class EventScheduleService(IDbContextFactory<Mgo2DatabaseContext> 
         await context.SaveChangesAsync(cancellationToken);
         return schedule;
     }
+
+    /// <summary>Name a lobby mode is written with in a schedule name.</summary>
+    /// <param name="mode">Lobby mode to name.</param>
+    public static string ModeName(int mode) => EventScheduleNameService.ModeName(mode);
 
     /// <summary>
     /// Changes a schedule in place. Every column is written, because the caller
