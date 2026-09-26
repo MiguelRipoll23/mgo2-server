@@ -7,7 +7,7 @@
   <ItemGroup>
     <!-- Runtime and tooling of the internal server-to-server protocol below. -->
     <PackageReference Include="Google.Protobuf" Version="3.36.2" />
-    <PackageReference Include="Grpc.Core.Api" Version="2.83.0" />
+    <PackageReference Include="Grpc.Core.Api" Version="2.84.0" />
     <!-- Private assets: the tooling only runs at build time and must not flow
          into every server that references this library. -->
     <PackageReference Include="Grpc.Tools" Version="2.84.0">
