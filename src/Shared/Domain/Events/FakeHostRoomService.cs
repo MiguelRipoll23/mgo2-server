@@ -1,5 +1,5 @@
-using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Persistence;
+using Mgo2Server.Shared.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mgo2Server.Shared.Domain.Events;
@@ -19,44 +19,43 @@ public enum FakeHostRoomOutcome
 
 /// <summary>What creating a fake host room did.</summary>
 /// <param name="Outcome">What happened.</param>
-/// <param name="GameIdentifier">Room that was created, when one was.</param>
-/// <param name="RoomName">Name the room carries.</param>
-/// <param name="HostCharacterIdentifier">Character hosting the room.</param>
+/// <param name="Room">The room, when one was made.</param>
 public readonly record struct FakeHostRoomResult(
     FakeHostRoomOutcome Outcome,
-    int GameIdentifier,
-    string RoomName,
-    int HostCharacterIdentifier);
+    FakeHostRoom? Room);
 
 /// <summary>
-/// Creates a dedicated event host room, so a paired match can reach a host
-/// without a player sitting in a game client to make one.
+/// Holds the dedicated event host rooms that exist only in this lobby's memory,
+/// so a pairing can be given somewhere to go without a client sitting in a game
+/// to make one.
 /// <para>
 /// A pairing does not announce itself. The match row is written when two teams
 /// are queued, but the match-found packet is only pushed once a room has been
-/// leased, and a room is only leased from one that is named for the role, says
+/// claimed, and a room is only claimed from one that is named for the role, says
 /// it is dedicated, and is sitting idle with its host present. All three of
-/// those are things a real host client does by existing, so a pairing made from
-/// the testing tools sits in "paired, waiting for a host" until somebody opens
-/// a dedicated room by hand — which reads from the page as a pairing that never
-/// worked, when in fact it paired correctly and simply has nowhere to go.
+/// those are things a real host client does merely by existing, so a pairing
+/// made from the testing tools sat in "paired, waiting for a host" until
+/// somebody opened a dedicated room by hand — which reads from the page as a
+/// pairing that never worked, when in fact it paired correctly and simply had
+/// nowhere to go.
 /// </para>
 /// <para>
-/// So this writes the room. It is a testing device and it says so: the room is
-/// named for the role the eligibility rule looks for and carries the dedicated
-/// flag, and its host is a real character because the room's host column is a
-/// foreign key and the sweep requires the host to be present in the room. The
-/// host is therefore a character that exists, and the room is removed with the
-/// testing tools rather than left behind.
+/// So this makes the room in memory, beside the real ones rather than instead of
+/// them. The rooms here are projected into the same <see cref="Game"/> a real
+/// room is, so everything downstream — the eligibility rule, the claim and the
+/// assignment packets — reads one kind of room and cannot tell them apart. The
+/// rooms a player really opens keep working exactly as they did; these simply
+/// join them in the pool.
 /// </para>
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
-/// <param name="gameService">Service that owns the rooms.</param>
-public sealed class FakeHostRoomService(
-    IDbContextFactory<Mgo2DatabaseContext> contextFactory,
-    GameService gameService)
+public sealed class FakeHostRoomService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
     : DomainService(contextFactory)
 {
+    private readonly Lock gate = new();
+    private readonly Dictionary<int, FakeHostRoom> rooms = [];
+    private int nextGameIdentifier = FakePlayerIdentifierUtils.FirstFakeIdentifier;
+
     /// <summary>
     /// The name a room carries to host a mode, or null when the mode is not one
     /// an event host room exists for.
@@ -70,7 +69,31 @@ public sealed class FakeHostRoomService(
     };
 
     /// <summary>
-    /// Creates the dedicated host room of a mode in a lobby.
+    /// The in-memory host rooms of a lobby, in the order they were created.
+    /// </summary>
+    /// <param name="lobbyIdentifier">Lobby to list.</param>
+    public IReadOnlyList<FakeHostRoom> ListRooms(int lobbyIdentifier)
+    {
+        lock (gate)
+        {
+            return [.. rooms.Values
+                .Where(room => room.Room.LobbyIdentifier == lobbyIdentifier)
+                .OrderBy(room => room.Room.Identifier)];
+        }
+    }
+
+    /// <summary>Returns one in-memory room, when it is held here.</summary>
+    /// <param name="gameIdentifier">Room to find.</param>
+    public FakeHostRoom? FindRoom(int gameIdentifier)
+    {
+        lock (gate)
+        {
+            return rooms.TryGetValue(gameIdentifier, out var room) ? room : null;
+        }
+    }
+
+    /// <summary>
+    /// Creates a dedicated host room of a mode in a lobby.
     /// </summary>
     /// <param name="lobbyIdentifier">Lobby the room belongs to.</param>
     /// <param name="mode">Mode the room hosts.</param>
@@ -82,10 +105,10 @@ public sealed class FakeHostRoomService(
         int hostCharacterIdentifier = 0,
         CancellationToken cancellationToken = default)
     {
-        var roomName = RoomNameFor(mode);
-        if (roomName is null)
+        var hostName = RoomNameFor(mode);
+        if (hostName is null)
         {
-            return new FakeHostRoomResult(FakeHostRoomOutcome.NotAnEventHost, 0, string.Empty, 0);
+            return new FakeHostRoomResult(FakeHostRoomOutcome.NotAnEventHost, null);
         }
 
         var host = hostCharacterIdentifier > 0
@@ -94,36 +117,43 @@ public sealed class FakeHostRoomService(
 
         if (host <= 0)
         {
-            return new FakeHostRoomResult(
-                FakeHostRoomOutcome.NoHostCharacter, 0, roomName, hostCharacterIdentifier);
+            return new FakeHostRoomResult(FakeHostRoomOutcome.NoHostCharacter, null);
         }
 
-        var game = await gameService.CreateAsync(room =>
+        // The identifier comes from the fake range, so it can never collide with
+        // a real room's — a games identifier is a database sequence and will not
+        // reach a billion — and so a claim naming one is recognisable as a claim
+        // on a room that exists in this process only.
+        var room = FakeHostRoom.Create(
+            NextGameIdentifier(),
+            lobbyIdentifier,
+            mode,
+            host,
+            hostName);
+
+        lock (gate)
         {
-            room.HostIdentifier = host;
-            room.LobbyIdentifier = lobbyIdentifier;
-            room.Name = roomName;
+            rooms[room.Room.Identifier] = room;
+        }
 
-            // A match of up to sixteen players plus the dedicated host has to
-            // fit, so the room is created at the largest size the eligibility
-            // rule will accept rather than at a player's usual eight.
-            room.MaximumPlayers =
-                EventHostEligibilityUtils.MatchPlayerCapacity
-                + EventHostEligibilityUtils.DedicatedHostPlayerSlots;
-            room.Comment = "Created by the event testing tools.";
+        return new FakeHostRoomResult(FakeHostRoomOutcome.Created, room);
+    }
 
-            // The flag the host-eligibility rule reads. The room is dedicated to
-            // the mode, which is what makes it eligible for that mode's matches
-            // and nothing else.
-            room.Common = """{"dedicated":true}""";
-        }, cancellationToken);
+    /// <summary>Forgets every in-memory room. For tests only.</summary>
+    public void Reset()
+    {
+        lock (gate)
+        {
+            rooms.Clear();
+        }
+    }
 
-        // The sweep requires the host to be present in the room, and the room's
-        // own roster row is what says so.
-        await gameService.AddPlayerAsync(game.Identifier, host, cancellationToken);
-
-        return new FakeHostRoomResult(
-            FakeHostRoomOutcome.Created, game.Identifier, roomName, host);
+    private int NextGameIdentifier()
+    {
+        lock (gate)
+        {
+            return nextGameIdentifier++;
+        }
     }
 
     private async Task<int> FindHostAsync(
@@ -132,8 +162,9 @@ public sealed class FakeHostRoomService(
     {
         await using var context = await CreateContextAsync(cancellationToken);
 
-        // A named host has to exist and has to be able to host: see the note on
-        // FindFirstHostAsync for why zero is not one of those.
+        // A named host has to exist, because a character that is not there is a
+        // host the room cannot say is present, and an absent host is a room that
+        // is never idle — which is a pairing that never reaches a host.
         var exists = await context.Characters
             .AnyAsync(
                 character => character.Identifier == characterIdentifier
@@ -147,17 +178,14 @@ public sealed class FakeHostRoomService(
         await using var context = await CreateContextAsync(cancellationToken);
 
         // The lowest identifier that can actually host a room, which is the
-        // lowest one above zero. Zero is excluded deliberately: AddPlayerAsync
-        // treats a character at or below zero as absent and writes no roster
-        // row for it, and IsIdle reads a roster without the host in it as a
-        // room that is not idle, so a room hosted by character zero would be
-        // created and then never eligible — a failure that looks exactly like
-        // the pairing that never reached a host. Skipping it here is also what
-        // keeps zero usable as the "no character found" answer below.
+        // lowest one above zero. Zero is excluded deliberately: it is how a
+        // roster spells "nobody here", so a host of zero is indistinguishable
+        // from an absent one and the room would be created and then never
+        // eligible. Skipping it is also what keeps zero usable as the "no
+        // character found" answer below.
         //
         // The gameplay server's own character is the one this lands on in
-        // practice, since it is created first and carries the host's peer
-        // identifier, but nothing here depends on that being true.
+        // practice, since it is created first, but nothing here depends on that.
         return await context.Characters
             .Where(character => character.Identifier > 0)
             .OrderBy(character => character.Identifier)

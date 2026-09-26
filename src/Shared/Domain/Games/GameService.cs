@@ -73,13 +73,26 @@ public sealed partial class GameService(
             .ToListAsync(cancellationToken);
     }
 
-    /// <summary>Lists the rooms of a lobby that are still being published.</summary>
+    /// <summary>
+    /// Lists the rooms of a lobby that are still being published, each with the
+    /// roster it is holding.
+    /// <para>
+    /// The roster is loaded rather than left for the caller to fetch, because the
+    /// roster is the answer to a question the room list exists to ask: whether a
+    /// room is idle, which is read as "the host is in it and nobody else is". A
+    /// caller that reached for <see cref="Game.Players"/> on a room from here got
+    /// an empty collection rather than the roster, so every room looked like a
+    /// host that had left and none of them was ever eligible for anything. The
+    /// include is here so that cannot happen to the next reader either.
+    /// </para>
+    /// </summary>
     /// <param name="lobbyIdentifier">Identifier of the lobby.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<List<Game>> FindByLobbyAsync(int lobbyIdentifier, CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
         return await StillPublished(context.Games.AsNoTracking())
+            .Include(game => game.Players)
             .Where(game => game.LobbyIdentifier == lobbyIdentifier)
             .ToListAsync(cancellationToken);
     }

@@ -1,5 +1,4 @@
 using Mgo2Server.Shared.Domain;
-using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,15 +19,17 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// <param name="matchService">Service that owns the pairings.</param>
 /// <param name="leaseService">Service that owns the room claims.</param>
 /// <param name="rewardService">Service that pays a completed match.</param>
-/// <param name="gameService">Service that owns the rooms a host is chosen from.</param>
+/// <param name="roomPool">The rooms a host is chosen from, real and in-memory.</param>
+/// <param name="fakeClaims">The claims held on in-memory rooms.</param>
 /// <param name="rosterService">Service that owns the frozen rosters a pairing names.</param>
 /// <param name="pushService">Service that tells the teams their match was found.</param>
-public sealed class EventAssignmentService(
+public sealed partial class EventAssignmentService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
     EventMatchService matchService,
     EventHostLeaseService leaseService,
     EventRewardService rewardService,
-    GameService gameService,
+    EventHostRoomPoolService roomPool,
+    FakeHostClaimService fakeClaims,
     TournamentRosterService rosterService,
     EventAssignmentPushService pushService)
     : DomainService(contextFactory)
@@ -60,7 +61,7 @@ public sealed class EventAssignmentService(
             return [];
         }
 
-        var games = await gameService.FindByLobbyAsync(lobbyIdentifier, cancellationToken);
+        var games = await roomPool.ListAsync(lobbyIdentifier, cancellationToken);
         var assignments = new List<EventAssignment>();
 
         foreach (var match in waiting)
@@ -143,16 +144,20 @@ public sealed class EventAssignmentService(
             return null;
         }
 
-        var lease = await leaseService.TryCreateAsync(
+        // A room that exists only in this process cannot be named by a lease:
+        // the lease's room column is a foreign key, and it names rows. So the
+        // claim is taken against whichever kind of room was chosen, and both
+        // kinds answer the same questions afterwards.
+        var state = await TryClaimAsync(
             matchIdentifier,
             gameIdentifier,
-            activeStateIdentifier: matchIdentifier,
-            sequence: firstTeam.Sequence,
+            matchIdentifier,
+            firstTeam.Sequence,
             match.LobbyIdentifier,
-            lobbySubtype: match.MatchType,
+            match.MatchType,
             cancellationToken);
 
-        if (lease is null)
+        if (state is null)
         {
             return null;
         }
@@ -164,7 +169,7 @@ public sealed class EventAssignmentService(
         {
             // The pairing vanished between the two writes, so the claim it holds
             // is released rather than left pointing at a match that is gone.
-            await leaseService.ReleaseAsync(gameIdentifier, cancellationToken);
+            await ReleaseAsync(gameIdentifier, cancellationToken);
             return null;
         }
 
@@ -172,9 +177,9 @@ public sealed class EventAssignmentService(
         {
             MatchIdentifier = matchIdentifier,
             GameIdentifier = gameIdentifier,
-            ActiveStateIdentifier = lease.ActiveStateIdentifier,
-            Sequence = lease.ActiveStateSequence,
-            ActivationTimeSeconds = EventActiveEventService.BaseTimeSeconds(lease),
+            ActiveStateIdentifier = state.Value.ActiveStateIdentifier,
+            Sequence = state.Value.ActiveStateSequence,
+            ActivationTimeSeconds = state.Value.BaseTimeSeconds(),
             LobbyIdentifier = match.LobbyIdentifier,
             LobbySubtype = match.MatchType,
             FirstTeam = EventTeamService.BuildSnapshot(firstTeam),
@@ -197,13 +202,13 @@ public sealed class EventAssignmentService(
             return null;
         }
 
-        var lease = await leaseService.FindActiveByMatchAsync(match.Identifier, cancellationToken);
-        if (lease is null)
+        var claim = await FindClaimAsync(match.Identifier, cancellationToken);
+        if (claim is null)
         {
             return null;
         }
 
-        return await LoadAsync(match.Identifier, lease, cancellationToken);
+        return await LoadAsync(match.Identifier, claim.Value, cancellationToken);
     }
 
     /// <summary>Finds the assignment of a room.</summary>
@@ -213,13 +218,30 @@ public sealed class EventAssignmentService(
         int gameIdentifier,
         CancellationToken cancellationToken = default)
     {
+        // A room is asked about by its own identifier, and only a real room's
+        // can be found in a lease, so an in-memory one is answered from the claim
+        // that names it.
+        if (FakePlayerIdentifierUtils.IsFake(gameIdentifier))
+        {
+            var inMemory = fakeClaims.FindByRoom(gameIdentifier);
+            return inMemory is null
+                ? null
+                : await LoadAsync(
+                    inMemory.MatchIdentifier,
+                    EventAssignmentState.From(inMemory),
+                    cancellationToken);
+        }
+
         var lease = await leaseService.FindActiveByGameAsync(gameIdentifier, cancellationToken);
         if (lease is null)
         {
             return null;
         }
 
-        return await LoadAsync(lease.MatchIdentifier, lease, cancellationToken);
+        return await LoadAsync(
+            lease.MatchIdentifier,
+            EventAssignmentState.From(lease),
+            cancellationToken);
     }
 
     /// <summary>Records an outcome and releases the room.</summary>
@@ -232,12 +254,12 @@ public sealed class EventAssignmentService(
         int winningTeamIdentifier,
         CancellationToken cancellationToken = default)
     {
-        var lease = await leaseService.FindActiveByMatchAsync(matchIdentifier, cancellationToken);
+        var claim = await FindClaimAsync(matchIdentifier, cancellationToken);
 
-        // The lease is the gate: a match with no active lease has already been
-        // completed, so a second report pays nothing. The reward ledger is a
+        // The claim is the gate: a match holding no claim on a room has already
+        // been completed, so a second report pays nothing. The reward ledger is a
         // second guard under the same rule rather than the first one.
-        if (lease is null)
+        if (claim is null)
         {
             return [];
         }
@@ -252,7 +274,7 @@ public sealed class EventAssignmentService(
             return [];
         }
 
-        await leaseService.ReleaseAsync(lease.GameIdentifier, cancellationToken);
+        await ReleaseAsync(claim.Value.GameIdentifier, cancellationToken);
         return await rewardService.PayAsync(matchIdentifier, winningTeamIdentifier, cancellationToken);
     }
 
@@ -264,18 +286,18 @@ public sealed class EventAssignmentService(
         int matchIdentifier,
         CancellationToken cancellationToken = default)
     {
-        var lease = await leaseService.FindActiveByMatchAsync(matchIdentifier, cancellationToken);
-        var assignment = lease is null
+        var claim = await FindClaimAsync(matchIdentifier, cancellationToken);
+        var assignment = claim is null
             ? null
-            : await LoadAsync(matchIdentifier, lease, cancellationToken);
+            : await LoadAsync(matchIdentifier, claim.Value, cancellationToken);
         var cancelled = await matchService.SetStateAsync(
             matchIdentifier,
             EventConstants.MatchCancelledState,
             cancellationToken: cancellationToken);
 
-        if (lease is not null)
+        if (claim is not null)
         {
-            await leaseService.ReleaseAsync(lease.GameIdentifier, cancellationToken);
+            await ReleaseAsync(claim.Value.GameIdentifier, cancellationToken);
 
             // A Survival match that was live is a pair of teams holding a
             // match-found screen; the teardown empties the event record on both
@@ -298,7 +320,7 @@ public sealed class EventAssignmentService(
 
     private async Task<EventAssignment?> LoadAsync(
         int matchIdentifier,
-        Persistence.Entities.EventHostLease lease,
+        EventAssignmentState claim,
         CancellationToken cancellationToken)
     {
         await using var context = await CreateContextAsync(cancellationToken);
@@ -324,10 +346,10 @@ public sealed class EventAssignmentService(
         return new EventAssignment
         {
             MatchIdentifier = match.Identifier,
-            GameIdentifier = lease.GameIdentifier,
-            ActiveStateIdentifier = lease.ActiveStateIdentifier,
-            Sequence = lease.ActiveStateSequence,
-            ActivationTimeSeconds = EventActiveEventService.BaseTimeSeconds(lease),
+            GameIdentifier = claim.GameIdentifier,
+            ActiveStateIdentifier = claim.ActiveStateIdentifier,
+            Sequence = claim.ActiveStateSequence,
+            ActivationTimeSeconds = claim.BaseTimeSeconds(),
             LobbyIdentifier = match.LobbyIdentifier,
             LobbySubtype = match.MatchType,
             FirstTeam = EventTeamService.BuildSnapshot(firstTeam),

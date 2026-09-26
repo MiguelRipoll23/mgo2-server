@@ -17,7 +17,7 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 /// leases the room, not by the room's arrival.
 /// </para>
 /// </summary>
-/// <param name="hostRoomService">Service that writes the room.</param>
+/// <param name="hostRoomService">Service that holds the room in memory.</param>
 /// <param name="identityService">Service that knows this lobby's own mode and row.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class FakeHostRoomRequestHandlerService(
@@ -72,9 +72,9 @@ public sealed class FakeHostRoomRequestHandlerService(
 
         logger.LogInformation(
             "Created dedicated host room {RoomName} ({GameIdentifier}) in lobby {LobbyIdentifier}, hosted by character {HostCharacterIdentifier}",
-            result.RoomName,
-            result.GameIdentifier,
+            result.Room!.Room.Name,
+            result.Room.Room.Identifier,
             lobbyIdentifier,
-            result.HostCharacterIdentifier);
+            result.Room.HostIdentifier);
     }
 }

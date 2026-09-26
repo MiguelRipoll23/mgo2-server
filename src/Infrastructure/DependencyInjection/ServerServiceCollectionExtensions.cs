@@ -185,6 +185,8 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<FakeTeamPairingService>();
         services.AddSingleton<FakeTeamMemberStateService>();
         services.AddSingleton<FakeHostRoomService>();
+        services.AddSingleton<FakeHostClaimService>();
+        services.AddSingleton<EventHostRoomPoolService>();
         services.AddSingleton<EventTeamStateService>();
         services.AddSingleton<EventTeamPushService>();
         services.AddSingleton<EventInvitationService>();
