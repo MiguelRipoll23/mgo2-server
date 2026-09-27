@@ -19,8 +19,7 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// <param name="matchService">Service that owns the pairings.</param>
 /// <param name="leaseService">Service that owns the room claims.</param>
 /// <param name="rewardService">Service that pays a completed match.</param>
-/// <param name="roomPool">The rooms a host is chosen from, real and in-memory.</param>
-/// <param name="fakeClaims">The claims held on in-memory rooms.</param>
+/// <param name="roomPool">The rooms a host is chosen from.</param>
 /// <param name="rosterService">Service that owns the frozen rosters a pairing names.</param>
 /// <param name="pushService">Service that tells the teams their match was found.</param>
 public sealed partial class EventAssignmentService(
@@ -29,7 +28,6 @@ public sealed partial class EventAssignmentService(
     EventHostLeaseService leaseService,
     EventRewardService rewardService,
     EventHostRoomPoolService roomPool,
-    FakeHostClaimService fakeClaims,
     TournamentRosterService rosterService,
     EventAssignmentPushService pushService)
     : DomainService(contextFactory)
@@ -218,20 +216,6 @@ public sealed partial class EventAssignmentService(
         int gameIdentifier,
         CancellationToken cancellationToken = default)
     {
-        // A room is asked about by its own identifier, and only a real room's
-        // can be found in a lease, so an in-memory one is answered from the claim
-        // that names it.
-        if (FakePlayerIdentifierUtils.IsFake(gameIdentifier))
-        {
-            var inMemory = fakeClaims.FindByRoom(gameIdentifier);
-            return inMemory is null
-                ? null
-                : await LoadAsync(
-                    inMemory.MatchIdentifier,
-                    EventAssignmentState.From(inMemory),
-                    cancellationToken);
-        }
-
         var lease = await leaseService.FindActiveByGameAsync(gameIdentifier, cancellationToken);
         if (lease is null)
         {

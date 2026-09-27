@@ -181,11 +181,10 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<EventInformationService>();
         services.AddSingleton<EventTeamService>();
         services.AddSingleton<EventTeamListingService>();
+        services.AddSingleton<TestCharacterPoolService>();
         services.AddSingleton<FakeTeamService>();
-        services.AddSingleton<FakeTeamPairingService>();
         services.AddSingleton<FakeTeamMemberStateService>();
         services.AddSingleton<FakeHostRoomService>();
-        services.AddSingleton<FakeHostClaimService>();
         services.AddSingleton<EventHostRoomPoolService>();
         services.AddSingleton<EventTeamStateService>();
         services.AddSingleton<EventTeamPushService>();

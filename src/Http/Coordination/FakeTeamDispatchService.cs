@@ -6,20 +6,19 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.Http.Coordination;
 
 /// <summary>
-/// Sends a request to create a team that exists only in a lobby's memory to the
-/// one lobby that will show it, and carries the questions about the teams a
-/// lobby is already holding.
+/// Sends a request to create a testing team to the one lobby that will hold it,
+/// and carries the questions about the teams a lobby already holds.
 /// <para>
 /// The request is answered by the HTTP API but the team has to exist in the
-/// lobby that lists it, and the two are separate processes. This is the step in
+/// lobby that holds it, and the two are separate processes. This is the step in
 /// between: it turns the lobby a caller named into the identifier the
 /// coordination registry is keyed by, and hands the request down that lobby's
 /// open stream.
 /// </para>
 /// <para>
-/// Nothing is written: the team lives in the lobby's memory and goes away with
-/// it, which is what makes it a testing device rather than a second source of
-/// teams.
+/// The lobby is asked rather than written directly because it owns the roster
+/// and pushes it to its clients; the removal is the one request that also waits
+/// for the lobby's answer.
 /// </para>
 /// </summary>
 /// <param name="registry">Registry of the connected lobbies.</param>
@@ -68,38 +67,34 @@ public sealed partial class FakeTeamDispatchService(
     /// <param name="mode">Lobby mode the team is created in.</param>
     /// <param name="count">How many players the team holds.</param>
     /// <param name="teamName">Name the team is given, or blank for a composed one.</param>
-    /// <param name="playerPrefix">Name the players are shown with, or blank.</param>
     /// <param name="lobbyIdentifier">Lobby the request went to, when it went anywhere.</param>
     public readonly record struct Result(
         DispatchOutcome Outcome,
         int Mode,
         int Count,
         string TeamName,
-        string PlayerPrefix,
         int LobbyIdentifier);
 
     /// <summary>Routes a request to the lobby that runs the named mode.</summary>
     /// <param name="mode">Lobby mode the team is created in.</param>
     /// <param name="count">How many players the team holds, leader included.</param>
     /// <param name="teamName">Name the team is given, or blank for a composed one.</param>
-    /// <param name="playerPrefix">Name the players are shown with, or blank.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<Result> DispatchAsync(
         int mode,
         int count,
         string teamName,
-        string playerPrefix,
         CancellationToken cancellationToken = default)
     {
         if (count < 1 || count > MaximumCount)
         {
-            return new Result(DispatchOutcome.InvalidCount, mode, count, teamName, playerPrefix, 0);
+            return new Result(DispatchOutcome.InvalidCount, mode, count, teamName, 0);
         }
 
         var lobby = await modes.ResolveAsync(mode, cancellationToken);
         if (lobby is null)
         {
-            return new Result(DispatchOutcome.NoSuchLobby, mode, count, teamName, playerPrefix, 0);
+            return new Result(DispatchOutcome.NoSuchLobby, mode, count, teamName, 0);
         }
 
         var message = new HttpEvent
@@ -109,30 +104,29 @@ public sealed partial class FakeTeamDispatchService(
                 LobbySubtype = mode,
                 Count = count,
                 TeamName = teamName,
-                PlayerPrefix = playerPrefix,
             },
         };
 
         if (!registry.SendTo(lobby.Identifier, message))
         {
             logger.LogWarning(
-                "Lobby {LobbyIdentifier} has no open coordination stream, so its fake team was not created",
+                "Lobby {LobbyIdentifier} has no open coordination stream, so its testing team was not created",
                 lobby.Identifier);
-            return new Result(DispatchOutcome.LobbyOffline, mode, count, teamName, playerPrefix, lobby.Identifier);
+            return new Result(DispatchOutcome.LobbyOffline, mode, count, teamName, lobby.Identifier);
         }
 
         logger.LogInformation(
-            "Asked lobby {LobbyIdentifier} to create an in-memory team in mode {Mode}",
+            "Asked lobby {LobbyIdentifier} to create a testing team in mode {Mode}",
             lobby.Identifier,
             mode);
 
-        return new Result(DispatchOutcome.Sent, mode, count, teamName, playerPrefix, lobby.Identifier);
+        return new Result(DispatchOutcome.Sent, mode, count, teamName, lobby.Identifier);
     }
 
-    /// <summary>Carries a request to change an in-memory team's state.</summary>
+    /// <summary>Carries a request to change a team's state.</summary>
     /// <param name="Outcome">What happened.</param>
     /// <param name="Mode">Lobby mode the team is in.</param>
-    /// <param name="TeamName">Name of the in-memory team.</param>
+    /// <param name="TeamName">Name of the team.</param>
     /// <param name="State">Team state that was asked for.</param>
     /// <param name="MemberState">Member state that was asked for, zero to follow the team.</param>
     /// <param name="LobbyIdentifier">Lobby the request went to, when it went anywhere.</param>
@@ -145,17 +139,14 @@ public sealed partial class FakeTeamDispatchService(
         int LobbyIdentifier);
 
     /// <summary>
-    /// Routes a request to change the state of an in-memory team to the lobby that
-    /// holds it.
+    /// Routes a request to change the state of a team to the lobby that holds it.
     /// <para>
-    /// The team has no row and so no identifier the API could name; the request
-    /// carries its display name and the lobby resolves it against the teams it
-    /// holds itself. Nothing is written: the change is visible in the lobby's own
-    /// list and detail replies until the lobby restarts.
+    /// The request carries the team's display name and the lobby resolves it
+    /// against the teams it holds itself.
     /// </para>
     /// </summary>
     /// <param name="mode">Lobby mode the team is in.</param>
-    /// <param name="teamName">Name of the in-memory team whose state changes.</param>
+    /// <param name="teamName">Name of the team whose state changes.</param>
     /// <param name="state">Team state to store, as the client's own phase byte.</param>
     /// <param name="memberState">Member state to force on the roster, or zero to follow the team.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
@@ -202,7 +193,7 @@ public sealed partial class FakeTeamDispatchService(
         }
 
         logger.LogInformation(
-            "Asked lobby {LobbyIdentifier} to set in-memory team {TeamName} to state {State} in mode {Mode}",
+            "Asked lobby {LobbyIdentifier} to set team {TeamName} to state {State} in mode {Mode}",
             lobby.Identifier,
             teamName,
             state,
@@ -211,62 +202,7 @@ public sealed partial class FakeTeamDispatchService(
         return new StateResult(DispatchOutcome.Sent, mode, teamName, state, memberState, lobby.Identifier);
     }
 
-    /// <summary>
-    /// Routes a request to write one in-memory team out as a row so the queue
-    /// can pair it.
-    /// <para>
-    /// This is the one request in the group that writes, and it is the pairing
-    /// service on the lobby that decides what it writes rather than this one:
-    /// the coordinator names a team and a mode, and the lobby holds both the
-    /// team and the rule about which modes it can pair.
-    /// </para>
-    /// </summary>
-    /// <param name="mode">Mode of the lobby the team is in.</param>
-    /// <param name="teamName">Name of the in-memory team.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<StateResult> DispatchPairingAsync(
-        int mode,
-        string teamName,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(teamName))
-        {
-            return new StateResult(DispatchOutcome.NoTeamName, mode, teamName, 0, 0, 0);
-        }
-
-        var lobby = await modes.ResolveAsync(mode, cancellationToken);
-        if (lobby is null)
-        {
-            return new StateResult(DispatchOutcome.NoSuchLobby, mode, teamName, 0, 0, 0);
-        }
-
-        var message = new HttpEvent
-        {
-            FakeTeamPairing = new FakeTeamPairingRequest
-            {
-                LobbySubtype = mode,
-                TeamName = teamName.Trim(),
-            },
-        };
-
-        if (!registry.SendTo(lobby.Identifier, message))
-        {
-            logger.LogWarning(
-                "Lobby {LobbyIdentifier} has no open coordination stream, so its fake team was not made pairable",
-                lobby.Identifier);
-            return new StateResult(DispatchOutcome.LobbyOffline, mode, teamName, 0, 0, lobby.Identifier);
-        }
-
-        logger.LogInformation(
-            "Asked lobby {LobbyIdentifier} to make in-memory team {TeamName} pairable in mode {Mode}",
-            lobby.Identifier,
-            teamName,
-            mode);
-
-        return new StateResult(DispatchOutcome.Sent, mode, teamName, 0, 0, lobby.Identifier);
-    }
-
-    /// <summary>What a question about a lobby's in-memory teams did.</summary>
+    /// <summary>What a question about a lobby's teams did.</summary>
     /// <param name="Outcome">What happened.</param>
     /// <param name="Mode">Lobby mode that was asked about.</param>
     /// <param name="Teams">Teams the lobby reported, empty when it reported none.</param>
@@ -276,26 +212,17 @@ public sealed partial class FakeTeamDispatchService(
         IReadOnlyList<FakeTeamSummary> Teams);
 
     /// <summary>
-    /// Asks the lobby of a mode what it holds in memory.
+    /// Asks the lobby of a mode to remove one of the teams it holds.
     /// <para>
     /// This is the one request of the group that waits for an answer rather
-    /// than handing something over and moving on: the teams live in the lobby's
-    /// process, so the API cannot list them itself, and a caller that was told
-    /// about a team that is not there would be told about a team it cannot
-    /// change either.
+    /// than handing something over and moving on: the team lives in the lobby's
+    /// process, so the answer carries back what was removed, and a caller that
+    /// was told a team was gone when it was not would be told about a team it
+    /// cannot change either.
     /// </para>
     /// </summary>
-    /// <param name="mode">Lobby mode to ask about.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    /// <returns>The teams the lobby holds, or why there are none.</returns>
-    public async Task<QueryResult> ListAsync(int mode, CancellationToken cancellationToken = default) =>
-        await AskAsync(mode, FakeTeamQueryAction.List, teamName: string.Empty, cancellationToken);
-
-    /// <summary>
-    /// Asks the lobby of a mode to forget one of the teams it holds in memory.
-    /// </summary>
     /// <param name="mode">Lobby mode the team is in.</param>
-    /// <param name="teamName">Name of the in-memory team to remove.</param>
+    /// <param name="teamName">Name of the team to remove.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The team that was removed, or why nothing was.</returns>
     public async Task<QueryResult> RemoveAsync(
@@ -353,7 +280,7 @@ public sealed partial class FakeTeamDispatchService(
         {
             var listing = await answer.WaitAsync(LobbyTeamQueryService.Timeout, cancellationToken);
             logger.LogInformation(
-                "Lobby {LobbyIdentifier} reported {Count} in-memory team(s) for {Action} in mode {Mode}",
+                "Lobby {LobbyIdentifier} reported {Count} team(s) for {Action} in mode {Mode}",
                 lobby.Identifier,
                 listing.Teams.Count,
                 action,

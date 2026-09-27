@@ -5,8 +5,8 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameLobbyServer.Coordination;
 
 /// <summary>
-/// Acts on the coordinator's request to create a team that exists only in this
-/// lobby's memory.
+/// Acts on the coordinator's request to create a testing team in this lobby, as
+/// a real row whose players are taken from the test-character pool.
 /// <para>
 /// The request names a lobby mode rather than an identifier because the
 /// coordinator does not know this lobby's identifier. A lobby asked for a mode
@@ -15,19 +15,22 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 /// it does not belong to.
 /// </para>
 /// <para>
-/// Nothing is written. The team is held so the lobby's own team-list and
-/// event-list replies can show it, and it is gone the moment the process ends,
-/// which is what makes it a testing device rather than a second source of
-/// teams.
+/// The team is persisted, not held in memory. Its players are real characters
+/// drawn from the pool, which is what lets the same characters be reused across
+/// a testing session rather than a new set minted per attempt. A Survival team
+/// then enters matchmaking on the same tick a real ready team does, so testing
+/// pairs automatically.
 /// </para>
 /// </summary>
-/// <param name="fakeTeamService">Service that holds the fake teams.</param>
+/// <param name="fakeTeamService">Service that creates the team from the pool.</param>
 /// <param name="identityService">Service that knows this lobby's own mode and row.</param>
+/// <param name="matchmakingService">Queue a Survival team is entered into automatically.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class FakeTeamRequestHandlerService(
     FakeTeamService fakeTeamService,
     LobbyIdentityService identityService,
     EventScheduleService scheduleService,
+    EventMatchmakingService matchmakingService,
     ILogger<FakeTeamRequestHandlerService> logger)
 {
     /// <summary>Creates the team a coordinator request asked for.</summary>
@@ -60,10 +63,7 @@ public sealed class FakeTeamRequestHandlerService(
         // Tournament carry one standing event, so the transient correlation is
         // what the list screens read. A registration lobby's teams belong to a
         // scheduled event, and the request selected none, so the first event the
-        // lobby is currently publishing is used: a team the bracket never knew
-        // about would not appear next to the entrants it is meant to be tested
-        // with. With nothing published there is no event to file it under, so
-        // the request is refused.
+        // lobby is currently publishing is used.
         if (!EventTeamCreationUtils.TryResolveEventIdentifier(
                 mode.Value,
                 selectedEventIdentifier: null,
@@ -87,26 +87,48 @@ public sealed class FakeTeamRequestHandlerService(
             return;
         }
 
-        var team = fakeTeamService.CreateTeam(
+        var result = await fakeTeamService.CreateTeamAsync(
             mode.Value,
             lobbyIdentifier,
             eventIdentifier,
             request.TeamName,
-            request.PlayerPrefix,
-            request.Count);
+            request.Count,
+            cancellationToken);
 
-        if (team is null)
+        switch (result.Outcome)
         {
-            logger.LogWarning("A fake team request could not be created; refused");
-            return;
+            case FakeTeamFillOutcome.NoPoolCharacters:
+                logger.LogInformation(
+                    "The test-character pool holds too few free characters for a team of {Count}; refused",
+                    request.Count);
+                return;
+
+            case FakeTeamFillOutcome.TeamNotFound:
+                logger.LogWarning("A fake team request could not be created; refused");
+                return;
         }
 
         logger.LogInformation(
-            "Created in-memory team {TeamName} ({TeamIdentifier}) with {Count} players for event {EventIdentifier} in lobby {LobbyIdentifier}",
-            team.Name,
-            team.Identifier,
-            team.Members.Count,
+            "Created testing team {TeamName} ({TeamIdentifier}) with {Count} players for event {EventIdentifier} in lobby {LobbyIdentifier}",
+            result.Snapshot!.Name,
+            result.TeamIdentifier,
+            result.Snapshot.OccupiedParticipantCount(),
             eventIdentifier,
             lobbyIdentifier);
+
+        if (mode.Value != EventConstants.SurvivalSelector)
+        {
+            return;
+        }
+
+        var matchmaking = await matchmakingService.ReconcileAsync(
+            result.TeamIdentifier,
+            cancellationToken);
+
+        logger.LogInformation(
+            "Entered testing team {TeamName} ({TeamIdentifier}) into matchmaking ({Status})",
+            result.Snapshot.Name,
+            result.TeamIdentifier,
+            matchmaking.Status);
     }
 }

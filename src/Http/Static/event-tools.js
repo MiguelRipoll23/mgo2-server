@@ -1,12 +1,10 @@
 // The behaviour of the event testing tools page.
 //
-// The page shows two kinds of team and asks two different servers about them.
-// A real team is a row, so it is read from the database by mode; an in-memory
-// team lives in one lobby's process, so the only way to see it is to ask that
-// lobby and wait for its answer. They are kept apart everywhere below because
-// the difference decides what can be done to them: only a real team is ever
-// queued and paired, and only an in-memory team can have its state set or be
-// forgotten from here.
+// Every team is a row, whether a player formed it or this page created it, so
+// the page reads one list from the database by mode. The state and member-state
+// forms act on those rows, and the pairings are listed apart because a pairing
+// is only announced to its teams once a room has been leased for it: a matched
+// pair and one waiting for a host both show nothing at all in game.
 //
 // Everything talks to the public endpoints, so there is no token and nothing to
 // sign in with. The page is served at both /survival and /tournament and is the
@@ -22,8 +20,7 @@
   const modeSelect = byId("mode");
   const status = byId("status");
   const statusText = byId("status-text");
-  const memoryList = byId("team-list");
-  const realList = byId("real-team-list");
+  const teamList = byId("real-team-list");
   const matchList = byId("match-list");
   const playersTeam = byId("players-team");
   const playersTeamOther = byId("players-team-other");
@@ -31,10 +28,14 @@
   const stateTeam = byId("state-team");
   const memberTeam = byId("member-team");
 
-  // The teams the last refresh returned, held so the menus and the lists on the
+  // The test-character pool is global, so it is shown beside the teams rather
+  // than under one: every mode draws its players from the same characters. It
+  // is painted by its own script, which is handed the status line and refresh.
+  const characterPool = window.EventToolPool.create({ showStatus, readMessage, refresh });
+
+  // The teams the last refresh returned, held so the menus and the list on the
   // page agree with each other without asking twice.
-  let realTeams = [];
-  let memoryTeams = [];
+  let lobbyTeams = [];
 
   function showStatus(kind, message) {
     statusText.textContent = message;
@@ -81,31 +82,16 @@
     return readList(url, "teams");
   }
 
-  function renderRealList() {
-    if (realTeams.length === 0) {
-      teams.emptyList(realList, "No player has formed a team in this lobby.");
+  function renderList() {
+    if (lobbyTeams.length === 0) {
+      teams.emptyList(teamList, "This lobby holds no teams.");
       return;
     }
 
-    realList.replaceChildren();
-    for (const team of realTeams) {
-      realList.append(teams.row(team, "real", []));
-    }
-  }
-
-  function renderMemoryList() {
-    if (memoryTeams.length === 0) {
-      teams.emptyList(memoryList, "This lobby is holding no teams in memory.");
-      return;
-    }
-
-    memoryList.replaceChildren();
-    for (const team of memoryTeams) {
-      memoryList.append(
-        teams.row(team, "memory", [
-          teams.promoteButton(team.name, promoteTeam),
-          teams.removeButton(team.name, forgetTeam),
-        ])
+    teamList.replaceChildren();
+    for (const team of lobbyTeams) {
+      teamList.append(
+        teams.row(team, [teams.removeButton(team.name, removeTeam)])
       );
     }
   }
@@ -135,74 +121,51 @@
   }
 
   function fillMenus() {
-    teams.fillMenu(
-      playersTeam,
-      realTeams,
-      memoryTeams,
-      "Another team this lobby does not list…"
-    );
+    teams.fillMenu(playersTeam, lobbyTeams, "Another team this lobby does not list…");
 
-    // The state form offers in-memory teams only. A real team's state is
-    // written by the entry pipeline on every decision, so a value set here
-    // would be overwritten rather than tested, and offering it would suggest
-    // otherwise.
-    teams.fillMenu(stateTeam, [], memoryTeams, null);
-
-    // The member-state form is the other way round: it offers stored teams,
-    // because a fake player that landed in a row is the one nobody else can
-    // decide for. An in-memory team's roster is changed by the form above.
-    teams.fillMenu(memberTeam, realTeams, [], null);
+    // The state and member-state forms act on the same rows. A team a player
+    // formed has its own state owned by the entry pipeline, but a testing team
+    // created here is the one these forms exist to move.
+    teams.fillMenu(stateTeam, lobbyTeams, null);
+    teams.fillMenu(memberTeam, lobbyTeams, null);
   }
 
-  // A refresh asks all three sources. They are asked together rather than one
-  // after the other because none is slow and a moderator watching the page
-  // should not see one list update while the others wait.
+  // A refresh asks the lists together rather than one after the other, because
+  // none is slow and a moderator watching the page should not see one list
+  // update while the others wait.
   async function refresh() {
     showStatus("pending", "Asking the lobby and the database what they hold…");
 
     const mode = modeSelect.value;
-    const [stored, memory, pairings] = await Promise.all([
+    const [stored, pairings, pool] = await Promise.all([
       readTeams("/event-teams?mode=" + mode),
-      readTeams("/fake-teams?mode=" + mode),
       readList("/event-matches?mode=" + mode, "matches"),
+      readList("/fake-teams/characters", "characters"),
     ]);
 
-    // A failure in either is not a failure of the other: one list can still be
-    // shown, which is more useful than emptying both.
-    if (stored === null && memory === null) {
-      realTeams = [];
-      memoryTeams = [];
-      renderRealList();
-      renderMemoryList();
-      renderMatchList(pairings);
-      fillMenus();
-      return;
+    if (pool !== null) {
+      characterPool.render(pool);
     }
 
-    if (stored !== null) {
-      realTeams = stored;
-      renderRealList();
-    }
-    if (memory !== null) {
-      memoryTeams = memory;
-      renderMemoryList();
-    }
+    // A failed listing shows the error and empties the list, which is more
+    // useful than leaving a stale one that no longer reflects the lobby.
+    lobbyTeams = stored === null ? [] : stored;
+    renderList();
     renderMatchList(pairings);
     fillMenus();
 
-    const held = realTeams.length + memoryTeams.length;
-    if (stored !== null && memory !== null) {
+    if (stored !== null) {
       showStatus(
         "success",
-        held === 1
+        lobbyTeams.length === 1
           ? "This lobby holds 1 team."
-          : `This lobby holds ${held} teams: ${realTeams.length} stored, ${memoryTeams.length} in memory.`
+          : `This lobby holds ${lobbyTeams.length} teams.`
       );
     }
   }
 
-  async function forgetTeam(name) {
-    showStatus("pending", `Asking the lobby to forget "${name}"…`);
+  async function removeTeam(name) {
+    showStatus("pending", `Asking the lobby to remove "${name}"…`);
     const response = await fetch(
       "/fake-teams/" + encodeURIComponent(name) + "?mode=" + modeSelect.value,
       { method: "DELETE" }
@@ -213,29 +176,6 @@
     }
     showStatus("success", await readMessage(response));
     await refresh();
-  }
-
-  // Writes one in-memory team out as a stored team and queues it. The team then
-  // leaves the memory list and appears in the stored one, because that is what
-  // it has become: a pairing is a row naming two teams, and everything
-  // downstream of one re-reads both sides as rows.
-  async function promoteTeam(name) {
-    showStatus("pending", `Asking the lobby to write "${name}" out and queue it…`);
-    try {
-      const response = await fetch("/fake-teams/pairing", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: Number(modeSelect.value), teamName: name }),
-      });
-
-      const message = await readMessage(response);
-      showStatus(response.ok ? "success" : "error", message);
-      if (response.ok) {
-        await refresh();
-      }
-    } catch (error) {
-      showStatus("error", "Could not reach the server. Is it running?");
-    }
   }
 
   async function send(path, body) {
@@ -304,7 +244,6 @@
       mode: Number(modeSelect.value),
       count: Number(byId("create-count").value),
       teamName: byId("create-team").value.trim(),
-      playerPrefix: byId("create-prefix").value.trim(),
     })
   );
 
@@ -323,7 +262,6 @@
       mode: Number(modeSelect.value),
       count: Number(byId("players-count").value),
       teamName: name,
-      playerPrefix: byId("players-prefix").value.trim(),
     });
   });
 
@@ -342,7 +280,7 @@
     }
 
     if (!stateTeam.value) {
-      showStatus("error", "This lobby is holding no teams in memory; create one first.");
+      showStatus("error", "This lobby holds no teams; create one first.");
       return;
     }
 
@@ -367,7 +305,7 @@
     }
 
     if (!memberTeam.value) {
-      showStatus("error", "This lobby is holding no stored teams; form one first.");
+      showStatus("error", "This lobby holds no teams; form one first.");
       return;
     }
 

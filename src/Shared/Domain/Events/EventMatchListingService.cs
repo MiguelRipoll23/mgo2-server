@@ -126,7 +126,7 @@ public sealed class EventMatchListingService(IDbContextFactory<Mgo2DatabaseConte
 
         var fake = team.Members.Count > 0
             && team.Members.All(member =>
-                FakePlayerIdentifierUtils.IsFake(member.CharacterIdentifier));
+                TestPlayerNameUtils.IsTestPlayer(member.Name));
 
         return new EventMatchSide(
             team.Identifier,

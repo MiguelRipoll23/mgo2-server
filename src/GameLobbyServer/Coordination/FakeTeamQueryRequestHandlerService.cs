@@ -5,8 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameLobbyServer.Coordination;
 
 /// <summary>
-/// Answers the coordinator's question about the teams this lobby holds only in
-/// its memory.
+/// Answers the coordinator's question about the testing teams this lobby holds.
 /// <para>
 /// Every other request on the stream is a push: the API hands the lobby
 /// something to do and the lobby logs what it did. A question is the other
@@ -14,19 +13,13 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 /// question arrived on, carrying the correlation the API is waiting on.
 /// </para>
 /// <para>
-/// The lobby is named by its mode rather than by its identifier because the
-/// coordinator does not know this lobby's identifier, and one asked for a mode
-/// it is not running answers with nothing at all: reporting the teams of a
-/// lobby the caller did not ask about would be a list of another lobby's
-/// teams.
-/// </para>
-/// <para>
-/// Nothing is written. Removing a team is the same forgetting a restart does,
-/// which is what makes the in-memory teams a testing device rather than a
-/// second source of teams.
+/// The teams are real rows now, so removing one is a delete rather than a
+/// forgetting. The lobby is still asked rather than the database written
+/// directly, because the lobby is where the request is already routed and its
+/// answer carries the correlation the caller waits on.
 /// </para>
 /// </summary>
-/// <param name="fakeTeamService">Service that holds the fake teams.</param>
+/// <param name="fakeTeamService">Service that owns the stored teams.</param>
 /// <param name="identityService">Service that knows this lobby's own mode and row.</param>
 /// <param name="outgoingEvents">Queue the answer is written to.</param>
 /// <param name="logger">Logger of this service.</param>
@@ -62,10 +55,11 @@ public sealed class FakeTeamQueryRequestHandlerService(
             return;
         }
 
-        var teams = request.Action switch
+        // The only question left is the removal: the listing moved to the rows,
+        // which the API reads itself and never has to ask a lobby for.
+        IReadOnlyList<FakeTeamRecord> teams = request.Action switch
         {
-            FakeTeamQueryAction.List => Summarize(fakeTeamService.ListTeams(lobbyIdentifier)),
-            FakeTeamQueryAction.Remove => RemoveOne(lobbyIdentifier, request.TeamName),
+            FakeTeamQueryAction.Remove => await RemoveOneAsync(lobbyIdentifier, request.TeamName, cancellationToken),
             _ => [],
         };
 
@@ -75,38 +69,42 @@ public sealed class FakeTeamQueryRequestHandlerService(
             lobbyIdentifier,
             teams.Count);
 
-        await AnswerAsync(request, teams, cancellationToken);
+        await AnswerAsync(request, Summarize(teams), cancellationToken);
     }
 
     /// <summary>Removes the team the question named, when this lobby holds it.</summary>
     /// <param name="lobbyIdentifier">Lobby the team is in.</param>
     /// <param name="teamName">Name the question named.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The team that was removed, or nothing.</returns>
-    private List<FakeTeamSummary> RemoveOne(int lobbyIdentifier, string teamName)
+    private async Task<IReadOnlyList<FakeTeamRecord>> RemoveOneAsync(
+        int lobbyIdentifier,
+        string teamName,
+        CancellationToken cancellationToken)
     {
-        var removed = fakeTeamService.RemoveTeam(lobbyIdentifier, teamName);
+        var removed = await fakeTeamService.RemoveTeamAsync(lobbyIdentifier, teamName, cancellationToken);
         if (removed is null)
         {
             logger.LogInformation(
-                "No in-memory team named \"{TeamName}\" is in lobby {LobbyIdentifier}; nothing was removed",
+                "No team named \"{TeamName}\" is in lobby {LobbyIdentifier}; nothing was removed",
                 teamName,
                 lobbyIdentifier);
             return [];
         }
 
-        return Summarize([removed]);
+        return [removed.Value];
     }
 
     /// <summary>Projects the teams into the shape the coordinator reads.</summary>
     /// <param name="teams">Teams this lobby holds.</param>
     /// <returns>The summary of each, in the order they are held.</returns>
-    private static List<FakeTeamSummary> Summarize(IReadOnlyList<FakeTeam> teams) =>
+    private static List<FakeTeamSummary> Summarize(IReadOnlyList<FakeTeamRecord> teams) =>
         [.. teams.Select(team => new FakeTeamSummary
         {
             TeamIdentifier = team.Identifier,
             TeamName = team.Name,
             State = team.State,
-            MemberCount = team.Members.Count,
+            MemberCount = team.MemberCount,
             EventIdentifier = team.EventIdentifier,
         })];
 

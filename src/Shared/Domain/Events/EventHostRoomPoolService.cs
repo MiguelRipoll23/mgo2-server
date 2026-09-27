@@ -4,32 +4,26 @@ using Mgo2Server.Shared.Persistence.Entities;
 namespace Mgo2Server.Shared.Domain.Events;
 
 /// <summary>
-/// The pool of rooms a match may be hosted in: the real rooms a player opened,
-/// beside the in-memory ones the testing tools made.
+/// The rooms a match may be hosted in, read from the one place they live: the
+/// games table.
 /// <para>
 /// It is a service of its own because "which rooms can host this match" is asked
-/// from more than one place, and each of them was reaching only one of the two
-/// sources. A sweep that listed the database found no in-memory room, and a tool
-/// that listed the in-memory ones found no real room, so a pairing made from the
-/// testing tools had a host available or had none depending on which reader
-/// asked. One pool answers it for both.
+/// from more than one place, and the answer was once assembled from two sources
+/// — the rows a player opened and a second store the testing tools kept in
+/// memory. A reader that reached only one of them found a host available or
+/// found none depending on which it was. Both are the same kind of room now, a
+/// row, so there is one source and one answer.
 /// </para>
 /// <para>
-/// The two are returned as the same <see cref="Game"/>, which is what makes an
-/// in-memory room act like a real one rather than merely resemble it: the
-/// eligibility rule and the assignment packets are written against that type and
-/// cannot tell which of the two they are holding.
+/// The rooms are returned as the <see cref="Game"/> they are, with the roster
+/// the idle rule reads, which is what lets the eligibility rule and the
+/// assignment packets be written against one type.
 /// </para>
 /// </summary>
-/// <param name="gameService">Service that owns the real rooms.</param>
-/// <param name="fakeRooms">The in-memory host rooms this lobby is holding.</param>
-public sealed class EventHostRoomPoolService(
-    GameService gameService,
-    FakeHostRoomService fakeRooms)
+/// <param name="gameService">Service that owns the rooms.</param>
+public sealed class EventHostRoomPoolService(GameService gameService)
 {
-    /// <summary>
-    /// Every room a match in a lobby could be hosted in, real and in-memory.
-    /// </summary>
+    /// <summary>Every room a match in a lobby could be hosted in.</summary>
     /// <param name="lobbyIdentifier">Lobby the rooms belong to.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The rooms, each with the roster the idle rule reads.</returns>
@@ -42,16 +36,6 @@ public sealed class EventHostRoomPoolService(
             return [];
         }
 
-        var real = await gameService.FindByLobbyAsync(lobbyIdentifier, cancellationToken);
-        var inMemory = fakeRooms.ListRooms(lobbyIdentifier)
-            .Select(room => room.Room)
-            .ToList();
-
-        // Both halves are returned, rather than one standing in for the other. A
-        // real room is a player's own and is never withheld because an in-memory
-        // one is available, and an in-memory room is a testing device that must
-        // not be passed off as a player's.
-        real.AddRange(inMemory);
-        return real;
+        return await gameService.FindByLobbyAsync(lobbyIdentifier, cancellationToken);
     }
 }

@@ -9,11 +9,12 @@ namespace Mgo2Server.Http.Coordination;
 /// to.
 /// <para>
 /// Every other message on the coordination stream is a one-way push: the API
-/// hands a lobby something to do and the lobby logs what it did. Asking a lobby
-/// what it holds in memory needs the other direction, which is why the question
-/// carries a correlation and the answer comes back up the request stream. This
-/// service is the other end of that: the caller parks a slot here, the gRPC
-/// service completes it when the answer arrives, and the caller wakes up.
+/// hands a lobby something to do and the lobby logs what it did. Removing a team
+/// needs the other direction, because the lobby is the one that holds it and the
+/// caller is shown what it removed: the question carries a correlation and the
+/// answer comes back up the request stream. This service is the other end of
+/// that: the caller parks a slot here, the gRPC service completes it when the
+/// answer arrives, and the caller wakes up.
 /// </para>
 /// <para>
 /// A slot is removed on a timeout as well as on an answer, because a lobby that

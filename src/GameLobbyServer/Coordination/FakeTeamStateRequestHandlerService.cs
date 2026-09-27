@@ -5,21 +5,21 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameLobbyServer.Coordination;
 
 /// <summary>
-/// Acts on the coordinator's request to change the state of a team that exists
-/// only in this lobby's memory.
+/// Acts on the coordinator's request to move a team of this lobby to a state,
+/// and optionally to force a member state on its roster.
 /// <para>
-/// The request names the team by its display name because an in-memory team has
-/// no row and no identifier the coordinator could know. It names a lobby mode
-/// rather than an identifier for the same reason the create request does, and a
-/// lobby asked for a mode it is not running refuses rather than changing a team
-/// in another lobby.
+/// The request names the team by its display name because that is what a
+/// moderator sees. It names a lobby mode rather than an identifier for the same
+/// reason the create request does, and a lobby asked for a mode it is not
+/// running refuses rather than changing a team in another lobby.
 /// </para>
 /// <para>
-/// Nothing is written. The change is held so the lobby's own list and detail
-/// replies show it, and it is gone the moment the process ends.
+/// The team is a real row now, so the change is written rather than held in
+/// memory. It exists so a moderator can exercise how a client renders a team at
+/// each phase of the entry pipeline without playing through it.
 /// </para>
 /// </summary>
-/// <param name="fakeTeamService">Service that holds the fake teams.</param>
+/// <param name="fakeTeamService">Service that owns the stored team.</param>
 /// <param name="identityService">Service that knows this lobby's own mode and row.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class FakeTeamStateRequestHandlerService(
@@ -65,26 +65,27 @@ public sealed class FakeTeamStateRequestHandlerService(
             return;
         }
 
-        var team = fakeTeamService.SetState(
+        var result = await fakeTeamService.SetStateAsync(
             lobbyIdentifier,
             request.TeamName,
             request.State,
-            request.MemberState > 0 ? request.MemberState : null);
+            request.MemberState > 0 ? request.MemberState : null,
+            cancellationToken);
 
-        if (team is null)
+        if (result.Outcome != FakeTeamFillOutcome.Filled)
         {
             logger.LogInformation(
-                "No in-memory team named \"{TeamName}\" is in lobby {LobbyIdentifier}; refused",
+                "No team named \"{TeamName}\" is in lobby {LobbyIdentifier}; refused",
                 request.TeamName,
                 lobbyIdentifier);
             return;
         }
 
         logger.LogInformation(
-            "Set in-memory team {TeamName} ({TeamIdentifier}) to state {State} with member state {MemberState}",
-            team.Name,
-            team.Identifier,
-            team.State,
+            "Set team {TeamName} ({TeamIdentifier}) to state {State} with member state {MemberState}",
+            result.Snapshot!.Name,
+            result.TeamIdentifier,
+            request.State,
             request.MemberState);
     }
 }

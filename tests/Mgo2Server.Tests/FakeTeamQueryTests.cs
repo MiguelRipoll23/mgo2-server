@@ -5,11 +5,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Mgo2Server.Tests;
 
 /// <summary>
-/// Guards the coordination questions the API is waiting on. An in-memory team
-/// has no row and no identifier any other part of the deployment could look up,
-/// so the correlation between a question and the answer that travels back up
-/// the stream is the only way a caller learns what a lobby is holding — and a
-/// question whose answer is never matched is a caller that waits for nothing.
+/// Guards the coordination questions the API is waiting on. Removing a team is
+/// answered by the lobby that holds it, so the correlation between a question
+/// and the answer that travels back up the stream is the only way a caller
+/// learns what was removed — and a question whose answer is never matched is a
+/// caller that waits for nothing.
 /// </summary>
 [Trait("Category", "Http")]
 public sealed class FakeTeamQueryTests

@@ -55,21 +55,20 @@ message HttpEvent {
     FakeTeamRequest fake_team = 3;
     FakeTeamStateRequest fake_team_state = 4;
     FakeTeamQueryRequest fake_team_query = 5;
-    FakeTeamPairingRequest fake_team_pairing = 6;
     FakeTeamMemberStateRequest fake_team_member_state = 7;
     FakeHostRoomRequest fake_host_room = 8;
   }
 }
 
-// A question the coordinator asks one lobby about the teams it holds only in
-// memory, and the answer it sends back up the stream it arrived on.
+// A question the coordinator asks one lobby about the teams it holds, and the
+// answer it sends back up the stream it arrived on.
 //
 // Every other arm of the two messages is a one-way push: the API hands a lobby
-// something to do and the lobby logs what it did. Listing and removing an
-// in-memory team is the first thing the API has to be told the answer to, since
-// the team has no row and no identifier any other part of the deployment could
-// look up. The correlation is therefore carried on the wire, and the answer
-// travels back on the direction the question did not: up the request stream.
+// something to do and the lobby logs what it did. Removing a team is the one
+// request the API has to be told the answer to, because the team lives in the
+// lobby that holds it and the caller is shown what it removed. The correlation
+// is therefore carried on the wire, and the answer travels back on the
+// direction the question did not: up the request stream.
 message FakeTeamQueryRequest {
   // Correlation the answer carries back. The coordinator reads it off the
   // reply and hands the reply to the caller that is waiting for it.
@@ -87,9 +86,12 @@ message FakeTeamQueryRequest {
 enum FakeTeamQueryAction {
   // No action was asked for; the lobby answers with an empty listing.
   FAKE_TEAM_QUERY_ACTION_UNSPECIFIED = 0;
-  // List the in-memory teams of the lobby.
-  FAKE_TEAM_QUERY_ACTION_LIST = 1;
-  // Remove one in-memory team, named by the request.
+  // Listing moved to the rows, which the API reads itself. The number is left
+  // unused rather than reused so a lobby restarted mid-rollout never reads a
+  // remove as a list.
+  reserved 1;
+  reserved "FAKE_TEAM_QUERY_ACTION_LIST";
+  // Remove one team, named by the request.
   FAKE_TEAM_QUERY_ACTION_REMOVE = 2;
 }
 
@@ -97,12 +99,12 @@ enum FakeTeamQueryAction {
 message FakeTeamListing {
   // Correlation of the request this answers.
   int64 request_identifier = 1;
-  // Teams the lobby holds in memory, for the list action. A remove answers
-  // with the team that was removed, so a caller can see what it removed.
+  // A remove answers with the team that was removed, so a caller can see what
+  // it removed; an empty list means there was no such team.
   repeated FakeTeamSummary teams = 2;
 }
 
-// One in-memory team as the lobby reports it.
+// One team as the lobby reports it.
 message FakeTeamSummary {
   // Identifier the client caches, from the fake range.
   int32 team_identifier = 1;
@@ -116,15 +118,12 @@ message FakeTeamSummary {
   int32 event_identifier = 5;
 }
 
-// A request to add players who are not really there to a team that already
-// exists in a lobby. The team may be a real row a player formed, or an
-// in-memory team a FakeTeamRequest created; the name is what tells the two
-// apart, because the lobby resolves it against its own teams first and then
-// against the rows.
+// A request to add test players to a team that already exists in a lobby. The
+// team may be one a player formed or one a FakeTeamRequest created; the name is
+// what identifies it, because the lobby resolves it against the teams it holds.
 //
-// The characters are named here and nowhere else: the lobby holds them in
-// memory and never gives them a row in the accounts table, so they can play an
-// event and leave no trace of having existed.
+// The players are taken from the test-character pool, so they are real character
+// rows under the server account rather than names the lobby invented.
 //
 // The lobby is named by its mode rather than by its identifier because the
 // coordinator does not know the identifiers; the lobby that answers is the one
@@ -138,16 +137,17 @@ message FakePlayerRequest {
   // Name of the existing team the players join. It is required: a request that
   // names no team has nothing to fill.
   string team_name = 3;
-  // Name the players are shown with, when one was asked for. A blank one lets
-  // the lobby compose a name per player.
-  string player_prefix = 4;
+  // Removed with the per-player naming: players now come from the pool and are
+  // named there. The number is left unused so a lobby restarted mid-rollout
+  // never reads it as something else.
+  reserved 4;
+  reserved "player_prefix";
 }
 
-// A request to create a team that exists only in the lobby's memory, for
-// testing a team list or a roster without writing a row. Its players are fake
-// in the same way as a FakePlayerRequest's: no account, no character, gone with
-// the process. Unlike a FakePlayerRequest, nothing here names an existing team;
-// the team is the thing being created.
+// A request to create a testing team, for testing a team list or a roster. The
+// team is an ordinary row whose players are taken from the test-character pool,
+// the same characters a FakePlayerRequest fills a team with. Nothing here names
+// an existing team; the team is the thing being created.
 //
 // The lobby is named by its mode rather than by its identifier because the
 // coordinator does not know the identifiers; the lobby that answers is the one
@@ -160,15 +160,16 @@ message FakeTeamRequest {
   int32 count = 2;
   // Display name the team is given, when one was asked for.
   string team_name = 3;
-  // Name the players are shown with, when one was asked for. A blank one lets
-  // the lobby compose a name per player.
-  string player_prefix = 4;
+  // Removed with the per-player naming: players now come from the pool and are
+  // named there. The number is left unused so a lobby restarted mid-rollout
+  // never reads it as something else.
+  reserved 4;
+  reserved "player_prefix";
 }
 
-// A request to change the state of a team that exists only in a lobby's memory.
-// The team is named rather than identified because, having no row, it has no
-// identifier the coordinator could know; the lobby resolves the name against the
-// teams it holds itself.
+// A request to change the state of a team. The team is named rather than
+// identified because the lobby resolves the name against the teams it holds
+// itself.
 //
 // Changing the state is what lets a moderator see how a client renders a team at
 // each phase of the entry pipeline, and changing the roster's member state is
@@ -177,7 +178,7 @@ message FakeTeamStateRequest {
   // Mode of the lobby the team is in: 4 Survival, 3 Tournament or
   // 10 Tournament registration.
   int32 lobby_subtype = 1;
-  // Name of the in-memory team whose state is changed. It is required.
+  // Name of the team whose state is changed. It is required.
   string team_name = 2;
   // The team state to store, as the client's own phase byte (1 open, 9 auto,
   // and so on).
@@ -185,30 +186,6 @@ message FakeTeamStateRequest {
   // The member state to force on the whole roster, or zero to let each member
   // follow the team state.
   int32 member_state = 4;
-}
-
-// A request to make one in-memory team of a lobby pairable, by writing it out
-// as a real event_teams row and queueing it.
-//
-// This is the one request in the group that writes a row, and it is deliberate.
-// A pairing is a durable row naming two team identifiers, and every consumer
-// downstream of it — the host lease, the assignment packets, the outcome
-// inference and the reward ledger — re-reads both sides as rows. A team that
-// exists only in memory therefore cannot take part in a pairing at all: the
-// match would be created and then silently never reach a host.
-//
-// The team is named rather than identified for the same reason every other
-// request here names one: it has no row, so there is no identifier the
-// coordinator could know.
-//
-// Only Survival is served. A Tournament entrant is seeded into a bracket and
-// frozen into a roster, and a memory-only team has neither, so admitting one
-// would put a team the bracket cannot read into real tournament state.
-message FakeTeamPairingRequest {
-  // Mode of the lobby the team is in: 4 Survival.
-  int32 lobby_subtype = 1;
-  // Name of the in-memory team to write out and queue. It is required.
-  string team_name = 2;
 }
 
 // A request to change the entry-decision byte on the fake players of a team

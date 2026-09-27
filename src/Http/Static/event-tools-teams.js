@@ -1,11 +1,10 @@
 // The team rendering of the event testing tools page.
 //
-// It is a file of its own because the page draws two lists that differ in one
-// important way, and a moderator who cannot tell them apart waits for a
-// pairing that can never happen: a real team is a row the entry pipeline
-// queues, an in-memory team is not in that queue at all. So the kind of a team
-// is part of how it is drawn and how it is named in a menu, and that logic is
-// kept together here rather than spread through the page's event handlers.
+// It is a file of its own because the page draws the teams, the state menus and
+// the pairings with rules a moderator reads differently from the raw rows: a
+// team's leader, how full it is and which state the entry pipeline holds it in,
+// and a pairing whose room may not exist yet. That logic is kept together here
+// rather than spread through the page's event handlers.
 //
 // Everything is read from the DOM ids the page declares; nothing here talks to
 // the server, which is what the page's own script does.
@@ -48,19 +47,15 @@
 
   const byId = (id) => document.getElementById(id);
 
-  // A team's name in a menu has to say which kind it is, because the two kinds
-  // answer to the same name and a menu that showed "Test" twice would fill an
-  // arbitrary one of them.
-  function label(team, kind) {
-    const origin = kind === "real" ? "stored" : "in memory";
-    return `${team.name} — ${team.members}/${maximumPlayers}, ${origin}, state ${team.state}`;
+  // A team's name in a menu, with how full it is and the state the pipeline
+  // holds it in, so a moderator can pick the right one without opening it.
+  function label(team) {
+    return `${team.name} — ${team.members}/${maximumPlayers}, state ${team.state}`;
   }
 
-  // A row of one of the two lists. The optional actions are the buttons that act
-  // on this team, and which ones a team gets is the whole point of the split: a
-  // stored team has no Remove, because forgetting one would be a deletion, and
-  // an in-memory team has no pair action until it is written out.
-  function row(team, kind, actions) {
+  // A row of the team list. The optional actions are the buttons that act on
+  // this team; the page passes the Remove that deletes the row.
+  function row(team, actions) {
     const element = document.createElement("div");
     element.className =
       "flex items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3";
@@ -72,9 +67,8 @@
 
     const meta = document.createElement("p");
     meta.className = "text-xs text-slate-500";
-    meta.textContent = kind === "real"
-      ? `led by ${team.leaderName} · ${team.members}/${maximumPlayers} players · state ${team.state}`
-      : `${team.members}/${maximumPlayers} players · state ${team.state}`;
+    meta.textContent =
+      `led by ${team.leaderName} · ${team.members}/${maximumPlayers} players · state ${team.state}`;
 
     detail.append(name, meta);
     element.append(detail);
@@ -94,37 +88,23 @@
     container.replaceChildren(empty);
   }
 
-  // A menu of every team, with the two kinds under their own headings. The
-  // optgroup is what makes the distinction visible while scrolling rather than
-  // only in the label each row carries.
-  function fillMenu(select, realTeams, memoryTeams, otherOption) {
+  // A menu of every team this lobby holds, plus the escape hatch when the page
+  // offers one. The selection is kept when the team is still there, so a
+  // refresh does not silently change what a moderator picked and is about to
+  // act on.
+  function fillMenu(select, teamList, otherOption) {
     const chosen = select.value;
     select.replaceChildren();
 
-    if (realTeams.length > 0) {
-      const stored = document.createElement("optgroup");
-      stored.label = "Formed by a player — in the queue";
-      for (const team of realTeams) {
-        stored.append(new Option(label(team, "real"), team.name));
-      }
-      select.append(stored);
-    }
-
-    if (memoryTeams.length > 0) {
-      const memory = document.createElement("optgroup");
-      memory.label = "In this lobby's memory only — never queued";
-      for (const team of memoryTeams) {
-        memory.append(new Option(label(team, "memory"), team.name));
-      }
-      select.append(memory);
+    for (const team of teamList) {
+      select.append(new Option(label(team), team.name));
     }
 
     if (otherOption) {
       select.append(new Option(otherOption, "other"));
     }
 
-    const available = [...realTeams, ...memoryTeams].some((team) => team.name === chosen);
-    if (available) {
+    if (teamList.some((team) => team.name === chosen)) {
       select.value = chosen;
     }
   }
@@ -141,31 +121,15 @@
     select.append(new Option(customLabel, "custom"));
   }
 
-  // Builds the Remove button of one in-memory team. It is passed in rather than
-  // wired here so that this file never learns how a team is removed.
+  // Builds the Remove button of one team. It is passed in rather than wired
+  // here so that this file never learns how a team is removed.
   function removeButton(name, onRemove) {
     const button = document.createElement("button");
     button.type = "button";
     button.className =
       "rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:bg-red-500/10";
-    button.textContent = "Forget";
+    button.textContent = "Remove";
     button.addEventListener("click", () => onRemove(name));
-    return button;
-  }
-
-  // Builds the action that turns one in-memory team into a team the queue can
-  // pair. It is the only action on the page that writes a row, so it is worded
-  // as what it does rather than as what it is: the team stops being a memory
-  // team and becomes a stored one.
-  function promoteButton(name, onPromote) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className =
-      "rounded-lg border border-mgo-500/50 px-3 py-1.5 text-xs font-semibold text-sky-300 transition hover:bg-mgo-500/10";
-    button.textContent = "Queue for pairing";
-    button.title =
-      "Writes this team out as a stored team and queues it, so a real team can be paired against it.";
-    button.addEventListener("click", () => onPromote(name));
     return button;
   }
 
@@ -216,6 +180,5 @@
     fillMenu,
     fillStates,
     removeButton,
-    promoteButton,
   };
 })();

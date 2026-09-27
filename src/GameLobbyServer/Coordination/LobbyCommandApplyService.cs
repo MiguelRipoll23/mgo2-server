@@ -27,19 +27,15 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 /// having the request dropped without a word.
 /// </param>
 /// <param name="fakeTeamRequests">
-/// Service that acts on a request to create an in-memory team in this lobby.
+/// Service that acts on a request to create a testing team in this lobby.
 /// Left null by a host that runs no event lobby, for the same reason.
 /// </param>
 /// <param name="fakeTeamStateRequests">
-/// Service that acts on a request to change the state of an in-memory team of
-/// this lobby. Left null by a host that runs no event lobby, for the same reason.
-/// </param>
-/// <param name="fakeTeamQueries">
-/// Service that answers a question about the in-memory teams of this lobby.
+/// Service that acts on a request to change the state of a team of this lobby.
 /// Left null by a host that runs no event lobby, for the same reason.
 /// </param>
-/// <param name="fakeTeamPairings">
-/// Service that writes an in-memory team out as a row so it can be paired.
+/// <param name="fakeTeamQueries">
+/// Service that answers a question about the teams of this lobby.
 /// Left null by a host that runs no event lobby, for the same reason.
 /// </param>
 /// <param name="fakeTeamMemberStates">
@@ -57,7 +53,6 @@ public sealed class LobbyCommandApplyService(
     FakeTeamRequestHandlerService? fakeTeamRequests = null,
     FakeTeamStateRequestHandlerService? fakeTeamStateRequests = null,
     FakeTeamQueryRequestHandlerService? fakeTeamQueries = null,
-    FakeTeamPairingRequestHandlerService? fakeTeamPairings = null,
     FakeTeamMemberStateRequestHandlerService? fakeTeamMemberStates = null,
     FakeHostRoomRequestHandlerService? fakeHostRooms = null)
 {
@@ -106,16 +101,6 @@ public sealed class LobbyCommandApplyService(
                         : () => fakeTeamQueries.HandleAsync(query, cancellationToken),
                     "This host cannot answer a team query; the question was refused",
                     "A fake team query could not be answered",
-                    cancellationToken);
-
-            case HttpEvent.EventOneofCase.FakeTeamPairing:
-                var pairing = message.FakeTeamPairing;
-                return GuardAsync(
-                    fakeTeamPairings is null
-                        ? null
-                        : () => fakeTeamPairings.HandleAsync(pairing, cancellationToken),
-                    "This host cannot make a fake team pairable; the request was refused",
-                    "A fake team pairing request could not be carried out",
                     cancellationToken);
 
             case HttpEvent.EventOneofCase.FakeTeamMemberState:

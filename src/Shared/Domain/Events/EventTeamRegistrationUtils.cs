@@ -33,7 +33,7 @@ public static class EventTeamRegistrationUtils
     /// <summary>
     /// Whether every occupied slot of a roster has decided to play.
     /// <para>
-    /// A fake player counts as ready: it has no client and no button to press,
+    /// A test player counts as ready: it has no client and no button to press,
     /// and it exists precisely so a team can be tested in the queue. Its roster
     /// byte still carries the value the client accepts, because the two
     /// questions — what the client is shown and what the queue may pair — are
@@ -56,7 +56,7 @@ public static class EventTeamRegistrationUtils
 
             occupied++;
             if (member.State != EventConstants.ParticipantReadyState
-                && !FakePlayerIdentifierUtils.IsFake(member.CharacterIdentifier))
+                && !TestPlayerNameUtils.IsTestPlayer(member.Name))
             {
                 return false;
             }

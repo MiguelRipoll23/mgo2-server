@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.Http.Coordination;
 
 /// <summary>
-/// Sends a request to add fake players to a team to the one lobby that holds it.
+/// Sends a request to add test players to a team to the one lobby that holds it.
 /// <para>
 /// The command is answered by the HTTP API but the players have to exist in the
 /// lobby that holds the team, and the two are separate processes. This is the
@@ -15,10 +15,9 @@ namespace Mgo2Server.Http.Coordination;
 /// lobby's open stream.
 /// </para>
 /// <para>
-/// The team is the one the request names, whether it is a real row a player
-/// formed or an in-memory team the fake-team command created. The players
-/// themselves are never rows in the accounts table — they live in the lobby's
-/// memory and go away with it.
+/// The team is the one the request names, whether a player formed it or the
+/// testing tools created it. The players come from the test-character pool, so
+/// they are real character rows under the server account.
 /// </para>
 /// </summary>
 /// <param name="registry">Registry of the connected lobbies.</param>
@@ -55,7 +54,6 @@ public sealed class FakePlayerDispatchService(
     /// <param name="mode">Lobby mode the team is in.</param>
     /// <param name="count">How many players to add.</param>
     /// <param name="teamName">Name of the existing team to fill.</param>
-    /// <param name="playerPrefix">Name the players are shown with, or blank.</param>
     /// <param name="outcome">What happened.</param>
     /// <param name="lobbyIdentifier">Lobby the request went to, when it went anywhere.</param>
     public readonly record struct Result(
@@ -63,7 +61,6 @@ public sealed class FakePlayerDispatchService(
         int Mode,
         int Count,
         string TeamName,
-        string PlayerPrefix,
         int LobbyIdentifier);
 
     /// <summary>
@@ -72,18 +69,16 @@ public sealed class FakePlayerDispatchService(
     /// <param name="mode">Lobby mode the players are put into.</param>
     /// <param name="count">How many players to add.</param>
     /// <param name="teamName">Name of the existing team to fill.</param>
-    /// <param name="playerPrefix">Name the players are shown with, or blank.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<Result> DispatchAsync(
         int mode,
         int count,
         string teamName,
-        string playerPrefix,
         CancellationToken cancellationToken = default)
     {
         if (count < 1 || count > MaximumCount)
         {
-            return new Result(DispatchOutcome.InvalidCount, mode, count, teamName, playerPrefix, 0);
+            return new Result(DispatchOutcome.InvalidCount, mode, count, teamName, 0);
         }
 
         // A request with no team has nothing to fill, and the lobby would refuse
@@ -91,13 +86,13 @@ public sealed class FakePlayerDispatchService(
         // which option was missing rather than only that nothing happened.
         if (string.IsNullOrWhiteSpace(teamName))
         {
-            return new Result(DispatchOutcome.NoTeamName, mode, count, teamName, playerPrefix, 0);
+            return new Result(DispatchOutcome.NoTeamName, mode, count, teamName, 0);
         }
 
         var lobby = await modes.ResolveAsync(mode, cancellationToken);
         if (lobby is null)
         {
-            return new Result(DispatchOutcome.NoSuchLobby, mode, count, teamName, playerPrefix, 0);
+            return new Result(DispatchOutcome.NoSuchLobby, mode, count, teamName, 0);
         }
 
         var message = new HttpEvent
@@ -107,25 +102,24 @@ public sealed class FakePlayerDispatchService(
                 LobbySubtype = mode,
                 Count = count,
                 TeamName = teamName,
-                PlayerPrefix = playerPrefix,
             },
         };
 
         if (!registry.SendTo(lobby.Identifier, message))
         {
             logger.LogWarning(
-                "Lobby {LobbyIdentifier} has no open coordination stream, so its fake players were not added",
+                "Lobby {LobbyIdentifier} has no open coordination stream, so its test players were not added",
                 lobby.Identifier);
-            return new Result(DispatchOutcome.LobbyOffline, mode, count, teamName, playerPrefix, lobby.Identifier);
+            return new Result(DispatchOutcome.LobbyOffline, mode, count, teamName, lobby.Identifier);
         }
 
         logger.LogInformation(
-            "Asked lobby {LobbyIdentifier} to add {Count} fake players to team {TeamName} in mode {Mode}",
+            "Asked lobby {LobbyIdentifier} to add {Count} test players to team {TeamName} in mode {Mode}",
             lobby.Identifier,
             count,
             teamName,
             mode);
 
-        return new Result(DispatchOutcome.Sent, mode, count, teamName, playerPrefix, lobby.Identifier);
+        return new Result(DispatchOutcome.Sent, mode, count, teamName, lobby.Identifier);
     }
 }

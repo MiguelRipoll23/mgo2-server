@@ -30,10 +30,10 @@
           <span class="text-sky-400" id="title">Event</span> testing tools
         </h1>
         <p class="mt-2 max-w-2xl text-sm text-slate-400">
-          Drive one lobby's entry pipeline. Teams a real player formed are read
-          from the database; teams you create here exist only in a lobby's memory
-          and are gone when it restarts. Fill either kind with players who are
-          not really there, and use the menus — there is nothing to type but a
+          Drive one lobby's entry pipeline. Every team is a row, whether a
+          player formed it or you created it here from the test-character pool,
+          and the entry pipeline queues and pairs it the same way. Fill a team
+          with test players and use the menus — there is nothing to type but a
           name.
         </p>
       </header>
@@ -76,10 +76,9 @@
         >
           <h2 class="text-lg font-semibold">Create a team</h2>
           <p class="mt-1 text-xs text-slate-500">
-            A team that lives in the lobby's memory only. It is never queued and
-            never paired on its own, because the queue is built from the
-            database — use <em>Queue for pairing</em> below to give it a row when
-            you want it matched.
+            A team of test players drawn from the test-character pool. It is a
+            row like any other, so it is queued for pairing and can be matched
+            against a team a player formed.
           </p>
           <div class="mt-4 space-y-4">
             <div>
@@ -99,16 +98,6 @@
                 class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
               ></select>
               <p class="mt-1.5 text-xs text-slate-500">The leader is one of them.</p>
-            </div>
-            <div>
-              <label for="create-prefix" class="block text-sm font-medium text-slate-300">Player names</label>
-              <input
-                type="text"
-                id="create-prefix"
-                maxlength="64"
-                placeholder="leave blank and they are numbered"
-                class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-              />
             </div>
             <button
               type="submit"
@@ -146,7 +135,7 @@
                 />
               </div>
               <p class="mt-1.5 text-xs text-slate-500" id="players-team-hint">
-                Both kinds of team this lobby holds, grouped by which they are.
+                Every team this lobby holds.
               </p>
             </div>
             <div>
@@ -155,16 +144,6 @@
                 id="players-count"
                 class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
               ></select>
-            </div>
-            <div>
-              <label for="players-prefix" class="block text-sm font-medium text-slate-300">Player names</label>
-              <input
-                type="text"
-                id="players-prefix"
-                maxlength="64"
-                placeholder="leave blank and they are numbered"
-                class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 outline-none transition focus:border-mgo-500 focus:ring-2 focus:ring-mgo-500/30"
-              />
             </div>
             <button
               type="submit"
@@ -179,11 +158,11 @@
           id="state-form"
           class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl backdrop-blur"
         >
-          <h2 class="text-lg font-semibold">Move an in-memory team to a state</h2>
+          <h2 class="text-lg font-semibold">Move a team to a state</h2>
           <p class="mt-1 text-xs text-slate-500">
-            In-memory teams only, because a real team's state is owned by the
-            entry pipeline: setting one from here would be overwritten by the
-            next decision, and nothing here writes a row.
+            Sets the stored state byte and optionally forces the member byte on
+            the roster. A team a player formed has its state owned by the entry
+            pipeline, so a value set on one is overwritten by its next decision.
           </p>
           <div class="mt-4 space-y-4">
             <div>
@@ -294,32 +273,15 @@
         </section>
 
         <section
-          class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl backdrop-blur"
-        >
-          <h2 class="text-lg font-semibold">Teams a player formed</h2>
-          <p class="mt-1 text-xs text-slate-500">
-            Rows in the database, in any state. These are the teams the entry
-            pipeline queues and pairs, so moving one of them to a waiting state
-            here would do nothing.
-          </p>
-          <div class="mt-4 space-y-2" id="real-team-list"></div>
-        </section>
-
-        <section
           class="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl backdrop-blur lg:col-span-2"
         >
-          <h2 class="text-lg font-semibold">Teams in this lobby's memory</h2>
+          <h2 class="text-lg font-semibold">Teams in this lobby</h2>
           <p class="mt-1 text-xs text-slate-500">
-            What the lobby holds in memory right now, with no row behind any of
-            it. A restart empties this list. <strong class="font-semibold text-slate-400">Queue for
-            pairing</strong> is the one action here that writes: it turns the
-            team into a stored one and puts it in the queue, which is what lets a
-            real team be matched against it. The row it writes stays afterwards
-            so the pairing can be inspected. Survival only — a Tournament entrant
-            is seeded into a bracket and frozen, which a memory-only team cannot
-            be.
+            Every row of the lobby, in any state: the teams a player formed and
+            the ones these tools created. These are the teams the entry pipeline
+            queues and pairs, so a team waiting here is waiting to be matched.
           </p>
-          <div class="mt-4 space-y-2" id="team-list"></div>
+          <div class="mt-4 space-y-2" id="real-team-list"></div>
         </section>
 
         <section
@@ -342,6 +304,7 @@
     </main>
 
     <script src="/event-tools-teams.js"></script>
+    <script src="/event-tools-pool.js"></script>
     <script src="/event-tools.js"></script>
   </body>
 </html>

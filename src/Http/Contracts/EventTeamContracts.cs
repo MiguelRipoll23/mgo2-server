@@ -3,13 +3,12 @@ using Mgo2Server.Shared.Domain.Events;
 namespace Mgo2Server.Http.Contracts;
 
 /// <summary>
-/// One formed team of a lobby, as the event testing tools are told about it.
+/// One team of a lobby, as the event testing tools are told about it.
 /// <para>
-/// It is separate from <see cref="FakeTeamEntry"/> because the two are different
-/// things: this one has a row, survives a lobby restart, and is what the entry
-/// pipeline actually queues. A tool that showed them as one list without saying
-/// which was which would invite a moderator to wait for a fake team to be
-/// paired.
+/// Every team is a row, whether a player formed it or the testing tools made
+/// it, so this is the single list the page draws: a testing team survives a
+/// lobby restart and is queued by the entry pipeline exactly as a player's own
+/// is.
 /// </para>
 /// </summary>
 /// <param name="Identifier">Row identifier, which a player never sees.</param>

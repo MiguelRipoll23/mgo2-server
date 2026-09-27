@@ -6,14 +6,13 @@ using Microsoft.EntityFrameworkCore;
 namespace Mgo2Server.Tests;
 
 /// <summary>
-/// Guards the change that moves the entry-decision byte on the fake players of a
+/// Guards the change that moves the entry-decision byte on the test players of a
 /// stored team.
 /// <para>
 /// The rule it exists to protect is a boundary: a testing device may move a
-/// fake player's decision, because nobody else can, and may not move a real
-/// member's, because a real member is a person deciding whether to play. So the
-/// fake range is what decides, and the tests below pin both halves of it — the
-/// fake members move, and a real member is never touched.
+/// test player's decision, because nobody else can, and may not move a real
+/// member's, because a real member is a person deciding whether to play. The
+/// name prefix is what decides, and the tests below pin both halves of it.
 /// </para>
 /// </summary>
 [Trait("Category", "Shared")]
@@ -49,46 +48,34 @@ public sealed class FakeTeamMemberStateTests
     }
 
     [Theory]
-    [InlineData(0, false)]
-    [InlineData(1, false)]
-    [InlineData(2, false)]
-    [InlineData(999_999_999, false)]
-    [InlineData(FakePlayerIdentifierUtils.FirstFakeIdentifier, true)]
-    [InlineData(FakePlayerIdentifierUtils.FirstFakeIdentifier + 1, true)]
-    public void The_fake_range_is_what_marks_a_player_as_made_by_the_tools(
-        int characterIdentifier,
+    [InlineData("server-1", true)]
+    [InlineData("SERVER-42", true)]
+    [InlineData("Player", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    [InlineData("server", false)]
+    public void The_name_prefix_is_what_marks_a_player_as_made_by_the_tools(
+        string? name,
         bool expected)
     {
-        Assert.Equal(expected, FakePlayerIdentifierUtils.IsFake(characterIdentifier));
+        Assert.Equal(expected, TestPlayerNameUtils.IsTestPlayer(name));
     }
 
     [Fact]
-    public void The_range_is_the_one_the_rest_of_the_subsystem_reads()
-    {
-        // The constant the tools hand identifiers out of and the constant every
-        // reader tests against are one number. If they ever drifted, a fake
-        // player would stop being recognisable and a real one could be mistaken
-        // for it, which is the one failure this range exists to prevent.
-        Assert.Equal(
-            FakePlayerIdentifierUtils.FirstFakeIdentifier,
-            FakeTeamService.FirstFakeIdentifier);
-    }
-
-    [Fact]
-    public void A_fake_member_counts_as_ready_whatever_byte_it_carries()
+    public void A_test_member_counts_as_ready_whatever_byte_it_carries()
     {
         // This is the reason the byte could be NG without stopping a pairing,
         // and the reason the tools still offer to change it: the client paints
         // it, the queue does not read it.
-        var fake = Member(FakeTeamService.FirstFakeIdentifier, EventConstants.ParticipantPendingState);
-        var real = Member(2, EventConstants.ParticipantPendingState);
+        var test = Member(1_000_000_000, TestPlayerNameUtils.ComposeName(1), EventConstants.ParticipantPendingState);
+        var real = Member(2, "Player", EventConstants.ParticipantPendingState);
 
-        Assert.True(EventTeamRegistrationUtils.IsReady([fake]));
+        Assert.True(EventTeamRegistrationUtils.IsReady([test]));
         Assert.False(EventTeamRegistrationUtils.IsReady([real]));
 
         // A real member still has to decide for itself, so a roster of one real
         // undecided member is not ready whatever else is in it.
-        Assert.False(EventTeamRegistrationUtils.IsReady([real, fake]));
+        Assert.False(EventTeamRegistrationUtils.IsReady([real, test]));
     }
 
     [Fact]
@@ -97,16 +84,19 @@ public sealed class FakeTeamMemberStateTests
         // Occupied is what makes it ready, so a team whose slots are all empty
         // cannot queue however few members it fails to have.
         Assert.False(EventTeamRegistrationUtils.IsReady([]));
-        Assert.False(EventTeamRegistrationUtils.IsReady([Member(0, EventConstants.ParticipantReadyState)]));
+        Assert.False(EventTeamRegistrationUtils.IsReady(
+            [Member(0, string.Empty, EventConstants.ParticipantReadyState)]));
     }
 
     private static Mgo2Server.Shared.Persistence.Entities.EventTeamMember Member(
         int characterIdentifier,
+        string name,
         int state) =>
         new()
         {
             Slot = 0,
             CharacterIdentifier = characterIdentifier,
+            Name = name,
             State = state,
         };
 

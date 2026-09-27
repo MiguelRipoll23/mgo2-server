@@ -1,10 +1,11 @@
+using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Persistence;
 using Mgo2Server.Shared.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mgo2Server.Shared.Domain.Events;
 
-/// <summary>Why a fake host room could not be created.</summary>
+/// <summary>Why a dedicated event host room could not be created.</summary>
 public enum FakeHostRoomOutcome
 {
     /// <summary>The room was created.</summary>
@@ -17,17 +18,18 @@ public enum FakeHostRoomOutcome
     NoHostCharacter,
 }
 
-/// <summary>What creating a fake host room did.</summary>
+/// <summary>What creating a dedicated event host room did.</summary>
 /// <param name="Outcome">What happened.</param>
 /// <param name="Room">The room, when one was made.</param>
+/// <param name="HostIdentifier">Character hosting the room, when one was made.</param>
 public readonly record struct FakeHostRoomResult(
     FakeHostRoomOutcome Outcome,
-    FakeHostRoom? Room);
+    Game? Room,
+    int HostIdentifier);
 
 /// <summary>
-/// Holds the dedicated event host rooms that exist only in this lobby's memory,
-/// so a pairing can be given somewhere to go without a client sitting in a game
-/// to make one.
+/// Creates the dedicated event host room a pairing needs, as an ordinary row in
+/// the games table rather than as anything held in memory.
 /// <para>
 /// A pairing does not announce itself. The match row is written when two teams
 /// are queued, but the match-found packet is only pushed once a room has been
@@ -40,22 +42,21 @@ public readonly record struct FakeHostRoomResult(
 /// nowhere to go.
 /// </para>
 /// <para>
-/// So this makes the room in memory, beside the real ones rather than instead of
-/// them. The rooms here are projected into the same <see cref="Game"/> a real
-/// room is, so everything downstream — the eligibility rule, the claim and the
-/// assignment packets — reads one kind of room and cannot tell them apart. The
-/// rooms a player really opens keep working exactly as they did; these simply
-/// join them in the pool.
+/// So this opens the room the way a host client would: it writes a real games
+/// row, with the host in its roster. The eligibility rule, the lease and the
+/// assignment packets then read one kind of room, because there is only one kind
+/// now — a row. A room that only half-existed, or one the process forgot on a
+/// restart, was a pairing waiting forever; a row outlives the process that made
+/// it.
 /// </para>
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
-public sealed class FakeHostRoomService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
+/// <param name="gameService">Service that owns the rooms.</param>
+public sealed class FakeHostRoomService(
+    IDbContextFactory<Mgo2DatabaseContext> contextFactory,
+    GameService gameService)
     : DomainService(contextFactory)
 {
-    private readonly Lock gate = new();
-    private readonly Dictionary<int, FakeHostRoom> rooms = [];
-    private int nextGameIdentifier = FakePlayerIdentifierUtils.FirstFakeIdentifier;
-
     /// <summary>
     /// The name a room carries to host a mode, or null when the mode is not one
     /// an event host room exists for.
@@ -69,31 +70,7 @@ public sealed class FakeHostRoomService(IDbContextFactory<Mgo2DatabaseContext> c
     };
 
     /// <summary>
-    /// The in-memory host rooms of a lobby, in the order they were created.
-    /// </summary>
-    /// <param name="lobbyIdentifier">Lobby to list.</param>
-    public IReadOnlyList<FakeHostRoom> ListRooms(int lobbyIdentifier)
-    {
-        lock (gate)
-        {
-            return [.. rooms.Values
-                .Where(room => room.Room.LobbyIdentifier == lobbyIdentifier)
-                .OrderBy(room => room.Room.Identifier)];
-        }
-    }
-
-    /// <summary>Returns one in-memory room, when it is held here.</summary>
-    /// <param name="gameIdentifier">Room to find.</param>
-    public FakeHostRoom? FindRoom(int gameIdentifier)
-    {
-        lock (gate)
-        {
-            return rooms.TryGetValue(gameIdentifier, out var room) ? room : null;
-        }
-    }
-
-    /// <summary>
-    /// Creates a dedicated host room of a mode in a lobby.
+    /// Creates a dedicated host room of a mode in a lobby, as a real row.
     /// </summary>
     /// <param name="lobbyIdentifier">Lobby the room belongs to.</param>
     /// <param name="mode">Mode the room hosts.</param>
@@ -108,7 +85,7 @@ public sealed class FakeHostRoomService(IDbContextFactory<Mgo2DatabaseContext> c
         var hostName = RoomNameFor(mode);
         if (hostName is null)
         {
-            return new FakeHostRoomResult(FakeHostRoomOutcome.NotAnEventHost, null);
+            return new FakeHostRoomResult(FakeHostRoomOutcome.NotAnEventHost, null, 0);
         }
 
         var host = hostCharacterIdentifier > 0
@@ -117,43 +94,52 @@ public sealed class FakeHostRoomService(IDbContextFactory<Mgo2DatabaseContext> c
 
         if (host <= 0)
         {
-            return new FakeHostRoomResult(FakeHostRoomOutcome.NoHostCharacter, null);
+            return new FakeHostRoomResult(FakeHostRoomOutcome.NoHostCharacter, null, 0);
         }
 
-        // The identifier comes from the fake range, so it can never collide with
-        // a real room's — a games identifier is a database sequence and will not
-        // reach a billion — and so a claim naming one is recognisable as a claim
-        // on a room that exists in this process only.
-        var room = FakeHostRoom.Create(
-            NextGameIdentifier(),
-            lobbyIdentifier,
-            mode,
-            host,
-            hostName);
+        var now = DateTimeOffset.UtcNow;
+        var room = await gameService.CreateAsync(
+            game =>
+            {
+                game.HostIdentifier = host;
+                game.LobbyIdentifier = lobbyIdentifier;
+                game.Name = hostName;
 
-        lock (gate)
-        {
-            rooms[room.Room.Identifier] = room;
-        }
+                // The room is sized for the largest match the eligibility rule
+                // accepts plus the dedicated host's own slot. A room at a
+                // player's usual eight would pass the capacity check and then
+                // find nowhere to seat anybody.
+                game.MaximumPlayers =
+                    EventHostEligibilityUtils.MatchPlayerCapacity
+                    + EventHostEligibilityUtils.DedicatedHostPlayerSlots;
+                game.Comment = "Created by the event testing tools.";
 
-        return new FakeHostRoomResult(FakeHostRoomOutcome.Created, room);
-    }
+                // The flag the host-eligibility rule reads. The room is dedicated
+                // to one mode, which is what makes it eligible for that mode's
+                // matches and nothing else.
+                game.Common = """{"dedicated":true}""";
 
-    /// <summary>Forgets every in-memory room. For tests only.</summary>
-    public void Reset()
-    {
-        lock (gate)
-        {
-            rooms.Clear();
-        }
-    }
+                // Freshly stamped, because the room list only publishes rooms
+                // whose host has written to them recently, and a row that was
+                // created but never stamped would be invisible to the very sweep
+                // it exists to feed.
+                game.CreatedAt = now;
+                game.UpdatedAt = now;
 
-    private int NextGameIdentifier()
-    {
-        lock (gate)
-        {
-            return nextGameIdentifier++;
-        }
+                // The sweep requires the host to be present in the room, and the
+                // roster is what says so. A character at or below zero is not a
+                // host at all: the roster spells zero as "nobody here", so a row
+                // carrying it would claim a host is present in an empty room and
+                // the idle rule would read that room as ready.
+                game.Players.Add(new GamePlayer
+                {
+                    CharacterIdentifier = host,
+                    JoinedAt = now,
+                });
+            },
+            cancellationToken);
+
+        return new FakeHostRoomResult(FakeHostRoomOutcome.Created, room, host);
     }
 
     private async Task<int> FindHostAsync(
@@ -179,13 +165,9 @@ public sealed class FakeHostRoomService(IDbContextFactory<Mgo2DatabaseContext> c
 
         // The lowest identifier that can actually host a room, which is the
         // lowest one above zero. Zero is excluded deliberately: it is how a
-        // roster spells "nobody here", so a host of zero is indistinguishable
-        // from an absent one and the room would be created and then never
-        // eligible. Skipping it is also what keeps zero usable as the "no
-        // character found" answer below.
-        //
-        // The gameplay server's own character is the one this lands on in
-        // practice, since it is created first, but nothing here depends on that.
+        // roster spells "nobody here", so a host of zero would be
+        // indistinguishable from an absent one and the room would be created
+        // and then never eligible.
         return await context.Characters
             .Where(character => character.Identifier > 0)
             .OrderBy(character => character.Identifier)

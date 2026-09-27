@@ -5,16 +5,14 @@ using Mgo2Server.Shared.Domain.Events;
 namespace Mgo2Server.Http.Endpoints.Public;
 
 /// <summary>
-/// The listing half of the event testing tools: the teams a lobby actually holds,
-/// the ones a player formed and the entry pipeline queues.
+/// The listing half of the event testing tools: the teams a lobby holds, the
+/// ones a player formed and the ones the tools created, all as rows.
 /// <para>
 /// It sits beside the fake-team endpoints rather than inside them because the
-/// two answer different questions. Those ask a lobby what it is holding in
-/// memory, which only that process can answer; this reads rows, which is what a
-/// moderator is asking about when they want to fill the team a real player
-/// formed. A tool that offered one list without saying which kind each entry was
-/// would let a moderator wait for an in-memory team to be paired, which can
-/// never happen: the queue is built from the rows.
+/// two answer different questions. Those carry a request to the lobby that will
+/// act on it; this reads the rows directly, which is what a moderator is asking
+/// about when they want to fill a team. Because a testing team is a row like
+/// any other, this is the single list the page draws.
 /// </para>
 /// <para>
 /// It is public for the same reason the fake-team endpoints are — the page that
@@ -34,15 +32,15 @@ internal static class EventTeamEndpoints
             .WithTags("Event teams");
 
         teams.MapGet("/", ListAsync)
-            .WithSummary("List the formed teams of a lobby")
+            .WithSummary("List the teams of a lobby")
             .WithDescription(
-                "Answers with every team a real player formed in the running lobby of a mode, in any "
-                + "state: the joinable ones, the ones queued for an opponent and the ones that have "
-                + "been assigned a game. The teams a lobby holds only in memory are listed by the "
-                + "fake-team endpoints instead, because only the lobby can be asked about those.");
+                "Answers with every team of the running lobby of a mode, in any state: the joinable "
+                + "ones, the ones queued for an opponent and the ones that have been assigned a game. "
+                + "A team the testing tools created is a row like any other, so it appears here beside "
+                + "the ones a player formed.");
     }
 
-    /// <summary>Lists the formed teams of the lobby a mode names.</summary>
+    /// <summary>Lists the teams of the lobby a mode names.</summary>
     /// <param name="listing">Service the rows are read through.</param>
     /// <param name="modes">Service that resolves the lobby a mode names.</param>
     /// <param name="mode">Lobby mode to ask about.</param>

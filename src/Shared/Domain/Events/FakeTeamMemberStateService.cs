@@ -92,7 +92,7 @@ public sealed class FakeTeamMemberStateService(
         var changedSlots = new List<int>();
         foreach (var member in team.Members)
         {
-            if (!FakePlayerIdentifierUtils.IsFake(member.CharacterIdentifier)
+            if (!TestPlayerNameUtils.IsTestPlayer(member.Name)
                 || member.State == memberState)
             {
                 continue;

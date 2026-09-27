@@ -5,28 +5,27 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameLobbyServer.Coordination;
 
 /// <summary>
-/// Acts on the coordinator's request to add fake players to a team in this
+/// Acts on the coordinator's request to add test players to a team in this
 /// lobby, and tells the team's clients about every slot it filled.
 /// <para>
 /// The request names a lobby mode rather than an identifier because the
 /// coordinator does not know this lobby's identifier. A lobby asked for a mode
 /// it is not running refuses the request rather than filling the wrong event: a
-/// fake player in the wrong lobby is a player a real client will meet in a
+/// test player in the wrong lobby is a player a real client will meet in a
 /// bracket it does not belong to.
 /// </para>
 /// <para>
-/// The team is the one the request names, whether it is a real row a player
-/// formed or an in-memory team a fake-team request created. The players go in
-/// already ready, because there is nobody to press the decision button — and the
-/// roster is pushed to the team's sessions afterwards, because a client that is
-/// holding the team open otherwise shows the roster it cached, which is the
-/// leader and no players.
+/// The players are taken from the test-character pool rather than created here,
+/// so a whole testing session reuses the same characters. They go in already in
+/// the state their team's own state implies, and the roster is pushed to the
+/// team's sessions afterwards, because a client holding the team open otherwise
+/// shows the roster it cached.
 /// </para>
 /// </summary>
-/// <param name="fakeTeamService">Service that holds the fake teams and players.</param>
+/// <param name="fakeTeamService">Service that fills the stored team from the pool.</param>
 /// <param name="identityService">Service that knows this lobby's own mode and row.</param>
 /// <param name="pushService">Service that tells the team's clients.</param>
-/// <param name="matchmakingService">Service that re-queues a real team that changed.</param>
+/// <param name="matchmakingService">Service that re-queues a team that changed.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class FakePlayerRequestHandlerService(
     FakeTeamService fakeTeamService,
@@ -71,7 +70,7 @@ public sealed class FakePlayerRequestHandlerService(
         var lobbyIdentifier = await identityService.ResolveIdentifierAsync(mode.Value, cancellationToken);
         if (lobbyIdentifier <= 0)
         {
-            logger.LogWarning("This lobby's own row could not be found; no fake players were created");
+            logger.LogWarning("This lobby's own row could not be found; no fake players were added");
             return;
         }
 
@@ -79,7 +78,6 @@ public sealed class FakePlayerRequestHandlerService(
             lobbyIdentifier,
             request.TeamName,
             request.Count,
-            request.PlayerPrefix,
             cancellationToken);
 
         switch (result.Outcome)
@@ -92,8 +90,12 @@ public sealed class FakePlayerRequestHandlerService(
                 return;
 
             case FakeTeamFillOutcome.TeamFull:
+                logger.LogInformation("Team {TeamIdentifier} has no free slot; refused", result.TeamIdentifier);
+                return;
+
+            case FakeTeamFillOutcome.NoPoolCharacters:
                 logger.LogInformation(
-                    "Team {TeamIdentifier} has no free slot; refused",
+                    "The test-character pool holds too few free characters for team {TeamIdentifier}; refused",
                     result.TeamIdentifier);
                 return;
         }
@@ -112,18 +114,14 @@ public sealed class FakePlayerRequestHandlerService(
         }
 
         logger.LogInformation(
-            "Added {Count} fake players to team {TeamName} ({TeamIdentifier}) in lobby {LobbyIdentifier}",
+            "Added {Count} test players to team {TeamName} ({TeamIdentifier}) in lobby {LobbyIdentifier}",
             result.AddedSlots.Count,
             snapshot.Name,
             result.TeamIdentifier,
             lobbyIdentifier);
 
-        if (!result.InMemory)
-        {
-            // A real team's roster changed, so a team that is already queued is
-            // re-checked: the new members are ready, and a team that was not
-            // eligible may now be.
-            await matchmakingService.ReconcileAsync(result.TeamIdentifier, cancellationToken);
-        }
+        // The roster changed, so a team that is already queued is re-checked:
+        // the new members are ready, and a team that was not eligible may be.
+        await matchmakingService.ReconcileAsync(result.TeamIdentifier, cancellationToken);
     }
 }

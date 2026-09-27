@@ -32,7 +32,6 @@ builder.Services.AddSingleton<FakePlayerRequestHandlerService>();
 builder.Services.AddSingleton<FakeTeamRequestHandlerService>();
 builder.Services.AddSingleton<FakeTeamStateRequestHandlerService>();
 builder.Services.AddSingleton<FakeTeamQueryRequestHandlerService>();
-builder.Services.AddSingleton<FakeTeamPairingRequestHandlerService>();
 builder.Services.AddSingleton<FakeTeamMemberStateRequestHandlerService>();
 builder.Services.AddSingleton<FakeHostRoomRequestHandlerService>();
 builder.Services.AddSingleton<LobbyEventQueueService>();

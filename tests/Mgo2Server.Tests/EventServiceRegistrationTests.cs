@@ -65,14 +65,12 @@ public sealed class EventServiceRegistrationTests
         Assert.NotNull(provider.GetRequiredService<EventScheduleNameService>());
         Assert.NotNull(provider.GetRequiredService<EventScheduleService>());
         Assert.NotNull(provider.GetRequiredService<FakeTeamService>());
-        Assert.NotNull(provider.GetRequiredService<FakeTeamPairingService>());
+        Assert.NotNull(provider.GetRequiredService<TestCharacterPoolService>());
 
-        // The in-memory host room, the claim that stands in for the lease it
-        // cannot have, and the pool that merges it with the real rooms are all
-        // reached from the coordination handler and the assignment sweep, so a
-        // registration missing any of them fails on the first pairing.
+        // The host room service writes the dedicated room a pairing needs, and
+        // the pool reads the rooms back for the assignment sweep, so a
+        // registration missing either fails on the first pairing.
         Assert.NotNull(provider.GetRequiredService<FakeHostRoomService>());
-        Assert.NotNull(provider.GetRequiredService<FakeHostClaimService>());
         Assert.NotNull(provider.GetRequiredService<EventHostRoomPoolService>());
     }
 }

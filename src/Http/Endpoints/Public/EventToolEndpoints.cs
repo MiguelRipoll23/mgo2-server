@@ -25,6 +25,14 @@ internal static class EventToolEndpoints
     /// </summary>
     private const string ToolTeamsScriptFileName = "event-tools-teams.js";
 
+    /// <summary>
+    /// File the test-character pool panel is served from. It is a third file
+    /// because the pool is global rather than per-lobby: it is read and changed
+    /// without asking any lobby, so it has nothing in common with the page's own
+    /// script beyond the status line it is handed.
+    /// </summary>
+    private const string ToolPoolScriptFileName = "event-tools-pool.js";
+
     /// <summary>Maps the event tool page endpoints.</summary>
     /// <param name="group">Group the endpoints are added to.</param>
     /// <remarks>
@@ -38,6 +46,7 @@ internal static class EventToolEndpoints
         group.MapGet("/survival", GetToolPageAsync);
         group.MapGet("/event-tools.js", GetToolScriptAsync);
         group.MapGet("/event-tools-teams.js", GetToolTeamsScriptAsync);
+        group.MapGet("/event-tools-pool.js", GetToolPoolScriptAsync);
     }
 
     private static Task<IResult> GetToolPageAsync(
@@ -56,6 +65,15 @@ internal static class EventToolEndpoints
         GetToolFileAsync(
             options,
             ToolTeamsScriptFileName,
+            "text/javascript; charset=utf-8",
+            cancellationToken);
+
+    private static Task<IResult> GetToolPoolScriptAsync(
+        IOptions<HttpApiOptions> options,
+        CancellationToken cancellationToken) =>
+        GetToolFileAsync(
+            options,
+            ToolPoolScriptFileName,
             "text/javascript; charset=utf-8",
             cancellationToken);
 

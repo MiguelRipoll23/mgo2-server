@@ -7,17 +7,15 @@ using Mgo2Server.Shared.Utils;
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 
 /// <summary>
-/// Streams the joinable teams of the lobby the caller is in, real rows and
-/// in-memory fake teams alike.
+/// Streams the joinable teams of the lobby the caller is in.
 /// <para>
-/// A fake team is listed after the rows because it is the testing device rather
-/// than the population; both are written from the same snapshot projection, so
-/// the client cannot tell where a row came from.
+/// There is one source: the rows. A testing team is a row like any other, so it
+/// appears in this list exactly as a player's team does and the client cannot
+/// tell where a row came from.
 /// </para>
 /// </summary>
 public sealed class GetEventTeamListHandler(
     EventTeamService teamService,
-    FakeTeamService fakeTeamService,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
@@ -59,17 +57,6 @@ public sealed class GetEventTeamListHandler(
                 cancellationToken);
         }
 
-        foreach (var fakeTeam in fakeTeamService.ListTeams(lobbyIdentifier))
-        {
-            var writer = new PacketWriter();
-            EventTeamListUtils.WriteItem(writer, fakeTeam.BuildSnapshot());
-            await sessionHelper.SendPacketAsync(
-                session,
-                CommandConstants.GetEventTeamListPage,
-                writer.Build(),
-                cancellationToken);
-        }
-
         await sessionHelper.SendStartEndPacketAsync(
             session,
             CommandConstants.GetEventTeamListEnd,
@@ -84,10 +71,9 @@ public sealed class GetEventTeamListHandler(
             cancellationToken);
 }
 
-/// <summary>Returns the detail of one joinable team, real or in-memory.</summary>
+/// <summary>Returns the detail of one joinable team.</summary>
 public sealed class GetEventTeamDetailsHandler(
     EventTeamService teamService,
-    FakeTeamService fakeTeamService,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
@@ -96,24 +82,6 @@ public sealed class GetEventTeamDetailsHandler(
         var teamIdentifier = packet.Payload.Length == 4
             ? (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(packet.Payload)
             : 0;
-
-        // An in-memory team is resolved first: its identifier comes from the
-        // fake range, which no row can occupy, so the two can never collide and
-        // the lookup is free either way.
-        var fakeTeam = teamIdentifier > 0
-            ? fakeTeamService.FindTeam(teamIdentifier)
-            : null;
-        if (fakeTeam is not null)
-        {
-            var fakeWriter = new PacketWriter();
-            EventSnapshotUtils.WriteCompact(fakeWriter, fakeTeam.BuildSnapshot());
-            await sessionHelper.SendPacketAsync(
-                session,
-                CommandConstants.GetEventTeamDetailsResult,
-                fakeWriter.Build(),
-                cancellationToken);
-            return;
-        }
 
         var team = teamIdentifier > 0
             ? await teamService.FindAsync(teamIdentifier, cancellationToken)

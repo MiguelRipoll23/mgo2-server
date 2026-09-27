@@ -5,14 +5,13 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.Http.Coordination;
 
 /// <summary>
-/// The parts of the fake-team dispatch that act on a team that has a row.
+/// The parts of the fake-team dispatch that act on a team's test players and on
+/// the host room its matches need.
 /// <para>
-/// They are here rather than in the main file because they answer to a
-/// different premise. Everything beside them creates, changes or forgets a team
-/// that lives only in a lobby's memory, and the reason a name is enough to
-/// identify one is that it has no row. These two cannot use that reason: a
-/// stored team is found by name in the database, and the fake players inside it
-/// are rows too — which is what makes them worth a request of their own.
+/// They are here rather than in the main file because the main file is already
+/// long and because they answer a different question: the member-state request
+/// moves the decision byte on a team's test players, which nobody else can move,
+/// and the host-room request creates the room a pairing waits for.
 /// </para>
 /// </summary>
 /// <param name="registry">Registry of the connected lobbies.</param>
@@ -21,13 +20,14 @@ namespace Mgo2Server.Http.Coordination;
 public sealed partial class FakeTeamDispatchService
 {
     /// <summary>
-    /// Routes a request to change the entry-decision byte on a stored team's fake
+    /// Routes a request to change the entry-decision byte on a team's test
     /// players.
     /// <para>
-    /// It is a separate request from the in-memory state one because the two
-    /// teams are not in the same place: an in-memory team has no row and nothing
-    /// to write, while a stored team's fake players are rows that a real player's
-    /// own client will never press the button for.
+    /// It is a separate request from the state one because the two touch
+    /// different things: the state request writes the team's own byte and may
+    /// force a member byte on the whole roster, while this moves only the test
+    /// players' decision — a byte a real player's own client will never press
+    /// the button for.
     /// </para>
     /// </summary>
     /// <param name="mode">Mode of the lobby the team is in.</param>

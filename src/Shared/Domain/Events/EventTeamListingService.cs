@@ -37,9 +37,8 @@ public readonly record struct EventTeamSummary(
 /// waiting for an opponent is exactly the row a tool is asked about.
 /// </para>
 /// <para>
-/// The in-memory teams are not here. They live in the lobby's own process and
-/// have no row, so the lobby is asked for those separately and the two answers
-/// are shown as the two things they are.
+/// A testing team is a row like any other, so it appears here too and the tools
+/// draw one list rather than telling the two apart.
 /// </para>
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
