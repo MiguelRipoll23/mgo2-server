@@ -27,7 +27,11 @@ metadata:
   name: mgo2-stun
   namespace: mgo2
 spec:
-  externalTrafficPolicy: Cluster
+  # No externalTrafficPolicy. It may only be set on an externally-accessible
+  # Service (NodePort or LoadBalancer), and this Service is a headless ClusterIP,
+  # so the API server rejects it with "may only be set for externally-accessible
+  # services" and the Application never syncs. The field was valid when this was a
+  # LoadBalancer and nothing re-validated it when it became headless.
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
