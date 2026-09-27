@@ -74,10 +74,14 @@ spec:
       # which does not survive a reboot, so it wants a DaemonSet or a node
       # bootstrap script rather than a manifest.
       containers:
+      # STUN_PRIMARY_ADDRESS and STUN_SECONDARY_ADDRESS are deliberately not
+      # declared here. An entry with no value is an empty environment variable,
+      # and the responder reads the environment after appsettings.json, so an
+      # empty variable wins over the ConfigMap value and silently leaves the
+      # responder serving one address. Leave both to the ConfigMap.
       - env:
         - name: STUN_PORT
           value: '3478'
-        - name: STUN_SECONDARY_ADDRESS
         image: ghcr.io/miguelripoll23/mgo2-server/mgo2-stun:latest
         imagePullPolicy: Always
         name: stun

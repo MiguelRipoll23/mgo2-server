@@ -27,8 +27,16 @@ public sealed class DnsServerOptions
     /// <summary>Port of the upstream name server.</summary>
     public int AlternativeNameServerPort { get; set; } = 53;
 
-    /// <summary>Domains answered locally instead of being forwarded upstream.</summary>
-    public List<string> LocalResolvedDomains { get; set; } = ["mgo2pc.com", "game.mgo2pc.com"];
+    /// <summary>
+    /// Domains answered locally instead of being forwarded upstream.
+    /// <para>
+    /// The port check is one of them. Forwarded upstream, the console reaches
+    /// whichever responder owns the public name instead of this deployment's,
+    /// and the mapped address it is told belongs to a different machine than the
+    /// peers that have to dial it.
+    /// </para>
+    /// </summary>
+    public List<string> LocalResolvedDomains { get; set; } = ["mgo2pc.com", "game.mgo2pc.com", "stun.mgo2pc.com"];
 
     /// <summary>How long an upstream query may take before it is abandoned.</summary>
     public int ForwardTimeoutMilliseconds { get; set; } = 5000;
