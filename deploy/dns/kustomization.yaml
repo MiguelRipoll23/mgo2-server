@@ -9,4 +9,4 @@ resources:
 # deploy/README.md for the seed value and why it must not survive a sync.
 images:
   - name: ghcr.io/miguelripoll23/mgo2-server/mgo2-dns
-    newTag: 98032e9fd1d44d3e36379f68a25aaadbbc3b565c
+    newTag: 1f5c67719a54003afb37bc725cb0896d7d96a104
