@@ -20,12 +20,31 @@ namespace Mgo2Server.Stun;
 /// never the route of the answer being written.
 /// </para>
 /// <para>
-/// With one address only the port can change. The responder then answers a
-/// change-address request from the alternate port of the same address, which is
-/// the one thing it can do; a restricted-cone NAT filters on address only, so such
-/// an answer reaches it and its owner is told they are a full-cone peer and will
-/// try direct connections only a real full-cone peer accepts. Two addresses are
-/// what makes peer to peer work; STUN_SECONDARY_ADDRESS is how one is supplied.
+/// A CHANGE-REQUEST is <em>not</em> answered: a request carrying one is dropped
+/// without a reply, which is what the server the console is played against does,
+/// and matching it is deliberate. The console reaches Test I prime, the flagless
+/// probe it sends to CHANGED-ADDRESS, and that one is answered normally, so the
+/// classification still completes from the two addresses reporting the same
+/// mapping.
+/// </para>
+/// <para>
+/// This is a departure from RFC 3489 section 9.2, which expects the change to be
+/// honoured, and it is kept for one deployment: the players are on a tailnet,
+/// where the console's own address and port arrive unmodified and so its mapped
+/// address always equals the local one. The console's classifier passes only two
+/// verdicts, and a silent Test II on an unmapped client is not one of them, so on
+/// this network answering the change is what produces a passing verdict. Dropping
+/// it was chosen to match the reference server and should be re-checked against a
+/// real client before it is trusted; see the remarks on
+/// <see cref="HandleRequestAsync"/> for how to tell the two outcomes apart.
+/// </para>
+/// <para>
+/// With one address only the port can change, and since a CHANGE-REQUEST is not
+/// answered that move is now only reachable by the console's flagless second
+/// probe. A restricted-cone NAT filters on address alone, so a second socket on
+/// the same address is not what tells one from a full-cone one either way; two
+/// real addresses are what make peer to peer work, and STUN_SECONDARY_ADDRESS is
+/// how one is supplied.
 /// </para>
 /// <para>
 /// The console identifies the responder by the address and the port an answer came
@@ -76,10 +95,17 @@ public sealed class StunServer(StunServerOptions options, ILogger<StunServer> lo
 
         if (!layout.ServesTwoAddresses)
         {
+            // Still worth saying out loud. A CHANGE-REQUEST is not answered at all,
+            // so the console's Test I prime is the only probe that reaches a second
+            // socket, and it can only reach this one. One address is enough for a
+            // client whose mapped address equals its own, which is every client on a
+            // tailnet, and not enough for a client behind a real NAT, which is told
+            // nothing about the kind of NAT it is behind.
             logger.LogWarning(
-                "Serving one address only: a request to change the address is answered from port {AlternatePort} " +
-                "of the same address, which cannot tell a full-cone NAT from a restricted-cone one. " +
-                "Give the responder a second address of its own (STUN_SECONDARY_ADDRESS) for peer to peer to work",
+                "Serving one address only: CHANGED-ADDRESS names port {AlternatePort} of this same address, so the " +
+                "console's second probe comes back to here. That is enough for a client on a tailnet, whose mapped " +
+                "address is its own, and not enough to classify a client behind a real NAT. " +
+                "Give the responder a second address of its own (STUN_SECONDARY_ADDRESS) to classify those",
                 layout.AlternatePort);
 
             if (options.SecondaryAddress is not null)
@@ -181,23 +207,37 @@ public sealed class StunServer(StunServerOptions options, ILogger<StunServer> lo
                 return;
             }
 
-            var changeAddress = (request.ChangeRequestFlags & StunMessageCodec.ChangeIpFlag) != 0;
-            var changePort = (request.ChangeRequestFlags & StunMessageCodec.ChangePortFlag) != 0;
+            if (request.ChangeRequestFlags != 0)
+            {
+                // Dropped, not answered and not refused: the console gets no reply
+                // at all rather than a 420, which is what the reference server does
+                // and what this deployment is matched to. Answering it instead is a
+                // one-line change -- return the reply below for these requests too,
+                // picking the socket from the flags the way RFC 3489 section 9.2
+                // says -- and it is the behaviour the console's own classifier wants
+                // on a tailnet, so the two are worth telling apart when a client
+                // misbehaves. This log line is the only trace of the request: a
+                // client that gets no answer leaves nothing else behind.
+                logger.LogInformation(
+                    "{EndPoint} <- {Peer} length {Length} change_request {ChangeRequest} not answered",
+                    listeningEndPoint,
+                    received.RemoteEndPoint,
+                    received.Buffer.Length,
+                    request.ChangeRequestFlags);
+                return;
+            }
 
-            // RFC 3489 section 9.2, relative to where the request arrived. The
-            // console's own probe asks for both, Test II, and is what it decides on.
+            // With no change asked for, the answer leaves from the socket the
+            // request arrived on. CHANGED-ADDRESS still names the other socket,
+            // which is where the console sends Test I prime.
             var changedAddress = layout.OtherAddressOf(listeningEndPoint);
-            var replyEndPoint = new IPEndPoint(
-                changeAddress ? changedAddress.Address : listeningEndPoint.Address,
-                changePort ? changedAddress.Port : listeningEndPoint.Port);
+            var replyEndPoint = listeningEndPoint;
 
             logger.LogInformation(
-                "{EndPoint} <- {Peer} length {Length} change_address {ChangeAddress} change_port {ChangePort}",
+                "{EndPoint} <- {Peer} length {Length} answered from the socket it arrived on",
                 listeningEndPoint,
                 received.RemoteEndPoint,
-                received.Buffer.Length,
-                changeAddress,
-                changePort);
+                received.Buffer.Length);
 
             var response = StunMessageCodec.BuildBindingResponse(
                 request,

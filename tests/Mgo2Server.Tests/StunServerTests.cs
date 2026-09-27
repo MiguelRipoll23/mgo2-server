@@ -42,19 +42,19 @@ public sealed class StunServerTests
     }
 
     [Fact]
-    public async Task Answers_a_change_address_request_from_the_other_address_and_port()
+    public async Task Does_not_answer_a_change_address_request()
     {
         var deployment = Deploy();
 
         try
         {
-            // Test II of the console: change the address and the port.
-            var (_, _, answeredFrom) = await ProbeAsync(
+            // Test II of the console: change the address and the port. The
+            // reference server leaves it unanswered rather than refusing it, and
+            // this responder is matched to it.
+            await AssertNoAnswerAsync(
                 deployment.Primary,
                 StunMessageCodec.ChangeIpFlag | StunMessageCodec.ChangePortFlag,
                 deployment.Cancellation.Token);
-
-            Assert.Equal(deployment.Secondary, answeredFrom);
         }
         finally
         {
@@ -63,25 +63,92 @@ public sealed class StunServerTests
     }
 
     [Fact]
-    public async Task Answers_a_change_port_request_from_the_alternate_port_of_the_same_address()
+    public async Task Does_not_answer_a_change_port_request()
     {
         var deployment = Deploy();
 
         try
         {
-            var (_, _, answeredFrom) = await ProbeAsync(
+            await AssertNoAnswerAsync(
                 deployment.Primary,
                 StunMessageCodec.ChangePortFlag,
                 deployment.Cancellation.Token);
-
-            Assert.Equal(
-                new IPEndPoint(deployment.Primary.Address, deployment.Primary.Port + 1),
-                answeredFrom);
         }
         finally
         {
             await deployment.StopAsync();
         }
+    }
+
+    [Fact]
+    public async Task Answers_the_change_address_probe_the_console_sends_to_the_other_socket()
+    {
+        // The leg the classification rests on once CHANGE-REQUEST is dropped: Test
+        // I prime is a plain request to CHANGED-ADDRESS, with no change asked for,
+        // and it has to be answered from the second socket.
+        var deployment = Deploy();
+
+        try
+        {
+            var (_, response, answeredFrom) = await ProbeAsync(
+                deployment.Secondary,
+                changeRequestFlags: 0,
+                deployment.Cancellation.Token);
+
+            Assert.Equal(deployment.Secondary, answeredFrom);
+            Assert.Equal(
+                expected: StunMessageCodec.BindingResponseType,
+                (response[0] << 8) | response[1]);
+
+            // The console also requires the two sockets to report the same mapping,
+            // and its mapped port is the port it sent from. Both probes therefore
+            // have to leave from one socket, or the comparison would be measuring
+            // the ephemeral ports this test happened to get.
+            var (primaryMapped, secondaryMapped) = await MappedPortsFromOneSocketAsync(
+                deployment,
+                deployment.Cancellation.Token);
+
+            Assert.Equal(primaryMapped, secondaryMapped);
+        }
+        finally
+        {
+            await deployment.StopAsync();
+        }
+    }
+
+    /// <summary>
+    /// Probes both sockets from a single client socket and reads back the port
+    /// each answer names as the console's mapped port.
+    /// </summary>
+    /// <param name="deployment">The responder to probe.</param>
+    /// <param name="cancellationToken">Token that stops the responder.</param>
+    private static async Task<(int Primary, int Secondary)> MappedPortsFromOneSocketAsync(
+        TestDeployment deployment,
+        CancellationToken cancellationToken)
+    {
+        using var client = new UdpClient(new IPEndPoint(PrimaryAddress, 0));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(ProbeTimeout);
+
+        var ports = new List<int>();
+
+        foreach (var destination in new[] { deployment.Primary, deployment.Secondary })
+        {
+            var transactionIdentifier = new byte[16];
+            Random.Shared.NextBytes(transactionIdentifier);
+
+            await client.SendAsync(
+                BuildRequest(transactionIdentifier, changeRequestFlags: 0),
+                destination,
+                timeout.Token);
+
+            var response = await client.ReceiveAsync(timeout.Token);
+            var attributes = ReadAttributes(response.Buffer);
+
+            ports.Add(ReadAddress(ValueOf(attributes, StunMessageCodec.MappedAddressType)).Port);
+        }
+
+        return (ports[0], ports[1]);
     }
 
     [Fact]
@@ -202,6 +269,38 @@ public sealed class StunServerTests
         }
 
         return datagram;
+    }
+
+    /// <summary>
+    /// Asserts that a request is left unanswered: no reply arrives, and none is
+    /// refused either. A 420 Error Response would satisfy neither the console nor
+    /// this test, which is why the absence of any datagram is the contract.
+    /// </summary>
+    /// <param name="destination">Address and port to send to.</param>
+    /// <param name="changeRequestFlags">Change the request asks the responder to make.</param>
+    /// <param name="cancellationToken">Token that stops the responder.</param>
+    private static async Task AssertNoAnswerAsync(
+        IPEndPoint destination,
+        int changeRequestFlags,
+        CancellationToken cancellationToken)
+    {
+        using var client = new UdpClient(new IPEndPoint(PrimaryAddress, 0));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        // Long enough that a slow answer would still be caught as an answer, short
+        // enough not to hold the suite up.
+        timeout.CancelAfter(ProbeTimeout);
+
+        var transactionIdentifier = new byte[16];
+        Random.Shared.NextBytes(transactionIdentifier);
+
+        await client.SendAsync(
+            BuildRequest(transactionIdentifier, changeRequestFlags),
+            destination,
+            timeout.Token);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await client.ReceiveAsync(timeout.Token));
     }
 
     /// <summary>Reads the attributes of a message as its type and value pairs.</summary>
