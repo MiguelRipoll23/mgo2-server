@@ -8,8 +8,9 @@ namespace Mgo2Server.Http.Discord;
 
 /// <summary>
 /// Publishes the global player count of the deployment in a dedicated Discord
-/// channel: the channel is created once, renamed whenever the count moves, and
-/// every connection and disconnection is written in it as a message.
+/// channel: the channel is created once, renamed as often as Discord lets a
+/// channel be renamed, and every connection and disconnection is written in it
+/// as a message.
 /// </summary>
 /// <remarks>
 /// It is an observer of the coordinator, so it needs the global count rather
@@ -20,23 +21,23 @@ namespace Mgo2Server.Http.Discord;
 /// not read as a departure followed by an arrival.
 /// </remarks>
 /// <param name="restClient">REST side of the integration, which owns the channel calls.</param>
+/// <param name="renames">Renames of the channel, which the rate limit of Discord governs.</param>
 /// <param name="presence">Counts the coordinator owns, read for the settled total.</param>
 /// <param name="options">Options of the integration.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class DiscordPlayerCountService(
     DiscordRestClientService restClient,
+    DiscordChannelRenameService renames,
     LobbyPresenceService presence,
     IOptions<DiscordOptions> options,
     ILogger<DiscordPlayerCountService> logger) : IPlayerPresenceObserver
 {
     private readonly DiscordOptions options = options.Value;
-    private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly SemaphoreSlim flushGate = new(1, 1);
     private readonly Lock pendingGate = new();
     private readonly Dictionary<int, PendingPresence> pending = [];
-    private readonly SemaphoreSlim flushGate = new(1, 1);
 
     private string? channelIdentifier;
-    private string? appliedName;
     private long pendingGenerations;
 
     /// <summary>Builds the name of the channel for a number of players.</summary>
@@ -64,9 +65,13 @@ public sealed partial class DiscordPlayerCountService(
             return;
         }
 
-        appliedName = await RenameAsync(channelIdentifier, name, cancellationToken) ? name : null;
+        renames.Adopt(channelIdentifier);
+        var published = await renames.ApplyAsync(name, cancellationToken);
+
         logger.LogInformation(
-            "The Discord player count channel {ChannelIdentifier} publishes {TotalPlayers} players",
+            published
+                ? "The Discord player count channel {ChannelIdentifier} publishes {TotalPlayers} players"
+                : "The Discord player count channel {ChannelIdentifier} could not be named for {TotalPlayers} players",
             channelIdentifier,
             totalPlayers);
     }
@@ -153,20 +158,14 @@ public sealed partial class DiscordPlayerCountService(
     }
 
     /// <inheritdoc />
-    public async Task PlayerTotalChangedAsync(int totalPlayers, CancellationToken cancellationToken)
+    public Task PlayerTotalChangedAsync(int totalPlayers, CancellationToken cancellationToken)
     {
-        if (channelIdentifier is null)
-        {
-            return;
-        }
-
-        var name = FormatChannelName(totalPlayers);
-        if (name == appliedName)
-        {
-            return;
-        }
-
-        appliedName = await RenameAsync(channelIdentifier, name, cancellationToken) ? name : null;
+        // Not awaited: the channel is renamed once the rate limit allows it, so
+        // the coordination stream that reported the change is not held up by a
+        // call to a third party, and the token of the caller is not the one
+        // that governs the rename.
+        renames.Request(FormatChannelName(totalPlayers));
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -212,27 +211,6 @@ public sealed partial class DiscordPlayerCountService(
         }
 
         await restClient.SendChannelMessageAsync(channelIdentifier, content, cancellationToken);
-    }
-
-    /// <summary>
-    /// Renames the channel, one call at a time. Discord limits how often a
-    /// channel may be renamed, so the calls are serialized and a refusal only
-    /// means the name is applied again at the next change.
-    /// </summary>
-    /// <param name="channel">Identifier of the channel.</param>
-    /// <param name="name">Name to apply.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    private async Task<bool> RenameAsync(string channel, string name, CancellationToken cancellationToken)
-    {
-        await gate.WaitAsync(cancellationToken);
-        try
-        {
-            return await restClient.RenameChannelAsync(channel, name, cancellationToken);
-        }
-        finally
-        {
-            gate.Release();
-        }
     }
 
     /// <summary>

@@ -31,7 +31,13 @@ public sealed class DiscordPlayerCountServiceTests
             {
                 ["GET /api/v10/guilds/10/channels"] = (HttpStatusCode.OK, """[{"id":"77","name":"players [0]"}]"""),
             });
-        var service = new DiscordPlayerCountService(rest.Client, new LobbyPresenceService(), rest.Options, NullLogger<DiscordPlayerCountService>.Instance);
+        var options = rest.Options;
+        var service = new DiscordPlayerCountService(
+            rest.Client,
+            Renamer(rest, options),
+            new LobbyPresenceService(),
+            options,
+            NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(3, CancellationToken.None);
 
@@ -51,7 +57,13 @@ public sealed class DiscordPlayerCountServiceTests
                 ["GET /api/v10/guilds/10/channels"] = (HttpStatusCode.OK, "[]"),
             },
             jsonResponse: """{"id":"88","name":"players [0]"}""");
-        var service = new DiscordPlayerCountService(rest.Client, new LobbyPresenceService(), rest.Options, NullLogger<DiscordPlayerCountService>.Instance);
+        var options = rest.Options;
+        var service = new DiscordPlayerCountService(
+            rest.Client,
+            Renamer(rest, options),
+            new LobbyPresenceService(),
+            options,
+            NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(0, CancellationToken.None);
 
@@ -72,7 +84,13 @@ public sealed class DiscordPlayerCountServiceTests
             {
                 ["GET /api/v10/guilds/10/channels"] = (HttpStatusCode.OK, """[{"id":"77","name":"players-[0]"}]"""),
             });
-        var service = new DiscordPlayerCountService(rest.Client, new LobbyPresenceService(), rest.Options, NullLogger<DiscordPlayerCountService>.Instance);
+        var options = rest.Options;
+        var service = new DiscordPlayerCountService(
+            rest.Client,
+            Renamer(rest, options),
+            new LobbyPresenceService(),
+            options,
+            NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(3, CancellationToken.None);
 
@@ -93,10 +111,12 @@ public sealed class DiscordPlayerCountServiceTests
             ["POST /api/v10/channels/77/messages"] = (HttpStatusCode.OK, """{"id":"91"}"""),
         });
         var presence = new LobbyPresenceService();
+        var options = Configured(o => o.PresenceCoalesceMilliseconds = 20);
         var service = new DiscordPlayerCountService(
             rest.Client,
+            Renamer(rest, options),
             presence,
-            Configured(options => options.PresenceCoalesceMilliseconds = 20),
+            options,
             NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(0, CancellationToken.None);
@@ -140,10 +160,12 @@ public sealed class DiscordPlayerCountServiceTests
             ["POST /api/v10/channels/77/messages"] = (HttpStatusCode.OK, """{"id":"91"}"""),
         });
         var presence = new LobbyPresenceService();
+        var options = Configured(o => o.PresenceCoalesceMilliseconds = 60);
         var service = new DiscordPlayerCountService(
             rest.Client,
+            Renamer(rest, options),
             presence,
-            Configured(options => options.PresenceCoalesceMilliseconds = 60),
+            options,
             NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(1, CancellationToken.None);
@@ -174,10 +196,22 @@ public sealed class DiscordPlayerCountServiceTests
                 ["GET /api/v10/guilds/10/channels"] = (HttpStatusCode.OK, """[{"id":"123","name":"players [0]"}]"""),
                 ["PATCH /api/v10/channels/123"] = (HttpStatusCode.TooManyRequests, """{"retry_after":60}"""),
             });
-        var service = new DiscordPlayerCountService(rest.Client, new LobbyPresenceService(), Configured(options => { }), NullLogger<DiscordPlayerCountService>.Instance);
+        var options = Configured(o => { });
+        var service = new DiscordPlayerCountService(
+            rest.Client,
+            Renamer(rest, options),
+            new LobbyPresenceService(),
+            options,
+            NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(1, CancellationToken.None);
         await service.PlayerTotalChangedAsync(2, CancellationToken.None);
+
+        // A rename is asked for in the background, so the second attempt is not
+        // done by the time the call above returns. The window is left at its real
+        // length, which is what bounds the retries to one more here.
+        await WaitForAsync(() => rest.Requests.Count(
+            request => request.Method == "PATCH" && request.Path == "/api/v10/channels/123") >= 2);
 
         Assert.Equal(2, rest.Requests.Count(request => request.Method == "PATCH" && request.Path == "/api/v10/channels/123"));
     }
@@ -186,10 +220,12 @@ public sealed class DiscordPlayerCountServiceTests
     public async Task AConfiguredChannelIsUsedAsItIs()
     {
         var rest = new RecordingRestClient(new Dictionary<string, (HttpStatusCode, string)>());
+        var options = Configured(o => o.PlayerCountChannelIdentifier = "55");
         var service = new DiscordPlayerCountService(
             rest.Client,
+            Renamer(rest, options),
             new LobbyPresenceService(),
-            Configured(options => options.PlayerCountChannelIdentifier = "55"),
+            options,
             NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(7, CancellationToken.None);
@@ -205,10 +241,12 @@ public sealed class DiscordPlayerCountServiceTests
     public async Task WithoutATokenNothingIsPublished()
     {
         var rest = new RecordingRestClient(new Dictionary<string, (HttpStatusCode, string)>());
+        var options = Options.Create(new DiscordOptions { Enabled = true, GuildIdentifier = "10" });
         var service = new DiscordPlayerCountService(
             rest.Client,
+            Renamer(rest, options),
             new LobbyPresenceService(),
-            Options.Create(new DiscordOptions { Enabled = true, GuildIdentifier = "10" }),
+            options,
             NullLogger<DiscordPlayerCountService>.Instance);
 
         await service.InitializeAsync(4, CancellationToken.None);
@@ -230,6 +268,18 @@ public sealed class DiscordPlayerCountServiceTests
 
         Assert.True(condition(), "The expected Discord call was not made in time.");
     }
+
+    /// <summary>
+    /// The rename service the player count renames through, on the same REST
+    /// client and the same options, so a test's recording of the calls sees every
+    /// rename the integration makes.
+    /// </summary>
+    /// <param name="rest">The recording REST client of the test.</param>
+    /// <param name="options">Options the player count service is built with.</param>
+    private static DiscordChannelRenameService Renamer(
+        RecordingRestClient rest,
+        IOptions<DiscordOptions> options) =>
+        new(rest.Client, options, NullLogger<DiscordChannelRenameService>.Instance);
 
     private static IOptions<DiscordOptions> Configured(Action<DiscordOptions> configure)
     {

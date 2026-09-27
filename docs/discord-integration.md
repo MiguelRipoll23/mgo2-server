@@ -200,7 +200,14 @@ lands inside that window the two cancel out, so a move is neither written in the
 channel nor allowed to flip its name through the transient count. A genuine
 connection or disconnection still waits out the window and is then written.
 
-Discord allows only a couple of renames of a channel per ten minutes, and the
-count moves far more often than that. The integration therefore treats a rename
-as best effort: a refusal is logged, the count is applied again at the next
-change, and nothing else is affected.
+Discord allows a channel to be renamed twice every ten minutes, and the count
+moves far more often than that. The integration therefore spends those two
+renames instead of asking for a third: every count that arrives inside the
+window is folded into one rename, which carries the count the deployment has
+when the window opens again. The name is published at once on startup, so a
+fresh deployment never waits for a window to name its channel.
+
+A rename Discord refuses is logged, and the count is applied again at the next
+change or at the next window. Nothing else waits on it: the arrival and
+departure messages are written whatever the name does, and the coordination
+stream that reported a change is not held up by a call to Discord.

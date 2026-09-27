@@ -111,6 +111,7 @@ builder.Services.AddSingleton<IDiscordInteractionResponder>(
 builder.Services.AddSingleton<DiscordPlayerCountService>();
 builder.Services.AddSingleton<IPlayerPresenceObserver>(
     provider => provider.GetRequiredService<DiscordPlayerCountService>());
+builder.Services.AddSingleton<DiscordChannelRenameService>();
 builder.Services.AddSingleton<DiscordEventScheduleCommandService>();
 builder.Services.AddSingleton<FakePlayerDispatchService>();
 builder.Services.AddSingleton<FakeTeamDispatchService>();

@@ -291,8 +291,10 @@ public sealed partial class DiscordRestClientService(
                 return response;
             }
 
-            // A rate limited rename is expected: Discord allows a handful of
-            // renames per channel and the count moves more often than that.
+            // A refusal is reported rather than thrown, and a rate limited
+            // rename is a fact of the endpoint: the player count channel asks
+            // for the names it is allowed, and one it is not is applied again
+            // at the next window.
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             logger.LogWarning(
                 "Discord refused to {Description} with {StatusCode}: {Body}",

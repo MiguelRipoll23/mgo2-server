@@ -79,6 +79,14 @@ public sealed class DiscordOptions
     /// </summary>
     public int PresenceCoalesceMilliseconds { get; set; } = 10000;
 
+    /// <summary>
+    /// Window Discord counts the renames of the player count channel in. The
+    /// endpoint allows a channel to be renamed twice in ten minutes, which is
+    /// what the default is, so every count that moves inside the window is
+    /// folded into one rename instead of asking for a third and being refused.
+    /// </summary>
+    public int RenameWindowMilliseconds { get; set; } = 600000;
+
     /// <summary>Whether the integration can reach Discord at all.</summary>
     public bool IsConfigured => Enabled && !string.IsNullOrWhiteSpace(BotToken);
 
