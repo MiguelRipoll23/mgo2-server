@@ -132,6 +132,15 @@ builder.Services.AddAuthentication(BearerTokenAuthenticationHandler.SchemeName)
         _ => { });
 
 builder.Services.AddAuthorization();
+
+// The health route is read by a page deployed outside this service, so it is
+// answered under an allow-all policy: it carries nothing of the caller's, and a
+// fixed origin list would only break the next deployment of that page. Every
+// other route is same-origin and stays outside the policy.
+builder.Services.AddCors(options => options.AddPolicy(
+    HealthEndpoints.CorsPolicyName,
+    policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
+
 builder.Services.AddOpenApi(options =>
 {
     // The document carries the identity clients expect, so a generated client
@@ -173,6 +182,7 @@ app.UseExceptionHandler(_ => { });
 // Runs before routing, because it rewrites the path the routes are matched on.
 app.UseMiddleware<LegacyPathNormalizer>();
 app.UseRouting();
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
