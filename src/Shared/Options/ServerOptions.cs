@@ -14,6 +14,22 @@ public sealed class ServerOptions
     public string? AdvertisedAddress { get; set; }
 
     /// <summary>
+    /// Base address of the page a host is sent to when their game is reachable
+    /// only on the tailnet the players share, without a trailing slash. Unset —
+    /// the default — means the link is never sent, so a deployment that is not
+    /// behind a tailnet is never told about a page it does not have.
+    /// </summary>
+    public string? ExternalServerBaseUrl { get; set; }
+
+    /// <summary>
+    /// Secret the host links are keyed on. It is the same value the HTTP API
+    /// validates its bearer tokens with, because the external page that resolves
+    /// a link is expected to hold it and derive the same code. Unset means no
+    /// link is sent, since a code nothing can resolve is worse than none.
+    /// </summary>
+    public string? JwtSecret { get; set; }
+
+    /// <summary>
     /// Interval in minutes between two heartbeats of a lobby row, and how long a
     /// lobby list that was read is served before it is read again. Every other
     /// timing of the lobby lifecycle is derived from it. It is the slowest beat

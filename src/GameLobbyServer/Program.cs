@@ -1,6 +1,7 @@
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.GameLobbyServer;
 using Mgo2Server.GameLobbyServer.Commands;
+using Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 using Mgo2Server.GameLobbyServer.Coordination;
 using Mgo2Server.GameLobbyServer.Maintenance;
 using Mgo2Server.Shared.Domain.Lobbies;
@@ -21,6 +22,7 @@ builder.Logging.AddServerLogging(builder.Configuration);
 builder.Services.AddServerServices(builder.Configuration);
 builder.Services.AddServerTelemetry(builder.Configuration, "mgo2-game-lobby");
 builder.Services.AddCommandHandlers();
+builder.Services.AddSingleton<HostLinkService>();
 
 // The coordination stream of this lobby. It both reports the presence of this
 // lobby to the HTTP API and receives the flash news the API relays, and it is

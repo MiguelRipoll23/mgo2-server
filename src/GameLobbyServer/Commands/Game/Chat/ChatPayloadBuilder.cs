@@ -28,6 +28,13 @@ public static class ChatPayloadBuilder
     /// </summary>
     public const byte TeamChannelDigit = (byte)'1';
 
+    /// <summary>
+    /// The channel digit of the room-wide channel, and the one a line the server
+    /// raises on a client's behalf is sent on: it is public, so it needs no team
+    /// table to resolve, and it is the digit the client itself writes for /all.
+    /// </summary>
+    public const byte PublicChannelDigit = (byte)'0';
+
     /// <summary>Whether a send is team chat.</summary>
     /// <param name="request">Decoded send.</param>
     public static bool IsTeamChannel(ChatRequest request) => request.ChannelDigit == TeamChannelDigit;
