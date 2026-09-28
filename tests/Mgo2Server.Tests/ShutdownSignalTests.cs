@@ -25,6 +25,24 @@ public sealed class ShutdownSignalTests
         Assert.Equal(0, requests);
     }
 
+    /// <summary>
+    /// A server that acts differently on a rollout than on a person's stop asks
+    /// for the signal. Only the game lobby does today, and a handler that never
+    /// fires is the assertion: the two stops are told apart when one arrives,
+    /// not at startup.
+    /// </summary>
+    [Fact]
+    public void A_server_can_be_told_which_signal_asked_it_to_stop()
+    {
+        var signals = new List<StopSignal>();
+
+        using var registration = ShutdownSignalUtils.OnStopRequested(
+            signals.Add,
+            NullLogger.Instance);
+
+        Assert.Empty(signals);
+    }
+
     [Fact]
     public void A_registration_can_be_released_and_taken_again()
     {

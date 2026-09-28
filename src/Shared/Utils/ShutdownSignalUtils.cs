@@ -3,6 +3,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.Shared.Utils;
 
+/// <summary>The signal a stop was asked for with.</summary>
+public enum StopSignal
+{
+    /// <summary>The interrupt a person sends from a terminal.</summary>
+    Interrupt,
+
+    /// <summary>The termination a platform sends when it replaces the process.</summary>
+    Termination,
+}
+
 /// <summary>
 /// Turns the two stops a server is asked for into one call: the interrupt a
 /// person sends from a terminal, and the SIGTERM a deployment sends.
@@ -24,15 +34,28 @@ public static class ShutdownSignalUtils
     /// <param name="requestStop">Called once per signal that arrives.</param>
     /// <param name="logger">Logger the request is reported to.</param>
     /// <returns>Registration that releases both handlers when it is disposed.</returns>
-    public static IDisposable OnStopRequested(Action requestStop, ILogger logger)
+    public static IDisposable OnStopRequested(Action requestStop, ILogger logger) =>
+        OnStopRequested(_ => requestStop(), logger);
+
+    /// <summary>
+    /// Requests a stop when the process is interrupted from a terminal or asked
+    /// to terminate by the platform it runs on, telling the caller which of the
+    /// two it was. The two are not the same event to the clients of a server: a
+    /// termination is a rollout replacing the process, an interrupt is a person
+    /// stopping it, and only the first one is worth announcing.
+    /// </summary>
+    /// <param name="requestStop">Called once per signal that arrives, with the signal.</param>
+    /// <param name="logger">Logger the request is reported to.</param>
+    /// <returns>Registration that releases both handlers when it is disposed.</returns>
+    public static IDisposable OnStopRequested(Action<StopSignal> requestStop, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(requestStop);
         ArgumentNullException.ThrowIfNull(logger);
 
-        void Request(string signal)
+        void Request(StopSignal signal, string name)
         {
-            logger.LogInformation("Shutdown requested ({Signal})", signal);
-            requestStop();
+            logger.LogInformation("Shutdown requested ({Signal})", name);
+            requestStop(signal);
         }
 
         ConsoleCancelEventHandler interruptHandler = (_, eventArguments) =>
@@ -41,7 +64,7 @@ public static class ShutdownSignalUtils
             // request has to reach the listener, and the connections it is
             // serving have to be waited for.
             eventArguments.Cancel = true;
-            Request("interrupt");
+            Request(StopSignal.Interrupt, "interrupt");
         };
 
         Console.CancelKeyPress += interruptHandler;
@@ -54,7 +77,7 @@ public static class ShutdownSignalUtils
                 // sends: the process ends when its connections have left, not
                 // while it still has them.
                 context.Cancel = true;
-                Request("SIGTERM");
+                Request(StopSignal.Termination, "SIGTERM");
             });
 
         return new SignalRegistration(interruptHandler, termination);

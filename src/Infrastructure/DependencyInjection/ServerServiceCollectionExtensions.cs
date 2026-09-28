@@ -42,9 +42,8 @@ public static class ServerServiceCollectionExtensions
         {
             options.AdvertisedAddress =
                 configuration.ReadText("ADVERTISED_ADDRESS") ?? options.AdvertisedAddress;
-            options.ExternalServerBaseUrl =
-                configuration.ReadText("EXTERNAL_SERVER_BASE_URL") ?? options.ExternalServerBaseUrl;
-            options.JwtSecret = configuration.ReadText("JWT_SECRET") ?? options.JwtSecret;
+            options.ExternalWebHostname =
+                configuration.ReadText("EXTERNAL_WEB_HOSTNAME") ?? options.ExternalWebHostname;
             options.LobbiesRefreshIntervalMinutes = configuration.ReadNumber(
                 "LOBBIES_REFRESH_INTERVAL_MINUTES",
                 options.LobbiesRefreshIntervalMinutes);

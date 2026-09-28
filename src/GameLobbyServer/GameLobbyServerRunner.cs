@@ -182,6 +182,16 @@ public sealed class GameLobbyServerRunner(
         // this instance on the spot would drop every one of them mid-room. The
         // workers stay up for the duration, so the lobby still answers with the
         // population it has while it waits to be replaced.
+        //
+        // The notice is written before that wait and not after it: the players the
+        // drain is holding are the players it is for, and it is what tells one of
+        // them why their lobby is about to go and to reconnect once it has. It is
+        // given no cancellation token because the one that stopped the listener —
+        // the only token this method has — is already cancelled, and a notice that
+        // is abandoned on the way out is a rollout nobody was warned about.
+        var rolloutNotice = serviceProvider.GetRequiredService<RolloutNoticeService>();
+        await rolloutNotice.AnnounceAsync();
+
         await server.WaitForConnectionsToLeaveAsync();
         server.CloseConnections();
     }
