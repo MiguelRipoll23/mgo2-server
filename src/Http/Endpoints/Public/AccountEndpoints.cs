@@ -14,7 +14,6 @@ internal static class AccountEndpoints
 
         accounts.MapPost("/register", RegisterAsync)
             .DisableAntiforgery()
-            .WithSummary("Register account")
             .WithDescription("Creates a new player account.")
             .Produces<RegistrationResponseContract>(StatusCodes.Status201Created);
     }

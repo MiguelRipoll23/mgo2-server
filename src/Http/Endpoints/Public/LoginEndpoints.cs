@@ -13,7 +13,6 @@ internal static class LoginEndpoints
     {
         group.MapPost("/Z4qIOLmQBOj4NQo0uHx3q0mE51Fe/", LoginAsync)
             .DisableAntiforgery()
-            .WithSummary("Login")
             .WithDescription("Authenticates a player and returns a session token");
     }
 

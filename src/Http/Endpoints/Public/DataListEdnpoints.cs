@@ -11,7 +11,6 @@ internal static class DataListEdnpoints
     {
         group.MapPost("/jp/mgo2/data/datalist.html", GetDataListAsync)
             .DisableAntiforgery()
-            .WithSummary("Data list")
             .WithDescription("Game updates list");
     }
 

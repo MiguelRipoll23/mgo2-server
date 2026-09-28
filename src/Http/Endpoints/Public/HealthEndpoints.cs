@@ -23,7 +23,6 @@ internal static class HealthEndpoints
     {
         group.MapGet("/health", GetHealth)
             .RequireCors(CorsPolicyName)
-            .WithSummary("Health check")
             .WithDescription("Returns 200 with a status word while the API is up.");
     }
 

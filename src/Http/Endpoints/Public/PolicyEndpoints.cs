@@ -10,7 +10,6 @@ internal static class PolicyEndpoints
     public static void MapPolicyEndpoints(this RouteGroupBuilder group)
     {
         group.MapGet("/jp/mgo2/policy/policy.txt", GetPolicyAsync)
-            .WithSummary("Policy document")
             .WithDescription("Returns the terms of service policy document");
     }
 

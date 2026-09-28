@@ -15,7 +15,6 @@ internal static class CheckVerEndpoints
         // repeated slashes before routing, so one route serves both.
         group.MapPost("/jp/mgo2/patch/checkver.html", CheckVersionAsync)
             .DisableAntiforgery()
-            .WithSummary("Check version")
             .WithDescription("Returns the result of the version check");
     }
 
