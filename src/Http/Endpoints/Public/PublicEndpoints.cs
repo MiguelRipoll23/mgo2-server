@@ -9,12 +9,7 @@ internal static class PublicEndpoints
     {
         var group = app.MapGroup("/");
 
-        group.MapHomeEndpoint();
         group.MapHealthEndpoints();
-        group.MapEventToolEndpoints();
-        group.MapEventTeamEndpoints();
-        group.MapEventMatchEndpoints();
-        group.MapFakeEventEndpoints();
         group.MapLoginEndpoints();
         group.MapAccountEndpoints();
         group.MapPolicyEndpoints();

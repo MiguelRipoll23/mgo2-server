@@ -32,13 +32,6 @@ public static class EventTeamRegistrationUtils
 
     /// <summary>
     /// Whether every occupied slot of a roster has decided to play.
-    /// <para>
-    /// A test player counts as ready: it has no client and no button to press,
-    /// and it exists precisely so a team can be tested in the queue. Its roster
-    /// byte still carries the value the client accepts, because the two
-    /// questions — what the client is shown and what the queue may pair — are
-    /// not the same one.
-    /// </para>
     /// </summary>
     /// <param name="members">Roster of the team.</param>
     /// <returns>Whether the roster holds at least one member and all are ready.</returns>
@@ -55,8 +48,7 @@ public static class EventTeamRegistrationUtils
             }
 
             occupied++;
-            if (member.State != EventConstants.ParticipantReadyState
-                && !TestPlayerNameUtils.IsTestPlayer(member.Name))
+            if (member.State != EventConstants.ParticipantReadyState)
             {
                 return false;
             }

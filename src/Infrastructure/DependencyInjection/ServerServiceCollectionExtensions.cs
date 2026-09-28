@@ -183,18 +183,12 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<AutomatchHooksService>();
         services.AddSingleton<EventInformationService>();
         services.AddSingleton<EventTeamService>();
-        services.AddSingleton<EventTeamListingService>();
-        services.AddSingleton<TestCharacterPoolService>();
-        services.AddSingleton<FakeTeamService>();
-        services.AddSingleton<FakeTeamMemberStateService>();
-        services.AddSingleton<FakeHostRoomService>();
         services.AddSingleton<EventHostRoomPoolService>();
         services.AddSingleton<EventTeamStateService>();
         services.AddSingleton<EventTeamPushService>();
         services.AddSingleton<EventInvitationService>();
         services.AddSingleton<EventSessionDirectoryService>();
         services.AddSingleton<EventMatchService>();
-        services.AddSingleton<EventMatchListingService>();
         services.AddSingleton<EventMatchmakingService>();
         services.AddSingleton<EventHostLeaseService>();
         services.AddSingleton<EventAssignmentService>();

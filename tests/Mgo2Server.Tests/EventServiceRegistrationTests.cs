@@ -34,7 +34,6 @@ public sealed class EventServiceRegistrationTests
         Assert.NotNull(provider.GetRequiredService<EventMatchService>());
         Assert.NotNull(provider.GetRequiredService<EventMatchmakingService>());
         Assert.NotNull(provider.GetRequiredService<EventTeamService>());
-        Assert.NotNull(provider.GetRequiredService<EventTeamListingService>());
         Assert.NotNull(provider.GetRequiredService<EventTeamPushService>());
         Assert.NotNull(provider.GetRequiredService<EventInvitationService>());
         Assert.NotNull(provider.GetRequiredService<EventSessionDirectoryService>());
@@ -50,7 +49,7 @@ public sealed class EventServiceRegistrationTests
     }
 
     [Fact]
-    public void The_schedule_and_fake_player_services_resolve_from_the_container()
+    public void The_schedule_services_resolve_from_the_container()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -60,17 +59,13 @@ public sealed class EventServiceRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // The schedule service took a dependency on the name service when events
-        // became addressable by name, and the fake teams are resolved by the
-        // coordination handlers on a lobby that holds the team they act on.
+        // became addressable by name.
         Assert.NotNull(provider.GetRequiredService<EventScheduleNameService>());
         Assert.NotNull(provider.GetRequiredService<EventScheduleService>());
-        Assert.NotNull(provider.GetRequiredService<FakeTeamService>());
-        Assert.NotNull(provider.GetRequiredService<TestCharacterPoolService>());
 
-        // The host room service writes the dedicated room a pairing needs, and
-        // the pool reads the rooms back for the assignment sweep, so a
-        // registration missing either fails on the first pairing.
-        Assert.NotNull(provider.GetRequiredService<FakeHostRoomService>());
+        // The host room pool holds the dedicated rooms a pairing is leased from,
+        // and the assignment sweep reads it, so a registration missing it fails
+        // on the first pairing.
         Assert.NotNull(provider.GetRequiredService<EventHostRoomPoolService>());
     }
 }

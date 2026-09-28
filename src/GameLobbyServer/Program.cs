@@ -30,12 +30,6 @@ builder.Services.AddSingleton<HostLinkService>();
 // than adding keeps the tracker and the stream on the same instance.
 builder.Services.AddSingleton<FlashNewsService>();
 builder.Services.AddSingleton<LobbyIdentityService>();
-builder.Services.AddSingleton<FakePlayerRequestHandlerService>();
-builder.Services.AddSingleton<FakeTeamRequestHandlerService>();
-builder.Services.AddSingleton<FakeTeamStateRequestHandlerService>();
-builder.Services.AddSingleton<FakeTeamQueryRequestHandlerService>();
-builder.Services.AddSingleton<FakeTeamMemberStateRequestHandlerService>();
-builder.Services.AddSingleton<FakeHostRoomRequestHandlerService>();
 builder.Services.AddSingleton<LobbyEventQueueService>();
 builder.Services.AddSingleton<LobbyCommandApplyService>();
 builder.Services.AddSingleton<LobbyCoordinationClientService>();
