@@ -104,6 +104,20 @@ public sealed class ChatPayloadTests
         Assert.Equal("hi", request.Text);
     }
 
+    [Theory]
+    [InlineData('0', false)]
+    [InlineData('1', true)]
+    [InlineData('2', false)]
+    [InlineData('3', false)]
+    public void Team_chat_is_the_channel_1_digit_and_no_other(char digit, bool isTeam)
+    {
+        // Only channel 1 is a team; 0 and 2 are public and 3 is resolved against a
+        // server-supplied table, so none of the others may be narrowed by team.
+        var request = ChatPayloadBuilder.ParseRequest(Request(0x00, (byte)digit, "hi"));
+
+        Assert.Equal(isTeam, ChatPayloadBuilder.IsTeamChannel(Assert.IsType<ChatRequest>(request)));
+    }
+
     /// <summary>Builds a 129-byte request around the fields the client writes.</summary>
     /// <param name="kind">Coarse public/team flag.</param>
     /// <param name="channelDigit">ASCII channel digit.</param>
@@ -119,5 +133,78 @@ public sealed class ChatPayloadTests
         }
 
         return payload;
+    }
+}
+
+/// <summary>
+/// Pins the team-chat rule: only a team channel is narrowed, and never to nothing.
+/// A line the roster cannot be asked about is delivered, because the failure worth
+/// avoiding is a message the player typed and never saw.
+/// </summary>
+[Trait("Category", "GameLobby")]
+public sealed class ChatRecipientUtilsTests
+{
+    /// <summary>A room with teams reported: characters 1 and 3 on the first team, 2 on the second.</summary>
+    private static readonly Dictionary<int, short> Teams = new()
+    {
+        [1] = 0,
+        [2] = 1,
+        [3] = 0,
+    };
+
+    [Fact]
+    public void A_teammate_is_reached()
+    {
+        Assert.True(ChatRecipientUtils.ReachesRecipient(3, Teams, 0));
+    }
+
+    [Fact]
+    public void The_sender_reaches_its_own_line()
+    {
+        Assert.True(ChatRecipientUtils.ReachesRecipient(1, Teams, 0));
+    }
+
+    [Fact]
+    public void The_other_team_is_not_reached()
+    {
+        Assert.False(ChatRecipientUtils.ReachesRecipient(2, Teams, 0));
+    }
+
+    [Fact]
+    public void The_third_role_is_a_slot_of_its_own()
+    {
+        // Slot 2 is the client's third role, not its second team: it is not the 1 the
+        // team change writes for the second team, so the two never pair up.
+        var teams = new Dictionary<int, short>
+        {
+            [1] = 2,
+            [2] = 1,
+        };
+
+        Assert.False(ChatRecipientUtils.ReachesRecipient(2, teams, 2));
+    }
+
+    [Fact]
+    public void A_channel_that_is_not_team_chat_reaches_the_whole_room()
+    {
+        Assert.True(ChatRecipientUtils.ReachesRecipient(2, null, null));
+    }
+
+    [Fact]
+    public void A_sender_the_roster_holds_no_team_for_still_reaches_the_room()
+    {
+        Assert.True(ChatRecipientUtils.ReachesRecipient(2, Teams, null));
+    }
+
+    [Fact]
+    public void A_recipient_the_roster_holds_no_team_for_is_still_reached()
+    {
+        Assert.True(ChatRecipientUtils.ReachesRecipient(9, Teams, 0));
+    }
+
+    [Fact]
+    public void A_connection_with_no_character_is_still_reached()
+    {
+        Assert.True(ChatRecipientUtils.ReachesRecipient(null, Teams, 0));
     }
 }

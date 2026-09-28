@@ -2446,7 +2446,7 @@ u8 write at `0xD52AC8`). This file said the request shape was unknown; the width
 not. What the byte means still is — but note that mgo2-server's "GetPlayerOptions" registration
 also reads a u8, which is now the one thing about it that is not contradicted by the binary.
 
-Still ack-only (`0x4441`, result 0, echo's shape). The references now *name* it but do not agree:
+The ack is unchanged (`0x4441`, result 0) — but the byte is no longer discarded. It is the sender's own team, which `FIELD_MAPPING.md` settled on 2026-08-01, and it is now stored on the sender's roster row so team chat has a team to narrow to; the same field also arrives raw in `0x4344`. The references *name* it but do not agree:
 Nomad's comment says "Set Team" (nothing parsed), mgo2-server registers it twice — once as
 unknown-ack, once as "GetPlayerOptions" reading a u8 and replying 5 bytes `{u32 0, u8 0}` —
 with whichever loads last winning. Neither is evidence worth acting on.

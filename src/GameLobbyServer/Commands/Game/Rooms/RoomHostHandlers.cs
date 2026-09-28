@@ -10,64 +10,6 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 
 /// <summary>
-/// Answers the host's peer-to-peer state machine. All three of its
-/// register-with-server round-trips read a result word and a peer-table key,
-/// so the key is echoed from the request and a short read would stall the
-/// state machine until it disconnects the peer.
-/// </summary>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
-public sealed class HostPeerRegistrationHandler(SessionHelper sessionHelper) : ICommandHandler
-{
-    /// <summary>Echoes the request's leading word back as the peer-table key.</summary>
-    public static async Task ReplyAsync(
-        TcpSession session,
-        ushort replyCommand,
-        Packet packet,
-        SessionHelper sessionHelper,
-        CancellationToken cancellationToken)
-    {
-        var reader = new PacketReader(packet.Payload);
-        var key = reader.Remaining >= 4 ? reader.ReadUInt32() : 0;
-
-        var writer = new PacketWriter();
-        writer.WriteUInt32(ErrorCodeConstants.ResultNone);
-        writer.WriteUInt32(key);
-        await sessionHelper.SendPacketAsync(session, replyCommand, writer.Build(), cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken) =>
-        ReplyAsync(session, CommandConstants.HostPlayerConnectedResult, packet, sessionHelper, cancellationToken);
-}
-
-/// <summary>Answers the host's disconnect notification.</summary>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
-public sealed class HostPlayerDisconnectedHandler(SessionHelper sessionHelper) : ICommandHandler
-{
-    /// <inheritdoc />
-    public Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken) =>
-        HostPeerRegistrationHandler.ReplyAsync(session, CommandConstants.HostPlayerDisconnectedResult, packet, sessionHelper, cancellationToken);
-}
-
-/// <summary>Answers the host's team registration.</summary>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
-public sealed class HostSetPlayerTeamHandler(SessionHelper sessionHelper) : ICommandHandler
-{
-    /// <inheritdoc />
-    public Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken) =>
-        HostPeerRegistrationHandler.ReplyAsync(session, CommandConstants.HostSetPlayerTeamResult, packet, sessionHelper, cancellationToken);
-}
-
-/// <summary>Answers the host's finished-connect registration.</summary>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
-public sealed class HostPlayerConnectFinishHandler(SessionHelper sessionHelper) : ICommandHandler
-{
-    /// <inheritdoc />
-    public Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken) =>
-        HostPeerRegistrationHandler.ReplyAsync(session, CommandConstants.HostPlayerConnectFinishResult, packet, sessionHelper, cancellationToken);
-}
-
-/// <summary>
 /// Migrates the room to the successor the client elected when the host leaves.
 /// </summary>
 /// <param name="gameService">Service that owns the rooms.</param>

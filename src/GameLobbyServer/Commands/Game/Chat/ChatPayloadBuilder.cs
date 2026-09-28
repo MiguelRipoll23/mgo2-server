@@ -21,6 +21,17 @@ public static class ChatPayloadBuilder
     /// <summary>Longest message the wire can carry, as the client's reader takes it.</summary>
     public const int MaximumTextLength = 127;
 
+    /// <summary>
+    /// The channel digit of team chat — the one channel that does not reach the whole
+    /// room. Channels 0 and 2 are public and 3 resolves speakers against a
+    /// server-supplied table, so neither may be narrowed to a team.
+    /// </summary>
+    public const byte TeamChannelDigit = (byte)'1';
+
+    /// <summary>Whether a send is team chat.</summary>
+    /// <param name="request">Decoded send.</param>
+    public static bool IsTeamChannel(ChatRequest request) => request.ChannelDigit == TeamChannelDigit;
+
     /// <summary>Bytes of the request that precede the text: the kind and the channel digit.</summary>
     private const int RequestHeaderLength = 2;
 

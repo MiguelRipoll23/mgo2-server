@@ -235,9 +235,9 @@ public static partial class CommandConstants
     /// <summary>Carries the result of the weapon-tally upload.</summary>
     public const ushort HostWeaponTalliesResult = 0x43a3;
 
-    /// <summary>Echoes a chat-family request.</summary>
-    public const ushort ChatEcho = 0x4440;
+    /// <summary>Reports the sender's own team, one-based.</summary>
+    public const ushort SetTeam = 0x4440;
 
-    /// <summary>Carries the result of the chat-family request.</summary>
-    public const ushort ChatEchoResult = 0x4441;
+    /// <summary>Carries the result of the team change.</summary>
+    public const ushort SetTeamResult = 0x4441;
 }

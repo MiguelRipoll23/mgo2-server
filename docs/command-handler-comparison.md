@@ -117,7 +117,7 @@ reference logs a warning and replies nothing.
 | `0x4700` | `GetPlayerDataHandler` | `updateConnectionInfo` |
 | `0x4150` | `GetLobbyDisconnectHandler` | `lobbyDisconnect` |
 | `0x43d0` | `TrainingConnectHandler` | `getTrainingParams` |
-| `0x4440` | `ChatEchoHandler` | `UNKNOWN_4440` |
+| `0x4440` | `SetTeamHandler` | `UNKNOWN_4440` |
 | `0x4900` / `0x4990` | `GetGameLobbyInfoHandler` / `GetGameEntryInfoHandler` | `getGameLobbyInfo` / `getGameEntryInfo` |
 
 ### Characters
@@ -528,7 +528,7 @@ refined the reading. Worth aligning comments, not code.
 | `0x43a0` | `PassRound` ("host migration") | `hostMigration` | The reference's key correction: this is sent when the **host quits**, not when a player deliberately hands the game on — only the host sends it, everyone else sends `0x4380`. The successor is elected silently by connection-quality score. The name here is fine; the comment should say "quit" |
 | `0x43a2` | `HostWeaponTallies` | `ROUND_END` | Both read it as end-of-round data; the reference warns the exact meaning is unconfirmed |
 | `0x4390` | `HostUpdateStats` | `updateStats` | |
-| `0x4440` | `ChatEcho` | `UNKNOWN_4440` | Both answer a bare result; the reference notes two upstream references disagree on the shape and that this server's `0x4441` result matches "echo" |
+| `0x4440` | `SetTeam` | `UNKNOWN_4440` | The reference keeps its ack-only reading and discards the byte, which is why its roster holds no team. The byte is settled here as the sender's own team (`FIELD_MAPPING.md`, 2026-08-01), so it is stored and the `0x4441` result is unchanged |
 | `0x43d0` | `TrainingConnect` | `getTrainingParams` | |
 | `0x4b20` | `GetClanMemberInfo` | `clanProfile` | |
 | `0x4b40` | `LeaveClan` | `withdraw` | |

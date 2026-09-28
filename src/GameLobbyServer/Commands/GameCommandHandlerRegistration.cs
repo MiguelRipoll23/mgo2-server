@@ -45,7 +45,7 @@ public static class GameCommandHandlerRegistration
         services.AddTransient<GetLobbyDisconnectHandler>();
         services.AddTransient<TrainingConnectHandler>();
         services.AddTransient<GetGameLobbyInfoHandler>();
-        services.AddTransient<ChatEchoHandler>();
+        services.AddTransient<SetTeamHandler>();
         services.AddTransient<SendChatHandler>();
 
         // Characters.
@@ -164,7 +164,7 @@ public static class GameCommandHandlerRegistration
         registry.Register<GetLobbyDisconnectHandler>(ServerType.GameplayLobby, CommandConstants.GetLobbyDisconnect);
         registry.Register<TrainingConnectHandler>(ServerType.GameplayLobby, CommandConstants.TrainingConnect);
         registry.Register<GetGameLobbyInfoHandler>(ServerType.GameplayLobby, CommandConstants.GetGameLobbyInfo);
-        registry.Register<ChatEchoHandler>(ServerType.GameplayLobby, CommandConstants.ChatEcho);
+        registry.Register<SetTeamHandler>(ServerType.GameplayLobby, CommandConstants.SetTeam);
         registry.Register<SendChatHandler>(ServerType.GameplayLobby, CommandConstants.SendChat);
         registry.Register<DisconnectHandler>(ServerType.GameplayLobby, CommandConstants.Disconnect);
         registry.Register<KeepAliveHandler>(ServerType.GameplayLobby, CommandConstants.KeepAlive);
