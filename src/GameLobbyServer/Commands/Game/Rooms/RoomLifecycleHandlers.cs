@@ -17,13 +17,13 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 /// <param name="characterService">Service that owns the stored settings.</param>
 /// <param name="automatchService">Queue told about the new room.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
-/// <param name="hostLinkService">Service that raises the tailnet host's link line.</param>
+/// <param name="externalJoinHintService">Service that raises the tailnet host's joinability line.</param>
 public sealed class CreateGameHandler(
     GameService gameService,
     CharacterService characterService,
     AutomatchService automatchService,
     SessionHelper sessionHelper,
-    HostLinkService hostLinkService) : ICommandHandler
+    ExternalJoinHintService externalJoinHintService) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
@@ -91,7 +91,7 @@ public sealed class CreateGameHandler(
 
         // Raised once the room exists and the host is its first member, so the
         // line arrives in a room the client has already been placed in.
-        await hostLinkService.SendAsync(session, characterIdentifier, cancellationToken);
+        await externalJoinHintService.SendAsync(session, characterIdentifier, cancellationToken);
     }
 
     /// <summary>Reads the non-empty rotation triples a push stored, rule first.</summary>

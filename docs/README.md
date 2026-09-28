@@ -11,7 +11,6 @@ depends on, some is documentation, and some is a tool you run once and forget.
 | `PROTOCOL.md` | The TCP command protocol, command by command and byte by byte. |
 | `STUN.md` | The UDP port check. Separate transport, separate thread, shares nothing with the lobby servers. |
 | `CRYPTO.md` | Every cipher, key and hash, where each is applied, and how to obtain them. |
-| `HOST_LINKS.md` | The link a tailnet host is sent to publish the address their game is reachable at from outside it, and the code derivation the external page reproduces. |
 | `OBSERVED.md` | What was observed and verified against a real client, including the hypotheses that turned out wrong. Read before re-testing anything. |
 | `BACKLOG.md` | Deliberately deferred work, with enough context to pick each item up cold. |
 
