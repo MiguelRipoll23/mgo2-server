@@ -16,6 +16,7 @@ public sealed class PersistenceModelTests
     /// </summary>
     private static readonly string[] ExpectedTables =
     [
+        "account_roles",
         "character_connections",
         "character_gameplay_options",
         "character_presence",

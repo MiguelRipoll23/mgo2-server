@@ -10,8 +10,7 @@ internal static class AccountEndpoints
     /// <param name="group">Group the endpoints are added to.</param>
     public static void MapAccountEndpoints(this RouteGroupBuilder group)
     {
-        var accounts = group.MapGroup("/account")
-            .WithTags("Account");
+        var accounts = group.MapGroup("/account");
 
         accounts.MapPost("/register", RegisterAsync)
             .DisableAntiforgery()

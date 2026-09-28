@@ -1,8 +1,6 @@
-using Mgo2Server.Http.Authentication;
 using Mgo2Server.Http.Coordination;
 using Mgo2Server.Http.Discord;
 using Mgo2Server.Http.Endpoints;
-using Mgo2Server.Http.Endpoints.Authenticated;
 using Mgo2Server.Http.Endpoints.Public;
 using Mgo2Server.Http.Errors;
 using Mgo2Server.Http.Middleware;
@@ -11,7 +9,6 @@ using Mgo2Server.Http.Services;
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Telemetry;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.OpenApi;
@@ -53,15 +50,7 @@ builder.WebHost.ConfigureKestrel(options =>
 var httpApiOptions = new HttpApiOptions
 {
     LauncherServer = builder.Configuration["LAUNCHER_SERVER"] ?? "http://mgo2pc.com",
-    JwtSecret = builder.Configuration["JWT_SECRET"] ?? string.Empty,
 };
-
-// The API refuses to start without the secret, because every authenticated
-// route would otherwise be trivially forgeable.
-if (string.IsNullOrEmpty(httpApiOptions.JwtSecret))
-{
-    throw new InvalidOperationException("JWT_SECRET environment variable is required");
-}
 
 var discordOptions = new DiscordOptions
 {
@@ -116,19 +105,6 @@ builder.Services.AddSingleton<DiscordGatewayClientService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<DiscordGatewayClientService>());
 builder.Services.AddHostedService<DiscordStartupService>();
 
-// The API registers a single scheme, and a single registered scheme is also the
-// default one, so the handler runs for the anonymous routes as well. It answers
-// "no result" rather than a failure when a request carries no token, which is
-// what keeps the public routes from reporting an authentication failure the way
-// they did after the port; the protected groups, which require authorization,
-// still turn a missing token into a 401.
-builder.Services.AddAuthentication(BearerTokenAuthenticationHandler.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, BearerTokenAuthenticationHandler>(
-        BearerTokenAuthenticationHandler.SchemeName,
-        _ => { });
-
-builder.Services.AddAuthorization();
-
 // The health route is read by a page deployed outside this service, so it is
 // answered under an allow-all policy: it carries nothing of the caller's, and a
 // fixed origin list would only break the next deployment of that page. Every
@@ -148,18 +124,10 @@ builder.Services.AddOpenApi(options =>
             Title = "MGO2 HTTP API",
             Version = "1.0.0",
             Description = "HTTP API for the Metal Gear Online 2 private server. " +
-                "Provides endpoints for player authentication, account management, " +
-                "lobby and game session coordination, news and flash news broadcasts, " +
-                "and server policy distribution.",
-        };
-
-        document.Components ??= new OpenApiComponents();
-        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
-        document.Components.SecuritySchemes["bearer"] = new OpenApiSecurityScheme
-        {
-            Type = SecuritySchemeType.Http,
-            Scheme = "bearer",
-            BearerFormat = "JWT",
+                "Provides the endpoints a game client needs: player authentication, " +
+                "account management, rankings, patch distribution and server policy. " +
+                "The dashboards and the moderator tooling read the same database from " +
+                "outside this service, so no administrative surface is published here.",
         };
 
         return Task.CompletedTask;
@@ -179,24 +147,22 @@ app.UseExceptionHandler(_ => { });
 app.UseMiddleware<LegacyPathNormalizer>();
 app.UseRouting();
 app.UseCors();
-app.UseAuthentication();
-app.UseAuthorization();
 
 app.MapOpenApi("/.well-known/openapi");
 app.MapOpenApi("/.well-known/openapi.json");
 
-// The API reference lives below the API itself, leaving the root free of a page
-// of its own.
-app.MapScalarApiReference("/api", reference =>
+// The API reference is the root of the service: the routes below it are all the
+// paths a game client calls, and none of them answers a bare GET, so the root is
+// free to carry the reference. The tags the reference used to be grouped by are
+// gone from the routes, so it lists them as one flat set.
+app.MapScalarApiReference("/", reference =>
 {
     reference
         .WithTitle("MGO2 HTTP API")
-        .WithOpenApiRoutePattern("/.well-known/openapi")
-        .ExpandAllTags();
+        .WithOpenApiRoutePattern("/.well-known/openapi");
 });
 
 app.MapPublicEndpoints();
-app.MapAuthenticatedEndpoints();
 app.MapGrpcService<LobbyCoordinationGrpcService>();
 
 // The API is where accounts are created, so it publishes the account total. The

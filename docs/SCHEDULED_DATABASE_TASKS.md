@@ -44,10 +44,8 @@ window, whatever the cleanup has not yet got round to *removing*.
 | Read | Kept only while | Where |
 | --- | --- | --- |
 | Gate lobby list (request `0x2005`, entries `0x2003`), player counts included | a gameplay lobby's `updated_at` is inside `LobbyStaleSeconds` (2 h) | `LobbyService.ReadLobbiesAsync`, `GetLobbiesAsync` |
-| HTTP `GET /lobbies` | the same window | `LobbyService.FindAllAsync` |
 | Lobby a dedicated host publishes its match in | the same window | `LobbyService.FindActiveGameLobbiesAsync` (`MatchService`) |
-| HTTP `GET /games` | `games.updated_at` is inside `GameStaleSeconds` (1 h) | `GameService.FindAllAsync` |
-| Room browser (request `0x4300`, entries `0x4302`), automatch lookups | the same window | `GameService.FindByLobbyAsync` |
+| Room browser (request `0x4300`, entries `0x4302`), automatch lookups | `games.updated_at` is inside `GameStaleSeconds` (60 s) | `GameService.FindByLobbyAsync` |
 | Friend, search and clan rosters (location block) | `character_presence.last_seen` is inside `CharacterPresenceService.StaleAfter` (1 min) | `CharacterPresenceService.FindLocationsAsync` |
 
 The gate and the account server are the exception in the other direction: they
@@ -70,7 +68,7 @@ this section runs nine times concurrently, once per lobby process.**
 | --- | --- | --- | --- |
 | `LobbyHeartbeatService` | `ServerOptions.LobbyHeartbeatIntervalSeconds` | 3600 s | `UPDATE lobbies SET updated_at` for this lobby, and nothing else. |
 | `LobbyCleanupService` | `DailyWorker.MidnightUtc` | 00:00 UTC | Reads the gameplay lobbies whose `updated_at` is older than `LobbyStaleSeconds` (7200 s), then `DELETE`s them. The rooms of a deleted lobby cascade away with it. |
-| `GameCleanupService` | `DailyWorker.MidnightUtc` | 00:00 UTC | In one transaction: credits `character_training_times` from the rosters of the rooms whose `updated_at` is older than `GameStaleSeconds` (3600 s), then `DELETE`s those `games`. Then, per lobby it emptied, a `SELECT count(*) FROM games` to republish that lobby's match total — a read, not a write, and only while a telemetry collector is listening. |
+| `GameCleanupService` | `DailyWorker.MidnightUtc` | 00:00 UTC | In one transaction: credits `character_training_times` from the rosters of the rooms whose `updated_at` is older than `GameStaleSeconds` (60 s), then `DELETE`s those `games`. Then, per lobby it emptied, a `SELECT count(*) FROM games` to republish that lobby's match total — a read, not a write, and only while a telemetry collector is listening. |
 | `CharacterPresenceTickerService` | `CharacterPresenceService.HeartbeatInterval` | 30 s | `UPDATE character_presence SET last_seen` for this lobby's connected characters; `INSERT`s any row that went missing. |
 | `CharacterPresenceCleanupService` | `DailyWorker.MidnightUtc` | 00:00 UTC | `DELETE`s every presence row whose `last_seen` is older than `StaleAfter` (60 s) **cluster-wide**. |
 | `AutomatchTickerService` | `AutomatchOptions.Tick` | 5 s | **None.** It drains an in-memory queue and pushes packets; the matchmaker holds no database rows. |
@@ -94,7 +92,7 @@ are not on an interval at all:
   container answers for itself and holds no player connection, so it is the slow
   one. The heartbeat does not back off, because a backoff longer than the interval
   would let the row it is keeping fall out of the window it is kept in.
-- **Rooms** leave the room list at `GameStaleSeconds`, an hour, because the beat
+- **Rooms** leave the room list at `GameStaleSeconds`, a minute, because the beat
   is the host's own ping report at half a minute and an hour of silence is a host
   that is gone. A room hosted by a dedicated server is stamped by
   `MatchService` every `MatchHeartbeatIntervalSeconds` — half the window, so its

@@ -170,13 +170,61 @@ public sealed class DiscordRestClientTests
         Assert.Equal(0, body.RootElement.GetProperty("type").GetInt32());
     }
 
+    [Fact]
+    public async Task ACommandThisBuildNoLongerDefinesIsRemoved()
+    {
+        var rest = new RecordingRestClient(
+            """
+            [
+              { "id": "900", "name": "fake-player" },
+              { "id": "901", "name": "fake-team" },
+              { "id": "902", "name": "flash" }
+            ]
+            """);
+
+        await rest.Client.RemoveUnknownCommandsAsync(CancellationToken.None);
+
+        // The two the event testing tools registered are gone from the code and
+        // have to go from the guild: an entry left behind still offers a
+        // moderator an interaction this build cannot serve.
+        var removed = rest.Requests
+            .Where(request => request.Method == "DELETE")
+            .Select(request => request.Path)
+            .ToList();
+
+        Assert.Equal(2, removed.Count);
+        Assert.Contains(removed, path => path.EndsWith("/900", StringComparison.Ordinal));
+        Assert.Contains(removed, path => path.EndsWith("/901", StringComparison.Ordinal));
+        Assert.All(removed, path => Assert.StartsWith(
+            $"/api/v10/applications/{Application}/guilds/10/commands",
+            path,
+            StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task NothingIsRemovedWhenEveryCommandIsStillDefined()
+    {
+        var rest = new RecordingRestClient(
+            """
+            [
+              { "id": "900", "name": "flash" },
+              { "id": "901", "name": "official-message" },
+              { "id": "902", "name": "event" }
+            ]
+            """);
+
+        await rest.Client.RemoveUnknownCommandsAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(rest.Requests, request => request.Method == "DELETE");
+    }
+
     private sealed record RecordedRequest(string Method, string Path, string Body);
 
     private sealed class RecordingRestClient
     {
-        public RecordingRestClient()
+        public RecordingRestClient(string commandList = "{}")
         {
-            var handler = new RecordingHandler();
+            var handler = new RecordingHandler(commandList);
             Client = new DiscordRestClientService(
                 new RecordingHttpClientFactory(handler),
                 Options.Create(new DiscordOptions
@@ -199,7 +247,7 @@ public sealed class DiscordRestClientTests
         public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 
-    private sealed class RecordingHandler : HttpMessageHandler
+    private sealed class RecordingHandler(string commandList = "{}") : HttpMessageHandler
     {
         public List<RecordedRequest> Requests { get; } = [];
 
@@ -213,9 +261,15 @@ public sealed class DiscordRestClientTests
 
             Requests.Add(new RecordedRequest(request.Method.Method, request.RequestUri!.PathAndQuery, body));
 
+            // The listing is the one call that answers with something other than
+            // an empty object; everything else only has to succeed.
+            var answered = request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath.EndsWith("/commands", StringComparison.Ordinal)
+                ? commandList
+                : "{}";
+
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+                Content = new StringContent(answered, Encoding.UTF8, "application/json"),
             };
         }
     }

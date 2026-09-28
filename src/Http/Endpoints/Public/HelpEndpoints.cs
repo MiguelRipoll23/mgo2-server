@@ -10,7 +10,6 @@ internal static class HelpEndpoints
     public static void MapHelpEndpoints(this RouteGroupBuilder group)
     {
         group.MapGet("/jp/mgo2/help/{*path}", GetHelpAsync)
-            .WithTags("Game")
             .WithSummary("Help file")
             .WithDescription("Returns a help/tip text file requested by the game client");
     }

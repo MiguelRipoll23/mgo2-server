@@ -15,6 +15,9 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
     /// <summary>Accounts.</summary>
     public DbSet<Account> Accounts => Set<Account>();
 
+    /// <summary>Staff roles granted to accounts.</summary>
+    public DbSet<AccountRole> AccountRoles => Set<AccountRole>();
+
     /// <summary>Characters.</summary>
     public DbSet<Character> Characters => Set<Character>();
 

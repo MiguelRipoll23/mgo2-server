@@ -21,6 +21,27 @@ public sealed class DiscordOptions
     /// <summary>Name of the command the moderators schedule events with.</summary>
     public const string ScheduleCommandName = "event";
 
+    /// <summary>
+    /// Every command this build defines. This is the whole vocabulary, and it is
+    /// what a command sitting in Discord under some other name is measured
+    /// against.
+    /// <para>
+    /// Registering a command is an upsert, so dropping one from the code stops
+    /// the bot from re-registering it and does nothing else: the entry Discord
+    /// already holds outlives the build that made it. A command removed from the
+    /// server would therefore keep answering in the guild, offering a moderator
+    /// an interaction this build can no longer serve. The names live here so the
+    /// set is stated once and the pruning that removes the rest can read it.
+    /// </para>
+    /// </summary>
+    public static IReadOnlySet<string> RegisteredCommandNames { get; } =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            FlashCommandName,
+            MessageCommandName,
+            ScheduleCommandName,
+        };
+
     /// <summary>Gateway the client connects to by default.</summary>
     public const string DefaultGatewayUrl = "wss://gateway.discord.gg/?v=10&encoding=json";
 

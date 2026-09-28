@@ -29,8 +29,8 @@ internal static class ColumnDefaultConfiguration
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
     {
-        ApplyDefault<Account>(modelBuilder, 0, nameof(Account.Role));
         ApplyDefault<Account>(modelBuilder, 3, nameof(Account.Slots));
+        ApplyNow<AccountRole>(modelBuilder, nameof(AccountRole.GrantedAt));
     }
 
     private static void ConfigureCharacters(ModelBuilder modelBuilder)

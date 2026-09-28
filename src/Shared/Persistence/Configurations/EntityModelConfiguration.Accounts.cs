@@ -27,5 +27,17 @@ internal static partial class EntityModelConfiguration
             // replaces it cannot race another login into a duplicate.
             entity.HasIndex(session => session.AccountIdentifier).IsUnique();
         });
+
+        modelBuilder.Entity<AccountRole>(entity =>
+        {
+            // The role is revoked by deleting the row, so a grant is removed by the
+            // same delete that removes its cascade on the account. A cascade the
+            // other way would take the roles with the account, which is the only
+            // direction that needs saying.
+            entity.HasOne(role => role.Account)
+                .WithMany(account => account.Roles)
+                .HasForeignKey(role => role.AccountIdentifier)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }

@@ -220,23 +220,6 @@ try {
     $appSettingsPath = Join-Path $PWD 'appsettings.json'
     $settingsText = [IO.File]::ReadAllText($appSettingsPath)
 
-    # The secret of the deployment replaces the JWT_SECRET placeholder on the
-    # first install, from a cryptographic random generator rather than the
-    # module one; an update run, whose secret already replaced it, leaves the
-    # file alone.
-    if ($settingsText.Contains('"JWT_SECRET": "REPLACE_ME"')) {
-        $secretBytes = [byte[]]::new(48)
-        $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
-        try {
-            $rng.GetBytes($secretBytes)
-        }
-        finally {
-            $rng.Dispose()
-        }
-        $settingsText = Set-SettingPlaceholder 'JWT_SECRET' ([Convert]::ToBase64String($secretBytes)) $settingsText
-        Write-Host 'Replaced the JWT_SECRET placeholder with a random secret. Review it before exposing the deployment.'
-    }
-
     # The address clients are told to connect to replaces its placeholder. An
     # operator who needs a fixed one sets ADVERTISED_ADDRESS in appsettings.json,
     # and the ADVERTISED_ADDRESS environment variable of the run answers without

@@ -7,8 +7,9 @@ namespace Mgo2Server.Http.Discord;
 
 /// <summary>
 /// Brings the REST side of the integration up once the API is running: it
-/// registers the slash commands, which Discord only takes over its REST API, and
-/// finds or creates the channel the player count is published in.
+/// registers the slash commands, which Discord only takes over its REST API,
+/// removes the ones this build no longer defines, and finds or creates the
+/// channel the player count is published in.
 /// </summary>
 /// <remarks>
 /// It runs in the background and reports every failure itself. Discord is
@@ -56,6 +57,10 @@ public sealed class DiscordStartupService(
             await restClient.RegisterFlashCommandAsync(cancellationToken);
             await restClient.RegisterMessageCommandAsync(cancellationToken);
             await restClient.RegisterEventScheduleCommandAsync(cancellationToken);
+
+            // After the registrations, so the set of names this build defines is
+            // complete before anything is measured against it.
+            await restClient.RemoveUnknownCommandsAsync(cancellationToken);
 
             if (!options.Value.IsPlayerCountConfigured)
             {

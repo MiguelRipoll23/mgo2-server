@@ -19,7 +19,6 @@ GameLobbyServer (one per lobby)                  Http (one)
                                                     │     └─ DiscordPlayerCountService
                                                     └─ FlashNewsDispatcherService
                                                        ▲
-                         POST /flash-news/broadcast ────┤
                          Discord /flash command ────────┘
 
       Discord ──(gateway events)──▶ DiscordCommandService
@@ -59,13 +58,13 @@ lobby, because a lobby that is not connected cannot have anybody in it.
 
 ### Flash news
 
-Both paths end in the same call — `FlashNewsDispatcherService.Dispatch` — so a
-flash reaches the lobbies exactly the same way whether it came from the API or
-from Discord:
+The Discord `/flash` command relays a server-message announcement to every
+connected lobby through `FlashNewsDispatcherService.Dispatch`.
 
-* `POST /flash-news/broadcast` and `POST /flash-news/emergency` (bearer token
-  required) relay a ticker announcement to every connected lobby.
-* The Discord `/flash` command relays a server-message announcement.
+There is no HTTP route for it. The API publishes no administrative surface at
+all — the only authenticated endpoint it ever had was the game login, and the
+dashboards and moderator tooling read the same database from outside this
+service — so a flash is a Discord command and nothing else.
 
 The payload of a ticker packet is the client protocol, so it is built where the
 protocol lives: the lobby rebuilds the announcement and writes it to its own
@@ -155,8 +154,17 @@ token.
 3. Set `DISCORD_MODERATOR_ROLE_ID` and `DISCORD_MANAGER_ROLE_ID` to the roles
    that may use the staff commands. Without them nobody may use them.
 4. Start the deployment. The API registers `/flash`, `/official-message` and
-   `/event` in the guild, connects the bot to the gateway and finds or creates
-   the channel of the player count.
+   `/event` in the guild, removes any command of this application that the build
+   no longer defines, connects the bot to the gateway and finds or creates the
+   channel of the player count.
+
+Registration is an upsert, so a command dropped from the code is simply never
+re-sent and the copy Discord already holds stays in the guild. The removal pass
+is what stops that: it lists this application's commands in the guild and deletes
+the ones not in `DiscordOptions.RegisteredCommandNames`. Both the list and the
+delete are scoped to the application, so it cannot touch a command of another bot
+in the same guild. Without it a command whose handler is gone keeps offering a
+moderator an interaction that answers nothing.
 
 `/flash` and `/official-message` take one required option — a `message` and a
 `body` respectively — and are registered per guild, so they are available
@@ -173,9 +181,9 @@ The bot has two ways to write a channel message:
   the channel it was used in, with the text of its `body` option. It is only run
   for the moderator and manager roles, and the message is never allowed to ping
   a role or everyone in the guild.
-* `POST /discord/messages` (bearer token required) with a `channelId`
-  and a `content` writes a message from the bot into that channel of the guild.
-  The message is never allowed to ping a role or everyone.
+* The dashboards write one from outside this service, by calling the Discord REST
+  API themselves with a bot token of their own. The bot token this service holds
+  is never published to them, so nothing here is reachable from outside.
 
 ### The player count channel
 

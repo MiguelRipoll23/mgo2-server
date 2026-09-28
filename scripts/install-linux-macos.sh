@@ -50,15 +50,13 @@ usage: scripts/install-linux-macos.sh [registry-prefix]
                    trailing slash, for example
                    ghcr.io/your-account/your-repository/
 
-  The script replaces the REPLACE_ME placeholders of appsettings.json: the
-  JWT_SECRET with a random secret and the ADVERTISED_ADDRESS with the private
-  address of this machine, which every server reads as an environment
-  variable. Setting ADVERTISED_ADDRESS to a fixed value answers for the
-  address, and an operator who skips the detection edits appsettings.json.
+  The script replaces the REPLACE_ME placeholder of appsettings.json: the
+  ADVERTISED_ADDRESS with the private address of this machine, which every
+  server reads as an environment variable. Setting ADVERTISED_ADDRESS to a
+  fixed value answers for the address, and an operator who skips the detection
+  edits appsettings.json.
 
-  The JWT_SECRET of the deployment is a random value on the first install, when
-  the placeholder is still there; an operator who set one keeps it. The servers
-  log at Warning and always send their metrics over OpenTelemetry
+  The servers log at Warning and always send their metrics over OpenTelemetry
   (OTEL_ENABLED=true, OTEL_PORT=4317), and editing appsettings.json is how
   anything else changes.
 
@@ -257,14 +255,6 @@ if [ ! -f appsettings.json ]; then
     cp appsettings.example.json appsettings.json
     chmod 600 appsettings.json
     echo "Created appsettings.json from appsettings.example.json."
-fi
-
-# The secret of the deployment replaces the JWT_SECRET placeholder on the first
-# install; an update run, whose secret already replaced it, leaves the file
-# alone.
-if grep -q '"JWT_SECRET": "REPLACE_ME"' appsettings.json 2>/dev/null; then
-    replace_setting_placeholder JWT_SECRET "$(openssl rand -base64 48)" appsettings.json
-    echo "Replaced the JWT_SECRET placeholder with a random secret. Review it before exposing the deployment."
 fi
 
 # The address clients are told to connect to replaces its placeholder. An

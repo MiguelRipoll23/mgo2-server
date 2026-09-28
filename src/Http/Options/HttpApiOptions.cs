@@ -10,8 +10,8 @@ public sealed class HttpApiOptions
     public string LauncherServer { get; set; } = "http://mgo2pc.com";
 
     /// <summary>
-    /// Directory holding the policy file, the mirrored patch files and the home
-    /// page. Resolved from the application base so it is found whether the API
+    /// Directory holding the policy file, the mirrored patch files and the help
+    /// texts. Resolved from the application base so it is found whether the API
     /// runs from a publish folder (Docker) or a build output (the run scripts).
     /// </summary>
     public string StaticDirectory { get; set; } = Path.Combine(AppContext.BaseDirectory, "Static");
@@ -27,9 +27,6 @@ public sealed class HttpApiOptions
 
     /// <summary>How long an upstream fetch may take before it is abandoned.</summary>
     public int UpstreamFetchTimeoutMilliseconds { get; set; } = 3000;
-
-    /// <summary>Secret the bearer tokens are validated with.</summary>
-    public string JwtSecret { get; set; } = string.Empty;
 
     /// <summary>Path of the policy document inside <see cref="StaticDirectory"/>.</summary>
     public string LocalPolicyPath => Path.Combine(StaticDirectory, LocalPolicyFileName);

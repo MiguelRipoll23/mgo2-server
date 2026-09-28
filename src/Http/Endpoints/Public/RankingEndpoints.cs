@@ -16,13 +16,11 @@ internal static class RankingEndpoints
     {
         group.MapPost("/jp/mgo2/rank/mgogetrank.html", GetPlayerRankingAsync)
             .DisableAntiforgery()
-            .WithTags("Game")
             .WithSummary("Player rankings")
             .WithDescription("Window of a player board, as the Rankings screens read it");
 
         group.MapPost("/jp/mgo2/rank/mgogetrank_clan.html", GetClanRankingAsync)
             .DisableAntiforgery()
-            .WithTags("Game")
             .WithSummary("Clan rankings")
             .WithDescription("Window of a clan board, as the clan Rankings screen reads it");
     }

@@ -23,10 +23,6 @@ public sealed class Account
     [MaxLength(255)]
     public required string Password { get; set; }
 
-    /// <summary>Role of the account: zero for players, higher values for administrators.</summary>
-    [Column("role")]
-    public int Role { get; set; }
-
     /// <summary>Timestamp until which the account is banned, or <c>null</c> when it is not banned.</summary>
     [Column("banned_until")]
     public DateTimeOffset? BannedUntil { get; set; }
@@ -58,4 +54,7 @@ public sealed class Account
 
     /// <summary>Characters owned by the account.</summary>
     public ICollection<Character> Characters { get; set; } = [];
+
+    /// <summary>Staff roles the account holds, which is empty for a player.</summary>
+    public ICollection<AccountRole> Roles { get; set; } = [];
 }
