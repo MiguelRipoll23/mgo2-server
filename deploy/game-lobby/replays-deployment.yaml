@@ -48,7 +48,7 @@ spec:
         - name: LOBBY_NO_HEADSHOT
           value: 'false'
         - name: LOBBY_REPLAYS_ONLY
-          value: 'false'
+          value: 'true'
         image: ghcr.io/miguelripoll23/mgo2-server/mgo2-game-lobby-server:latest
         imagePullPolicy: Always
         lifecycle:
