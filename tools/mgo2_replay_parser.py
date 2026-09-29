@@ -4,11 +4,20 @@
 Replays come from a SaveMGO-compatible site via
 `mgo2pc.com/api/v1/download-replay/<survivalmatch-id>`; the archive holds one
 file named `replay_<game_id>_<replay_id>.dat`. The endpoint needs no
-credentials. Survival-match ids 67030, 67032, 67034, 67040 and 67033 were read
-from it; 67033 is the file checked in here and the other four are what the
-cross-matches in docs/protocol/UDP_P2P_PROTOCOL.md sections 6.4 and 6.7 rest
-on. They are fetched on demand rather than committed, at roughly 0.5-13 MB
-each. Everything below was derived from direct
+credentials. Five of them are checked in beside this script, covering five
+matches on four maps — the cross-matches in docs/protocol/UDP_P2P_PROTOCOL.md
+sections 6.4 and 6.7 rest on all five and neither is reproducible from one:
+
+    survivalmatch id   file                  map
+    67030              replay_360824_6.dat   10
+    67032              replay_360821_7.dat   10
+    67034              replay_360825_7.dat    4
+    67033              replay_360827_5.dat   17   (the original sample)
+    67040              replay_360828_5.dat    7
+
+Only the `.dat` is kept, not the archive it arrived in: the endpoint refetches
+that in one command and it is the `.dat` the analysis reads. Fetch the rest of
+the archive with `curl -o sm-<id>.zip <endpoint>/<id>` and `unzip` it. Everything below was derived from direct
 byte analysis (cross-checked against the site's match API and the world f32
 coordinates inside the file).
 
