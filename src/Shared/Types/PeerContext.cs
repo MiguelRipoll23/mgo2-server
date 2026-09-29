@@ -14,9 +14,15 @@ namespace Mgo2Server.Shared.Types;
 /// counter. Frames are keyed with the pre-handshake key or with the session
 /// key according to <see cref="PeerSession.Established"/>.
 /// </param>
+/// <param name="Broadcast">
+/// Writes a message to every other peer in the room, each through its own
+/// session and counter. The peer this message came from is not included: a
+/// handler that has to answer it as well uses <paramref name="Send"/> for that.
+/// </param>
 public sealed record PeerContext(
     PeerSession Session,
     UdpMessage Message,
     IPEndPoint Remote,
     int LocalPort,
-    Func<ushort, byte[], Task> Send);
+    Func<ushort, byte[], Task> Send,
+    Func<ushort, byte[], Task> Broadcast);

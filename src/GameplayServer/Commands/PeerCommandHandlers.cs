@@ -76,7 +76,8 @@ public sealed class AcknowledgeKeepAliveHandler : IPeerCommandHandler
 /// Handles a player-profile record. The joiner sends its own profile once the
 /// session is keyed and then re-sends it, byte for byte, until the host answers;
 /// this handler answers with the whole room roster, the host's own entry first
-/// and every joining player after it in slot order.
+/// and every joining player after it in slot order, and tells the peers already
+/// in the room that the roster grew.
 /// </summary>
 /// <param name="roster">Roster of the room this host is playing.</param>
 /// <param name="logger">Logger of this handler.</param>
@@ -105,6 +106,16 @@ public sealed class PlayerProfileHandler(
         foreach (var record in roster.BuildRecords())
         {
             await context.Send(UdpCommandConstants.PlayerProfile, record);
+        }
+
+        // The peers already in the room are told as well. A player who is only
+        // announced to the peer that just joined is never announced to the ones
+        // that were there first, and they would go on playing without knowing
+        // the room has grown. The roster is small enough to send whole, which is
+        // also what the recorded host wrote: one flat roster, not a delta.
+        foreach (var record in roster.BuildRecords())
+        {
+            await context.Broadcast(UdpCommandConstants.PlayerProfile, record);
         }
     }
 }

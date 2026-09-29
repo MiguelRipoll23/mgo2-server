@@ -692,10 +692,33 @@ that run; `PlayerProfileHandler` answers every inbound profile with it. Slots
 are keyed by remote endpoint, so a client that re-sends its profile keeps the
 slot it was first given instead of walking along the roster on each retry.
 
-**[U]** The host does not currently re-broadcast the roster to the peers that
-are already in the room, so a player who joins second is not announced to the
-first. The recorded match shows one flat roster rather than per-join deltas, so
-the shape of that update is not yet read off the wire.
+The same run also goes to the peers **already** in the room (`PeerContext.Broadcast`).
+A player announced only to the peer that just joined is never announced to the
+ones that were there first, and they would carry on playing without knowing the
+room has grown. The recorded match is one flat roster rather than per-join
+deltas, so the whole roster is what is sent.
+
+### 6.6 The block ahead of the roster — the match description [U]
+
+The host's opening block in the recorded stream does not start at the roster.
+It runs from file offset `0x0c` to `0x52`, 66 bytes ahead of it, and holds:
+
+- `0x0c` a size word, `58`;
+- `0x10` four bytes, `76 84 01 00`;
+- `0x14` a record of type `0x0102`, length `0x10`, flags `0x39`, whose body is
+  `00 07 32 00 00 00 00 00 00 8f a0 00 00 01 02 00` — everything after the
+  first seven of those bytes is zero;
+- zeros to `0x99`, then the host's own `(0x03, name, NUL, clan)` triple, which
+  the host's roster record repeats immediately afterwards.
+
+**[U] Nothing here is decoded, and nothing is implemented.** One recorded match
+is the only sample; the type `0x0102` appears nowhere else in the 8.4 MB file
+and in neither live capture, so there is nothing to cross-check the sixteen
+bytes against. The map is Desert Duel — byte `0x07` of the file is `0x11`, and
+`0x8fa0` in the body is the only other value that is not a version or a roster
+base — but which of those sixteen bytes carries it is not established. Writing
+sixty-six bytes of guesswork onto the wire is worse than leaving the block out,
+so the host sends the roster alone until the block is read properly.
 
 ---
 

@@ -302,9 +302,34 @@ public sealed partial class GameplayServerService
             {
                 SendMessage(session, type, body, remote);
                 return Task.CompletedTask;
+            },
+            (type, body) =>
+            {
+                SendToOthers(session, type, body);
+                return Task.CompletedTask;
             });
 
         await handler.HandleAsync(context);
+    }
+
+    /// <summary>
+    /// Writes a message to every established peer except the one it came from.
+    /// Peers are skipped rather than removed: a peer that has not finished its
+    /// handshake is not in the room yet, and the session is dropped when it goes
+    /// quiet.
+    /// </summary>
+    /// <param name="origin">Session the message came from, which is left out.</param>
+    /// <param name="messageType">Type of the message.</param>
+    /// <param name="body">Body of the message.</param>
+    private void SendToOthers(PeerSession origin, ushort messageType, byte[] body)
+    {
+        foreach (var session in sessions.Snapshot())
+        {
+            if (session.Established && !ReferenceEquals(session, origin))
+            {
+                SendMessage(session, messageType, body, session.DialBack);
+            }
+        }
     }
 
     /// <summary>Writes a message to a peer through the session's shared counter.</summary>
