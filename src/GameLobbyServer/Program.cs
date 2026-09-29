@@ -26,6 +26,10 @@ builder.Services.AddCommandHandlers();
 builder.Services.AddSingleton<ExternalJoinHintService>();
 builder.Services.AddSingleton<SurvivalTestService>();
 
+// The other half of the self-test: a run's expectation of an opponent is held
+// here, and the connection that freezes its team is what consumes it.
+builder.Services.AddSingleton<SurvivalTestOpponentService>();
+
 // The coordination stream of this lobby. It both reports the presence of this
 // lobby to the HTTP API and receives the flash news the API relays, and it is
 // the publisher the lobby tracker reports a player through. Replacing rather

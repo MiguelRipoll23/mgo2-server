@@ -1,3 +1,4 @@
+using Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Interfaces;
@@ -97,12 +98,20 @@ public sealed class LeaveEventTeamHandler(
             cancellationToken);
 }
 
-/// <summary>Records one member's entry decision and pushes it to the team.</summary>
+/// <summary>
+/// Records one member's entry decision and pushes it to the team.
+/// <para>
+/// The decision is also the state change that puts a team into the field, so it
+/// is where a scripted self-test run is completed: the moment the team is waiting
+/// is the moment the simulated opponent it expects is formed.
+/// </para>
+/// </summary>
 public sealed class SetEventEntryDecisionHandler(
     EventTeamService teamService,
     EventTeamMemberService memberService,
     EventTeamPushService pushService,
     EventMatchmakingService matchmakingService,
+    SurvivalTestOpponentService survivalTestOpponent,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <inheritdoc />
@@ -171,6 +180,11 @@ public sealed class SetEventEntryDecisionHandler(
         // The decision is what makes a team eligible, so it is also the moment
         // the queue is reconciled.
         await matchmakingService.ReconcileAsync(teamIdentifier, cancellationToken);
+
+        // A team the self-test padded is waiting now rather than joinable, which
+        // is the moment its simulated opponent is formed. For every other team
+        // the call is inert: only a team a run armed and froze is served.
+        await survivalTestOpponent.RunAsync(session, teamIdentifier, cancellationToken);
     }
 
     private Task RefuseAsync(TcpSession session, CancellationToken cancellationToken) =>
