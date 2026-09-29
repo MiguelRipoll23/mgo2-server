@@ -38,6 +38,13 @@ public sealed class PlayerProfileRecordTests
         "074b00003c10001051c2000000000000020002000000000000000000000000211c00000000000000000000000000000000000000000000000000000000000000000000034d616c656e610047756e73686970",
     ];
 
+    /// <summary>
+    /// The eight columns of the per-player block that differ between the
+    /// recorded records. Every other column of the block is the same byte in all
+    /// twelve, so the builder is expected to reproduce those.
+    /// </summary>
+    private static readonly HashSet<int> PerPlayerColumns = [0x10, 0x1f, 0x20, 0x23, 0x2d, 0x2e, 0x37, 0x39];
+
     [Fact]
     public void Parse_reads_the_name_and_clan_of_every_recorded_record()
     {
@@ -145,23 +152,32 @@ public sealed class PlayerProfileRecordTests
                 name: record.Name,
                 clanName: record.ClanName);
 
-            // The builder covers the header and the two names. The records also
-            // carry a per-player block between them (offsets 0x10..0x42) whose
-            // meaning is unresolved, so those bytes are not claimed to match;
-            // they are compared separately below.
+            // The builder covers everything but the eight columns of the
+            // per-player block that differ between players. Those are compared
+            // separately below, because nothing decoded what the host puts in
+            // them yet.
             Assert.Equal(recorded.Length, rebuilt.Length);
-            Assert.Equal(recorded[..0x10], rebuilt[..0x10]);
+            foreach (var offset in Enumerable.Range(0, rebuilt.Length))
+            {
+                if (PerPlayerColumns.Contains(offset))
+                {
+                    continue;
+                }
+
+                Assert.Equal(recorded[offset], rebuilt[offset]);
+            }
             Assert.Equal(recorded[PlayerProfileRecordUtility.NameMarkerOffset..],
                 rebuilt[PlayerProfileRecordUtility.NameMarkerOffset..]);
         }
     }
 
     [Fact]
-    public void Build_leaves_the_unresolved_per_player_block_zeroed()
+    public void Build_leaves_the_per_player_columns_it_cannot_still_supply_at_zero()
     {
-        // Offsets 0x0b..0x42 hold a per-player block the host fills from its
-        // own state. Nothing decoded it yet, so the builder writes zeros and
-        // this test states that, rather than letting the gap pass unnoticed.
+        // Eight columns of the block carry a per-player value the host fills
+        // from its own state, and nothing decoded them yet. The builder writes
+        // zeros there and this test states that, rather than letting the gap
+        // pass unnoticed.
         var body = PlayerProfileRecordUtility.Build(
             characterIdentifier: 1,
             rosterIndex: 0,
@@ -170,7 +186,74 @@ public sealed class PlayerProfileRecordTests
             name: "host",
             clanName: "clan");
 
-        Assert.All(body[0x0b..PlayerProfileRecordUtility.NameMarkerOffset], value => Assert.Equal(0, value));
+        foreach (var offset in new[] { 0x10, 0x1f, 0x20, 0x23, 0x2d, 0x2e, 0x37, 0x39 })
+        {
+            Assert.Equal(0, body[offset]);
+        }
+    }
+
+    [Fact]
+    public void Every_recorded_record_agrees_on_every_column_they_do_not_disagree_on()
+    {
+        // Offsets 0x0b..0x42 are not one opaque block. Across all twelve
+        // recorded records only eight columns carry anything per player, and
+        // every other column is the same byte in all twelve. Of those, one is
+        // not zero — 0x02 at 0x12 — and the builder writes that one; the rest
+        // are zero, which is what the builder writes too. This is what makes
+        // writing zeros across the block right rather than merely a
+        // placeholder, and a record that starts filling those columns fails
+        // here.
+        var varying = PerPlayerColumns;
+        var bodies = RecordedBodies.Append(RecordedHostBody).Select(Convert.FromHexString).ToArray();
+
+        for (var offset = 0x0b; offset < PlayerProfileRecordUtility.NameMarkerOffset; offset++)
+        {
+            if (varying.Contains(offset))
+            {
+                continue;
+            }
+
+            var values = bodies.Select(body => body[offset]).Distinct().ToArray();
+            Assert.Single(values);
+        }
+    }
+
+    [Fact]
+    public void Build_writes_the_one_constant_the_recorded_records_agree_is_not_zero()
+    {
+        var body = PlayerProfileRecordUtility.Build(
+            characterIdentifier: 1,
+            rosterIndex: 0,
+            perPlayerValue: 0,
+            teamFlag: 0,
+            name: "host",
+            clanName: "clan");
+
+        // The other forty-seven columns outside the eight that vary per player
+        // are zero in every recorded record, and zero is what the builder writes.
+        Assert.All(
+            body[0x0b..PlayerProfileRecordUtility.NameMarkerOffset].Where((_, index) => index + 0x0b != 0x12),
+            value => Assert.Equal(0, value));
+    }
+
+    [Fact]
+    public void The_columns_that_carry_a_player_value_are_the_ones_the_records_disagree_on()
+    {
+        // The counterpart of the test above: the eight columns left out of it
+        // are exactly the ones the twelve records disagree on, so the two
+        // together account for the whole block and nothing is left unexplained.
+        var bodies = RecordedBodies.Append(RecordedHostBody).Select(Convert.FromHexString).ToArray();
+        var varying = new List<int>();
+
+        for (var offset = 0x0b; offset < PlayerProfileRecordUtility.NameMarkerOffset; offset++)
+        {
+            if (bodies.Select(body => body[offset]).Distinct().Count() > 1)
+            {
+                varying.Add(offset);
+            }
+        }
+
+        Assert.Equal([0x10, 0x1f, 0x20, 0x23, 0x2d, 0x2e, 0x37, 0x39], varying);
     }
 
     [Fact]

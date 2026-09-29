@@ -25,10 +25,10 @@ namespace Mgo2Server.Shared.Utils;
 /// [0x05] u8   roster index
 /// [0x06] u8   zero
 /// [0x07] u8   roster index, repeated
-/// [0x08] u16  per-player value that varies across the roster
-/// [0x0a] u8   team flag
-/// [0x0b..0x43] zero
-/// [0x43] u8   constant 0x03
+/// [0x08] u16  per-player value that varies across the roster/// [0x0a] u8        team flag
+/// [0x0b..0x42]     per-player block; 0x02 at 0x12, zero elsewhere but for
+///                  eight columns that differ per player
+/// [0x43] u8        0x03 when a clan name follows, 0x00 when none does
 /// [0x44] char[]  NUL-terminated account name
 ///          char[]  clan name, running to the end of the record
 /// </code>
@@ -85,6 +85,18 @@ public static class PlayerProfileRecordUtility
     /// whether a clan name follows rather than being a constant.
     /// </summary>
     private const byte ClanNameMarker = 0x03;
+
+    /// <summary>
+    /// The one byte of the per-player block that is not zero in every recorded
+    /// record. Across the twelve records of the recorded match this is the only
+    /// constant in the block that is not zero; the other seven columns that
+    /// carry anything vary per player, and the remaining forty-eight are zero
+    /// throughout.
+    /// </summary>
+    private const byte BlockConstant = 0x02;
+
+    /// <summary>Offset of <see cref="BlockConstant"/> within the record body.</summary>
+    private const int BlockConstantOffset = 0x12;
 
     /// <summary>Offset of the constant name marker.</summary>
     public const int NameMarkerOffset = 0x43;
@@ -143,6 +155,7 @@ public static class PlayerProfileRecordUtility
         body[7] = (byte)(PlayerNumberBase + rosterIndex);
         BinaryUtility.WriteUInt16LittleEndian(body, 8, perPlayerValue);
         body[10] = teamFlag;
+        body[BlockConstantOffset] = BlockConstant;
         body[NameMarkerOffset] = clanBytes.Length > 0 ? ClanNameMarker : (byte)0x00;
         nameBytes.CopyTo(body, NameOffset);
         body[NameOffset + nameBytes.Length] = 0x00;

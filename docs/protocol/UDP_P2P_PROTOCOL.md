@@ -636,7 +636,7 @@ Body, little-endian:
 [0x07] u8        6 + roster index, repeated
 [0x08] u16       per-player value, differs for every player in the roster
 [0x0a] u8        team flag
-[0x0b..0x42]     per-player block, not zero in the recorded records
+[0x0b..0x42]     per-player block; see below
 [0x43] u8        0x03 when a clan name follows, 0x00 when none does
 [0x44] char[]    NUL-terminated account name
          char[]   clan name, running to the end of the record
@@ -664,11 +664,26 @@ different leading byte: the live capture in
 with one. **[V]**
 
 **[U] Unresolved:** the per-player block at `0x0b..0x42` and the value at
-`0x08`. The recorded records populate both, and the value at `0x08` differs for
-every player, so neither is a constant. The builder writes zeros for the block
-and `0` for the value, and
-`tests/Mgo2Server.Tests/PlayerProfileRecordTests.cs` asserts that it does, so
-the gap is stated rather than hidden.
+`0x08`. Neither is opaque, though. Column by column over the twelve recorded
+records:
+
+- **Eight columns differ per player** — `0x10`, `0x1f`, `0x20`, `0x23`, `0x2d`,
+  `0x2e`, `0x37`, `0x39`. What the host puts in them is unresolved, so the
+  builder writes zeros and a test says so. **[V]**
+- **One column is constant and not zero** — `0x12` reads `0x02` in all twelve.
+  The builder writes it. **[V]**
+- **The other forty-seven are zero in all twelve.** The builder writes zeros,
+  which is therefore correct rather than a placeholder. **[V]**
+
+So the builder reproduces every byte of all twelve recorded records apart from
+those eight columns, and
+`tests/Mgo2Server.Tests/PlayerProfileRecordTests.cs` asserts exactly that. The
+value at `0x08` differs for every player and stays unresolved; the builder
+writes `0`.
+
+The columns at `0x1f`/`0x20` read as a per-player score — `0x1c21` for the host
+down to `0x00ae` for the player who left early — but nothing cross-checks that
+against the match result, so it is not claimed. **[I]**
 
 Implemented in `src/Shared/Utils/PlayerProfileRecordUtility.cs`
 (`Build`/`Parse`).
@@ -698,7 +713,58 @@ ones that were there first, and they would carry on playing without knowing the
 room has grown. The recorded match is one flat roster rather than per-join
 deltas, so the whole roster is what is sent.
 
-### 6.6 The block ahead of the roster — the match description [U]
+### 6.6 The rest of the opening burst, after the roster [V] / [U]
+
+The host's opening burst in the recorded match runs `0x0c`..`0x13ed`; the tick
+stream starts at `0x13ed`. Between the roster and the ticks there are two more
+runs of `0x1001` records, and neither is decoded. What is established is where
+they start, how many there are and what they look like. **[V]**
+
+- **`0x480`** — one seven-byte record, body `07 00 00 00 00 00 03`, closing
+  the roster run. **[V]**
+- **`0x48b`** — a six-byte marker `<u32> <u16>`, `5b 00 00 00 78 00`. Fourteen
+  more of these follow at `0x509`, `0x5c3`, `0x605`, `0x647`, `0x689`, `0x707`,
+  `0x839`, `0x8b7`, `0x8f9`, `0x93b`, `0x97d`, `0x9bf`, `0xa01`, and `0xa7f`
+  (nine bytes there). **[V]**
+- **`0x491`..`0xa7f`** — **forty-eight** records of twenty-six bytes, in runs of
+  4, 6, 2, 2, 2, 4, 10, 4, 2, 2, 2, 2, 2, 4 between the markers. Only **two**
+  distinct bodies occur, alternating:
+
+  ```
+  85 12 fe ff ff ff ff 00 01 00 00 01 01 01 01 01 00 00 00 ff ff ff ff ff ff ff 01
+  86 12 7f 7f 7f 7f 7f 07 07 07 07 07 07 07 07 07 07 07 07 7f 7f 7f 7f 7f 7f ff
+  ```
+
+  and one variant of the first that differs only in its last byte. The `fe`/`7f`
+  and `ff`/`07` runs read as a default-constructed object — a bitfield of ones
+  between sentinels — so these are most likely initial spawn state for players
+  who have not spawned. **[I]** They are **not** implemented: sending twenty-six
+  bytes of guessed structure would be worse than sending none.
+- **`0xa88`..`0xe5e`** — sixteen records whose bodies all begin `0b <id>`, with
+  `id` running `0, 1, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 24, 24` and
+  lengths 161, 50, 54, 54, 57, 57, 55, 56, 55, 56, 56, 55, 55, 55, 25, 25. The
+  161-byte one lists many items, the 25-byte ones almost nothing, which reads as
+  a per-thing loadout rather than per-player — the ids are not the twelve roster
+  slots. **[I]** Not implemented, for the same reason.
+- **`0xe5e`..`0x113a`** — not walked.
+
+**A cross-sample constant.** The six bytes `45 2f 57 39 67 68` ("E/W9gh") sit
+inside the body of the join request a real client sent
+(`docs/protocol/UDP_SERVER_LOG.txt`, offset `0x11`) and occur **once** in the
+whole 8.4 MB replay, at `0xb4d` — inside the `0b 01` record, at body offset
+`0x1b`. The replay record is the live request's body prefixed by `0b 01`, byte
+for byte after that. So this run is a fixed template section, not per-player
+data, and the two record kinds are the same payload with and without a
+`0b <id>` prefix. **[V]**
+
+**The tick stream is confirmed.** The framing the replay parser documents —
+`{id u16 LE, len u8, class u8, data}`, `len` = data + 1, and
+`id & 0xFF` = `0x75 + 10 * slot + OFF[class]` — walks ten consecutive records
+from `0x140b` with every one landing exactly on the next boundary, and the
+first ten give slots 0 then 1 with `OFF` matching for classes 01, 02, 04, 05 and
+06. **[V]**
+
+### 6.7 The block ahead of the roster — the match description [U]
 
 The host's opening block in the recorded stream does not start at the roster.
 It runs from file offset `0x0c` to `0x52`, 66 bytes ahead of it, and holds:

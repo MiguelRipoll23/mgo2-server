@@ -19,11 +19,20 @@ LAYOUT
 ------
     [0x00..0x08)  "RPDT" magic + version bytes
     [0x07]        map id (17 = Desert Duel, 4 = Gronznyj Grad, ...)
-    [0x0c]        size of the first record (which starts at 0x50)
-    [0x50]        first record: {ctr u16, type u16 (=0x1001), len u8, flags u8}
-                  + body carrying the first character's id at body+8 (u16 LE)
-    [0x8a]        12 player records (16-byte prefix, NUL-terminated name,
-                  non-terminated clan name, 56-byte tail)
+    [0x0c..0x52)  the opening block: a size word, a 4-byte value, one 16-byte
+                  record of type 0x0102, zeros, then the host's own
+                  (0x03, name, NUL, clan) triple. Undecoded; everything but
+                  that one record is zero, so no framing of it is
+                  distinguishable from this file alone.
+    [0x52..0x484)  the roster: 12 records back to back, no prefix, each
+                  {type u16 = 0x1001, len u8, flags u8} + a body carrying one
+                  player's own profile (NUL-terminated name, then a
+                  non-terminated clan name). The first is the host itself at
+                  roster index -1; the rest are the joining players at 0..10.
+    [0x480]       one 7-byte record closing the roster: body 07 00 00 00 00 00 03
+    [0x491..0xa7f) 48 twenty-six-byte records in runs separated by 6-byte
+                  <u32> <u16> markers; only two distinct bodies occur.
+    [0xa88..0xe5e) 16 records whose bodies begin `0b <id>`; not decoded.
     [0x13ed..]    the recorded data-phase stream, organised in TICKS:
 
         tick header (30 bytes): `61 02 10 00 ff <12 per-player counters>
