@@ -42,7 +42,7 @@ spec:
         - name: LOBBY_PORT
           value: '5737'
         - name: LOBBY_BEGINNER_ONLY
-          value: 'true'
+          value: 'false'
         - name: LOBBY_EXPANSION_ONLY
           value: 'false'
         - name: LOBBY_NO_HEADSHOT

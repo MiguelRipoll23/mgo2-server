@@ -178,7 +178,7 @@ services:
       LOBBY_NAME: Basic Training
       LOBBY_SUBTYPE: BASIC TRAINING
       LOBBY_PORT: "5737"
-      LOBBY_BEGINNER_ONLY: "true"
+      LOBBY_BEGINNER_ONLY: "false"
       LOBBY_EXPANSION_ONLY: "false"
       LOBBY_NO_HEADSHOT: "false"
       LOBBY_REPLAYS_ONLY: "false"
