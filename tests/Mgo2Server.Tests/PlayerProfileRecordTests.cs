@@ -12,6 +12,14 @@ namespace Mgo2Server.Tests;
 public sealed class PlayerProfileRecordTests
 {
     /// <summary>
+    /// The host's own record, the one at file offset 0x52. It is the only
+    /// record in the roster written before the roster itself, and the only one
+    /// whose roster index is below zero.
+    /// </summary>
+    private const string RecordedHostBody =
+        "074d00003105000528be000000000000010002000000000000000000000000211c00000000000000000000000000000000000000000000000000000000000000000000034465616473686f740047756e73686970";
+
+    /// <summary>
     /// The ten full-length records the host recorded, in roster order. Each is
     /// the profile of the player whose record follows it in the file.
     /// </summary>
@@ -73,11 +81,46 @@ public sealed class PlayerProfileRecordTests
             // field at offset 5 is the same index biased by 6. Both tie the
             // record to its position in the room.
             Assert.Equal((byte)(0x32 + index), record.RosterBaseField);
-            Assert.Equal((byte)index, record.RosterIndex);
+            Assert.Equal((sbyte)index, record.RosterIndex);
             // The field at offset 5 carries the same index under a different
             // base, so it recovers to the same value.
-            Assert.Equal((byte)index, record.PlayerNumber);
+            Assert.Equal((sbyte)index, record.PlayerNumber);
         }
+    }
+
+    [Fact]
+    public void Parse_places_the_host_below_the_first_joining_player()
+    {
+        // The host is not a joining player, so its slot sits below the first one:
+        // the recorded host record carries 0x31 and 0x05 where the first joining
+        // player's record carries 0x32 and 0x06. Reading the index as unsigned
+        // would wrap it to 255 and put the host at the end of the room instead.
+        var record = PlayerProfileRecordUtility.Parse(Convert.FromHexString(RecordedHostBody));
+
+        Assert.NotNull(record);
+        Assert.Equal(PlayerProfileRecordUtility.HostRosterIndex, record.RosterIndex);
+        Assert.Equal(0x31, record.RosterBaseField);
+        Assert.Equal(PlayerProfileRecordUtility.HostRosterIndex, record.PlayerNumber);
+        Assert.Equal("Deadshot", record.Name);
+        Assert.Equal("Gunship", record.ClanName);
+    }
+
+    [Fact]
+    public void Build_places_the_host_below_the_first_joining_player()
+    {
+        var body = PlayerProfileRecordUtility.Build(
+            characterIdentifier: 0x4d,
+            rosterIndex: PlayerProfileRecordUtility.HostRosterIndex,
+            perPlayerValue: 0xbe28,
+            teamFlag: 0,
+            name: "Deadshot",
+            clanName: "Gunship");
+
+        var recorded = Convert.FromHexString(RecordedHostBody);
+        Assert.Equal(recorded[..0x10], body[..0x10]);
+        Assert.Equal(
+            recorded[PlayerProfileRecordUtility.NameMarkerOffset..],
+            body[PlayerProfileRecordUtility.NameMarkerOffset..]);
     }
 
     [Fact]

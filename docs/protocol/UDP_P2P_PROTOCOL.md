@@ -611,16 +611,18 @@ mgo2-server implements this in `DedicatedHostService.ackInbound()`
 established, the joiner streaming K-keyed frames — and the LZSS layer is now
 decoded (§7): the repeated compressed frame carries the joiner's `0x1001`
 player-profile record (§6.2). **Resolved (2026-09-10): the ACK wire format**
-(§6.3) — ack it, then answer with the host's own record so the room/host
-exchange proceeds.
+(§6.3). **Resolved (2026-09-29): what the host has to answer with** (§6.5) —
+the room roster, host entry at index -1 and the joining players after it, not a
+single record.
 
 ### 6.4 The `0x1001` player-profile record — layout [V]
 
-The host's own profile record, read off the records a real host wrote into a
-recorded survival match (`tools/replays/replay_360827_5.dat`). Eleven records
-were recovered from the roster block; the ten full-length ones parse to exactly
-their declared length under the layout below, which is what pins the offsets —
-a field one byte out shifts the name and the arithmetic stops adding up. **[V]**
+The profile record, read off the records a real host wrote into a recorded
+survival match (`tools/replays/replay_360827_5.dat`). Twelve records were
+recovered from the roster block at file offsets `0x52`..`0x484`; they sit
+back to back, each carrying its own player's name, and parse to exactly their
+declared length under the layout below — which is what pins the offsets: a
+field one byte out shifts the name and the arithmetic stops adding up. **[V]**
 
 Body, little-endian:
 
@@ -642,13 +644,24 @@ Body, little-endian:
 
 Three things are worth stating because they are easy to get wrong:
 
-- **The record at roster block *i* describes player *i+1*.** The name inside a
-  record is the *next* player's, not the block's own. The first block's record
-  is written before the roster, at `0x50`. **[V]**
+- **The host is not on the same count as the players.** Its own record is the
+  first of the twelve, at `0x52`, and it is the only one whose index is
+  negative: the field at offset 4 reads `0x31` and the field at offset 5 reads
+  `0x05`, where the first joining player's record reads `0x32` and `0x06`. The
+  host is not a joining player, so it sits at roster index **-1** and the
+  joining players fill 0, 1, 2 and so on in the order they arrive. Reading the
+  index as unsigned wraps the host to 255 and files it at the end of the room
+  instead of the start. **[V]**
 - **Offsets 4 and 5 share an index but not a base** (`0x32 + i` against
   `6 + i`), so neither can be read off the other. **[V]**
 - **The name is NUL-terminated; the clan name is not**, because the record ends
   there. Every record ends exactly on the last clan byte. **[V]**
+
+The record a joining client opens the exchange with has the same shape but a
+different leading byte: the live capture in
+`docs/protocol/UDP_SERVER_LOG.txt` carries `0x02` where a roster record carries
+`0x07`. It is a request to join, not a roster entry, so the host never answers
+with one. **[V]**
 
 **[U] Unresolved:** the per-player block at `0x0b..0x42` and the value at
 `0x08`. The recorded records populate both, and the value at `0x08` differs for
@@ -658,8 +671,31 @@ and `0` for the value, and
 the gap is stated rather than hidden.
 
 Implemented in `src/Shared/Utils/PlayerProfileRecordUtility.cs`
-(`Build`/`Parse`), and the host answers a joiner's profile with its own in
-`PlayerProfileHandler`.
+(`Build`/`Parse`).
+
+### 6.5 What the host sends to continue the join — the roster [V]
+
+The joiner does not go quiet once the host answers once. The live capture shows
+it re-sending the *same* `0x1001` body, byte for byte, on a fresh frame counter
+every round, indefinitely: it is waiting for the room, not for an
+acknowledgement. The acknowledgement is already in place (§6.3), so what is
+missing is the roster. **[V]**
+
+The answer is a run of `0x1001` records, host entry first and then one per
+joining player, in slot order — the same shape as the roster block the host
+wrote into the recorded match, which is what the twelve back-to-back records
+between `0x52` and `0x484` are. Until the client has that sequence it has no
+slot of its own and no way to place the players around it. **[V]**
+
+`RoomRosterService` (`src/GameplayServer/Rooms/`) holds the roster and builds
+that run; `PlayerProfileHandler` answers every inbound profile with it. Slots
+are keyed by remote endpoint, so a client that re-sends its profile keeps the
+slot it was first given instead of walking along the roster on each retry.
+
+**[U]** The host does not currently re-broadcast the roster to the peers that
+are already in the room, so a player who joins second is not announced to the
+first. The recorded match shows one flat roster rather than per-join deltas, so
+the shape of that update is not yet read off the wire.
 
 ---
 

@@ -37,11 +37,36 @@ namespace Mgo2Server.Shared.Utils;
 /// there. Both are bounded, so a name longer than the buffer is truncated
 /// rather than allowed to overrun the frame.
 /// </para>
+/// <para>
+/// The host's own record is the one at roster index <see cref="HostRosterIndex"/>,
+/// which is why the index is signed: the recorded host record carries
+/// <c>0x31</c> and <c>0x05</c> where a joining player's first record carries
+/// <c>0x32</c> and <c>0x06</c>. Every other player follows at 0, 1, 2 and so on.
+/// </para>
+/// <para>
+/// A joining client opens the exchange with a record of the same shape but a
+/// different leading byte — <c>0x02</c> where a roster record carries
+/// <see cref="RecordVersion"/> — so <see cref="Parse"/> reports the byte rather
+/// than rejecting the body.
+/// </para>
 /// </remarks>
 public static class PlayerProfileRecordUtility
 {
-    /// <summary>Record version byte every recorded profile carries.</summary>
+    /// <summary>Record version byte every recorded roster entry carries.</summary>
     public const byte RecordVersion = 0x07;
+
+    /// <summary>
+    /// Leading byte a joining client puts on the record it opens the exchange
+    /// with. It is not a roster entry, so it never appears in what the host
+    /// sends back.
+    /// </summary>
+    public const byte JoinRequestVersion = 0x02;
+
+    /// <summary>
+    /// Roster slot the host itself takes. The host is not one of the joining
+    /// players, so its slot sits below the first one rather than at it.
+    /// </summary>
+    public const sbyte HostRosterIndex = -1;
 
     /// <summary>Base added to the roster index to form the field at offset 4.</summary>
     private const byte RosterIndexBase = 0x32;
@@ -84,7 +109,11 @@ public static class PlayerProfileRecordUtility
     /// Builds a profile record body.
     /// </summary>
     /// <param name="characterIdentifier">Character identifier of the player.</param>
-    /// <param name="rosterIndex">Position of the player in the room roster.</param>
+    /// <param name="rosterIndex">
+    /// Position of the player in the room roster, counted from
+    /// <see cref="HostRosterIndex"/>. It is signed because the host's own slot
+    /// is the one below zero.
+    /// </param>
     /// <param name="perPlayerValue">
     /// The varying value written at offset 8. It differs per player in every
     /// recorded match and its meaning is unresolved, so it is passed through.
@@ -94,7 +123,7 @@ public static class PlayerProfileRecordUtility
     /// <param name="clanName">Clan name, which may be empty.</param>
     public static byte[] Build(
         byte characterIdentifier,
-        byte rosterIndex,
+        sbyte rosterIndex,
         ushort perPlayerValue,
         byte teamFlag,
         string name,
@@ -148,8 +177,8 @@ public static class PlayerProfileRecordUtility
             body[0],
             body[1],
             body[4],
-            (byte)(body[4] - RosterIndexBase),
-            (byte)(body[5] - PlayerNumberBase),
+            (sbyte)(body[4] - RosterIndexBase),
+            (sbyte)(body[5] - PlayerNumberBase),
             body[NameMarkerOffset] != 0x00,
             BinaryUtility.ReadUInt16LittleEndian(body, 8),
             body[10],
@@ -174,10 +203,14 @@ public static class PlayerProfileRecordUtility
 /// <param name="Version">Record version byte.</param>
 /// <param name="CharacterIdentifier">Character identifier of the player.</param>
 /// <param name="RosterBaseField">The raw field at offset 4, which is 0x32 plus the roster index.</param>
-/// <param name="RosterIndex">Position of the player in the room roster, recovered from that field.</param>
+/// <param name="RosterIndex">
+/// Position of the player in the room roster, recovered from that field. It is
+/// signed because the host's own slot is <c>-1</c>.
+/// </param>
 /// <param name="PlayerNumber">
-/// The value at offset 5, which is 6 plus the roster index. The two fields
-/// share an index but not a base, so neither can be read off the other.
+/// The roster index recovered from the field at offset 5, which carries the same
+/// index under a different base. The two fields share an index but not a base,
+/// so neither can be read off the other.
 /// </param>
 /// <param name="HasClanName">Whether a clan name follows the account name.</param>
 /// <param name="PerPlayerValue">The varying value at offset 8; its meaning is unresolved.</param>
@@ -188,8 +221,8 @@ public sealed record PlayerProfileRecord(
     byte Version,
     byte CharacterIdentifier,
     byte RosterBaseField,
-    byte RosterIndex,
-    byte PlayerNumber,
+    sbyte RosterIndex,
+    sbyte PlayerNumber,
     bool HasClanName,
     ushort PerPlayerValue,
     byte TeamFlag,

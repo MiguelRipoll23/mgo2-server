@@ -1,4 +1,5 @@
 using Mgo2Server.GameplayServer.Identity;
+using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Types;
@@ -73,53 +74,37 @@ public sealed class AcknowledgeKeepAliveHandler : IPeerCommandHandler
 
 /// <summary>
 /// Handles a player-profile record. The joiner sends its own profile once the
-/// session is keyed and then re-sends it until the host answers with one of its
-/// own, so this handler replies with the host's profile.
+/// session is keyed and then re-sends it, byte for byte, until the host answers;
+/// this handler answers with the whole room roster, the host's own entry first
+/// and every joining player after it in slot order.
 /// </summary>
-/// <param name="hostIdentity">Identity this host presents to its peers.</param>
+/// <param name="roster">Roster of the room this host is playing.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
-    HostIdentityService hostIdentity,
+    RoomRosterService roster,
     ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
 {
-    /// <summary>
-    /// Position this host takes in the room roster. Zero is the host's own slot:
-    /// the joining client fills the slots after it, so the host is first.
-    /// </summary>
-    private const byte HostRosterIndex = 0;
-
-    /// <summary>
-    /// The per-player value the record carries at offset 8. Its meaning is
-    /// unresolved, and every recorded value differs per player, so it is sent as
-    /// zero and logged rather than guessed at.
-    /// </summary>
-    private const ushort UnresolvedPerPlayerValue = 0;
-
-    /// <summary>Team flag; zero in every recorded record that carries no team.</summary>
-    private const byte HostTeamFlag = 0;
-
     /// <inheritdoc />
     public async Task HandleAsync(PeerContext context)
     {
-        var record = PlayerProfileRecordUtility.Parse(context.Message.Body);
+        var profile = PlayerProfileRecordUtility.Parse(context.Message.Body);
+        var member = roster.Register(context.Remote, profile);
+
         logger.LogInformation(
-            "UDP {LocalPort}: profile from {RemoteAddress}: character {CharacterIdentifier} name {Name}",
+            "UDP {LocalPort}: profile from {RemoteAddress}: character {CharacterIdentifier} name {Name}, roster slot {RosterIndex}",
             context.LocalPort,
             context.Remote,
-            record?.CharacterIdentifier,
-            record?.Name is { Length: > 0 } name ? name : "(none)");
+            profile?.CharacterIdentifier,
+            profile?.Name is { Length: > 0 } name ? name : "(none)",
+            member.RosterIndex);
 
-        // The host answers with its own profile. Sending it unconditionally is
-        // deliberate: the joiner re-sends its profile until it sees one, so a
-        // reply to a repeat is what breaks the exchange, not a bug.
-        var body = PlayerProfileRecordUtility.Build(
-            characterIdentifier: hostIdentity.ProfileCharacterIdentifier,
-            rosterIndex: HostRosterIndex,
-            perPlayerValue: UnresolvedPerPlayerValue,
-            teamFlag: HostTeamFlag,
-            name: hostIdentity.AccountName,
-            clanName: hostIdentity.ClanName);
-
-        await context.Send(UdpCommandConstants.PlayerProfile, body);
+        // Answering unconditionally is deliberate: the joiner re-sends its
+        // profile until it sees the roster, so a reply to a repeat is what
+        // breaks the exchange, not a bug. Re-registering is idempotent, so the
+        // repeated profile keeps the slot it was first given.
+        foreach (var record in roster.BuildRecords())
+        {
+            await context.Send(UdpCommandConstants.PlayerProfile, record);
+        }
     }
 }
