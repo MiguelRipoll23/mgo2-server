@@ -41,6 +41,20 @@ public sealed class ServerOptions
     /// </summary>
     public string? PublicHostAddress { get; set; }
 
+    /// <summary>
+    /// Address the gameplay host puts in its own handshake and publishes as its
+    /// peer-to-peer endpoint. It is derived from <see cref="PublicHostAddress"/>
+    /// so the address a peer is told in a handshake and the one a joining client
+    /// is handed in the join result cannot drift apart.
+    /// <para>
+    /// Neither may be the address a datagram arrived from. Behind a load
+    /// balancer that is the balancer's own address, which a peer cannot dial
+    /// back; the wildcard falls back to loopback because it is no more dialable.
+    /// </para>
+    /// </summary>
+    public string GameplayServerAdvertisedAddress =>
+        PublicHostAddress ?? (AnnouncedIpAddress is "0.0.0.0" ? "127.0.0.1" : AnnouncedIpAddress);
+
     /// <summary>Name of the lobby the gameplay server publishes its match in.</summary>
     public string GameplayLobbyName { get; set; } = "Free Battle";
 

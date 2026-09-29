@@ -128,13 +128,16 @@ public sealed partial class GameplayServerService : IAsyncDisposable
 
     private async Task RegisterConnectionAsync(CancellationToken cancellationToken)
     {
-        // The wildcard address cannot be connected to, so a server that was
-        // not given an advertised address falls back to loopback.
-        var advertisedHost = options.PublicHostAddress
-            ?? (options.AnnouncedIpAddress is "0.0.0.0" ? "127.0.0.1" : options.AnnouncedIpAddress);
+        // The address published here is the same one the host puts in its own
+        // handshake, read from the same property, so a joining client is never
+        // handed one endpoint and given another to answer on.
         await gameService.SaveConnectionInformationAsync(
             (int)hostIdentity.PeerIdentifier,
-            new ConnectionInformation(advertisedHost, port, advertisedHost, port),
+            new ConnectionInformation(
+                hostIdentity.AdvertisedAddress,
+                port,
+                hostIdentity.AdvertisedAddress,
+                port),
             cancellationToken);
     }
 

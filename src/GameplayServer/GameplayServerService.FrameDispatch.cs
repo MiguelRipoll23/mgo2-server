@@ -203,7 +203,7 @@ public sealed partial class GameplayServerService
         }
         else
         {
-            AcknowledgeInbound(session, counter, remote);
+            AcknowledgeInbound(session, counter);
         }
     }
 
@@ -213,8 +213,7 @@ public sealed partial class GameplayServerService
     /// </summary>
     /// <param name="session">Session to acknowledge.</param>
     /// <param name="counter">Counter of the frame that arrived.</param>
-    /// <param name="remote">Endpoint the acknowledgement is written to.</param>
-    private void AcknowledgeInbound(PeerSession session, ushort counter, IPEndPoint remote)
+    private void AcknowledgeInbound(PeerSession session, ushort counter)
     {
         var sequence = (ushort)(counter & UdpCommandConstants.CounterMask);
         if (sequence <= session.LastInboundSequence)
@@ -239,11 +238,12 @@ public sealed partial class GameplayServerService
             ? session.SessionKey ^ UdpCryptoKeyConstants.TailDigestKey
             : UdpCryptoKeyConstants.TailDigestKey;
 
-        Send(FrameCryptoUtility.EncodeFrame(plain, outboundCounter, key, digestKey), remote);
+        Send(FrameCryptoUtility.EncodeFrame(plain, outboundCounter, key, digestKey), session.DialBack);
         logger.LogDebug(
-            "Acknowledged counter={Counter} sequence={Sequence}",
+            "Acknowledged counter={Counter} sequence={Sequence} to {DialBack}",
             outboundCounter,
-            session.LastInboundSequence);
+            session.LastInboundSequence,
+            session.DialBack);
     }
 
     /// <summary>
@@ -300,7 +300,7 @@ public sealed partial class GameplayServerService
             port,
             (type, body) =>
             {
-                SendMessage(session, type, body, remote);
+                SendMessage(session, type, body);
                 return Task.CompletedTask;
             },
             (type, body) =>
@@ -327,17 +327,21 @@ public sealed partial class GameplayServerService
         {
             if (session.Established && !ReferenceEquals(session, origin))
             {
-                SendMessage(session, messageType, body, session.DialBack);
+                SendMessage(session, messageType, body);
             }
         }
     }
 
-    /// <summary>Writes a message to a peer through the session's shared counter.</summary>
+    /// <summary>
+    /// Writes a message to a peer through the session's shared counter, to the
+    /// endpoint the session dials back rather than to the address a datagram
+    /// happened to arrive from. The two differ whenever the host sits behind a
+    /// load balancer, and only the first is a socket the peer is reading.
+    /// </summary>
     /// <param name="session">Session to write through.</param>
     /// <param name="messageType">Type of the message.</param>
     /// <param name="body">Body of the message.</param>
-    /// <param name="remote">Endpoint the message is written to.</param>
-    private void SendMessage(PeerSession session, ushort messageType, byte[] body, IPEndPoint remote)
+    private void SendMessage(PeerSession session, ushort messageType, byte[] body)
     {
         var counter = session.OutboundCounter;
         session.OutboundCounter = (ushort)((counter + 1) & 0xffff);
@@ -348,11 +352,12 @@ public sealed partial class GameplayServerService
             ? session.SessionKey ^ UdpCryptoKeyConstants.TailDigestKey
             : UdpCryptoKeyConstants.TailDigestKey;
 
-        Send(FrameCryptoUtility.EncodeFrame(plain, counter, key, digestKey), remote);
+        Send(FrameCryptoUtility.EncodeFrame(plain, counter, key, digestKey), session.DialBack);
         logger.LogDebug(
-            "Outbound counter={Counter} type={MessageType:x4}{PreKeyed}",
+            "Outbound counter={Counter} type={MessageType:x4} to {DialBack}{PreKeyed}",
             counter,
             messageType,
+            session.DialBack,
             session.Established ? string.Empty : " pre");
     }
 

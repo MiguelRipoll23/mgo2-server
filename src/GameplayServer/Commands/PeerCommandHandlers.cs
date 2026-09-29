@@ -1,3 +1,4 @@
+using System.Net;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Constants;
@@ -36,22 +37,33 @@ public sealed class AcceptHandshakeHandler(
         context.Session.PeerIdentifier = handshake.PeerIdentifier;
         context.Session.CounterBase = handshake.CounterBase;
         context.Session.SessionKey = handshake.CounterBase ^ hostIdentity.CounterBase;
-        context.Session.DialBack = context.Remote;
+
+        // Answers go to the endpoint the peer advertised, not to the one the
+        // datagram came from. The handshake carries the peer's own pair for
+        // exactly this: behind a load balancer the source is the balancer's
+        // address and a port the peer's socket is not listening on, so replying
+        // to it leaves the reply in a connection-tracking entry the peer never
+        // reads. The source is only the fallback for a peer that advertised
+        // nothing usable.
+        var dialBack = AdvertisedEndpointOf(handshake) ?? context.Remote;
+        context.Session.DialBack = dialBack;
 
         logger.LogInformation(
-            "UDP {LocalPort}: handshake from {RemoteAddress} peer=0x{PeerIdentifier:x8} base=0x{CounterBase:x8}",
+            "UDP {LocalPort}: handshake from {RemoteAddress} peer=0x{PeerIdentifier:x8} base=0x{CounterBase:x8}, answering {DialBack}",
             context.LocalPort,
             context.Remote,
             handshake.PeerIdentifier,
-            handshake.CounterBase);
+            handshake.CounterBase,
+            dialBack);
 
         // 1. The handshake reply, still pre-keyed because the joiner has not
-        //    reached its keyed state yet.
+        //    reached its keyed state yet. It advertises the address this host is
+        //    reached on, which is the configured one for the same reason.
         var reply = FrameBuilderUtility.BuildHandshakeBody(
             hostIdentity.PeerIdentifier,
             hostIdentity.CounterBase,
-            context.Remote.Address.ToString(),
-            context.LocalPort);
+            hostIdentity.AdvertisedAddress,
+            hostIdentity.AdvertisedPort);
         await context.Send(UdpCommandConstants.Handshake, reply);
 
         // 2. The key-establishing keep-alive.
@@ -61,6 +73,28 @@ public sealed class AcceptHandshakeHandler(
             "UDP {LocalPort}: session with peer=0x{PeerIdentifier:x8} established",
             context.LocalPort,
             handshake.PeerIdentifier);
+    }
+
+    /// <summary>
+    /// Picks the endpoint a peer's handshake says it is listening on. The first
+    /// advertised pair is the public one and the second the private, so the
+    /// public is preferred; a pair that names no address or no port is skipped,
+    /// because a peer that advertises nothing usable is better answered at the
+    /// address the datagram came from than at a placeholder.
+    /// </summary>
+    /// <param name="handshake">Parsed handshake body.</param>
+    /// <returns>The advertised endpoint, or <c>null</c> when there is none usable.</returns>
+    private static IPEndPoint? AdvertisedEndpointOf(HandshakeBody handshake)
+    {
+        foreach (var pair in handshake.Pairs)
+        {
+            if (pair.Port != 0 && IPAddress.TryParse(pair.Address, out var address))
+            {
+                return new IPEndPoint(address, pair.Port);
+            }
+        }
+
+        return null;
     }
 }
 

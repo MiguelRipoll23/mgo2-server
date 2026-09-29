@@ -187,6 +187,19 @@ Decoded layout (offsets relative to the datagram start, after §5 unscramble+cha
 - **Entries = the sender's OWN endpoints** (public + private): a live capture showed
   `89.129.16.203:5730` (public) and `192.168.1.50:5730` (private). The host replies to
   the joiner's source address and uses these entries to dial the joiner back **[V]**.
+  - **Behind a load balancer the source address is not the joiner.** The entries are
+    the only statement of where the joiner is listening, and the source is a
+    connection-tracking address on a port the joiner's socket is not reading. A host
+    that answers the source sends every reply into a translation table entry the
+    joiner never reads, and the session dies silently after the handshake. The host
+    therefore answers the first advertised pair and falls back to the source only
+    when the joiner advertises nothing usable. The same is true in the other
+    direction: a host behind a balancer must put its **configured** advertised
+    address in its own handshake, because the address its datagrams arrive from is
+    the balancer's and is not dialable. `ServerOptions.GameplayServerAdvertisedAddress`
+    is the single source for both, so the address a joining client is handed in the
+    join result and the address a peer is told to answer on cannot drift apart
+    **[V]**.
 - **Ordering is enforced by the session state:** session init `FUN_00268148` starts the
   session by sending the handshake, so it is the first datagram; the session state byte
   (`session+4`) gates which XOR key applies (§6) **[V]**.

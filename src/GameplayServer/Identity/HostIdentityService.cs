@@ -27,4 +27,15 @@ public sealed class HostIdentityService(IOptions<ServerOptions> options)
 
     /// <summary>Clan name this host announces; empty when it runs without one.</summary>
     public string ClanName => options.Value.GameplayServerClanName ?? string.Empty;
+
+    /// <summary>
+    /// Address this host puts in its own handshake. It is the configured
+    /// advertised address rather than the address a datagram arrived from,
+    /// because behind a load balancer the two are different and only the
+    /// configured one is dialable by the peer.
+    /// </summary>
+    public string AdvertisedAddress => options.Value.GameplayServerAdvertisedAddress;
+
+    /// <summary>Port this host puts in its own handshake and binds.</summary>
+    public int AdvertisedPort => options.Value.GameplayServerPort;
 }
