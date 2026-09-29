@@ -29,6 +29,13 @@ spec:
           value: '5730'
         - name: GAMEPLAY_SERVER_LOBBY_NAME
           value: Free Battle
+        # This host is the one endpoint a client dials with the socket MGO2 binds
+        # to its own console address. That bind is the console's LAN address, and a
+        # LAN-bound datagram cannot leave over the tailnet the ADVERTISED_ADDRESS
+        # names, so this host alone announces the node's LAN address. It is what
+        # P2P_HOST is for; leave it unset on a node that has one address.
+        - name: P2P_HOST
+          value: 192.168.1.15
         image: ghcr.io/miguelripoll23/mgo2-server/mgo2-gameplay-server:latest
         imagePullPolicy: Always
         lifecycle:
