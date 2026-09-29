@@ -25,6 +25,7 @@ builder.Services.AddServerTelemetry(builder.Configuration, "mgo2-game-lobby");
 builder.Services.AddCommandHandlers();
 builder.Services.AddSingleton<ExternalJoinHintService>();
 builder.Services.AddSingleton<SurvivalTestService>();
+builder.Services.AddSingleton<PublicIpChatCommandService>();
 
 // The other half of the self-test: a run's expectation of an opponent is held
 // here, and the connection that freezes its team is what consumes it.

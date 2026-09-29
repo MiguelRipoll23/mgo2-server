@@ -45,18 +45,17 @@ public sealed class SetTeamHandler(
 /// <param name="activeGameSessions">Connections currently in the lobby.</param>
 /// <param name="gameService">Service the room's teams are read from.</param>
 /// <param name="survivalTest">Service the Survival self-test runs through.</param>
+/// <param name="publicIpChatCommand">Service the public-address command is answered by.</param>
 /// <param name="lobbyIdentity">Service that knows this lobby's own game type.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class SendChatHandler(
     ActiveGameSessionsService activeGameSessions,
     GameService gameService,
     SurvivalTestService survivalTest,
+    PublicIpChatCommandService publicIpChatCommand,
     LobbyIdentityService lobbyIdentity,
     SessionHelper sessionHelper) : ICommandHandler
 {
-    /// <summary>Prefix a client may not impersonate.</summary>
-    private const string ServerPrefix = "Server | ";
-
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
@@ -83,16 +82,12 @@ public sealed class SendChatHandler(
             return;
         }
 
-        // A client may not impersonate the server.
-        if (request.Text.StartsWith(ServerPrefix, StringComparison.OrdinalIgnoreCase))
+        // The character asks where it is reachable, and the answer is its own line:
+        // it is spoken as the asking character and sent to nobody else, so it is
+        // never broadcast and never reaches the roster.
+        if (PublicIpChatCommandService.IsCommand(request.Text))
         {
-            await sessionHelper.SendPacketAsync(
-                session,
-                CommandConstants.SendChatResult,
-                ChatPayloadBuilder.BuildReply(
-                    characterIdentifier,
-                    request with { Text = ServerPrefix + "You can't send server messages." }),
-                cancellationToken);
+            await publicIpChatCommand.HandleAsync(session, characterIdentifier, cancellationToken);
             return;
         }
 
