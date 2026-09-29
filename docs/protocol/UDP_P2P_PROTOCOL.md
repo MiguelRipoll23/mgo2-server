@@ -614,6 +614,53 @@ player-profile record (§6.2). **Resolved (2026-09-10): the ACK wire format**
 (§6.3) — ack it, then answer with the host's own record so the room/host
 exchange proceeds.
 
+### 6.4 The `0x1001` player-profile record — layout [V]
+
+The host's own profile record, read off the records a real host wrote into a
+recorded survival match (`tools/replays/replay_360827_5.dat`). Eleven records
+were recovered from the roster block; the ten full-length ones parse to exactly
+their declared length under the layout below, which is what pins the offsets —
+a field one byte out shifts the name and the arithmetic stops adding up. **[V]**
+
+Body, little-endian:
+
+```
+[0x00] u8        0x07 in every recorded record
+[0x01] u8        character identifier
+[0x02] u16       zero
+[0x04] u8        0x32 + roster index
+[0x05] u8        6 + roster index
+[0x06] u8        zero
+[0x07] u8        6 + roster index, repeated
+[0x08] u16       per-player value, differs for every player in the roster
+[0x0a] u8        team flag
+[0x0b..0x42]     per-player block, not zero in the recorded records
+[0x43] u8        0x03 when a clan name follows, 0x00 when none does
+[0x44] char[]    NUL-terminated account name
+         char[]   clan name, running to the end of the record
+```
+
+Three things are worth stating because they are easy to get wrong:
+
+- **The record at roster block *i* describes player *i+1*.** The name inside a
+  record is the *next* player's, not the block's own. The first block's record
+  is written before the roster, at `0x50`. **[V]**
+- **Offsets 4 and 5 share an index but not a base** (`0x32 + i` against
+  `6 + i`), so neither can be read off the other. **[V]**
+- **The name is NUL-terminated; the clan name is not**, because the record ends
+  there. Every record ends exactly on the last clan byte. **[V]**
+
+**[U] Unresolved:** the per-player block at `0x0b..0x42` and the value at
+`0x08`. The recorded records populate both, and the value at `0x08` differs for
+every player, so neither is a constant. The builder writes zeros for the block
+and `0` for the value, and
+`tests/Mgo2Server.Tests/PlayerProfileRecordTests.cs` asserts that it does, so
+the gap is stated rather than hidden.
+
+Implemented in `src/Shared/Utils/PlayerProfileRecordUtility.cs`
+(`Build`/`Parse`), and the host answers a joiner's profile with its own in
+`PlayerProfileHandler`.
+
 ---
 
 ## 7. Compression — LZSS, off by default [V]

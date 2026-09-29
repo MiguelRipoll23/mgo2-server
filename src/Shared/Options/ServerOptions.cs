@@ -58,6 +58,13 @@ public sealed class ServerOptions
     public string GameplayServerCharacterName { get; set; } = "server";
 
     /// <summary>
+    /// Clan name the gameplay server announces in its peer-to-peer
+    /// player-profile record. A recorded record carries an empty clan name when
+    /// the player has no clan, which is the case for a dedicated host.
+    /// </summary>
+    public string? GameplayServerClanName { get; set; }
+
+    /// <summary>
     /// Address published to clients in place of each lobby's stored address.
     /// Only set when the advertised address is a routable address rather than a
     /// wildcard or loopback address.

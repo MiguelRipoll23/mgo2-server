@@ -72,62 +72,54 @@ public sealed class AcknowledgeKeepAliveHandler : IPeerCommandHandler
 }
 
 /// <summary>
-/// Records the joiner's player-profile record. The frame carrying it is
-/// acknowledged by the transport, so no reply is sent.
+/// Handles a player-profile record. The joiner sends its own profile once the
+/// session is keyed and then re-sends it until the host answers with one of its
+/// own, so this handler replies with the host's profile.
 /// </summary>
+/// <param name="hostIdentity">Identity this host presents to its peers.</param>
 /// <param name="logger">Logger of this handler.</param>
-public sealed class PlayerProfileHandler(ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
+public sealed class PlayerProfileHandler(
+    HostIdentityService hostIdentity,
+    ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
 {
-    /// <summary>Offset of the account name within the record body.</summary>
-    private const int NameOffset = 0x51 - 4;
+    /// <summary>
+    /// Position this host takes in the room roster. Zero is the host's own slot:
+    /// the joining client fills the slots after it, so the host is first.
+    /// </summary>
+    private const byte HostRosterIndex = 0;
+
+    /// <summary>
+    /// The per-player value the record carries at offset 8. Its meaning is
+    /// unresolved, and every recorded value differs per player, so it is sent as
+    /// zero and logged rather than guessed at.
+    /// </summary>
+    private const ushort UnresolvedPerPlayerValue = 0;
+
+    /// <summary>Team flag; zero in every recorded record that carries no team.</summary>
+    private const byte HostTeamFlag = 0;
 
     /// <inheritdoc />
-    public Task HandleAsync(PeerContext context)
+    public async Task HandleAsync(PeerContext context)
     {
-        var body = context.Message.Body;
-        if (body.Length < 2)
-        {
-            return Task.CompletedTask;
-        }
-
-        var characterIdentifier = BinaryUtility.ReadUInt16LittleEndian(body, 0);
-        var name = ReadNullTerminatedString(body, NameOffset);
-
+        var record = PlayerProfileRecordUtility.Parse(context.Message.Body);
         logger.LogInformation(
-            "UDP {LocalPort}: character {CharacterIdentifier}{Name} attempting to join",
+            "UDP {LocalPort}: profile from {RemoteAddress}: character {CharacterIdentifier} name {Name}",
             context.LocalPort,
-            characterIdentifier,
-            name is null ? string.Empty : $" ({name})");
+            context.Remote,
+            record?.CharacterIdentifier,
+            record?.Name is { Length: > 0 } name ? name : "(none)");
 
-        return Task.CompletedTask;
-    }
+        // The host answers with its own profile. Sending it unconditionally is
+        // deliberate: the joiner re-sends its profile until it sees one, so a
+        // reply to a repeat is what breaks the exchange, not a bug.
+        var body = PlayerProfileRecordUtility.Build(
+            characterIdentifier: hostIdentity.ProfileCharacterIdentifier,
+            rosterIndex: HostRosterIndex,
+            perPlayerValue: UnresolvedPerPlayerValue,
+            teamFlag: HostTeamFlag,
+            name: hostIdentity.AccountName,
+            clanName: hostIdentity.ClanName);
 
-    private static string? ReadNullTerminatedString(byte[] buffer, int offset)
-    {
-        var end = offset;
-        while (end < buffer.Length && buffer[end] != 0x00)
-        {
-            end++;
-        }
-
-        if (end == offset || end >= buffer.Length)
-        {
-            return null;
-        }
-
-        var characters = new char[end - offset];
-        var printable = true;
-        for (var index = offset; index < end; index++)
-        {
-            var value = buffer[index];
-            if (value is < 0x20 or > 0x7e)
-            {
-                printable = false;
-            }
-
-            characters[index - offset] = (char)value;
-        }
-
-        return printable ? new string(characters) : null;
+        await context.Send(UdpCommandConstants.PlayerProfile, body);
     }
 }
