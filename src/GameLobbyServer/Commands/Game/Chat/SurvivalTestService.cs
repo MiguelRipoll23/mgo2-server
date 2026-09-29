@@ -145,7 +145,7 @@ public sealed class SurvivalTestService(
         // with is a room somebody really opened. It is not looked for in this
         // lobby alone: a room named for a host role runs the role's mode wherever
         // it was opened.
-        var hostRoom = EventHostRoomPoolService.FindHost(
+        var hostRoom = roomPool.FindHost(
             await roomPool.ListAsync(cancellationToken),
             team.MatchType,
             EventTeamService.BuildSnapshot(team).OccupiedParticipantCount() + OpponentMemberCount);

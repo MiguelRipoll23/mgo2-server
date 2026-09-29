@@ -93,6 +93,20 @@ public sealed class EventOptions
     public int OutcomeSweepMilliseconds { get; set; } = 1000;
 
     /// <summary>
+    /// Whether a room has to be running the event's own settings before it may
+    /// host a match.
+    /// <para>
+    /// Off by default, which is also how the reference ships it: the settings a
+    /// host saves are their own, and a gate that is on by default would leave a
+    /// matched pair waiting for the one room that happens to reproduce the preset
+    /// byte for byte — the timers and the common bytes included. Turning it on is
+    /// how a deployment says its event is played on the event's settings, and it
+    /// is then its own to know that its hosts are opened from them.
+    /// </para>
+    /// </summary>
+    public bool RequireHostSettingsMatch { get; set; }
+
+    /// <summary>
     /// The ten win rewards, in streak order, with any slot the configuration
     /// omitted filled with zero.
     /// </summary>

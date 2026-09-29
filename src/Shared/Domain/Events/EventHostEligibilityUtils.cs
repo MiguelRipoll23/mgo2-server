@@ -237,11 +237,24 @@ public static class EventHostEligibilityUtils
     /// the role sets the mode when the room is created, so a host opened anywhere
     /// can still serve the mode it is named for.
     /// </para>
+    /// <para>
+    /// A fourth rule joins the three when an environment is passed: the room has
+    /// to be running the settings it was asked for, read out of the copy the room
+    /// kept when it was created rather than out of the settings its host has
+    /// saved, which the host may have changed since. It is asked only when the
+    /// event requires the room to be running that environment, so a deployment
+    /// that does not ask it is not narrowed by a rule it never stated.
+    /// </para>
     /// </summary>
     /// <param name="room">Room being asked about.</param>
     /// <param name="matchType">Mode of the match.</param>
     /// <param name="participantCount">Players the match brings.</param>
-    public static bool IsEligibleHost(Game room, int matchType, int participantCount)
+    /// <param name="requiredSettings">Environment the room has to be running, or null when any will do.</param>
+    public static bool IsEligibleHost(
+        Game room,
+        int matchType,
+        int participantCount,
+        EventHostEnvironment? requiredSettings = null)
     {
         ArgumentNullException.ThrowIfNull(room);
 
@@ -249,6 +262,7 @@ public static class EventHostEligibilityUtils
             && IsIdle(
                 room.HostIdentifier,
                 room.Players.Select(player => player.CharacterIdentifier))
-            && AcceptsMatch(room.LobbySubtype, matchType, room.MaximumPlayers, participantCount);
+            && AcceptsMatch(room.LobbySubtype, matchType, room.MaximumPlayers, participantCount)
+            && (requiredSettings is null || EventHostRoomSettingsUtils.Matches(room.Common, requiredSettings));
     }
 }

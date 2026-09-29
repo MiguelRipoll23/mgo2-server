@@ -237,15 +237,106 @@ public sealed class EventHostEligibilityTests
 
         Assert.Same(
             elsewhere,
-            EventHostRoomPoolService.FindHost(
+            EventHostRoomPoolService.SelectHost(
                 [wrongMode, busy, elsewhere],
                 EventConstants.SurvivalSelector,
-                participantCount: 16));
+                participantCount: 16,
+                requiredSettings: null));
 
-        Assert.Null(EventHostRoomPoolService.FindHost(
+        Assert.Null(EventHostRoomPoolService.SelectHost(
             [wrongMode, busy],
             EventConstants.SurvivalSelector,
-            participantCount: 16));
+            participantCount: 16,
+            requiredSettings: null));
+    }
+
+    [Fact]
+    public void A_room_that_is_running_the_events_settings_may_host_it()
+    {
+        var preset = EventHostEnvironment.CreateDefault();
+        var room = Room(common: EventHostRoomSettingsUtils.Compose(true, SurvivalPreset()));
+
+        Assert.True(EventHostEligibilityUtils.IsEligibleHost(
+            room,
+            EventConstants.SurvivalSelector,
+            participantCount: 4,
+            preset));
+
+        Assert.Same(
+            room,
+            EventHostRoomPoolService.SelectHost(
+                [room],
+                EventConstants.SurvivalSelector,
+                participantCount: 4,
+                preset));
+    }
+
+    [Fact]
+    public void A_room_running_settings_of_its_own_may_not_host_the_event()
+    {
+        // The host saved their own settings: a longer team-deathmatch round. The
+        // room is a dedicated host in the right mode with room to spare, and it is
+        // still refused, because the event is played on the event's settings.
+        var room = Room(common: EventHostRoomSettingsUtils.Compose(true, SurvivalPreset(teamDeathmatchTime: 10)));
+
+        Assert.False(EventHostEligibilityUtils.IsEligibleHost(
+            room,
+            EventConstants.SurvivalSelector,
+            participantCount: 4,
+            EventHostEnvironment.CreateDefault()));
+
+        // The same room is a host when the deployment does not ask for the settings.
+        Assert.True(EventHostEligibilityUtils.IsEligibleHost(
+            room,
+            EventConstants.SurvivalSelector,
+            participantCount: 4));
+    }
+
+    [Fact]
+    public void A_room_that_kept_no_settings_cannot_be_running_them()
+    {
+        // A room created before the settings were kept, or without a push behind
+        // it, cannot state what it runs, so it is refused rather than assumed.
+        var room = Room(common: """{"dedicated":true}""");
+
+        Assert.False(EventHostEligibilityUtils.IsEligibleHost(
+            room,
+            EventConstants.SurvivalSelector,
+            participantCount: 4,
+            EventHostEnvironment.CreateDefault()));
+
+        Assert.False(EventHostEligibilityUtils.IsEligibleHost(
+            Room(common: "not json"),
+            EventConstants.SurvivalSelector,
+            participantCount: 4,
+            EventHostEnvironment.CreateDefault()));
+    }
+
+    /// <summary>
+    /// The shipping Survival preset as a settings row, which is what a host that
+    /// opened a room from it pushed. The snake-kill count is stated because the
+    /// row's own default is 3 while the preset leaves it at zero, and the preset
+    /// is what a host has to have saved to match it.
+    /// </summary>
+    private static CharacterHostSettings SurvivalPreset(int teamDeathmatchTime = 5) => new()
+    {
+        MaxPlayers = 17,
+        BriefingTime = 1,
+        LevelLimitBase = 0x16,
+        CommonA = 0x04,
+        SneakingSnakeKills = 0,
+        RotationRules = Slots(4, 4, 4, 4),
+        RotationMaps = Slots(1, 2, 3, 4),
+        RotationFlags = Slots(0, 0, 0, 0),
+        RuleTimers = [0, 0, 0, 0, 0, 0, teamDeathmatchTime, 2, 50, 0, 0, 0, 0, 0, 0, 0, 0],
+    };
+
+    /// <summary>One rotation component as a stored row carries it: sixteen slots.</summary>
+    private static short[] Slots(params short[] values)
+    {
+        var slots = new short[EventHostEnvironment.RotationSlots];
+        values.CopyTo(slots, 0);
+        return slots;
     }
 
     /// <summary>A room row, with the roster and settings the three rules read.</summary>

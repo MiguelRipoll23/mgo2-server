@@ -138,6 +138,9 @@ public static class ServerServiceCollectionExtensions
             options.OutcomeSweepMilliseconds = configuration.ReadNumber(
                 "EVENT_OUTCOME_SWEEP_MILLISECONDS",
                 options.OutcomeSweepMilliseconds);
+            options.RequireHostSettingsMatch = configuration.ReadFlag(
+                "EVENT_REQUIRE_HOST_SETTINGS_MATCH",
+                options.RequireHostSettingsMatch);
         });
 
         services.AddDbContextFactory<Mgo2DatabaseContext>(options =>

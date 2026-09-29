@@ -77,7 +77,7 @@ public sealed partial class EventAssignmentService(
             var participants = EventTeamService.BuildSnapshot(first).OccupiedParticipantCount()
                 + EventTeamService.BuildSnapshot(second).OccupiedParticipantCount();
 
-            var host = EventHostRoomPoolService.FindHost(games, match.MatchType, participants);
+            var host = roomPool.FindHost(games, match.MatchType, participants);
             if (host is null)
             {
                 continue;

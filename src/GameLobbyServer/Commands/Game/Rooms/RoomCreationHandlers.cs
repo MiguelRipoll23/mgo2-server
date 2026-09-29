@@ -77,7 +77,7 @@ public sealed class CreateGameHandler(
 
         // A room the host flagged as dedicated is the one the event hosts are
         // chosen from, so the flag travels into the room settings the event
-        // host-eligibility reads; a plain room keeps the empty default.
+        // host-eligibility reads.
         var isDedicatedRoom = pushed is { Dedicated: true };
 
         // A room runs the mode its own settings named, because that is the mode the
@@ -119,10 +119,12 @@ public sealed class CreateGameHandler(
             room.MaximumPlayers = defaultMaximumPlayers;
             room.Games = JsonSerializer.Serialize(rotation);
 
-            if (isDedicatedRoom)
-            {
-                room.Common = """{"dedicated":true}""";
-            }
+            // The room keeps the settings it was created from, in its own row,
+            // and that copy is what the event's settings rule reads. Taking it
+            // from the host's saved settings instead would read an edit: the
+            // settings are the host's to change once the room is open, while
+            // what the room runs is fixed at the moment it is created.
+            room.Common = EventHostRoomSettingsUtils.Compose(isDedicatedRoom, pushed);
         }, cancellationToken);
 
         // The host is the room's first roster member: the roster row carries

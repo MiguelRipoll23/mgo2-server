@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Options;
 using Mgo2Server.Shared.Domain.Games;
+using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence.Entities;
 
 namespace Mgo2Server.Shared.Domain.Events;
@@ -18,26 +20,65 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// rented for a role, and the role sets the room's mode when it is created, so a
 /// host opened in another lobby is still the host the match needs.
 /// </para>
+/// <para>
+/// The one rule that is the deployment's to state is whether a host has to be
+/// running the event's own settings. It is <see cref="EventOptions.RequireHostSettingsMatch"/>
+/// and it is off unless it is asked for, so the setting is read once here and
+/// every reader of the choice applies it rather than each deciding for itself.
+/// </para>
 /// </summary>
 /// <param name="gameService">Service that owns the rooms.</param>
-public sealed class EventHostRoomPoolService(GameService gameService)
+/// <param name="options">Event configuration, for the rule about the room's own settings.</param>
+public sealed class EventHostRoomPoolService(GameService gameService, IOptions<EventOptions> options)
 {
+    /// <summary>
+    /// Environment a room must be running, or null when any room may host. The
+    /// environment is the shipping preset the event screens advertise, so what a
+    /// room has to match is what the client was told the event runs. One preset
+    /// serves both roles: the Survival and Tournament hosts are told the same
+    /// settings, so the same environment is asked of either.
+    /// </summary>
+    private readonly EventHostEnvironment? requiredSettings =
+        options.Value.RequireHostSettingsMatch ? EventHostEnvironment.CreateDefault() : null;
+
     /// <summary>Every room a match could be hosted in.</summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The rooms, each with the roster the idle rule reads.</returns>
     public async Task<List<Game>> ListAsync(CancellationToken cancellationToken = default) =>
         await gameService.FindHostRoomCandidatesAsync(cancellationToken);
 
-    /// <summary>Picks the room that hosts a match out of a candidate list.</summary>
+    /// <summary>
+    /// Picks the room that hosts a match out of a candidate list, applying the
+    /// rule about the room's own settings that the deployment stated.
+    /// </summary>
     /// <param name="rooms">Rooms to choose from, as <see cref="ListAsync"/> returned them.</param>
     /// <param name="matchType">Mode of the match.</param>
     /// <param name="participantCount">Players the match brings.</param>
     /// <returns>The first room that may take the match, or null when none may.</returns>
-    public static Game? FindHost(List<Game> rooms, int matchType, int participantCount)
+    public Game? FindHost(List<Game> rooms, int matchType, int participantCount) =>
+        SelectHost(rooms, matchType, participantCount, requiredSettings);
+
+    /// <summary>
+    /// Picks the room that hosts a match out of a candidate list.
+    /// </summary>
+    /// <param name="rooms">Rooms to choose from, as <see cref="ListAsync"/> returned them.</param>
+    /// <param name="matchType">Mode of the match.</param>
+    /// <param name="participantCount">Players the match brings.</param>
+    /// <param name="requiredSettings">
+    /// Environment the room's own settings must match, or null when any room may host.
+    /// Passed in rather than read from the service so the rule can be exercised
+    /// without one, and so a reader can see which answer it is asking for.
+    /// </param>
+    /// <returns>The first room that may take the match, or null when none may.</returns>
+    public static Game? SelectHost(
+        List<Game> rooms,
+        int matchType,
+        int participantCount,
+        EventHostEnvironment? requiredSettings)
     {
         ArgumentNullException.ThrowIfNull(rooms);
 
         return rooms.FirstOrDefault(room =>
-            EventHostEligibilityUtils.IsEligibleHost(room, matchType, participantCount));
+            EventHostEligibilityUtils.IsEligibleHost(room, matchType, participantCount, requiredSettings));
     }
 }
