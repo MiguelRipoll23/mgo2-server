@@ -719,6 +719,26 @@ ones that were there first, and they would carry on playing without knowing the
 room has grown. The recorded match is one flat roster rather than per-join
 deltas, so the whole roster is what is sent.
 
+**The type is shared, and only one of the two shapes is a profile.** The whole
+of the live capture in `docs/protocol/UDP_SERVER_LOG.txt` is 36 datagrams, and
+after the handshake and the keep-alive every one of them is a `0x1001`:
+
+| body | flags | count |
+|---|---|---|
+| 90 bytes | `0x00` | 11 |
+| 1 byte, `0x00` | `0x01`..`0x05` | 23 |
+
+The one-byte ones are not profiles and carry nothing a roster could be built
+from. **They are not answered** — each roster is one record per player, sent to
+the sender *and* to every peer in the room, so answering all 23 would turn a
+host with two players into well over a hundred datagrams. `PlayerProfileHandler`
+parses the body and stays quiet unless it holds a name. **[V]**
+
+**The client never acknowledges anything the host sends.** Not one inbound
+`0x1000 | sequence` appears in the capture, so a host's outbound reliable
+frames are never closed by the peer. That is not a stall: nothing waits on the
+closure, and the host acks the client on every inbound frame regardless. **[V]**
+
 ### 6.6 The rest of the opening burst, after the roster [V] / [U]
 
 The host's opening burst in the recorded match runs `0x0c`..`0x13ed`; the tick

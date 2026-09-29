@@ -24,10 +24,12 @@ public sealed class PlayerProfileHandlerTests
     /// <summary>Runs the handler over one inbound profile and reports what went out.</summary>
     /// <param name="roster">Roster to answer from.</param>
     /// <param name="remote">Endpoint the profile came from.</param>
+    /// <param name="body">Body the message carries; a profile unless stated otherwise.</param>
     /// <returns>The bodies sent to the joiner, and the bodies broadcast to the room.</returns>
     private static async Task<(List<byte[]> Sent, List<byte[]> Broadcast)> RunAsync(
         RoomRosterService roster,
-        IPEndPoint remote)
+        IPEndPoint remote,
+        byte[]? body = null)
     {
         List<byte[]> sent = [];
         List<byte[]> broadcast = [];
@@ -47,7 +49,7 @@ public sealed class PlayerProfileHandlerTests
                 LastSeenAt = 0,
                 LastInboundSequence = 0,
             },
-            UdpMessage.Create(UdpCommandConstants.PlayerProfile, JoinRequestBody()),
+            UdpMessage.Create(UdpCommandConstants.PlayerProfile, body ?? JoinRequestBody()),
             remote,
             5730,
             (_, body) =>
@@ -103,6 +105,22 @@ public sealed class PlayerProfileHandlerTests
         // playing without knowing the room has grown.
         Assert.NotEmpty(broadcast);
         Assert.Equal(sent, broadcast);
+    }
+
+    [Fact]
+    public async Task HandleAsync_does_not_answer_the_one_byte_messages_that_share_the_type()
+    {
+        // A joining client sends one-byte 0x1001 messages as well as profiles —
+        // 23 of them against 11 profiles in the live capture. They are not
+        // profiles, and answering each with the whole roster to the sender and
+        // to every peer in the room turns a quiet host into a flood.
+        var roster = CreateRoster();
+        roster.Register(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 40002), null);
+
+        var (sent, broadcast) = await RunAsync(roster, Joiner, body: [0x00]);
+
+        Assert.Empty(sent);
+        Assert.Empty(broadcast);
     }
 
     [Fact]

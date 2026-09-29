@@ -79,6 +79,13 @@ public sealed class AcknowledgeKeepAliveHandler : IPeerCommandHandler
 /// and every joining player after it in slot order, and tells the peers already
 /// in the room that the roster grew.
 /// </summary>
+/// <remarks>
+/// The type is shared. A joining client also sends one-byte <c>0x1001</c>
+/// messages — 23 of them against 11 profiles in the capture in
+/// <c>docs/protocol/UDP_SERVER_LOG.txt</c> — which are not profiles and are not
+/// answered, because answering each one with the whole roster to the sender and
+/// to every peer in the room turns a quiet host into a flood.
+/// </remarks>
 /// <param name="roster">Roster of the room this host is playing.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
@@ -89,20 +96,31 @@ public sealed class PlayerProfileHandler(
     public async Task HandleAsync(PeerContext context)
     {
         var profile = PlayerProfileRecordUtility.Parse(context.Message.Body);
+        if (profile is not { Name.Length: > 0 })
+        {
+            logger.LogDebug(
+                "UDP {LocalPort}: {MessageType:x4} of {BodyLength} bytes from {RemoteAddress} carries no profile; not answered",
+                context.LocalPort,
+                context.Message.Type,
+                context.Message.Body.Length,
+                context.Remote);
+            return;
+        }
+
         var member = roster.Register(context.Remote, profile);
 
         logger.LogInformation(
             "UDP {LocalPort}: profile from {RemoteAddress}: character {CharacterIdentifier} name {Name}, roster slot {RosterIndex}",
             context.LocalPort,
             context.Remote,
-            profile?.CharacterIdentifier,
-            profile?.Name is { Length: > 0 } name ? name : "(none)",
+            profile.CharacterIdentifier,
+            profile.Name,
             member.RosterIndex);
 
-        // Answering unconditionally is deliberate: the joiner re-sends its
-        // profile until it sees the roster, so a reply to a repeat is what
-        // breaks the exchange, not a bug. Re-registering is idempotent, so the
-        // repeated profile keeps the slot it was first given.
+        // Answering a repeat is deliberate: the joiner re-sends its profile
+        // until it sees the roster, so a reply to a repeat is what breaks the
+        // exchange, not a bug. Re-registering is idempotent, so the repeated
+        // profile keeps the slot it was first given.
         foreach (var record in roster.BuildRecords())
         {
             await context.Send(UdpCommandConstants.PlayerProfile, record);
