@@ -176,7 +176,7 @@ public sealed class CreateEventTeamHandler(
 
 /// <summary>Joins a team, commits the membership and pushes the new roster slot.</summary>
 public sealed class JoinEventTeamHandler(
-    EventTeamService teamService,
+    EventTeamMemberService memberService,
     EventTeamPushService pushService,
     EventInvitationService invitationService,
     EventMatchmakingService matchmakingService,
@@ -229,7 +229,7 @@ public sealed class JoinEventTeamHandler(
         }
 
         var character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken);
-        var (outcome, team) = await teamService.JoinAsync(
+        var (outcome, team) = await memberService.JoinAsync(
             teamIdentifier,
             lobbyIdentifier,
             characterIdentifier,

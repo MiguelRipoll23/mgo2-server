@@ -45,6 +45,25 @@ public sealed class EventHostEligibilityTests
         Assert.False(EventHostEligibilityUtils.IsDedicatedEventHost(null, """{"dedicated":true}"""));
     }
 
+    [Theory]
+    [InlineData("SURVIVAL_HOST", true)]
+    [InlineData("survival_host", true)]
+    [InlineData("Survival_Host", true)]
+    [InlineData("TOURNAMENT_HOST", true)]
+    [InlineData("tournament_host", true)]
+    [InlineData("SURVIVAL_HOST 2", false)]
+    [InlineData("SURVIVAL_HOSTS", false)]
+    [InlineData(" MY SURVIVAL_HOST", false)]
+    [InlineData("MY ROOM", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Only_the_two_host_names_are_reserved(string? name, bool expected)
+    {
+        // A reserved name is a role rather than a room, so the room list hides it
+        // and the create-game request refuses it without the dedicated flag.
+        Assert.Equal(expected, EventHostEligibilityUtils.IsReservedHostName(name));
+    }
+
     [Fact]
     public void An_unreadable_settings_blob_is_not_a_dedicated_room()
     {

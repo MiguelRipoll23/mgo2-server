@@ -109,7 +109,7 @@ public sealed class PlayerPresenceNotificationServiceTests
             NullLogger<PlayerPresenceNotificationService>.Instance);
 
     private static CharacterService CreateCharacterService() =>
-        new(new UnreachableDbContextFactory());
+        new(new UnreachableDbContextFactory(), new CharacterMemoryService());
 
     /// <summary>Fails the way a database that cannot be reached fails.</summary>
     private sealed class UnreachableDbContextFactory : IDbContextFactory<Mgo2DatabaseContext>

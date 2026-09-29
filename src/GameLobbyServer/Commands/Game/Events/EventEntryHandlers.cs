@@ -22,6 +22,7 @@ public sealed class EnterEventHandler(
     TournamentSubmissionService submissionService,
     EventEntryService entryService,
     EventTeamService teamService,
+    EventTeamMemberService memberService,
     EventTeamPushService pushService,
     EventInvitationService invitationService,
     EventMatchmakingService matchmakingService,
@@ -238,7 +239,7 @@ public sealed class EnterEventHandler(
         // pairable in the moment between the two.
         await matchmakingService.CancelAsync(teamIdentifier, cancellationToken);
 
-        var outcome = await teamService.LeaveAsync(teamIdentifier, characterIdentifier, cancellationToken);
+        var outcome = await memberService.LeaveAsync(teamIdentifier, characterIdentifier, cancellationToken);
         session.EventTeamIdentifier = null;
         invitationService.RemoveForCharacter(characterIdentifier);
         invitationService.RemoveForTeam(teamIdentifier);

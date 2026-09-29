@@ -1,5 +1,6 @@
 using Mgo2Server.Shared.Persistence;
 using Mgo2Server.Shared.Persistence.Entities;
+using Mgo2Server.Shared.Utils;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mgo2Server.Shared.Domain.Events;
@@ -20,7 +21,10 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// </para>
 /// </summary>
 /// <param name="contextFactory">Factory of the database contexts.</param>
-public sealed class EventTeamStateService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
+/// <param name="memoryService">Store that owns the simulated teams.</param>
+public sealed class EventTeamStateService(
+    IDbContextFactory<Mgo2DatabaseContext> contextFactory,
+    EventTeamMemoryService memoryService)
 {
     /// <summary>
     /// Moves a team into <paramref name="state"/>, and reports whether the row
@@ -37,7 +41,14 @@ public sealed class EventTeamStateService(IDbContextFactory<Mgo2DatabaseContext>
         int state,
         CancellationToken cancellationToken = default)
     {
-        if (teamIdentifier <= 0)
+        // A simulated team has no row to write, so the queue's mark is kept
+        // where the team itself is. A zero never names a team of either kind.
+        if (TestIdentifierUtils.IsTest(teamIdentifier))
+        {
+            return memoryService.SetTeamState(teamIdentifier, state);
+        }
+
+        if (teamIdentifier == 0)
         {
             return false;
         }

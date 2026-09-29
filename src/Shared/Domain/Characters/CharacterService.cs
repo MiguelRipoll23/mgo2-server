@@ -32,7 +32,10 @@ public sealed record CharacterClanInformation(int ClanIdentifier, string ClanNam
 /// class.
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
-public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
+/// <param name="memoryService">Store that owns the in-memory test characters.</param>
+public sealed partial class CharacterService(
+    IDbContextFactory<Mgo2DatabaseContext> contextFactory,
+    CharacterMemoryService memoryService)
     : DomainService(contextFactory)
 {
     /// <summary>Lists the active characters of an account.</summary>
@@ -54,6 +57,14 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<Character?> FindByIdAsync(int characterIdentifier, CancellationToken cancellationToken = default)
     {
+        // A test character is not a row, so the store that holds it answers
+        // first; a real identifier finds nothing there and falls through to the
+        // table, which is what makes one lookup serve both kinds.
+        if (memoryService.Find(characterIdentifier) is { } simulated)
+        {
+            return simulated;
+        }
+
         await using var context = await CreateContextAsync(cancellationToken);
         return await context.Characters
             .AsNoTracking()
@@ -65,6 +76,11 @@ public sealed partial class CharacterService(IDbContextFactory<Mgo2DatabaseConte
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<Character?> FindByNameAsync(string name, CancellationToken cancellationToken = default)
     {
+        if (memoryService.FindByName(name) is { } simulated)
+        {
+            return simulated;
+        }
+
         await using var context = await CreateContextAsync(cancellationToken);
         return await context.Characters
             .AsNoTracking()

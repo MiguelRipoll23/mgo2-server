@@ -52,6 +52,7 @@ public readonly record struct EventEntryResult(EventEntryOutcome Outcome, int Te
 /// </para>
 /// </summary>
 /// <param name="teamService">Service that owns the entrant teams.</param>
+/// <param name="memberService">Service that owns the rosters.</param>
 /// <param name="submissionService">Service that submits a team into the Tournament field.</param>
 /// <param name="matchmakingService">Service that pairs the Survival field.</param>
 /// <param name="characterService">Service that owns the characters entering.</param>
@@ -59,6 +60,7 @@ public readonly record struct EventEntryResult(EventEntryOutcome Outcome, int Te
 /// <param name="options">Event configuration, which carries the level limits.</param>
 public sealed class EventEntryService(
     EventTeamService teamService,
+    EventTeamMemberService memberService,
     TournamentSubmissionService submissionService,
     EventMatchmakingService matchmakingService,
     CharacterService characterService,
@@ -136,7 +138,7 @@ public sealed class EventEntryService(
             return new EventEntryResult(EventEntryOutcome.InTeam, existing.Identifier);
         }
 
-        await teamService.SetDecisionAsync(teamIdentifier, characterIdentifier, 1, cancellationToken);
+        await memberService.SetDecisionAsync(teamIdentifier, characterIdentifier, 1, cancellationToken);
 
         return lobbySubtype == EventConstants.TournamentSelector
             ? await EnterTournamentAsync(characterIdentifier, eventIdentifier, teamIdentifier, cancellationToken)

@@ -19,12 +19,14 @@ namespace Mgo2Server.GameLobbyServer.Maintenance;
 /// </para>
 /// </summary>
 /// <param name="teamService">Service that owns the teams.</param>
+/// <param name="memberService">Service that owns the rosters.</param>
 /// <param name="pushService">Service that tells the remaining members.</param>
 /// <param name="invitationService">Service that owns the pending invitations.</param>
 /// <param name="matchmakingService">Service that owns the waiting teams.</param>
 /// <param name="logger">Logger of the service.</param>
 public sealed class EventSessionCleanupService(
     EventTeamService teamService,
+    EventTeamMemberService memberService,
     EventTeamPushService pushService,
     EventInvitationService invitationService,
     EventMatchmakingService matchmakingService,
@@ -70,7 +72,7 @@ public sealed class EventSessionCleanupService(
             // never waiting in the field with a roster that has a member missing.
             await matchmakingService.CancelAsync(teamIdentifier, cancellationToken);
 
-            var outcome = await teamService.LeaveAsync(teamIdentifier, characterIdentifier, cancellationToken);
+            var outcome = await memberService.LeaveAsync(teamIdentifier, characterIdentifier, cancellationToken);
             if (outcome == EventLeaveOutcome.NotAMember)
             {
                 return;

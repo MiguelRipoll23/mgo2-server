@@ -169,6 +169,7 @@ public static class ServerServiceCollectionExtensions
         services.TryAddSingleton<ILobbyPresencePublisher, NullLobbyPresencePublisher>();
         services.AddSingleton<LobbyTrackerService>();
         services.AddSingleton<CharacterPresenceService>();
+        services.AddSingleton<CharacterMemoryService>();
         services.AddSingleton<CharacterService>();
         services.AddSingleton<CharacterStatisticsService>();
         services.AddSingleton<CharacterTitleService>();
@@ -181,7 +182,10 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<AutomatchService>();
         services.AddSingleton<AutomatchHooksService>();
         services.AddSingleton<EventInformationService>();
+        services.AddSingleton<EventTeamMemoryService>();
+        services.AddSingleton<EventHostRoomMemoryService>();
         services.AddSingleton<EventTeamService>();
+        services.AddSingleton<EventTeamMemberService>();
         services.AddSingleton<EventHostRoomPoolService>();
         services.AddSingleton<EventTeamStateService>();
         services.AddSingleton<EventTeamPushService>();

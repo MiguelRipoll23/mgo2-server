@@ -63,6 +63,7 @@ public sealed class LobbyCoordinationConnectionTests : IAsyncLifetime
         // not have, which is precisely the state the coordination must survive.
         builder.Services.AddDbContextFactory<Mgo2DatabaseContext>(options =>
             options.UseNpgsql("Host=127.0.0.1;Port=1;Database=mgo2;Username=postgres;Timeout=1"));
+        builder.Services.AddSingleton<CharacterMemoryService>();
         builder.Services.AddSingleton<CharacterService>();
 
         application = builder.Build();

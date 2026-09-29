@@ -17,7 +17,9 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 /// <param name="matchService">Service that owns the pairings.</param>
+/// <param name="teamService">Service that owns the paired teams, real and simulated.</param>
 /// <param name="leaseService">Service that owns the room claims.</param>
+/// <param name="memoryRooms">Store that owns the rooms this process opened, and their claims.</param>
 /// <param name="rewardService">Service that pays a completed match.</param>
 /// <param name="roomPool">The rooms a host is chosen from.</param>
 /// <param name="rosterService">Service that owns the frozen rosters a pairing names.</param>
@@ -25,7 +27,9 @@ namespace Mgo2Server.Shared.Domain.Events;
 public sealed partial class EventAssignmentService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
     EventMatchService matchService,
+    EventTeamService teamService,
     EventHostLeaseService leaseService,
+    EventHostRoomMemoryService memoryRooms,
     EventRewardService rewardService,
     EventHostRoomPoolService roomPool,
     TournamentRosterService rosterService,
@@ -64,14 +68,11 @@ public sealed partial class EventAssignmentService(
 
         foreach (var match in waiting)
         {
-            await using var context = await CreateContextAsync(cancellationToken);
-            var teams = await context.EventTeams
-                .Include(team => team.Members)
-                .Where(team => team.Identifier == match.FirstTeamIdentifier
-                    || team.Identifier == match.SecondTeamIdentifier)
-                .ToListAsync(cancellationToken);
-            var first = teams.FirstOrDefault(team => team.Identifier == match.FirstTeamIdentifier);
-            var second = teams.FirstOrDefault(team => team.Identifier == match.SecondTeamIdentifier);
+            // The teams are read through the team service rather than straight
+            // from the table, so a match whose second team exists only in memory
+            // still finds its roster and can take a host when one is free.
+            var first = await teamService.FindAsync(match.FirstTeamIdentifier, cancellationToken);
+            var second = await teamService.FindAsync(match.SecondTeamIdentifier, cancellationToken);
             if (first is null || second is null)
             {
                 continue;
@@ -130,13 +131,8 @@ public sealed partial class EventAssignmentService(
             return null;
         }
 
-        var teams = await context.EventTeams
-            .Include(team => team.Members)
-            .Where(team => team.Identifier == match.FirstTeamIdentifier
-                || team.Identifier == match.SecondTeamIdentifier)
-            .ToListAsync(cancellationToken);
-        var firstTeam = teams.FirstOrDefault(team => team.Identifier == match.FirstTeamIdentifier);
-        var secondTeam = teams.FirstOrDefault(team => team.Identifier == match.SecondTeamIdentifier);
+        var firstTeam = await teamService.FindAsync(match.FirstTeamIdentifier, cancellationToken);
+        var secondTeam = await teamService.FindAsync(match.SecondTeamIdentifier, cancellationToken);
         if (firstTeam is null || secondTeam is null)
         {
             return null;
@@ -216,15 +212,15 @@ public sealed partial class EventAssignmentService(
         int gameIdentifier,
         CancellationToken cancellationToken = default)
     {
-        var lease = await leaseService.FindActiveByGameAsync(gameIdentifier, cancellationToken);
-        if (lease is null)
+        var found = await FindClaimByRoomAsync(gameIdentifier, cancellationToken);
+        if (found is not { } claim)
         {
             return null;
         }
 
         return await LoadAsync(
-            lease.MatchIdentifier,
-            EventAssignmentState.From(lease),
+            claim.MatchIdentifier,
+            claim.Claim,
             cancellationToken);
     }
 
@@ -315,13 +311,8 @@ public sealed partial class EventAssignmentService(
             return null;
         }
 
-        var teams = await context.EventTeams
-            .Include(team => team.Members)
-            .Where(team => team.Identifier == match.FirstTeamIdentifier
-                || team.Identifier == match.SecondTeamIdentifier)
-            .ToListAsync(cancellationToken);
-        var firstTeam = teams.FirstOrDefault(team => team.Identifier == match.FirstTeamIdentifier);
-        var secondTeam = teams.FirstOrDefault(team => team.Identifier == match.SecondTeamIdentifier);
+        var firstTeam = await teamService.FindAsync(match.FirstTeamIdentifier, cancellationToken);
+        var secondTeam = await teamService.FindAsync(match.SecondTeamIdentifier, cancellationToken);
         if (firstTeam is null || secondTeam is null)
         {
             return null;

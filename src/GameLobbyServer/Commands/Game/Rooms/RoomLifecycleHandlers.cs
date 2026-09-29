@@ -3,6 +3,7 @@ using Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Automatch;
 using Mgo2Server.Shared.Domain.Characters;
+using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Persistence.Entities;
@@ -52,6 +53,25 @@ public sealed class CreateGameHandler(
         var password = pushed is { Password.Length: > 0 } ? pushed.Password : string.Empty;
         var rotation = ReadRotation(pushed);
 
+        // A room the host flagged as dedicated is the one the event hosts are
+        // chosen from, so the flag travels into the room settings the event
+        // host-eligibility reads; a plain room keeps the empty default.
+        var isDedicatedRoom = pushed is { Dedicated: true };
+
+        // A reserved host name is a role rather than a room: the event system
+        // leases such a room to a match, and only a room that says it is dedicated
+        // may hold the role. Taken without the flag it would sit in the lobby as a
+        // room named for a host and never be eligible to be one.
+        if (EventHostEligibilityUtils.IsReservedHostName(name) && !isDedicatedRoom)
+        {
+            await sessionHelper.SendResultAsync(
+                session,
+                CommandConstants.CreateGameResult,
+                ErrorCodeConstants.ResultCreateGameRefused,
+                cancellationToken);
+            return;
+        }
+
         var game = await gameService.CreateAsync(room =>
         {
             room.HostIdentifier = characterIdentifier;
@@ -61,11 +81,6 @@ public sealed class CreateGameHandler(
             room.Comment = comment;
             room.MaximumPlayers = defaultMaximumPlayers;
             room.Games = JsonSerializer.Serialize(rotation);
-
-            // A room the host flagged as dedicated is the one the event hosts are
-            // chosen from, so the flag travels into the room settings the event
-            // host-eligibility reads; a plain room keeps the empty default.
-            var isDedicatedRoom = pushed is { Dedicated: true };
 
             if (isDedicatedRoom)
             {

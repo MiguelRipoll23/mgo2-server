@@ -9,9 +9,9 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 /// <summary>
 /// Streams the joinable teams of the lobby the caller is in.
 /// <para>
-/// There is one source: the rows. A testing team is a row like any other, so it
-/// appears in this list exactly as a player's team does and the client cannot
-/// tell where a row came from.
+/// The rows and the simulated teams a test may hold are one list here: the team
+/// service merges them, so a simulated team appears exactly as a player's does
+/// and the client cannot tell where one came from.
 /// </para>
 /// </summary>
 public sealed class GetEventTeamListHandler(

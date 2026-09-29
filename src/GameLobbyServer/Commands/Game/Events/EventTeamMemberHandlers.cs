@@ -9,6 +9,7 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 /// <summary>Disbands a team the caller leads, or removes the caller from one.</summary>
 public sealed class LeaveEventTeamHandler(
     EventTeamService teamService,
+    EventTeamMemberService memberService,
     EventTeamPushService pushService,
     EventInvitationService invitationService,
     EventMatchmakingService matchmakingService,
@@ -59,7 +60,7 @@ public sealed class LeaveEventTeamHandler(
         // waiting in the field with a roster that has a member missing.
         await matchmakingService.CancelAsync(teamIdentifier, cancellationToken);
 
-        var outcome = await teamService.LeaveAsync(teamIdentifier, characterIdentifier, cancellationToken);
+        var outcome = await memberService.LeaveAsync(teamIdentifier, characterIdentifier, cancellationToken);
 
         await sessionHelper.SendResultAsync(
             session,
@@ -99,6 +100,7 @@ public sealed class LeaveEventTeamHandler(
 /// <summary>Records one member's entry decision and pushes it to the team.</summary>
 public sealed class SetEventEntryDecisionHandler(
     EventTeamService teamService,
+    EventTeamMemberService memberService,
     EventTeamPushService pushService,
     EventMatchmakingService matchmakingService,
     SessionHelper sessionHelper) : ICommandHandler
@@ -139,7 +141,7 @@ public sealed class SetEventEntryDecisionHandler(
             return;
         }
 
-        var slot = await teamService.SetDecisionAsync(
+        var slot = await memberService.SetDecisionAsync(
             teamIdentifier,
             characterIdentifier,
             decision,

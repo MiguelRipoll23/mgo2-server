@@ -1,5 +1,6 @@
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
+using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Persistence.Entities;
@@ -44,6 +45,12 @@ public sealed class GetGameListHandler(
         var games = lobbyIdentifier > 0
             ? await gameService.FindByLobbyAsync(lobbyIdentifier, cancellationToken)
             : [];
+
+        // A reserved host room is a role rather than a room: the assignment leases
+        // it to a match the teams have already been paired for, so no player picks
+        // it from here and nobody may join it by choosing it. The reference leaves
+        // its reserved hosts out of this list for the same reason.
+        games.RemoveAll(game => EventHostEligibilityUtils.IsReservedHostName(game.Name));
 
         var hostIdentifiers = games.Select(game => game.HostIdentifier).Distinct().ToList();
         var ratings = await gameService.GetHostRatingSummariesAsync(hostIdentifiers, cancellationToken);

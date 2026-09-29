@@ -1,3 +1,4 @@
+using Mgo2Server.GameLobbyServer.Coordination;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Interfaces;
@@ -43,10 +44,14 @@ public sealed class SetTeamHandler(
 /// <summary>Broadcasts a chat message to everyone in the same room.</summary>
 /// <param name="activeGameSessions">Connections currently in the lobby.</param>
 /// <param name="gameService">Service the room's teams are read from.</param>
+/// <param name="survivalTest">Service the Survival self-test runs through.</param>
+/// <param name="lobbyIdentity">Service that knows this lobby's own game type.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class SendChatHandler(
     ActiveGameSessionsService activeGameSessions,
     GameService gameService,
+    SurvivalTestService survivalTest,
+    LobbyIdentityService lobbyIdentity,
     SessionHelper sessionHelper) : ICommandHandler
 {
     /// <summary>Prefix a client may not impersonate.</summary>
@@ -67,6 +72,16 @@ public sealed class SendChatHandler(
         }
 
         var characterIdentifier = session.CharacterIdentifier.Value;
+
+        // The self-test rides on chat because the client has no command for it.
+        // It is served only by a lobby whose own game type is Survival, so a
+        // /test typed into any other lobby stays ordinary text.
+        if (SurvivalTestService.IsCommand(request.Text)
+            && await lobbyIdentity.ResolveModeAsync(cancellationToken) == LobbySubtypeConstants.Survival)
+        {
+            await survivalTest.RunAsync(session, cancellationToken);
+            return;
+        }
 
         // A client may not impersonate the server.
         if (request.Text.StartsWith(ServerPrefix, StringComparison.OrdinalIgnoreCase))

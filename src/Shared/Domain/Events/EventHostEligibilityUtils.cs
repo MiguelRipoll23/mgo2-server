@@ -26,24 +26,31 @@ public static class EventHostEligibilityUtils
     public const int DedicatedHostPlayerSlots = 1;
 
     /// <summary>
-    /// Whether a room is a dedicated event host. The name is compared
-    /// case-insensitively because the client sends it as typed, and the flag is
-    /// read from the room's own settings rather than inferred.
+    /// Whether a room name is one of the reserved host names, so that it names a
+    /// role rather than a room. The comparison is case-insensitive because a
+    /// client types the name and sends it as typed.
+    /// <para>
+    /// Two readers other than the eligibility rule ask this. The room list leaves
+    /// these rooms out, because a host is leased to a match rather than chosen by
+    /// a player, and the create-game request refuses the name unless the room also
+    /// says it is dedicated — which is the reference's own pair of rules, and the
+    /// reason a name is not on its own a claim to the role.
+    /// </para>
+    /// </summary>
+    /// <param name="name">Name of the room.</param>
+    public static bool IsReservedHostName(string? name) =>
+        !string.IsNullOrEmpty(name)
+        && (string.Equals(name, SurvivalHostName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, TournamentHostName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Whether a room is a dedicated event host: named for the role, and saying so
+    /// in its own settings rather than having the name taken as the claim.
     /// </summary>
     /// <param name="name">Name of the room.</param>
     /// <param name="common">Room settings blob.</param>
-    public static bool IsDedicatedEventHost(string? name, string? common)
-    {
-        if (string.IsNullOrEmpty(name))
-        {
-            return false;
-        }
-
-        var matchesRole =
-            string.Equals(name, SurvivalHostName, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(name, TournamentHostName, StringComparison.OrdinalIgnoreCase);
-        return matchesRole && IsDedicated(common);
-    }
+    public static bool IsDedicatedEventHost(string? name, string? common) =>
+        IsReservedHostName(name) && IsDedicated(common);
 
     /// <summary>Reads the dedicated flag out of the room settings.</summary>
     /// <param name="common">Room settings blob, or null.</param>

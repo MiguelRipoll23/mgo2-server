@@ -5,49 +5,27 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Mgo2Server.Shared.Domain.Events;
 
-/// <summary>Outcome of joining a team.</summary>
-public enum EventJoinOutcome
-{
-    /// <summary>The character is now a member.</summary>
-    Joined,
-
-    /// <summary>No such team exists in the lobby.</summary>
-    TeamNotFound,
-
-    /// <summary>The team is protected and the supplied password is wrong.</summary>
-    WrongPassword,
-
-    /// <summary>The team has no free slot.</summary>
-    TeamFull,
-
-    /// <summary>The character is already a member.</summary>
-    AlreadyMember,
-}
-
-/// <summary>Result of removing a member, which decides whether the team survives.</summary>
-public enum EventLeaveOutcome
-{
-    /// <summary>A non-leader member left and the team remains.</summary>
-    MemberLeft,
-
-    /// <summary>The leader left and the team is gone.</summary>
-    TeamDisbanded,
-
-    /// <summary>The character was not a member.</summary>
-    NotAMember,
-}
-
 /// <summary>
-/// Owns the formed event teams: their creation, roster changes and the
-/// projection of a team into the active-game snapshot the client caches.
+/// Owns the formed event teams: their creation and the projection of a team into
+/// the active-game snapshot the client caches.
 /// <para>
-/// Every operation reads or writes the row, so a restart frees nothing and a
-/// second process sees the same teams. The snapshot is built at send time; it is
-/// never the storage.
+/// A team is either a row or a simulated one held in memory. Every query merges
+/// the two, so a caller — the matchmaker included — reads one store and never has
+/// to know where a team came from. A row is authoritative for everything the
+/// client can see; a simulated team is a test's own, and it is gone when the
+/// process is.
+/// </para>
+/// <para>
+/// Every operation reads or writes its half, so a restart frees nothing that was
+/// persisted and a second process sees the same rows. The snapshot is built at
+/// send time; it is never the storage.
 /// </para>
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
-public sealed class EventTeamService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
+/// <param name="memoryService">Store that owns the simulated teams and members.</param>
+public sealed class EventTeamService(
+    IDbContextFactory<Mgo2DatabaseContext> contextFactory,
+    EventTeamMemoryService memoryService)
     : DomainService(contextFactory)
 {
     /// <summary>Option bit marking a password-protected team.</summary>
@@ -110,15 +88,40 @@ public sealed class EventTeamService(IDbContextFactory<Mgo2DatabaseContext> cont
         return team;
     }
 
-    /// <summary>Finds one team with its roster.</summary>
+    /// <summary>
+    /// Creates a simulated team whose whole roster is simulated. It is never
+    /// written to the database and it disappears when the process does, which is
+    /// what makes it usable as an opponent without touching real state.
+    /// </summary>
+    /// <param name="name">Display name of the team.</param>
+    /// <param name="matchType">Match type, which is the lobby selector.</param>
+    /// <param name="lobbyIdentifier">Lobby the team belongs to.</param>
+    /// <param name="eventIdentifier">Event the team is filed under.</param>
+    /// <param name="roster">Test characters the roster is filled from.</param>
+    public EventTeam CreateInMemory(
+        string name,
+        int matchType,
+        int lobbyIdentifier,
+        int eventIdentifier,
+        IReadOnlyList<Character> roster) =>
+        memoryService.CreateTeam(name, matchType, lobbyIdentifier, eventIdentifier, roster);
+
+    /// <summary>Finds one team with its roster, real or simulated.</summary>
     /// <param name="teamIdentifier">Team to find.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<EventTeam?> FindAsync(int teamIdentifier, CancellationToken cancellationToken = default)
     {
+        if (memoryService.FindTeam(teamIdentifier) is { } memoryTeam)
+        {
+            return memoryTeam;
+        }
+
         await using var context = await CreateContextAsync(cancellationToken);
-        return await context.EventTeams
-            .Include(team => team.Members)
-            .FirstOrDefaultAsync(team => team.Identifier == teamIdentifier, cancellationToken);
+        var team = await context.EventTeams
+            .AsNoTracking()
+            .Include(candidate => candidate.Members)
+            .FirstOrDefaultAsync(candidate => candidate.Identifier == teamIdentifier, cancellationToken);
+        return AttachSimulatedMembers(team);
     }
 
     /// <summary>
@@ -140,15 +143,19 @@ public sealed class EventTeamService(IDbContextFactory<Mgo2DatabaseContext> cont
         }
 
         await using var context = await CreateContextAsync(cancellationToken);
-        return await context.EventTeams
-            .Include(team => team.Members)
+        var team = await context.EventTeams
+            .AsNoTracking()
+            .Include(candidate => candidate.Members)
             .FirstOrDefaultAsync(
-                team => team.OwnerCharacterIdentifier == ownerCharacterIdentifier
-                    && team.LobbyIdentifier == lobbyIdentifier,
+                candidate => candidate.OwnerCharacterIdentifier == ownerCharacterIdentifier
+                    && candidate.LobbyIdentifier == lobbyIdentifier,
                 cancellationToken);
+
+        return AttachSimulatedMembers(team)
+            ?? memoryService.FindOwnedInLobby(ownerCharacterIdentifier, lobbyIdentifier);
     }
 
-    /// <summary>Lists the joinable teams of a lobby.</summary>
+    /// <summary>Lists the joinable teams of a lobby, real and simulated.</summary>
     /// <param name="lobbyIdentifier">Lobby to list.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<List<EventTeam>> FindJoinableAsync(
@@ -156,17 +163,18 @@ public sealed class EventTeamService(IDbContextFactory<Mgo2DatabaseContext> cont
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        return await context.EventTeams
-            .Include(team => team.Members)
-            .Where(team => team.LobbyIdentifier == lobbyIdentifier
-                && team.State == EventConstants.TeamJoinableState)
-            .OrderBy(team => team.Identifier)
+        var teams = await context.EventTeams
+            .AsNoTracking()
+            .Include(candidate => candidate.Members)
+            .Where(candidate => candidate.LobbyIdentifier == lobbyIdentifier
+                && candidate.State == EventConstants.TeamJoinableState)
+            .OrderBy(candidate => candidate.Identifier)
             .ToListAsync(cancellationToken);
+
+        teams.AddRange(memoryService.FindJoinable(lobbyIdentifier));
+        return teams;
     }
 
-    /// <summary>Lists every team of a lobby, in any state.</summary>
-    /// <param name="lobbyIdentifier">Lobby to list.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <summary>
     /// Lists the teams one event's list is made of. The lobby alone is not
     /// enough: a lobby may be publishing several events, and each is shown with
@@ -181,160 +189,26 @@ public sealed class EventTeamService(IDbContextFactory<Mgo2DatabaseContext> cont
         CancellationToken cancellationToken = default)
     {
         await using var context = await CreateContextAsync(cancellationToken);
-        return await context.EventTeams
-            .Include(team => team.Members)
-            .Where(team => team.LobbyIdentifier == lobbyIdentifier
-                && team.EventIdentifier == eventIdentifier)
-            .OrderBy(team => team.Identifier)
+        var teams = await context.EventTeams
+            .AsNoTracking()
+            .Include(candidate => candidate.Members)
+            .Where(candidate => candidate.LobbyIdentifier == lobbyIdentifier
+                && candidate.EventIdentifier == eventIdentifier)
+            .OrderBy(candidate => candidate.Identifier)
             .ToListAsync(cancellationToken);
+
+        foreach (var team in teams)
+        {
+            AttachSimulatedMembers(team);
+        }
+
+        teams.AddRange(memoryService.FindByLobbyAndEvent(lobbyIdentifier, eventIdentifier));
+        return teams;
     }
 
-    /// <summary>Adds a character to a team.</summary>
-    /// <param name="teamIdentifier">Team to join.</param>
-    /// <param name="lobbyIdentifier">Lobby the caller is in.</param>
-    /// <param name="characterIdentifier">Character joining.</param>
-    /// <param name="characterName">Name of the character joining.</param>
-    /// <param name="experience">Experience of the character joining.</param>
-    /// <param name="password">Password supplied for a protected team.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<(EventJoinOutcome Outcome, EventTeam? Team)> JoinAsync(
-        int teamIdentifier,
-        int lobbyIdentifier,
-        int characterIdentifier,
-        string characterName,
-        int experience,
-        string password,
-        CancellationToken cancellationToken = default)
-    {
-        await using var context = await CreateContextAsync(cancellationToken);
-        var team = await context.EventTeams
-            .Include(candidate => candidate.Members)
-            .FirstOrDefaultAsync(
-                candidate => candidate.Identifier == teamIdentifier
-                    && candidate.LobbyIdentifier == lobbyIdentifier,
-                cancellationToken);
-
-        if (team is null)
-        {
-            return (EventJoinOutcome.TeamNotFound, null);
-        }
-
-        // A join that is refused leaves the team untouched rather than mutating
-        // it and rolling back, so the row the client was shown stays valid.
-        if (team.Members.Any(member => member.CharacterIdentifier == characterIdentifier))
-        {
-            return (EventJoinOutcome.AlreadyMember, team);
-        }
-
-        if ((team.FlagBits & PasswordProtectedFlag) != 0
-            && !string.Equals(team.Password, password ?? string.Empty, StringComparison.Ordinal))
-        {
-            return (EventJoinOutcome.WrongPassword, team);
-        }
-
-        if (team.Members.Count >= EventConstants.TeamMemberLimit)
-        {
-            return (EventJoinOutcome.TeamFull, team);
-        }
-
-        var slot = NextFreeSlot(team);
-        if (slot < 0)
-        {
-            return (EventJoinOutcome.TeamFull, team);
-        }
-
-        team.Members.Add(new EventTeamMember
-        {
-            Slot = slot,
-            CharacterIdentifier = characterIdentifier,
-            Name = characterName,
-            State = EventConstants.ParticipantPendingState,
-            Experience = Math.Max(0, experience),
-        });
-
-        // The sequence is left alone. It is the serial the members' clients are
-        // holding, and the notification that fills this slot is discarded unless
-        // it carries exactly that one — see EventTeam.Sequence. The roster
-        // changes; the identity the client reconciles it against does not.
-        team.UpdatedAt = DateTimeOffset.UtcNow;
-
-        await context.SaveChangesAsync(cancellationToken);
-        return (EventJoinOutcome.Joined, team);
-    }
-
-    /// <summary>Removes a member, dismantling the team when its leader leaves.</summary>
-    /// <param name="teamIdentifier">Team to change.</param>
-    /// <param name="characterIdentifier">Character leaving.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<EventLeaveOutcome> LeaveAsync(
-        int teamIdentifier,
-        int characterIdentifier,
-        CancellationToken cancellationToken = default)
-    {
-        await using var context = await CreateContextAsync(cancellationToken);
-        var team = await context.EventTeams
-            .Include(candidate => candidate.Members)
-            .FirstOrDefaultAsync(candidate => candidate.Identifier == teamIdentifier, cancellationToken);
-
-        if (team is null)
-        {
-            return EventLeaveOutcome.NotAMember;
-        }
-
-        if (team.OwnerCharacterIdentifier == characterIdentifier)
-        {
-            context.EventTeams.Remove(team);
-            await context.SaveChangesAsync(cancellationToken);
-            return EventLeaveOutcome.TeamDisbanded;
-        }
-
-        var member = team.Members.FirstOrDefault(candidate => candidate.CharacterIdentifier == characterIdentifier);
-        if (member is null)
-        {
-            return EventLeaveOutcome.NotAMember;
-        }
-
-        context.EventTeamMembers.Remove(member);
-
-        // Left alone for the same reason a join leaves it alone: the removal is
-        // announced against the serial the remaining members are holding.
-        team.UpdatedAt = DateTimeOffset.UtcNow;
-        await context.SaveChangesAsync(cancellationToken);
-        return EventLeaveOutcome.MemberLeft;
-    }
-
-    /// <summary>Sets one member's entry decision.</summary>
-    /// <param name="teamIdentifier">Team to change.</param>
-    /// <param name="characterIdentifier">Character whose decision changed.</param>
-    /// <param name="decision">One to ready the member, zero to hold them.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    /// <returns>The changed slot index, or minus one when the character is not a member.</returns>
-    public async Task<int> SetDecisionAsync(
-        int teamIdentifier,
-        int characterIdentifier,
-        int decision,
-        CancellationToken cancellationToken = default)
-    {
-        await using var context = await CreateContextAsync(cancellationToken);
-        var team = await context.EventTeams
-            .Include(candidate => candidate.Members)
-            .FirstOrDefaultAsync(candidate => candidate.Identifier == teamIdentifier, cancellationToken);
-
-        var member = team?.Members.FirstOrDefault(candidate => candidate.CharacterIdentifier == characterIdentifier);
-        if (team is null || member is null)
-        {
-            return -1;
-        }
-
-        member.State = decision == 1
-            ? EventConstants.ParticipantReadyState
-            : EventConstants.ParticipantPendingState;
-        team.UpdatedAt = DateTimeOffset.UtcNow;
-        await context.SaveChangesAsync(cancellationToken);
-        return member.Slot;
-    }
-
-    /// <summary>Projects a team and its roster into an active-game snapshot.</summary>
+    /// <summary>
+    /// Projects a team and its roster into an active-game snapshot.
+    /// </summary>
     /// <param name="team">Team to project; its members must be loaded.</param>
     /// <returns>The snapshot.</returns>
     public static EventSnapshot BuildSnapshot(EventTeam team)
@@ -382,16 +256,24 @@ public sealed class EventTeamService(IDbContextFactory<Mgo2DatabaseContext> cont
         return snapshot;
     }
 
-    private static int NextFreeSlot(EventTeam team)
+    /// <summary>
+    /// Merges the simulated members a real team carries into its roster. The
+    /// entity is detached, so a member that exists only in memory cannot be
+    /// written back by accident.
+    /// </summary>
+    /// <param name="team">Team to merge into, when there is one.</param>
+    private EventTeam? AttachSimulatedMembers(EventTeam? team)
     {
-        for (var slot = 1; slot < EventConstants.TeamRosterSize; slot++)
+        if (team is null)
         {
-            if (!team.Members.Any(member => member.Slot == slot))
-            {
-                return slot;
-            }
+            return null;
         }
 
-        return -1;
+        foreach (var member in memoryService.MembersFor(team.Identifier))
+        {
+            team.Members.Add(member);
+        }
+
+        return team;
     }
 }

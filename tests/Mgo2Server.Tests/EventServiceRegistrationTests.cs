@@ -1,4 +1,5 @@
 using Mgo2Server.Infrastructure.DependencyInjection;
+using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Events;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,7 +34,10 @@ public sealed class EventServiceRegistrationTests
         Assert.NotNull(provider.GetRequiredService<EventOutcomePushService>());
         Assert.NotNull(provider.GetRequiredService<EventMatchService>());
         Assert.NotNull(provider.GetRequiredService<EventMatchmakingService>());
+        Assert.NotNull(provider.GetRequiredService<EventTeamMemoryService>());
+        Assert.NotNull(provider.GetRequiredService<EventHostRoomMemoryService>());
         Assert.NotNull(provider.GetRequiredService<EventTeamService>());
+        Assert.NotNull(provider.GetRequiredService<EventTeamMemberService>());
         Assert.NotNull(provider.GetRequiredService<EventTeamPushService>());
         Assert.NotNull(provider.GetRequiredService<EventInvitationService>());
         Assert.NotNull(provider.GetRequiredService<EventSessionDirectoryService>());
@@ -67,5 +71,6 @@ public sealed class EventServiceRegistrationTests
         // and the assignment sweep reads it, so a registration missing it fails
         // on the first pairing.
         Assert.NotNull(provider.GetRequiredService<EventHostRoomPoolService>());
+        Assert.NotNull(provider.GetRequiredService<CharacterMemoryService>());
     }
 }

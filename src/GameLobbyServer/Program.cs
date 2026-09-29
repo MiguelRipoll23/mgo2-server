@@ -24,6 +24,7 @@ builder.Services.AddServerServices(builder.Configuration);
 builder.Services.AddServerTelemetry(builder.Configuration, "mgo2-game-lobby");
 builder.Services.AddCommandHandlers();
 builder.Services.AddSingleton<ExternalJoinHintService>();
+builder.Services.AddSingleton<SurvivalTestService>();
 
 // The coordination stream of this lobby. It both reports the presence of this
 // lobby to the HTTP API and receives the flash news the API relays, and it is

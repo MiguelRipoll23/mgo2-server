@@ -70,6 +70,14 @@ public static class ErrorCodeConstants
     /// <summary>Official GAME_FULL(-503).</summary>
     public const uint ResultGameFull = 0xfffffe09;
 
+    /// <summary>
+    /// Create-room refusal (2), the code the reference raises for a request its own
+    /// rules refuse — an unsupported lobby subtype, and a reserved host name
+    /// without the dedicated flag. Sent verbatim: the create-room reply is a raw
+    /// result word rather than one of the masked error codes.
+    /// </summary>
+    public const uint ResultCreateGameRefused = 2;
+
     /// <summary>Official personal-stats "character deleted"(-266).</summary>
     public const uint ResultCharacterGone = 0xfffffef6;
 
