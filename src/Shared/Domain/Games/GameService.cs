@@ -98,6 +98,25 @@ public sealed partial class GameService(
     }
 
     /// <summary>
+    /// Lists every room that is still being published, each with the roster it is
+    /// holding, for a caller that is choosing a room to host a match.
+    /// <para>
+    /// It is not narrowed by lobby, and that is the point: a room named for a host
+    /// role carries the role's own mode rather than the mode of the lobby it sits
+    /// in, and it may be opened anywhere. A reader that asked only one lobby found
+    /// the host or not depending on where its owner happened to be standing.
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task<List<Game>> FindHostRoomCandidatesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var context = await CreateContextAsync(cancellationToken);
+        return await StillPublished(context.Games.AsNoTracking())
+            .Include(game => game.Players)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Narrows a room query to the rooms that are still being published: those
     /// whose host has written to them inside <see cref="ServerOptions.GameStaleSeconds"/>.
     /// A room whose host stopped is deleted by the daily cleanup, but it stops

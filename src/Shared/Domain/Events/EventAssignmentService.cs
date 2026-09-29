@@ -19,7 +19,6 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// <param name="matchService">Service that owns the pairings.</param>
 /// <param name="teamService">Service that owns the paired teams, real and simulated.</param>
 /// <param name="leaseService">Service that owns the room claims.</param>
-/// <param name="memoryRooms">Store that owns the rooms this process opened, and their claims.</param>
 /// <param name="rewardService">Service that pays a completed match.</param>
 /// <param name="roomPool">The rooms a host is chosen from.</param>
 /// <param name="rosterService">Service that owns the frozen rosters a pairing names.</param>
@@ -29,7 +28,6 @@ public sealed partial class EventAssignmentService(
     EventMatchService matchService,
     EventTeamService teamService,
     EventHostLeaseService leaseService,
-    EventHostRoomMemoryService memoryRooms,
     EventRewardService rewardService,
     EventHostRoomPoolService roomPool,
     TournamentRosterService rosterService,
@@ -47,12 +45,10 @@ public sealed partial class EventAssignmentService(
     /// </para>
     /// </summary>
     /// <param name="lobbyIdentifier">Lobby whose waiting matches are assigned.</param>
-    /// <param name="lobbySubtype">Mode of that lobby.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The assignments made.</returns>
     public async Task<List<EventAssignment>> TryAssignWaitingAsync(
         int lobbyIdentifier,
-        int lobbySubtype,
         CancellationToken cancellationToken = default)
     {
         var waiting = (await matchService.FindActiveByLobbyAsync(lobbyIdentifier, cancellationToken))
@@ -63,7 +59,7 @@ public sealed partial class EventAssignmentService(
             return [];
         }
 
-        var games = await roomPool.ListAsync(lobbyIdentifier, cancellationToken);
+        var games = await roomPool.ListAsync(cancellationToken);
         var assignments = new List<EventAssignment>();
 
         foreach (var match in waiting)
@@ -81,16 +77,7 @@ public sealed partial class EventAssignmentService(
             var participants = EventTeamService.BuildSnapshot(first).OccupiedParticipantCount()
                 + EventTeamService.BuildSnapshot(second).OccupiedParticipantCount();
 
-            var host = games.FirstOrDefault(game =>
-                EventHostEligibilityUtils.IsDedicatedEventHost(game.Name, game.Common)
-                && EventHostEligibilityUtils.IsIdle(
-                    game.HostIdentifier,
-                    game.Players.Select(player => player.CharacterIdentifier))
-                && EventHostEligibilityUtils.AcceptsMatch(
-                    lobbySubtype,
-                    match.MatchType,
-                    game.MaximumPlayers,
-                    participants));
+            var host = EventHostRoomPoolService.FindHost(games, match.MatchType, participants);
             if (host is null)
             {
                 continue;
@@ -138,10 +125,9 @@ public sealed partial class EventAssignmentService(
             return null;
         }
 
-        // A room that exists only in this process cannot be named by a lease:
-        // the lease's room column is a foreign key, and it names rows. So the
-        // claim is taken against whichever kind of room was chosen, and both
-        // kinds answer the same questions afterwards.
+        // The claim is taken before the match moves, and it is what settles the
+        // race: a room another match took between the choice and here leaves this
+        // match waiting rather than pointing at a room it does not hold.
         var state = await TryClaimAsync(
             matchIdentifier,
             gameIdentifier,
@@ -212,15 +198,15 @@ public sealed partial class EventAssignmentService(
         int gameIdentifier,
         CancellationToken cancellationToken = default)
     {
-        var found = await FindClaimByRoomAsync(gameIdentifier, cancellationToken);
-        if (found is not { } claim)
+        var lease = await leaseService.FindActiveByGameAsync(gameIdentifier, cancellationToken);
+        if (lease is null)
         {
             return null;
         }
 
         return await LoadAsync(
-            claim.MatchIdentifier,
-            claim.Claim,
+            lease.MatchIdentifier,
+            EventAssignmentState.From(lease),
             cancellationToken);
     }
 

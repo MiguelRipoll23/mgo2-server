@@ -13,15 +13,18 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// The scripted Survival self-test behind the <c>/test</c> chat command. It makes
 /// a solo player's team look like one of a full field: the real team is padded
 /// with simulated players, a simulated opponent is formed and queued, and the
-/// dedicated host room a pairing needs is opened for it — so the whole matchmaking
-/// path runs without a second person.
+/// dedicated host room a pairing needs is opened for it as a real room — so the
+/// whole matchmaking path runs without a second person.
 /// <para>
 /// The pairing is not the end of it. Two paired teams only hear anything once a
 /// room has been claimed for them, and a room is only claimed when one is named
-/// for the role, says it is dedicated and sits idle with its host present. So the
-/// test stands one up itself, as the room a real dedicated host client presents,
-/// which is the step that turns "paired, waiting for a host" into a match-found
-/// screen on the player's own client.
+/// for the role, says it is dedicated and sits idle with its host present. Such
+/// a room is not made here, and could not be: a room exists because a client
+/// asked for one and the create-room command served that request. The run
+/// therefore looks for the room it needs and says which room to open when there
+/// is none, so the host a match is published with is always a room a client
+/// really opened. That room need not be in this lobby: the role a host is named
+/// for sets its mode when it is created.
 /// </para>
 /// <para>
 /// The division of authorship is strict. The team's state and the leader's own
@@ -42,7 +45,7 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// </summary>
 /// <param name="teamMemoryService">Store that owns the simulated teams and members.</param>
 /// <param name="characterMemoryService">Store that owns the simulated characters.</param>
-/// <param name="hostRoomService">Store that owns the simulated host rooms and their claims.</param>
+/// <param name="roomPool">Service that owns the rooms a match may be hosted in.</param>
 /// <param name="teamService">Service that owns the teams, real and simulated.</param>
 /// <param name="memberService">Service that owns the rosters, real and simulated.</param>
 /// <param name="matchmakingService">Service that pairs the teams.</param>
@@ -54,7 +57,7 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 public sealed class SurvivalTestService(
     EventTeamMemoryService teamMemoryService,
     CharacterMemoryService characterMemoryService,
-    EventHostRoomMemoryService hostRoomService,
+    EventHostRoomPoolService roomPool,
     EventTeamService teamService,
     EventTeamMemberService memberService,
     EventMatchmakingService matchmakingService,
@@ -92,9 +95,10 @@ public sealed class SurvivalTestService(
             return;
         }
 
-        // The lobby's own game type is what a room has to agree with to host the
-        // match, so it is read from the process rather than taken from the teams.
-        if (await lobbyIdentity.ResolveModeAsync(cancellationToken) is not { } lobbySubtype)
+        // The mode is read from the process rather than taken from the teams, so a
+        // lobby whose own configuration is broken refuses the run instead of
+        // pairing teams a room could never accept.
+        if (await lobbyIdentity.ResolveModeAsync(cancellationToken) is null)
         {
             return;
         }
@@ -103,7 +107,6 @@ public sealed class SurvivalTestService(
         // dropped before the first step writes anything.
         teamMemoryService.Reset();
         characterMemoryService.Reset();
-        hostRoomService.Reset();
 
         var team = await teamService.FindOwnedInLobbyAsync(
             characterIdentifier,
@@ -135,7 +138,35 @@ public sealed class SurvivalTestService(
             characterIdentifier,
             team.Identifier);
 
-        // 1. Pad the real team with simulated players, pending like any arrival.
+        // 1. The room the match is played in has to exist before anything is, and
+        // it is not opened here: a room is only ever a client's own request served
+        // by the create-room command. The run looks for the one it needs and names
+        // the room to open when there is none, so the host a match is published
+        // with is a room somebody really opened. It is not looked for in this
+        // lobby alone: a room named for a host role runs the role's mode wherever
+        // it was opened.
+        var hostRoom = EventHostRoomPoolService.FindHost(
+            await roomPool.ListAsync(cancellationToken),
+            team.MatchType,
+            EventTeamService.BuildSnapshot(team).OccupiedParticipantCount() + OpponentMemberCount);
+        if (hostRoom is null)
+        {
+            await SayAsync(
+                session,
+                characterIdentifier,
+                $"No room can host the match. Open a dedicated room named \"{EventHostEligibilityUtils.SurvivalHostName}\" from your client, then run /test again.",
+                cancellationToken);
+            return;
+        }
+
+        await SayAsync(
+            session,
+            characterIdentifier,
+            $"Room {hostRoom.Identifier} (\"{hostRoom.Name}\") is free to host the match.",
+            cancellationToken);
+        await DelayAsync(cancellationToken);
+
+        // 2. Pad the real team with simulated players, pending like any arrival.
         var added = AddSimulatedPlayers(team);
         await PushAddedAsync(team.Identifier, added, cancellationToken);
         await SayAsync(
@@ -145,7 +176,7 @@ public sealed class SurvivalTestService(
             cancellationToken);
         await DelayAsync(cancellationToken);
 
-        // 2. Move the simulated players from NG to Ready.
+        // 3. Move the simulated players from NG to Ready.
         await ReadyAsync(team.Identifier, added, cancellationToken);
         await PushDecisionAsync(team.Identifier, added, cancellationToken);
         await SayAsync(
@@ -155,7 +186,7 @@ public sealed class SurvivalTestService(
             cancellationToken);
         await DelayAsync(cancellationToken);
 
-        // 3. Form the simulated opponent, whose own roster starts ready because it
+        // 4. Form the simulated opponent, whose own roster starts ready because it
         // has no player behind it to make a decision.
         var opponent = teamService.CreateInMemory(
             TestPlayerNameUtils.TeamName,
@@ -170,21 +201,6 @@ public sealed class SurvivalTestService(
             cancellationToken);
         await DelayAsync(cancellationToken);
 
-        // 4. Open the dedicated host room. Without one a pairing stays in "paired,
-        // waiting for a host" for ever, because the assignment never invents a
-        // room to publish.
-        var host = characterMemoryService.Create();
-        var room = hostRoomService.CreateHostRoom(
-            lobbyIdentifier,
-            host,
-            EventHostEligibilityUtils.SurvivalHostName);
-        await SayAsync(
-            session,
-            characterIdentifier,
-            $"Opened in-memory room \"{room.Name}\" hosted by {host.Name}, which is what a pairing is leased to.",
-            cancellationToken);
-        await DelayAsync(cancellationToken);
-
         // 5. The real team is queued as it stands — the player's own slot is
         // theirs to have readied — and the opponent is registered, which is the
         // step that pairs the two.
@@ -196,7 +212,7 @@ public sealed class SurvivalTestService(
         // 6. Claim the room for the pairing and publish it, which is what puts the
         // match-found packets on both teams' screens.
         var assignments = pairing.Status == MatchmakingStatus.Paired
-            ? await assignmentService.TryAssignWaitingAsync(lobbyIdentifier, lobbySubtype, cancellationToken)
+            ? await assignmentService.TryAssignWaitingAsync(lobbyIdentifier, cancellationToken)
             : [];
         await SayAsync(session, characterIdentifier, OutcomeMessage(pairing, assignments), cancellationToken);
 

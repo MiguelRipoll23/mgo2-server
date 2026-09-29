@@ -1,150 +1,41 @@
-using System.Text.Json;
-using Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 using Mgo2Server.Shared.Constants;
-using Mgo2Server.Shared.Domain.Automatch;
-using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Interfaces;
-using Mgo2Server.Shared.Persistence.Entities;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 
-/// <summary>Creates a room from the settings the client pushed moments before.</summary>
+/// <summary>
+/// Joins a room, handing the joiner the host's peer-to-peer endpoint.
+/// <para>
+/// The request names the mode the join is for, and the room has to be running it;
+/// the reference refuses a mismatch, and a mismatch is worth refusing because a
+/// room entered under one mode leaves the client unable to state which lobby it is
+/// in. A payload that stops before that byte makes no claim about a mode, and a
+/// room created before the mode column existed cannot be asked for its own, so
+/// neither is refused on this rule.
+/// </para>
+/// <para>
+/// A reserved Survival host room is not a room to enter at all: it is leased to one
+/// match and belongs to the two teams that match named. The room browser leaves
+/// such a room out of the list, but the list is not the rule — a client that knows
+/// the identifier could still ask to join it, and a room with a stranger in it
+/// stops being an idle host for the next match. So the rule is applied here, where
+/// the join is served.
+/// </para>
+/// </summary>
 /// <param name="gameService">Service that owns the rooms.</param>
-/// <param name="characterService">Service that owns the stored settings.</param>
-/// <param name="automatchService">Queue told about the new room.</param>
+/// <param name="assignmentService">Service that knows which match a room is leased to.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
-/// <param name="externalJoinHintService">Service that raises the tailnet host's joinability line.</param>
-public sealed class CreateGameHandler(
-    GameService gameService,
-    CharacterService characterService,
-    AutomatchService automatchService,
-    SessionHelper sessionHelper,
-    ExternalJoinHintService externalJoinHintService) : ICommandHandler
-{
-    /// <inheritdoc />
-    public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
-    {
-        // Both halves are one refusal: a session missing either fact cannot create
-        // a game.
-        if (session.CharacterIdentifier is null || session.LobbyIdentifier is null)
-        {
-            await sessionHelper.SendResultAsync(
-                session,
-                CommandConstants.CreateGameResult,
-                ErrorCodeConstants.ResultInvalidSession,
-                cancellationToken);
-            return;
-        }
-
-        var characterIdentifier = session.CharacterIdentifier.Value;
-        var lobbyIdentifier = session.LobbyIdentifier.Value;
-
-        var settings = await characterService.GetHostSettingsAsync(characterIdentifier, cancellationToken);
-        var pushed = settings.FirstOrDefault(row => row.Type == HostSettingsType.Value);
-        var defaultMaximumPlayers = pushed is { MaxPlayers: > 0 } ? (int)pushed.MaxPlayers : 8;
-
-        var name = pushed?.Name is { Length: > 0 } pushedName ? pushedName : string.Empty;
-        var comment = pushed?.Comment ?? string.Empty;
-        var password = pushed is { Password.Length: > 0 } ? pushed.Password : string.Empty;
-        var rotation = ReadRotation(pushed);
-
-        // A room the host flagged as dedicated is the one the event hosts are
-        // chosen from, so the flag travels into the room settings the event
-        // host-eligibility reads; a plain room keeps the empty default.
-        var isDedicatedRoom = pushed is { Dedicated: true };
-
-        // A reserved host name is a role rather than a room: the event system
-        // leases such a room to a match, and only a room that says it is dedicated
-        // may hold the role. Taken without the flag it would sit in the lobby as a
-        // room named for a host and never be eligible to be one.
-        if (EventHostEligibilityUtils.IsReservedHostName(name) && !isDedicatedRoom)
-        {
-            await sessionHelper.SendResultAsync(
-                session,
-                CommandConstants.CreateGameResult,
-                ErrorCodeConstants.ResultCreateGameRefused,
-                cancellationToken);
-            return;
-        }
-
-        var game = await gameService.CreateAsync(room =>
-        {
-            room.HostIdentifier = characterIdentifier;
-            room.LobbyIdentifier = lobbyIdentifier;
-            room.Name = name.Length > 0 ? name : $"Game_{characterIdentifier}";
-            room.Password = password ?? string.Empty;
-            room.Comment = comment;
-            room.MaximumPlayers = defaultMaximumPlayers;
-            room.Games = JsonSerializer.Serialize(rotation);
-
-            if (isDedicatedRoom)
-            {
-                room.Common = """{"dedicated":true}""";
-            }
-        }, cancellationToken);
-
-        // The host is the room's first roster member: the roster row carries
-        // its ping, team slot and round attribution.
-        await gameService.AddPlayerAsync(game.Identifier, characterIdentifier, cancellationToken);
-        session.GameIdentifier = game.Identifier;
-
-        // Told to the queue so a pending match releases without waiting for
-        // the next tick to notice the new row.
-        automatchService.GameCreated(characterIdentifier, game.Identifier);
-
-        // The reply is a result word followed by the room identifier: the
-        // client reads the identifier before testing the result.
-        var writer = new PacketWriter();
-        writer.WriteUInt32(ErrorCodeConstants.ResultNone);
-        writer.WriteUInt32((uint)game.Identifier);
-        await sessionHelper.SendPacketAsync(session, CommandConstants.CreateGameResult, writer.Build(), cancellationToken);
-
-        // Raised once the room exists and the host is its first member, so the
-        // line arrives in a room the client has already been placed in.
-        await externalJoinHintService.SendAsync(session, characterIdentifier, cancellationToken);
-    }
-
-    /// <summary>Reads the non-empty rotation triples a push stored, rule first.</summary>
-    /// <param name="settings">Stored settings row, or <c>null</c> when the host never pushed.</param>
-    private static List<int[]> ReadRotation(CharacterHostSettings? settings)
-    {
-        var rotation = new List<int[]>();
-        if (settings is null)
-        {
-            return rotation;
-        }
-
-        for (var index = 0; index < 16; index++)
-        {
-            var rules = settings.RotationRules;
-            var maps = settings.RotationMaps;
-            var flags = settings.RotationFlags;
-            var rule = rules is not null && index < rules.Length ? rules[index] : (short)0;
-            var map = maps is not null && index < maps.Length ? maps[index] : (short)0;
-            if (rule == 0 && map == 0)
-            {
-                break;
-            }
-
-            var flag = flags is not null && index < flags.Length ? flags[index] : (short)0;
-            rotation.Add([rule, map, flag]);
-        }
-
-        return rotation;
-    }
-}
-
-/// <summary>Joins a room, handing the joiner the host's peer-to-peer endpoint.</summary>
-/// <param name="gameService">Service that owns the rooms.</param>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
+/// <param name="logger">Logger of this handler.</param>
 public sealed class JoinGameHandler(
     GameService gameService,
-    SessionHelper sessionHelper) : ICommandHandler
+    EventAssignmentService assignmentService,
+    SessionHelper sessionHelper,
+    ILogger<JoinGameHandler> logger) : ICommandHandler
 {
     /// <summary>Size of the success reply, including the two unread trailing bytes.</summary>
     private const int SuccessSize = 43;
@@ -178,6 +69,38 @@ public sealed class JoinGameHandler(
         {
             await SendResultAsync(session, ErrorCodeConstants.ResultGeneral, null, cancellationToken);
             return;
+        }
+
+        var requestedSubtype = reader.Remaining >= 1
+            ? reader.ReadUInt8()
+            : EventHostEligibilityUtils.UnnamedSubtype;
+        if (!EventHostEligibilityUtils.AcceptsJoinMode(game, requestedSubtype))
+        {
+            // Logged with both modes because this is the rule a live client can
+            // contradict: the refusal names the mismatch rather than leaving it to
+            // be guessed at from the code.
+            logger.LogWarning(
+                "Refused a join of room {GameIdentifier}: the room runs mode {GameSubtype} and the request named {RequestedSubtype}",
+                game.Identifier,
+                game.LobbySubtype,
+                requestedSubtype);
+            await SendResultAsync(session, ErrorCodeConstants.ResultJoinGameRefused, null, cancellationToken);
+            return;
+        }
+
+        if (EventHostEligibilityUtils.IsSurvivalHost(game))
+        {
+            var assignment = await assignmentService.FindByGameAsync(game.Identifier, cancellationToken);
+            var participant = session.CharacterIdentifier ?? 0;
+            var isAssigned = assignment is not null
+                && (assignment.FirstTeam.IndexOfParticipant(participant) >= 0
+                    || assignment.SecondTeam.IndexOfParticipant(participant) >= 0);
+
+            if (!isAssigned)
+            {
+                await SendResultAsync(session, ErrorCodeConstants.ResultJoinGameRefused, null, cancellationToken);
+                return;
+            }
         }
 
         if (game.Password.Length > 0 && game.Password != password)

@@ -1,4 +1,6 @@
+using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Events;
+using Mgo2Server.Shared.Persistence.Entities;
 
 namespace Mgo2Server.Tests;
 
@@ -127,4 +129,143 @@ public sealed class EventHostEligibilityTests
             maximumPlayers: 16,
             participantCount: 4));
     }
+
+    [Fact]
+    public void A_room_hosts_a_match_only_when_all_three_rules_hold()
+    {
+        Assert.True(EventHostEligibilityUtils.IsEligibleHost(
+            Room(members: [7], maximumPlayers: 8),
+            matchType: EventConstants.SurvivalSelector,
+            participantCount: 7));
+
+        // A player's own room is not a host however free it is, and a host that has
+        // collected a player is running a game rather than offering one.
+        Assert.False(EventHostEligibilityUtils.IsEligibleHost(
+            Room(name: "MY ROOM", members: [7], maximumPlayers: 8),
+            EventConstants.SurvivalSelector,
+            7));
+
+        Assert.False(EventHostEligibilityUtils.IsEligibleHost(
+            Room(members: [7, 8], maximumPlayers: 8),
+            EventConstants.SurvivalSelector,
+            7));
+
+        // The room's own mode has to agree, and the match has to fit beside the
+        // host's slot.
+        Assert.False(EventHostEligibilityUtils.IsEligibleHost(
+            Room(members: [7], maximumPlayers: 8, lobbySubtype: EventConstants.TournamentSelector),
+            EventConstants.SurvivalSelector,
+            4));
+
+        Assert.False(EventHostEligibilityUtils.IsEligibleHost(
+            Room(members: [7], maximumPlayers: 8),
+            EventConstants.SurvivalSelector,
+            participantCount: 8));
+    }
+
+    [Fact]
+    public void A_host_serves_the_mode_its_name_stands_for_not_its_lobby_s()
+    {
+        // The role sets the room's mode when the room is created, so a dedicated
+        // host opened in another lobby still serves the mode it is named for.
+        Assert.Equal(EventConstants.SurvivalSelector, EventHostEligibilityUtils.HostSubtype("SURVIVAL_HOST"));
+        Assert.Equal(EventConstants.TournamentSelector, EventHostEligibilityUtils.HostSubtype("tournament_host"));
+        Assert.Null(EventHostEligibilityUtils.HostSubtype("MY ROOM"));
+        Assert.Null(EventHostEligibilityUtils.HostSubtype(null));
+    }
+
+    [Fact]
+    public void Only_the_survival_role_is_the_one_nobody_may_walk_into()
+    {
+        // The two roles are served by different rules: a Tournament host is handed
+        // its players by a draw, while a Survival host is leased a match and may be
+        // entered by nobody but the two teams it was leased to.
+        Assert.True(EventHostEligibilityUtils.IsSurvivalHost(
+            Room(name: "survival_host", lobbySubtype: EventConstants.SurvivalSelector)));
+        Assert.False(EventHostEligibilityUtils.IsSurvivalHost(
+            Room(name: "TOURNAMENT_HOST", lobbySubtype: EventConstants.TournamentSelector)));
+
+        // Neither is a role on the name alone.
+        Assert.False(EventHostEligibilityUtils.IsSurvivalHost(Room(common: "{}")));
+        Assert.False(EventHostEligibilityUtils.IsTournamentHost(
+            Room(name: "TOURNAMENT_HOST", common: "{}", lobbySubtype: EventConstants.TournamentSelector)));
+
+        // A Tournament host is one only while it is running the role's own mode.
+        Assert.True(EventHostEligibilityUtils.IsTournamentHost(
+            Room(name: "TOURNAMENT_HOST", lobbySubtype: EventConstants.TournamentSelector)));
+        Assert.False(EventHostEligibilityUtils.IsTournamentHost(
+            Room(name: "TOURNAMENT_HOST", lobbySubtype: EventConstants.SurvivalSelector)));
+    }
+
+    [Fact]
+    public void A_join_may_name_only_the_mode_the_room_runs()
+    {
+        var room = Room(lobbySubtype: EventConstants.SurvivalSelector);
+        Assert.True(EventHostEligibilityUtils.AcceptsJoinMode(room, EventConstants.SurvivalSelector));
+        Assert.False(EventHostEligibilityUtils.AcceptsJoinMode(room, LobbySubtypeConstants.FreeBattle));
+
+        // A request that stops before the byte makes no claim, and a room that
+        // cannot state its own mode is not asked for one.
+        Assert.True(EventHostEligibilityUtils.AcceptsJoinMode(
+            room,
+            EventHostEligibilityUtils.UnnamedSubtype));
+        Assert.True(EventHostEligibilityUtils.AcceptsJoinMode(
+            Room(lobbySubtype: 0),
+            LobbySubtypeConstants.FreeBattle));
+
+        // The Tournament host is reached through the ordinary room screen, which
+        // may name Free Battle, so it takes that as well as its own mode.
+        var tournament = Room(name: "TOURNAMENT_HOST", lobbySubtype: EventConstants.TournamentSelector);
+        Assert.True(EventHostEligibilityUtils.AcceptsJoinMode(tournament, LobbySubtypeConstants.FreeBattle));
+        Assert.True(EventHostEligibilityUtils.AcceptsJoinMode(tournament, EventConstants.TournamentSelector));
+
+        // A room that is not that role gets no such exception.
+        Assert.False(EventHostEligibilityUtils.AcceptsJoinMode(
+            Room(name: "TOURNAMENT_HOST", common: "{}", lobbySubtype: EventConstants.TournamentSelector),
+            LobbySubtypeConstants.FreeBattle));
+    }
+
+    [Fact]
+    public void A_host_is_chosen_whatever_lobby_it_was_opened_in()
+    {
+        // The role sets the room's mode when the room is created, so the room that
+        // hosts a Survival match need not sit in the Survival lobby.
+        var elsewhere = Room(members: [7], maximumPlayers: 17, lobbySubtype: EventConstants.SurvivalSelector);
+        elsewhere.LobbyIdentifier = 99;
+        var wrongMode = Room(members: [7], maximumPlayers: 17, lobbySubtype: EventConstants.TournamentSelector);
+        var busy = Room(members: [7, 8], maximumPlayers: 17);
+
+        Assert.Same(
+            elsewhere,
+            EventHostRoomPoolService.FindHost(
+                [wrongMode, busy, elsewhere],
+                EventConstants.SurvivalSelector,
+                participantCount: 16));
+
+        Assert.Null(EventHostRoomPoolService.FindHost(
+            [wrongMode, busy],
+            EventConstants.SurvivalSelector,
+            participantCount: 16));
+    }
+
+    /// <summary>A room row, with the roster and settings the three rules read.</summary>
+    private static Game Room(
+        string name = "SURVIVAL_HOST",
+        string common = """{"dedicated":true}""",
+        int hostIdentifier = 7,
+        List<int>? members = null,
+        int maximumPlayers = 17,
+        int lobbySubtype = EventConstants.SurvivalSelector) =>
+        new()
+        {
+            Name = name,
+            Common = common,
+            HostIdentifier = hostIdentifier,
+            MaximumPlayers = maximumPlayers,
+            LobbySubtype = lobbySubtype,
+            Players = [.. (members ?? [hostIdentifier]).Select(characterIdentifier => new GamePlayer
+            {
+                CharacterIdentifier = characterIdentifier,
+            })],
+        };
 }

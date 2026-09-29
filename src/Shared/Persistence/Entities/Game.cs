@@ -21,6 +21,18 @@ public sealed class Game
     [Column("lobby_id")]
     public int LobbyIdentifier { get; set; }
 
+    /// <summary>
+    /// Mode the room itself runs.
+    /// <para>
+    /// It is the mode of the settings the room was created from, except for a room
+    /// named for a host role, which takes the role's own mode instead. That is what
+    /// lets a dedicated host be opened in one lobby and still be found by the mode
+    /// it serves: the role decides the mode, not the lobby its owner stood in.
+    /// </para>
+    /// </summary>
+    [Column("lobby_subtype")]
+    public int LobbySubtype { get; set; }
+
     /// <summary>Display name of the room.</summary>
     [Column("name")]
     [MaxLength(16)]

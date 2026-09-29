@@ -10,11 +10,10 @@ namespace Mgo2Server.GameLobbyServer.Maintenance;
 /// Looks for a host for the matches that are waiting for one, and tells the two
 /// teams when it finds one.
 /// <para>
-/// It is a sweep rather than a reaction to the pairing, because the room that
-/// hosts a match is created by a player and may arrive at any moment: a host that
-/// was created before the match paired, or a minute after, is found the same way
-/// by looking again. Reacting only to the pairing would miss every host that was
-/// not already waiting.
+/// The sweep is what covers a match that pairs after its host is already sitting
+/// there, and a host that a finished match has just released: a room is announced
+/// the moment a client creates it, but neither of those two has anything left to
+/// announce it, and both are found the same way by looking again.
 /// </para>
 /// </summary>
 /// <param name="assignmentService">Service that assigns and publishes a match.</param>
@@ -33,7 +32,6 @@ public sealed class EventAssignmentTickerService(
     private static readonly TimeSpan FailureBackoffCeiling = TimeSpan.FromMinutes(1);
 
     private int lobbyIdentifier;
-    private int lobbySubtype;
 
     /// <summary>Starts the sweep for the lobby this instance registered.</summary>
     /// <param name="lobbyIdentifier">Identifier of the registered lobby.</param>
@@ -51,7 +49,6 @@ public sealed class EventAssignmentTickerService(
         }
 
         this.lobbyIdentifier = lobbyIdentifier;
-        this.lobbySubtype = lobbySubtype;
         Start();
     }
 
@@ -65,7 +62,6 @@ public sealed class EventAssignmentTickerService(
 
         var assignments = await assignmentService.TryAssignWaitingAsync(
             lobbyIdentifier,
-            lobbySubtype,
             cancellationToken);
 
         foreach (var assignment in assignments)

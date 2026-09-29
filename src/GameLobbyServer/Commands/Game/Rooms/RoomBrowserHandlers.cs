@@ -125,7 +125,18 @@ public sealed class GetHostSettingsHandler(
     }
 }
 
-/// <summary>Stores the host settings block the client pushes.</summary>
+/// <summary>
+/// Stores the host settings block the client pushes.
+/// <para>
+/// A block is checked before it is stored rather than after it is used: what is
+/// kept here is what a later create-room request builds a room out of, so a block
+/// that names a host role without saying it is dedicated, one that names a mode or
+/// a player count the screen cannot, or one that leaves the room with nothing to
+/// play is refused now and never reaches a room. The reference checks the same four
+/// things at this command and answers the same code; the create-room command
+/// re-checks the reserved name as well, because a stored block may predate this.
+/// </para>
+/// </summary>
 /// <param name="characterService">Service that owns the stored settings.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class CheckHostSettingsHandler(
@@ -135,14 +146,45 @@ public sealed class CheckHostSettingsHandler(
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
-        if (session.CharacterIdentifier is { } characterIdentifier && packet.Payload.Length > 0)
+        if (session.CharacterIdentifier is not { } characterIdentifier)
         {
-            await characterService.UpdateHostSettingsAsync(
-                characterIdentifier,
-                HostSettingsType.Value,
-                HostSettingsCodec.FromPayload(packet.Payload),
+            await sessionHelper.SendResultAsync(
+                session,
+                CommandConstants.CheckHostSettingsResult,
+                ErrorCodeConstants.ResultInvalidSession,
                 cancellationToken);
+            return;
         }
+
+        // A push the codec cannot read is not a settings change. The block is
+        // padded when it is decoded, so a short one would otherwise be stored as
+        // settings nobody wrote.
+        if (packet.Payload.Length < HostSettingsCodec.MinimumBlobLength)
+        {
+            await sessionHelper.SendResultAsync(
+                session,
+                CommandConstants.CheckHostSettingsResult,
+                ErrorCodeConstants.ResultGeneral,
+                cancellationToken);
+            return;
+        }
+
+        var settings = HostSettingsCodec.FromPayload(packet.Payload);
+        if (!HostSettingsValidationUtils.IsAcceptable(settings))
+        {
+            await sessionHelper.SendResultAsync(
+                session,
+                CommandConstants.CheckHostSettingsResult,
+                ErrorCodeConstants.ResultHostRequestRefused,
+                cancellationToken);
+            return;
+        }
+
+        await characterService.UpdateHostSettingsAsync(
+            characterIdentifier,
+            HostSettingsType.Value,
+            settings,
+            cancellationToken);
 
         await sessionHelper.SendResultAsync(session, CommandConstants.CheckHostSettingsResult, ErrorCodeConstants.ResultNone, cancellationToken);
     }

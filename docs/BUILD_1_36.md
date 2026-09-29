@@ -732,6 +732,41 @@ both registered, and the registry's refusal to hold two handlers for one identif
 gameplay lobby at startup. The room host hand-off is `0x43a0` (`PassRoundHandler`), live-confirmed
 2026-07-22, and it was never this identifier.
 
+## `0x4320`'s third field names the mode the join is for
+
+**Read 2026-09-29 from this image.** The room-request bank `0xF0E2xx`–`0xF12xxx` holds the join
+sender at `0xF1203C`, with its `li r4,0x4320` at `0xF121A0`, and the request is the disc build's
+shape: **u32 game id + char[16] password + u8 mode**, 21 bytes.
+
+| stage | site |
+| --- | --- |
+| begin | `bl 0xF2E540` at `0xF12194` |
+| command id | `li r4,0x4320` then `bl 0xF2E4E8` |
+| game id | the caller's 2nd argument, spilled to `r1+0x5c8` at `0xF12064` and written by `bl 0xF2DF64` |
+| password | a 17-byte staging buffer at `r1+0x538`, zeroed at `0xF120F8`-`0xF12104` and copied by `bl 0xF9DCA0` at `0xF12110` only when the argument is non-null; its length is pre-checked to **3..16** (`bl 0xF9DDE8`, `cmplwi r3,2` / `cmplwi r3,0x10`) |
+| mode | one byte at `r1+0x530`, written by `bl 0xF2DE14` at `0xF121D8` |
+| seal, send | `bl 0xF2DDD0`, `bl 0xF2E6CC` at `0xF12200` |
+
+**Where the mode byte comes from, in order:**
+
+1. **`1`** — `li r0,1` / `stb r0,0x530(r1)` at `0xF12118`, so Free Battle is the default;
+2. the **latched subtype**, read as `lbz r0,0x294(r3)` / `stb r0,0x530(r1)` at `0xF12148`-`0xF1214C`,
+   when `bl 0xF1719C` and `bl 0xF17308` both return non-null — the same latched byte the Lobby Select
+   emitters above write;
+3. the caller's **4th argument**, low byte, and only while it is one of **1, 2, 7, 8 or 9**
+   (`cmpwi` chain at `0xF12150`-`0xF12178`); when it is, the same byte is also latched into
+   `ctx+0x28D80` (`0xF12180`-`0xF12188`).
+
+**A correction owed to the disc-build doc.** `dev/proto/inbound/mgo2_cmd_4320_c2s.ksy` records that
+argument's accepted set as {1, 2, 7, 8}. Here it is **{1, 2, 7, 8, 9}** — `cmpwi r0,9` at `0xF12174` is
+the fifth test. The rest of the ksy's reading survives, including the part that matters most: the
+value sent is not confined to that set, because the latched branch copies whatever the latch holds.
+
+**Server consequence.** The byte is the mode the join is for, which is how the reference server reads
+it. Our `JoinGameHandler` refuses a mismatch now, with result code 3, rather than accepting any room a
+client can name. A request that stops before the byte claims no mode, and a room created before the
+mode column existed cannot be asked for its own, so neither is refused on this rule.
+
 ## Open
 
 - Whether 1.36 honours the `d/testhk` hostname override at all — the string is present, but presence

@@ -35,7 +35,6 @@ public sealed class EventServiceRegistrationTests
         Assert.NotNull(provider.GetRequiredService<EventMatchService>());
         Assert.NotNull(provider.GetRequiredService<EventMatchmakingService>());
         Assert.NotNull(provider.GetRequiredService<EventTeamMemoryService>());
-        Assert.NotNull(provider.GetRequiredService<EventHostRoomMemoryService>());
         Assert.NotNull(provider.GetRequiredService<EventTeamService>());
         Assert.NotNull(provider.GetRequiredService<EventTeamMemberService>());
         Assert.NotNull(provider.GetRequiredService<EventTeamPushService>());

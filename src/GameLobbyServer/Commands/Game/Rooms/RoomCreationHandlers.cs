@@ -1,0 +1,200 @@
+using System.Text.Json;
+using Mgo2Server.GameLobbyServer.Commands.Game.Chat;
+using Mgo2Server.Shared.Constants;
+using Mgo2Server.Shared.Domain.Automatch;
+using Mgo2Server.Shared.Domain.Characters;
+using Mgo2Server.Shared.Domain.Events;
+using Mgo2Server.Shared.Domain.Games;
+using Mgo2Server.Shared.Interfaces;
+using Mgo2Server.Shared.Persistence.Entities;
+using Mgo2Server.Shared.Types;
+using Mgo2Server.Shared.Utils;
+
+namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
+
+/// <summary>
+/// Creates a room from the settings the client pushed moments before.
+/// <para>
+/// It is kept apart from the rest of the room lifecycle because that file is at
+/// the project's line limit.
+/// </para>
+/// <para>
+/// A request that names a host role is served here like any other, and written
+/// the same way: a real row, owned by the character that asked for it. The
+/// reference gives the role that same owner — the character of the client that
+/// sent the command, which is the identity its dedicated hosts carry — and the
+/// room is a room there too, not a fantasy the lobby keeps to itself.
+/// </para>
+/// <para>
+/// The room is also offered to the event queue as soon as it exists, rather than
+/// at the next sweep: the room that was just created may be the host two paired
+/// teams are waiting on. The offer is made after the client has been answered,
+/// where the reference makes it just before, so that a client is never handed a
+/// match before it is told the room it is in exists — the reference buys the same
+/// ordering with the half-second delay before it publishes an assignment.
+/// </para>
+/// </summary>
+/// <param name="gameService">Service that owns the rooms.</param>
+/// <param name="characterService">Service that owns the stored settings.</param>
+/// <param name="automatchService">Queue told about the new room.</param>
+/// <param name="assignmentService">Service told the new room may host a match.</param>
+/// <param name="sessionHelper">Helper used to write the replies.</param>
+/// <param name="externalJoinHintService">Service that raises the tailnet host's joinability line.</param>
+public sealed class CreateGameHandler(
+    GameService gameService,
+    CharacterService characterService,
+    AutomatchService automatchService,
+    EventAssignmentService assignmentService,
+    SessionHelper sessionHelper,
+    ExternalJoinHintService externalJoinHintService) : ICommandHandler
+{
+    /// <inheritdoc />
+    public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
+    {
+        // Both halves are one refusal: a session missing either fact cannot create
+        // a game.
+        if (session.CharacterIdentifier is null || session.LobbyIdentifier is null)
+        {
+            await sessionHelper.SendResultAsync(
+                session,
+                CommandConstants.CreateGameResult,
+                ErrorCodeConstants.ResultInvalidSession,
+                cancellationToken);
+            return;
+        }
+
+        var characterIdentifier = session.CharacterIdentifier.Value;
+        var lobbyIdentifier = session.LobbyIdentifier.Value;
+
+        var settings = await characterService.GetHostSettingsAsync(characterIdentifier, cancellationToken);
+        var pushed = settings.FirstOrDefault(row => row.Type == HostSettingsType.Value);
+        var defaultMaximumPlayers = pushed is { MaxPlayers: > 0 } ? (int)pushed.MaxPlayers : 8;
+
+        var name = pushed?.Name is { Length: > 0 } pushedName ? pushedName : string.Empty;
+        var comment = pushed?.Comment ?? string.Empty;
+        var password = pushed is { Password.Length: > 0 } ? pushed.Password : string.Empty;
+        var rotation = ReadRotation(pushed);
+
+        // A room the host flagged as dedicated is the one the event hosts are
+        // chosen from, so the flag travels into the room settings the event
+        // host-eligibility reads; a plain room keeps the empty default.
+        var isDedicatedRoom = pushed is { Dedicated: true };
+
+        // A room runs the mode its own settings named, because that is the mode the
+        // host picked on the settings screen. A room named for a host role runs the
+        // role's mode instead, so a host opened in one lobby is still found by the
+        // mode it is named for. The rule is the reference's, and so is consulting
+        // the name only for a room that says it is dedicated: a name on its own is
+        // not a claim to the role.
+        var reservedSubtype = isDedicatedRoom ? EventHostEligibilityUtils.HostSubtype(name) : null;
+        var roomSubtype = reservedSubtype ?? pushed?.SettingsLobbySubtype ?? 0;
+
+        // A reserved host name is a role rather than a room: the event system
+        // leases such a room to a match, and only a room that says it is dedicated
+        // may hold the role. Taken without the flag it would sit in the lobby as a
+        // room named for a host and never be eligible to be one.
+        //
+        // The settings push refuses the same request earlier, so a room created
+        // through the screens cannot arrive here holding one. This stays because it
+        // is the room that must not exist, and the settings it is created from are
+        // a stored row that may predate that check.
+        if (EventHostEligibilityUtils.IsReservedHostName(name) && !isDedicatedRoom)
+        {
+            await sessionHelper.SendResultAsync(
+                session,
+                CommandConstants.CreateGameResult,
+                ErrorCodeConstants.ResultHostRequestRefused,
+                cancellationToken);
+            return;
+        }
+
+        var game = await gameService.CreateAsync(room =>
+        {
+            room.HostIdentifier = characterIdentifier;
+            room.LobbyIdentifier = lobbyIdentifier;
+            room.LobbySubtype = roomSubtype;
+            room.Name = name.Length > 0 ? name : $"Game_{characterIdentifier}";
+            room.Password = password ?? string.Empty;
+            room.Comment = comment;
+            room.MaximumPlayers = defaultMaximumPlayers;
+            room.Games = JsonSerializer.Serialize(rotation);
+
+            if (isDedicatedRoom)
+            {
+                room.Common = """{"dedicated":true}""";
+            }
+        }, cancellationToken);
+
+        // The host is the room's first roster member: the roster row carries
+        // its ping, team slot and round attribution.
+        await gameService.AddPlayerAsync(game.Identifier, characterIdentifier, cancellationToken);
+        session.GameIdentifier = game.Identifier;
+
+        // Told to the queue so a pending match releases without waiting for
+        // the next tick to notice the new row.
+        automatchService.GameCreated(characterIdentifier, game.Identifier);
+
+        await SendCreatedAsync(session, game.Identifier, cancellationToken);
+
+        // Raised once the room exists and the host is its first member, so the
+        // line arrives in a room the client has already been placed in.
+        await externalJoinHintService.SendAsync(session, characterIdentifier, cancellationToken);
+
+        // The room is offered to the waiting matches now rather than at the next
+        // sweep. A room that cannot host one is not asked about twice: the rule is
+        // applied here and the call returns as soon as no match is waiting.
+        await assignmentService.TryAssignWaitingAsync(lobbyIdentifier, cancellationToken);
+    }
+
+    /// <summary>
+    /// Answers with the identifier of the room that was created. The reply is a
+    /// result word followed by the room identifier, and the client reads the
+    /// identifier before testing the result.
+    /// </summary>
+    /// <param name="session">Connection the room was created for.</param>
+    /// <param name="gameIdentifier">Identifier of the created room.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private Task SendCreatedAsync(
+        TcpSession session,
+        int gameIdentifier,
+        CancellationToken cancellationToken)
+    {
+        var writer = new PacketWriter();
+        writer.WriteUInt32(ErrorCodeConstants.ResultNone);
+        writer.WriteUInt32((uint)gameIdentifier);
+        return sessionHelper.SendPacketAsync(
+            session,
+            CommandConstants.CreateGameResult,
+            writer.Build(),
+            cancellationToken);
+    }
+
+    /// <summary>Reads the non-empty rotation triples a push stored, rule first.</summary>
+    /// <param name="settings">Stored settings row, or <c>null</c> when the host never pushed.</param>
+    private static List<int[]> ReadRotation(CharacterHostSettings? settings)
+    {
+        var rotation = new List<int[]>();
+        if (settings is null)
+        {
+            return rotation;
+        }
+
+        for (var index = 0; index < 16; index++)
+        {
+            var rules = settings.RotationRules;
+            var maps = settings.RotationMaps;
+            var flags = settings.RotationFlags;
+            var rule = rules is not null && index < rules.Length ? rules[index] : (short)0;
+            var map = maps is not null && index < maps.Length ? maps[index] : (short)0;
+            if (rule == 0 && map == 0)
+            {
+                break;
+            }
+
+            var flag = flags is not null && index < flags.Length ? flags[index] : (short)0;
+            rotation.Add([rule, map, flag]);
+        }
+
+        return rotation;
+    }
+}

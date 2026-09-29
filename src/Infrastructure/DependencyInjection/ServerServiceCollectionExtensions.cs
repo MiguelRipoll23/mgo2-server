@@ -183,7 +183,6 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<AutomatchHooksService>();
         services.AddSingleton<EventInformationService>();
         services.AddSingleton<EventTeamMemoryService>();
-        services.AddSingleton<EventHostRoomMemoryService>();
         services.AddSingleton<EventTeamService>();
         services.AddSingleton<EventTeamMemberService>();
         services.AddSingleton<EventHostRoomPoolService>();

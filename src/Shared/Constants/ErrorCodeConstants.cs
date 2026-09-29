@@ -71,12 +71,22 @@ public static class ErrorCodeConstants
     public const uint ResultGameFull = 0xfffffe09;
 
     /// <summary>
-    /// Create-room refusal (2), the code the reference raises for a request its own
-    /// rules refuse — an unsupported lobby subtype, and a reserved host name
-    /// without the dedicated flag. Sent verbatim: the create-room reply is a raw
-    /// result word rather than one of the masked error codes.
+    /// Join refusal (3), the code the reference raises for a room the character may
+    /// not enter — a reserved Survival host room that is not leased to a match the
+    /// character is in. It is a raw result word on the join reply like the refusal
+    /// above, not one of the masked error codes.
     /// </summary>
-    public const uint ResultCreateGameRefused = 2;
+    public const uint ResultJoinGameRefused = 3;
+
+    /// <summary>
+    /// Host-request refusal (2), the code the reference raises for a request its own
+    /// rules refuse: an unsupported lobby subtype, a player count outside the range
+    /// the screen offers, an empty rotation, and a reserved host name without the
+    /// dedicated flag. It answers the settings push (0x4311) and the create-room
+    /// request (0x4317) alike. Sent verbatim: both replies are raw result words
+    /// rather than one of the masked error codes.
+    /// </summary>
+    public const uint ResultHostRequestRefused = 2;
 
     /// <summary>Official personal-stats "character deleted"(-266).</summary>
     public const uint ResultCharacterGone = 0xfffffef6;
