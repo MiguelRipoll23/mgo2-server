@@ -665,7 +665,7 @@ with one. **[V]**
 
 **[U] Unresolved:** the per-player block at `0x0b..0x42` and the value at
 `0x08`. Neither is opaque, though. Column by column over the twelve recorded
-records:
+records of the in-repo match:
 
 - **Eight columns differ per player** — `0x10`, `0x1f`, `0x20`, `0x23`, `0x2d`,
   `0x2e`, `0x37`, `0x39`. What the host puts in them is unresolved, so the
@@ -675,8 +675,14 @@ records:
 - **The other forty-seven are zero in all twelve.** The builder writes zeros,
   which is therefore correct rather than a placeholder. **[V]**
 
-So the builder reproduces every byte of all twelve recorded records apart from
-those eight columns, and
+Widening the same count to **sixty records across five matches on four maps**
+(§6.7) leaves `0x12 = 0x02` holding — it is still the only non-zero constant —
+and widens the per-player set to **eleven** columns: the eight above plus
+`0x26`, `0x31` and `0x3b`. So the block is eleven per-player columns, one
+constant and forty-four zeros, on the wider evidence. **[V]**
+
+So the builder reproduces every byte of all twelve in-repo records apart from
+the eight per-player columns it cannot supply, and
 `tests/Mgo2Server.Tests/PlayerProfileRecordTests.cs` asserts exactly that. The
 value at `0x08` differs for every player and stays unresolved; the builder
 writes `0`.
@@ -764,27 +770,58 @@ from `0x140b` with every one landing exactly on the next boundary, and the
 first ten give slots 0 then 1 with `OFF` matching for classes 01, 02, 04, 05 and
 06. **[V]**
 
-### 6.7 The block ahead of the roster — the match description [U]
+### 6.7 The block ahead of the roster [V] / [U]
 
-The host's opening block in the recorded stream does not start at the roster.
-It runs from file offset `0x0c` to `0x52`, 66 bytes ahead of it, and holds:
+The host's opening block does not start at the roster. It is a **fixed
+seventy-byte prologue**, `0x0c`..`0x52`, and the roster starts at `0x52` in
+every sample. That was only visible once there was more than one sample; the
+earlier reading of `0x0c` as "the size of the first record" was wrong, because
+it varies while the roster start does not. **[V]**
 
-- `0x0c` a size word, `58`;
-- `0x10` four bytes, `76 84 01 00`;
-- `0x14` a record of type `0x0102`, length `0x10`, flags `0x39`, whose body is
-  `00 07 32 00 00 00 00 00 00 8f a0 00 00 01 02 00` — everything after the
-  first seven of those bytes is zero;
-- zeros to `0x99`, then the host's own `(0x03, name, NUL, clan)` triple, which
-  the host's roster record repeats immediately afterwards.
+Five replays, four maps, fetched from `/api/v1/download-replay/<id>`:
 
-**[U] Nothing here is decoded, and nothing is implemented.** One recorded match
-is the only sample; the type `0x0102` appears nowhere else in the 8.4 MB file
-and in neither live capture, so there is nothing to cross-check the sixteen
-bytes against. The map is Desert Duel — byte `0x07` of the file is `0x11`, and
-`0x8fa0` in the body is the only other value that is not a version or a roster
-base — but which of those sixteen bytes carries it is not established. Writing
-sixty-six bytes of guesswork onto the wire is worse than leaving the block out,
-so the host sends the roster alone until the block is read properly.
+| file | map | `0x0c` | `0x10` | `0x1e` |
+|---|---|---|---|---|
+| `replay_360821_7` | 10 | 38 | 99427 | `0x9e43` |
+| `replay_360824_6` | 10 | 40 | 99452 | `0xa08c` |
+| `replay_360825_7` | 4 | 44 | 99456 | `0x9e46` |
+| `replay_360827_5` | 17 | 58 | 99446 | `0xa08f` |
+| `replay_360828_5` | 7 | 38 | 99450 | `0x9e47` |
+
+The sixteen-byte record is the same in all five — type `0x0102`, length `0x10`,
+flags `0x39`, at `0x14` — and reads:
+
+```
+[0x00] u16  0x0007    constant
+[0x02] u16  0x0032    constant
+[0x04] u32  0         constant
+[0x08] u16  varies    0x9e43 / 0xa08c / 0x9e46 / 0xa08f / 0x9e47
+[0x0a] u16  0         constant
+[0x0c] u16  0x0201    constant
+[0x0e] u16  0         constant
+```
+
+**Thirteen of the sixteen bytes are identical across five matches on four maps,
+and the record carries no map and no mode at all.** That refutes the earlier
+guess that this was the match description. What it is instead is close to
+readable: `0x0007` and `0x0032` are exactly the version byte and the roster base
+of the `0x1001` roster records that follow (§6.4), so the record is a
+**descriptor of the roster format that comes next**, not of the match. **[I]**
+
+The map identifier lives only in the replay *file* header at offset `0x07`, and
+that is the file's own bookkeeping rather than anything the host put on the
+wire — the joiner learns the map over TCP with the rest of the room, before it
+ever opens a peer session.
+
+**The two words at `0x0c` and `0x10` are per match** and vary independently of
+the map, the tick count and the file size. `0x10` sits in a narrow band around
+99450 across all five, which reads as a serial or a seed. **[U]**
+
+**Nothing here is implemented, and now there is a reason not to.** With thirteen
+of sixteen bytes constant, the descriptor could be written — but the two words
+that would have to be invented are exactly the per-match ones, and the
+descriptor is replay-file material rather than a thing a joiner is shown to be
+waiting for. The host sends the roster alone. **[U]**
 
 ---
 

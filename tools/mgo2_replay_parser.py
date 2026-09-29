@@ -2,8 +2,13 @@
 """Parse MGO2 survival-match replay files (the game's RPDT format).
 
 Replays come from a SaveMGO-compatible site via
-`/api/v1/download-replay/<survivalmatch-id>`; the archive holds one file named
-`replay_<game_id>_<replay_id>.dat`. Everything below was derived from direct
+`mgo2pc.com/api/v1/download-replay/<survivalmatch-id>`; the archive holds one
+file named `replay_<game_id>_<replay_id>.dat`. The endpoint needs no
+credentials. Survival-match ids 67030, 67032, 67034, 67040 and 67033 were read
+from it; 67033 is the file checked in here and the other four are what the
+cross-matches in docs/protocol/UDP_P2P_PROTOCOL.md sections 6.4 and 6.7 rest
+on. They are fetched on demand rather than committed, at roughly 0.5-13 MB
+each. Everything below was derived from direct
 byte analysis (cross-checked against the site's match API and the world f32
 coordinates inside the file).
 
@@ -19,11 +24,13 @@ LAYOUT
 ------
     [0x00..0x08)  "RPDT" magic + version bytes
     [0x07]        map id (17 = Desert Duel, 4 = Gronznyj Grad, ...)
-    [0x0c..0x52)  the opening block: a size word, a 4-byte value, one 16-byte
-                  record of type 0x0102, zeros, then the host's own
-                  (0x03, name, NUL, clan) triple. Undecoded; everything but
-                  that one record is zero, so no framing of it is
-                  distinguishable from this file alone.
+    [0x0c..0x52)  a fixed 70-byte prologue, the same length in all five
+                  samples: two per-match words at 0x0c and 0x10, then a
+                  16-byte record of type 0x0102 (0x14) whose 0x0007 and 0x0032
+                  are the version and roster base of the records that follow,
+                  then zeros, then the host's own (0x03, name, NUL, clan)
+                  triple. 13 of the 16 bytes are constant across five matches
+                  on four maps; it carries no map and no mode.
     [0x52..0x484)  the roster: 12 records back to back, no prefix, each
                   {type u16 = 0x1001, len u8, flags u8} + a body carrying one
                   player's own profile (NUL-terminated name, then a
