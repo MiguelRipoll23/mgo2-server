@@ -227,12 +227,35 @@ the pod replies to the console directly rather than through the load balancer,
 and the AWS equivalent has a documented history of asymmetric-routing failures
 that look exactly like an application bug.
 
-### UDP gameplay and the name server — `Cluster`, deliberately
+### UDP gameplay — `Local`, because it is the host and not only a relay
 
-Neither needs the console's address. Gameplay relays, and `docs/STUN.md` traces
-the peer descriptor as built **client-side** at `0x9444BC` from the port check
-result — so the server never has to see the raw address for peer to peer to work.
-The name server answers queries and has no use for it either.
+The peer descriptor really is built **client-side** at `0x9444BC` from the port
+check result, so for a *relay* the server never has to see the raw address. The
+gameplay host is not only a relay, and that is where the reasoning stopped
+short. It is the peer in the session it is hosting, and both ends file the
+session under the exact `address:port` a datagram arrived from: the console's
+receive loop compares the source against `session+0x2c..0x30` at `0x262880`, and
+`PeerSessionService` keys its dictionary the same way.
+
+Under `Cluster` the proxy rewrites the source, so the session provisioned from
+the handshake is filed under one endpoint and the next datagram arrives from
+another. The lookup misses, the session key is never derived, and every frame
+after the handshake is logged `Undecodable datagram` — which is what a join
+failure looks like from the console's side, as a hang and then a refusal to
+connect to the host. Nothing errors, so this reads as a crypto problem and not as
+a routing one.
+
+`Local` restores the source, and the paired Deployment carries the same
+`readinessProbe`, `minReadySeconds` and `maxUnavailable: 0` / `maxSurge: 1`
+rollout the TCP Services use, for the same reason: a node with no local endpoint
+drops its traffic rather than forwarding it.
+
+### The name server — `Cluster`, deliberately
+
+It answers queries and has no use for the console's address, so a proxying load
+balancer costs it nothing. `tools/check_deploy_source_addresses.py` keeps the two
+apart, and that separation is the thing worth preserving: the day the gameplay
+host stops keying sessions by source endpoint, this goes back to `Cluster`.
 
 ### The port check — not behind a load balancer at all
 

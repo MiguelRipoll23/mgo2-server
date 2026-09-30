@@ -10,13 +10,23 @@ spec:
   progressDeadlineSeconds: 600
   replicas: 1
   revisionHistoryLimit: 10
+  # A pod is only counted available once it has been Ready this long, which is
+  # what keeps a rollout from killing the old pod before the load balancer has
+  # health-checked the new pod's node. See deploy/README.md,
+  # "externalTrafficPolicy: Local".
+  minReadySeconds: 10
   selector:
     matchLabels:
       app: mgo2-gameplay-1
   strategy:
     rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
+      # Never below the current count. With Local, a node whose pods are all
+      # gone drops its traffic rather than forwarding it elsewhere, so a rollout
+      # that dips below the ready count dips below serving capacity.
+      maxUnavailable: 0
+      # Exactly one, not a percentage: 25% of a single replica rounds to zero, so
+      # the surge that a Local rollout depends on would not happen at all.
+      maxSurge: 1
     type: RollingUpdate
   template:
     metadata:
@@ -59,6 +69,19 @@ spec:
           runAsUser: 1000
           seccompProfile:
             type: RuntimeDefault
+        readinessProbe:
+          # Kubernetes has no UDP probe, so this asks /proc whether the socket is
+          # bound. 5730 is 0x1662, and /proc/net/udp is per network namespace, so
+          # the line only exists once the host's UdpClient is listening. A TCP
+          # probe would pass against a port nothing ever accepts on.
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - grep -qE ':1662[[:space:]]' /proc/net/udp
+          periodSeconds: 5
+          failureThreshold: 3
+          timeoutSeconds: 3
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
@@ -69,6 +92,13 @@ spec:
         envFrom:
         - secretRef:
             name: mgo2-secrets
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: mgo2-gameplay-1
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
