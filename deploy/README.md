@@ -177,6 +177,28 @@ Three things worth knowing:
   again. The pointer names the annotation rather than the pod template, so Argo
   still corrects everything else about it.
 
+### Why every workload sets `revisionHistoryLimit: 2`
+
+A Deployment never edits its ReplicaSet. Any change to `.spec.template` — the
+image, an env entry, or an annotation — changes the template's hash and the
+Deployment creates a new ReplicaSet named after it, scaling the old one to zero
+rather than deleting it. That is how a rollback works, so the old ones are kept
+on purpose, up to `spec.revisionHistoryLimit`.
+
+Reloader makes those revisions cheap to create and impossible to avoid: every
+ConfigMap change writes an annotation into the pod template, which is a template
+change like any other, and Argo's `ignoreDifferences` means it stays there
+instead of being reverted. So each `kubectl apply` of `mgo2-appsettings` leaves
+behind a scaled-to-zero ReplicaSet, and a reindent of the JSON leaves one behind
+too.
+
+Two is the compromise. The default ten accumulates a revision per reload across
+all fifteen workloads, which buries the objects in `kubectl get rs` without
+holding anything the git history does not already hold better; zero would leave
+no way back at all from a bad rollout, and `kubectl rollout undo` is the fastest
+remedy when one goes wrong mid-deploy. Everything further back is a revert of a
+commit, which is where the history was worth having all along.
+
 ## Source addresses and the load balancer
 
 A pod behind a proxying load balancer sees the load balancer's address, not the

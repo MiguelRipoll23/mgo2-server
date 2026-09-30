@@ -9,7 +9,11 @@ metadata:
 spec:
   progressDeadlineSeconds: 600
   replicas: 1
-  revisionHistoryLimit: 10
+  # Two, not the default ten. Reloader writes an annotation onto the pod
+  # template on every ConfigMap change, and each of those is a new ReplicaSet,
+  # so a busy week accumulates a revision per reload. The history worth keeping
+  # is in git; the cluster keeps only enough to roll back the last change.
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: mgo2-dns
