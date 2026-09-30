@@ -18,6 +18,12 @@ import yaml
 
 DEPLOY = pathlib.Path("deploy")
 
+# UDP Services that are the peer in a session rather than a relay. A relay only
+# forwards and never needs the peer's address, so a proxying load balancer costs
+# it nothing; a host files the session under the endpoint the datagram arrived
+# from, so a proxying load balancer takes the session away from it.
+HOSTING_UDP_SERVICES = {"mgo2-gameplay-1"}
+
 # A Service that preserves the source IP is one whose pods must be Ready before
 # the load balancer sends them anything, so its Deployment owes a probe and a
 # rollout that never goes below the ready count.
@@ -99,12 +105,25 @@ def check_traffic_policies(parsed: list[pathlib.Path]) -> None:
             continue
 
         if "UDP" in protocols:
-            # Neither the gameplay relay nor the name server needs the client's
-            # address, and both are proxied without harm: there is no reflexive
-            # mapping to get wrong. The port check is the only UDP service with a
-            # reason to care, and it is handled above.
-            if policy == "Local":
-                fail(f"{path}: {name} is UDP and gains nothing from Local")
+            if name in HOSTING_UDP_SERVICES:
+                # This one is not a relay: it hosts the peer-to-peer session and
+                # files it under the exact "address:port" the datagram arrived
+                # from, the same match the console makes on its side. A proxying
+                # load balancer rewrites the source, the session goes missing and
+                # every frame after the handshake comes back undecodable.
+                if kind == "LoadBalancer" and policy != "Local":
+                    fail(
+                        f"{path}: {name} hosts the session and files it by source "
+                        f"endpoint, so it is {kind}/{policy} and its pods see the "
+                        f"load balancer's address rather than the console's"
+                    )
+            else:
+                # The name server answers queries and has no use for the client's
+                # address either, and it is proxied without harm: there is no
+                # reflexive mapping to get wrong. The port check is the only other
+                # UDP service, and it is handled above.
+                if policy == "Local":
+                    fail(f"{path}: {name} is UDP and gains nothing from Local")
             continue
 
         if kind == "LoadBalancer" and policy != "Local":

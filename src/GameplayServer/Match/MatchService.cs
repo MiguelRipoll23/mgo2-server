@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Mgo2Server.GameplayServer.Identity;
+using Mgo2Server.Shared.Domain.Automatch;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Options;
@@ -35,6 +36,46 @@ public sealed class MatchService(
 {
     /// <summary>How long to wait before looking again for the lobby of the match.</summary>
     private static readonly TimeSpan LobbyLookupRetryDelay = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// The rule this host's room runs, which is the client's Free Battle: the
+    /// one rule every client can play and the one the dedicated host exists to
+    /// offer. It is the same number the client's own join command defaults to
+    /// (`docs/BUILD_1_36.md`, "0x4320's third field").
+    /// </summary>
+    private const int FreeBattleRule = 1;
+
+    /// <summary>
+    /// The single round this host's room advertises, as a `[rule, map, flag]`
+    /// triple with the map drawn from the disc's five shipping stages.
+    /// <para>
+    /// The map used to be written as zero, and a zero map is not a map. The
+    /// client reads the triple its rotation index names and, per
+    /// `docs/AUTOMATCH.md`, **discards the index and falls back to entry 0 when
+    /// `maps[idx] == 0`** — so the one entry that named no map named no map by
+    /// the only route a joiner is given, since the map reaches the joiner over
+    /// TCP with the rest of the room rather than over the peer session
+    /// (`docs/protocol/UDP_P2P_PROTOCOL.md`). Zero is the client's own literal
+    /// for "None" (`maps.h`, index 0 of the display table), so the room was
+    /// advertising itself as being on no map at all.
+    /// </para>
+    /// <para>
+    /// It is one entry rather than a rotation because the client requires the
+    /// list to be contiguous from index 0 with nonzero maps, and a host that
+    /// never changes map has nothing to rotate through. The pool is automatch's
+    /// own — the five stages the disc ships and the only ones any capture has
+    /// confirmed loading — so a dedicated host offers the same maps the queue
+    /// does, and the draw is per process rather than per room: the row is
+    /// created once and then heartbeated for the life of the container, so a
+    /// room-level draw would never be seen again after the first.
+    /// </para>
+    /// </summary>
+    private static int[][] StageRotation()
+    {
+        var map = AutomatchConstants.MapPool[Random.Shared.Next(AutomatchConstants.MapPool.Length)];
+
+        return [[FreeBattleRule, map, 0]];
+    }
 
     private readonly ServerOptions options = options.Value;
     private readonly int port = options.Value.GameplayServerPort;
@@ -100,6 +141,12 @@ public sealed class MatchService(
             return existing.Identifier;
         }
 
+        // Drawn before the row is built rather than inside it, so the map this
+        // host settles on can be logged below: the row is heartbeated for the
+        // life of the container and is never rebuilt, so the log line at
+        // creation is the only place the choice is ever visible.
+        var rotation = StageRotation();
+
         var game = await gameService.CreateAsync(room =>
         {
             room.HostIdentifier = hostIdentifier;
@@ -108,15 +155,16 @@ public sealed class MatchService(
             room.Password = string.Empty;
             room.Comment = "Gameplay server";
             room.MaximumPlayers = 8;
-            room.Games = JsonSerializer.Serialize(new[] { new[] { 1, 0, 0 } });
+            room.Games = JsonSerializer.Serialize(rotation);
         }, cancellationToken);
 
         await gameService.AddPlayerAsync(game.Identifier, hostIdentifier, cancellationToken);
         logger.LogInformation(
-            "Created match {GameIdentifier} ({Name}) in lobby {LobbyIdentifier}",
+            "Created match {GameIdentifier} ({Name}) in lobby {LobbyIdentifier} on map {Map}",
             game.Identifier,
             name,
-            lobby.Identifier);
+            lobby.Identifier,
+            rotation[0][1]);
 
         return game.Identifier;
     }
