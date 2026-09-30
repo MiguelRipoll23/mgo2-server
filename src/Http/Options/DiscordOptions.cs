@@ -79,6 +79,13 @@ public sealed class DiscordOptions
     /// </summary>
     public string PlayerCountChannelIdentifier { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Identifier of the channel every login attempt is written in. Left empty,
+    /// no login is written anywhere: a deployment that configured no channel
+    /// loses nothing but the log.
+    /// </summary>
+    public string LoginsChannelIdentifier { get; set; } = string.Empty;
+
     /// <summary>Base URL of the Discord REST API, used for the one call the integration makes.</summary>
     public string ApiBaseUrl { get; set; } = "https://discord.com/api/v10";
 
@@ -114,6 +121,10 @@ public sealed class DiscordOptions
     /// <summary>Whether the integration can publish the player count.</summary>
     public bool IsPlayerCountConfigured =>
         Enabled && !string.IsNullOrWhiteSpace(BotToken) && !string.IsNullOrWhiteSpace(GuildIdentifier);
+
+    /// <summary>Whether the integration can write login attempts in a channel.</summary>
+    public bool IsLoginLogConfigured =>
+        Enabled && !string.IsNullOrWhiteSpace(BotToken) && !string.IsNullOrWhiteSpace(LoginsChannelIdentifier);
 
     /// <summary>
     /// Reports whether the roles of a command user allow the staff commands

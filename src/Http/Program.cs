@@ -61,6 +61,7 @@ var discordOptions = new DiscordOptions
         : DiscordOptions.DefaultGatewayUrl,
     GuildIdentifier = builder.Configuration["DISCORD_GUILD_ID"] ?? string.Empty,
     PlayerCountChannelIdentifier = builder.Configuration["DISCORD_PLAYER_COUNT_CHANNEL_ID"] ?? string.Empty,
+    LoginsChannelIdentifier = builder.Configuration["DISCORD_LOGINS_CHANNEL_ID"] ?? string.Empty,
     ModeratorRoleIdentifier = builder.Configuration["DISCORD_MODERATOR_ROLE_ID"] ?? string.Empty,
     ManagerRoleIdentifier = builder.Configuration["DISCORD_MANAGER_ROLE_ID"] ?? string.Empty,
 };
@@ -98,6 +99,7 @@ builder.Services.AddSingleton<IDiscordInteractionResponder>(
 builder.Services.AddSingleton<DiscordPlayerCountService>();
 builder.Services.AddSingleton<IPlayerPresenceObserver>(
     provider => provider.GetRequiredService<DiscordPlayerCountService>());
+builder.Services.AddSingleton<DiscordLoginNotificationService>();
 builder.Services.AddSingleton<DiscordChannelRenameService>();
 builder.Services.AddSingleton<DiscordEventScheduleCommandService>();
 builder.Services.AddSingleton<DiscordCommandService>();

@@ -67,20 +67,20 @@ public sealed class AuthenticationService(
     /// <param name="displayName">Login name of the account.</param>
     /// <param name="passwordHash">Password hash presented by the client.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<string> LoginAsync(
+    public async Task<LoginAttempt> LoginAsync(
         string displayName,
         string passwordHash,
         CancellationToken cancellationToken = default)
     {
         if (displayName.Equals("server", StringComparison.OrdinalIgnoreCase))
         {
-            return FailedLoginReply;
+            return new LoginAttempt(false, FailedLoginReply);
         }
 
         var user = await FindByCredentialsAsync(displayName, passwordHash, cancellationToken);
         if (user is null)
         {
-            return FailedLoginReply;
+            return new LoginAttempt(false, FailedLoginReply);
         }
 
         var tokenBytes = RandomNumberGenerator.GetBytes(LoginTokenLength / 2);
@@ -89,6 +89,6 @@ public sealed class AuthenticationService(
 
         await sessionService.CreateSessionAsync(user.Identifier, storedField, cancellationToken);
 
-        return $"0,{user.Identifier},{LoginPerks},{sessionToken}";
+        return new LoginAttempt(true, $"0,{user.Identifier},{LoginPerks},{sessionToken}");
     }
 }
