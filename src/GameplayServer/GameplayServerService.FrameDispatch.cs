@@ -37,6 +37,17 @@ public sealed partial class GameplayServerService
         var remoteAddress = $"{remote.Address}:{remote.Port}";
         var work = wire.ToArray();
 
+        // The datagram as it arrived, before any unscrambling. Every later stage
+        // reports what it made of the frame, and when a frame is rejected that
+        // is not enough to tell a bad decode from a frame that was never the
+        // shape we expected. The bytes settle that, and they are the only
+        // record of the frame that no later stage can alter.
+        logger.LogDebug(
+            "Raw {Length} bytes from {RemoteAddress}: {RawHex}",
+            work.Length,
+            remoteAddress,
+            Convert.ToHexString(work));
+
         // The digest key classifies the frame before the chain is removed:
         // pre-keyed frames verify with the bare constant, keyed frames with the
         // session key combined with it.
