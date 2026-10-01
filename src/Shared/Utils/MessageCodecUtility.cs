@@ -24,7 +24,10 @@ public static class MessageCodecUtility
 
         if (compressed && content.Length > 0)
         {
-            content = LzssUtility.Decompress(content) ?? [];
+            // No null check on purpose: a stream that ends by exhaustion is
+            // already handled inside the decompressor, and swallowing the
+            // result here is what used to lose the joiner's profile frame.
+            content = LzssUtility.Decompress(content);
         }
 
         return new UdpFrame(

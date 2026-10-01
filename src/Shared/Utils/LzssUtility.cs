@@ -9,11 +9,23 @@ namespace Mgo2Server.Shared.Utils;
 /// 2). The ring write index starts at 1 and offset 0 is the end-of-stream
 /// marker.
 /// </summary>
+/// <remarks>
+/// The marker is what the decoder implements, but a captured joiner frame runs
+/// out of input mid-token without ever writing it: the stream ends by
+/// exhaustion. Exhaustion is therefore not a failure — it returns what was
+/// decoded so far. Returning nothing instead loses the whole frame, and the
+/// frame is a join request: the digest still verifies, the host has a session
+/// and no profile, and the joiner re-sends the same body indefinitely waiting
+/// for a roster that never comes.
+/// </remarks>
 public static class LzssUtility
 {
-    /// <summary>Decompresses an LZSS stream, or returns <c>null</c> when the stream is truncated.</summary>
+    /// <summary>
+    /// Decompresses an LZSS stream. A stream that ends by exhaustion rather
+    /// than by the marker yields the bytes decoded so far.
+    /// </summary>
     /// <param name="source">Compressed bytes.</param>
-    public static byte[]? Decompress(ReadOnlySpan<byte> source)
+    public static byte[] Decompress(ReadOnlySpan<byte> source)
     {
         var maximumOutput = UdpCommandConstants.LzssMaximumOutput;
         var output = new byte[maximumOutput];
@@ -37,7 +49,7 @@ public static class LzssUtility
                 var literal = bits.ReadBits(8);
                 if (literal < 0)
                 {
-                    return null;
+                    return output[..outputIndex];
                 }
 
                 output[outputIndex++] = (byte)literal;
@@ -49,7 +61,7 @@ public static class LzssUtility
             var lengthField = bits.ReadBits(4);
             if (offset < 0 || lengthField < 0)
             {
-                return null;
+                return output[..outputIndex];
             }
 
             if (offset == 0)

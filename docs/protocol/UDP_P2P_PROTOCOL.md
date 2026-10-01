@@ -906,12 +906,35 @@ waiting for. The host sends the roster alone. **[U]**
   the whole `[2 .. len-0xa)` region of the frame — everything after the 2-byte
   scrambled header, before the 10-byte tail (the tail is outside the chain and
   outside the stream; the EOF marker stops the decompressor first). Data-phase
-  frames set the marker (hdr `0x8002`…`0x801e`); handshake and `0x1001` control
-  frames never set it **[V]**. The earlier "u16 BE output-size prefix
-  `0x0814` = 2068" reading was wrong — those bytes are simply the first stream
-  bytes, and a 43-byte stream could never expand to 2068 under this format.
-  Which runtime path sets the `0x200` gate flag for the data phase remains
-  **[U]**.
+  frames set the marker (hdr `0x8002`…`0x801e`) **[V]**. The earlier "u16 BE
+  output-size prefix `0x0814` = 2068" reading was wrong — those bytes are simply
+  the first stream bytes, and a 43-byte stream could never expand to 2068 under
+  this format.
+- **The joiner's profile frame IS marked, and it is not a `0x1001` control
+  frame** (2026-10-01, live). The frame that carries the join request arrives
+  with hdr `0x8001` and decompresses to `type=0x1001 len=0x95`, holding the
+  player record — the same §6.4 shape, with the leading `0x02` that marks it a
+  request rather than a roster entry. An earlier reading here said handshake
+  and `0x1001` control frames never set the marker; that held for the
+  one-byte `0x1001` *acknowledgements* of §6.3, which are short enough that the
+  builder prefers the literal form, and was wrongly generalised to the profile.
+  So the runtime path that sets the `0x200` gate flag is the data phase after
+  all, and the question this section left **[U]** is answered.
+- **The stream ends by exhaustion, not by the EOF marker** (2026-10-01, live).
+  The marker-offset rule above is what the decoder implements, but a captured
+  joiner frame runs out of input mid-token with no offset-0 ever written. A
+  decoder that treats exhaustion as an error returns nothing for the frame and
+  the whole join request is lost with no error anywhere: the digest still
+  verifies, the frame still arrives, and the host answers a session it has no
+  profile for. That is what this server did — it read the capture as an empty
+  content region, logged no profile and no unknown message type, and left the
+  joiner re-sending the same body forever (§6.5). Exhaustion must yield the
+  bytes decoded so far, not a discarded frame.
+- **The capture annotations in `UDP_PACKET_DUMP.txt` predate any working
+  decompressor.** Its `tag=0xc480 msgLen=20523` lines are a misparse of
+  compressed bytes read as if they were message headers, not a format finding;
+  read §7's algorithm instead. The header counters and the handshake-phase
+  observations on those lines are sound.
 
 ---
 
