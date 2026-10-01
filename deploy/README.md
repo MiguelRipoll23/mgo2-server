@@ -317,6 +317,51 @@ failure than it looks. It has to be a second address of the same node
 (`ip addr add …`), which does not survive a reboot and so wants a node bootstrap
 script rather than a manifest here.
 
+### The gameplay reply source port — a host rule, not a manifest
+
+The gameplay Service is `Local`, so the pod sees the console's real address and
+port, and `externalTrafficPolicy: Local` does the same job for the reply path in
+principle. It does not do it in practice, and the reason is the pod's socket.
+
+`GameplayServerService` binds `new UdpClient(new IPEndPoint(IPAddress.Any, port))`
+and sends with `UdpClient.Send`. That socket is **bound but never connected**, so
+Linux picks an **ephemeral source port for every send**. The reply therefore
+leaves from `10.42.0.x:<random>`, flannel's `--random-fully` masquerade picks a
+port of its own on top of that, and the console — which matches every inbound
+datagram against the single `ip:port` it dialled, with a 4-byte `memcmp` of
+`session+0x2c` and then an exact 16-bit compare of `session+0x30` — discards
+them all. It re-handshakes forever and logs nothing.
+
+So the reply has to be pinned to the address and port the console dialled, and
+that is a **host** concern, not a workload one:
+
+- `/etc/nftables.d-mgo2-gameplay.nft` holds the rule, and
+  `/etc/systemd/system/mgo2-gameplay-nft.service` loads it at boot
+  (`Before=k3s.service`, so the pin is in place before any pod sends).
+
+Two details in the rule are load-bearing:
+
+- **It matches `udp dport 5730`, not `udp sport 5730`.** Every reply toward the
+  console is addressed to the port the console dialled, so the destination port
+  is the stable selector. The source port is precisely the thing that is not
+  stable, and a rule conditioned on it matches only the one case where the pod
+  happens to emit from 5730 and silently lets everything else through to the
+  randomising masquerade.
+- **It runs at `srcnat - 10`, before flannel.** Otherwise the pin is applied and
+  then randomized away.
+
+Verify after any change, because nothing fails loudly:
+
+```bash
+sudo nft list table ip mgo2_gameplay   # exactly one rule
+sudo systemctl is-enabled mgo2-gameplay-nft.service   # enabled
+```
+
+`nft -f` **adds** to an existing table rather than replacing it, so reloading
+after an edit leaves the old rule in place alongside the new one. Delete the
+table first — `sudo nft delete table ip mgo2_gameplay` — or use
+`systemctl restart`, whose `ExecStop` does it.
+
 ## Rolling back
 
 Point `newTag` at the previous commit's SHA and commit it. That is the entire
