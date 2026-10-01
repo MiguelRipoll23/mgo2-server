@@ -200,6 +200,19 @@ Decoded layout (offsets relative to the datagram start, after §5 unscramble+cha
     is the single source for both, so the address a joining client is handed in the
     join result and the address a peer is told to answer on cannot drift apart
     **[V]**.
+  - **Answering the advertised pair does not make the session reachable from it.** A
+    session is filed under the endpoint the handshake *arrived from*, and the frames
+    that follow arrive from the endpoint the joiner was *answered at*. Those are the
+    same pair for a joiner out on the internet, where both name its NATed address,
+    and different wherever something rewrites the source in between — a load
+    balancer, or a router that loops a reply addressed to its own public address back
+    into the LAN it shares with the host. A lookup by the observed source alone then
+    misses, and because the tail digest cannot be verified without the session key
+    the frame is discarded: a live trial logged `answering 89.129.16.203:5730`
+    followed by nothing but `Undecodable datagram from 89.129.16.203:5730`, with the
+    session reported established throughout. The lookup therefore falls back to a
+    session that dials back to the arriving endpoint, which is what makes both
+    directions work at once where answering only one of them does not **[V]**.
 - **Ordering is enforced by the session state:** session init `FUN_00268148` starts the
   session by sending the handshake, so it is the first datagram; the session state byte
   (`session+4`) gates which XOR key applies (§6) **[V]**.

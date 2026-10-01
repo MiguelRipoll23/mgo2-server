@@ -51,7 +51,16 @@ public sealed partial class GameplayServerService
         // The digest key classifies the frame before the chain is removed:
         // pre-keyed frames verify with the bare constant, keyed frames with the
         // session key combined with it.
-        var session = sessions.Get(remoteAddress);
+        // The session is filed under the endpoint the handshake arrived from,
+        // while the frames that follow it arrive from the endpoint the peer
+        // advertised and the handler dialed back to. Those are the same
+        // endpoint for a peer out on the internet and different whenever
+        // something rewrites the source in between - a load balancer, or a
+        // router hairpining a reply addressed to its own public address back
+        // into the LAN - and a lookup by the observed source alone drops every
+        // one of those peer's frames as undecodable, because the digest cannot
+        // be verified without the session key.
+        var session = sessions.Get(remoteAddress) ?? sessions.FindByDialBack(remote);
         var preKeyedCounter = TryUnscrambleWith(work, UdpCryptoKeyConstants.TailDigestKey);
         ushort? keyedCounter = null;
         uint sessionKey = 0;
@@ -76,7 +85,15 @@ public sealed partial class GameplayServerService
             return;
         }
 
-        logger.LogWarning("Undecodable datagram from {RemoteAddress}", remoteAddress);
+        // The two endpoints this host would have recognised are the one the
+        // datagram came from and the one every live session dials back to, so
+        // both are named. A mismatch between them is the whole diagnosis: the
+        // peer is answering from somewhere the session was never filed under,
+        // which is what a rewritten source does to it.
+        logger.LogWarning(
+            "Undecodable datagram from {RemoteAddress}: no session is keyed on that endpoint and none dials back to it; sessions held: {DialBacks}",
+            remoteAddress,
+            string.Join(", ", sessions.Snapshot().Select(session => session.DialBack)));
     }
 
     /// <summary>

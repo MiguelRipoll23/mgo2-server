@@ -1,3 +1,4 @@
+using System.Net;
 using Mgo2Server.Shared.Types;
 
 namespace Mgo2Server.Shared.Udp;
@@ -44,6 +45,29 @@ public sealed class PeerSessionService(TimeSpan idleTimeout)
         lock (gate)
         {
             return sessions.GetValueOrDefault(remoteAddress);
+        }
+    }
+
+    /// <summary>
+    /// Returns the session that dials back to the given endpoint, when one does.
+    /// </summary>
+    /// <remarks>
+    /// A session is filed under the endpoint its handshake arrived from, but the
+    /// handshake handler then replaces that with the pair the peer advertised,
+    /// because that is the only endpoint the peer's socket is reading. The two
+    /// are the same for a peer out on the internet, where both name the peer's
+    /// NATed address, and different wherever something rewrites the source in
+    /// between: a load balancer, or a router that hairpins a reply addressed to
+    /// its own public address back into the LAN it shares with this host. A
+    /// datagram from such a peer arrives from the advertised endpoint and would
+    /// otherwise miss the session entirely.
+    /// </remarks>
+    /// <param name="endpoint">Endpoint a datagram arrived from.</param>
+    public PeerSession? FindByDialBack(IPEndPoint endpoint)
+    {
+        lock (gate)
+        {
+            return sessions.Values.FirstOrDefault(session => session.DialBack.Equals(endpoint));
         }
     }
 
