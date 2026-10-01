@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Sockets;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Types;
@@ -155,7 +154,7 @@ public sealed partial class GameplayServerService
 
         foreach (var message in frame.Messages)
         {
-            await DispatchMessageAsync(message, remote);
+            await DispatchMessageAsync(message, remote, session);
         }
 
         // Pre-keyed frames advance the cumulative window but are not
@@ -220,7 +219,7 @@ public sealed partial class GameplayServerService
                 continue;
             }
 
-            await DispatchMessageAsync(message, remote);
+            await DispatchMessageAsync(message, remote, session);
         }
 
         // A frame whose only content is acknowledgement entries must not be
@@ -304,14 +303,18 @@ public sealed partial class GameplayServerService
         });
     }
 
-    private async Task DispatchMessageAsync(UdpMessage message, IPEndPoint remote)
+    /// <param name="message">Message to hand to its handler.</param>
+    /// <param name="remote">Endpoint the message arrived from.</param>
+    /// <param name="session">
+    /// Session the frame was decoded against. It is passed in rather than looked
+    /// up again by the observed source: a peer that advertised a different
+    /// endpoint than its handshake arrived from - a hairpining router, or a load
+    /// balancer - sends every later frame from the advertised one, so a second
+    /// lookup by source alone misses the session and drops the message silently.
+    /// </param>
+    private async Task DispatchMessageAsync(UdpMessage message, IPEndPoint remote, PeerSession session)
     {
         var remoteAddress = $"{remote.Address}:{remote.Port}";
-        var session = sessions.Get(remoteAddress);
-        if (session is null)
-        {
-            return;
-        }
 
         var handlerType = registry.ResolveHandlerType(message.Type);
         if (handlerType is null)
@@ -346,66 +349,5 @@ public sealed partial class GameplayServerService
             });
 
         await handler.HandleAsync(context);
-    }
-
-    /// <summary>
-    /// Writes a message to every established peer except the one it came from.
-    /// Peers are skipped rather than removed: a peer that has not finished its
-    /// handshake is not in the room yet, and the session is dropped when it goes
-    /// quiet.
-    /// </summary>
-    /// <param name="origin">Session the message came from, which is left out.</param>
-    /// <param name="messageType">Type of the message.</param>
-    /// <param name="body">Body of the message.</param>
-    private void SendToOthers(PeerSession origin, ushort messageType, byte[] body)
-    {
-        foreach (var session in sessions.Snapshot())
-        {
-            if (session.Established && !ReferenceEquals(session, origin))
-            {
-                SendMessage(session, messageType, body);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Writes a message to a peer through the session's shared counter, to the
-    /// endpoint the session dials back rather than to the address a datagram
-    /// happened to arrive from. The two differ whenever the host sits behind a
-    /// load balancer, and only the first is a socket the peer is reading.
-    /// </summary>
-    /// <param name="session">Session to write through.</param>
-    /// <param name="messageType">Type of the message.</param>
-    /// <param name="body">Body of the message.</param>
-    private void SendMessage(PeerSession session, ushort messageType, byte[] body)
-    {
-        var counter = session.OutboundCounter;
-        session.OutboundCounter = (ushort)((counter + 1) & 0xffff);
-
-        var plain = FrameBuilderUtility.BuildMessageFrame(counter, [FrameBuilderUtility.MessageOf(messageType, body)]);
-        var key = session.Established ? session.SessionKey : UdpCryptoKeyConstants.PreHandshakeKey;
-        var digestKey = session.Established
-            ? session.SessionKey ^ UdpCryptoKeyConstants.TailDigestKey
-            : UdpCryptoKeyConstants.TailDigestKey;
-
-        Send(FrameCryptoUtility.EncodeFrame(plain, counter, key, digestKey), session.DialBack);
-        logger.LogDebug(
-            "Outbound counter={Counter} type={MessageType:x4} to {DialBack}{PreKeyed}",
-            counter,
-            messageType,
-            session.DialBack,
-            session.Established ? string.Empty : " pre");
-    }
-
-    private void Send(byte[] data, IPEndPoint remote)
-    {
-        try
-        {
-            socket?.Send(data, data.Length, remote);
-        }
-        catch (SocketException exception)
-        {
-            logger.LogWarning("Send to {RemoteAddress} failed: {Message}", remote, exception.Message);
-        }
     }
 }
