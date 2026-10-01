@@ -249,28 +249,45 @@ the pod replies to the console directly rather than through the load balancer,
 and the AWS equivalent has a documented history of asymmetric-routing failures
 that look exactly like an application bug.
 
-### UDP gameplay — `Local`, because it is the host and not only a relay
+### UDP gameplay — no load balancer at all, because it is the host
 
 The peer descriptor really is built **client-side** at `0x9444BC` from the port
 check result, so for a *relay* the server never has to see the raw address. The
-gameplay host is not only a relay, and that is where the reasoning stopped
-short. It is the peer in the session it is hosting, and both ends file the
-session under the exact `address:port` a datagram arrived from: the console's
-receive loop compares the source against `session+0x2c..0x30` at `0x262880`, and
-`PeerSessionService` keys its dictionary the same way.
+gameplay host is not only a relay, and that is where the reasoning stops. It is
+the peer in the session it is hosting, and both ends file the session under the
+exact `address:port` a datagram arrived from: the console's receive loop
+compares the source against `session+0x2c..0x30` and `PeerSessionService` keys
+its dictionary the same way.
 
-Under `Cluster` the proxy rewrites the source, so the session provisioned from
-the handshake is filed under one endpoint and the next datagram arrives from
-another. The lookup misses, the session key is never derived, and every frame
-after the handshake is logged `Undecodable datagram` — which is what a join
-failure looks like from the console's side, as a hang and then a refusal to
-connect to the host. Nothing errors, so this reads as a crypto problem and not as
-a routing one.
+A `LoadBalancer` is the wrong tool for that, and `externalTrafficPolicy: Local`
+was not enough. `Local` restores the console's source *address* on the way in,
+but the reply still leaves from whatever the proxy chain does with it, and the
+console matches on the address **and the port**. klipper-lb rewrites the source
+port, flannel's masquerade randomizes it again, and no policy setting on a
+Service gets between a packet and that. The console discards what does not
+arrive from the exact `ip:port` it dialled, and nothing errors on either side.
 
-`Local` restores the source, and the paired Deployment carries the same
-`readinessProbe`, `minReadySeconds` and `maxUnavailable: 0` / `maxSurge: 1`
-rollout the TCP Services use, for the same reason: a node with no local endpoint
-drops its traffic rather than forwarding it.
+So there is no Service in the data path at all. The pod runs on the node's own
+network and the Service is headless, which is the same shape `stun/` uses and
+for the same reason — it identifies the peer by where the datagram came from:
+
+- `hostNetwork: true`, so the pod binds the node's own `192.168.1.15:5730`,
+  a datagram arrives with the console's real endpoint, and the reply leaves
+  from the address the console dialled;
+- `dnsPolicy: ClusterFirstWithHostNet`, without which the pod loses cluster DNS
+  and the internal gRPC call to `mgo2-http` fails;
+- `type: Recreate`, not `RollingUpdate`: the pod holds the node's port, so a
+  surge would start the replacement while the old one still has it;
+- `clusterIP: None` on the Service, so nothing proxies in front of it.
+
+The cost is the same one `stun/` already carries, and it is worth stating
+plainly: **the pod now binds a port on the node**, so the node is the unit of
+scheduling. It cannot be replicated, it cannot float to another node, and if
+the node is lost the port goes with it. The `readinessProbe` still matters
+(`/proc/net/udp` is per network namespace, and the host's namespace is where
+the socket now lives), and `ADVERTISED_ADDRESS` has to be an address of that
+node. This is a deliberate trade: correctness of the peer endpoint over
+schedulability.
 
 ### The name server — `Cluster`, deliberately
 
@@ -316,51 +333,6 @@ answered from, and without one a restricted-cone NAT is read as a full-cone one
 failure than it looks. It has to be a second address of the same node
 (`ip addr add …`), which does not survive a reboot and so wants a node bootstrap
 script rather than a manifest here.
-
-### The gameplay reply source port — a host rule, not a manifest
-
-The gameplay Service is `Local`, so the pod sees the console's real address and
-port, and `externalTrafficPolicy: Local` does the same job for the reply path in
-principle. It does not do it in practice, and the reason is the pod's socket.
-
-`GameplayServerService` binds `new UdpClient(new IPEndPoint(IPAddress.Any, port))`
-and sends with `UdpClient.Send`. That socket is **bound but never connected**, so
-Linux picks an **ephemeral source port for every send**. The reply therefore
-leaves from `10.42.0.x:<random>`, flannel's `--random-fully` masquerade picks a
-port of its own on top of that, and the console — which matches every inbound
-datagram against the single `ip:port` it dialled, with a 4-byte `memcmp` of
-`session+0x2c` and then an exact 16-bit compare of `session+0x30` — discards
-them all. It re-handshakes forever and logs nothing.
-
-So the reply has to be pinned to the address and port the console dialled, and
-that is a **host** concern, not a workload one:
-
-- `/etc/nftables.d-mgo2-gameplay.nft` holds the rule, and
-  `/etc/systemd/system/mgo2-gameplay-nft.service` loads it at boot
-  (`Before=k3s.service`, so the pin is in place before any pod sends).
-
-Two details in the rule are load-bearing:
-
-- **It matches `udp dport 5730`, not `udp sport 5730`.** Every reply toward the
-  console is addressed to the port the console dialled, so the destination port
-  is the stable selector. The source port is precisely the thing that is not
-  stable, and a rule conditioned on it matches only the one case where the pod
-  happens to emit from 5730 and silently lets everything else through to the
-  randomising masquerade.
-- **It runs at `srcnat - 10`, before flannel.** Otherwise the pin is applied and
-  then randomized away.
-
-Verify after any change, because nothing fails loudly:
-
-```bash
-sudo nft list table ip mgo2_gameplay   # exactly one rule
-sudo systemctl is-enabled mgo2-gameplay-nft.service   # enabled
-```
-
-`nft -f` **adds** to an existing table rather than replacing it, so reloading
-after an edit leaves the old rule in place alongside the new one. Delete the
-table first — `sudo nft delete table ip mgo2_gameplay` — or use
-`systemctl restart`, whose `ExecStop` does it.
 
 ## Rolling back
 

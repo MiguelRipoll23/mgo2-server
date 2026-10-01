@@ -23,15 +23,11 @@ spec:
     matchLabels:
       app: mgo2-gameplay-1
   strategy:
-    rollingUpdate:
-      # Never below the current count. With Local, a node whose pods are all
-      # gone drops its traffic rather than forwarding it elsewhere, so a rollout
-      # that dips below the ready count dips below serving capacity.
-      maxUnavailable: 0
-      # Exactly one, not a percentage: 25% of a single replica rounds to zero, so
-      # the surge that a Local rollout depends on would not happen at all.
-      maxSurge: 1
-    type: RollingUpdate
+    # Recreate, not RollingUpdate: the pod binds the node's own 5730, so a
+    # surge would start the replacement while the old pod still holds the port
+    # and the new one would never come up. Same reason the STUN responder is
+    # Recreate, and it removes the need for the Local rollout settings below.
+    type: Recreate
   template:
     metadata:
       labels:
@@ -102,7 +98,19 @@ spec:
         labelSelector:
           matchLabels:
             app: mgo2-gameplay-1
-      dnsPolicy: ClusterFirst
+      # On the node's own network, so a datagram arrives with the console's real
+      # address and port and the reply leaves from the address the console
+      # dialled. A Service LoadBalancer stands between the two and rewrites
+      # both, and this host files its session under the exact "address:port" a
+      # datagram arrived from, so it needs to see the wire as it really is.
+      # This is the same shape the STUN responder uses, and for the same
+      # reason: it identifies the peer by where the datagram came from. See
+      # deploy/README.md, "The gameplay reply path".
+      hostNetwork: true
+      # Without WithHostNet the pod resolves cluster names against the
+      # cluster's DNS from inside the host's namespace, where that address
+      # means nothing, and the internal gRPC call to mgo2-http fails.
+      dnsPolicy: ClusterFirstWithHostNet
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}

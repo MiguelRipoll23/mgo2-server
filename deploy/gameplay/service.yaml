@@ -4,21 +4,18 @@ metadata:
   name: mgo2-gameplay-1
   namespace: mgo2
 spec:
-  # Local, so the pod sees the console's real endpoint instead of the load
-  # balancer's. This host is the peer in the session it is hosting, and it
-  # looks a session up by the exact "address:port" a datagram arrived from --
-  # the same match the console makes on its side (MGO2.ELF, the receive loop at
-  # 0x262880). Under Cluster the proxy rewrites the source, the session
-  # provisioned from the handshake is filed under an address the next datagram
-  # does not come from, and every frame after the handshake is undecodable.
+  # Headless. The pod is on the node's own network (hostNetwork, see
+  # deployment.yaml), so it already answers on 192.168.1.15:5730 and the
+  # console reaches it there directly.
   #
-  # The cost is that a node forwards only to its own pods and DROPS traffic to a
-  # node that has none, so the load balancer has to stop sending there before
-  # the last pod goes. That is what healthCheckNodePort is for, and the paired
-  # Deployment's rollout settings are built around it. See deploy/README.md,
-  # "externalTrafficPolicy: Local".
-  externalTrafficPolicy: Local
-  internalTrafficPolicy: Cluster
+  # There is deliberately no load balancer in front of it. This host files its
+  # session under the exact "address:port" a datagram arrived from -- the same
+  # match the console makes on its side (MGO2.ELF, the receive loop) -- so it
+  # has to see the wire as it really is. A LoadBalancer stands between the
+  # console and the pod and rewrites the source address and port on the way in
+  # and the reply on the way out, which is precisely the information this host
+  # keys its session on. See deploy/README.md, "The gameplay reply path".
+  clusterIP: None
   ipFamilies:
   - IPv4
   ipFamilyPolicy: SingleStack
@@ -29,4 +26,4 @@ spec:
   selector:
     app: mgo2-gameplay-1
   sessionAffinity: None
-  type: LoadBalancer
+  type: ClusterIP
