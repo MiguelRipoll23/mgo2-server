@@ -47,9 +47,9 @@ public sealed class ServerOptions
     /// so the address a peer is told in a handshake and the one a joining client
     /// is handed in the join result cannot drift apart.
     /// <para>
-    /// Neither may be the address a datagram arrived from. Behind a load
-    /// balancer that is the balancer's own address, which a peer cannot dial
-    /// back; the wildcard falls back to loopback because it is no more dialable.
+    /// This is the address a peer dials, never the address a datagram arrived
+    /// from: that one is the load balancer's own. The host answers at the source
+    /// instead, which is the only endpoint the peer is actually reading.
     /// </para>
     /// </summary>
     public string GameplayServerAdvertisedAddress =>
