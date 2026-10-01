@@ -1,3 +1,4 @@
+using System.Net;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Constants;
@@ -37,23 +38,14 @@ public sealed class AcceptHandshakeHandler(
         context.Session.CounterBase = handshake.CounterBase;
         context.Session.SessionKey = handshake.CounterBase ^ hostIdentity.CounterBase;
 
-        // Answers go to the address the datagram came from, and never to the
-        // pair the peer advertised in its own handshake. That pair is whatever
-        // a STUN lookup returned for the peer, so a console on a home network
-        // names its router's public address there -- and from inside that same
-        // network the router does not loop the answer back, so every reply
-        // vanishes without an error. The observed source is reachable by
-        // definition: a peer on the LAN shows its LAN address and one dialling
-        // in from outside shows the public address the NAT gave it. One path
-        // serves both, and it is what this host did before it started obeying
-        // the advertised pair.
-        //
-        // The deployment owes the source for this to be the peer's real
-        // endpoint: externalTrafficPolicy Local plus the source-NAT rule in
-        // deploy/README.md. Where the source is a load balancer's conntrack
-        // address instead, this is the wrong address -- but so was every
-        // alternative, and the peer's own pair is never one of them.
-        var dialBack = context.Remote;
+        // Answers go to the endpoint the peer advertised, not to the one the
+        // datagram came from. The handshake carries the peer's own pair for
+        // exactly this: behind a load balancer the source is the balancer's
+        // address and a port the peer's socket is not listening on, so replying
+        // to it leaves the reply in a connection-tracking entry the peer never
+        // reads. The source is only the fallback for a peer that advertised
+        // nothing usable.
+        var dialBack = AdvertisedEndpointOf(handshake) ?? context.Remote;
         context.Session.DialBack = dialBack;
 
         logger.LogInformation(
@@ -83,6 +75,27 @@ public sealed class AcceptHandshakeHandler(
             handshake.PeerIdentifier);
     }
 
+    /// <summary>
+    /// Picks the endpoint a peer's handshake says it is listening on. The first
+    /// advertised pair is the public one and the second the private, so the
+    /// public is preferred; a pair that names no address or no port is skipped,
+    /// because a peer that advertises nothing usable is better answered at the
+    /// address the datagram came from than at a placeholder.
+    /// </summary>
+    /// <param name="handshake">Parsed handshake body.</param>
+    /// <returns>The advertised endpoint, or <c>null</c> when there is none usable.</returns>
+    private static IPEndPoint? AdvertisedEndpointOf(HandshakeBody handshake)
+    {
+        foreach (var pair in handshake.Pairs)
+        {
+            if (pair.Port != 0 && IPAddress.TryParse(pair.Address, out var address))
+            {
+                return new IPEndPoint(address, pair.Port);
+            }
+        }
+
+        return null;
+    }
 }
 
 /// <summary>Mirrors a peer's keep-alive straight back.</summary>
