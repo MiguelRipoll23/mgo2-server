@@ -18,7 +18,7 @@ now that conclusion is exact, not inferred.
 | what | gate/account/game lobby, characters, hosting, browser, mail, ADDLIST | the direct console-to-console gameplay link during a match |
 | reaches our server? | **yes — this is the entire server** | **no — never touches us** |
 | send builder | `0xD5CF40` | `0xD824D0` (separate) |
-| parse dispatchers | `0xD361E8` / `0xD37074` / `0xD38804` | `0xD78CC8` (its own session object) |
+| parse dispatchers | `0xD361E8` / `0xD37074` / `0xD38804` | `0xF4A248` (its own session object; `0xD78CC8` was stale) |
 | framing | 24-byte header + XOR + selective Blowfish | its own; **zero** calls to any lobby primitive |
 | id space | `0x0004`/`0x0005`, `0x2xxx`, `0x3xxx`, `0x41xx`–`0x4Exx` | `0x1101`–`0x1918`, `0x2101`–`0x240c`, `0x3001`–`0x3632`, `0x4004`–`0x4080`, `0x52xx`/`0x56xx` |
 | size | 112 sent / 204 parsed | 212 dispatched |
@@ -30,8 +30,13 @@ The crux for our scope: **join (`0x4320`/`0x4321`) and peer-register (`0x4340`�
 Channel A** — the client telling the *lobby server* about a peer event over TCP, which we answer.
 The `0x43xx` range is entirely absent from B. So the boundary is clean: **we implement all of A,
 none of B**, and B's gameplay traffic (the host↔peer link that the join hands off to) is the
-emulator's, exactly as the P2P backlog concluded. Channel B is not enumerated here; its 212 ids
-live in the P2P task output, which was a `/tmp` file and is gone; that layer would need re-enumerating from `0xD78CC8` if it is ever investigated.
+emulator's, exactly as the P2P backlog concluded. Channel B is not enumerated here; its ids
+live in the P2P task output, which was a `/tmp` file and is gone. **Re-enumerated 2026-10-01**
+from the binary: the table is at `0xF4A248` (a leaf binary-search resolver), not `0xD78CC8`,
+which today disassembles as byte-copy code, and it yields **312 ids** — listed by band in
+[`protocol/UDP_COMMANDS.md`](protocol/UDP_COMMANDS.md), "Channel B command ids". The 212/131
+figures this file carried are both superseded; of the Channel A ids this file documents, only
+`0x3004` appears in the extracted set — the one value the two spaces are documented to share.
 
 Legend: **✓ handled** — the server sends/answers it today. **gap** — the client uses it but we do
 not. **dead** — code *in the ELF* that goes nowhere: an unreachable builder, a stub parser, a
@@ -245,8 +250,10 @@ the cursor into the header as the payload length), so builder→seal brackets th
 
 **204 inbound ids**, routed by three literal compare-chain dispatchers (`0xD361E8` for `0x2xxx`,
 `0xD37074` for `0x3xxx`, `0xD38804` for the game range `0x41xx`–`0x4Exx`); nothing table-driven,
-so the set is complete. A fourth dispatcher `0xD78CCC` (131 ids, `0x2100`–`0x4080`) is the
-**separate in-game P2P session channel**, not the lobby TCP reply path — out of scope here.
+so the set is complete. A fourth dispatcher — **corrected 2026-10-01 to `0xF4A248`, 312 ids, `0x1100`–`0x5604`**
+(the older `0xD78CCC`/131-id reading was stale) — is the **separate in-game P2P session
+channel**, not the lobby TCP reply path — out of scope here. See
+[`protocol/UDP_COMMANDS.md`](protocol/UDP_COMMANDS.md).
 
 The full list with per-id summaries is [`dev/analysis/s2c_ids.txt`](../analysis/s2c_ids.txt) and
 [`PACKETS.md`](PACKETS.md); byte layouts for all 204 are in `dev/proto/outbound/`
