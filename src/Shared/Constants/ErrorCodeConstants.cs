@@ -81,10 +81,8 @@ public static class ErrorCodeConstants
     /// <summary>
     /// Host-request refusal (2), the code the reference raises for a request its own
     /// rules refuse: an unsupported lobby subtype, a player count outside the range
-    /// the screen offers, an empty rotation, and a reserved host name without the
-    /// dedicated flag. It answers the settings push (0x4311) and the create-room
-    /// request (0x4317) alike. Sent verbatim: both replies are raw result words
-    /// rather than one of the masked error codes.
+    /// the screen offers, and an empty rotation. It answers the settings push (0x4311),
+    /// sent verbatim as a raw result word rather than one of the masked error codes.
     /// </summary>
     public const uint ResultHostRequestRefused = 2;
 

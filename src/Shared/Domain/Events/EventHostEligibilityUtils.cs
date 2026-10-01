@@ -37,25 +37,26 @@ public static class EventHostEligibilityUtils
     public const int DedicatedHostPlayerSlots = 1;
 
     /// <summary>
-    /// Whether a room name is one of the reserved host names, so that it names a
-    /// role rather than a room. The comparison is case-insensitive because a
-    /// client types the name and sends it as typed.
+    /// Whether a room name is one of the host-role names, so that it names a role
+    /// rather than a room. The comparison is case-insensitive because a client
+    /// types the name and sends it as typed.
     /// <para>
-    /// Two readers other than the eligibility rule ask this. The room list leaves
-    /// these rooms out, because a host is leased to a match rather than chosen by
-    /// a player, and the create-game request refuses the name unless the room also
-    /// says it is dedicated — which is the reference's own pair of rules, and the
-    /// reason a name is not on its own a claim to the role.
+    /// The name is not reserved: any player may name a room with it, and the name
+    /// on its own is not a claim to the role. Holding the role is still gated, by
+    /// the dedicated flag rather than by the name. The room list is the one reader
+    /// other than the eligibility rule: it leaves these rooms out, because a host
+    /// is leased to a match rather than chosen by a player.
     /// </para>
     /// </summary>
     /// <param name="name">Name of the room.</param>
     public static bool IsReservedHostName(string? name) => HostSubtype(name) is not null;
 
     /// <summary>
-    /// The mode a reserved host name stands for, or null when the name names a
-    /// room rather than a role. A room is created with the mode its name stands
-    /// for, which is the whole point of reserving the name: the role decides the
-    /// mode, not the lobby the room was opened in.
+    /// The mode a host-role name stands for, or null when the name names a room
+    /// rather than a role. A dedicated room is created with the mode its name
+    /// stands for, so the role decides the mode, not the lobby the room was opened
+    /// in. The name is not reserved and is read only for a room that says it is
+    /// dedicated.
     /// </summary>
     /// <param name="name">Name of the room.</param>
     public static int? HostSubtype(string? name)

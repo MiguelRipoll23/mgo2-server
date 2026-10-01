@@ -1,4 +1,3 @@
-using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Persistence.Entities;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
@@ -36,20 +35,10 @@ public static class HostSettingsValidationUtils
     {
         ArgumentNullException.ThrowIfNull(settings);
 
-        return !NamesReservedRoleWithoutDedicated(settings)
-            && IsSupportedSubtype(settings.SettingsLobbySubtype)
+        return IsSupportedSubtype(settings.SettingsLobbySubtype)
             && IsSupportedPlayerCount(settings.MaxPlayers)
             && HasRotation(settings);
     }
-
-    /// <summary>
-    /// Whether a block asks for a room named for a host role while denying it is
-    /// one. Such a room would sit in the lobby named for a role it may never hold,
-    /// so the request is refused before anything of it is kept.
-    /// </summary>
-    /// <param name="settings">Block the client pushed.</param>
-    public static bool NamesReservedRoleWithoutDedicated(CharacterHostSettings settings) =>
-        EventHostEligibilityUtils.IsReservedHostName(settings.Name) && !settings.Dedicated;
 
     /// <summary>Whether a mode is one the host settings screen can name.</summary>
     /// <param name="subtype">Mode named by the block.</param>

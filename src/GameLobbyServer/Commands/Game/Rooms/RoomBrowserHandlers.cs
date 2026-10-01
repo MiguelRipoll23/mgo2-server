@@ -130,11 +130,10 @@ public sealed class GetHostSettingsHandler(
 /// <para>
 /// A block is checked before it is stored rather than after it is used: what is
 /// kept here is what a later create-room request builds a room out of, so a block
-/// that names a host role without saying it is dedicated, one that names a mode or
-/// a player count the screen cannot, or one that leaves the room with nothing to
-/// play is refused now and never reaches a room. The reference checks the same four
-/// things at this command and answers the same code; the create-room command
-/// re-checks the reserved name as well, because a stored block may predate this.
+/// that names a mode or a player count the screen cannot, or one that leaves the
+/// room with nothing to play, is refused now and never reaches a room. A block that
+/// names a host role is not among them: the name is the player's to use, and the
+/// role it stands for is held only by a room that also says it is dedicated.
 /// </para>
 /// </summary>
 /// <param name="characterService">Service that owns the stored settings.</param>

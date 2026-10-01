@@ -89,25 +89,6 @@ public sealed class CreateGameHandler(
         var reservedSubtype = isDedicatedRoom ? EventHostEligibilityUtils.HostSubtype(name) : null;
         var roomSubtype = reservedSubtype ?? pushed?.SettingsLobbySubtype ?? 0;
 
-        // A reserved host name is a role rather than a room: the event system
-        // leases such a room to a match, and only a room that says it is dedicated
-        // may hold the role. Taken without the flag it would sit in the lobby as a
-        // room named for a host and never be eligible to be one.
-        //
-        // The settings push refuses the same request earlier, so a room created
-        // through the screens cannot arrive here holding one. This stays because it
-        // is the room that must not exist, and the settings it is created from are
-        // a stored row that may predate that check.
-        if (EventHostEligibilityUtils.IsReservedHostName(name) && !isDedicatedRoom)
-        {
-            await sessionHelper.SendResultAsync(
-                session,
-                CommandConstants.CreateGameResult,
-                ErrorCodeConstants.ResultHostRequestRefused,
-                cancellationToken);
-            return;
-        }
-
         var game = await gameService.CreateAsync(room =>
         {
             room.HostIdentifier = characterIdentifier;
