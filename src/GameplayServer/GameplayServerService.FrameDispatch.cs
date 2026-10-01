@@ -316,7 +316,15 @@ public sealed partial class GameplayServerService
         var handlerType = registry.ResolveHandlerType(message.Type);
         if (handlerType is null)
         {
-            logger.LogDebug("No handler for peer message type {MessageType:x4}", message.Type);
+            // A warning and not a debug line: a type the host cannot answer is
+            // a gap in the protocol table, not per-frame chatter. At Debug it
+            // was invisible in the noise, and a join that stalls on an
+            // unhandled type logged nothing at all while the joiner waited.
+            logger.LogWarning(
+                "No handler for peer message type {MessageType:x4} from {RemoteAddress}: {BodyLength} bytes dropped",
+                message.Type,
+                remoteAddress,
+                message.Body.Length);
             return;
         }
 

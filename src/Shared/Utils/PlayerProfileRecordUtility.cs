@@ -29,7 +29,7 @@ namespace Mgo2Server.Shared.Utils;
 /// [0x0b..0x42]     per-player block; 0x02 at 0x12, zero elsewhere but for
 ///                  eight columns that differ per player
 /// [0x43] u8        0x03 when a clan name follows, 0x00 when none does
-/// [0x44] char[]  NUL-terminated account name
+/// [0x44] char[]  NUL-terminated character name
 ///          char[]  clan name, running to the end of the record
 /// </code>
 /// <para>
@@ -80,7 +80,7 @@ public static class PlayerProfileRecordUtility
     private const byte PlayerNumberBase = 6;
 
     /// <summary>
-    /// Byte preceding the account name. It reads 0x03 in every recorded record
+    /// Byte preceding the character name. It reads 0x03 in every recorded record
     /// that carries a clan name and 0x00 in the one that does not, so it marks
     /// whether a clan name follows rather than being a constant.
     /// </summary>
@@ -101,7 +101,7 @@ public static class PlayerProfileRecordUtility
     /// <summary>Offset of the constant name marker.</summary>
     public const int NameMarkerOffset = 0x43;
 
-    /// <summary>Offset of the NUL-terminated account name.</summary>
+    /// <summary>Offset of the NUL-terminated character name.</summary>
     public const int NameOffset = 0x44;
 
     /// <summary>
@@ -111,8 +111,12 @@ public static class PlayerProfileRecordUtility
     /// </summary>
     private const int MinimumBodySize = NameOffset + 2;
 
-    /// <summary>Longest account name a record will carry.</summary>
-    public const int MaximumNameLength = 20;
+    /// <summary>Longest character name a record will carry.</summary>
+    /// <remarks>
+    /// Sixteen characters, which is the width the TCP character list uses for
+    /// the same field (`0x3049`'s `selected_name`, 16 bytes, ISO-8859-1).
+    /// </remarks>
+    public const int MaximumNameLength = 16;
 
     /// <summary>Longest clan name a record will carry.</summary>
     public const int MaximumClanLength = 24;
@@ -131,7 +135,7 @@ public static class PlayerProfileRecordUtility
     /// recorded match and its meaning is unresolved, so it is passed through.
     /// </param>
     /// <param name="teamFlag">Team flag written at offset 10.</param>
-    /// <param name="name">Account name.</param>
+    /// <param name="name">Character name.</param>
     /// <param name="clanName">Clan name, which may be empty.</param>
     public static byte[] Build(
         byte characterIdentifier,
@@ -178,13 +182,17 @@ public static class PlayerProfileRecordUtility
             return null;
         }
 
-        var nameEnd = body[NameOffset..].IndexOf((byte)0x00);
-        var name = nameEnd < 0
-            ? Encoding.ASCII.GetString(body[NameOffset..])
-            : Encoding.ASCII.GetString(body.Slice(NameOffset, nameEnd));
-        var clan = body.Length > NameOffset + name.Length + 1
-            ? Encoding.ASCII.GetString(body[(NameOffset + name.Length + 1)..])
-            : string.Empty;
+        var name = string.Empty;
+        var clan = string.Empty;
+        var roster = RosterLayoutOf(body);
+        if (roster is not null)
+        {
+            (name, clan) = roster.Value;
+        }
+        else
+        {
+            (name, clan) = TrailingLayoutOf(body);
+        }
 
         return new PlayerProfileRecord(
             body[0],
@@ -198,6 +206,85 @@ public static class PlayerProfileRecordUtility
             name,
             clan);
     }
+
+    /// <summary>
+    /// Reads the names off the documented roster layout, or returns <c>null</c>
+    /// when the body is not that shape.
+    /// </summary>
+    private static (string Name, string Clan)? RosterLayoutOf(ReadOnlySpan<byte> body)
+    {
+        if (body[NameMarkerOffset] is not (0x00 or 0x03))
+        {
+            return null;
+        }
+
+        var nameEnd = body[NameOffset..].IndexOf((byte)0x00);
+        if (nameEnd < 0)
+        {
+            return null;
+        }
+
+        // Any printable run is a name here: the recorded characters carry
+        // spaces and punctuation, so nothing narrower may be required.
+        return (
+            DecodeName(body.Slice(NameOffset, nameEnd)),
+            DecodeName(body[(NameOffset + nameEnd + 1)..]));
+    }
+
+    /// <summary>
+    /// Reads the names off a join request, whose per-player block is longer than
+    /// the roster record's and so carries them elsewhere.
+    /// </summary>
+    /// <remarks>
+    /// The record ends the way the roster record does: the character name, a NUL,
+    /// and the clan name running to the end. The name is therefore whatever
+    /// printable run precedes that NUL — trimmed back to the first byte an
+    /// character name can hold, because the per-player block that precedes it is
+    /// full of printable bytes of its own (0x60 in the live capture) that would
+    /// otherwise be read as part of the name.
+    /// </remarks>
+    private static (string Name, string Clan) TrailingLayoutOf(ReadOnlySpan<byte> body)
+    {
+        var clanStart = body.LastIndexOf((byte)0x00) + 1;
+        var nameEnd = clanStart - 1;
+
+        var nameStart = nameEnd;
+        while (nameStart > 0 && IsPrintable(body[nameStart - 1]))
+        {
+            nameStart--;
+        }
+
+        while (nameStart < nameEnd && !IsNameByte(body[nameStart]))
+        {
+            nameStart++;
+        }
+
+        return (
+            nameEnd > nameStart ? DecodeName(body[nameStart..nameEnd]) : string.Empty,
+            clanStart < body.Length ? DecodeName(body[clanStart..]) : string.Empty);
+    }
+
+    private static bool IsPrintable(byte value) => value is >= 0x20 and < 0x7f;
+
+    /// <summary>
+    /// Whether a byte can begin a character name. Letters, digits and the
+    /// underscore: this is what tells the name apart from the structural bytes
+    /// of the block in front of it, which are printable but are not text.
+    /// Only the leading edge is trimmed with it, so a name may still contain
+    /// anything once it has started.
+    /// </summary>
+    private static bool IsNameByte(byte value) =>
+        value is (>= (byte)'a' and <= (byte)'z') or (>= (byte)'A' and <= (byte)'Z') or
+               (>= (byte)'0' and <= (byte)'9') or (byte)'_';
+
+    /// <summary>
+    /// Decodes a character name the way the game writes one: raw bytes in
+    /// ISO-8859-1, the encoding the TCP character list uses for the same field.
+    /// Latin-1 maps every byte to the codepoint of the same value, so a name
+    /// survives exactly as it was on the wire and a decode can never throw.
+    /// </summary>
+    private static string DecodeName(ReadOnlySpan<byte> bytes) =>
+        bytes.IsEmpty ? string.Empty : Encoding.Latin1.GetString(bytes);
 
     private static byte[] Truncate(byte[] value, int maximum)
     {
@@ -225,10 +312,10 @@ public static class PlayerProfileRecordUtility
 /// index under a different base. The two fields share an index but not a base,
 /// so neither can be read off the other.
 /// </param>
-/// <param name="HasClanName">Whether a clan name follows the account name.</param>
+/// <param name="HasClanName">Whether a clan name follows the character name.</param>
 /// <param name="PerPlayerValue">The varying value at offset 8; its meaning is unresolved.</param>
 /// <param name="TeamFlag">Team flag.</param>
-/// <param name="Name">Account name.</param>
+/// <param name="Name">Character name.</param>
 /// <param name="ClanName">Clan name.</param>
 public sealed record PlayerProfileRecord(
     byte Version,

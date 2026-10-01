@@ -664,7 +664,9 @@ Body, little-endian:
 [0x0a] u8        team flag
 [0x0b..0x42]     per-player block; see below
 [0x43] u8        0x03 when a clan name follows, 0x00 when none does
-[0x44] char[]    NUL-terminated account name
+[0x44] char[16]  character name, NUL-padded — ISO-8859-1, the encoding the TCP
+         char[]   character list uses for the same field (`0x3049`'s
+                  `selected_name`), not UTF-8 and not the console's own code page
          char[]   clan name, running to the end of the record
 ```
 
@@ -910,6 +912,13 @@ waiting for. The host sends the roster alone. **[U]**
   output-size prefix `0x0814` = 2068" reading was wrong — those bytes are simply
   the first stream bytes, and a 43-byte stream could never expand to 2068 under
   this format.
+- **The join request is tagged `0x9001`, not `0x1001`** (2026-10-01, live).
+  A captured join carries `type=0x9001 len=0x95` holding the player record, and
+  `0x1001` is the tag a roster answer uses. Registering only the roster tag is
+  what left a join with no handler, and the handler had nothing to log because
+  an unregistered type is a drop, not an error. §6.4's offsets also do not
+  carry: the join request's per-player block is longer, so its names sit at the
+  end of the record rather than at `0x44`.
 - **The joiner's profile frame IS marked, and it is not a `0x1001` control
   frame** (2026-10-01, live). The frame that carries the join request arrives
   with hdr `0x8001` and decompresses to `type=0x1001 len=0x95`, holding the

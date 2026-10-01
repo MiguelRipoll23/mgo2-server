@@ -14,6 +14,15 @@ public static class UdpCommandConstants
     /// <summary>Player-profile record sent by the joining peer.</summary>
     public const ushort PlayerProfile = 0x1001;
 
+    /// <summary>
+    /// Join request the joiner opens the exchange with. It carries the same
+    /// player record as <see cref="PlayerProfile"/> under a different tag, and
+    /// it is the one a live console actually sends first (2026-10-01, hdr
+    /// 0x8003, 149-byte body opening with 0x02). §6.4 describes the roster
+    /// record that answers it, not this one.
+    /// </summary>
+    public const ushort JoinRequest = 0x9001;
+
     /// <summary>Reliable-class base: an acknowledgement of frame sequence N travels as this value ORed with N.</summary>
     public const ushort AcknowledgementClass = 0x1000;
 

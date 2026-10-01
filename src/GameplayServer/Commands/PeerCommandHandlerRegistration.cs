@@ -15,5 +15,9 @@ public static class PeerCommandHandlerRegistration
         registry.Register<AcceptHandshakeHandler>(UdpCommandConstants.Handshake);
         registry.Register<AcknowledgeKeepAliveHandler>(UdpCommandConstants.KeepAlive);
         registry.Register<PlayerProfileHandler>(UdpCommandConstants.PlayerProfile);
+        // The tag a live joiner opens with. It carries the same player record
+        // as the roster type, so it is answered the same way; registering only
+        // the roster type is what left a join with no handler and no roster.
+        registry.Register<PlayerProfileHandler>(UdpCommandConstants.JoinRequest);
     }
 }
