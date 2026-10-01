@@ -8,8 +8,24 @@ public static class UdpCommandConstants
     /// <summary>Handshake message; also the base of the reliable class.</summary>
     public const ushort Handshake = 0x1000;
 
-    /// <summary>Keep-alive message mirrored back to the peer.</summary>
+    /// <summary>
+    /// Keep-alive message mirrored back to the peer. It is id 0 in the
+    /// keep-alive class: the serializer builds a wire type from a twelve-bit
+    /// id plus flag-derived class bits, so this value is `0 | 0x5000`.
+    /// </summary>
     public const ushort KeepAlive = 0x5000;
+
+    /// <summary>
+    /// The joiner's keyed data-phase keep-alive. It is the same message class
+    /// as <see cref="KeepAlive"/> — the serializer's flag bits 0 and 1 both
+    /// travel as `0x5000` — with id 1 instead of 0, so the two are distinct
+    /// messages and not a sequence number. A joiner emits these about once a
+    /// second once its session is keyed, and the transport treats the class as
+    /// fire-and-forget: an empty body is skipped on receive and nothing in the
+    /// decoder builds a reply to it. Mirroring it keeps the log honest without
+    /// inventing an answer the game is not waiting for.
+    /// </summary>
+    public const ushort DataKeepAlive = 0x5001;
 
     /// <summary>Player-profile record sent by the joining peer.</summary>
     public const ushort PlayerProfile = 0x1001;

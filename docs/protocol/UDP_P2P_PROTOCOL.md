@@ -126,9 +126,10 @@ One datagram (any length `len`):
 
 ```
 [ 0 .. 2)         scrambled header — unscrambles to a LE u16 counter (§5.1)
-[ 2 .. 4)         message type (u16 LE) — 0x1000 = handshake/one-shot, 0x5000 = keep-alive,
-                  0x1001 = control (§6.2); frames with the compression marker carry a raw
-                  LZSS stream from [2) instead of a message header (§6.2/§7)
+[ 2 .. 4)         message type (u16 LE) — `id (12 bits) | class (top nibble)` (§6.2);
+                  0x1000 = handshake/one-shot, 0x1001 = reliable record, 0x5000 = keep-alive
+                  id 0, 0x5001 = keep-alive id 1; frames with the compression marker carry a
+                  raw LZSS stream from [2) instead of a message header (§6.2/§7)
 [ 4 .. 5)         len (u8) — this message's body length
 [ 5 .. 6)         flags2 (u8) — per-message flags byte
 [ 6 .. 6+len)     message body — further messages (each with their own type/len/flags2/body)
@@ -503,6 +504,13 @@ header scramble (§5.1), recover `hdr`, compute
 `seed = (peer_base ^ own_base) ^ ((hdr & 0x7fff) * 0x5d588b65 + 1)`, and replay the
 plaintext-feedback chain over `[2 .. len-0xa)` (§5.2). No secret, no brute force.
 
+The heartbeat keeps the same class but changes id once the session is keyed: the
+state-6 keep-alive above is `0x5000` (id 0), and the keyed data-phase heartbeat a
+live joiner emits about once a second is `0x5001` (id 1) — same flags, different
+id, so a host must echo the id it received (§6.2). Nothing in the decoder answers
+either one: an id-0 body of 0..3 bytes is skipped outright (`0x267b84`) and there
+is no id-1 branch at all. **[V]**
+
 ### 6.2 The data phase (state ≥ 8) — live captures [V]
 
 First session-keyed frames captured **2026-09-09**, immediately after the fake
@@ -529,6 +537,26 @@ for data frames is likewise the `len|flags2` merge — ignore it; parse per this
 layout.) **This header only exists on UNCOMPRESSED frames**: when the hdr
 `0x8000` marker is set, the frame's `[2 .. len-0xa)` region is a raw LZSS stream
 instead (§7), and the message header(s) materialize only after decompression.
+
+**The type word is `id | class`, not one opaque number** (serializer
+`FUN_00269860`, `0x269860`..`0x269a2c`) **[V]**. The serializer takes the low
+twelve bits of the message's own first word as the **id**, then ORs in the
+**class** bits from the message's flags byte at `+9` and from its length:
+
+| source | type bit |
+|---|---|
+| `flags & 0x01` | `0x1000` reliable (`0x2698bc`) |
+| `flags & 0x02` | `0x4000` (`0x269a18`; with `0x1000` gives `0x5000`) |
+| body length `> 0xff` | `0x2000` long form (`0x2698e8`) |
+| `flags & 0x20` | `0x8000` LZSS-compressed (`0x2699b4`) |
+
+So every tag on this channel reads as `id (12 bits) | class (top nibble)`, and
+the two halves move independently: id 1 appears in three classes (`0x1001`
+reliable, `0x9001` reliable+compressed, `0x5001` reliable+`0x4000`), and the
+`0x5000` class carries two ids (`0x5000` id 0, `0x5001` id 1). **The class does
+not select a handler** — the receiver's per-id lookup (`0x2614f8`) compares
+`word & 0x7f00fff`, which drops bits 12-15 — so `0x5000` and `0x5001` are two
+distinct commands, not a value and its sequence number. **[V]**
 
 **Observed message types (post-decode):**
 
@@ -562,12 +590,22 @@ instead (§7), and the message header(s) materialize only after decompression.
 
 **Observed message types at a glance:**
 
-| marker | decoded content | role |
-|---|---|---|
-| — | `0x1000`, len `0x1c`, flags2 `0x00` | handshake (§4) |
-| — | `0x5000`, len `0x00` | keep-alive (§6.1) |
-| `0x8000` | `0x1001`, len `0x5a` (LZSS; 94-byte profile record) | reliable game data — joiner's player profile (above) |
-| — | `0x1001`, len `0x01`, flags2 `0x01..0x05` | ACK of the host's frame seq 1 (§6.3; flags2 = attempt) |
+| marker | decoded content | id | class | role |
+|---|---|---|---|---|
+| — | `0x1000`, len `0x1c`, flags2 `0x00` | 0 | `0x1000` | handshake (§4) |
+| — | `0x5000`, len `0x00` | 0 | `0x5000` | keep-alive (§6.1) |
+| — | `0x5001`, len `0x00` | 1 | `0x5000` | data-phase keep-alive (2026-10-02 live; §6.1) |
+| `0x8000` | `0x1001`, len `0x5a` (LZSS; 94-byte profile record) | 1 | `0x9000` | reliable game data — joiner's player profile (above) |
+| — | `0x1001`, len `0x01`, flags2 `0x01..0x05` | 1 | `0x1000` | ACK of the host's frame seq 1 (§6.3; flags2 = attempt) |
+
+**`0x5001` — the keyed data-phase keep-alive (2026-10-02, live).** Once the
+session is keyed the joiner emits an empty `0x5001` about once a second; before
+that the id is only ever 0. It is fire-and-forget on both sides: an id-0 message
+with a body of 0..3 bytes is skipped outright by the receiver (`0x267b84`,
+`ble 0x267b18`) — the empty keep-alive shape — and the transport decoder has no
+id-1 branch at all, so nothing there builds a reply to either keep-alive. A host
+that drops it is losing nothing; a host that mirrors it must echo **`0x5001`**,
+not `0x5000`, because the id is the command.
 
 **Shared counter confirmed live.** The joiner's hdrs over the run form one
 monotonic sequence `0x8002, 0x8003, 0x8004, 0x0005, 0x8006, 0x0007, 0x8008, 0x0009,
@@ -1233,8 +1271,11 @@ identity (peer id / counter base) comes from `udp-host-identity-constants.ts`.
    matches the source against each session's peer sockaddr, and routes a matched
    session (state 2..6) through the decoder → handshake **sender** queue-drain, or an
    unmatched datagram through the global accept session → handshake **receiver**
-   `FUN_00267d58` (§4). Still open: the exact dispatch table between the decoder and
-   per-type message handlers beyond the handshake.
+   `FUN_00267d58` (§4). The per-type dispatch is **by the twelve-bit id with the class
+   bits masked out** (`0x2614f8` compares `word & 0x7f00fff`, §6.2), so the class is
+   delivery metadata and not a handler selector. The table itself is built on the module
+   instance at runtime (`0x1856c10`, outside the mapped segments) so the id-to-handler
+   entries cannot be read from this image; that part stays **[U]**.
 5. Exact datagram template behind `FUN_00fa1af0` (format/state pointer is
    runtime-initialized).
 6. `FUN_00fbc1fc`'s resolved target (`PTR_FUN_0119f550`) and the meaning of
@@ -1273,3 +1314,4 @@ landing on old captures or old notes.
 | 2026-09-09 | flags word read at `session+5` (u16) | flags word at `session+0x14` (§6/§7) |
 | 2026-09-10 | the 17-byte `0x1001 len 1` frames are control/window signaling with cyclic flags2 | they are **ACKs** of the host's frames — `flags2` is the send attempt, escalating while unacknowledged (§6.3) |
 | 2026-09-10 | "exact ACK wire format is the last transport-side unknown" | resolved: `type 0x1000 \| seq, len 1, flags2 = attempt, body [0]`, cumulative, no ack-of-ack (§6.3) |
+| 2026-10-02 | the wire type is one opaque u16 a handler table keys on | it is `id (12 bits) \| class-bits`, the class derived from the message flags (`flags&1`→`0x1000`, `flags&2`→`0x4000`, `flags&0x20`→`0x8000`, body > `0xff`→`0x2000`) and masked out of the per-id lookup — so `0x5000`/`0x5001` are two ids, not a sequence (§6.2) |

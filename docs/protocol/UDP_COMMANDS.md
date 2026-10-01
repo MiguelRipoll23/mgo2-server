@@ -13,7 +13,7 @@ one's recorded UDP block — records framed `type u16 LE | len u8 | flags u8 | b
 `<u32> <u16>` run markers skipped — yields **78 records per replay, byte-for-byte identical
 across all five matches on four maps**, carrying exactly **two type values**: `0x0102` (once)
 and `0x1001` (77 times). The replay is the *host's* recorded outbound stream, so client-only
-types (`0x1000`, `0x5000`, `0x9001`) do not appear in it.
+types (`0x1000`, `0x5000`, `0x5001`, `0x9001`) do not appear in it.
 
 Confidence tags follow the protocol document: **[V]** verified in `MGO2.ELF` and/or a live
 capture, **[I]** inferred, **[U]** unresolved.
@@ -25,6 +25,32 @@ capture, **[I]** inferred, **[U]** unresolved.
 These are the values in the message header `type u16 LE | len u8 | flags2 u8 | body`, and the
 bits that modify the frame header. The type word is `(id & 0xfff) | class-bits` in the
 serializer (`FUN_00269860`), so `0x1000` is the *reliable class* and its low twelve bits an id.
+
+### The type word — id plus class bits [V]
+
+Read off the serializer `FUN_00269860` (`0x269860`..`0x269a2c`). It takes the low twelve bits
+of the message record's first word as the **id**, and derives the remaining four bits from the
+message record's flags byte at `+9` and from its length:
+
+| source | type bit | note |
+|---|---|---|
+| `flags & 0x01` | `0x1000` | reliable class — also the base `0x1000 \| seq` acknowledgements use (`0x2698bc`) |
+| `flags & 0x02` | `0x4000` | second class bit; with `0x1000` gives `0x5000` (`0x269a18`) |
+| body length `> 0xff` | `0x2000` | long-length form (`0x2698e8`) |
+| `flags & 0x20` | `0x8000` | LZSS-compressed content (`0x2699b4`) |
+
+The **id** is the low twelve bits and the **class** is the top nibble. The two are independent:
+the same id appears in more than one class (`0x1001` reliable, `0x9001` reliable+compressed,
+`0x5001` reliable+`0x4000` are all id 1), and the same class carries more than one id
+(`0x5000` is id 0 and `0x5001` is id 1).
+
+**The class bits do not select a handler.** The receiver's per-message lookup masks them out
+(`FUN_00269860`'s counterpart at `0x2614f8` compares `word & 0x7f00fff`, which leaves the low
+twelve bits and drops bits 12-15), so `0x5000` and `0x5001` are two distinct messages rather
+than a value and its sequence number. The class is delivery metadata — reliable, compressed,
+long — and the id is the command. **[V]**
+
+Consequences for the table below: read every type as `id | class`, not as one opaque number.
 
 ### `0x0102` — roster-format descriptor
 
@@ -82,15 +108,34 @@ single length byte.** **[V]**
 The serializer writes `(id & 0xfff) | class-bits`; `0x2000` marks the long-length form. It
 lives in the same u16 as the type, so it must be masked off before dispatch.
 
-### `0x5000` — keep-alive [V]
+### `0x5000` — keep-alive, id 0 [V]
 
 **Guess: an empty heartbeat; mirrored straight back.** **[V]**
 
-`type 0x5000, len 0, flags2 0` — a 16-byte frame carrying no body. The joiner emits these
-pre-keyed after each host reply (state 6). The host's **session-keyed** keep-alive is what
-flips the joiner into the data phase (state 8), because its tail digest verifies with
-`K ^ 0x2b58de69`. In the data phase the host mirrors them. Implemented by
-`AcknowledgeKeepAliveHandler`.
+`0x5000` is **id 0** in the `0x1000\|0x4000` class. `type 0x5000, len 0, flags2 0` — a 16-byte
+frame carrying no body. The joiner emits these pre-keyed after each host reply (state 6). The
+host's **session-keyed** keep-alive is what flips the joiner into the data phase (state 8),
+because its tail digest verifies with `K ^ 0x2b58de69`. In the data phase the host mirrors
+them. Implemented by `AcknowledgeKeepAliveHandler`.
+
+### `0x5001` — data-phase keep-alive, id 1 [V]
+
+**Guess: the joiner's keyed data-phase heartbeat; also fire-and-forget.** **[V]**
+
+`0x5001` is the same class as `0x5000` (flags bits 0 and 1) with **id 1**. Live (2026-10-02,
+RPCS3 join against the container on the raspberrypi): once the session is keyed the joiner
+emits `type 0x5001, len 0, flags2 0` about once a second, alongside its re-sent `0x9001`
+profile. Before that, the id is only ever 0.
+
+**It is not answered by the game, and the mirror is a courtesy.** Two things in the receiver
+(`FUN_002666c8`) say so: an id-0 message with a body of **0-3 bytes is skipped outright**
+(`0x267b84`, `ble 0x267b18`), which is exactly the empty keep-alive shape; and no id-1
+specific branch exists in the transport decoder at all. Nothing in the decoder builds a
+reply to a keep-alive, so a host that drops `0x5001` is losing nothing — but the drop is
+logged as an unhandled type, which is what makes it look like a gap. Registering it under
+`AcknowledgeKeepAliveHandler` mirrors it with its own type (`0x5001`, not `0x5000`) and turns
+the warning into a debug line. Implemented by `AcknowledgeKeepAliveHandler` for both
+`UdpCommandConstants.KeepAlive` and `UdpCommandConstants.DataKeepAlive`.
 
 ### `0x8000` — LZSS compression marker [V]
 

@@ -98,12 +98,17 @@ public sealed class AcceptHandshakeHandler(
     }
 }
 
-/// <summary>Mirrors a peer's keep-alive straight back.</summary>
+/// <summary>
+/// Mirrors a peer's keep-alive straight back. The type is echoed rather than
+/// forced to the handshake keep-alive, because the joiner sends its data-phase
+/// heartbeat in the same class under a different id (<c>0x5001</c>) and an
+/// answer tagged <c>0x5000</c> would not be the message it sent.
+/// </summary>
 public sealed class AcknowledgeKeepAliveHandler : IPeerCommandHandler
 {
     /// <inheritdoc />
     public Task HandleAsync(PeerContext context) =>
-        context.Send(UdpCommandConstants.KeepAlive, context.Message.Body);
+        context.Send(context.Message.Type, context.Message.Body);
 }
 
 /// <summary>
