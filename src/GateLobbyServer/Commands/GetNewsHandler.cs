@@ -24,6 +24,13 @@ public sealed class GetNewsHandler(
     /// <summary>Field length of an article topic.</summary>
     private const int NewsTopicLength = 128;
 
+    /// <summary>
+    /// Width the client's news screen holds, in characters. The screen wraps
+    /// nothing, so a longer line runs off its edge; the article is wrapped here
+    /// because the rows it is stored in hold no breaks of their own.
+    /// </summary>
+    private const int NewsLineWidth = 58;
+
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
     {
@@ -62,8 +69,8 @@ public sealed class GetNewsHandler(
         writer.WriteUInt32((uint)article.Identifier);
         writer.WriteUInt8(article.Important ? 1 : 0);
         writer.WriteUInt32((uint)article.Time.ToUnixTimeSeconds());
-        writer.WriteFixedString(article.Title, NewsTopicLength);
-        writer.WriteBytes(Encoding.UTF8.GetBytes(article.Body));
+        writer.WriteFixedString(TextUtils.Wrap(article.Title, NewsLineWidth), NewsTopicLength);
+        writer.WriteBytes(Encoding.UTF8.GetBytes(TextUtils.Wrap(article.Body, NewsLineWidth)));
         writer.WriteUInt8(0);
         return writer.Build();
     }

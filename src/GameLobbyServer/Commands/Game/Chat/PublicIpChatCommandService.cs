@@ -58,7 +58,7 @@ public sealed class PublicIpChatCommandService(
         await sessionHelper.SendPacketAsync(
             session,
             CommandConstants.SendChatResult,
-            ChatPayloadBuilder.BuildReply(characterIdentifier, line),
+            ChatPayloadBuilder.BuildServerReply(characterIdentifier, line),
             cancellationToken);
     }
 

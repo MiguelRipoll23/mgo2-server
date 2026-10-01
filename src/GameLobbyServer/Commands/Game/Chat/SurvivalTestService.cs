@@ -278,7 +278,7 @@ public sealed class SurvivalTestService(
         return sessionHelper.SendPacketAsync(
             session,
             CommandConstants.SendChatResult,
-            ChatPayloadBuilder.BuildReply(characterIdentifier, request),
+            ChatPayloadBuilder.BuildServerReply(characterIdentifier, request),
             cancellationToken);
     }
 

@@ -198,7 +198,7 @@ public sealed class SurvivalTestOpponentService(
         return sessionHelper.SendPacketAsync(
             session,
             CommandConstants.SendChatResult,
-            ChatPayloadBuilder.BuildReply(characterIdentifier, request),
+            ChatPayloadBuilder.BuildServerReply(characterIdentifier, request),
             cancellationToken);
     }
 

@@ -1,4 +1,5 @@
 using Mgo2Server.Http.Options;
+using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -14,6 +15,13 @@ public sealed class PolicyService(
     IOptions<HttpApiOptions> options,
     ILogger<PolicyService> logger)
 {
+    /// <summary>
+    /// Width the client's terms screen holds, in characters. The screen wraps
+    /// nothing, so a longer line runs off its edge; the document is wrapped here
+    /// rather than relying on whoever edits it to keep the lines short.
+    /// </summary>
+    private const int PolicyLineWidth = 58;
+
     private readonly HttpApiOptions options = options.Value;
 
     /// <summary>Returns the policy document the client is shown.</summary>
@@ -27,6 +35,7 @@ public sealed class PolicyService(
             return string.Empty;
         }
 
-        return await File.ReadAllTextAsync(path, cancellationToken);
+        var document = await File.ReadAllTextAsync(path, cancellationToken);
+        return TextUtils.Wrap(document, PolicyLineWidth);
     }
 }

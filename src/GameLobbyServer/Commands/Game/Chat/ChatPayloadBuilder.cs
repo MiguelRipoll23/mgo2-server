@@ -64,6 +64,19 @@ public static class ChatPayloadBuilder
     }
 
     /// <summary>
+    /// Builds the <c>0x4401</c> line for a message the server authored itself. A
+    /// line relayed from a client already carries the client's own wrapping, but a
+    /// line the server raises has none, so it is wrapped to the longest text the
+    /// client's chat reader takes.
+    /// </summary>
+    /// <param name="speakerCharacterIdentifier">Character id the line is spoken as.</param>
+    /// <param name="request">Line the server authored.</param>
+    public static byte[] BuildServerReply(int speakerCharacterIdentifier, ChatRequest request) =>
+        BuildReply(
+            speakerCharacterIdentifier,
+            request with { Text = TextUtils.Wrap(request.Text, MaximumTextLength) });
+
+    /// <summary>
     /// Builds the <c>0x4401</c> line to display: the speaker's character id, then the
     /// channel digit and text as the sender gave them.
     /// </summary>
