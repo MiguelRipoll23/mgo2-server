@@ -426,6 +426,77 @@ claimed as vitals.
 `PlayerVitalsRecordUtility` (the record), pinned by `PlayerVitalsRecordTests` against the
 bodies above. The server does not send tick records yet, so nothing dispatches it.
 
+### The 3D position, and the bit that says a character is dead [V]
+
+The record is a tick record under attribute class `2`, and every character has
+one: its identifier is **one above** the identifier carrying its health, so
+`0x0080`/`0x0081` are one character's vitals and position, `0x00b2`/`0x00b3`
+another's, and so on. The `0x800` bit names a second character rather than a
+second copy — the two share no position anywhere in the capture.
+
+It comes in four lengths that place the same five trailing words differently:
+
+| length | facing | z | y | x | second facing | |
+| --- | --- | --- | --- | --- | --- | --- |
+| 16, 17, 18 | 4 | 6 | 8 | 10 | 12 | walking; 14 748 of the 15 142 alive records |
+| 32 | 20 | 22 | 24 | 26 | 28 | **every dead record, and one alive** |
+| 38 | 26 | 28 | 30 | 32 | 34 | aiming |
+| 44 | **[U]** | | | | | 51 records; no offset in it lands on any player's path |
+
+Each coordinate is a signed 16-bit number **at a tenth of the world unit**. The
+scale is not assumed: the 32-byte form carries its position a second time in
+single precision at offset 8, and at ten units per step the compressed `x` and
+`z` land within 10 units of it — 391 of 442 such records, the 51 exceptions being
+the 44-byte form. **`y` does not agree**: it reads 3 800 where the other reads
+3 973.7, and it holds still while the other moves. Which of the two is the
+height is **[U]**; the coordinate is carried either way.
+
+**Bit 1 of the first byte is death.** Every first-byte value the capture carries
+— `0x01`, `0x20`, `0x21`, `0x41`, `0x61`, `0x81`, `0xa1`, `0xc1`, `0xe1` — has
+that bit clear, and the one value that has it set, `0x22`, appears 390 times and
+belongs to a character whose health record was reading zero at that moment. The
+shape changes with it: dead records are the 32-byte form, alive ones are 16, 38
+or 44.
+
+**A dead character comes back at its own spawn point.** Three deaths are in the
+capture with the whole sequence visible, and the order is the same every time:
+
+| | player `0x0081` | player `0x0881` |
+| --- | --- | --- |
+| dies at | t+621.6 s, at `(1 610, 3 800, 35 100)` | t+802.9 s, at `(39 870, 3 800, -24 750)` |
+| health back to 250 | t+626.2 s, 4.6 s dead | t+810.6 s, 7.7 s dead |
+| position alive again | t+628.6 s at `(-24 500, 2 800, -17 500)` | t+810.8 s at `(29 000, 3 290, 3 000)` |
+| its own spawn point | `(-30 000, 1 790, -5 000)` | `(33 470, 3 300, -470)` |
+
+So the character reappears **near its own spawn** 2–7 s after dying — within
+about 5 500 units of where it started — and then walks the rest of the way in,
+reaching the spawn point itself about 15 s later. That is the expected respawn
+behaviour, and it is what makes the spawn points below usable as anchors.
+
+**The spawns are on two sides.** Taking each character's first position after the
+round boundary (the capture has one 130 s gap in the position stream, at
+t+433–564 s) puts two of them near `x = -30 000` and two near `x = +33 500`,
+**63 000 units apart**, each pair within 2 000 units of itself:
+
+| | first position after the boundary | |
+| --- | --- | --- |
+| `0x0081` | `(-30 000, 1 790, -5 000)` | west |
+| `0x08b3` | `(-30 840, 1 790, -10 260)` | west |
+| `0x00b3` | `(33 500, 3 290, -500)` | east |
+| `0x0881` | `(33 470, 3 300, -470)` | east |
+
+Two and two, on opposite sides — which is what a briefing screen's two teams
+look like, and it fits the screen better than anything else in the capture. It is
+**[V]** that the split is two and two on this axis and **[I]** that the two
+groups are the teams, since nothing in the capture names them. It also bears on
+§6.1: the roster entry's `0x10` column splits **three against one**, so that
+column is not the team.
+
+**Implemented** as `PlayerPosition` (the three coordinates and the ten-unit
+scale) and `PlayerPositionRecordUtility` (the record, the death bit and the
+per-length offsets), pinned by `PlayerPositionRecordTests` against the captured
+bodies. The 44-byte form is declined rather than guessed at.
+
 The per-player slot decode `id & 0xFF = 0x75 + 10*slot + OFF[class]` is a **replay-format**
 rule. These ids are `0x80`, `0x83`, `0xdd`, `0x0a61` — none is in the `0x75 + 10n` family,
 so **that formula does not apply to this capture** and the ids here are not slot-decoded.

@@ -288,6 +288,20 @@ ladder `46 7f c2 a0 0e` in between. Health is 250 when untouched and 0 when dead
 deaths and three restores over the round, and stamina read 250 in every record. See
 `UDP_GAME_CAPTURE.md` §5 and `PlayerVitalsRecordUtility`. **[V]**
 
+**The live capture places the position record as well as the replay.** Attribute class
+`2`, one identifier above the same character's health record (`0x0080` health,
+`0x0081` position). Three signed coordinates, `z y x`, each at a tenth of a world
+unit, at offsets that move with the record's length: `6/8/10` in the 16-byte
+walking form, `22/24/26` in the 32-byte form, `28/30/32` in the 38-byte one. The
+32-byte form also carries the position in single precision at offset 8, which is
+what fixes the scale at ten — the compressed `x` and `z` land within 10 units of
+it. **`y` does not agree with that copy and stays [U].** The 44-byte form is
+[U]: nothing in it lands on any player's path. **Bit 1 of the first byte is
+death** — 390 records set it, all of them a character whose health was zero, and
+all of them the 32-byte form. A dead character reappears near its own spawn point
+2–7 s later. See `UDP_GAME_CAPTURE.md` §5 and `PlayerPositionRecordUtility`.
+**[V]** on the coordinates, the scale and the death bit.
+
 The **attacker is never on the wire**: the vitals record names the victim only, and no field
 co-varies with an HP drop, so a candidate attacker is inferred from an `0x01 len 10` aim/fire
 record in the same tick.
