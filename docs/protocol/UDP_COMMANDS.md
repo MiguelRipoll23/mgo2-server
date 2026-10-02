@@ -302,6 +302,12 @@ all of them the 32-byte form. A dead character reappears near its own spawn poin
 2–7 s later. See `UDP_GAME_CAPTURE.md` §5 and `PlayerPositionRecordUtility`.
 **[V]** on the coordinates, the scale and the death bit.
 
+**Both are dispatched and logged** (`PlayerVitalsHandler` on `0x0080` / `0x0880`,
+`PlayerPositionHandler` on the six measured position identifiers). Each record is
+logged at debug and a death or a revive again at information, and neither is
+answered — the capture has the host reading these and writing none. The 44-byte
+position form has no position to report, so it is logged with its bytes.
+
 The **attacker is never on the wire**: the vitals record names the victim only, and no field
 co-varies with an HP drop, so a candidate attacker is inferred from an `0x01 len 10` aim/fire
 record in the same tick.

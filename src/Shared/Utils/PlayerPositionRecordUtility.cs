@@ -36,8 +36,68 @@ namespace Mgo2Server.Shared.Utils;
 /// </remarks>
 public static class PlayerPositionRecordUtility
 {
+    /// <summary>
+    /// Position identifier of the first character: one above the identifier
+    /// carrying its health.
+    /// </summary>
+    public const ushort FirstPlayerType = 0x0081;
+
+    /// <summary>
+    /// Position identifier of the second character, the same record as
+    /// <see cref="FirstPlayerType"/> under the <c>0x800</c> bit.
+    /// </summary>
+    public const ushort SecondPlayerType = 0x0881;
+
+    /// <summary>
+    /// Position identifier of the third character, the one whose health record
+    /// is <c>0x00b2</c>.
+    /// </summary>
+    public const ushort ThirdPlayerType = 0x00b3;
+
+    /// <summary>
+    /// Position identifier of the fourth character, the same record as
+    /// <see cref="ThirdPlayerType"/> under the <c>0x800</c> bit.
+    /// </summary>
+    public const ushort FourthPlayerType = 0x08b3;
+
+    /// <summary>
+    /// Position identifier of a fifth character, one above the health record at
+    /// <c>0x006c</c>. The capture carried it but never showed it dead.
+    /// </summary>
+    public const ushort FifthPlayerType = 0x006d;
+
+    /// <summary>
+    /// Position identifier of a sixth character, one above the health record at
+    /// <c>0x00da</c>.
+    /// </summary>
+    public const ushort SixthPlayerType = 0x00db;
+
     /// <summary>Attribute class the position records travel under.</summary>
     public const byte AttributeClass = 0x02;
+
+    /// <summary>
+    /// Every position identifier the live capture carries, which is what this
+    /// server registers handlers for.
+    /// </summary>
+    /// <remarks>
+    /// The list is what the capture measured, not a rule: the health identifier
+    /// of a character is always one below its position identifier, but the
+    /// identifiers themselves are not consecutive, so a character the capture
+    /// did not contain has an identifier nothing here predicts. An identifier
+    /// outside this list still reaches the "no handler" warning, which is the
+    /// honest outcome for one nothing has placed.
+    /// </remarks>
+    public static ReadOnlySpan<ushort> MeasuredTypes =>
+    [
+        FirstPlayerType,
+        SecondPlayerType,
+        ThirdPlayerType,
+        FourthPlayerType,
+        FifthPlayerType,
+        SixthPlayerType,
+    ];
+
+    
 
     /// <summary>Bit of the record's first byte that is set while the character is dead.</summary>
     public const byte DeadBit = 0x02;

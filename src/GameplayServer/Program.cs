@@ -26,6 +26,9 @@ builder.Services.AddSingleton<PeerCommandRegistry>();
 builder.Services.AddSingleton<AcceptHandshakeHandler>();
 builder.Services.AddSingleton<AcknowledgeKeepAliveHandler>();
 builder.Services.AddSingleton<PlayerProfileHandler>();
+builder.Services.AddSingleton<PlayerStateService>();
+builder.Services.AddSingleton<PlayerVitalsHandler>();
+builder.Services.AddSingleton<PlayerPositionHandler>();
 builder.Services.AddSingleton<GameplayServerService>();
 
 var host = builder.Build();

@@ -424,7 +424,8 @@ claimed as vitals.
 
 **Implemented** as `PlayerVitals` (the values, the 250 ceiling and `IsDead`) and
 `PlayerVitalsRecordUtility` (the record), pinned by `PlayerVitalsRecordTests` against the
-bodies above. The server does not send tick records yet, so nothing dispatches it.
+bodies above. `PlayerVitalsHandler` dispatches `0x0080` and `0x0880` and logs each record at
+debug, with a death or a revive logged again at information; nothing is answered.
 
 ### The 3D position, and the bit that says a character is dead [V]
 
@@ -496,6 +497,15 @@ column is not the team.
 scale) and `PlayerPositionRecordUtility` (the record, the death bit and the
 per-length offsets), pinned by `PlayerPositionRecordTests` against the captured
 bodies. The 44-byte form is declined rather than guessed at.
+
+`PlayerPositionHandler` dispatches the six position identifiers the capture
+carried — `0x0081`, `0x0881`, `0x00b3`, `0x08b3`, `0x006d`, `0x00db` — and logs
+every decoded record at debug in world units, with a death or a revive logged
+again at information. The 44-byte form has no position to report, so it is
+logged with its bytes instead, which is the only way to see the form during a
+session. Registration is on the measured identifiers rather than on the
+attribute class, so an identifier the capture never contained still reaches the
+"no handler" warning: nothing here predicts a character the capture did not have.
 
 The per-player slot decode `id & 0xFF = 0x75 + 10*slot + OFF[class]` is a **replay-format**
 rule. These ids are `0x80`, `0x83`, `0xdd`, `0x0a61` — none is in the `0x75 + 10n` family,
