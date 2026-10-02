@@ -179,6 +179,37 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
         return run;
     }
 
+    /// <summary>
+    /// Builds the copy of a roster run that the recorded host sends immediately
+    /// after the run itself: the same records in the same order, with the empty
+    /// head record left off.
+    /// </summary>
+    /// <remarks>
+    /// The live host sends every roster run twice. The second copy opens on the
+    /// host's own entry rather than on <see cref="UdpCommandConstants.RosterHead"/>,
+    /// and reaches the peer 0.1 to 0.9 s after the first.
+    ///
+    /// What the capture settles is the shape and the fact of the second copy, and
+    /// not what schedules it. It is not a retransmission of a lost frame: the two
+    /// go out on consecutive outbound sequences 56 to 68 frames apart, with the
+    /// tick stream filling the gap, so the second is a new datagram rather than
+    /// the same frame sent again. It is not acknowledgement-driven either — the
+    /// joiner acknowledged sequence 1 twenty-seven times over the round and
+    /// sequence 2, which is what the run travels as, never once — and the first
+    /// acknowledgement of any kind arrives some 66 s after the run this method
+    /// repeats.
+    ///
+    /// So it is sent unconditionally, and nothing here waits for a peer to
+    /// confirm it. What ends the repetition is **[U]**: no inbound record marks
+    /// the end of a run's second copy in the capture, and the host's own
+    /// acknowledgements never cover these sequences.
+    /// </remarks>
+    /// <returns>The records of the run without its head, ready to be sent.</returns>
+    public List<RosterRecord> BuildRosterRunRepeat() =>
+    [
+        .. BuildRosterRun().Where(record => record.Type != UdpCommandConstants.RosterHead),
+    ];
+
     private sbyte NextFreeIndex()
     {
         var taken = members.Select(member => member.RosterIndex).ToHashSet();

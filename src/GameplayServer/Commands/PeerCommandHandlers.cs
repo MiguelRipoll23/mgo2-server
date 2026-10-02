@@ -150,7 +150,8 @@ public sealed class InGameControlHandler(ILogger<InGameControlHandler> logger) :
 /// session is keyed and then re-sends it, byte for byte, until the host answers;
 /// this handler answers with the whole room roster, the host's own entry first
 /// under the join tag and every joining player after it in slot order under the
-/// roster tag, closes the run with the record that ends a roster, and tells the
+/// roster tag, closes the run with the record that ends a roster, sends that run
+/// a second time without its head the way the recorded host does, and tells the
 /// peers already in the room that the roster grew.
 /// </summary>
 /// <remarks>
@@ -223,6 +224,17 @@ public sealed class PlayerProfileHandler(
         // exchange, not a bug. Re-registering is idempotent, so the repeated
         // profile keeps the slot it was first given.
         foreach (var record in run)
+        {
+            await context.Send(record.Type, record.Body);
+        }
+
+        // Then the run again, without its head, which is what the recorded host
+        // sends. It is not a retransmission and nothing waits for an
+        // acknowledgement: the live host puts the two on consecutive outbound
+        // sequences with the tick stream between them, and the joiner never
+        // acknowledged either. RoomRosterService.BuildRosterRunRepeat carries
+        // the measurement.
+        foreach (var record in roster.BuildRosterRunRepeat())
         {
             await context.Send(record.Type, record.Body);
         }

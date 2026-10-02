@@ -32,7 +32,11 @@ public sealed class PlayerProfileHandlerTests
     /// <param name="remote">Endpoint the profile came from.</param>
     /// <param name="body">Body the message carries; a profile unless stated otherwise.</param>
     /// <param name="logs">Collects the handler's log lines when supplied.</param>
-    /// <returns>The records sent to the joiner, and the records broadcast to the room.</returns>
+    /// <returns>
+    /// The records sent to the joiner, and the records broadcast to the room. The
+    /// joiner's copy is the roster run followed by the host's second copy of it,
+    /// so a test that means one run takes the records up to its close.
+    /// </returns>
     private static async Task<(List<RosterRecord> Sent, List<RosterRecord> Broadcast)> RunAsync(
         RoomRosterService roster,
         IPEndPoint remote,
@@ -122,6 +126,12 @@ public sealed class PlayerProfileHandlerTests
         Assert.Equal(83, sent[1].Body.Length);
         Assert.Equal(79, sent[2].Body.Length);
         Assert.Equal(7, sent[3].Body.Length);
+
+        // And the second copy the host sends carries the same three, without the
+        // head, so the lengths come out again a few records further on.
+        Assert.Equal(83, sent[4].Body.Length);
+        Assert.Equal(79, sent[5].Body.Length);
+        Assert.Equal(7, sent[6].Body.Length);
     }
 
     [Fact]
@@ -133,7 +143,10 @@ public sealed class PlayerProfileHandlerTests
             .Select(record => PlayerProfileRecordParseUtils.Parse(record.Body)?.Name)
             .OfType<string>()
             .ToArray();
-        Assert.Equal(["host", "Celestia"], names);
+
+        // The host and the joiner, then the same two again in the host's second
+        // copy of the run.
+        Assert.Equal(["host", "Celestia", "host", "Celestia"], names);
     }
 
     [Fact]
@@ -166,6 +179,9 @@ public sealed class PlayerProfileHandlerTests
                 UdpCommandConstants.JoinRequest,
                 UdpCommandConstants.PlayerProfile,
                 UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.JoinRequest,
+                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.PlayerProfile,
             ],
             sent.Select(record => record.Type).ToArray());
         Assert.Equal(RoomRosterService.HostEntryType, sent[1].Type);
@@ -176,7 +192,58 @@ public sealed class PlayerProfileHandlerTests
         Assert.Equal("host", host.Name);
         Assert.Equal(PlayerProfileRecordUtility.HostRosterIndex, host.RosterIndex);
 
-        Assert.Equal(sent.Select(record => record.Type), broadcast.Select(record => record.Type));
+        // One run is what the room is told; the second copy is the joiner's.
+        Assert.Equal(
+            broadcast.Select(record => record.Type),
+            sent.Take(broadcast.Count).Select(record => record.Type));
+    }
+
+    [Fact]
+    public async Task HandleAsync_sends_the_run_a_second_time_without_its_head()
+    {
+        // The recorded host sends every roster run twice. The second copy is the
+        // same records in the same order, opening on the host's own entry rather
+        // than on the empty 0x5001 head: at t+2475.561 the host put
+        // 0x5001, 0x9001/83, 0x1001/79, 0x1001/7 on the wire, and at t+2475.678,
+        // 117 ms later, the same three records without the head.
+        var (sent, _) = await RunAsync(CreateRoster(), Joiner);
+
+        var repeat = sent.Skip(4).ToArray();
+
+        Assert.Equal(
+            [
+                UdpCommandConstants.JoinRequest,
+                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.PlayerProfile,
+            ],
+            repeat.Select(record => record.Type));
+
+        // The same bodies, so the second copy is the run rather than a fresh
+        // rendering of it.
+        Assert.Equal(sent[1].Body, repeat[0].Body);
+        Assert.Equal(sent[2].Body, repeat[1].Body);
+        Assert.Equal(sent[3].Body, repeat[2].Body);
+        Assert.DoesNotContain(repeat, record => record.Type == UdpCommandConstants.RosterHead);
+    }
+
+    [Fact]
+    public void The_second_copy_is_the_run_the_capture_repeats()
+    {
+        // Built straight from the capture's own body for the host's own entry: a
+        // 90-byte run of head, entry, joiner and close becomes a 83-byte one
+        // without the head, and the three bodies are byte for byte the same.
+        var roster = CreateRoster("Dedicated host", clanName: null);
+        roster.Register(Joiner, PlayerProfileRecordParseUtils.Parse(
+            JoinRequestBody(name: "NightOwl77", clanName: string.Empty)));
+
+        var run = roster.BuildRosterRun();
+        var repeat = roster.BuildRosterRunRepeat();
+
+        Assert.Equal(run.Count - 1, repeat.Count);
+        Assert.Equal(UdpCommandConstants.RosterHead, run[0].Type);
+        Assert.DoesNotContain(repeat, record => record.Type == UdpCommandConstants.RosterHead);
+        Assert.Equal(run.Skip(1).Select(record => record.Type), repeat.Select(record => record.Type));
+        Assert.Equal(run.Skip(1).Select(record => record.Body), repeat.Select(record => record.Body));
     }
 
     [Fact]
@@ -217,9 +284,11 @@ public sealed class PlayerProfileHandlerTests
 
         // A player announced only to the peer that just joined is never
         // announced to the ones that were there first, and they would go on
-        // playing without knowing the room has grown.
+        // playing without knowing the room has grown. The room is told the run
+        // once: the host's second copy is addressed to the peer that asked for
+        // the roster, which is all the capture's single peer can show.
         Assert.NotEmpty(broadcast);
-        Assert.Equal(sent, broadcast);
+        Assert.Equal(sent.Take(broadcast.Count), broadcast);
     }
 
     [Fact]
@@ -247,10 +316,11 @@ public sealed class PlayerProfileHandlerTests
         var (sent, _) = await RunAsync(roster, Joiner);
 
         // The empty head, the host, the joiner, and the record that closes the
-        // roster.
-        Assert.Equal(4, sent.Count);
+        // roster — and then the host's second copy of those three.
+        Assert.Equal(7, sent.Count);
         var record = PlayerProfileRecordParseUtils.Parse(sent[2].Body);
         Assert.NotNull(record);
         Assert.Equal(RoomRosterService.FirstJoinerRosterIndex, record.RosterIndex);
+        Assert.Equal(sent[2].Body, sent[5].Body);
     }
 }

@@ -359,6 +359,31 @@ The **fourth byte** of the roster records runs `0, 0, 1, 2` across the run and r
 identically on the re-send — so it is positional, not a send attempt, but what it positions
 is unknown. We send `0`.
 
+**The host sends the run twice.** The re-send is not a mirror of the run to a second
+recipient: it goes to the same peer, carries the same three record bodies byte for byte, and
+**omits the empty `0x5001` head**. The join itself:
+
+```
+t+2475.561  counter 0x8002 (seq 2)  0x5001 0, 0x9001 83, 0x1001 79, 0x1001 7
+t+2475.678  counter 0x8003 (seq 3)              0x9001 83, 0x1001 79, 0x1001 7
+t+2475.837  counter 0x0004 (seq 4)  0x5001 0
+```
+
+Three of the eleven host-entry datagrams in the capture are doubled like this, with the gap
+varying: 0.117 s, 0.874 s, 0.745 s, 0.831 s. **[V]** on the shape and the fact of it.
+
+**What schedules the second copy is [U], and two candidate explanations are refuted.**
+It is **not a retransmission of a lost frame**: the two go out on consecutive outbound
+sequences 56 to 68 frames apart, with the tick stream filling the gap, so the second is a
+new datagram rather than the same frame sent again. It is **not acknowledgement-driven**:
+the joiner acknowledged sequence `0x001` twenty-seven times over the round and sequence
+`0x002` — which is what the run travels as — **never once**, and the first acknowledgement
+of any kind arrives at t+68531, some 66 s after the run above. Neither is proof that no
+other mechanism schedules it: the host's own acknowledgements never cover these sequences at
+all, and the joiner's first substantive reply is at t+2531, so the capture cannot see what
+ends the repetition. It is implemented as an **unconditional** second copy for that reason,
+matching what is visible rather than a mechanism that is not.
+
 **4 — the game runs.** From `hdr 0x8005` onward the channel is tick records in both
 directions and nothing else of substance: 20 852 `0x0261`, 15 954 `0x0a61`, 10 932 `0x00dd`
 and so on. The join is over in about four seconds.
