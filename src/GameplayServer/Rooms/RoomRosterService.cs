@@ -187,7 +187,8 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
     /// <remarks>
     /// The live host sends every roster run twice. The second copy opens on the
     /// host's own entry rather than on <see cref="UdpCommandConstants.RosterHead"/>,
-    /// and reaches the peer 0.1 to 0.9 s after the first.
+    /// and reaches the peer 0.7 to 0.9 ms after the first — 117 µs after it at the
+    /// join itself.
     ///
     /// What the capture settles is the shape and the fact of the second copy, and
     /// not what schedules it. It is not a retransmission of a lost frame: the two
@@ -196,7 +197,7 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
     /// the same frame sent again. It is not acknowledgement-driven either — the
     /// joiner acknowledged sequence 1 twenty-seven times over the round and
     /// sequence 2, which is what the run travels as, never once — and the first
-    /// acknowledgement of any kind arrives some 66 s after the run this method
+    /// acknowledgement of any kind arrives some 66 ms after the run this method
     /// repeats.
     ///
     /// So it is sent unconditionally, and nothing here waits for a peer to
@@ -216,8 +217,8 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
     /// </summary>
     /// <remarks>
     /// The live host closes a roster exchange with a third frame carrying the
-    /// same empty <c>0x5001</c> that opens the run, 158 ms after the repeat in
-    /// the capture (t+4170.179, outbound counter 4). It repeats the type that
+    /// same empty <c>0x5001</c> that opens the run, 158 µs after the repeat in
+    /// the capture (t+2.4758, outbound counter 4). It repeats the type that
     /// opened the run rather than closing it, and what it says is **[U]** — the
     /// type is the one §3 of <c>UDP_GAME_CAPTURE.md</c> shows is not the
     /// acknowledgement despite the resemblance.

@@ -24,12 +24,35 @@ UDP = 17
 TCP = 6
 
 
+def ReadTimestampResolution(interface_description: bytes) -> float:
+    """Ticks per second, from the interface's ``if_tsresol`` option.
+
+    The option is one byte: the high bit picks a power of two over a power of
+    ten, and the low seven bits are the exponent. Default is microseconds when
+    the option is absent. Assuming microseconds regardless is a 1000x error on
+    a capture taken with the default of a Windows capture driver, which is
+    nanoseconds.
+    """
+    offset = 8  # link type, reserved, snap length
+    while offset + 4 <= len(interface_description):
+        code, length = struct.unpack_from("<HH", interface_description, offset)
+        if code == 0:
+            break
+        if code == 9 and length >= 1:
+            raw = interface_description[offset + 4]
+            exponent = raw & 0x7F
+            return float(1 << exponent) if raw & 0x80 else float(10**exponent)
+        offset += 4 + (length + 3) // 4 * 4
+    return 1_000_000.0
+
+
 class Pcapng:
     """Minimal pcapng reader: link type plus timestamped packet bytes."""
 
     def __init__(self, path: str) -> None:
         self.path = path
         self.link_type = LINKTYPE_ETHERNET
+        self.ticks_per_second = 1_000_000
         self.packets: list[tuple[float, bytes]] = []
 
     def read(self) -> None:
@@ -52,12 +75,13 @@ class Pcapng:
             if len(body) >= 2:
                 link_type, _, _ = struct.unpack_from("<HHI", body, 0)
                 self.link_type = link_type
+            self.ticks_per_second = ReadTimestampResolution(body)
         elif block_type == 0x00000006:  # enhanced packet block
             interface_id, ts_high, ts_low, captured, original = struct.unpack_from(
                 "<IIIII", body, 0
             )
             del interface_id, original
-            ts = ((ts_high << 32) | ts_low) / 1_000_000.0
+            ts = ((ts_high << 32) | ts_low) / self.ticks_per_second
             packet = body[20 : 20 + captured]
             self.packets.append((ts, packet))
         elif block_type == 0x00000003:  # simple packet block

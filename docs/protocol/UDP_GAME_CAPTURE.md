@@ -208,10 +208,10 @@ joiner -> server   10.2.0.2:5730 -> 99.66.131.177:5731   hdr 0x0000   t+0.000
   peer_id 51001  counter_base 0x736773a6  magic b7 8a 25 4d  ver 2  count 2
   entries 10.2.0.2:5730, 10.2.0.2:5730
 
-server -> joiner   99.66.131.177:5731 -> 10.2.0.2:5730   hdr 0x0000   t+1668.068
+server -> joiner   99.66.131.177:5731 -> 10.2.0.2:5730   hdr 0x0000   t+1.6681
   0x5000, empty — the key-establishing keep-alive, sent FIRST
 
-server -> joiner   99.66.131.177:5731 -> 10.2.0.2:5730   hdr 0x0001   t+1668.118
+server -> joiner   99.66.131.177:5731 -> 10.2.0.2:5730   hdr 0x0001   t+1.6681
   peer_id 51002  counter_base 0x3c8a65d6  magic b7 8a 25 4d  ver 2  count 2
   entries 99.66.131.177:5731, 10.104.10.28:5731
 ```
@@ -219,9 +219,8 @@ server -> joiner   99.66.131.177:5731 -> 10.2.0.2:5730   hdr 0x0001   t+1668.118
 **The keep-alive leads, and it takes outbound counter 0.** The reply reads as the more
 important of the two, so it is easy to send first — the live host does not, and the counters
 are observable, so a client keying anything off them sees the order. **[V]** on the order and
-the counters. The 50 ms gap between them is not reproduced: this server does not delay a
-send by a measured interval, and nothing in the capture says the client depends on the
-spacing rather than the order.
+the counters. The two go out **in the same millisecond** (t+1.6681), so there is no interval
+to reproduce and nothing here delays a send.
 
 **2 — the joiner opens with its own profile**, `0x1001`, 140-byte body, opening `02 78 05
 78 05` and carrying its own character name at the end. It is sent **compressed** (`hdr 0x8001`) and
@@ -237,13 +236,15 @@ answered by nothing until the server's roster arrives.
 | `0x1001` len 79 | opens `07 48`, ends **`PlayerOne`** | the joiner's entry, echoed back |
 | `0x1001` len 7 | `07 00 00 00 00 00 03` | the roster close |
 
-**3b — the run is sent again, without its head**, `hdr 0x8003`, 117 ms later, the same three
-records byte for byte.
+**3b — the run is sent again, without its head**, `hdr 0x8003`, **117 µs** later, the same
+three records byte for byte.
 
-**3c — and one bare `0x5001` closes the exchange**, `hdr 0x0004`, t+4170.179, 158 ms after the
-repeat. It repeats the type that opened the run rather than closing it. What it says is
-**[U]** — the type is the one §3 shows is not the acknowledgement despite the resemblance —
-and it is sent because the live host sends it.
+**3c — and one bare `0x5001` closes the exchange**, `hdr 0x0004`, t+2.4758, **158 µs** after
+the repeat. The whole run, its repeat and the trailer leave in **202 µs**, which is too fast
+for any timer to have scheduled them — they are three back-to-back sends. It repeats the type
+that opened the run rather than closing it. What it says is **[U]** — the type is the one §3
+shows is not the acknowledgement despite the resemblance — and it is sent because the live
+host sends it.
 
 The host's own entry travels under **`0x9001`**, the tag the joiner itself opened the
 exchange with, while the joining players and the close travel under `0x1001`. Both roster
@@ -381,13 +382,14 @@ recipient: it goes to the same peer, carries the same three record bodies byte f
 **omits the empty `0x5001` head**. The join itself:
 
 ```
-t+2475.561  counter 0x8002 (seq 2)  0x5001 0, 0x9001 83, 0x1001 79, 0x1001 7
-t+2475.678  counter 0x8003 (seq 3)              0x9001 83, 0x1001 79, 0x1001 7
-t+2475.837  counter 0x0004 (seq 4)  0x5001 0
+t+2.4756  counter 0x8002 (seq 2)  0x5001 0, 0x9001 83, 0x1001 79, 0x1001 7
+t+2.4757  counter 0x8003 (seq 3)              0x9001 83, 0x1001 79, 0x1001 7
+t+2.4758  counter 0x0004 (seq 4)  0x5001 0
 ```
 
-Three of the eleven host-entry datagrams in the capture are doubled like this, with the gap
-varying: 0.117 s, 0.874 s, 0.745 s, 0.831 s. **[V]** on the shape and the fact of it.
+Three of the eleven host-entry datagrams in the capture are doubled like this — at t+154.30,
+t+208.98 and t+494.97 — and the gap varies: **0.9 ms, 0.7 ms, 0.8 ms**. The join itself is
+the exception at 117 µs. **[V]** on the shape and the fact of it.
 
 **What schedules the second copy is [U], and two candidate explanations are refuted.**
 It is **not a retransmission of a lost frame**: the two go out on consecutive outbound
@@ -395,15 +397,51 @@ sequences 56 to 68 frames apart, with the tick stream filling the gap, so the se
 new datagram rather than the same frame sent again. It is **not acknowledgement-driven**:
 the joiner acknowledged sequence `0x001` twenty-seven times over the round and sequence
 `0x002` — which is what the run travels as — **never once**, and the first acknowledgement
-of any kind arrives at t+68531, some 66 s after the run above. Neither is proof that no
+of any kind arrives at **t+68.53**, some 66 ms after the run above. Neither is proof that no
 other mechanism schedules it: the host's own acknowledgements never cover these sequences at
-all, and the joiner's first substantive reply is at t+2531, so the capture cannot see what
+all, and the joiner's first substantive reply is at t+2.53, so the capture cannot see what
 ends the repetition. It is implemented as an **unconditional** second copy for that reason,
 matching what is visible rather than a mechanism that is not.
 
 **4 — the game runs.** From `hdr 0x8005` onward the channel is tick records in both
 directions and nothing else of substance: 20 852 `0x0261`, 15 954 `0x0a61`, 10 932 `0x00dd`
-and so on. The join is over in about four seconds.
+and so on. The join is over in about **two and a half seconds**.
+
+**A note on the clock.** Every interval in this file comes from
+`tools/pcap_conversations.py`, which resolves the capture's `if_tsresol` (9, so
+**nanoseconds**). An earlier reading of that reader assumed microseconds and made
+every interval here a thousand times too large — the round looked like 9.5 days
+rather than its actual **825.6 s**. The figures that predate that were taken
+against a working clock and are correct; only ones measured through the broken
+reader were wrong.
+
+**The room grows, and the growth does not use the roster record.** Six characters
+play the round, each named by its position record, and they arrive well after the
+join:
+
+| record | first position | | record | first position |
+| --- | --- | --- | --- | --- |
+| `0x00db` | t+192.3 s | | `0x0081` | t+563.8 s |
+| `0x006d` | t+218.5 s | | `0x0881` | t+764.1 s |
+| `0x00b3` | t+394.4 s | | `0x08b3` | t+764.1 s |
+
+Yet **only two datagrams in the whole round carry the `07 4c` room record**, both at
+t+2.476 with a single `07 48` player entry — the join itself. Every later arrival
+reaches this peer as `0x9001` + one `0x1001` entry + trailing records, never as a
+second entry beside the first:
+
+```
+t+154.301  122B  0x9001, 0x1001, 0x90c, 0xa61, 0xa61      (repeated at .302, 156.5, 158.9, 161.1)
+t+384.976  193B  0x1001 x2, 0xd9, 0xdb, 0xdd x2, 0xdf, 0x1001, 0xda, 0x10c, 0x261 x2
+t+494.973  123B  0x9001, 0x1001, 0x1a54, 0xa61, 0xa61
+```
+
+So the notification that a second player has joined is **not** the roster run this
+server re-sends, and it is **[U]**: the leading `0x9001`+`0x1001` pair looks like a
+single entry re-sent while the trailing records (`0x90c`, `0xa61`, `0x1a54`,
+`0x10c`, `0x261`) change with each arrival, but nothing here decodes them.
+`PlayerProfileHandler` broadcasting the whole run is therefore **unverified against
+this capture** — the capture contains no datagram that would justify it.
 
 ---
 

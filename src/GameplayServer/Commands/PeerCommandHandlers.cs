@@ -15,11 +15,11 @@ namespace Mgo2Server.GameplayServer.Commands;
 /// </summary>
 /// <remarks>
 /// The live host sends the keep-alive <b>first</b>, as outbound counter 0, and
-/// the handshake reply 50 ms later as counter 1
-/// (<c>docs/mgo2-game.pcapng</c>: a 16-byte <c>0x5000</c> at t+1668.068 and a
-/// 44-byte <c>0x1000</c> at t+1668.118). The reply leads here only because it
-/// reads as the more important of the two; the capture puts the other way, and
-/// the counters are observable, so the keep-alive takes counter 0.
+/// the handshake reply behind it as counter 1
+/// (<c>docs/mgo2-game.pcapng</c>: a 16-byte <c>0x5000</c> and a 44-byte
+/// <c>0x1000</c>, both at t+1.6681). The reply leads here only because it reads
+/// as the more important of the two; the capture puts the other way, and the
+/// counters are observable, so the keep-alive takes counter 0.
 /// </remarks>
 /// <param name="hostIdentity">Identity this host presents to its peers.</param>
 /// <param name="logger">Logger of this handler.</param>
@@ -67,10 +67,9 @@ public sealed class AcceptHandshakeHandler(
         // 1. The keep-alive, which the recorded host sends first, as its
         //    outbound counter 0. The joiner reads it as the frame that
         //    establishes the session key, so it carries the key ahead of
-        //    anything that needs it; the live capture puts it 50 ms ahead of
-        //    the handshake reply and this host does not delay a send by a
-        //    measured gap, but the order and the counters are what a client can
-        //    observe and depend on.
+        //    anything that needs it; the live capture puts it in the same
+        //    millisecond as the handshake reply, and the order and the counters
+        //    are what a client can observe and depend on.
         context.Session.Established = true;
         await context.Send(UdpCommandConstants.KeepAlive, []);
 
