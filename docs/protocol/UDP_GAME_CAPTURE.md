@@ -443,6 +443,64 @@ single entry re-sent while the trailing records (`0x90c`, `0xa61`, `0x1a54`,
 `PlayerProfileHandler` broadcasting the whole run is therefore **unverified against
 this capture** — the capture contains no datagram that would justify it.
 
+### The post-join burst — one datagram, sent once [V]
+
+At t+4.9929, 2.52 s after the roster answer, the host writes a 366-byte datagram
+on outbound counter 5 (t+5 in the frame listing below). It is the only datagram
+in the whole round of that shape. **[V]**
+
+| order | type | body | what it is |
+| --- | --- | --- | --- |
+| 1 | `0xd001` | `24` | one-byte control |
+| 2 | `0x9001` | 161 B, opens `0b 00` | host's own payload |
+| 3 | `0x1001` | 50 B, opens `0b 01` | a joining player's payload |
+| 4 | `0x1001` | 54 B, opens `0b 15` | unexplained |
+| 5 | `0x1001` | 54 B, opens `0b 15` | byte-identical to record 4 |
+| 6 | `0x0002` | 22 B | state blob |
+
+A seventh record follows 300µs later on counter 6: `0xd001` with body `02`. **[V]**
+
+**The state blob is fully pinned.** All 141 `0x0002` records in the round are 22
+bytes and all go server to client. Eighteen are zero, then `40 00`, then a
+sixteen-bit big-endian value — the only part that moves: 100 for 56 of them, then
+0, 94, 98, 99, and the 50 this burst carries. `PostJoinBurstService.BuildStateBlob()`
+reproduces the join-time blob exactly. What the value counts is **[U]**. **[V]**
+
+**`0xd001` is mostly the host's, not the peer's.** The round holds 181 of them:
+**176 server to client, 5 the other way.** It was registered receive-only here on
+the strength of the 5. Two go out inside this burst, with bodies `24` and `02`. **[V]**
+
+**The payloads do not decode, and are not copied.** The `0b <slot>` bodies run 6 to
+161 bytes and hold one character's equipment, skills and settings. The first four
+here match the replay's opening burst byte for byte — `0b 00`/161, `0b 01`/50,
+`0b 15`/54 twice, including the `45 2f 57 39 67 68` template run at body offset
+`0x1b` of `0b 01` — so a replay is a source for live payloads, not only for
+framing (`UDP_P2P_PROTOCOL.md` §6.6). Their contents are still **[U]**, and the
+burst is built with each payload as its tag, its slot and zeros. **[I]**
+
+**Three things about this burst are worth not assuming.** **[V]**
+
+- **It is not a two-player event, though it looks like one.** It does go out when
+  the room holds the host and its first joiner, and no peer handle but that one has
+  been announced at t+4.99 — the second arrives at t+154.3. But the `0b` payloads
+  are not gated on that: 580 of them appear over the round, in 470 datagrams,
+  through to the last second at t+825.6, and **504** of them after four peer
+  handles are known. What is one-shot is the burst, not the payload family.
+- **It is not one record per player.** Three of the four `0b` payloads travel under
+  `0x1001` for a single joiner, and two of them are byte-identical. One payload
+  per joining player is a reading of the shape, not a measurement.
+- **The record types are not payload-specific.** `0x9001` and `0x1001` carry a
+  `07 48` roster entry on one datagram and a `0b` payload on the next. Across the
+  round `0x1001` bodies begin `0b`, `07`, `85`, `86`, `83`, `00`, `0c`, `81`,
+  `84`, `82`, `02` — the leading byte separates the shapes, not the type. The
+  `0b` payloads also ride on `0x1a54`, `0x087f`, `0x00b1`, `0x00df` and others.
+
+**The fourth header byte is positional noise here.** It climbs monotonically to 180
+over the round and *repeats* within frames: the roster answer carries `0, 0, 1, 2`,
+this burst `1, 3, 4, 5, 6, 21`, and a frame at t+192.3 `36, 37, 34, 35, …`. So it is
+not a roster index and not a per-record counter, and the burst does not set it
+deliberately. **[V]**
+
 ---
 
 ## 5. Tick records

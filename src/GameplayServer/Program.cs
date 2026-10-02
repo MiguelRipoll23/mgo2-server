@@ -22,6 +22,7 @@ builder.Services.AddSingleton<HostIdentityService>();
 builder.Services.AddSingleton<AccountService>();
 builder.Services.AddSingleton<MatchService>();
 builder.Services.AddSingleton<RoomRosterService>();
+builder.Services.AddSingleton<PostJoinBurstService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 builder.Services.AddSingleton<AcceptHandshakeHandler>();
 builder.Services.AddSingleton<AcknowledgeKeepAliveHandler>();

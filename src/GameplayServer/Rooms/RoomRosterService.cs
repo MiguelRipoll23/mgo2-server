@@ -111,6 +111,20 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
         }
     }
 
+    /// <summary>
+    /// Number of joining players on the roster, the host itself not counted.
+    /// </summary>
+    public int JoinerCount
+    {
+        get
+        {
+            lock (gate)
+            {
+                return members.Count;
+            }
+        }
+    }
+
     /// <summary>Removes a peer from the roster and frees its slot.</summary>
     /// <param name="remote">Endpoint the peer was reached at.</param>
     /// <returns>True when the peer was on the roster.</returns>

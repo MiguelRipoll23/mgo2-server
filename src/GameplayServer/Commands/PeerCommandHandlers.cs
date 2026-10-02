@@ -134,12 +134,18 @@ public sealed class AcknowledgeKeepAliveHandler : IPeerCommandHandler
 /// of them a round contains, buries the warnings that matter.
 /// </para>
 /// <para>
-/// Neither is answered. What either one *means* is unresolved
-/// (docs/protocol/UDP_GAME_CAPTURE.md §3), and answering a record this server
-/// cannot read is how <c>0x43CA</c>/<c>0x43CB</c> and <c>0x4442</c> went wrong in
-/// this project. They are logged at debug level so a session can be watched
-/// without turning the log into the traffic itself.
-/// </para>
+/// Neither is answered here. What either one *means* is unresolved
+    /// (docs/protocol/UDP_GAME_CAPTURE.md §3), and answering a record this server
+    /// cannot read is how <c>0x43CA</c>/<c>0x43CB</c> and <c>0x4442</c> went wrong in
+    /// this project. They are logged at debug level so a session can be watched
+    /// without turning the log into the traffic itself.
+    /// </para>
+/// <para>
+    /// The one-byte record is mostly the other direction: the live host writes
+    /// 176 of the 181 in a round and the client writes 5. This handler is what
+    /// receives the 5; what the host writes is built by
+    /// <see cref="PostJoinBurstService"/>.
+    /// </para>
 /// </remarks>
 public sealed class InGameControlHandler(ILogger<InGameControlHandler> logger) : IPeerCommandHandler
 {
@@ -177,9 +183,11 @@ public sealed class InGameControlHandler(ILogger<InGameControlHandler> logger) :
 /// to every peer in the room turns a quiet host into a flood.
 /// </remarks>
 /// <param name="roster">Roster of the room this host is playing.</param>
+/// <param name="burst">Builder of the one-shot burst that follows the roster exchange.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
     RoomRosterService roster,
+    PostJoinBurstService burst,
     ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
@@ -260,6 +268,22 @@ public sealed class PlayerProfileHandler(
         // host sends it.
         var trailer = RoomRosterService.BuildRosterTrailer();
         await context.Send(trailer.Type, trailer.Body);
+
+        // Then the burst, which the recorded host sends once, about two and a
+        // half seconds after the roster it is answering here. The capture holds
+        // exactly one of them in the whole round, and the three peers that join
+        // later do not each get one, so it goes to the peer that was just
+        // answered and not to the room. Its payload bodies are built as the tag,
+        // the slot and zeros: the capture's own are one character's equipment
+        // and are deliberately not copied. PostJoinBurstService carries the
+        // measurement and what it does not settle.
+        foreach (var record in burst.BuildBurst())
+        {
+            await context.Send(record.Type, record.Body);
+        }
+
+        var followUp = PostJoinBurstService.BuildFollowUp();
+        await context.Send(followUp.Type, followUp.Body);
 
         // The peers already in the room are told as well. A player who is only
         // announced to the peer that just joined is never announced to the ones

@@ -47,15 +47,37 @@ public static class UdpCommandConstants
     public const ushort RosterHead = 0x5001;
 
     /// <summary>
-    /// One-byte in-game control record, seen from both ends of a live session.
+    /// One-byte in-game control record. The live host writes nearly all of them.
     /// </summary>
     /// <remarks>
-    /// The body is a small counter rather than an identifier, and it arrives
-    /// with the same fourth-byte counter <see cref="RosterHead"/> carries.
-    /// Its meaning is **[U]**; the server recognises the type so it is not
-    /// logged as an unknown command, and deliberately does not answer it.
+    /// <para>
+    /// The capture holds 181 of these, <b>176 from the server to the client</b>
+    /// and 5 the other way, so this is predominantly a record the host emits
+    /// rather than one it only receives. Two go out inside the post-join burst,
+    /// with bodies <c>0x24</c> and <c>0x02</c>.
+    /// </para>
+    /// <para>
+    /// The body is a small counter rather than an identifier — sixteen distinct
+    /// values across the round — and it arrives with the same fourth-byte
+    /// counter <see cref="RosterHead"/> carries. What any of them *means* is
+    /// **[U]**. The server recognises the type so it is not logged as an unknown
+    /// command, and an inbound one is not answered: answering a record this
+    /// server cannot read is how <c>0x43CA</c>/<c>0x43CB</c> and <c>0x4442</c>
+    /// went wrong in this project.
+    /// </para>
     /// </remarks>
     public const ushort InGameControl = 0xd001;
+
+    /// <summary>
+    /// Fixed-length state blob that closes the post-join burst.
+    /// </summary>
+    /// <remarks>
+    /// Every one of the 141 blobs the round contains is 22 bytes and every one
+    /// of them goes server to client. Eighteen are zero, then a marker, a zero,
+    /// and a sixteen-bit big-endian value that is the only part that moves.
+    /// <see cref="GameplayServer.Rooms.PostJoinBurstService"/> builds it.
+    /// </remarks>
+    public const ushort GameStateBlob = 0x0002;
 
     /// <summary>Reliable-class base: an acknowledgement of frame sequence N travels as this value ORed with N.</summary>
     public const ushort AcknowledgementClass = 0x1000;

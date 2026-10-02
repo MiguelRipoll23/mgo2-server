@@ -865,7 +865,36 @@ they start, how many there are and what they look like. **[V]**
   lengths 161, 50, 54, 54, 57, 57, 55, 56, 55, 56, 56, 55, 55, 55, 25, 25. The
   161-byte one lists many items, the 25-byte ones almost nothing, which reads as
   a per-thing loadout rather than per-player — the ids are not the twelve roster
-  slots. **[I]** Not implemented, for the same reason.
+  slots. **[I]**
+
+  **This list is not replay-only.** The first four entries — `0b 00` at 161
+  bytes, `0b 01` at 50 and `0b 15` at 54 twice — are byte for byte the four
+  `0b` payloads the live dedicated server sends in its post-join burst
+  (`UDP_GAME_CAPTURE.md` §4), and the cross-sample constant `45 2f 57 39 67 68`
+  below sits at the same body offset in the live `0b 01`. The replay's opening
+  burst and the live gameplay burst are the same records on two channels, which
+  is worth knowing: a replay is now a source for live payloads rather than only
+  a source for framing. **[V]**
+
+  In the live round these payloads are **not** confined to the opening burst.
+  There are 580 of them, in 470 datagrams, from t+4.99 to the last second at
+  t+825.6, spread across twelve different record types — `0x1001`, `0x9001`,
+  `0x1a54`, `0x087f`, `0x00b1`, `0x00df` and others — and 504 of them go out
+  after four peer handles have been announced. What is a one-shot is the *burst*
+  that opens with them, not the payload family: the round contains exactly one
+  burst of that shape and the three later joiners do not each get one. **[V]**
+
+  The record types are polymorphic rather than dedicated to these payloads: a
+  `0x9001` or `0x1001` carries a `07 48` roster entry on one datagram and a
+  `0b` payload on the next, and `0x1001` bodies across the round begin `0b`,
+  `07`, `85`, `86`, `83`, `00`, `0c`, `81`, `84`, `82` and `02`. The leading
+  byte is what tells the shapes apart, not the record type. **[V]**
+
+  **Not implemented, for the same reason as above**: the *contents* are one
+  character's equipment, skills and settings, and sending those to any other
+  player would be wrong. The burst's shape is built — see
+  `PostJoinBurstService` — with each payload as its `0b` tag, its slot and
+  zeros, which is the most this server can say without inventing a loadout.
 - **`0xe5e`..`0x113a`** — not walked.
 
 **A cross-sample constant.** The six bytes `45 2f 57 39 67 68` ("E/W9gh") sit
