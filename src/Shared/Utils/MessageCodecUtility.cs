@@ -38,7 +38,7 @@ public static class MessageCodecUtility
             decoded);
     }
 
-    /// <summary>Parses the concatenated messages of a content region.</summary>
+    /// <summary>Parses the concatenated records of a content region.</summary>
     /// <param name="buffer">Content region, decompressed when the frame was compressed.</param>
     public static List<UdpMessage> ParseMessages(ReadOnlySpan<byte> buffer)
     {
@@ -48,17 +48,42 @@ public static class MessageCodecUtility
         while (offset + UdpCommandConstants.MessageHeaderSize <= buffer.Length)
         {
             var type = BinaryUtility.ReadUInt16LittleEndian(buffer, offset);
-            var length = buffer[offset + 2];
+            var declaredLength = buffer[offset + 2];
+            var bodyLength = ReadBodyLength(type, declaredLength);
+            if (bodyLength < 0 || offset + UdpCommandConstants.MessageHeaderSize + bodyLength > buffer.Length)
+            {
+                // A length that runs past the end means the region is not walking
+                // under the framing this record claims, and everything after it
+                // would be read at a false offset. Stop rather than invent.
+                break;
+            }
+
             var flags = buffer[offset + 3];
             var bodyStart = offset + UdpCommandConstants.MessageHeaderSize;
-            var bodyEnd = Math.Min(bodyStart + length, buffer.Length);
 
-            messages.Add(new UdpMessage(type, length, flags, buffer[bodyStart..bodyEnd].ToArray()));
-            offset = bodyStart + length;
+            messages.Add(new UdpMessage(type, declaredLength, flags, buffer[bodyStart..(bodyStart + bodyLength)].ToArray()));
+            offset = bodyStart + bodyLength;
         }
 
         return messages;
     }
+
+    /// <summary>
+    /// Reads a record's length byte under the framing its identifier selects.
+    /// </summary>
+    /// <remarks>
+    /// Two framings share this wire and the fourth header byte means different
+    /// things in each. A session record counts the body alone; a tick record
+    /// counts the body plus the attribute class, which is why its body is one
+    /// byte shorter than the byte says. Reading every record the session way
+    /// desynchronises a frame at its first tick record - see
+    /// docs/protocol/UDP_GAME_CAPTURE.md §2.
+    /// </remarks>
+    /// <param name="type">Record identifier.</param>
+    /// <param name="lengthByte">The record's length byte.</param>
+    /// <returns>Body length in bytes.</returns>
+    public static int ReadBodyLength(ushort type, byte lengthByte) =>
+        type < UdpCommandConstants.TickRecordThreshold ? lengthByte - 1 : lengthByte;
 
     /// <summary>Serializes messages into a content region payload.</summary>
     /// <param name="messages">Messages to serialize.</param>

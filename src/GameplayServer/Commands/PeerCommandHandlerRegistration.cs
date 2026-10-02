@@ -14,14 +14,15 @@ public static class PeerCommandHandlerRegistration
     {
         registry.Register<AcceptHandshakeHandler>(UdpCommandConstants.Handshake);
         registry.Register<AcknowledgeKeepAliveHandler>(UdpCommandConstants.KeepAlive);
-        // The keyed data-phase keep-alive shares the class of the handshake one
-        // and differs only in its twelve-bit id. Without it a live joiner's
-        // heartbeat is an unhandled type and every one of them logs a warning.
-        registry.Register<AcknowledgeKeepAliveHandler>(UdpCommandConstants.DataKeepAlive);
         registry.Register<PlayerProfileHandler>(UdpCommandConstants.PlayerProfile);
         // The tag a live joiner opens with. It carries the same player record
         // as the roster type, so it is answered the same way; registering only
         // the roster type is what left a join with no handler and no roster.
         registry.Register<PlayerProfileHandler>(UdpCommandConstants.JoinRequest);
+        // The two record types a running game exchanges in volume and nobody
+        // has decoded. They are registered so they stop arriving as unknown
+        // commands; neither is answered, because neither is understood.
+        registry.Register<InGameControlHandler>(UdpCommandConstants.RosterHead);
+        registry.Register<InGameControlHandler>(UdpCommandConstants.InGameControl);
     }
 }

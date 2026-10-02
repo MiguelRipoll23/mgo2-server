@@ -118,24 +118,51 @@ host's **session-keyed** keep-alive is what flips the joiner into the data phase
 because its tail digest verifies with `K ^ 0x2b58de69`. In the data phase the host mirrors
 them. Implemented by `AcknowledgeKeepAliveHandler`.
 
-### `0x5001` — data-phase keep-alive, id 1 [V]
+### `0x5001` — **[U]**; an earlier keep-alive reading is refuted by the live capture [V]
 
-**Guess: the joiner's keyed data-phase heartbeat; also fire-and-forget.** **[V]**
+An earlier reading, taken from the binary's serializer, called `0x5001` a data-phase
+keep-alive of id 1 and mirrored it back the way `0x5000` is mirrored. **A live capture
+refutes the mirroring.** Over all 541 records of the type in one complete round:
 
-`0x5001` is the same class as `0x5000` (flags bits 0 and 1) with **id 1**. Live (2026-10-02,
-RPCS3 join against the container on the raspberrypi): once the session is keyed the joiner
-emits `type 0x5001, len 0, flags2 0` about once a second, alongside its re-sent `0x9001`
-profile. Before that, the id is only ever 0.
+- **The identifier never varies.** Every one is `0x5001`; the low twelve bits, which
+  carry the id, are always `0x001`.
+- **The fourth byte is a monotonic per-session counter**, climbing to 194 on the joiner and
+  147 on the server over the round and never resetting. A keep-alive has nothing to count.
+- **The body is always empty**, and the *server* sends 60 of them as well as answering
+  them.
 
-**It is not answered by the game, and the mirror is a courtesy.** Two things in the receiver
-(`FUN_002666c8`) say so: an id-0 message with a body of **0-3 bytes is skipped outright**
-(`0x267b84`, `ble 0x267b18`), which is exactly the empty keep-alive shape; and no id-1
-specific branch exists in the transport decoder at all. Nothing in the decoder builds a
-reply to a keep-alive, so a host that drops `0x5001` is losing nothing — but the drop is
-logged as an unhandled type, which is what makes it look like a gap. Registering it under
-`AcknowledgeKeepAliveHandler` mirrors it with its own type (`0x5001`, not `0x5000`) and turns
-the warning into a debug line. Implemented by `AcknowledgeKeepAliveHandler` for both
-`UdpCommandConstants.KeepAlive` and `UdpCommandConstants.DataKeepAlive`.
+It is therefore registered as a recognised in-game control record
+(`UdpCommandConstants.RosterHead`, handled by `InGameControlHandler`) and **not answered**,
+and it is *sent* at the head of a roster run because the live host sends it there. What it
+means is **[U]**. The class-bit reading itself — a type being `id | class`, so `0x5000`
+and `0x5001` are two ids rather than a value and its sequence — is unaffected and stands.
+See [`UDP_GAME_CAPTURE.md`](UDP_GAME_CAPTURE.md) §3 for the measurement.
+
+### Record framing — two conventions on one wire [V]
+
+**Corrected from a live dedicated-server game** (`docs/mgo2-game.pcapng`, written
+up in `UDP_GAME_CAPTURE.md` §2). The `type u16 LE | len u8 | flags2 u8 | body` layout
+below is **not the whole story**, and reading every record the session way desynchronises a
+content region at its first in-game record.
+
+| record | identifier | fourth byte is | `len` is |
+| --- | --- | --- | --- |
+| session record | `id >= 0x1000` | the message flags | the **body length** |
+| in-game tick record | `id < 0x1000` | the **attribute class** | the **body length + 1** |
+
+Both share the wire and the header shape; the identifier is what tells them apart. The
+tick form is the one `tools/mgo2_replay_parser.py` already walks (*"`len` is
+`data_len+1`"*), so the replay format and the live channel agree and the lobby section of
+this file was the odd one out.
+
+Measured over the capture's 19 018 digest-verified frames: reading every length as a body
+length walks **291** to their last byte, reading every length as `data + 1` walks
+**17 423**, and partitioning on the identifier walks **18 728**. The remaining **290**
+carry a constant 8-byte trailer (`ff cf ff 0f 01 02 06 00` and 13 others) that no framing
+rule accounts for — **unresolved**, see `UDP_GAME_CAPTURE.md` §2.
+
+Implemented in `MessageCodecUtility.ReadBodyLength`, threshold
+`UdpCommandConstants.TickRecordThreshold`.
 
 ### `0x8000` — LZSS compression marker [V]
 
@@ -152,7 +179,7 @@ arrives marked (`hdr 0x8001`).
 **Guess: the tag a joiner opens the exchange with — its own player record, a request rather
 than a roster entry.** **[V]**
 
-Live capture (2026-10-01): `type 0x9001, len 0x95` holding the player record; `0x1001` is the
+Live capture: `type 0x9001, len 0x95` holding the player record; `0x1001` is the
 tag the host's roster answer uses. The handler registers the same profile parser under this
 type, which is what a stalled join was missing. Not present in the replay, because the replay
 is the host's stream and the host never sends it.
@@ -167,20 +194,35 @@ Four shapes share the type. Counts are per replay; they are identical in all fiv
 
 **Guess: one player's room entry — name and clan.** **[V]**
 
-Body layout (§6.4), little-endian: byte `0x00 = 0x07`, character id, `0x04 = 0x32 + roster
-index`, `0x05 = 6 + roster index`, a per-player value at `0x08`, team flag at `0x0a`, an
-11-column per-player block, then `0x43 = 0x03` when a clan follows, a 16-byte NUL-padded
-ISO-8859-1 **name**, and a **non-terminated** clan name to end of record. The host's own entry
-is first and is the only one with a **negative** index (`0x31`/`0x05`), i.e. roster index `-1`;
-joining players fill `0`, `1`, `2`, … The per-player columns and the `0x08` value are
-unresolved (`[U]`); the builder writes zeros there and a test asserts it.
+Body layout (§6.4), little-endian: byte `0x00 = 0x07`, character id, `0x04 = 0xe2 + roster
+index` (or a plain `0x00` for the host), the same per-player value at `0x05` and `0x07`, a
+per-player value at `0x08`, an unresolved value at `0x0a` (`0` on the host, `1` on every
+joiner — **not** a team flag), a per-player block, then `0x43 = 0x03` when
+a clan follows, a 16-byte NUL-padded ISO-8859-1 **name**, and a **non-terminated** clan name
+to end of record. The host's own entry is first and sits at roster index `-1`, which it
+writes as `0x00` rather than as `0xe2 - 1`; joining players fill `0`, `1`, `2`, … and are
+written `0xe2`, `0xe3`, `0xe4`… The per-player block, the `0x05`/`0x07` value and the `0x08`
+value are unresolved (`[U]`); the builder writes zeros there and a test asserts it.
 
-### Roster close — 1 per replay, body 7 bytes [V]
+**Corrected from a live dedicated-server game** (`UDP_GAME_CAPTURE.md` §4). The layout was
+first read off a recorded replay, which put the index at `0x04` as `0x32 + index` and treated
+`0x05`/`0x07` as the same index under a second base. Six roster records in the live session
+— the host and five joining players at indices `-1` and `0` to `4` — show `0xe2 + index` at
+`0x04`, a **zero** rather than `0xe1` for the host, and per-player values at `0x05`/`0x07`
+that do not follow roster order. The live capture is the reference; the replay reading is
+superseded.
+
+### Roster close — 1 per roster run, body 7 bytes [V] — **implemented**
 
 **Guess: a terminator for the roster run.** **[V]**
 
 `type 0x1001, len 7, body 07 00 00 00 00 00 03` at `0x480`, immediately after the twelve
-entries. Establishes the end of the flat roster. Not otherwise decoded.
+entries of the recorded match, and again in the live dedicated-server session
+(`docs/protocol/UDP_GAME_CAPTURE.md` §4) closing a **two-entry** roster — so it is not
+tied to a roster size. Establishes the end of the flat roster. Not otherwise decoded.
+
+Sent by `PlayerProfileHandler` as the last record of the run, to the joiner and to the
+peers already in the room alike (`PlayerProfileRecordUtility.BuildRosterClose()`).
 
 ### Spawn-state — 48 per replay, 26-byte bodies [I]
 

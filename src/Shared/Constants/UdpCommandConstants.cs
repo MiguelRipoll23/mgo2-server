@@ -15,29 +15,47 @@ public static class UdpCommandConstants
     /// </summary>
     public const ushort KeepAlive = 0x5000;
 
-    /// <summary>
-    /// The joiner's keyed data-phase keep-alive. It is the same message class
-    /// as <see cref="KeepAlive"/> — the serializer's flag bits 0 and 1 both
-    /// travel as `0x5000` — with id 1 instead of 0, so the two are distinct
-    /// messages and not a sequence number. A joiner emits these about once a
-    /// second once its session is keyed, and the transport treats the class as
-    /// fire-and-forget: an empty body is skipped on receive and nothing in the
-    /// decoder builds a reply to it. Mirroring it keeps the log honest without
-    /// inventing an answer the game is not waiting for.
-    /// </summary>
-    public const ushort DataKeepAlive = 0x5001;
-
     /// <summary>Player-profile record sent by the joining peer.</summary>
     public const ushort PlayerProfile = 0x1001;
 
     /// <summary>
     /// Join request the joiner opens the exchange with. It carries the same
     /// player record as <see cref="PlayerProfile"/> under a different tag, and
-    /// it is the one a live console actually sends first (2026-10-01, hdr
-    /// 0x8003, 149-byte body opening with 0x02). §6.4 describes the roster
-    /// record that answers it, not this one.
+    /// it is the one a live console actually sends first (hdr 0x8003, 149-byte
+    /// body opening with 0x02). §6.4 describes the roster record that answers
+    /// it, not this one. The recorded host also sends its own roster entry under
+    /// this tag, so it is both what a joiner opens with and what a host answers
+    /// its own entry with.
     /// </summary>
     public const ushort JoinRequest = 0x9001;
+
+    /// <summary>
+    /// Zero-length record the recorded host puts at the head of its roster
+    /// answer, ahead of its own entry and the joining players'.
+    /// </summary>
+    /// <remarks>
+    /// The live capture puts this type first in every roster frame, and shows
+    /// it arriving from a peer 481 times over a round with a fourth byte that
+    /// climbs monotonically to 194 rather than resetting. What it says is
+    /// **[U]**, and in particular it is <em>not</em> the acknowledgement: its
+    /// identifier never varies, so it names no sequence to acknowledge. See
+    /// docs/protocol/UDP_GAME_CAPTURE.md §3. It is sent at the head of a roster
+    /// because the live server sends it there and this server does not invent
+    /// records a peer never wrote, not because its meaning is known, and it is
+    /// not answered when it arrives.
+    /// </remarks>
+    public const ushort RosterHead = 0x5001;
+
+    /// <summary>
+    /// One-byte in-game control record, seen from both ends of a live session.
+    /// </summary>
+    /// <remarks>
+    /// The body is a small counter rather than an identifier, and it arrives
+    /// with the same fourth-byte counter <see cref="RosterHead"/> carries.
+    /// Its meaning is **[U]**; the server recognises the type so it is not
+    /// logged as an unknown command, and deliberately does not answer it.
+    /// </remarks>
+    public const ushort InGameControl = 0xd001;
 
     /// <summary>Reliable-class base: an acknowledgement of frame sequence N travels as this value ORed with N.</summary>
     public const ushort AcknowledgementClass = 0x1000;
@@ -62,6 +80,22 @@ public static class UdpCommandConstants
 
     /// <summary>Mask that strips the compression marker from the header counter.</summary>
     public const ushort CounterMask = 0x7fff;
+
+    /// <summary>
+    /// First record identifier read under the in-game framing. A record below
+    /// this is a tick record, whose length byte counts the body plus the
+    /// attribute class; a record at or above it is a session record, whose
+    /// length byte is the body length. Both share the wire and the header
+    /// shape, and the identifier is what tells them apart.
+    /// </summary>
+    /// <remarks>
+    /// Established from a live dedicated-server game
+    /// (docs/protocol/UDP_GAME_CAPTURE.md §2): reading every length as a body
+    /// length walks 291 of 19018 frames to their last byte, reading every
+    /// length as body+1 walks 17423, and partitioning on this threshold walks
+    /// 18728.
+    /// </remarks>
+    public const int TickRecordThreshold = 0x1000;
 
     /// <summary>Body of an acknowledgement message.</summary>
     public static ReadOnlySpan<byte> AcknowledgementBody => [0x00];

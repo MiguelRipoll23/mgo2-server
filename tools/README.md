@@ -287,6 +287,38 @@ working because that stall is an open question, not because anything depends on 
 
 ### Decoding live traffic
 
+**Reading a pcapng capture of the game.** There is no `tshark` dependency — `pcap_conversations.py`
+is a stdlib pcapng reader, and the UDP tools on top of it are the offline twin of
+`FrameCryptoUtility` / `LzssUtility` / `MessageCodecUtility`, so a capture decodes to exactly what
+the server would have made of it.
+
+```
+python3 pcap_conversations.py ../../docs/mgo2-game.pcapng          # every flow, by volume
+python3 pcap_flow.py           ../../docs/mgo2-game.pcapng 5733      # one flow's wire bytes
+python3 udp_flow_summary.py    ../../docs/mgo2-game.pcapng --peer IP:PORT
+python3 udp_frame.py          ../../docs/mgo2-game.pcapng --peer IP:PORT --limit 40
+```
+
+The session key is **derived from the two handshake counter bases**, not configured, so these work
+on any capture of this protocol. A frame whose tail digest does not verify is reported as unparsed
+rather than described — nothing here is printed that the bytes do not support.
+
+`udp_framing_solver.py` and `udp_framing_table.py` reproduce the record-framing finding in
+`dev/docs/protocol/UDP_GAME_CAPTURE.md` §2: two length conventions share the wire and the record
+identifier is what tells them apart.
+
+| tool | what |
+| --- | --- |
+| `pcap_conversations.py` | Stdlib pcapng reader; per-flow packet and byte counts, ordered by volume. The entry point for any capture. |
+| `pcap_flow.py` | One flow's packets as wire hex, for when the framing tools do not apply (the TCP lobby channel, STUN, DNS). |
+| `udp_frame.py` | Decodes the peer-to-peer channel: header scramble, XOR chain, tail digest, LZSS, records. Prints messages with bodies. |
+| `udp_flow_summary.py` | Session identity, the derived key, and a message-type inventory with direction split and body lengths. |
+| `udp_framing_solver.py` | The per-type vote behind the two-conventions finding. |
+| `udp_framing_table.py` | Derives and validates the per-type length table; prints the frame counts each rule walks. |
+| `udp_unresolved_probe.py` | The unresolved session records in time order, with what shares their frame. |
+| `udp_pairing_probe.py` | Tests the `0x1x..`/`0x5x..` families as request/answer, both directions, with the latency distribution. |
+| `udp_join_replay.py` | Replays the opening exchange in time order with every record decoded, for diffing against the server's own answer. |
+
 | tool | what |
 | --- | --- |
 | `decode_settings.py` | Decodes a `0x4310` host-settings blob into its known fields. |

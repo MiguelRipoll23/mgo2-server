@@ -9,3 +9,9 @@ affected.txt
 
 # Python bytecode left behind by the analysis scripts in tools/.
 __pycache__/
+
+# Packet captures. These are recordings of real sessions and are never
+# committed; docs/protocol/UDP_GAME_CAPTURE.md holds what was measured out of
+# them, with the identifying parts redacted.
+*.pcap
+*.pcapng

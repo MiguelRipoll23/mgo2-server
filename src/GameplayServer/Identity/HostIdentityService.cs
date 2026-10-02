@@ -22,8 +22,17 @@ public sealed class HostIdentityService(IOptions<ServerOptions> options)
     /// <summary>Character identifier narrowed to the single byte the record carries.</summary>
     public byte ProfileCharacterIdentifier => (byte)(PeerIdentifier & 0xff);
 
-    /// <summary>Account name this host announces in its player-profile record.</summary>
-    public string AccountName => options.Value.GameplayServerAccountName;
+    /// <summary>
+    /// Character name this host announces in its player-profile record.
+    /// </summary>
+    /// <remarks>
+    /// The record's name field is the <em>character</em> name, not the account
+    /// name the host logs in with: the capture shows the joining player's own
+    /// character name echoed back, and the two are separate values
+    /// (<see cref="ServerOptions.GameplayServerCharacterName"/> against
+    /// <see cref="ServerOptions.GameplayServerAccountName"/>).
+    /// </remarks>
+    public string CharacterName => options.Value.GameplayServerCharacterName;
 
     /// <summary>Clan name this host announces; empty when it runs without one.</summary>
     public string ClanName => options.Value.GameplayServerClanName ?? string.Empty;

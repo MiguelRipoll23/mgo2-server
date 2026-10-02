@@ -128,8 +128,8 @@ One datagram (any length `len`):
 [ 0 .. 2)         scrambled header — unscrambles to a LE u16 counter (§5.1)
 [ 2 .. 4)         message type (u16 LE) — `id (12 bits) | class (top nibble)` (§6.2);
                   0x1000 = handshake/one-shot, 0x1001 = reliable record, 0x5000 = keep-alive
-                  id 0, 0x5001 = keep-alive id 1; frames with the compression marker carry a
-                  raw LZSS stream from [2) instead of a message header (§6.2/§7)
+                  id 0, 0x5001 = id 1 in the same class; frames with the compression marker
+                  carry a raw LZSS stream from [2) instead of a header (§6.2/§7)
 [ 4 .. 5)         len (u8) — this message's body length
 [ 5 .. 6)         flags2 (u8) — per-message flags byte
 [ 6 .. 6+len)     message body — further messages (each with their own type/len/flags2/body)
@@ -505,11 +505,12 @@ header scramble (§5.1), recover `hdr`, compute
 plaintext-feedback chain over `[2 .. len-0xa)` (§5.2). No secret, no brute force.
 
 The heartbeat keeps the same class but changes id once the session is keyed: the
-state-6 keep-alive above is `0x5000` (id 0), and the keyed data-phase heartbeat a
-live joiner emits about once a second is `0x5001` (id 1) — same flags, different
-id, so a host must echo the id it received (§6.2). Nothing in the decoder answers
-either one: an id-0 body of 0..3 bytes is skipped outright (`0x267b84`) and there
-is no id-1 branch at all. **[V]**
+state-6 keep-alive above is `0x5000` (id 0), and `0x5001` is id 1 in that class.
+Nothing in the decoder answers either one: an id-0 body of 0..3 bytes is skipped
+outright (`0x267b84`) and there is no id-1 branch at all. **[V]** What `0x5001`
+itself carries is unresolved and is **not** answered — see §6.2's table and
+[`UDP_GAME_CAPTURE.md`](UDP_GAME_CAPTURE.md) §3, where a live capture shows it with
+a monotonic fourth byte rather than the shape of a heartbeat.
 
 ### 6.2 The data phase (state ≥ 8) — live captures [V]
 
@@ -558,6 +559,19 @@ not select a handler** — the receiver's per-id lookup (`0x2614f8`) compares
 `word & 0x7f00fff`, which drops bits 12-15 — so `0x5000` and `0x5001` are two
 distinct commands, not a value and its sequence number. **[V]**
 
+> **Correction, from a live dedicated-server game.** The layout above is the
+> **session-record** framing and it
+> is **not the only one on this wire**. A record whose identifier is **below `0x1000`** is
+> an in-game tick record and its `len` byte counts the **body plus the `flags2`/class byte**
+> — `len = data + 1`, exactly the framing `tools/mgo2_replay_parser.py` and §6.6 below
+> already walk. Reading a tick record the session way over-reads it by one byte and
+> desynchronises the rest of the content region. Measured over the 19 018
+> digest-verified frames of that game: session framing
+> throughout walks **291** frames to their last byte, tick framing throughout **17 423**,
+> and choosing by identifier **18 728**. See
+> [`UDP_GAME_CAPTURE.md`](UDP_GAME_CAPTURE.md) §2 and `UDP_COMMANDS.md`,
+> "Record framing". Implemented in `MessageCodecUtility.ReadBodyLength`.
+
 **Observed message types (post-decode):**
 
 - **`0x1001` — the data-phase record type.** Two shapes in the capture:
@@ -594,18 +608,19 @@ distinct commands, not a value and its sequence number. **[V]**
 |---|---|---|---|---|
 | — | `0x1000`, len `0x1c`, flags2 `0x00` | 0 | `0x1000` | handshake (§4) |
 | — | `0x5000`, len `0x00` | 0 | `0x5000` | keep-alive (§6.1) |
-| — | `0x5001`, len `0x00` | 1 | `0x5000` | data-phase keep-alive (2026-10-02 live; §6.1) |
+| — | `0x5001`, len `0x00` | 1 | `0x5000` | **[U]** unresolved; a live capture refutes the keep-alive reading (§6.1, and the capture §3) |
 | `0x8000` | `0x1001`, len `0x5a` (LZSS; 94-byte profile record) | 1 | `0x9000` | reliable game data — joiner's player profile (above) |
 | — | `0x1001`, len `0x01`, flags2 `0x01..0x05` | 1 | `0x1000` | ACK of the host's frame seq 1 (§6.3; flags2 = attempt) |
 
-**`0x5001` — the keyed data-phase keep-alive (2026-10-02, live).** Once the
-session is keyed the joiner emits an empty `0x5001` about once a second; before
-that the id is only ever 0. It is fire-and-forget on both sides: an id-0 message
-with a body of 0..3 bytes is skipped outright by the receiver (`0x267b84`,
-`ble 0x267b18`) — the empty keep-alive shape — and the transport decoder has no
-id-1 branch at all, so nothing there builds a reply to either keep-alive. A host
-that drops it is losing nothing; a host that mirrors it must echo **`0x5001`**,
-not `0x5000`, because the id is the command.
+**`0x5001` — [U], and not mirrored.** An earlier reading called this the keyed
+data-phase keep-alive and had the host echo it. A live capture refutes that: over
+all 541 records of the type in one round the identifier never varies, the fourth
+byte climbs monotonically to 194 on the joiner and 147 on the server without ever
+resetting, the body is always empty, and the *server* sends 60 of them as well as
+receiving them. A keep-alive has nothing to count and no one side to mirror from.
+It is registered as a recognised in-game control record and not answered; it is
+only *sent*, at the head of a roster run, because the live host sends it there.
+See [`UDP_GAME_CAPTURE.md`](UDP_GAME_CAPTURE.md) §3.
 
 **Shared counter confirmed live.** The joiner's hdrs over the run form one
 monotonic sequence `0x8002, 0x8003, 0x8004, 0x0005, 0x8006, 0x0007, 0x8008, 0x0009,
@@ -691,15 +706,15 @@ field one byte out shifts the name and the arithmetic stops adding up. **[V]**
 Body, little-endian:
 
 ```
-[0x00] u8        0x07 in every recorded record
+[0x00] u8        0x07 in every captured record
 [0x01] u8        character identifier
 [0x02] u16       zero
-[0x04] u8        0x32 + roster index
-[0x05] u8        6 + roster index
+[0x04] u8        0xe2 + roster index, or 0x00 for the host
+[0x05] u8        per-player value, repeated at 0x07
 [0x06] u8        zero
-[0x07] u8        6 + roster index, repeated
+[0x07] u8        the same per-player value as 0x05
 [0x08] u16       per-player value, differs for every player in the roster
-[0x0a] u8        team flag
+[0x0a] u8        unresolved: 0 on the host, 1 on every joining player
 [0x0b..0x42]     per-player block; see below
 [0x43] u8        0x03 when a clan name follows, 0x00 when none does
 [0x44] char[16]  character name, NUL-padded — ISO-8859-1, the encoding the TCP
@@ -710,19 +725,29 @@ Body, little-endian:
 
 Three things are worth stating because they are easy to get wrong:
 
-- **The host is not on the same count as the players.** Its own record is the
-  first of the twelve, at `0x52`, and it is the only one whose index is
-  negative: the field at offset 4 reads `0x31` and the field at offset 5 reads
-  `0x05`, where the first joining player's record reads `0x32` and `0x06`. The
-  host is not a joining player, so it sits at roster index **-1** and the
-  joining players fill 0, 1, 2 and so on in the order they arrive. Reading the
-  index as unsigned wraps the host to 255 and files it at the end of the room
-  instead of the start. **[V]**
-- **Offsets 4 and 5 share an index but not a base** (`0x32 + i` against
-  `6 + i`), so neither can be read off the other. **[V]**
+- **The host is not on the players' count at all.** It sits at roster index
+  **-1**, and it writes a plain `0x00` at offset 4 — not `0xe2 - 1`, which
+  would be `0xe1`. The joining players fill 0, 1, 2 and so on in the order they
+  arrive, written `0xe2`, `0xe3`, `0xe4`… So reading the index as
+  `field - 0xe2` puts the host at -226 and every other reading puts it
+  somewhere else; zero is the host. **[V]**
+- **Offsets 5 and 7 are a per-player value, not the index.** The same byte
+  appears at both, and across a live roster it runs `0x00`, `0x14`, `0x0f`,
+  `0x04`, `0x0b`, `0x06` for indices -1 to 4 — which follows no order. Its
+  meaning is **[U]** and the builder writes zero. **[V]** that it is not an
+  index, **[U]** as to what it is.
 - **The name is NUL-terminated; the clan name is not**, because the record ends
   there. Every record ends exactly on the last clan byte. **[V]**
 
+> **Superseded by the live capture.** This layout was first read off a recorded
+> replay (`tools/replays/replay_360827_5.dat`) and put offset 4 at
+> `0x32 + roster index` and offsets 5/7 at `6 + roster index`, with the host at
+> `0x31`/`0x05`. A live dedicated-server game
+> (`docs/mgo2-game.pcapng`, written up in [`UDP_GAME_CAPTURE.md`](UDP_GAME_CAPTURE.md)
+> §4) contradicts all three: `0xe2 + index`, a zero for the host, and
+> per-player values at 5/7. The replay reading is kept above only as the
+> history of where the error came from; **the live capture is the reference**
+> and the builder, the parser and the tests follow it. **[V]**
 The record a joining client opens the exchange with has the same shape but a
 different leading byte: the live capture in
 `docs/protocol/UDP_SERVER_LOG.txt` carries `0x02` where a roster record carries
@@ -813,7 +838,9 @@ runs of `0x1001` records, and neither is decoded. What is established is where
 they start, how many there are and what they look like. **[V]**
 
 - **`0x480`** — one seven-byte record, body `07 00 00 00 00 00 03`, closing
-  the roster run. **[V]**
+  the roster run. Seen on the live wire too, closing a two-entry roster
+  (`UDP_GAME_CAPTURE.md` §4), so it is not tied to a roster size; now
+  implemented as `PlayerProfileRecordUtility.BuildRosterClose()`. **[V]**
 - **`0x48b`** — a six-byte marker `<u32> <u16>`, `5b 00 00 00 78 00`. Fourteen
   more of these follow at `0x509`, `0x5c3`, `0x605`, `0x647`, `0x689`, `0x707`,
   `0x839`, `0x8b7`, `0x8f9`, `0x93b`, `0x97d`, `0x9bf`, `0xa01`, and `0xa7f`
@@ -950,7 +977,7 @@ waiting for. The host sends the roster alone. **[U]**
   output-size prefix `0x0814` = 2068" reading was wrong — those bytes are simply
   the first stream bytes, and a 43-byte stream could never expand to 2068 under
   this format.
-- **The join request is tagged `0x9001`, not `0x1001`** (2026-10-01, live).
+- **The join request is tagged `0x9001`, not `0x1001`** (live capture).
   A captured join carries `type=0x9001 len=0x95` holding the player record, and
   `0x1001` is the tag a roster answer uses. Registering only the roster tag is
   what left a join with no handler, and the handler had nothing to log because
@@ -958,7 +985,7 @@ waiting for. The host sends the roster alone. **[U]**
   carry: the join request's per-player block is longer, so its names sit at the
   end of the record rather than at `0x44`.
 - **The joiner's profile frame IS marked, and it is not a `0x1001` control
-  frame** (2026-10-01, live). The frame that carries the join request arrives
+  frame** (live capture). The frame that carries the join request arrives
   with hdr `0x8001` and decompresses to `type=0x1001 len=0x95`, holding the
   player record — the same §6.4 shape, with the leading `0x02` that marks it a
   request rather than a roster entry. An earlier reading here said handshake
@@ -967,7 +994,7 @@ waiting for. The host sends the roster alone. **[U]**
   builder prefers the literal form, and was wrongly generalised to the profile.
   So the runtime path that sets the `0x200` gate flag is the data phase after
   all, and the question this section left **[U]** is answered.
-- **The stream ends by exhaustion, not by the EOF marker** (2026-10-01, live).
+- **The stream ends by exhaustion, not by the EOF marker** (live capture).
   The marker-offset rule above is what the decoder implements, but a captured
   joiner frame runs out of input mid-token with no offset-0 ever written. A
   decoder that treats exhaustion as an error returns nothing for the frame and
@@ -1314,4 +1341,4 @@ landing on old captures or old notes.
 | 2026-09-09 | flags word read at `session+5` (u16) | flags word at `session+0x14` (§6/§7) |
 | 2026-09-10 | the 17-byte `0x1001 len 1` frames are control/window signaling with cyclic flags2 | they are **ACKs** of the host's frames — `flags2` is the send attempt, escalating while unacknowledged (§6.3) |
 | 2026-09-10 | "exact ACK wire format is the last transport-side unknown" | resolved: `type 0x1000 \| seq, len 1, flags2 = attempt, body [0]`, cumulative, no ack-of-ack (§6.3) |
-| 2026-10-02 | the wire type is one opaque u16 a handler table keys on | it is `id (12 bits) \| class-bits`, the class derived from the message flags (`flags&1`→`0x1000`, `flags&2`→`0x4000`, `flags&0x20`→`0x8000`, body > `0xff`→`0x2000`) and masked out of the per-id lookup — so `0x5000`/`0x5001` are two ids, not a sequence (§6.2) |
+| (pre-capture) | the wire type is one opaque u16 a handler table keys on | it is `id (12 bits) \| class-bits`, the class derived from the message flags (`flags&1`→`0x1000`, `flags&2`→`0x4000`, `flags&0x20`→`0x8000`, body > `0xff`→`0x2000`) and masked out of the per-id lookup — so `0x5000`/`0x5001` are two ids, not a sequence (§6.2) |

@@ -12,11 +12,11 @@ namespace Mgo2Server.Tests;
 /// first and every joining player after it in slot order.
 /// </summary>
 /// <remarks>
-/// The shape comes from the roster block a real host wrote into a recorded
-/// match (<c>tools/replays/replay_360827_5.dat</c>): twelve back-to-back
-/// <c>0x1001</c> records, the first at file offset <c>0x52</c> carrying the
-/// host's own profile at roster index -1, then one per joining player at 0, 1,
-/// 2 and so on.
+/// The shape comes from a real dedicated server's roster during a live game
+/// (<c>docs/mgo2-game.pcapng</c>, written up in
+/// <c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4): back-to-back records, the
+/// host's own entry first at roster index -1, then one per joining player at
+/// 0, 1, 2 and so on.
 /// </remarks>
 [Trait("Category", "Shared")]
 public sealed class RoomRosterTests
@@ -25,18 +25,18 @@ public sealed class RoomRosterTests
     private static readonly IPEndPoint Second = new(IPAddress.Loopback, 40002);
 
     /// <summary>Builds a roster over a host identity with known names.</summary>
-    /// <param name="accountName">Account name the host announces.</param>
+    /// <param name="characterName">Character name the host announces in its profile record.</param>
     /// <param name="clanName">Clan name the host announces; empty for none.</param>
-    private static RoomRosterService CreateRoster(string accountName = "host", string? clanName = "clan") =>
+    private static RoomRosterService CreateRoster(string characterName = "host", string? clanName = "clan") =>
         new(new HostIdentityService(Options.Create(new ServerOptions
         {
-            GameplayServerAccountName = accountName,
+            GameplayServerCharacterName = characterName,
             GameplayServerClanName = clanName,
         })));
 
     /// <summary>Builds a profile record as a joining client would send it.</summary>
     /// <param name="characterIdentifier">Character identifier of the player.</param>
-    /// <param name="name">Account name of the player.</param>
+    /// <param name="name">Character name of the player.</param>
     /// <param name="clanName">Clan name of the player; empty for none.</param>
     private static PlayerProfileRecord? JoinerProfile(byte characterIdentifier, string name, string clanName) =>
         PlayerProfileRecordUtility.Parse(

@@ -1,5 +1,6 @@
 using System.Net;
 using Mgo2Server.GameplayServer.Identity;
+using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 
@@ -15,8 +16,9 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// until the host answers. The answer is not one record but the room: the
 /// recorded host wrote its own entry first and then one entry per joining
 /// player, in roster order, back to back in the same message stream
-/// (<c>tools/replays/replay_360827_5.dat</c>, records at file offsets
-/// <c>0x52</c> to <c>0x484</c>). Until the client has seen that sequence it
+/// (<c>docs/mgo2-game.pcapng</c>; see
+/// <c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4). Until the client has seen
+/// that sequence it
 /// has no slot of its own and no way to place the players around it, which is
 /// why it keeps retrying.
 /// </para>
@@ -34,14 +36,34 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
     public const sbyte FirstJoinerRosterIndex = 0;
 
     /// <summary>
+    /// Type the host's own roster entry is sent under, which is not the type the
+    /// joining players' entries travel as.
+    /// </summary>
+    /// <remarks>
+    /// The recorded host opens its answer with its own entry under
+    /// <see cref="UdpCommandConstants.JoinRequest"/> and follows it with the
+    /// joining players under <see cref="UdpCommandConstants.PlayerProfile"/> —
+    /// the same tag the joiner itself opened the exchange with, which the host
+    /// then uses for its own record. Both roster frames of the live session do
+    /// this (docs/protocol/UDP_GAME_CAPTURE.md §4), so the head of the run is
+    /// not merely a <c>0x1001</c> record like the rest of it.
+    /// </remarks>
+    public const ushort HostEntryType = UdpCommandConstants.JoinRequest;
+
+    /// <summary>
     /// The value written at offset 8 of every record. It differs per player in
     /// every recorded room and its meaning is unresolved, so it is sent as zero
     /// rather than guessed at.
     /// </summary>
     private const ushort UnresolvedPerPlayerValue = 0;
 
-    /// <summary>Team flag; zero in every recorded record that carries no team.</summary>
-    private const byte TeamFlag = 0;
+    /// <summary>
+    /// Value written at offset 10 of every record this host sends. Its meaning
+    /// is unresolved: the captured roster carries <c>0</c> on the host and
+    /// <c>1</c> on each joining player, so zero is sent for everyone here until
+    /// what it means is known.
+    /// </summary>
+    private const byte FlagValue = 0;
 
     private readonly Lock gate = new();
     private readonly List<RosterMember> members = [];
@@ -119,12 +141,40 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
                 hostIdentity.ProfileCharacterIdentifier,
                 PlayerProfileRecordUtility.HostRosterIndex,
                 UnresolvedPerPlayerValue,
-                TeamFlag,
-                hostIdentity.AccountName,
+                FlagValue,
+                hostIdentity.CharacterName,
                 hostIdentity.ClanName),
         };
-        records.AddRange(ordered.Select(member => member.BuildRecord(UnresolvedPerPlayerValue, TeamFlag)));
+        records.AddRange(ordered.Select(member => member.BuildRecord(UnresolvedPerPlayerValue, FlagValue)));
         return records;
+    }
+
+    /// <summary>
+    /// Builds the whole roster run as it goes on the wire: the empty record the
+    /// recorded host opens with, its own entry under <see cref="HostEntryType"/>,
+    /// every joining player's entry under
+    /// <see cref="UdpCommandConstants.PlayerProfile"/>, and the record that closes
+    /// the run last.
+    /// </summary>
+    /// <returns>
+    /// The records in the order they are sent, each with the type it travels as.
+    /// </returns>
+    public List<RosterRecord> BuildRosterRun()
+    {
+        var entries = BuildRecords();
+        var run = new List<RosterRecord>(entries.Count + 2)
+        {
+            new(UdpCommandConstants.RosterHead, []),
+            new(HostEntryType, entries[0]),
+        };
+
+        for (var index = 1; index < entries.Count; index++)
+        {
+            run.Add(new(UdpCommandConstants.PlayerProfile, entries[index]));
+        }
+
+        run.Add(new(UdpCommandConstants.PlayerProfile, PlayerProfileRecordUtility.BuildRosterClose()));
+        return run;
     }
 
     private sbyte NextFreeIndex()
@@ -143,6 +193,11 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
     }
 }
 
+/// <summary>One record of the roster run, with the type it travels as.</summary>
+/// <param name="Type">Message type the record is sent under.</param>
+/// <param name="Body">Record body.</param>
+public sealed record RosterRecord(ushort Type, byte[] Body);
+
 /// <summary>One joining player on the room roster.</summary>
 /// <param name="RemoteAddress">Endpoint the player is reached at, formatted as "address:port".</param>
 /// <param name="RosterIndex">Slot the player fills, counted from zero.</param>
@@ -151,7 +206,7 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
     /// <summary>Character identifier the player announced.</summary>
     public byte CharacterIdentifier { get; set; }
 
-    /// <summary>Account name the player announced.</summary>
+    /// <summary>Character name the player announced.</summary>
     public string Name { get; set; } = string.Empty;
 
     /// <summary>Clan name the player announced; empty when it announced none.</summary>
@@ -159,14 +214,14 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
 
     /// <summary>Builds the player-profile record that puts this player on a peer's roster.</summary>
     /// <param name="perPlayerValue">Value written at offset 8, whose meaning is unresolved.</param>
-    /// <param name="teamFlag">Team flag written at offset 10.</param>
+    /// <param name="flagValue">Value written at offset 10, whose meaning is unresolved.</param>
     /// <returns>The record body.</returns>
-    public byte[] BuildRecord(ushort perPlayerValue, byte teamFlag) =>
+    public byte[] BuildRecord(ushort perPlayerValue, byte flagValue) =>
         PlayerProfileRecordUtility.Build(
             CharacterIdentifier,
             RosterIndex,
             perPlayerValue,
-            teamFlag,
+            flagValue,
             Name,
             ClanName);
 }

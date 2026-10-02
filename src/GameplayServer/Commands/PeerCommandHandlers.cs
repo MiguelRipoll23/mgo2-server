@@ -98,25 +98,60 @@ public sealed class AcceptHandshakeHandler(
     }
 }
 
-/// <summary>
-/// Mirrors a peer's keep-alive straight back. The type is echoed rather than
-/// forced to the handshake keep-alive, because the joiner sends its data-phase
-/// heartbeat in the same class under a different id (<c>0x5001</c>) and an
-/// answer tagged <c>0x5000</c> would not be the message it sent.
-/// </summary>
+/// <summary>Mirrors a peer's keep-alive straight back.</summary>
 public sealed class AcknowledgeKeepAliveHandler : IPeerCommandHandler
 {
     /// <inheritdoc />
     public Task HandleAsync(PeerContext context) =>
-        context.Send(context.Message.Type, context.Message.Body);
+        context.Send(UdpCommandConstants.KeepAlive, context.Message.Body);
+}
+
+/// <summary>
+/// Recognises the in-game control records a running game exchanges, and does
+/// nothing else with them.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A live session is mostly two record types nobody has decoded: a zero-length
+/// one the client sends in volume with a fourth byte that climbs monotonically,
+/// and a one-byte one whose body is a small counter. Both are normal traffic,
+/// not surprises, so they are handled here rather than falling through to the
+/// "no handler for peer message type" warning — which, at the several hundred
+/// of them a round contains, buries the warnings that matter.
+/// </para>
+/// <para>
+/// Neither is answered. What either one *means* is unresolved
+/// (docs/protocol/UDP_GAME_CAPTURE.md §3), and answering a record this server
+/// cannot read is how <c>0x43CA</c>/<c>0x43CB</c> and <c>0x4442</c> went wrong in
+/// this project. They are logged at debug level so a session can be watched
+/// without turning the log into the traffic itself.
+/// </para>
+/// </remarks>
+public sealed class InGameControlHandler(ILogger<InGameControlHandler> logger) : IPeerCommandHandler
+{
+    /// <inheritdoc />
+    public Task HandleAsync(PeerContext context)
+    {
+        logger.LogDebug(
+            "UDP {LocalPort}: in-game control {MessageType:x4} of {BodyLength} bytes from {RemoteAddress} " +
+            "(fourth byte {Flags}); not answered, its meaning is unresolved",
+            context.LocalPort,
+            context.Message.Type,
+            context.Message.Body.Length,
+            context.Remote,
+            context.Message.Flags);
+
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>
 /// Handles a player-profile record. The joiner sends its own profile once the
 /// session is keyed and then re-sends it, byte for byte, until the host answers;
 /// this handler answers with the whole room roster, the host's own entry first
-/// and every joining player after it in slot order, and tells the peers already
-/// in the room that the roster grew.
+/// under the join tag and every joining player after it in slot order under the
+/// roster tag, closes the run with the record that ends a roster, and tells the
+/// peers already in the room that the roster grew.
 /// </summary>
 /// <remarks>
 /// The type is shared. A joining client also sends one-byte <c>0x1001</c>
@@ -156,13 +191,40 @@ public sealed class PlayerProfileHandler(
             profile.Name,
             member.RosterIndex);
 
+        // The run is built once and sent twice, so the joiner and the room are
+        // told the same roster and the same end to it. Each record carries the
+        // type the recorded host sent it under: the host's own entry under the
+        // join tag, the joining players and the close under the roster tag.
+        var run = roster.BuildRosterRun();
+
+        // The host's own entry going out under 0x9001 is the odd one, and it is
+        // logged at information level because nothing else about it explains
+        // itself. 0x9001 is the tag a *joiner* opens the exchange with, and the
+        // recorded dedicated server answers with its own roster entry under the
+        // same tag, ahead of the 0x1001 records that carry everyone else
+        // (docs/protocol/UDP_GAME_CAPTURE.md §4, both roster frames). The game
+        // appears to be reusing one tag for both ends of the exchange rather
+        // than the two types the name suggests, so this is worth seeing in a
+        // log rather than discovering from a client that ignores the roster.
+        foreach (var record in run.Where(record => record.Type == RoomRosterService.HostEntryType))
+        {
+            logger.LogInformation(
+                "UDP {LocalPort}: sending this host's own roster entry to {RemoteAddress} under " +
+                "0x{MsgType:x4}, the tag a joiner opens the exchange with; the rest of the roster " +
+                "travels as 0x{RosterType:x4}",
+                context.LocalPort,
+                context.Remote,
+                record.Type,
+                UdpCommandConstants.PlayerProfile);
+        }
+
         // Answering a repeat is deliberate: the joiner re-sends its profile
         // until it sees the roster, so a reply to a repeat is what breaks the
         // exchange, not a bug. Re-registering is idempotent, so the repeated
         // profile keeps the slot it was first given.
-        foreach (var record in roster.BuildRecords())
+        foreach (var record in run)
         {
-            await context.Send(UdpCommandConstants.PlayerProfile, record);
+            await context.Send(record.Type, record.Body);
         }
 
         // The peers already in the room are told as well. A player who is only
@@ -170,9 +232,9 @@ public sealed class PlayerProfileHandler(
         // that were there first, and they would go on playing without knowing
         // the room has grown. The roster is small enough to send whole, which is
         // also what the recorded host wrote: one flat roster, not a delta.
-        foreach (var record in roster.BuildRecords())
+        foreach (var record in run)
         {
-            await context.Broadcast(UdpCommandConstants.PlayerProfile, record);
+            await context.Broadcast(record.Type, record.Body);
         }
     }
 }
