@@ -775,8 +775,7 @@ and widens the per-player set to **eleven** columns: the eight above plus
 constant and forty-four zeros, on the wider evidence. **[V]**
 
 So the builder reproduces every byte of all twelve in-repo records apart from
-the eight per-player columns it cannot supply, and
-`tests/Mgo2Server.Tests/PlayerProfileRecordTests.cs` asserts exactly that. The
+the eight per-player columns it cannot supply. The
 value at `0x08` differs for every player and stays unresolved; the builder
 writes `0`.
 

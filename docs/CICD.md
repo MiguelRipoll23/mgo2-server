@@ -214,24 +214,16 @@ nobody is checking.
 ## Tests are partitioned by trait, not by project
 
 The suite is a single project, `tests/Mgo2Server.Tests`, in a single namespace,
-referencing six projects. Splitting it per service would be the cleaner
-boundary long-term, but it is a large move; what the pipelines actually need is
-a way to run *one service's* tests, and that is what the service trait gives
-them.
+referencing six projects. It is **the protocol codecs and nothing else**: the
+frame cipher and its tail digest, the TCP packet codec, the record framing and
+the handshake body. Payloads, handlers and domain services are not tested —
+their byte offsets and behaviour are written down in `docs/protocol/` instead,
+and the codecs are what a wrong implementation breaks in a way nothing else
+catches.
 
-Every test class carries `[Trait("Category", "<Service>")]` for the service that
-owns the code it exercises. Each pipeline runs its own category **plus
-`Shared`**, because shared code is a dependency of every service and a failure
-there is genuinely everyone's.
-
-The mapping is by layer, which is why a few assignments look surprising:
-
-- `LobbyCoordinationConnectionTests` is `GameLobby` — it drives the lobby side
-  of the gRPC link, though it also touches `Http.Coordination`.
-- `ServerMetricsServiceTests`, `PersistenceModelTests` and the protocol codec
-  tests are `Shared` — they exercise code every service is built from.
-- The gate and the gameplay server have no tests of their own, so their
-  pipelines run the shared half of the suite and nothing else.
+Every test class carries `[Trait("Category", "Shared")]`, and each pipeline runs
+its own category **plus `Shared`**, so the gate, the gameplay server and the
+game lobby all run the same tests.
 
 **Still shared: compilation.** The test project references every service it
 tests, so a *compile* error in one service stops every pipeline's build. What

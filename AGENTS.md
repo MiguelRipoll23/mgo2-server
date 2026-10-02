@@ -11,17 +11,16 @@
 
 ## Tests
 
-* Test behaviour that a wrong implementation would get wrong, not code that is merely
-  present. Do not add a test for simple, self-evident logic — a builder returning what it
-  was handed, a constant holding its own value, a property forwarding to another property.
-* Prefer one test per behaviour, asserting the outcome, over several tests each re-deriving
-  the same fact from a different angle. If a second test would only restate the first in
-  other words, it is not worth keeping.
-* Assertions should pin behaviour rather than incidental structure. Naming a record by its
-  meaning (`the roster close`) rather than by its position survives a record being inserted
-  in front of it; `sent[^1]` does not.
-* When a change alters behaviour already covered, update those tests instead of adding new
-  ones alongside them.
+* **Test the protocol crypto, encoding and decoding. Nothing else.**
+* The codecs are the whole of the suite: the peer-to-peer frame cipher and its tail digest,
+  the TCP packet codec, the record framing, and the handshake body — each tested for the
+  round trip and for the malformed input it has to refuse.
+* Do not add a test for a payload, a handler, a builder's output or a property. Those change
+  as the protocol is read further, and each one's byte offsets live in `docs/protocol/`,
+  which is where a reader should look.
+* Do not test text utilities, chat payloads, or persistence mappings.
+* Prefer one test per behaviour over several that re-derive the same fact in other words.
+* When a change alters the codecs, update those tests; do not add new ones alongside them.
 
 ## Schema
 
@@ -41,7 +40,8 @@
   route: `CharacterActiveFlag` is the case, because PostgreSQL will not cast an integer
   column to boolean without a `USING` clause that Entity Framework has no way to write.
   Both are visible in the file rather than hidden at runtime, and the model still owns the
-  change — the snapshot comes from it and `PersistenceModelTests` fails if the two part ways.
+  change — the snapshot comes from it, and reviewing the model against the snapshot is a
+  check on the change rather than an automated one.
 * A migration that has been committed and applied is never edited: an applied database takes
   the statement once, so an edit reaches only the databases that have not run it. Correct a
   migration by adding the next one, however small the correction.
@@ -50,8 +50,9 @@
   `dotnet ef database update`.
 * Run `dotnet tool restore` once per clone, then `dotnet ef migrations add <Name>` from the
   repository root.
-* `PersistenceModelTests` fails when the model carries a change no migration captures, so a
-  forgotten migration cannot reach a deployment.
+* A forgotten migration must not reach a deployment: check the model against the migrations
+  before shipping one. This is not covered by an automated test — the suite is the codecs
+  alone — so it is a review step, and it belongs in the description of the change.
 * A database that predates the migrations holds the schema with no migration history, so it
   has to be recreated rather than migrated.
 * Files the migrations tool generates — the migrations and the model snapshot — are exempt
@@ -68,9 +69,9 @@ carrying the prose that explains the change, because it has no model to generate
   stays wrong and the fix is always the next migration. We have the same constraint with none of
   the enforcement: an edited migration only lands on databases that have not run it yet.
 * Its schema is only ever as trustworthy as the last person's SQL; ours is checked against the
-  model by `PersistenceModelTests`, which is why the statement has to come from the tool. A
+  model when the migration is written, which is why the statement has to come from the tool. A
   hand-written migration here would be a schema with nothing comparing the two.
 * Its convention from `V52` forward is worth copying: **no wire offsets in a migration.** A
   column comment says what the data *means*; the packet's layout lives in the payload builder
-  and its test, or the parsing document. Offsets in both drift apart, and the schema is the wrong
+  or the parsing document. Offsets in both drift apart, and the schema is the wrong
   place to look for a wire layout anyway.

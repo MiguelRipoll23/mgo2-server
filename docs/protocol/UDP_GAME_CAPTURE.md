@@ -349,9 +349,8 @@ because it is no longer an index. The per-player block also carries **three** no
 constants — `0x02` at `0x12` and `0x16` at both `0x18` and `0x1e` — against the replay's
 one, and the builder writes all three.
 
-The test vectors are the six captured records verbatim, with same-length placeholder names,
-and `PlayerProfileRecordTests` is rewritten against them. The replay-derived vectors and
-their assertions are gone: the live capture is the reference.
+The builder is written against the six captured records verbatim, with same-length placeholder
+names. The replay-derived vectors are gone: the live capture is the reference.
 
 Two things here are worth stating because they correct the docs. The roster close
 `07 00 00 00 00 00 03` was previously known only from a replay (§6.6) and is here on the
@@ -466,8 +465,8 @@ damage (`186`, `58`, `153`, `220`) but never reach zero, so they are **[U]** and
 claimed as vitals.
 
 **Implemented** as `PlayerVitals` (the values, the 250 ceiling and `IsDead`) and
-`PlayerVitalsRecordUtility` (the record), pinned by `PlayerVitalsRecordTests` against the
-bodies above. `PlayerVitalsHandler` dispatches `0x0080` and `0x0880` and logs each record at
+`PlayerVitalsRecordUtility` (the record), written against the bodies above.
+`PlayerVitalsHandler` dispatches `0x0080` and `0x0880` and logs each record at
 debug, with a death or a revive logged again at information; nothing is answered.
 
 ### The 3D position, and the bit that says a character is dead [V]
@@ -538,8 +537,8 @@ column is not the team.
 
 **Implemented** as `PlayerPosition` (the three coordinates and the ten-unit
 scale) and `PlayerPositionRecordUtility` (the record, the death bit and the
-per-length offsets), pinned by `PlayerPositionRecordTests` against the captured
-bodies. The 44-byte form is declined rather than guessed at.
+per-length offsets), written against the captured bodies. The 44-byte form is
+declined rather than guessed at.
 
 `PlayerPositionHandler` dispatches the six position identifiers the capture
 carried — `0x0081`, `0x0881`, `0x00b3`, `0x08b3`, `0x006d`, `0x00db` — and logs

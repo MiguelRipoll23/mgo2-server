@@ -10,7 +10,7 @@ repository's Entity Framework model and migrations and from the reference's Flyw
 | Source | `src/Shared/Persistence/{Entities,Configurations,Migrations}` | `src/main/resources/db/migration` |
 | Tables | **32** | **34** |
 | Columns | **390** | **404** |
-| Guard | `PersistenceModelTests` — model vs snapshot, plus an explicit table list | Flyway checksums; there is no model to compare the SQL against |
+| Guard | none automated — the model is compared with the snapshot when a migration is written | Flyway checksums; there is no model to compare the SQL against |
 
 Both schemas descend from the same original storage layout — this repository's
 `Mgo2DatabaseContext` says the names are "pinned to the original schema", and the reference's
@@ -260,8 +260,8 @@ Worth one note, since it shapes how the two schemas can be corrected.
 
 The reference's migrations are hand-written and carry their reasoning in the file — `V59` is
 twelve lines of comment to three of SQL, and explains why experience moved off the account
-before dropping the pool. Ours are generated from the model, and `PersistenceModelTests` fails
-if the model carries a change no migration captures, so a forgotten migration cannot deploy.
+before dropping the pool. Ours are generated from the model, and the model is compared with
+the snapshot when the migration is written, so a forgotten migration should not deploy.
 The cost of that guard is that a change to the *meaning* of a column has nowhere to be written
 down: `V73`'s five wrong bits and `V68`'s renamed table have no equivalent artefact here.
 
