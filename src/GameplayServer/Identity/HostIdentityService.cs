@@ -19,9 +19,6 @@ public sealed class HostIdentityService(IOptions<ServerOptions> options)
     /// <summary>Counter base this host announces.</summary>
     public uint CounterBase => UdpHostIdentityConstants.HostCounterBase;
 
-    /// <summary>Character identifier narrowed to the single byte the record carries.</summary>
-    public byte ProfileCharacterIdentifier => (byte)(PeerIdentifier & 0xff);
-
     /// <summary>
     /// Character name this host announces in its player-profile record.
     /// </summary>

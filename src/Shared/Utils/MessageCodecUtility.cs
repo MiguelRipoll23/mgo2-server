@@ -86,6 +86,14 @@ public static class MessageCodecUtility
         type < UdpCommandConstants.TickRecordThreshold ? lengthByte - 1 : lengthByte;
 
     /// <summary>Serializes messages into a content region payload.</summary>
+    /// <remarks>
+    /// The length byte follows the framing the identifier selects, the same way
+    /// <see cref="ReadBodyLength"/> reads it: a tick record counts its
+    /// attribute class as well as its body. Writing the body length for both
+    /// would put a tick record's body one byte short of where its reader
+    /// expects it, which is the mirror image of the defect §2 of
+    /// <c>UDP_GAME_CAPTURE.md</c> describes on the reading side.
+    /// </remarks>
     /// <param name="messages">Messages to serialize.</param>
     public static byte[] SerializeMessages(IReadOnlyList<UdpMessage> messages)
     {
@@ -101,7 +109,7 @@ public static class MessageCodecUtility
         {
             output[offset] = (byte)(message.Type & 0xff);
             output[offset + 1] = (byte)((message.Type >> 8) & 0xff);
-            output[offset + 2] = (byte)message.Body.Length;
+            output[offset + 2] = WriteBodyLength(message.Type, message.Body.Length);
             output[offset + 3] = message.Flags;
             message.Body.CopyTo(output, offset + UdpCommandConstants.MessageHeaderSize);
             offset += UdpCommandConstants.MessageHeaderSize + message.Body.Length;
@@ -109,6 +117,17 @@ public static class MessageCodecUtility
 
         return output;
     }
+
+    /// <summary>
+    /// Writes a record's length byte under the framing its identifier selects:
+    /// the body alone for a session record, the body plus the attribute class for
+    /// a tick record.
+    /// </summary>
+    /// <param name="type">Record identifier.</param>
+    /// <param name="bodyLength">Length of the record's body.</param>
+    /// <returns>The value the length byte carries.</returns>
+    public static byte WriteBodyLength(ushort type, int bodyLength) =>
+        type < UdpCommandConstants.TickRecordThreshold ? (byte)(bodyLength + 1) : (byte)bodyLength;
 
     /// <summary>
     /// Builds the packet-log bytes for a frame: the header word followed by the

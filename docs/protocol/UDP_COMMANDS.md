@@ -194,23 +194,30 @@ Four shapes share the type. Counts are per replay; they are identical in all fiv
 
 **Guess: one player's room entry — name and clan.** **[V]**
 
-Body layout (§6.4), little-endian: byte `0x00 = 0x07`, character id, `0x04 = 0xe2 + roster
-index` (or a plain `0x00` for the host), the same per-player value at `0x05` and `0x07`, a
-per-player value at `0x08`, an unresolved value at `0x0a` (`0` on the host, `1` on every
-joiner — **not** a team flag), a per-player block, then `0x43 = 0x03` when
+Body layout (§6.4), little-endian: byte `0x00 = 0x07`, the record **sub-type** at `0x01`, `0x04 = 0xe2 + roster
+index` (or a plain `0x00` for the host), the same per-player value at `0x05` and `0x07`, the
+**character id** as a u32 at `0x08`, a per-player block carrying the character's **appearance** at
+`0x13`–`0x1e`, then `0x43 = 0x03` when
 a clan follows, a 16-byte NUL-padded ISO-8859-1 **name**, and a **non-terminated** clan name
 to end of record. The host's own entry is first and sits at roster index `-1`, which it
 writes as `0x00` rather than as `0xe2 - 1`; joining players fill `0`, `1`, `2`, … and are
-written `0xe2`, `0xe3`, `0xe4`… The per-player block, the `0x05`/`0x07` value and the `0x08`
-value are unresolved (`[U]`); the builder writes zeros there and a test asserts it.
-
-**Corrected from a live dedicated-server game** (`UDP_GAME_CAPTURE.md` §4). The layout was
+written `0xe2`, `0xe3`, `0xe4`… The `0x05`/`0x07` value and the rest of the per-player block
+are unresolved (`[U]`); the builder writes zeros there and a test asserts it. **There is no
+field at `0x0a`**: it was read as an unresolved flag (`0` on the host, `1` on every joiner) and
+it is the high byte of the character id at `0x08`.**Corrected from a live dedicated-server game** (`UDP_GAME_CAPTURE.md` §4). The layout was
 first read off a recorded replay, which put the index at `0x04` as `0x32 + index` and treated
 `0x05`/`0x07` as the same index under a second base. Six roster records in the live session
 — the host and five joining players at indices `-1` and `0` to `4` — show `0xe2 + index` at
-`0x04`, a **zero** rather than `0xe1` for the host, and per-player values at `0x05`/`0x07`
-that do not follow roster order. The live capture is the reference; the replay reading is
+`0x04`, a **zero** rather than `0xe1` for the host, and per-player values at `0x05`/`0x07` that do not follow roster order. The live capture is the reference; the replay reading is
 superseded.
+
+**Also corrected from the same capture**: `0x08` is a **u32 character id**, not a u16 value of
+unresolved meaning, and the byte at `0x0a` is its high byte rather than a flag. Every one of
+the fifteen player entries in the capture carries the same id at `0x08` for the same character,
+including the entries a rejoin wrote at a different roster index under a different handle, and
+the local player's id there matches the one the TCP character record of the same session
+carries. `0x13`–`0x1e` is the character's **appearance** block — twelve bytes, byte-identical
+across every entry of one character. Both are **[V]** and both are now parsed and written.
 
 ### Roster close — 1 per roster run, body 7 bytes [V] — **implemented**
 
@@ -273,6 +280,13 @@ verbatim is not established. Class meanings are from `tools/mgo2_replay_parser.p
 | `0x06` | ? | 1–2 bytes | unknown | [U] |
 | `0x07` | ? | — | observed in the replays but not labelled by the parser | [U] |
 | `0x08` | rare event | 13 bytes | rare match event | [I] |
+
+**The live capture confirms this record rather than the replay.** `id 0x0080` (and
+`0x0880` for a second player) carries the same two bytes under attribute class `3`, 3 269
+times in one round in seven distinct bodies: `fa fa` 2 893 times, `00 fa` 316 times, and the
+ladder `46 7f c2 a0 0e` in between. Health is 250 when untouched and 0 when dead, with three
+deaths and three restores over the round, and stamina read 250 in every record. See
+`UDP_GAME_CAPTURE.md` §5 and `PlayerVitalsRecordUtility`. **[V]**
 
 The **attacker is never on the wire**: the vitals record names the victim only, and no field
 co-varies with an HP drop, so a candidate attacker is inferred from an `0x01 len 10` aim/fire

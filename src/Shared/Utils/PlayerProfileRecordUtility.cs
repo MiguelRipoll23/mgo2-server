@@ -3,18 +3,19 @@ using System.Text;
 namespace Mgo2Server.Shared.Utils;
 
 /// <summary>
-/// Builds and parses the <c>0x1001</c> player-profile record that both ends of
-/// the peer-to-peer channel exchange once a session reaches the data phase.
+/// Builds the <c>0x1001</c> player-profile record that both ends of the
+/// peer-to-peer channel exchange once a session reaches the data phase.
+/// Reading one back is <see cref="PlayerProfileRecordParseUtils.Parse"/>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The layout is read off the <c>0x1001</c> and <c>0x9001</c> records a real
 /// dedicated server wrote during a live game (<c>docs/mgo2-game.pcapng</c>).
-/// That capture holds six roster records — the host and five joining players,
-/// at roster indices <c>-1</c> and <c>0</c> to <c>4</c> — and all six parse to
-/// exactly their declared length with this reader, which is what pins the field
-/// offsets: a wrong offset shifts the name and the record no longer adds up.
-/// An earlier reading came from a recorded replay and put the index at
+/// That capture holds six roster records — the room record and five player
+/// entries, at roster indices <c>-1</c> and <c>0</c> to <c>4</c> — and all six
+/// parse to exactly their declared length with the reader, which is what pins
+/// the field offsets: a wrong offset shifts the name and the record no longer
+/// adds up. An earlier reading came from a recorded replay and put the index at
 /// <c>0x32 + index</c> with offsets <c>0x05</c>/<c>0x07</c> as the same index
 /// under a second base; the live capture supersedes it on both counts, and
 /// <c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4 sets out the differences.
@@ -22,27 +23,58 @@ namespace Mgo2Server.Shared.Utils;
 /// <para>Body, little-endian throughout:</para>
 /// <code>
 /// [0x00] u8   record version, 0x07 in every captured record
-/// [0x01] u8   character identifier
+/// [0x01] u8   record sub-type: PlayerEntrySubType on a player's entry,
+///              RoomRecordSubType on the room's own record
 /// [0x02] u16  zero
 /// [0x04] u8   0xe2 + roster index, or zero for the host
 /// [0x05] u8   per-player value, repeated at 0x07
 /// [0x06] u8   zero
 /// [0x07] u8   the same per-player value as 0x05
-/// [0x08] u16  per-player value that varies across the roster
-/// [0x0a] u8   unresolved: 0 on the host, 1 on every joining player
-/// [0x0b..0x42]     per-player block; 0x02 at 0x12 and 0x16 at 0x18 and 0x1e,
-///                  zero elsewhere but for the columns that differ per player
+/// [0x08] u32  character id; its high byte is what offset 0x0a used to be
+///              read as, which is why that column is not a field of its own
+/// [0x0c] u8   unresolved: 0x01 0x02 on the room record, zero on a player's
+/// [0x0d] u8   unresolved, and it moves with 0x0c
+/// [0x10] u8   two values across the captured roster and nothing else varies
+///              with it; **[I]** the team, which the capture cannot confirm
+/// [0x11] u8   zero
+/// [0x12] u8   BlockConstant, 0x02 in every captured record
+/// [0x13..0x1e]    the character's appearance block, AppearanceLength bytes
+/// [0x1f..0x42]    zero in every captured record
 /// [0x43] u8        0x03 when a clan name follows, 0x00 when none does
 /// [0x44] char[]  NUL-terminated character name
 ///          char[]  clan name, running to the end of the record
 /// </code>
 /// <para>
-/// The name is NUL-terminated; the clan name is not, because the record ends
-/// there. Both are bounded, so a longer name is truncated rather than allowed
-/// to overrun the frame. A joining client opens the exchange with a record of
-/// the same shape but a different leading byte — <c>0x02</c> where a roster
-/// record carries <see cref="RecordVersion"/> — so <see cref="Parse"/> reports
-/// that byte rather than rejecting the body.
+/// <b>Offset <c>0x08</c> is the character id.</b> An earlier reading called it
+/// a per-player value of unresolved meaning and read it as a u16. It is a
+/// u32, and every one of the fifteen player entries in the capture carries
+/// the same value at it for the same character across every rejoin — the
+/// capture holds fifteen player entries and one value per character, all of them
+/// in the <c>0x0001xxxx</c> range. The local player's id is the same number in
+/// this roster and in the TCP character record of the same session, which is the
+/// cross-check that names the field rather than merely numbering it. The values
+/// are redacted here as elsewhere; the test vectors carry stand-ins.
+///
+/// <para>
+/// The byte at <c>0x0a</c> is <b>not</b> a field of its own. It was read as one
+/// — "zero on the host, one on every joining player", which is not enough to
+/// name — and it is the third byte of the id: every captured character id is in
+/// the <c>0x0001xxxx</c> range, so that byte reads <c>0x01</c> on all of them,
+/// and the room record's id, <c>0x0000a001</c>, has <c>0x00</c> there. What the
+/// room record's own value at the id is, given it is not this host's character
+/// id, is **[U]**.</para>
+/// </para>
+/// <para>
+/// <b>The block at <c>0x13</c>–<c>0x1e</c> is the character's appearance.</b>
+/// It is twelve bytes, and it is byte-identical across every entry of the same
+/// character, including the entries that a rejoin wrote at a different roster
+/// index with a different handle — so it is the character and not the
+/// occurrence. Inside it, <c>0x13</c>–<c>0x16</c> are four bytes unique to the
+/// character, the byte pair at <c>0x17</c>/<c>0x18</c> and the one at
+/// <c>0x1d</c>/<c>0x1e</c> are the same in both halves of every record and
+/// differ only between a player entry and the room record, and the four bytes
+/// between them are per character. Nothing here decoded further, so the block
+/// is carried verbatim rather than interpreted.
 /// </para>
 /// <para>
 /// Two offsets are easy to misread. The host sits at roster index
@@ -64,6 +96,20 @@ public static class PlayerProfileRecordUtility
 {
     /// <summary>Record version byte every recorded roster entry carries.</summary>
     public const byte RecordVersion = 0x07;
+
+    /// <summary>
+    /// Sub-type byte on a player's roster entry. The captured entries carry
+    /// this byte and, for one character, <c>0x47</c> — one bit apart — so the
+    /// two are the same sub-type and what the bit selects is **[U]**.
+    /// </summary>
+    public const byte PlayerEntrySubType = 0x48;
+
+    /// <summary>
+    /// Sub-type byte on the room's own record, which the host sends as the head
+    /// of the roster run. It is a different record from a player's entry: it
+    /// carries no roster index, no clan, and the room's own name.
+    /// </summary>
+    public const byte RoomRecordSubType = 0x4c;
 
     /// <summary>
     /// Leading byte a joining client puts on the record it opens the exchange
@@ -89,14 +135,14 @@ public static class PlayerProfileRecordUtility
     /// from the live capture: the joining players' records carry 0xe2, 0xe3,
     /// 0xe4, 0xe5 and 0xe6 at roster indices 0 to 4.
     /// </summary>
-    private const byte RosterIndexBase = 0xe2;
+    internal const byte RosterIndexBase = 0xe2;
 
     /// <summary>
     /// What the host writes at offset 4, which is not
     /// <c><see cref="RosterIndexBase"/> - 1</c>: the captured host record
     /// carries a plain zero and the players are on their own scale.
     /// </summary>
-    private const byte HostRosterField = 0x00;
+    internal const byte HostRosterField = 0x00;
 
     /// <summary>
     /// Value written at offsets 5 and 7 — a per-player value of unresolved
@@ -113,10 +159,9 @@ public static class PlayerProfileRecordUtility
     private const byte ClanNameMarker = 0x03;
 
     /// <summary>
-    /// The byte at <see cref="BlockConstantOffset"/>. It and the two
-    /// <see cref="BlockMarker"/> columns are the only constants in the block
-    /// that are not zero across the six captured records; the thirteen columns
-    /// carrying anything else vary per player, and the rest are zero throughout.
+    /// The byte at <see cref="BlockConstantOffset"/>. It is the same in all six
+    /// captured records and is the only non-zero constant in the part of the
+    /// block before the name marker that every record agrees on.
     /// </summary>
     private const byte BlockConstant = 0x02;
 
@@ -124,16 +169,38 @@ public static class PlayerProfileRecordUtility
     private const int BlockConstantOffset = 0x12;
 
     /// <summary>
-    /// The other two columns of the block that are the same byte in all six
-    /// captured records without being zero.
+    /// Marker opening the second and third halves of the appearance block. It
+    /// is 0x62 on every player entry and 0x63 on the room record, so it says
+    /// which kind of record this is and nothing more.
     /// </summary>
-    private const byte BlockMarker = 0x16;
+    private const byte PlayerBlockMarker = 0x62;
 
-    /// <summary>First offset of <see cref="BlockMarker"/>.</summary>
-    private const int FirstBlockMarkerOffset = 0x18;
+    /// <summary>Value <see cref="PlayerBlockMarker"/> takes on the room record.</summary>
+    private const byte RoomBlockMarker = 0x63;
 
-    /// <summary>Second offset of <see cref="BlockMarker"/>.</summary>
-    private const int SecondBlockMarkerOffset = 0x1e;
+    /// <summary>
+    /// Byte closing each half of the appearance block. It is 0x16 in all six
+    /// captured records whatever the marker before it is.
+    /// </summary>
+    private const byte BlockTrailer = 0x16;
+
+    /// <summary>
+    /// Offsets of the three constants inside the appearance block: the marker
+    /// and the trailer of each of its two halves.
+    /// </summary>
+    private static ReadOnlySpan<int> BlockMarkerOffsets => [0x17, 0x1d];
+
+    /// <summary>Offsets of the two block trailers.</summary>
+    private static ReadOnlySpan<int> BlockTrailerOffsets => [0x18, 0x1e];
+
+    /// <summary>First offset of the character's appearance block.</summary>
+    public const int AppearanceOffset = 0x13;
+
+    /// <summary>Length of the character's appearance block.</summary>
+    public const int AppearanceLength = 0x1e - AppearanceOffset + 1;
+
+    /// <summary>Offset of the character id.</summary>
+    public const int CharacterIdOffset = 0x08;
 
     /// <summary>Offset of the constant name marker.</summary>
     public const int NameMarkerOffset = 0x43;
@@ -146,7 +213,7 @@ public static class PlayerProfileRecordUtility
     /// fixed fields to carry a name, so this is the fixed-field size plus the
     /// marker and at least one character.
     /// </summary>
-    private const int MinimumBodySize = NameOffset + 2;
+    internal const int MinimumBodySize = NameOffset + 2;
 
     /// <summary>Longest character name a record will carry.</summary>
     /// <remarks>
@@ -161,31 +228,30 @@ public static class PlayerProfileRecordUtility
     /// <summary>
     /// Builds a profile record body.
     /// </summary>
-    /// <param name="characterIdentifier">Character identifier of the player.</param>
+    /// <param name="recordSubType">
+    /// Byte written at offset 1: <see cref="PlayerEntrySubType"/> for a
+    /// player's entry, <see cref="RoomRecordSubType"/> for the room's own.
+    /// </param>
     /// <param name="rosterIndex">
     /// Position of the player in the room roster, counted from
     /// <see cref="HostRosterIndex"/>. It is signed because the host's own slot
     /// is the one below zero.
     /// </param>
-    /// <param name="perPlayerValue">
-    /// The varying value written at offset 8. It differs per player in every
-    /// recorded match and its meaning is unresolved, so it is passed through.
-    /// </param>
-    /// <param name="flagValue">
-    /// Value written at offset 10, unresolved: the six captured records carry
-    /// <c>0</c> on the host and <c>1</c> on every joining player, which is not
-    /// enough to name it. An earlier replay reading called it a team flag
-    /// without evidence for that.
-    /// </param>
-    /// <param name="name">Character name.</param>
+    /// <param name="characterId">Character id written at offset 8.</param>
+        /// <param name="name">Character name.</param>
     /// <param name="clanName">Clan name, which may be empty.</param>
+    /// <param name="appearance">
+    /// The character's appearance block as it was read off a profile. Null or
+    /// empty writes the block's measured constants and zeros, which is what a
+    /// record built without a character to copy them from looks like.
+    /// </param>
     public static byte[] Build(
-        byte characterIdentifier,
+        byte recordSubType,
         sbyte rosterIndex,
-        ushort perPlayerValue,
-        byte flagValue,
+        int characterId,
         string name,
-        string clanName)
+        string clanName,
+        byte[]? appearance = null)
     {
         var nameBytes = Truncate(Encoding.ASCII.GetBytes(name ?? string.Empty), MaximumNameLength);
         var clanBytes = Truncate(Encoding.ASCII.GetBytes(clanName ?? string.Empty), MaximumClanLength);
@@ -195,17 +261,31 @@ public static class PlayerProfileRecordUtility
         // records do.
         var body = new byte[NameOffset + 1 + nameBytes.Length + clanBytes.Length];
         body[0] = RecordVersion;
-        body[1] = characterIdentifier;
+        body[1] = recordSubType;
         body[4] = rosterIndex == HostRosterIndex
             ? HostRosterField
             : (byte)(RosterIndexBase + rosterIndex);
         body[5] = PlayerValue;
         body[7] = PlayerValue;
-        BinaryUtility.WriteUInt16LittleEndian(body, 8, perPlayerValue);
-        body[10] = flagValue;
+        BinaryUtility.WriteUInt32LittleEndian(body, CharacterIdOffset, (uint)characterId);
         body[BlockConstantOffset] = BlockConstant;
-        body[FirstBlockMarkerOffset] = BlockMarker;
-        body[SecondBlockMarkerOffset] = BlockMarker;
+
+        var marker = recordSubType == RoomRecordSubType ? RoomBlockMarker : PlayerBlockMarker;
+        foreach (var offset in BlockMarkerOffsets)
+        {
+            body[offset] = marker;
+        }
+
+        foreach (var offset in BlockTrailerOffsets)
+        {
+            body[offset] = BlockTrailer;
+        }
+
+        // The caller's block is written last so that it wins over the constants:
+        // a block read off a record is the record's own, and the two only differ
+        // where the record it came from was not a player entry.
+        WriteAppearance(body, appearance);
+
         body[NameMarkerOffset] = clanBytes.Length > 0 ? ClanNameMarker : (byte)0x00;
         nameBytes.CopyTo(body, NameOffset);
         body[NameOffset + nameBytes.Length] = 0x00;
@@ -220,139 +300,26 @@ public static class PlayerProfileRecordUtility
     /// <remarks>
     /// The recorded host writes it last, immediately after the last roster entry,
     /// and it is a <c>0x1001</c> record like the entries rather than a type of its
-    /// own. Its body is too short to carry a name, so <see cref="Parse"/> returns
-    /// <c>null</c> for it and it cannot be mistaken for a player.
+    /// own. Its body is too short to carry a name, so
+    /// <see cref="PlayerProfileRecordParseUtils.Parse"/> returns <c>null</c> for
+    /// it and it cannot be mistaken for a player.
     /// </remarks>
     public static byte[] BuildRosterClose() => [.. ClosingRecordBytes];
 
     /// <summary>
-    /// Parses a profile record body.
+    /// Copies an appearance block into a record body, leaving the bytes it does
+    /// not cover at zero. A block longer than the field is truncated and a
+    /// shorter one is padded, so the record's layout never moves.
     /// </summary>
-    /// <param name="body">Message body to parse.</param>
-    /// <returns>
-    /// The parsed record, or <c>null</c> when the body is too short to hold the
-    /// fixed fields.
-    /// </returns>
-    public static PlayerProfileRecord? Parse(ReadOnlySpan<byte> body)
+    private static void WriteAppearance(Span<byte> body, byte[]? appearance)
     {
-        if (body.Length < MinimumBodySize)
+        if (appearance is null || appearance.Length == 0)
         {
-            return null;
+            return;
         }
 
-        var name = string.Empty;
-        var clan = string.Empty;
-        var roster = RosterLayoutOf(body);
-        if (roster is not null)
-        {
-            (name, clan) = roster.Value;
-        }
-        else
-        {
-            (name, clan) = TrailingLayoutOf(body);
-        }
-
-        return new PlayerProfileRecord(
-            body[0],
-            body[1],
-            body[4],
-            RosterIndexOf(body[4]),
-            body[5],
-            body[NameMarkerOffset] != 0x00,
-            BinaryUtility.ReadUInt16LittleEndian(body, 8),
-            body[10],
-            name,
-            clan);
+        appearance.AsSpan(0, Math.Min(appearance.Length, AppearanceLength)).CopyTo(body[AppearanceOffset..]);
     }
-
-    /// <summary>
-    /// Recovers the roster index from the field at offset 4. The host is
-    /// written as a distinct zero rather than as one below the first player, so
-    /// zero means the host and everything else is the index under
-    /// <see cref="RosterIndexBase"/>.
-    /// </summary>
-    /// <param name="field">Raw field at offset 4.</param>
-    /// <returns>The roster index the record reports.</returns>
-    private static sbyte RosterIndexOf(byte field) =>
-        field == HostRosterField ? HostRosterIndex : (sbyte)(field - RosterIndexBase);
-
-    /// <summary>
-    /// Reads the names off the documented roster layout, or returns <c>null</c>
-    /// when the body is not that shape.
-    /// </summary>
-    private static (string Name, string Clan)? RosterLayoutOf(ReadOnlySpan<byte> body)
-    {
-        if (body[NameMarkerOffset] is not (0x00 or 0x03))
-        {
-            return null;
-        }
-
-        var nameEnd = body[NameOffset..].IndexOf((byte)0x00);
-        if (nameEnd < 0)
-        {
-            return null;
-        }
-
-        // Any printable run is a name here: the recorded characters carry
-        // spaces and punctuation, so nothing narrower may be required.
-        return (
-            DecodeName(body.Slice(NameOffset, nameEnd)),
-            DecodeName(body[(NameOffset + nameEnd + 1)..]));
-    }
-
-    /// <summary>
-    /// Reads the names off a join request, whose per-player block is longer than
-    /// the roster record's and so carries them elsewhere.
-    /// </summary>
-    /// <remarks>
-    /// The record ends the way the roster record does: the character name, a NUL,
-    /// and the clan name running to the end. The name is therefore whatever
-    /// printable run precedes that NUL, trimmed back to the first byte a
-    /// character name can hold, because the block before it is full of
-    /// printable bytes of its own that would otherwise be read as part of it.
-    /// </remarks>
-    private static (string Name, string Clan) TrailingLayoutOf(ReadOnlySpan<byte> body)
-    {
-        var clanStart = body.LastIndexOf((byte)0x00) + 1;
-        var nameEnd = clanStart - 1;
-
-        var nameStart = nameEnd;
-        while (nameStart > 0 && IsPrintable(body[nameStart - 1]))
-        {
-            nameStart--;
-        }
-
-        while (nameStart < nameEnd && !IsNameByte(body[nameStart]))
-        {
-            nameStart++;
-        }
-
-        return (
-            nameEnd > nameStart ? DecodeName(body[nameStart..nameEnd]) : string.Empty,
-            clanStart < body.Length ? DecodeName(body[clanStart..]) : string.Empty);
-    }
-
-    private static bool IsPrintable(byte value) => value is >= 0x20 and < 0x7f;
-
-    /// <summary>
-    /// Whether a byte can begin a character name. Letters, digits and the
-    /// underscore: this is what tells the name apart from the structural bytes
-    /// of the block in front of it, which are printable but are not text. Only
-    /// the leading edge is trimmed with it, so a name may still contain
-    /// anything once it has started.
-    /// </summary>
-    private static bool IsNameByte(byte value) =>
-        value is (>= (byte)'a' and <= (byte)'z') or (>= (byte)'A' and <= (byte)'Z') or
-               (>= (byte)'0' and <= (byte)'9') or (byte)'_';
-
-    /// <summary>
-    /// Decodes a character name the way the game writes one: raw bytes in
-    /// ISO-8859-1, the encoding the TCP character list uses for the same field.
-    /// Latin-1 maps every byte to the codepoint of the same value, so a name
-    /// survives exactly as it was on the wire and a decode can never throw.
-    /// </summary>
-    private static string DecodeName(ReadOnlySpan<byte> bytes) =>
-        bytes.IsEmpty ? string.Empty : Encoding.Latin1.GetString(bytes);
 
     private static byte[] Truncate(byte[] value, int maximum)
     {
@@ -369,7 +336,12 @@ public static class PlayerProfileRecordUtility
 
 /// <summary>A parsed <c>0x1001</c> player-profile record.</summary>
 /// <param name="Version">Record version byte.</param>
-/// <param name="CharacterIdentifier">Character identifier of the player.</param>
+/// <param name="RecordSubType">
+/// Byte at offset 1, which says what kind of record this is rather than who it
+/// is about: <see cref="PlayerProfileRecordUtility.PlayerEntrySubType"/> on a
+/// player's entry, <see cref="PlayerProfileRecordUtility.RoomRecordSubType"/> on
+/// the room's own.
+/// </param>
 /// <param name="RosterBaseField">Raw field at offset 4: 0xe2 plus the index, or zero for the host.</param>
 /// <param name="RosterIndex">
 /// Position of the player in the room roster, recovered from that field. It is
@@ -382,18 +354,22 @@ public static class PlayerProfileRecordUtility
 /// rather than an index.
 /// </param>
 /// <param name="HasClanName">Whether a clan name follows the character name.</param>
-/// <param name="PerPlayerValue">The varying value at offset 8; its meaning is unresolved.</param>
-/// <param name="FlagValue">The value at offset 10, whose meaning is unresolved.</param>
+/// <param name="CharacterId">The character id at offset 8, little-endian.</param>
+/// <param name="Appearance">
+/// The character's appearance block, twelve bytes. It is the same for a
+/// character on every entry it appears in, which is what separates it from the
+/// per-occurrence values around it.
+/// </param>
 /// <param name="Name">Character name.</param>
 /// <param name="ClanName">Clan name.</param>
 public sealed record PlayerProfileRecord(
     byte Version,
-    byte CharacterIdentifier,
+    byte RecordSubType,
     byte RosterBaseField,
     sbyte RosterIndex,
     byte PlayerValue,
     bool HasClanName,
-    ushort PerPlayerValue,
-    byte FlagValue,
+    int CharacterId,
+    byte[] Appearance,
     string Name,
     string ClanName);

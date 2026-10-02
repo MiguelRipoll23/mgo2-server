@@ -254,19 +254,79 @@ t=4s, 156s, 208s, 387s and 494s). Sorted by index they give the rule directly:
 | `0x04` | `0x00` | `0xe2` | `0xe3` | `0xe4` | `0xe5` | `0xe6` | **`0xe2 + index`**, host a plain zero |
 | `0x05` | `0x00` | `0x14` | `0x0f` | `0x04` | `0x0b` | `0x06` | per-player value, **not** an index |
 | `0x07` | `0x00` | `0x14` | `0x0f` | `0x04` | `0x0b` | `0x06` | the same byte, repeated |
-| `0x0a` | `0` | `1` | `1` | `1` | `1` | `1` | **[U]** host `0`, every joiner `1`; not the team flag |
+| `0x08` u32 | `0x0000a001` | `0x0001xxxx` | `0x0001xxxx` | `0x0001xxxx` | `0x0001xxxx` | `0x0001xxxx` | **character id**; the first and last are the same character |
+| `0x0a` | `0x00` | `0x01` | `0x01` | `0x01` | `0x01` | `0x01` | the **high byte of the id at `0x08`**, not a field |
 
-Three things follow. `[0x04]` is `0xe2 + index` and the host is written as a **distinct
+Four things follow. `[0x04]` is `0xe2 + index` and the host is written as a **distinct
 zero**, not as `0xe2 - 1`. `[0x05]`/`[0x07]` are the same byte in all six and follow no
 order, so they are a per-player value of unresolved meaning rather than the second copy of
-the index the replay reading claimed. And `[0x0a]` is `0` on the host and `1` on every
-joiner — **unresolved**, and explicitly *not* a team flag: the capture shows the pattern
-but nothing that says what the byte means, so the code calls it `FlagValue` and says so
-rather than borrowing a name the bytes do not support.
+the index the replay reading claimed. `[0x08]` is the **character id**, and `[0x0a]` is its
+high byte rather than a flag of its own — see below.
 
-**Implemented.** `PlayerProfileRecordUtility` now writes `0xe2 + index` (or zero for the
-host), writes zero at `0x05`/`[0x07]`, and recovers the index with `RosterIndexOf`, which
-reads a zero as the host. `PlayerNumber` is renamed `PlayerValue` and is reported raw,
+### `[0x08]` is the character id, and `[0x0a]` is not a field [V]
+
+`[0x08]` was read as a u16 per-player value of unresolved meaning, and the byte at `[0x0a]`
+as an unresolved flag that is `0` on the host and `1` on every joiner. Both readings are
+wrong, and the same reading is wrong about both: `[0x08]`–`[0x0b]` is one **u32 little-endian
+character id**.
+
+The values themselves are redacted, as this file's preamble promises: the four
+characters that played are written here as `0x0001xxxx` and the tests carry stand-ins. What
+matters is the shape and the stability, not the numbers.
+
+Three things make it the character id rather than a coincidence of the roster order.
+
+- **It is stable per character, not per slot.** The capture holds **fifteen** player entries
+  across the round, and every entry of one character carries the same id — including the
+  rejoin written at roster index `4` under handle `0x06` where that character's first entry at
+  index `1` carried handle `0x0f`. Nothing else in the record is stable that way except the
+  name and the appearance block.
+- **It matches the other channel.** The local player's id here is the same number as the one
+  the TCP `0x4101` character record of the same session carries — the cross-check that names
+  the field rather than merely numbering it.
+- **It explains `[0x0a]`.** Every captured character id is in the `0x0001xxxx` range, so its
+  high byte reads `0x01` on all five of them and `0x00` on the room record, whose id is
+  `0x0000a001`. "Zero on the host, one on every joiner" is what the high byte of a u32 looks
+  like; there is no field there at all. The code no longer writes one.
+
+The room record's own value is **[U]**: `0x0000a001` is not this host's character id, and what
+it is — a room identifier, a host identifier under another numbering — is not established.
+
+### `[0x13]`–`[0x1e]` is the character's appearance [V]
+
+Twelve bytes, and they are the only part of the record that describes what the character
+*looks like*. Like the name and the id they belong to the character: all fifteen entries
+carry the same twelve for the same character, and the four characters that played carry four
+different blocks.
+
+| character | `0x13`–`0x1e` |
+| --- | --- |
+| `NightOwl77` | `d9 8a d5 05 62 16 0a 02 00 02 62 16` |
+| `IronFalcon` | `62 1a a8 1b 62 16 c0 a8 01 16 62 16` |
+| `SteelHart` | `59 98 e2 29 62 16 c0 a8 01 4d 62 16` |
+| `CopperKite` | `5c bf b2 67 62 16 c0 a8 01 5a 62 16` |
+| room record | `63 42 83 b1 63 16 0a 68 0a 1c 63 16` |
+
+`0x13`–`0x16` are four bytes unique to the character; the pair at `0x17`/`0x18` and the one
+at `0x1d`/`0x1e` are `62 16` on every player entry and `63 16` on the room record — a marker
+of the record kind and nothing else; the four bytes between them are per character. What the
+bytes *mean* is **[U]**, so the block is carried verbatim rather than decoded into fields.
+
+**This is only half of the appearance on the wire.** A second record, `0b <slot> 02 …`
+(50–56 bytes), arrives about 90 ms after each roster entry and carries more of it — sixteen
+zero bytes, `00 00`, `50 02 ff`, four varying bytes, then `1e` and a per-character tail. The
+local player's own appearance proves the shape: its 140-byte join request carries the same
+tail (`1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 0b 16 00 0e 0e 07 0f 00 00`), and the server
+re-broadcasts it. That record is **not implemented** — its slot byte is neither the roster
+handle (`0x14 0f 04 0b`) nor the character id, slots are reused across rejoins, and four of
+its columns are still **[U]**.
+
+**Implemented.** `PlayerProfileRecordUtility` writes `0xe2 + index` (or zero for the
+host), writes zero at `0x05`/`[0x07]`, writes the **character id** as a u32 at `0x08` —
+there is no `0x0a` field — carries the **appearance block** at `0x13`–`0x1e`, and recovers
+the index with `RosterIndexOf`, which reads a zero as the host. `PlayerProfileRecordParseUtils`
+reads all three back, and `RoomRosterService` answers a peer with the id and the appearance
+the player announced rather than with values it invented. `PlayerNumber` is renamed `PlayerValue` and is reported raw,
 because it is no longer an index. The per-player block also carries **three** non-zero
 constants — `0x02` at `0x12` and `0x16` at both `0x18` and `0x1e` — against the replay's
 one, and the builder writes all three.
@@ -330,6 +390,41 @@ the class, because nothing here could be named honestly.
 the four sizes `mgo2_replay_parser.py` maps to the compressed position and the yaw pair, and
 at the same offsets. The capture confirms the replay parser's transform table on live wire
 bytes rather than on a recorded file. **[V]**
+
+### `0x0080` is health, and `0` is death [V]
+
+The one tick record in this capture that needs no inference at all. Its body is two bytes —
+**health, then stamina** — under attribute class `3`, and 3 269 of them arrive in one round,
+server to client, in seven distinct bodies between them:
+
+| body | count | |
+| --- | --- | --- |
+| `fa fa` | 2 893 | untouched: health 250, stamina 250 |
+| `00 fa` | 316 | **dead**: health 0 |
+| `46 fa` `7f fa` `c2 fa` `a0 fa` `0e fa` | 60 | health on the way down |
+
+**250 is full and 0 is death**, and both ends of that are in the capture rather than assumed:
+health sits at `0xfa` between fights, falls only when the character is hit, reaches `0x00`,
+and is back at `0xfa` after — three deaths and three restores over the round. The ladder
+between the ends is `250 → 194 → 160 → 127 → 70 → 14 → 0`, steps of the game's own choosing
+rather than round numbers, which is why the values in between are listed but not named.
+
+**Stamina is the second byte, and that half is an inference [I].** What is measured is that
+it read `250` in every one of the 3 269 records while the first byte is the one that fell and
+rose — health first, the still one second. Calling the second one stamina goes on that and on
+nothing else: no record in the capture shows it moving, so `250` is a ceiling it was never
+seen to exceed rather than one it was seen to reach. The health half above is **[V]**; this
+half is not, and nothing in the code depends on it being right.
+
+`0x0880` is the same two bytes for a second player, one `0x800` bit along — the same bit the
+recorded tick stream uses for the second slot. Four other families (`0x006c`, `0x00b2`,
+`0x00da`, `0x010c`) are two bytes long and always `fa fa`; `0x00b2` and `0x08b2` do carry
+damage (`186`, `58`, `153`, `220`) but never reach zero, so they are **[U]** and are not
+claimed as vitals.
+
+**Implemented** as `PlayerVitals` (the values, the 250 ceiling and `IsDead`) and
+`PlayerVitalsRecordUtility` (the record), pinned by `PlayerVitalsRecordTests` against the
+bodies above. The server does not send tick records yet, so nothing dispatches it.
 
 The per-player slot decode `id & 0xFF = 0x75 + 10*slot + OFF[class]` is a **replay-format**
 rule. These ids are `0x80`, `0x83`, `0xdd`, `0x0a61` — none is in the `0x75 + 10n` family,

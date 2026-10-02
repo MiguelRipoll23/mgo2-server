@@ -79,11 +79,20 @@ public sealed class PlayerProfileHandlerTests
     }
 
     /// <summary>Builds the body a joining client opens the exchange with.</summary>
+    /// <param name="characterId">Character id the client announces at offset 8.</param>
     /// <param name="name">Character name the client announces.</param>
     /// <param name="clanName">Clan name the client announces; empty for none.</param>
-    private static byte[] JoinRequestBody(string name = "Celestia", string clanName = "FiNAL BOSS")
+    private static byte[] JoinRequestBody(
+        int characterId = 65537,
+        string name = "Celestia",
+        string clanName = "FiNAL BOSS")
     {
-        var body = PlayerProfileRecordUtility.Build(0x50, 0, 0, 0, name, clanName);
+        var body = PlayerProfileRecordUtility.Build(
+            PlayerProfileRecordUtility.PlayerEntrySubType,
+            RoomRosterService.FirstJoinerRosterIndex,
+            characterId,
+            name,
+            clanName);
 
         // The client opens with a request rather than a roster entry, so the
         // leading byte differs from the one a roster record carries.
@@ -108,7 +117,7 @@ public sealed class PlayerProfileHandlerTests
         // name, so the roster here is built without one. The run opens with the
         // empty record the live host sends first, so the entries start at one.
         var roster = CreateRoster("Dedicated host", clanName: null);
-        var (sent, _) = await RunAsync(roster, Joiner, JoinRequestBody("NightOwl77", clanName: string.Empty));
+        var (sent, _) = await RunAsync(roster, Joiner, JoinRequestBody(name: "NightOwl77", clanName: string.Empty));
 
         Assert.Equal(83, sent[1].Body.Length);
         Assert.Equal(79, sent[2].Body.Length);
@@ -121,7 +130,7 @@ public sealed class PlayerProfileHandlerTests
         var (sent, _) = await RunAsync(CreateRoster(), Joiner);
 
         var names = sent
-            .Select(record => PlayerProfileRecordUtility.Parse(record.Body)?.Name)
+            .Select(record => PlayerProfileRecordParseUtils.Parse(record.Body)?.Name)
             .OfType<string>()
             .ToArray();
         Assert.Equal(["host", "Celestia"], names);
@@ -162,7 +171,7 @@ public sealed class PlayerProfileHandlerTests
         Assert.Equal(RoomRosterService.HostEntryType, sent[1].Type);
 
         // The host's own entry is the one under the join tag.
-        var host = PlayerProfileRecordUtility.Parse(sent[1].Body);
+        var host = PlayerProfileRecordParseUtils.Parse(sent[1].Body);
         Assert.NotNull(host);
         Assert.Equal("host", host.Name);
         Assert.Equal(PlayerProfileRecordUtility.HostRosterIndex, host.RosterIndex);
@@ -182,7 +191,7 @@ public sealed class PlayerProfileHandlerTests
         Assert.Equal(UdpCommandConstants.PlayerProfile, sent[^1].Type);
         Assert.Equal("07000000000003", Convert.ToHexString(sent[^1].Body).ToLowerInvariant());
         Assert.Equal(RosterClose, sent[^1].Body);
-        Assert.Null(PlayerProfileRecordUtility.Parse(sent[^1].Body));
+        Assert.Null(PlayerProfileRecordParseUtils.Parse(sent[^1].Body));
         Assert.Equal(sent[^1].Body, broadcast[^1].Body);
     }
 
@@ -240,7 +249,7 @@ public sealed class PlayerProfileHandlerTests
         // The empty head, the host, the joiner, and the record that closes the
         // roster.
         Assert.Equal(4, sent.Count);
-        var record = PlayerProfileRecordUtility.Parse(sent[2].Body);
+        var record = PlayerProfileRecordParseUtils.Parse(sent[2].Body);
         Assert.NotNull(record);
         Assert.Equal(RoomRosterService.FirstJoinerRosterIndex, record.RosterIndex);
     }

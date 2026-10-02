@@ -707,15 +707,17 @@ Body, little-endian:
 
 ```
 [0x00] u8        0x07 in every captured record
-[0x01] u8        character identifier
+[0x01] u8        record sub-type: 0x48 (or 0x47) on a player's entry, 0x4c on
+                 the room's own record
 [0x02] u16       zero
 [0x04] u8        0xe2 + roster index, or 0x00 for the host
 [0x05] u8        per-player value, repeated at 0x07
 [0x06] u8        zero
 [0x07] u8        the same per-player value as 0x05
-[0x08] u16       per-player value, differs for every player in the roster
-[0x0a] u8        unresolved: 0 on the host, 1 on every joining player
-[0x0b..0x42]     per-player block; see below
+[0x08] u32       character id — the byte at 0x0a is its high byte, not a field
+[0x0b..0x42]     per-player block; the character's appearance is at 0x13..0x1e
+                 and the record kind is marked at 0x17 and 0x1d (0x62 on a
+                 player's entry, 0x63 on the room's) — see below
 [0x43] u8        0x03 when a clan name follows, 0x00 when none does
 [0x44] char[16]  character name, NUL-padded — ISO-8859-1, the encoding the TCP
          char[]   character list uses for the same field (`0x3049`'s

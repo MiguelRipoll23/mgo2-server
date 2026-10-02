@@ -67,7 +67,7 @@ public sealed class LatestJoinerFrameTests(ITestOutputHelper output)
         var frame = MessageCodecUtility.DecodeFrame(work);
 
         var join = frame.Messages.Single(m => m.Type == UdpCommandConstants.JoinRequest);
-        var profile = PlayerProfileRecordUtility.Parse(join.Body);
+        var profile = PlayerProfileRecordParseUtils.Parse(join.Body);
 
         Assert.NotNull(profile);
         Assert.Equal("MyPlayerName", profile.Name);

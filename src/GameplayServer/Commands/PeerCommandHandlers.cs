@@ -169,7 +169,7 @@ public sealed class PlayerProfileHandler(
     /// <inheritdoc />
     public async Task HandleAsync(PeerContext context)
     {
-        var profile = PlayerProfileRecordUtility.Parse(context.Message.Body);
+        var profile = PlayerProfileRecordParseUtils.Parse(context.Message.Body);
         if (profile is not { Name.Length: > 0 })
         {
             logger.LogDebug(
@@ -184,10 +184,10 @@ public sealed class PlayerProfileHandler(
         var member = roster.Register(context.Remote, profile);
 
         logger.LogInformation(
-            "UDP {LocalPort}: profile from {RemoteAddress}: character {CharacterIdentifier} name {Name}, roster slot {RosterIndex}",
+            "UDP {LocalPort}: profile from {RemoteAddress}: character {CharacterId} name {Name}, roster slot {RosterIndex}",
             context.LocalPort,
             context.Remote,
-            profile.CharacterIdentifier,
+            profile.CharacterId,
             profile.Name,
             member.RosterIndex);
 

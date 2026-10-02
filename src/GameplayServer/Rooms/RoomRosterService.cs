@@ -28,6 +28,14 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// are handed out per remote endpoint, so a client that re-sends its profile
 /// keeps the slot it was first given instead of taking a new one each retry.
 /// </para>
+/// <para>
+/// Each entry repeats what the player announced about itself: its character id
+/// at offset 8 and its appearance block at <c>0x13</c>–<c>0x1e</c>. Both are
+/// per character rather than per slot — the capture shows the same character
+/// carrying the same two on entries written at different roster indices — so a
+/// peer is answered with the appearance the player arrived with rather than one
+/// this host made up.
+/// </para>
 /// </remarks>
 /// <param name="hostIdentity">Identity this host presents to its peers.</param>
 public sealed class RoomRosterService(HostIdentityService hostIdentity)
@@ -49,21 +57,6 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
     /// not merely a <c>0x1001</c> record like the rest of it.
     /// </remarks>
     public const ushort HostEntryType = UdpCommandConstants.JoinRequest;
-
-    /// <summary>
-    /// The value written at offset 8 of every record. It differs per player in
-    /// every recorded room and its meaning is unresolved, so it is sent as zero
-    /// rather than guessed at.
-    /// </summary>
-    private const ushort UnresolvedPerPlayerValue = 0;
-
-    /// <summary>
-    /// Value written at offset 10 of every record this host sends. Its meaning
-    /// is unresolved: the captured roster carries <c>0</c> on the host and
-    /// <c>1</c> on each joining player, so zero is sent for everyone here until
-    /// what it means is known.
-    /// </summary>
-    private const byte FlagValue = 0;
 
     private readonly Lock gate = new();
     private readonly List<RosterMember> members = [];
@@ -91,17 +84,27 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
                 // A re-sent profile is the client still waiting for its answer,
                 // not a second player, so the slot is kept and only the details
                 // the client restated are refreshed.
-                existing.CharacterIdentifier = profile?.CharacterIdentifier ?? existing.CharacterIdentifier;
+                existing.CharacterId = profile?.CharacterId ?? existing.CharacterId;
                 existing.Name = profile is { Name.Length: > 0 } ? profile.Name : existing.Name;
                 existing.ClanName = profile?.ClanName ?? existing.ClanName;
+
+                // The appearance block belongs to the character rather than to
+                // the slot, so a re-sent profile restates it and nothing else
+                // moves; it is only filled in the first time one arrives.
+                if (profile is { Appearance.Length: > 0 })
+                {
+                    existing.Appearance = profile.Appearance;
+                }
+
                 return existing;
             }
 
             var member = new RosterMember(key, NextFreeIndex())
             {
-                CharacterIdentifier = profile?.CharacterIdentifier ?? 0,
+                CharacterId = profile?.CharacterId ?? 0,
                 Name = profile?.Name ?? string.Empty,
                 ClanName = profile?.ClanName ?? string.Empty,
+                Appearance = profile?.Appearance ?? [],
             };
             members.Add(member);
             return member;
@@ -138,14 +141,13 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
         var records = new List<byte[]>
         {
             PlayerProfileRecordUtility.Build(
-                hostIdentity.ProfileCharacterIdentifier,
+                PlayerProfileRecordUtility.RoomRecordSubType,
                 PlayerProfileRecordUtility.HostRosterIndex,
-                UnresolvedPerPlayerValue,
-                FlagValue,
+                (int)hostIdentity.PeerIdentifier,
                 hostIdentity.CharacterName,
                 hostIdentity.ClanName),
         };
-        records.AddRange(ordered.Select(member => member.BuildRecord(UnresolvedPerPlayerValue, FlagValue)));
+        records.AddRange(ordered.Select(member => member.BuildRecord()));
         return records;
     }
 
@@ -203,8 +205,11 @@ public sealed record RosterRecord(ushort Type, byte[] Body);
 /// <param name="RosterIndex">Slot the player fills, counted from zero.</param>
 public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
 {
-    /// <summary>Character identifier the player announced.</summary>
-    public byte CharacterIdentifier { get; set; }
+    /// <summary>
+    /// Character identifier the player announced, read off offset 8 of its
+    /// profile.
+    /// </summary>
+    public int CharacterId { get; set; }
 
     /// <summary>Character name the player announced.</summary>
     public string Name { get; set; } = string.Empty;
@@ -212,16 +217,20 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
     /// <summary>Clan name the player announced; empty when it announced none.</summary>
     public string ClanName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The player's appearance block, as it was announced. Empty when the
+    /// profile carried none, which leaves the record's constants in place.
+    /// </summary>
+    public byte[] Appearance { get; set; } = [];
+
     /// <summary>Builds the player-profile record that puts this player on a peer's roster.</summary>
-    /// <param name="perPlayerValue">Value written at offset 8, whose meaning is unresolved.</param>
-    /// <param name="flagValue">Value written at offset 10, whose meaning is unresolved.</param>
     /// <returns>The record body.</returns>
-    public byte[] BuildRecord(ushort perPlayerValue, byte flagValue) =>
+    public byte[] BuildRecord() =>
         PlayerProfileRecordUtility.Build(
-            CharacterIdentifier,
+            PlayerProfileRecordUtility.PlayerEntrySubType,
             RosterIndex,
-            perPlayerValue,
-            flagValue,
+            CharacterId,
             Name,
-            ClanName);
+            ClanName,
+            Appearance);
 }
