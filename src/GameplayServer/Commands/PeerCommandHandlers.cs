@@ -11,8 +11,16 @@ namespace Mgo2Server.GameplayServer.Commands;
 
 /// <summary>
 /// Accepts a joiner's handshake, then sends the keep-alive that establishes the
-/// session key.
+/// session key and the handshake reply behind it.
 /// </summary>
+/// <remarks>
+/// The live host sends the keep-alive <b>first</b>, as outbound counter 0, and
+/// the handshake reply 50 ms later as counter 1
+/// (<c>docs/mgo2-game.pcapng</c>: a 16-byte <c>0x5000</c> at t+1668.068 and a
+/// 44-byte <c>0x1000</c> at t+1668.118). The reply leads here only because it
+/// reads as the more important of the two; the capture puts the other way, and
+/// the counters are observable, so the keep-alive takes counter 0.
+/// </remarks>
 /// <param name="hostIdentity">Identity this host presents to its peers.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class AcceptHandshakeHandler(
@@ -56,7 +64,17 @@ public sealed class AcceptHandshakeHandler(
             handshake.CounterBase,
             dialBack);
 
-        // 1. The handshake reply, still pre-keyed because the joiner has not
+        // 1. The keep-alive, which the recorded host sends first, as its
+        //    outbound counter 0. The joiner reads it as the frame that
+        //    establishes the session key, so it carries the key ahead of
+        //    anything that needs it; the live capture puts it 50 ms ahead of
+        //    the handshake reply and this host does not delay a send by a
+        //    measured gap, but the order and the counters are what a client can
+        //    observe and depend on.
+        context.Session.Established = true;
+        await context.Send(UdpCommandConstants.KeepAlive, []);
+
+        // 2. The handshake reply, still pre-keyed because the joiner has not
         //    reached its keyed state yet. It advertises the address this host is
         //    reached on, which is the configured one for the same reason.
         var reply = FrameBuilderUtility.BuildHandshakeBody(
@@ -66,9 +84,6 @@ public sealed class AcceptHandshakeHandler(
             hostIdentity.AdvertisedPort);
         await context.Send(UdpCommandConstants.Handshake, reply);
 
-        // 2. The key-establishing keep-alive.
-        context.Session.Established = true;
-        await context.Send(UdpCommandConstants.KeepAlive, []);
         logger.LogInformation(
             "UDP {LocalPort}: session with peer=0x{PeerIdentifier:x8} established",
             context.LocalPort,
@@ -151,8 +166,9 @@ public sealed class InGameControlHandler(ILogger<InGameControlHandler> logger) :
 /// this handler answers with the whole room roster, the host's own entry first
 /// under the join tag and every joining player after it in slot order under the
 /// roster tag, closes the run with the record that ends a roster, sends that run
-/// a second time without its head the way the recorded host does, and tells the
-/// peers already in the room that the roster grew.
+/// a second time without its head and then one bare empty head record after it,
+/// the way the recorded host does, and tells the peers already in the room that
+/// the roster grew.
 /// </summary>
 /// <remarks>
 /// The type is shared. A joining client also sends one-byte <c>0x1001</c>
@@ -238,6 +254,13 @@ public sealed class PlayerProfileHandler(
         {
             await context.Send(record.Type, record.Body);
         }
+
+        // Then one more empty 0x5001 on its own, the record the live host closes
+        // a roster exchange with. It repeats the type that opened the run rather
+        // than closing it; what it says is unresolved, and it is sent because the
+        // host sends it.
+        var trailer = RoomRosterService.BuildRosterTrailer();
+        await context.Send(trailer.Type, trailer.Body);
 
         // The peers already in the room are told as well. A player who is only
         // announced to the peer that just joined is never announced to the ones

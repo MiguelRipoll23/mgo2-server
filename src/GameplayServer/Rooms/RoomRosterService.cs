@@ -210,6 +210,25 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
         .. BuildRosterRun().Where(record => record.Type != UdpCommandConstants.RosterHead),
     ];
 
+    /// <summary>
+    /// Builds the bare head record the recorded host sends after the run and its
+    /// second copy: one empty <c>0x5001</c> and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// The live host closes a roster exchange with a third frame carrying the
+    /// same empty <c>0x5001</c> that opens the run, 158 ms after the repeat in
+    /// the capture (t+4170.179, outbound counter 4). It repeats the type that
+    /// opened the run rather than closing it, and what it says is **[U]** — the
+    /// type is the one §3 of <c>UDP_GAME_CAPTURE.md</c> shows is not the
+    /// acknowledgement despite the resemblance.
+    ///
+    /// It is sent because the host sends it, on the same grounds as the rest of
+    /// the run: a record a peer wrote and a host answers with is not a record
+    /// this server should decline to write. Nothing waits on it.
+    /// </remarks>
+    /// <returns>The trailing record, ready to be sent.</returns>
+    public static RosterRecord BuildRosterTrailer() => new(UdpCommandConstants.RosterHead, []);
+
     private sbyte NextFreeIndex()
     {
         var taken = members.Select(member => member.RosterIndex).ToHashSet();

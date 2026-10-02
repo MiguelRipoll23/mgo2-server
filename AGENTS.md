@@ -9,6 +9,20 @@
 * Services and utilities must use the service or utils suffix respectively in both the file name and class name.
 * Do not use abbreviations unless they are extremely common and well-established, such as id, utils, or info.
 
+## Tests
+
+* Test behaviour that a wrong implementation would get wrong, not code that is merely
+  present. Do not add a test for simple, self-evident logic — a builder returning what it
+  was handed, a constant holding its own value, a property forwarding to another property.
+* Prefer one test per behaviour, asserting the outcome, over several tests each re-deriving
+  the same fact from a different angle. If a second test would only restate the first in
+  other words, it is not worth keeping.
+* Assertions should pin behaviour rather than incidental structure. Naming a record by its
+  meaning (`the roster close`) rather than by its position survives a record being inserted
+  in front of it; `sent[^1]` does not.
+* When a change alters behaviour already covered, update those tests instead of adding new
+  ones alongside them.
+
 ## Schema
 
 * The schema is owned by the Entity Framework migrations in `src/Shared/Persistence/Migrations`.

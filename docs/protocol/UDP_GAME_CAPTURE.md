@@ -201,17 +201,27 @@ Recorded as a negative so the pattern is not rediscovered as a discovery. **[V]*
 
 Byte for byte from the capture, both parties named. This is the part we implement.
 
-**1 — handshake, both directions, pre-keyed.** Two 44-byte datagrams.
+**1 — handshake, both directions, pre-keyed.** Two 44-byte datagrams and a 16-byte keep-alive.
 
 ```
-joiner -> server   10.2.0.2:5730 -> 99.66.131.177:5731   hdr 0x0000
+joiner -> server   10.2.0.2:5730 -> 99.66.131.177:5731   hdr 0x0000   t+0.000
   peer_id 51001  counter_base 0x736773a6  magic b7 8a 25 4d  ver 2  count 2
   entries 10.2.0.2:5730, 10.2.0.2:5730
 
-server -> joiner   99.66.131.177:5731 -> 10.2.0.2:5730   hdr 0x0001
+server -> joiner   99.66.131.177:5731 -> 10.2.0.2:5730   hdr 0x0000   t+1668.068
+  0x5000, empty — the key-establishing keep-alive, sent FIRST
+
+server -> joiner   99.66.131.177:5731 -> 10.2.0.2:5730   hdr 0x0001   t+1668.118
   peer_id 51002  counter_base 0x3c8a65d6  magic b7 8a 25 4d  ver 2  count 2
   entries 99.66.131.177:5731, 10.104.10.28:5731
 ```
+
+**The keep-alive leads, and it takes outbound counter 0.** The reply reads as the more
+important of the two, so it is easy to send first — the live host does not, and the counters
+are observable, so a client keying anything off them sees the order. **[V]** on the order and
+the counters. The 50 ms gap between them is not reproduced: this server does not delay a
+send by a measured interval, and nothing in the capture says the client depends on the
+spacing rather than the order.
 
 **2 — the joiner opens with its own profile**, `0x1001`, 140-byte body, opening `02 78 05
 78 05` and carrying its own character name at the end. It is sent **compressed** (`hdr 0x8001`) and
@@ -226,6 +236,14 @@ answered by nothing until the server's roster arrives.
 | `0x9001` len 83 | opens `07 4c`, ends **`Dedicated host`** | the host's own entry |
 | `0x1001` len 79 | opens `07 48`, ends **`PlayerOne`** | the joiner's entry, echoed back |
 | `0x1001` len 7 | `07 00 00 00 00 00 03` | the roster close |
+
+**3b — the run is sent again, without its head**, `hdr 0x8003`, 117 ms later, the same three
+records byte for byte.
+
+**3c — and one bare `0x5001` closes the exchange**, `hdr 0x0004`, t+4170.179, 158 ms after the
+repeat. It repeats the type that opened the run rather than closing it. What it says is
+**[U]** — the type is the one §3 shows is not the acknowledgement despite the resemblance —
+and it is sent because the live host sends it.
 
 The host's own entry travels under **`0x9001`**, the tag the joiner itself opened the
 exchange with, while the joining players and the close travel under `0x1001`. Both roster

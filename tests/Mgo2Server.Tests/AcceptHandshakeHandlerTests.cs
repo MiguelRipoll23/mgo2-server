@@ -123,7 +123,10 @@ public sealed class AcceptHandshakeHandlerTests
     {
         var (_, sent) = await RunAsync(HandshakeBodyAdvertising("192.168.1.50", 25110));
 
-        var reply = FrameBuilderUtility.ParseHandshakeBody(sent[0]);
+        // The keep-alive leads, as it does on the wire, so the handshake body is the
+        // second thing this handler sends and the first is empty.
+        Assert.Empty(sent[0]);
+        var reply = FrameBuilderUtility.ParseHandshakeBody(sent[1]);
         Assert.NotNull(reply);
         Assert.Equal(AdvertisedAddress, reply.Pairs[0].Address);
         Assert.Equal(AdvertisedPort, reply.Pairs[0].Port);
