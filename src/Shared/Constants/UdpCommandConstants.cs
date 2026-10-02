@@ -82,7 +82,26 @@ public static class UdpCommandConstants
     /// <summary>Reliable-class base: an acknowledgement of frame sequence N travels as this value ORed with N.</summary>
     public const ushort AcknowledgementClass = 0x1000;
 
-    /// <summary>Mask applied to the acknowledged frame sequence.</summary>
+    /// <summary>
+    /// Mask applied to the acknowledged frame sequence, and the width of the
+    /// field an acknowledgement can actually name.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An acknowledgement is a one-byte record whose type is
+    /// <c>0x1000 | (sequence &amp; 0x0fff)</c>. The frame header's own counter is
+    /// <b>fifteen</b> bits wide (<see cref="CounterMask"/> strips only the
+    /// compression bit), so the two widths do not agree and an acknowledgement
+    /// cannot identify every frame: sequence <c>1</c> also names sequences 4 097,
+    /// 8 193, 12 289 and 16 385.
+    /// </para>
+    /// <para>
+    /// This is not a defect in the reading. In a live round the outbound counter
+    /// reached 18 665 — four full wrap cycles past the twelve-bit field — and
+    /// every acknowledgement in the round named sequence <c>1</c>, with the
+    /// server itself sending none. See docs/protocol/UDP_GAME_CAPTURE.md §3.
+    /// </para>
+    /// </remarks>
     public const ushort AcknowledgementIdentifierMask = 0x0fff;
 
     /// <summary>Size of the frame header in bytes.</summary>
@@ -97,10 +116,29 @@ public static class UdpCommandConstants
     /// <summary>Total frame overhead added around the content region.</summary>
     public const int FrameOverhead = HeaderSize + TailSize;
 
-    /// <summary>Header bit marking the content region as a raw LZSS stream.</summary>
+    /// <summary>
+    /// Header bit marking the content region as a raw LZSS stream.
+    /// </summary>
+    /// <remarks>
+    /// Bit 15 is the only flag in the frame header. What is left is the frame
+    /// counter, fifteen bits wide and monotonic: measured over 19 018 live
+    /// datagrams it steps by one on 99.4% of consecutive server-to-client pairs
+    /// and 100% of client-to-server pairs, and it never wraps. Bits 12, 13 and 14
+    /// are counter bits, not class or reliability flags — reading them as flags
+    /// produces a field that looks uniformly random and is not. See
+    /// docs/protocol/UDP_GAME_CAPTURE.md §2.
+    /// </remarks>
     public const ushort CompressionMarker = 0x8000;
 
-    /// <summary>Mask that strips the compression marker from the header counter.</summary>
+    /// <summary>
+    /// Mask that strips the compression marker, leaving the frame counter.
+    /// </summary>
+    /// <remarks>
+    /// This is the whole fifteen-bit counter. It is not a twelve-bit sequence:
+    /// masking to twelve bits collapses every 4 096 frames onto one value, which
+    /// is why an acknowledgement (<see cref="AcknowledgementIdentifierMask"/>)
+    /// is ambiguous once the counter passes 4 096.
+    /// </remarks>
     public const ushort CounterMask = 0x7fff;
 
     /// <summary>

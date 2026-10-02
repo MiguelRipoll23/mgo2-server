@@ -524,7 +524,10 @@ tail digest with `K ^ 0x2b58de69` — the keyed path, live. Capture session:
 handshake's `00 10 1c 00`):
 
 ```
-[0..2)    hdr u16 LE — shared per-peer counter (§6.2); bit 0x8000 = LZSS-compressed
+[0..2)    hdr u16 LE — [bit 0x8000 = LZSS-compressed][bits 14-0 = a monotonic
+                    per-peer frame counter].  Not a set of flags: bits 12-14 are
+                    counter bits and change only as the counter carries past
+                    4096/8192/12288/16384 (UDP_GAME_CAPTURE.md §2). **[V]**
 [2..4)    message type u16 LE        (class bits 0x4000/0x8000 live in this word)
 [4]       len u8 — body length
 [5]       flags2 u8 — per-message flags byte
@@ -677,6 +680,12 @@ Implementation rules for a host:
 
 1. ACK each newly observed inbound seq (`hdr & 0x7fff`) exactly once —
    type `0x1000 | seq`, len 1, flags2 1, body `[0]` — on the shared counter.
+   **But note the limit:** the header counter is fifteen bits (§6.2) and this
+   type carries only twelve, so the acknowledgement is ambiguous for any
+   sequence at or above `0x1000`. In a live round the counter passed 18 665 and
+   sequence `1` named five different frames (1, 4097, 8193, 12289, 16385). The
+   capture's own 27 acknowledgements all named sequence 1
+   (`UDP_GAME_CAPTURE.md` §3). **[V]**
 2. Cumulative: the joiner's single `0x1001` covers both host seqs 0 and 1;
    duplicate frames (re-sends of an acked record, seq ≤ lastInSeq) are not
    re-acked.

@@ -89,6 +89,58 @@ rule. Recorded as **[U]**.
 the first also reports the per-type vote, which is what shows the split is per-type rather
 than an artefact of one rule fitting one direction.
 
+### The frame header is a compression flag and a fifteen-bit counter [V]
+
+The header is a little-endian `u16` at `[0..2)` of every datagram, and it is
+**not** a set of flags. It is one bit and one counter:
+
+```
+bit 15      LZSS compression marker (§2's 5 111 compressed frames)
+bits 14-0   a monotonic per-peer frame counter
+```
+
+Measured over all 19 018 verified datagrams:
+
+| | server → joiner | joiner → server |
+| --- | --- | --- |
+| frames | 18 526 | 492 |
+| counter range | 2 .. 18 665 | 1 .. 492 |
+| step of +1 between consecutive frames | **99.4%** (18 418 / 18 525) | **100.0%** (491 / 491) |
+| sequence values never seen | 107 | 0 |
+| wraps | none — 18 665 < 2^15 | none |
+
+So reading the sequence is `hdr & 0x7fff`, and the `0x8000` marker is the only
+flag. That part was already right.
+
+**Bits 12, 13 and 14 are counter bits, and reading them as flags is wrong.** They
+were read three ways before being settled, and two of those readings were wrong
+in ways that looked convincing:
+
+- *"a uniformly random 2-bit field"* — the counter crosses 4096-multiples four
+  times, which produces four equal-length epochs; that was mistaken for four
+  equiprobable values. The field is in fact **constant for ~4 070 frames at a
+  time** and changes only 4 times in the whole round, in the order
+  `[0, 1, 2, 3, 0]`.
+- *"a flag set on 12.2% of frames"* — bit 14 is set on exactly one contiguous
+  run, t+688.1 → t+823.2. That is simply the counter passing 16 384.
+- *"the high bits of a 14-bit counter stepping on wrap"* — closest, but no wrap
+  occurs at all: the counter never reaches 32 768. The transitions at
+  4096/8192/12288/16384 are ordinary carry propagation.
+
+Two traps worth naming. A `0xF000` mask folds the compression bit into the field
+and reports a value distribution that does not exist. And **correlating the bits
+against record types is confounded by time** — `0x087f` shows bit 14 on 100% of
+its 1 001 frames only because that type occurs solely after t+688, where bit 14
+is permanently set. Every such correlation in this capture needs the time axis
+before it means anything. **[V]**
+
+The client's own code agrees on the width if not on the meaning: at `0xF20ABC` it
+reads a byte and tests its bits individually, setting `0x8000`, `0x4000`,
+`0x2000` and `0x1000`. That is in the **handshake** body, not in a frame header,
+so those four bits are a handshake field — plausibly a capability mask — and are
+**[U]**. Generalising them to per-frame flags, as an earlier draft of this file
+did, is retracted.
+
 ### What this means for the server
 
 `MessageCodecUtility.ParseMessages` reads `length = buffer[offset + 2]` for every record.
@@ -154,6 +206,68 @@ Session records only (`id >= 0x1000`). Tick records are in §5.
 
 **`0x1001` is the only type both parties use in volume, and it is the one this project
 already implements.** The roster it carries is the whole of the join.
+
+### How delivery is acknowledged — and why the ack cannot name a frame [V]
+
+Delivery is **not** signalled by a header bit. It is signalled by a record in
+the content region:
+
+```
+type   = 0x1000 | (sequence & 0x0fff)   u16 LE
+len    = 0x01
+flags2 = send attempt
+body   = 0x00
+```
+
+**There is no reliability flag to set.** Bit 12 is set on 8 114 of the 18 526
+outbound frames, and 27 acknowledgements arrive — one per 301 flagged frames. A
+flag meaning "reliable" would not sit at a uniform ~44% across the round. **[V]**
+
+**The whole round's 27 acknowledgements**, and what they measure:
+
+| | |
+| --- | --- |
+| count | 27 |
+| direction | **all joiner → server** |
+| sequence named | **1** — every single one |
+| span | t+66.06 → t+729.62 |
+| acknowledgements sent by the server | **zero** |
+
+The server sent no acknowledgements at all. It received 492 frames from the
+joiner and answered none of them. So in this session reliability ran one way
+only. **[V]**
+
+**The ack names 12 bits and the counter is 15, so it cannot identify a frame.**
+The header counter reached 18 665 — past four full 4 096-wrap cycles — while
+the ack's type field carries only the low twelve. Sequence `1` is therefore
+ambiguous across **five distinct frames** in this round: sequences 1, 4 097,
+8 193, 12 289 and 16 385. Counting how many frames share each 12-bit value
+gives `{3 values shared by 3, 1 840 by 4, 2 199 by 5}` over the 4 096 values.
+
+That ambiguity is also why the first acknowledgement at t+66.06 appears to
+predate every frame carrying a twelve-bit value of 1 — the earliest of those is
+at t+181.0. The frame the joiner was actually acknowledging is the **pre-keyed
+handshake reply** at sequence 1, which never verifies under the session key and so
+is in none of the frame counts above. **[V]**
+
+This has a direct consequence for §3's inventory: **`0x1001` is two record kinds
+in one type.** Its 512 records are 485 genuine ones (roster entries opening
+`07 48`, `0b` payloads, `85`, `86`, `83`, `81`, `84`, `82`, `0c`, `02`) plus
+**27 acknowledgements** — the one-byte `00` bodies. Any count of `0x1001` records
+that does not separate those 27 is wrong, and the earlier reading of `0x1001` as
+485 plus 512 came from exactly that conflation. **[V]**
+
+This also corrects one implementation rule in `UDP_P2P_PROTOCOL.md` §6.3, which
+said to acknowledge each inbound `hdr & 0x7fff`. Reading the sequence with
+`0x7fff` is right, but the ack can only echo twelve bits of it, so for any
+sequence at or above 4 096 the acknowledgement is ambiguous — it names the low
+twelve bits and nothing more. **[V]**
+
+**What all 27 naming sequence 1 means is [U].** Per-packet acknowledgement would
+name 27 different sequences. A single repeated sequence over eleven minutes is
+more consistent with a keepalive or window probe than with delivery
+confirmation — but the capture settles that they are acks and not what they are
+acknowledging.
 
 **`0x5001` — not the acknowledgement, contrary to first reading [V] as a negative.**
 An earlier draft of this file read it as the running game's acknowledgement tag, on the
