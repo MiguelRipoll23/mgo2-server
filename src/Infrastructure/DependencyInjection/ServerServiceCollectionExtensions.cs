@@ -51,7 +51,7 @@ public static class ServerServiceCollectionExtensions
                 "GAMEPLAY_SERVER_PORT",
                 configuration.ReadNumber("UDP_PORT", options.GameplayServerPort));
             options.PublicHostAddress =
-                configuration.ReadText("P2P_HOST") ?? options.PublicHostAddress;
+                configuration.ReadText("DEDICATED_ADVERTISED_ADDRESS") ?? options.PublicHostAddress;
             options.GameplayLobbyName = configuration.ReadText("GAMEPLAY_SERVER_LOBBY_NAME")
                 ?? options.GameplayLobbyName;
             options.GameplayServerAccountName = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_NAME")

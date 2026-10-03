@@ -422,7 +422,7 @@ try {
         Start-Server 'gameplay-5730' 'GameplayServer' 'Gameplay server (5730/udp)' @{
             GAMEPLAY_SERVER_PORT = '5730'
             GAMEPLAY_SERVER_LOBBY_NAME = 'Free Battle'
-            P2P_HOST = Get-SettingValue 'ADVERTISED_ADDRESS' '127.0.0.1' $projectDirectory
+            DEDICATED_ADVERTISED_ADDRESS = Get-SettingValue 'ADVERTISED_ADDRESS' '127.0.0.1' $projectDirectory
         }
 
         Start-Server 'http' 'Http' "HTTP API ($httpPort/tcp)" @{

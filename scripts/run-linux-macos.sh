@@ -326,7 +326,7 @@ http_port="$(setting_value HTTP_PORT 80)"
 dns_port="$(setting_value DNS_PORT 53)"
 stun_port="$(setting_value STUN_PORT 3478)"
 launcher_server="$(setting_value LAUNCHER_SERVER http://mgo2pc.com)"
-p2p_host="$(setting_value ADVERTISED_ADDRESS 127.0.0.1)"
+dedicated_advertised_address="$(setting_value ADVERTISED_ADDRESS 127.0.0.1)"
 
 echo ''
 echo 'Starting every server'
@@ -369,7 +369,7 @@ done
 start_server gameplay-5730 GameplayServer 'Gameplay server (5730/udp)' \
     'GAMEPLAY_SERVER_PORT=5730' \
     'GAMEPLAY_SERVER_LOBBY_NAME=Free Battle' \
-    "P2P_HOST=${p2p_host}"
+    "DEDICATED_ADVERTISED_ADDRESS=${dedicated_advertised_address}"
 
 start_server http Http "HTTP API (${http_port}/tcp)" \
     "HTTP_PORT=${http_port}" \

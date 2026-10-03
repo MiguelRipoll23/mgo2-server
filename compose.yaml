@@ -262,7 +262,9 @@ services:
     <<: *gameplay-server
     container_name: mgo2-gameplay-1
     # The address players are told to rendezvous at comes from ADVERTISED_ADDRESS
-    # in the mounted appsettings.json; P2P_HOST is deliberately not set.
+    # in the mounted appsettings.json. DEDICATED_ADVERTISED_ADDRESS overrides it
+    # when this host's clients bind their socket somewhere ADVERTISED_ADDRESS
+    # cannot reach; leave it unset when it does not.
     environment:
       GAMEPLAY_SERVER_PORT: "5730"
       GAMEPLAY_SERVER_LOBBY_NAME: Free Battle

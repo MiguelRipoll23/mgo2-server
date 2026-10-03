@@ -715,7 +715,9 @@ not what this code does. The gate is **[U]**; a window or a
 retransmit-while-unconfirmed loop fits the observed pattern, and the 27 identical
 sequence values favour the latter.
 
-Implementation rules for a host:
+**What the protocol does.** These are the rules a host implementing this channel
+follows. **mgo2-server implements none of 1–3** — see *What this server does*,
+below, which is why they are kept separate rather than merged.
 
 1. ACK each newly observed inbound seq (`hdr & 0x7fff`) exactly once —
    type `0x1000 | seq`, len 1, flags2 1, body `[0]` — on the shared counter.
@@ -725,20 +727,32 @@ Implementation rules for a host:
    sequence `1` named five different frames (1, 4097, 8193, 12289, 16385). The
    capture's own 27 acknowledgements all named sequence 1
    (`UDP_GAME_CAPTURE.md` §3). **[V]**
-   **mgo2-server sends none of these.** Rule 1 is not implemented on the
-   gameplay server: the recorded host received 492 frames in a live round and
-   acknowledged none, and each acknowledgement would spend an outbound sequence
-   and shift every later sequence number away from the capture's. It also never
-   replies to an unreliable record — `PlayerTickHandlers` (vitals and position)
-   contains no send or broadcast at all, so a position tick produces a log line
-   and nothing on the wire. Inbound acknowledgements are still recognised, by a
-   stricter test than the class bit alone: `(type & 0xf000) == 0x1000`, one-byte
-   body, body `0x00`. **[V]**
 2. Cumulative: the joiner's single `0x1001` covers both host seqs 0 and 1;
    duplicate frames (re-sends of an acked record, seq ≤ lastInSeq) are not
    re-acked.
 3. Never ack a frame whose only message is an ACK entry (no ack-of-ack).
 4. Keep ONE outbound counter for data frames and acks alike (§2/§6.2).
+
+**What this server does instead.** Rules 1–3 are deliberately not implemented on
+the gameplay server, and rule 4 holds for the same reason — it has a single
+outbound counter, it simply never draws from it for an acknowledgement. **[V]**
+
+- **No acknowledgements are sent at all.** The recorded host received 492 frames
+  in a live round and acknowledged none, and nothing in the binary gates one on
+  the reliable class. Each acknowledgement would also spend an outbound
+  sequence, shifting every later sequence number away from the capture's.
+- **No reply of any kind to an unreliable record.** `PlayerTickHandlers` (vitals
+  and position) contains no send or broadcast, so a position tick produces a log
+  line and nothing on the wire — which is what the measurement in
+  `UDP_GAME_CAPTURE.md` §3 implies, since no tick record carries the reliable
+  class bit in the first place.
+- **Inbound acknowledgements are still recognised**, by a stricter test than the
+  class bit alone: `(type & 0xf000) == 0x1000`, a one-byte body, and body `0x00`.
+  They are logged and deduplicated, and never answered.
+
+If a client ever turns out to need acknowledgements to advance, this is the first
+thing to change: `UdpCommandConstants.AcknowledgementTypeOf` already builds the
+type correctly, masking the sequence to the twelve bits it can carry. **[V]**
 
 mgo2-server implements this in `DedicatedHostService.ackInbound()`
 (`src/infrastructure/udp/services/dedicated-host-service.ts`).
