@@ -58,17 +58,23 @@ spec:
         ports:
         - containerPort: 5731
           protocol: TCP
-        # This probe is not optional under externalTrafficPolicy: Local. Without
-        # one the pod is Ready the moment the container starts, kube-proxy
-        # believes the node has a local endpoint, and the load balancer sends a
-        # connection to a listener that has not bound yet. A tcpSocket probe
-        # reports the truth, and the server tolerates it: the probe connects and
-        # drops, which TcpServerBase reads as zero bytes and closes quietly.
-        readinessProbe:
+        # A startupProbe, not a readinessProbe, and the reason is the log rather
+        # than the readiness. Both gate the same thing here, but a
+        # readinessProbe is polled for the life of the pod: every poll is a
+        # connect-then-drop, and TcpServerBase logs both halves, so each pod
+        # wrote a connection and a disconnection every five seconds forever. A
+        # startupProbe is polled only until it passes once and then stops, so
+        # the steady state is silent. The bind is still verified, which is the
+        # part externalTrafficPolicy: Local needs: until the probe passes the
+        # pod is not Ready, so kube-proxy does not advertise a local endpoint
+        # and the load balancer cannot send to a listener that has not bound.
+        startupProbe:
           tcpSocket:
             port: 5731
           periodSeconds: 5
-          failureThreshold: 3
+          # 5s x 120 is two minutes to bind before the container is restarted,
+          # which is the whole startup budget this server needs.
+          failureThreshold: 120
           timeoutSeconds: 3
         resources: {}
         securityContext:

@@ -172,11 +172,17 @@ def check_deployments(parsed: list[pathlib.Path]) -> None:
         ):
             fail(f"{path}: {name} is Local but does not spread across nodes")
 
+        # A probe of either kind keeps the pod out of the endpoints until the
+        # port is bound. A startupProbe is the better shape for a game server:
+        # it is polled until it passes once and then stops, so it costs nothing
+        # in steady state, where a readinessProbe would connect and be logged
+        # every period for the life of the pod. Either satisfies Local.
         for container in template.get("containers", []):
-            if "readinessProbe" not in container:
+            if "readinessProbe" not in container and "startupProbe" not in container:
                 fail(
-                    f"{path}: {name} is Local and container {container.get('name')!r} has no "
-                    f"readinessProbe, so it is Ready before it binds its port"
+                    f"{path}: {name} is Local and container {container.get('name')!r} has "
+                    f"neither a readinessProbe nor a startupProbe, so it is Ready before it "
+                    f"binds its port"
                 )
 
 

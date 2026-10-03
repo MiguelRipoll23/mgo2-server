@@ -74,18 +74,26 @@ spec:
           runAsUser: 1000
           seccompProfile:
             type: RuntimeDefault
-        readinessProbe:
+        startupProbe:
           # Kubernetes has no UDP probe, so this asks /proc whether the socket is
           # bound. 5730 is 0x1662, and /proc/net/udp is per network namespace, so
           # the line only exists once the host's UdpClient is listening. A TCP
           # probe would pass against a port nothing ever accepts on.
+          #
+          # A startupProbe rather than a readinessProbe, for the same reason as
+          # the TCP deployments: this opens no connection either way, but the
+          # readiness probe ran for the life of the pod and there is nothing to
+          # learn from the tenth poll that the first did not. The bind is still
+          # verified before the pod is Ready, which is what externalTrafficPolicy
+          # : Local needs.
           exec:
             command:
             - /bin/sh
             - -c
             - grep -qE ':1662[[:space:]]' /proc/net/udp
           periodSeconds: 5
-          failureThreshold: 3
+          # 5s x 120 is two minutes to bind before the container is restarted.
+          failureThreshold: 120
           timeoutSeconds: 3
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File

@@ -222,7 +222,7 @@ carries what makes the drop window as small as it can be made:
 
 | Setting | What it prevents |
 | --- | --- |
-| `readinessProbe` (`tcpSocket`) | The pod is Ready before it has bound, so the LB sends to a listener that is not there yet. **The most important one.** |
+| `startupProbe` | The pod is Ready before it has bound, so the LB sends to a listener that is not there yet. **The most important one.** A `startupProbe` rather than a `readinessProbe`: both keep the pod out of the endpoints until the port is bound, but the startup probe is polled until it passes once and then stops. A readiness probe is polled for the life of the pod, and on these servers each poll is a `tcpSocket` connect that `TcpServerBase` accepts, logs and then reads zero bytes from — a connection and a disconnection every period, forever, from a client that does not exist. |
 | `maxUnavailable: 0` | The rollout taking the ready count below the serving count. |
 | `maxSurge: 1` | Nothing. `25%` of one replica rounds to zero, so the surge a Local rollout depends on would not happen at all. |
 | `minReadySeconds: 10` | The old pod dying before the LB has health-checked the new pod's node. |
@@ -268,7 +268,7 @@ connect to the host. Nothing errors, so this reads as a crypto problem and not a
 a routing one.
 
 `Local` restores the source, and the paired Deployment carries the same
-`readinessProbe`, `minReadySeconds` and `maxUnavailable: 0` / `maxSurge: 1`
+`startupProbe`, `minReadySeconds` and `maxUnavailable: 0` / `maxSurge: 1`
 rollout the TCP Services use, for the same reason: a node with no local endpoint
 drops its traffic rather than forwarding it.
 

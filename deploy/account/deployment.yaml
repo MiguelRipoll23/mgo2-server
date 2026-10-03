@@ -56,17 +56,15 @@ spec:
         ports:
         - containerPort: 5732
           protocol: TCP
-        # This probe is not optional under externalTrafficPolicy: Local. Without
-        # one the pod is Ready the moment the container starts, kube-proxy
-        # believes the node has a local endpoint, and the load balancer sends a
-        # connection to a listener that has not bound yet. A tcpSocket probe
-        # reports the truth, and the server tolerates it: the probe connects and
-        # drops, which TcpServerBase reads as zero bytes and closes quietly.
-        readinessProbe:
+        # A startupProbe, not a readinessProbe: a readinessProbe would connect
+        # and drop every five seconds for the life of the pod, and both halves
+        # are logged. See the note in deploy/gate/deployment.yaml, which is the
+        # same case; the bind is still verified before the pod is Ready.
+        startupProbe:
           tcpSocket:
             port: 5732
           periodSeconds: 5
-          failureThreshold: 3
+          failureThreshold: 120
           timeoutSeconds: 3
         resources: {}
         securityContext:

@@ -46,19 +46,33 @@ spec:
           protocol: TCP
         - containerPort: 5743
           protocol: TCP
-        # This probe is not optional under externalTrafficPolicy: Local. Without
-        # one the pod is Ready the moment the container starts, kube-proxy
-        # believes the node has a local endpoint, and the load balancer sends a
-        # connection to a listener that has not bound yet. Port 80 is the HTTP
-        # listener; the gRPC port answers on the same readiness either way. The
-        # server tolerates the probe: it connects and drops, which the read loop
-        # reads as zero bytes and closes quietly.
-        readinessProbe:
-          tcpSocket:
+        # Two probes, because the two questions are different. The startupProbe
+        # asks only "has it bound yet", which is what externalTrafficPolicy: Local
+        # needs: until it passes the pod is not Ready, so the load balancer
+        # cannot send to a listener that has not bound. It is polled every five
+        # seconds until it passes once and then stops, so the steady state costs
+        # nothing. The readinessProbe then watches the server while it serves,
+        # hourly, because an hourly poll is enough to notice a wedged process and
+        # costs one request an hour against an endpoint that is trivially cheap.
+        startupProbe:
+          httpGet:
+            path: /health
             port: 80
           periodSeconds: 5
-          failureThreshold: 3
+          # 5s x 120 is two minutes to bind and serve before the container is
+          # restarted.
+          failureThreshold: 120
           timeoutSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          periodSeconds: 3600
+          # Three misses is three hours of an already-suspect server before the
+          # pod is pulled out of rotation; this is a slow sanity check, not a
+          # fast failover, and the game servers are what carry the players.
+          failureThreshold: 3
+          timeoutSeconds: 10
         resources: {}
         securityContext:
           allowPrivilegeEscalation: false
