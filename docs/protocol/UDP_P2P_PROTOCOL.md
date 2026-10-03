@@ -527,7 +527,9 @@ handshake's `00 10 1c 00`):
 [0..2)    hdr u16 LE — [bit 0x8000 = LZSS-compressed][bits 14-0 = a monotonic
                     per-peer frame counter].  Not a set of flags: bits 12-14 are
                     counter bits and change only as the counter carries past
-                    4096/8192/12288/16384 (UDP_GAME_CAPTURE.md §2). **[V]**
+                    4096/8192/12288/16384 (UDP_GAME_CAPTURE.md §2). The counter
+                    is 15 bits, so it must wrap at 0x7fff: letting it reach
+                    0x8000 marks a plaintext frame as compressed. **[V]**
 [2..4)    message type u16 LE        (class bits 0x4000/0x8000 live in this word)
 [4]       len u8 — body length
 [5]       flags2 u8 — per-message flags byte
@@ -686,6 +688,11 @@ Implementation rules for a host:
    sequence `1` named five different frames (1, 4097, 8193, 12289, 16385). The
    capture's own 27 acknowledgements all named sequence 1
    (`UDP_GAME_CAPTURE.md` §3). **[V]**
+   **mgo2-server sends none of these.** Rule 1 is not implemented on the
+   gameplay server: the recorded host received 492 frames in a live round and
+   acknowledged none, and each acknowledgement would spend an outbound sequence
+   and shift every later sequence number away from the capture's. Inbound
+   acknowledgements are still parsed and logged. **[V]**
 2. Cumulative: the joiner's single `0x1001` covers both host seqs 0 and 1;
    duplicate frames (re-sends of an acked record, seq ≤ lastInSeq) are not
    re-acked.

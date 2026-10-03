@@ -166,16 +166,24 @@ public sealed partial class GameplayServerService
     }
 
     /// <summary>
-    /// Advances the cumulative window without transmitting. Pre-keyed frames
-    /// and frames whose only content is acknowledgement entries use this, because
-    /// acknowledging an acknowledgement would ping-pong forever.
+    /// Records how far the peer's counter has got, without transmitting.
     /// </summary>
+    /// <remarks>
+    /// The recorded host does not answer frames with acknowledgements at all: it
+    /// received 492 frames in a live round and sent none, while the joiner sent
+    /// 27. Following the capture means tracking the counter and staying silent.
+    /// <c>UDP_P2P_PROTOCOL.md</c> §6.3 says a host should acknowledge each
+    /// inbound sequence, and the capture contradicts it for this host.
+    ///
+    /// The comparison is wrap-aware. A plain <c>&gt;</c> would report every
+    /// frame as stale once the fifteen-bit counter had gone past 32 767.
+    /// </remarks>
     /// <param name="session">Session to advance.</param>
     /// <param name="counter">Counter of the frame that arrived.</param>
     private static void TrackInbound(PeerSession session, ushort counter)
     {
-        var sequence = (ushort)(counter & UdpCommandConstants.CounterMask);
-        if (sequence > session.LastInboundSequence)
+        var sequence = FrameCounterUtility.Value(counter);
+        if (FrameCounterUtility.IsNewer(sequence, session.LastInboundSequence))
         {
             session.LastInboundSequence = sequence;
         }
@@ -193,12 +201,17 @@ public sealed partial class GameplayServerService
         session.Established = true;
         logger.LogDebug("Inbound keyed frame counter={Counter} key={SessionKey:x8}", counter, sessionKey);
 
-        var acknowledgementEntries = 0;
         foreach (var message in frame.Messages)
         {
-            // An acknowledgement entry closes the matching outbound frame: the
-            // sender's reliable-class identifier with a one-byte zero body. The
-            // length guard matters, because the profile record shares the class.
+            // An acknowledgement entry names the frame it closes: the sender's
+            // reliable-class identifier with a one-byte zero body. The length
+            // guard matters, because the profile record shares the class.
+            //
+            // Only twelve bits of it are a sequence, so the value is logged as
+            // it arrives rather than as the frame it closes: sequences 1, 4097,
+            // 8193, 12289 and 16385 all arrive as this same type. A live round
+            // ended at counter 18665 with every one of its 27 acknowledgements
+            // reading this way.
             var isAcknowledgementEntry =
                 (message.Type & 0xf000) == UdpCommandConstants.AcknowledgementClass &&
                 message.Length == 1 &&
@@ -210,67 +223,22 @@ public sealed partial class GameplayServerService
                 if (session.SeenAcknowledgements.Add(message.Type))
                 {
                     logger.LogDebug(
-                        "Acknowledgement for sequence {Sequence} received (flags={Flags})",
+                        "Acknowledgement naming sequence {Sequence} received (flags={Flags})",
                         message.Type & UdpCommandConstants.AcknowledgementIdentifierMask,
                         message.Flags);
                 }
 
-                acknowledgementEntries++;
                 continue;
             }
 
             await DispatchMessageAsync(message, remote, session);
         }
 
-        // A frame whose only content is acknowledgement entries must not be
-        // acknowledged, because acknowledgements of acknowledgements cycle.
-        if (acknowledgementEntries == frame.Messages.Count)
-        {
-            TrackInbound(session, counter);
-        }
-        else
-        {
-            AcknowledgeInbound(session, counter);
-        }
-    }
-
-    /// <summary>
-    /// Acknowledges the peer's frame. Every newly observed sequence gets exactly
-    /// one acknowledgement, and a duplicate is not re-acknowledged.
-    /// </summary>
-    /// <param name="session">Session to acknowledge.</param>
-    /// <param name="counter">Counter of the frame that arrived.</param>
-    private void AcknowledgeInbound(PeerSession session, ushort counter)
-    {
-        var sequence = (ushort)(counter & UdpCommandConstants.CounterMask);
-        if (sequence <= session.LastInboundSequence)
-        {
-            return;
-        }
-
-        session.LastInboundSequence = sequence;
-        session.OutboundCounter = (ushort)((session.OutboundCounter + 1) & 0xffff);
-        var outboundCounter = session.OutboundCounter;
-
-        var plain = FrameBuilderUtility.BuildMessageFrame(outboundCounter,
-        [
-            FrameBuilderUtility.MessageOf(
-                (ushort)(UdpCommandConstants.AcknowledgementClass | session.LastInboundSequence),
-                UdpCommandConstants.AcknowledgementBody,
-                UdpCommandConstants.AcknowledgementFirstAttempt),
-        ]);
-
-        var key = session.Established ? session.SessionKey : UdpCryptoKeyConstants.PreHandshakeKey;
-        var digestKey = session.Established
-            ? session.SessionKey ^ UdpCryptoKeyConstants.TailDigestKey
-            : UdpCryptoKeyConstants.TailDigestKey;
-
-        Send(FrameCryptoUtility.EncodeFrame(plain, outboundCounter, key, digestKey), session.DialBack);
-        logger.LogDebug(
-            "Acknowledged counter={Counter} sequence={Sequence} to {DialBack}",
-            outboundCounter,
-            session.LastInboundSequence,
-            session.DialBack);
+        // The recorded host answers nothing with an acknowledgement, so the
+        // counter is only tracked. Acknowledging here would add a frame the live
+        // host never sends and spend an outbound sequence on it, which shifts
+        // every later sequence number away from the capture's.
+        TrackInbound(session, counter);
     }
 
     /// <summary>

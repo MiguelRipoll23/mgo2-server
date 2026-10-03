@@ -39,13 +39,20 @@ public sealed partial class GameplayServerService
     /// happened to arrive from. The two differ whenever the host sits behind a
     /// load balancer, and only the first is a socket the peer is reading.
     /// </summary>
+    /// <remarks>
+    /// The counter is fifteen bits and the header's bit 15 is the compression
+    /// marker, so the increment wraps at <c>0x7fff</c> rather than at
+    /// <c>0xffff</c>. Wrapping at sixteen bits would let the counter reach
+    /// <c>0x8000</c> and mark a plaintext frame as compressed, which the peer
+    /// would then try to decompress.
+    /// </remarks>
     /// <param name="session">Session to write through.</param>
     /// <param name="messageType">Type of the message.</param>
     /// <param name="body">Body of the message.</param>
     private void SendMessage(PeerSession session, ushort messageType, byte[] body)
     {
         var counter = session.OutboundCounter;
-        session.OutboundCounter = (ushort)((counter + 1) & 0xffff);
+        session.OutboundCounter = FrameCounterUtility.Next(counter);
 
         var plain = FrameBuilderUtility.BuildMessageFrame(counter, [FrameBuilderUtility.MessageOf(messageType, body)]);
         var key = session.Established ? session.SessionKey : UdpCryptoKeyConstants.PreHandshakeKey;
