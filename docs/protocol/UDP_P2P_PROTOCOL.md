@@ -556,6 +556,15 @@ twelve bits of the message's own first word as the **id**, then ORs in the
 | body length `> 0xff` | `0x2000` long form (`0x2698e8`) |
 | `flags & 0x20` | `0x8000` LZSS-compressed (`0x2699b4`) |
 
+**The first row does not reproduce the live wire.** On the dedicated server's
+game, bit 0 of a record's fourth header byte agrees with bit 12 of its type on
+only **44.8%** of 152 668 records — barely better than chance. On that wire the
+fourth byte is a **running counter**: 13 distinct values (0–21) across tick
+records, 202 (0–201) across session records, climbing monotonically over a
+round. Either the dedicated server is a different build from the one
+`FUN_00269860` was read in, or the flags byte is a field this reading is not
+looking at. The `id (12 bits) | class (top nibble)` shape itself holds. **[V]**
+
 So every tag on this channel reads as `id (12 bits) | class (top nibble)`, and
 the two halves move independently: id 1 appears in three classes (`0x1001`
 reliable, `0x9001` reliable+compressed, `0x5001` reliable+`0x4000`), and the
@@ -649,15 +658,19 @@ entry message**:
 ```
 type   = 0x1000 | (ackedSeq & 0xfff)   u16 LE   (reliable-class, acked frame seq)
 len    = 0x01
-flags2 = send attempt (starts at 1, escalates per re-send)
+flags2 = send attempt (starts at 1, escalates per re-send)   ← does not hold, below
 body   = 0x00
 ```
 
 Sent as an ordinary session-keyed frame drawing the host's shared outbound
 counter. Wire evidence from the capture: the joiner's 17-byte control frames
 (`05 00 | 01 10 | 01 01 00`) are its ACK of **our seq 1** (the establish +
-keep-alive mirror both drew seq 1) — cumulative, one ACK covers both. The
-escalating flags2 (1→5) is its re-send counter while the host stays silent.
+keep-alive mirror both drew seq 1) — cumulative, one ACK covers both.
+
+**The escalating `flags2` does not hold.** The round's 27 acknowledgements carry
+fourth bytes of `15, 18, 24, 25, 29, 31, 34, 38, 40, 45, 46, 47, 48, 50, 61, 99,
+106, 113, 114, 116, 125, 132, 138` — scattered through the same running counter
+the session records use, not a per-ack retry stamp that climbs 1→5. **[V]**
 
 Binary evidence:
 
@@ -678,6 +691,30 @@ Binary evidence:
   `type u16 LE | len u8 | flags2 u8 | body` — the §6.2 layout — and registers
   (offset, size) slots per message.
 
+**Re-read against `MGO2.ELF`, and what that settles.** The four addresses are
+in the image this ELF covers and were disassembled to check rather than taken on
+trust. Three hold exactly as written, and one claim does not. **[V]**
+
+| claim | disassembly |
+| --- | --- |
+| `0x266e00` stamps the received counter into the ack template | `lwz r9,0x3c(session)` / `lhz r0,0x293e(r1)` / `stw r0,4(r9)` — confirmed |
+| `0x26607c` writes `session+0x88` into the envelope's `[4..6)` | `lwz r0,0x88(session)` / `sth r0,4(r31)` — confirmed |
+| pending message slots, matched per acknowledgement | `0x266cd8`–`0x266d44` is a **lowest-set-bit scan** of a 32-bit mask at `session+0x44` (`srwi`/`clrlwi` loop) — a slot allocator, as described |
+| an acknowledgement is gated on the record being reliable-class | **refuted** |
+
+**There is no bit-12 test anywhere in the binary.** `rlwinm rX, rX, 0, 0xc, 0xc`
+— keep bit 12 and nothing else — has **zero** occurrences across 18.3 MB, and no
+`andi`-form equivalent of it either. The enqueue at `0x266e00` sits
+*unconditionally* in the accepted-frame path, so the client **prepares** an ack
+for every frame it takes, and whatever decides whether to send it is downstream
+and is not a class test.
+
+That matches the capture: 492 inbound frames, 27 acknowledgements, every one of
+them naming sequence 1. A per-frame "ack this because it was reliable" policy is
+not what this code does. The gate is **[U]**; a window or a
+retransmit-while-unconfirmed loop fits the observed pattern, and the 27 identical
+sequence values favour the latter.
+
 Implementation rules for a host:
 
 1. ACK each newly observed inbound seq (`hdr & 0x7fff`) exactly once —
@@ -691,8 +728,12 @@ Implementation rules for a host:
    **mgo2-server sends none of these.** Rule 1 is not implemented on the
    gameplay server: the recorded host received 492 frames in a live round and
    acknowledged none, and each acknowledgement would spend an outbound sequence
-   and shift every later sequence number away from the capture's. Inbound
-   acknowledgements are still parsed and logged. **[V]**
+   and shift every later sequence number away from the capture's. It also never
+   replies to an unreliable record — `PlayerTickHandlers` (vitals and position)
+   contains no send or broadcast at all, so a position tick produces a log line
+   and nothing on the wire. Inbound acknowledgements are still recognised, by a
+   stricter test than the class bit alone: `(type & 0xf000) == 0x1000`, one-byte
+   body, body `0x00`. **[V]**
 2. Cumulative: the joiner's single `0x1001` covers both host seqs 0 and 1;
    duplicate frames (re-sends of an acked record, seq ≤ lastInSeq) are not
    re-acked.

@@ -219,9 +219,37 @@ flags2 = send attempt
 body   = 0x00
 ```
 
-**There is no reliability flag to set.** Bit 12 is set on 8 114 of the 18 526
-outbound frames, and 27 acknowledgements arrive — one per 301 flagged frames. A
-flag meaning "reliable" would not sit at a uniform ~44% across the round. **[V]**
+**There is no reliability flag in the frame header.** Bit 12 is set on 8 114 of
+the 18 526 outbound frames, and 27 acknowledgements arrive — one per 301
+flagged frames. A flag meaning "reliable" would not sit at a uniform ~44% across
+the round. **[V]**
+
+**Reliability is marked per record instead, in bit 12 of the record's type** —
+the `0x1000` class bit that `UDP_P2P_PROTOCOL.md` §6.2 traces to `flags & 0x01`.
+And the records that would flood if they were acknowledged never carry it:
+
+| | records | with type bit 12 set |
+| --- | --- | --- |
+| position (`0x006d`…`0x08db`) | 15 392 | **0** |
+| vitals (`0x0080`/`0x0880`) | 4 527 | **0** |
+| every tick record (`id < 0x1000`) | 146 224 | **0** |
+
+A position tick is therefore structurally outside anything the acknowledgement
+mechanism addresses. **[V]**
+
+**But bit 12 is very nearly just the tick/session boundary**, so it should not be
+read as "reliable" on its own. Of the 6 444 records at or above `0x1000`, **288
+have bit 12 clear** — every one of them in the `0x8xxx` group (`0x810d` 243,
+`0x890d` 34, `0x825c` 5, `0x8a5c` 2, `0x807f`, `0x80d9`), almost all
+joiner→server with 16-byte bodies. So the bit tracks the record family at least
+as much as it tracks delivery. **[V]**
+
+**Nothing in the client tests that bit.** Disassembling `MGO2.ELF` finds **zero**
+occurrences of `rlwinm rX, rX, 0, 0xc, 0xc` — the instruction that would keep
+bit 12 alone — across 18.3 MB, and no `andi` equivalent. The client's ack
+enqueue is unconditional; see `UDP_P2P_PROTOCOL.md` §6.3. So whatever governs
+which frames get answered is **[U]**, and the capture cannot supply it: the host
+sent no acks at all, so no policy was ever exercised. **[V]**
 
 **The whole round's 27 acknowledgements**, and what they measure:
 
