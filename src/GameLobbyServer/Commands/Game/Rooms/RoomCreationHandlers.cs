@@ -26,6 +26,13 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 /// room is a room there too, not a fantasy the lobby keeps to itself.
 /// </para>
 /// <para>
+/// A room named for the dedicated host is refused rather than written, because
+/// that name is the gameplay server's own: a row a player opened under it would
+/// be reported as a dedicated host the server never created. A request that
+/// names a host role is not among those refused — a name on its own is a
+/// player's to use.
+/// </para>
+/// <para>
 /// The room is also offered to the event queue as soon as it exists, rather than
 /// at the next sweep: the room that was just created may be the host two paired
 /// teams are waiting on. The offer is made after the client has been answered,
@@ -74,6 +81,21 @@ public sealed class CreateGameHandler(
         var comment = pushed?.Comment ?? string.Empty;
         var password = pushed is { Password.Length: > 0 } ? pushed.Password : string.Empty;
         var rotation = ReadRotation(pushed);
+
+        // The dedicated-host prefix is the gameplay server's own, and a room
+        // named for it is one the details screen reports as a dedicated host.
+        // Letting a player open one would put a second room under that name that
+        // no dedicated host wrote, so the request is refused with the same code
+        // the settings push uses for a block the room cannot be built from.
+        if (DedicatedHostNameUtils.IsDedicatedHostName(name))
+        {
+            await sessionHelper.SendResultAsync(
+                session,
+                CommandConstants.CreateGameResult,
+                ErrorCodeConstants.ResultHostRequestRefused,
+                cancellationToken);
+            return;
+        }
 
         // A room the host flagged as dedicated is the one the event hosts are
         // chosen from, so the flag travels into the room settings the event

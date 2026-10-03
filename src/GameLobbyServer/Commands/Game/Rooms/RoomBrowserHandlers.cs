@@ -260,6 +260,7 @@ public sealed class GetGameDetailsHandler(
         var averageExperience = roster.Count > 0 ? (int)Math.Round((double)totalExperience / roster.Count) : 0;
         var viewerIsHost = session.CharacterIdentifier == game.HostIdentifier;
         var rotation = ParseRotation(game.Games);
+        var isDedicated = await IsDedicatedAsync(game.Name, game.HostIdentifier, cancellationToken);
 
         var writer = new PacketWriter();
         writer.WriteUInt32(ErrorCodeConstants.ResultNone);
@@ -267,7 +268,7 @@ public sealed class GetGameDetailsHandler(
         writer.WriteFixedString(game.Name, 16);
         writer.WriteFixedString(game.Comment, 128);
         writer.WriteUInt8(game.Password.Length > 0 ? 1 : 0);
-        writer.WriteUInt8(0);
+        writer.WriteUInt8(isDedicated ? 1 : 0);
         writer.WriteUInt8(session.LobbyIdentifier is { } lobbyIdentifier ? Math.Min(lobbyIdentifier, 0xff) : 0);
         writer.WriteUInt32((uint)averageExperience);
         writer.WriteUInt32((uint)rating.RatingSum);
@@ -334,6 +335,36 @@ public sealed class GetGameDetailsHandler(
         }
 
         await sessionHelper.SendPacketAsync(session, CommandConstants.GetGameDetailsResult, writer.Build(), cancellationToken);
+    }
+
+    /// <summary>
+    /// Whether the room is hosted as a dedicated host, which is the byte the
+    /// client draws as the Create Game toggle's own value.
+    /// <para>
+    /// Two things say so and either is enough. A room whose name carries the
+    /// dedicated-host prefix is one the gameplay server opened, and it is
+    /// dedicated by that name whatever its settings row holds. Otherwise the
+    /// host's own live settings row is asked: the column is the host's claim
+    /// about how it is hosting, so a host that turned the toggle on after
+    /// opening the room is reported as dedicated rather than as it was when the
+    /// room was created.
+    /// </para>
+    /// </summary>
+    /// <param name="roomName">Name of the room being described.</param>
+    /// <param name="hostIdentifier">Character hosting the room.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task<bool> IsDedicatedAsync(
+        string roomName,
+        int hostIdentifier,
+        CancellationToken cancellationToken)
+    {
+        if (DedicatedHostNameUtils.IsDedicatedHostName(roomName))
+        {
+            return true;
+        }
+
+        var settings = await characterService.GetHostSettingsAsync(hostIdentifier, cancellationToken);
+        return settings.FirstOrDefault(row => row.Type == HostSettingsType.Value)?.Dedicated is true;
     }
 
     private static List<int[]> ParseRotation(string games)

@@ -47,14 +47,6 @@ public sealed class MatchService(
     private const int FreeBattleRule = 1;
 
     /// <summary>
-    /// Prefix of a character name that marks its room as a dedicated host. A
-    /// gameplay server's character is named for what it is, and the name is the
-    /// only record the room needs: the room it publishes is built from the name
-    /// rather than from a settings row the host would otherwise have to write.
-    /// </summary>
-    private const string DedicatedCharacterNamePrefix = "server";
-
-    /// <summary>
     /// The single round this host's room advertises, as a `[rule, map, flag]`
     /// triple with the map drawn from the disc's five shipping stages.
     /// <para>
@@ -125,14 +117,6 @@ public sealed class MatchService(
     }
 
     /// <summary>
-    /// Whether this host's character names it a dedicated host.
-    /// </summary>
-    private bool IsDedicatedCharacterName =>
-        options.GameplayServerCharacterName.StartsWith(
-            DedicatedCharacterNamePrefix,
-            StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
     /// Finds the lobby this host publishes in and creates the match when it is
     /// missing, so restarting the container reuses the match it left behind.
     /// </summary>
@@ -175,11 +159,13 @@ public sealed class MatchService(
             room.Games = JsonSerializer.Serialize(rotation);
 
             // A gameplay server hosts rather than plays, so its room is a
-            // dedicated host, and the character name it publishes under is what
-            // says so. The flag travels into the room settings the other readers
-            // look at; nothing is stored against the host to carry it, because
-            // the name already does.
-            room.Common = EventHostRoomSettingsUtils.Compose(IsDedicatedCharacterName, null);
+            // dedicated host, and the room's own name is what says so: the name
+            // is written a few lines above and is the same prefix the details
+            // reply reads, so the flag and the name cannot disagree. Nothing is
+            // stored against the host to carry it, because the name already does.
+            room.Common = EventHostRoomSettingsUtils.Compose(
+                DedicatedHostNameUtils.IsDedicatedHostName(name),
+                null);
         }, cancellationToken);
 
         await gameService.AddPlayerAsync(game.Identifier, hostIdentifier, cancellationToken);
