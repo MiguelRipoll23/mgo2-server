@@ -91,7 +91,7 @@ public sealed class AccountService(
                 "peer identifier, so the account must own that identifier.");
         }
 
-        logger.LogInformation(
+        logger.LogDebug(
             "Gameplay server account ready: {AccountName}, character {CharacterName} ({Identifier})",
             accountName,
             characterName,
