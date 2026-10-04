@@ -1,6 +1,7 @@
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Udp;
 using Mgo2Server.Shared.Utils;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Mgo2Server.GameplayServer.Commands;
 
@@ -35,5 +36,27 @@ public static class PeerCommandHandlerRegistration
         {
             registry.Register<PlayerPositionHandler>(positionType);
         }
+    }
+
+    /// <summary>
+    /// Registers every peer command handler with the container.
+    /// </summary>
+    /// <remarks>
+    /// The two lists belong together. The dispatcher resolves a handler from the
+    /// container by the type the registry named, so a handler registered above and
+    /// missing here is not a type with no behaviour but a message that throws on
+    /// arrival and takes the rest of its frame's messages with it — which is how
+    /// the in-game control records failed here while the peer sat connected.
+    /// </remarks>
+    /// <param name="services">Container to register with.</param>
+    public static IServiceCollection AddCommandHandlers(this IServiceCollection services)
+    {
+        services.AddSingleton<AcceptHandshakeHandler>();
+        services.AddSingleton<AcknowledgeKeepAliveHandler>();
+        services.AddSingleton<PlayerProfileHandler>();
+        services.AddSingleton<InGameControlHandler>();
+        services.AddSingleton<PlayerVitalsHandler>();
+        services.AddSingleton<PlayerPositionHandler>();
+        return services;
     }
 }

@@ -24,12 +24,10 @@ builder.Services.AddSingleton<MatchService>();
 builder.Services.AddSingleton<RoomRosterService>();
 builder.Services.AddSingleton<PostJoinBurstService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
-builder.Services.AddSingleton<AcceptHandshakeHandler>();
-builder.Services.AddSingleton<AcknowledgeKeepAliveHandler>();
-builder.Services.AddSingleton<PlayerProfileHandler>();
+// The peer command handlers are registered beside the types their messages are
+// bound to, so a handler cannot be mapped without being resolvable.
+builder.Services.AddCommandHandlers();
 builder.Services.AddSingleton<PlayerStateService>();
-builder.Services.AddSingleton<PlayerVitalsHandler>();
-builder.Services.AddSingleton<PlayerPositionHandler>();
 builder.Services.AddSingleton<GameplayServerService>();
 
 var host = builder.Build();
