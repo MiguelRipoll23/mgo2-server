@@ -117,6 +117,17 @@ joiner (RPCS3/PS3)                        game server                     fake h
   **Confirmed live 2026-09-09:** the session-keyed ESTABLISH OUT flipped the
   joiner into state 8 — the ~2 s handshake retries stopped and the first
   session-keyed data-phase frames were captured (§6.2).
+  > **A real host sends both opening frames pre-keyed.** The trial above used a
+  > fake host, and a session-keyed frame is accepted. The dedicated server in
+  > `docs/mgo2-game.pcapng` does not send one: its 16-byte `0x5000` keep-alive
+  > and its 44-byte handshake reply verify with the bare constant
+  > `0x2b58de69` and with `K ^ 0x2b58de69` at neither, while the joiner's first
+  > session-keyed frame verifies only with `K ^ 0x2b58de69`. The joiner reaches
+  > its keyed state on **accepting the handshake reply**, so a host that marks
+  > the session established before sending it hands the joiner two frames it
+  > drops at the §5.3 digest gate, and watches it re-dial for ~40 s. The capture
+  > is the reference here; `AcceptHandshakeHandler` sets the flag after the
+  > reply for that reason. See `UDP_GAME_CAPTURE.md` §4. **[V]**
 
 ---
 
@@ -495,8 +506,18 @@ established the key from the handshake reply alone.
 `tag-0x5000` keep-alive (ESTABLISH OUT) after its handshake reply; the joiner's
 ~2 s handshake re-dials stopped within one retry cycle and its next frames were
 session-keyed. The key-establishment path is not just in the decompile — it works
-on a real client (the `DedicatedHostService` handshake handler does the same on
-every accept). What the joiner sends next is documented in §6.2.
+on a real client. What the joiner sends next is documented in §6.2.
+
+**The real host does not do this**, and the difference is the whole point. In
+`docs/mgo2-game.pcapng` the dedicated server's keep-alive and handshake reply are
+**both pre-keyed** — measured over every derivation of the two counter bases and
+the two constants, they verify with the bare constant `0x2b58de69` and with
+`K ^ 0x2b58de69` at neither (`UDP_GAME_CAPTURE.md` §4). So the state-<8 → pre-key
+rule above is absolute and covers the opening exchange: the joiner cannot read a
+session-keyed frame until it has accepted a handshake reply, and it accepts that
+reply only after reading it. A host that marks its session established before
+sending the reply therefore gets both frames dropped at the digest gate
+(`0x266918`), before a field is parsed, and the joiner re-dials until it gives up. **[V]**
 
 **Decryption (offline, no brute force):** decode the peer's handshake (§5) for its
 `counter_base` → `peer_base`; own base is what we sent. Then per data frame: undo the

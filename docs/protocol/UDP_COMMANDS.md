@@ -114,8 +114,12 @@ lives in the same u16 as the type, so it must be masked off before dispatch.
 
 `0x5000` is **id 0** in the `0x1000\|0x4000` class. `type 0x5000, len 0, flags2 0` — a 16-byte
 frame carrying no body. The joiner emits these pre-keyed after each host reply (state 6). The
-host's **session-keyed** keep-alive is what flips the joiner into the data phase (state 8),
-because its tail digest verifies with `K ^ 0x2b58de69`. In the data phase the host mirrors
+host's keep-alive is what the joiner counts as the host answering, but it is **pre-keyed** — its
+tail digest verifies with the bare constant `0x2b58de69`, not with `K ^ 0x2b58de69`. What flips
+the joiner into the data phase (state 8) is its **acceptance of the handshake reply** behind it,
+which cannot happen until that reply is read. A host that marks its session established before
+sending the reply sends both frames keyed, and the joiner drops them at the digest gate
+(`UDP_GAME_CAPTURE.md` §4). In the data phase the host mirrors
 them. Implemented by `AcknowledgeKeepAliveHandler`.
 
 ### `0x5001` — **[U]**; an earlier keep-alive reading is refuted by the live capture [V]

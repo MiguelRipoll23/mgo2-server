@@ -364,6 +364,25 @@ are observable, so a client keying anything off them sees the order. **[V]** on 
 the counters. The two go out **in the same millisecond** (t+1.6681), so there is no interval
 to reproduce and nothing here delays a send.
 
+**Both are pre-keyed, and the keep-alive is no exception.** Searching each frame's tail digest
+over every derivation of the two counter bases and the two constants — `JB`, `HB`, `JB ^ HB`,
+each of those exclusive-ORed with `0x2b58de69` and with `0x87103c2f`, and `0` — the 16-byte
+keep-alive and the 44-byte reply verify with the **bare constant `0x2b58de69`** and with
+`K ^ 0x2b58de69` at **neither**; the joiner's first session-keyed frame, 92 bytes at
+`hdr 0x8001`, verifies **only** with `K ^ 0x2b58de69`. **[V]**
+
+So the keep-alive described above as "key-establishing" does not carry the session key. It is
+what the joiner counts as the host answering, and the joiner reaches its keyed state on
+**accepting the handshake reply** — which it can only do after reading it. `UDP_P2P_PROTOCOL.md`
+§2 and §6.1 record the opposite, from a fake-host trial on 2026-09-09 where a session-keyed
+`ESTABLISH OUT` did flip the joiner to state 8. Both can be true: a session-keyed frame is
+accepted there, and this host never sends one at that point. What settles it for a real host is
+the capture, and a host that marks its session established **before** the handshake reply sends
+both opening frames keyed — which the joiner then discards at the §5.3 digest gate before
+parsing a field, so it re-dials every ~1.9 s and gives up. That is the failure this server hit:
+17 handshakes answered, 17 identical silent rejections, every one of them logged here as a
+session established.
+
 **2 — the joiner opens with its own profile**, `0x1001`, 140-byte body, opening `02 78 05
 78 05` and carrying its own character name at the end. It is sent **compressed** (`hdr 0x8001`) and
 **re-sent byte for byte** on `hdr 0x8002` — the reliable re-send §6.5 documents, and it is

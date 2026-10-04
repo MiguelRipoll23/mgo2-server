@@ -10,8 +10,8 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Commands;
 
 /// <summary>
-/// Accepts a joiner's handshake, then sends the keep-alive that establishes the
-/// session key and the handshake reply behind it.
+/// Accepts a joiner's handshake, then sends the keep-alive and the handshake
+/// reply behind it, and only then marks the session established.
 /// </summary>
 /// <remarks>
 /// The live host sends the keep-alive <b>first</b>, as outbound counter 0, and
@@ -20,6 +20,22 @@ namespace Mgo2Server.GameplayServer.Commands;
 /// <c>0x1000</c>, both at t+1.6681). The reply leads here only because it reads
 /// as the more important of the two; the capture puts the other way, and the
 /// counters are observable, so the keep-alive takes counter 0.
+/// <para>
+/// <b>Both</b> of those frames travel pre-keyed, and the flag that decides it
+/// cannot be set before them. Searching the capture's digest over every
+/// derivation of the two counter bases and the two constants, the 16-byte
+/// keep-alive and the 44-byte reply verify with the bare constant
+/// <c>0x2b58de69</c> and with <c>K ^ 0x2b58de69</c> at neither; the joiner's
+/// first session-keyed frame, 92 bytes at counter 32769, verifies only with
+/// <c>K ^ 0x2b58de69</c>. So the whole state-&lt;8 → pre-key rule
+/// (<c>UDP_P2P_PROTOCOL.md</c> §6) covers the opening exchange as well: the
+/// joiner cannot read a session-keyed frame until it has accepted a handshake
+/// reply, and it accepts that reply only after reading it. Marking the session
+/// established first sent both frames keyed, the joiner discarded them at the
+/// digest gate before parsing a field, and re-dialled every ~1.9 s until it gave
+/// up — 17 handshakes answered with 17 identical failures, each logged here as a
+/// session established.
+/// </para>
 /// </remarks>
 /// <param name="hostIdentity">Identity this host presents to its peers.</param>
 /// <param name="logger">Logger of this handler.</param>
@@ -65,23 +81,28 @@ public sealed class AcceptHandshakeHandler(
             dialBack);
 
         // 1. The keep-alive, which the recorded host sends first, as its
-        //    outbound counter 0. The joiner reads it as the frame that
-        //    establishes the session key, so it carries the key ahead of
-        //    anything that needs it; the live capture puts it in the same
-        //    millisecond as the handshake reply, and the order and the counters
-        //    are what a client can observe and depend on.
-        context.Session.Established = true;
+        //    outbound counter 0. Pre-keyed, because the session is not
+        //    established yet and marking it so here is what made the joiner
+        //    discard this frame: the state<8 -> pre-key rule is absolute, and
+        //    the keep-alive does not get to carry the session key ahead of the
+        //    handshake reply that earns it.
         await context.Send(UdpCommandConstants.KeepAlive, []);
 
-        // 2. The handshake reply, still pre-keyed because the joiner has not
-        //    reached its keyed state yet. It advertises the address this host is
-        //    reached on, which is the configured one for the same reason.
+        // 2. The handshake reply, also pre-keyed for the same reason. It
+        //    advertises the address this host is reached on, which is the
+        //    configured one for the same reason.
         var reply = FrameBuilderUtility.BuildHandshakeBody(
             hostIdentity.PeerIdentifier,
             hostIdentity.CounterBase,
             hostIdentity.AdvertisedAddress,
             hostIdentity.AdvertisedPort);
         await context.Send(UdpCommandConstants.Handshake, reply);
+
+        // Only now. The joiner reaches its keyed state when it accepts this
+        // reply, so anything sent before it is refused at the digest gate, and
+        // everything sent after it - the roster run, the post-join burst - is
+        // session-keyed, which is what the capture shows from counter 32770 on.
+        context.Session.Established = true;
 
         logger.LogInformation(
             "UDP {LocalPort}: session with peer=0x{PeerIdentifier:x8} established",
