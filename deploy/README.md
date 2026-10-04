@@ -249,7 +249,7 @@ the pod replies to the console directly rather than through the load balancer,
 and the AWS equivalent has a documented history of asymmetric-routing failures
 that look exactly like an application bug.
 
-### UDP gameplay — `Local`, because it is the host and not only a relay
+### UDP gameplay — no load balancer at all, because it is the host and not only a relay
 
 The peer descriptor really is built **client-side** at `0x9444BC` from the port
 check result, so for a *relay* the server never has to see the raw address. The
@@ -267,10 +267,43 @@ failure looks like from the console's side, as a hang and then a refusal to
 connect to the host. Nothing errors, so this reads as a crypto problem and not as
 a routing one.
 
-`Local` restores the source, and the paired Deployment carries the same
-`startupProbe`, `minReadySeconds` and `maxUnavailable: 0` / `maxSurge: 1`
-rollout the TCP Services use, for the same reason: a node with no local endpoint
-drops its traffic rather than forwarding it.
+**`Local` does not fix it on this cluster, and assuming it does is what broke
+the host.** `externalTrafficPolicy: Local` controls kube-proxy's masquerading; it
+does not undo what a proxying hop already rewrote. The load balancer here is
+k3s's own ServiceLB, which is `klipper-lb` — a userspace proxy running in a pod
+that takes `hostPort`. The datagram reaches it carrying the console's real
+address, and it forwards to the backend from a fresh socket, so the gameplay pod
+would see *the proxy's* address and an ephemeral port, under `Local` exactly as
+under `Cluster`.
+
+That is the same failure the port check has, and it has the same answer, so the
+gameplay host is on the node's own network:
+
+- `hostNetwork: true`, so a datagram arrives with the console's real address and
+  port, and the reply leaves from the address and port the console dialled;
+- `dnsPolicy: ClusterFirstWithHostNet`, without which it loses cluster DNS;
+- a headless Service, so there is no virtual IP and nothing to proxy through;
+- `type: Recreate`, not `RollingUpdate`: the pod owns the host's 5730, so a
+  surge would start the replacement while the old pod still holds the port.
+
+Two consequences worth stating plainly:
+
+- **A rollout is a short outage, not a seamless one.** The pod binds the node's
+  own port, so the replacement cannot start until the old one releases it. With
+  one replica on one node there is no surge available to avoid that. What keeps
+  it short is the 5s `preStop` sleep and the six-hour `terminationGracePeriod`,
+  so a match in progress drains instead of being cut. **A second node is the
+  only thing that would make this outage-free** — not a load balancer.
+- **The public address is the node's, and that is stable.** The port forward on
+  the router points at the node rather than at a pod, so `89.129.16.203:5730`
+  stays valid across rollouts and clients never re-dial a different endpoint.
+
+`clusterIP` is immutable, so this Service cannot be moved to or from a
+LoadBalancer by a patch. ArgoCD fails the sync with `spec.clusterIPs[0]: Invalid
+value: "None": may not be set to 'None' for LoadBalancer services`, retries five
+times, and then leaves the Application `OutOfSync` indefinitely — self-heal
+retries the same patch forever. Changing it means deleting the Service by hand
+and letting Argo recreate it.
 
 ### The name server — `Cluster`, deliberately
 
@@ -317,50 +350,68 @@ failure than it looks. It has to be a second address of the same node
 (`ip addr add …`), which does not survive a reboot and so wants a node bootstrap
 script rather than a manifest here.
 
-### The gameplay reply source port — a host rule, not a manifest
+### The gameplay reply source port — already correct on the host network
 
-The gameplay Service is `Local`, so the pod sees the console's real address and
-port, and `externalTrafficPolicy: Local` does the same job for the reply path in
-principle. It does not do it in practice, and the reason is the pod's socket.
+This section used to claim that the pod's socket is "bound but never connected,
+so Linux picks an ephemeral source port for every send", and that the reply
+therefore needed an nftables pin. **That is wrong, and the pin built for it is
+not needed on the topology this host now runs.**
 
-`GameplayServerService` binds `new UdpClient(new IPEndPoint(IPAddress.Any, port))`
-and sends with `UdpClient.Send`. That socket is **bound but never connected**, so
-Linux picks an **ephemeral source port for every send**. The reply therefore
-leaves from `10.42.0.x:<random>`, flannel's `--random-fully` masquerade picks a
-port of its own on top of that, and the console — which matches every inbound
-datagram against the single `ip:port` it dialled, with a 4-byte `memcmp` of
-`session+0x2c` and then an exact 16-bit compare of `session+0x30` — discards
-them all. It re-handshakes forever and logs nothing.
+A UDP socket that is `bind()`-ed but never `connect()`-ed sends *from its bound
+port*. The kernel only picks an ephemeral port for a socket that has never been
+bound. `GameplayServerService` binds
+`new UdpClient(new IPEndPoint(IPAddress.Any, port))` and sends with
+`UdpClient.Send`, which is exactly the bound case. Measured on the node:
 
-So the reply has to be pinned to the address and port the console dialled, and
-that is a **host** concern, not a workload one:
+```python
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.bind(("0.0.0.0", 45999))     # never connect()
+s.sendto(b"x", ("127.0.0.1", 45999))
+```
+
+```
+127.0.0.1.45999 > 127.0.0.1.45999: UDP, length 1     (x3, all from 45999)
+```
+
+Every datagram left from the bound port. The pod's replies already leave from
+5730, which is what the console matches on.
+
+What *did* need a pin was the pod-network topology, for a different reason
+entirely: flannel's masquerade, not the socket.
+
+```
+-A FLANNEL-POSTRTG -s 10.42.0.0/16 ! -d 224.0.0.0/4 -j MASQUERADE --random-fully
+```
+
+`--random-fully` rewrites the source *port* of anything leaving the pod CIDP, so
+a correct 5730 was randomized on the way out. On `hostNetwork` there is no
+flannel masquerade at all and the reply leaves the node untouched.
+
+So the pin is a **pod-network-only** workaround. It is not installed on this
+node and nothing here needs it:
+
+```bash
+sudo nft list table ip mgo2_gameplay   # absent, and that is correct
+```
+
+If the gameplay host ever goes back to the pod network, the pin becomes
+necessary again, and it is still a **host** concern rather than a workload one:
 
 - `/etc/nftables.d-mgo2-gameplay.nft` holds the rule, and
   `/etc/systemd/system/mgo2-gameplay-nft.service` loads it at boot
-  (`Before=k3s.service`, so the pin is in place before any pod sends).
+  (`Before=k3s.service`, so the pin is in place before any pod sends);
+- it matches `udp dport 5730`, not `udp sport 5730` — the destination port is
+  the console's, and the source port is what flannel randomizes;
+- it runs at `srcnat - 10`, before flannel, or the pin is applied and then
+  randomized away;
+- `nft -f` **adds** to an existing table rather than replacing it, so delete the
+  table first (`sudo nft delete table ip mgo2_gameplay`) or use
+  `systemctl restart`, whose `ExecStop` does it.
 
-Two details in the rule are load-bearing:
-
-- **It matches `udp dport 5730`, not `udp sport 5730`.** Every reply toward the
-  console is addressed to the port the console dialled, so the destination port
-  is the stable selector. The source port is precisely the thing that is not
-  stable, and a rule conditioned on it matches only the one case where the pod
-  happens to emit from 5730 and silently lets everything else through to the
-  randomising masquerade.
-- **It runs at `srcnat - 10`, before flannel.** Otherwise the pin is applied and
-  then randomized away.
-
-Verify after any change, because nothing fails loudly:
-
-```bash
-sudo nft list table ip mgo2_gameplay   # exactly one rule
-sudo systemctl is-enabled mgo2-gameplay-nft.service   # enabled
-```
-
-`nft -f` **adds** to an existing table rather than replacing it, so reloading
-after an edit leaves the old rule in place alongside the new one. Delete the
-table first — `sudo nft delete table ip mgo2_gameplay` — or use
-`systemctl restart`, whose `ExecStop` does it.
+`tools/check_gameplay_reply_source.py` asserts that rule is present and loaded,
+so it **fails by design** on the `hostNetwork` topology, where the rule is
+correctly absent. Read its failure as "this rule is missing", not as "this host
+is broken"; the topology that needs it is not the one deployed.
 
 ## Rolling back
 

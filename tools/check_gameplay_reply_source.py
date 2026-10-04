@@ -1,21 +1,38 @@
 #!/usr/bin/env python3
 """Check the host rule that pins the gameplay reply's source address and port.
 
-The gameplay Service is `externalTrafficPolicy: Local`, so the pod sees the
-console's real endpoint. The reply path is the part that does not follow: the
-pod's socket is bound but never connected, so Linux picks an ephemeral source
-port per send, flannel's `--random-fully` masquerade randomizes it further, and
-the console discards every reply that does not arrive from the exact `ip:port`
-it dialled. It re-handshakes forever and logs nothing on either side.
+This rule is a POD-NETWORK-ONLY workaround, and the gameplay host does not run
+on the pod network. On `hostNetwork` there is no flannel masquerade and no rule
+is needed, so this exits 0 with a note rather than failing.
 
-A host nftables rule pins that reply back to what the console dialled. This
-checks the rule is present, correct, and loaded at boot -- the failure mode for
-all three is a join that hangs with no error anywhere, so nothing else notices.
+Why the pod network needed it at all -- note that it is NOT the socket. An
+earlier version of this file claimed the pod's socket was "bound but never
+connected, so Linux picks an ephemeral source port for every send". That is
+wrong: a UDP socket that is `bind()`-ed but never `connect()`-ed sends from its
+bound port, and the kernel only picks an ephemeral port for a socket that has
+never been bound. `GameplayServerService` binds its `UdpClient` to an explicit
+endpoint, so its replies already leave from the gameplay port.
+
+The real culprit was flannel:
+
+    -A FLANNEL-POSTRTG -s 10.42.0.0/16 ... -j MASQUERADE --random-fully
+
+`--random-fully` rewrites the source port of anything leaving the pod CIDP, so
+a correct reply port was randomized on the way out and the console -- which
+matches every inbound datagram against the single `ip:port` it dialled --
+discarded them all. It re-handshakes forever and logs nothing on either side.
+
+So: on the pod network this rule is necessary and its absence is a silent,
+total failure of joining. On `hostNetwork` it is correctly absent.
 
 Usage:
-    python tools/check_gameplay_reply_source.py [--ssh HOST]
+    python tools/check_gameplay_reply_source.py [--ssh HOST] [--topology auto]
 
-Exit status is 0 when the rule is correct and persistent, 1 when it is not.
+    --topology  auto      read deploy/gameplay/deployment.yaml (default)
+                   host    assert the rule is absent, as hostNetwork requires
+                   pod     assert the rule is present, correct and persistent
+
+Exit status is 0 when the topology's requirement is met, 1 when it is not.
 """
 from __future__ import annotations
 
@@ -25,13 +42,21 @@ import re
 import subprocess
 import sys
 
+try:
+    import yaml
+except ImportError:  # pragma: no cover - PyYAML is a repo dependency
+    yaml = None
+
+GAMEPLAY_DEPLOYMENT = pathlib.Path("deploy/gameplay/deployment.yaml")
+
 RULE_FILE = pathlib.Path("/etc/nftables.d-mgo2-gameplay.nft")
 UNIT_FILE = pathlib.Path("/etc/systemd/system/mgo2-gameplay-nft.service")
 TABLE = "ip mgo2_gameplay"
 
 # The rule the console's session filter needs. The destination port is the
-# selector because it is the port the console dialled; the source port is
-# ephemeral per send and conditioning on it is the bug this replaces.
+# selector because it is the port the console dialled; the source port is what
+# flannel's masquerade randomises, so conditioning on it is the bug this
+# replaces.
 EXPECTED_RULE = re.compile(
     r"ip saddr (?P<pod_cidr>[\d./]+)\s+"
     r"ip daddr (?P<client>[\d.]+)\s+"
@@ -74,7 +99,8 @@ def check_rule_file(ssh_host: str | None) -> str | None:
     rule = rules[0]
     if SOURCE_PORT_MATCH.search(rule):
         return (
-            f"{RULE_FILE} matches on the source port, which is ephemeral per send: {rule}"
+            f"{RULE_FILE} matches on the source port, which the masquerade is what "
+            f"randomises: {rule}"
         )
 
     if not EXPECTED_RULE.search(rule):
@@ -94,7 +120,7 @@ def check_loaded(ssh_host: str | None) -> str | None:
         return f"table {TABLE} holds {len(rules)} snat rules, expected exactly 1"
 
     if SOURCE_PORT_MATCH.search(rules[0]):
-        return f"the live rule matches on the ephemeral source port: {rules[0]}"
+        return f"the live rule matches on the randomised source port: {rules[0]}"
 
     if not EXPECTED_RULE.search(rules[0]):
         return f"the live rule is not the expected shape: {rules[0]}"
@@ -122,10 +148,72 @@ def check_persistence(ssh_host: str | None) -> str | None:
     return None
 
 
+def check_absent(ssh_host: str | None) -> str | None:
+    """Returns why a rule hostNetwork makes unnecessary is present, or None.
+
+    A leftover rule is not a neutral thing here. It runs at `srcnat - 10` and
+    SNATs replies to a fixed address and port, so on a host-networked pod it
+    would rewrite a reply that is already correct, back out of the address the
+    console dialled.
+    """
+    loaded = run(ssh_host, f"sudo nft list table {TABLE}")
+    if loaded.returncode == 0:
+        return (
+            f"table {TABLE} is loaded, but the pod is host-networked so nothing can "
+            f"randomise its reply and this rule only rewrites a correct one. "
+            f"Remove it: sudo nft delete table {TABLE}"
+        )
+
+    if run(ssh_host, f"sudo test -f {RULE_FILE.as_posix()}").returncode == 0:
+        return (
+            f"{RULE_FILE} exists for a host-networked pod that does not need it, and "
+            f"the systemd unit loads it at boot, so it returns after every reboot "
+            f"until it is deleted."
+        )
+
+    return None
+
+
+def detect_topology() -> str | None:
+    """Reads the topology from the manifest, or None when it cannot be read."""
+    if yaml is None or not GAMEPLAY_DEPLOYMENT.exists():
+        return None
+    with GAMEPLAY_DEPLOYMENT.open(encoding="utf-8") as handle:
+        document = yaml.safe_load(handle)
+    template = document["spec"]["template"]["spec"]
+    return "host" if template.get("hostNetwork") else "pod"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ssh", help="ssh host to check, default is this machine")
+    parser.add_argument(
+        "--topology",
+        choices=("auto", "host", "pod"),
+        default="auto",
+        help="auto reads deploy/gameplay/deployment.yaml (default)",
+    )
     arguments = parser.parse_args()
+
+    topology = detect_topology() if arguments.topology == "auto" else arguments.topology
+    if topology is None:
+        print(
+            f"FAIL: could not read the topology from {GAMEPLAY_DEPLOYMENT}. "
+            f"Pass --topology host or --topology pod to say which applies."
+        )
+        return 1
+
+    if topology == "host":
+        failure = check_absent(arguments.ssh)
+        if failure:
+            print(f"FAIL: {failure}")
+            return 1
+        print(
+            "PASS: the gameplay pod is host-networked, so its reply source needs no "
+            "pin. The flannel --random-fully masquerade this rule exists to counteract "
+            "only applies to the pod CIDP, and this pod is not in it."
+        )
+        return 0
 
     failures = [
         failure
