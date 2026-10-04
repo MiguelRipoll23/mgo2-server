@@ -226,13 +226,13 @@ public sealed class PlayerProfileHandler(
             return;
         }
 
-        var member = roster.Register(context.Remote, profile);
+        var member = roster.Register(context.Remote, profile, context.Session.PeerIdentifier);
 
         logger.LogInformation(
             "UDP {LocalPort}: profile from {RemoteAddress}: character {CharacterId} name {Name}, roster slot {RosterIndex}",
             context.LocalPort,
             context.Remote,
-            profile.CharacterId,
+            member.CharacterId,
             profile.Name,
             member.RosterIndex);
 
@@ -267,10 +267,13 @@ public sealed class PlayerProfileHandler(
         // until it sees the roster, so a reply to a repeat is what breaks the
         // exchange, not a bug. Re-registering is idempotent, so the repeated
         // profile keeps the slot it was first given.
-        foreach (var record in run)
-        {
-            await context.Send(record.Type, record.Body);
-        }
+        //
+        // The whole run goes out as one datagram. The recorded host packs the
+        // head, its own entry, every player's entry and the closing record into
+        // a single frame, and one record per datagram spends an outbound
+        // sequence on each and hands the joiner a roster it never saw
+        // assembled.
+        await SendRunAsync(context, run);
 
         // Then the run again, without its head, which is what the recorded host
         // sends. It is not a retransmission and nothing waits for an
@@ -278,10 +281,7 @@ public sealed class PlayerProfileHandler(
         // sequences with the tick stream between them, and the joiner never
         // acknowledged either. RoomRosterService.BuildRosterRunRepeat carries
         // the measurement.
-        foreach (var record in roster.BuildRosterRunRepeat())
-        {
-            await context.Send(record.Type, record.Body);
-        }
+        await SendRunAsync(context, roster.BuildRosterRunRepeat());
 
         // Then one more empty 0x5001 on its own, the record the live host closes
         // a roster exchange with. It repeats the type that opened the run rather
@@ -294,14 +294,12 @@ public sealed class PlayerProfileHandler(
         // half seconds after the roster it is answering here. The capture holds
         // exactly one of them in the whole round, and the three peers that join
         // later do not each get one, so it goes to the peer that was just
-        // answered and not to the room. Its payload bodies are built as the tag,
-        // the slot and zeros: the capture's own are one character's equipment
-        // and are deliberately not copied. PostJoinBurstService carries the
+        // answered and not to the room. It is one datagram, like the roster run
+        // and for the same reason. Its payload bodies are built as the tag, the
+        // slot and zeros: the capture's own are one character's equipment and
+        // are deliberately not copied. PostJoinBurstService carries the
         // measurement and what it does not settle.
-        foreach (var record in burst.BuildBurst())
-        {
-            await context.Send(record.Type, record.Body);
-        }
+        await SendRunAsync(context, burst.BuildBurst());
 
         var followUp = PostJoinBurstService.BuildFollowUp();
         await context.Send(followUp.Type, followUp.Body);
@@ -315,5 +313,26 @@ public sealed class PlayerProfileHandler(
         {
             await context.Broadcast(record.Type, record.Body);
         }
+    }
+
+    /// <summary>
+    /// Writes a run of records as one datagram, or one message at a time where
+    /// the context cannot batch.
+    /// </summary>
+    /// <param name="context">Context of the message being answered.</param>
+    /// <param name="run">Records to write, in order.</param>
+    private static async Task SendRunAsync(PeerContext context, IReadOnlyList<RosterRecord> run)
+    {
+        if (context.SendRecords is not { } sendRecords)
+        {
+            foreach (var record in run)
+            {
+                await context.Send(record.Type, record.Body);
+            }
+
+            return;
+        }
+
+        await sendRecords([.. run.Select(record => FrameBuilderUtility.MessageOf(record.Type, record.Body))]);
     }
 }

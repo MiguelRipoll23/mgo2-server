@@ -71,8 +71,12 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
     /// read. A peer without a readable profile still takes a slot, because the
     /// slot is what the room is keyed on.
     /// </param>
+    /// <param name="peerIdentifier">
+    /// Identifier the peer announced in its handshake, which is what the
+    /// character id of its roster entry is written from.
+    /// </param>
     /// <returns>The roster entry the peer is now filed under.</returns>
-    public RosterMember Register(IPEndPoint remote, PlayerProfileRecord? profile)
+    public RosterMember Register(IPEndPoint remote, PlayerProfileRecord? profile, uint peerIdentifier)
     {
         var key = remote.ToString();
 
@@ -84,7 +88,7 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
                 // A re-sent profile is the client still waiting for its answer,
                 // not a second player, so the slot is kept and only the details
                 // the client restated are refreshed.
-                existing.CharacterId = profile?.CharacterId ?? existing.CharacterId;
+                existing.CharacterId = (int)peerIdentifier;
                 existing.Name = profile is { Name.Length: > 0 } ? profile.Name : existing.Name;
                 existing.ClanName = profile?.ClanName ?? existing.ClanName;
 
@@ -101,7 +105,7 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
 
             var member = new RosterMember(key, NextFreeIndex())
             {
-                CharacterId = profile?.CharacterId ?? 0,
+                CharacterId = (int)peerIdentifier,
                 Name = profile?.Name ?? string.Empty,
                 ClanName = profile?.ClanName ?? string.Empty,
                 Appearance = profile?.Appearance ?? [],
@@ -159,7 +163,9 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
                 PlayerProfileRecordUtility.HostRosterIndex,
                 (int)hostIdentity.PeerIdentifier,
                 hostIdentity.CharacterName,
-                hostIdentity.ClanName),
+                hostIdentity.ClanName,
+                appearance: null,
+                PlayerProfileRecordUtility.RoomRecordUnresolvedByte),
         };
         records.AddRange(ordered.Select(member => member.BuildRecord()));
         return records;
@@ -297,5 +303,6 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
             CharacterId,
             Name,
             ClanName,
-            Appearance);
+            Appearance,
+            PlayerProfileRecordUtility.PlayerRecordUnresolvedByte);
 }

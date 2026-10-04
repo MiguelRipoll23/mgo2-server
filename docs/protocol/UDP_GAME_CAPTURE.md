@@ -469,8 +469,14 @@ Three things make it the character id rather than a coincidence of the roster or
   `0x0000a001`. "Zero on the host, one on every joiner" is what the high byte of a u32 looks
   like; there is no field there at all. The code no longer writes one.
 
-The room record's own value is **[U]**: `0x0000a001` is not this host's character id, and what
-it is — a room identifier, a host identifier under another numbering — is not established.
+The room record's own value is **not [U]** either, and it is the same field as every other
+one: `0x0000a001` is the **dedicated host's character id**. The TCP cross-check above
+generalises to the host as well as to the joiner — the gameplay-lobby flow at
+`15.204.239.231:5733` carries `00 00 a0 01` (big-endian `0xa001`) at offsets 176, 164 and 372
+of commands `0x0700`, `0x0f00` and `0x4313`, with the name `Low Level Host` in the same record
+**four bytes later**, and the same number is the dedicated server's UDP handshake `peer_id`
+(40961). It is a character id and it is on the character record; it is **not** a room
+identifier, and the earlier reading of it as "not this host's character id" was wrong.
 
 ### `[0x13]`–`[0x1e]` is the character's appearance [V]
 

@@ -51,10 +51,34 @@ public sealed partial class GameplayServerService
     /// <param name="body">Body of the message.</param>
     private void SendMessage(PeerSession session, ushort messageType, byte[] body)
     {
+        SendMessages(session, [FrameBuilderUtility.MessageOf(messageType, body)]);
+    }
+
+    /// <summary>
+    /// Writes several messages to a peer as one datagram on one outbound
+    /// counter.
+    /// </summary>
+    /// <remarks>
+    /// The recorded host sends a roster run whole: one frame carrying the head,
+    /// the room's own entry, every player's entry and the record that closes
+    /// the run. Sending those one per datagram spends an outbound sequence each
+    /// and reaches the peer as a scatter of frames rather than the single
+    /// exchange it reads, and it shifts every later sequence number away from
+    /// the capture's.
+    /// </remarks>
+    /// <param name="session">Session to write through.</param>
+    /// <param name="messages">Messages to write, in order.</param>
+    private void SendMessages(PeerSession session, IReadOnlyList<UdpMessage> messages)
+    {
+        if (messages.Count == 0)
+        {
+            return;
+        }
+
         var counter = session.OutboundCounter;
         session.OutboundCounter = FrameCounterUtility.Next(counter);
 
-        var plain = FrameBuilderUtility.BuildMessageFrame(counter, [FrameBuilderUtility.MessageOf(messageType, body)]);
+        var plain = FrameBuilderUtility.BuildMessageFrame(counter, messages);
         var key = session.Established ? session.SessionKey : UdpCryptoKeyConstants.PreHandshakeKey;
         var digestKey = session.Established
             ? session.SessionKey ^ UdpCryptoKeyConstants.TailDigestKey
@@ -62,9 +86,9 @@ public sealed partial class GameplayServerService
 
         Send(FrameCryptoUtility.EncodeFrame(plain, counter, key, digestKey), session.DialBack);
         logger.LogDebug(
-            "Outbound counter={Counter} type={MessageType:x4} to {DialBack}{PreKeyed}",
+            "Outbound counter={Counter} messages={MessageCount} to {DialBack}{PreKeyed}",
             counter,
-            messageType,
+            messages.Count,
             session.DialBack,
             session.Established ? string.Empty : " pre");
     }

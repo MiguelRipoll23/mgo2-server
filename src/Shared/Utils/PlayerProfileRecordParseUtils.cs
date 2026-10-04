@@ -20,6 +20,12 @@ namespace Mgo2Server.Shared.Utils;
 /// Nothing here is lenient. A body that is too short for the fixed fields is
 /// <c>null</c> rather than a record of zeroes, and the roster close — seven
 /// bytes — is one of those, so it reads as no player at all.
+///
+/// <para>
+/// The two layouts are told apart by a marker byte, and the fields only the
+/// roster layout has are read only when that layout is the one present. A join
+/// request is a different record that merely ends the same way, and its offsets
+/// are its own.
 /// </para>
 /// </remarks>
 public static class PlayerProfileRecordParseUtils
@@ -42,24 +48,42 @@ public static class PlayerProfileRecordParseUtils
         var name = string.Empty;
         var clan = string.Empty;
         var roster = RosterLayoutOf(body);
-        if (roster is not null)
+        var isRosterEntry = roster is not null;
+        if (isRosterEntry)
         {
-            (name, clan) = roster.Value;
+            (name, clan) = roster!.Value;
         }
         else
         {
             (name, clan) = TrailingLayoutOf(body);
         }
 
+        // The character id, the appearance block and the name marker are read
+        // only off the roster layout. A join request carries its names in the
+        // same place but puts a longer block in front of them, so the same
+        // offsets land on structural bytes rather than on those fields: a
+        // join request's offset 0x08 is part of its own header, and reading it
+        // as the id yields a number that belongs to nothing. Reading the
+        // appearance out of a join request is worse than reading nothing,
+        // because the block is twelve bytes long and so overwrites the markers
+        // at 0x17/0x18/0x1d/0x1e with whatever the record happened to hold
+        // there - on one live join, the first four bytes of the player's own
+        // name.
+        //
+        // The peer identifier a roster entry is written with does not come from
+        // here at all: it is the session's, from the handshake. See
+        // RoomRosterService.Register.
         return new PlayerProfileRecord(
             body[0],
             body[1],
-            body[4],
-            RosterIndexOf(body[4]),
-            body[5],
-            body[PlayerProfileRecordUtility.NameMarkerOffset] != 0x00,
-            (int)BinaryUtility.ReadUInt32LittleEndian(body, PlayerProfileRecordUtility.CharacterIdOffset),
-            AppearanceOf(body),
+            isRosterEntry ? body[4] : (byte)0x00,
+            isRosterEntry ? RosterIndexOf(body[4]) : PlayerProfileRecordUtility.HostRosterIndex,
+            isRosterEntry ? body[5] : (byte)0x00,
+            isRosterEntry && body[PlayerProfileRecordUtility.NameMarkerOffset] != 0x00,
+            isRosterEntry
+                ? (int)BinaryUtility.ReadUInt32LittleEndian(body, PlayerProfileRecordUtility.CharacterIdOffset)
+                : 0,
+            isRosterEntry ? AppearanceOf(body) : [],
             name,
             clan);
     }

@@ -19,10 +19,19 @@ namespace Mgo2Server.Shared.Types;
 /// session and counter. The peer this message came from is not included: a
 /// handler that has to answer it as well uses <paramref name="Send"/> for that.
 /// </param>
+/// <param name="SendRecords">
+/// Writes several messages to the peer as one datagram on one outbound
+/// counter. The recorded host sends a whole roster run in a single frame, and
+/// the run's records only mean anything together: a handler that writes them
+/// one per datagram spends an outbound sequence on each and hands the peer a
+/// roster it never saw assembled. Null where the context was built without it,
+/// and a handler falls back to sending one message at a time.
+/// </param>
 public sealed record PeerContext(
     PeerSession Session,
     UdpMessage Message,
     IPEndPoint Remote,
     int LocalPort,
     Func<ushort, byte[], Task> Send,
-    Func<ushort, byte[], Task> Broadcast);
+    Func<ushort, byte[], Task> Broadcast,
+    Func<IReadOnlyList<UdpMessage>, Task>? SendRecords = null);
