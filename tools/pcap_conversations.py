@@ -59,6 +59,23 @@ class Pcapng:
         with open(self.path, "rb") as handle:
             data = handle.read()
 
+        # A classic pcap and a pcapng are different containers, and tcpdump
+        # writes the classic form unless told otherwise -- so a capture taken
+        # on a Linux host is very often not a pcapng. Reading one as the other
+        # yields nothing at all rather than an error: the first block length
+        # does not fit the file, the loop breaks, and every tool downstream
+        # reports zero packets on a file that plainly has some. The magic says
+        # which it is.
+        if len(data) >= 4:
+            magic = data[:4]
+            if magic == b"\x0a\x0d\x0d\x0a":
+                self._read_pcapng(data)
+            elif magic in (b"\xd4\xc3\xb2\xa1", b"\x4d\x3c\xb2\xa1", b"\xa1\xb2\xc3\xd4", b"\xa1\xb2\x3c\x4d"):
+                self._read_classic(data)
+            else:
+                raise ValueError(f"{self.path}: not a pcap or pcapng (magic {magic.hex()})")
+
+    def _read_pcapng(self, data: bytes) -> None:
         offset = 0
         while offset + 12 <= len(data):
             block_type, block_length = struct.unpack_from("<II", data, offset)
@@ -67,6 +84,28 @@ class Pcapng:
             body = data[offset + 8 : offset + block_length - 4]
             self._handle_block(block_type, body)
             offset += block_length
+
+    def _read_classic(self, data: bytes) -> None:
+        """Read the classic pcap container, in either byte order."""
+        magic = data[:4]
+        if magic in (b"\xd4\xc3\xb2\xa1", b"\x4d\x3c\xb2\xa1"):
+            endian = "<"
+        else:
+            endian = ">"
+        self.link_type = struct.unpack_from(f"{endian}I", data, 20)[0]
+        # The snaplen and the link type share a field order; ticks are assumed
+        # microseconds, the classic format's default and the only one a normal
+        # tcpdump emits.
+        self.ticks_per_second = 1_000_000
+
+        offset = 24
+        while offset + 16 <= len(data):
+            ts_high, ts_low, captured, _ = struct.unpack_from(f"{endian}IIII", data, offset)
+            offset += 16
+            if captured == 0 or offset + captured > len(data):
+                break
+            self.packets.append(((ts_high << 32 | ts_low) / self.ticks_per_second, data[offset : offset + captured]))
+            offset += captured
 
     def _handle_block(self, block_type: int, body: bytes) -> None:
         if block_type == 0x0A0D0D0A:  # section header

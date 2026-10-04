@@ -91,8 +91,16 @@ def dechain(frame: bytearray, counter: int, key: int) -> None:
 
 
 def digest_key_for(key: int) -> int:
-    """The tail digest key for a chain key: bare constant pre-keyed, derived otherwise."""
-    return PRE_KEY if key == PRE_KEY else (key ^ BASE_DERIVE) & 0xFFFFFFFF
+    """The tail digest key for a chain key: bare constant pre-keyed, derived otherwise.
+
+    The pre-keyed case digests with `BASE_DERIVE` and not with the pre-handshake
+    chain key: `FrameCryptoUtility` takes `TailDigestKey` directly for a frame it
+    classifies as pre-keyed, and only a session-keyed frame gets its key
+    exclusive-ORed in. Measuring the captured join confirms it - the joiner's
+    handshake verifies with the bare constant and at neither `PRE_KEY` nor
+    `BASE_DERIVE ^ K`.
+    """
+    return BASE_DERIVE if key == PRE_KEY else (key ^ BASE_DERIVE) & 0xFFFFFFFF
 
 
 def verify_tail(frame: bytes, digest_key: int) -> bool:

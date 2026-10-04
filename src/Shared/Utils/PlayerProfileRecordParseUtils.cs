@@ -116,6 +116,22 @@ public static class PlayerProfileRecordParseUtils
     /// Reads the names off the documented roster layout, or returns <c>null</c>
     /// when the body is not that shape.
     /// </summary>
+    /// <remarks>
+    /// The name must be non-empty for the layout to be accepted, and that is the
+    /// whole of the discrimination between the two. The marker byte alone cannot
+    /// do it: a join request carries a zero in the same position often enough to
+    /// be the rule rather than the exception — the live capture's own join
+    /// request has one — and accepting it there reads the byte at
+    /// <see cref="PlayerProfileRecordUtility.NameOffset"/> as the head of the
+    /// name. On a join request that byte is the last structural zero of the
+    /// block in front of the names, so the name comes back empty, the record is
+    /// taken to be a roster entry with no name, and the handler's
+    /// <c>Name.Length > 0</c> gate drops the join request as a record that
+    /// carries no profile. A real roster entry always opens its name at that
+    /// offset, so requiring one costs the layout nothing and hands every
+    /// zero-length case to <see cref="TrailingLayoutOf"/>, which is the layout
+    /// those bodies actually have.
+    /// </remarks>
     private static (string Name, string Clan)? RosterLayoutOf(ReadOnlySpan<byte> body)
     {
         if (body[PlayerProfileRecordUtility.NameMarkerOffset] is not (0x00 or 0x03))
@@ -124,7 +140,7 @@ public static class PlayerProfileRecordParseUtils
         }
 
         var nameEnd = body[PlayerProfileRecordUtility.NameOffset..].IndexOf((byte)0x00);
-        if (nameEnd < 0)
+        if (nameEnd <= 0)
         {
             return null;
         }

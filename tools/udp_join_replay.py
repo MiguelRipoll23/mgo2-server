@@ -42,6 +42,12 @@ def main() -> None:
     if "--frames" in sys.argv:
         wanted = int(sys.argv[sys.argv.index("--frames") + 1])
 
+    joiner, server = JOINER, SERVER
+    if "--joiner" in sys.argv:
+        joiner = sys.argv[sys.argv.index("--joiner") + 1]
+    if "--server" in sys.argv:
+        server = sys.argv[sys.argv.index("--server") + 1]
+
     capture = Pcapng(sys.argv[1])
     capture.read()
 
@@ -51,7 +57,7 @@ def main() -> None:
             continue
         local = f"{source}:{source_port}"
         remote = f"{destination}:{destination_port}"
-        if {local, remote} != {JOINER, SERVER}:
+        if {local, remote} != {joiner, server}:
             continue
         datagrams.append((ts, local, remote, payload))
     datagrams.sort(key=lambda row: row[0])
@@ -64,18 +70,18 @@ def main() -> None:
         if struct.unpack_from("<H", plain, 2)[0] != 0x1000:
             continue
         bases[local] = struct.unpack_from("<II", plain, 6)[1]
-    key = (bases[JOINER] ^ bases[SERVER]) & 0xFFFFFFFF
-    print(f"session key 0x{key:08x}, joiner base 0x{bases[JOINER]:08x}, server base 0x{bases[SERVER]:08x}\n")
+    key = (bases[joiner] ^ bases[server]) & 0xFFFFFFFF
+    print(f"session key 0x{key:08x}, joiner base 0x{bases[joiner]:08x}, server base 0x{bases[server]:08x}\n")
 
     start = datagrams[0][0]
     shown = 0
     for ts, local, remote, payload in datagrams:
         counter, plain, verified = decode(payload, key)
         if not verified and len(payload) != 44:
-            role = "joiner" if local == JOINER else "server"
+            role = "joiner" if local == joiner else "server"
             print(f"[{ts - start:8.3f}] {role} -> other  {len(payload)} B  hdr=0x{counter:04x}  TAIL DID NOT VERIFY")
             continue
-        role = "joiner" if local == JOINER else "server"
+        role = "joiner" if local == joiner else "server"
         if len(payload) == 44:
             # A handshake is an ordinary session record, so it decodes through the
             # same path as everything else rather than by hand-placed offsets.
