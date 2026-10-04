@@ -47,6 +47,22 @@ public sealed class MatchService(
     private const int FreeBattleRule = 1;
 
     /// <summary>
+    /// The latency this host's room reports, in milliseconds.
+    /// <para>
+    /// The unit is milliseconds and the field is the host's own reported
+    /// round-trip time: the client's room picker buckets it against 20 and 80
+    /// (<c>docs/proto/outbound/mgo2_cmd_4302_s2c.ksy</c>, <c>ping</c>), and the
+    /// capture's rooms report 10, 50 and 100. A gameplay server hosts from
+    /// wherever it is deployed and has no client to measure a ping from, so it
+    /// reports the value the captured dedicated host reported — 100 — rather
+    /// than the zero an unreported field would carry. Zero is not "a fast
+    /// host": it is the absence of a measurement, and it is what the room list
+    /// draws as the worst of the three readings.
+    /// </para>
+    /// </summary>
+    private const int ReportedPingMilliseconds = 100;
+
+    /// <summary>
     /// The single round this host's room advertises, as a `[rule, map, flag]`
     /// triple with the map drawn from the disc's five shipping stages.
     /// <para>
@@ -163,18 +179,17 @@ public sealed class MatchService(
             // is written a few lines above and is the same prefix the details
             // reply reads, so the flag and the name cannot disagree. Nothing is
             // stored against the host to carry it, because the name already does.
-            room.Common = EventHostRoomSettingsUtils.Compose(
-                DedicatedHostNameUtils.IsDedicatedHostName(name),
-                null);
+            room.Ping = ReportedPingMilliseconds;
         }, cancellationToken);
 
         await gameService.AddPlayerAsync(game.Identifier, hostIdentifier, cancellationToken);
         logger.LogInformation(
-            "Created match {GameIdentifier} ({Name}) in lobby {LobbyIdentifier} on map {Map}",
+            "Created match {GameIdentifier} ({Name}) in lobby {LobbyIdentifier} on map {Map}, reporting {Ping} ms",
             game.Identifier,
             name,
             lobby.Identifier,
-            rotation[0][1]);
+            rotation[0][1],
+            ReportedPingMilliseconds);
 
         return game.Identifier;
     }

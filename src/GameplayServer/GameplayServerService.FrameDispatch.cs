@@ -41,11 +41,7 @@ public sealed partial class GameplayServerService
         // is not enough to tell a bad decode from a frame that was never the
         // shape we expected. The bytes settle that, and they are the only
         // record of the frame that no later stage can alter.
-        logger.LogDebug(
-            "Raw {Length} bytes from {RemoteAddress}: {RawHex}",
-            work.Length,
-            remoteAddress,
-            Convert.ToHexString(work));
+        TrafficLogger.LogUdpTraffic(logger, LogPrefix, remoteAddress, "IN", work);
 
         // The digest key classifies the frame before the chain is removed:
         // pre-keyed frames verify with the bare constant, keyed frames with the
@@ -90,8 +86,10 @@ public sealed partial class GameplayServerService
         // peer is answering from somewhere the session was never filed under,
         // which is what a rewritten source does to it.
         logger.LogWarning(
-            "Undecodable datagram from {RemoteAddress}: no session is keyed on that endpoint and none dials back to it; sessions held: {DialBacks}",
+            "[{LogPrefix}] IN {RemoteAddress} undecodable ({Length} bytes): no session is keyed on that endpoint and none dials back to it; sessions held: {DialBacks}",
+            LogPrefix,
             remoteAddress,
+            work.Length,
             string.Join(", ", sessions.Snapshot().Select(session => session.DialBack)));
     }
 
@@ -134,7 +132,10 @@ public sealed partial class GameplayServerService
         {
             if (draining)
             {
-                logger.LogDebug("Dropping handshake from {RemoteAddress}: this host is draining", remoteAddress);
+                logger.LogDebug(
+                    "[{LogPrefix}] IN {RemoteAddress} handshake dropped: this host is draining",
+                    LogPrefix,
+                    remoteAddress);
             }
             else
             {
@@ -146,11 +147,23 @@ public sealed partial class GameplayServerService
         if (session is null)
         {
             var note = first is null ? string.Empty : $" type={first.Type:x4}";
-            logger.LogDebug("Inbound pre-keyed frame from {RemoteAddress}{Note}; dropped", remoteAddress, note);
+            logger.LogDebug(
+                "[{LogPrefix}] IN {RemoteAddress} pre-keyed frame{note}; dropped, no session for it",
+                LogPrefix,
+                remoteAddress,
+                note);
             return;
         }
 
         var isHandshake = decoded.Length == 44 && first is not null && first.Type == UdpCommandConstants.Handshake;
+
+        // The frame as it decoded, with its messages: the same shape the TCP
+        // lobbies log, so a gameplay session reads like a lobby session.
+        TrafficLogger.LogUdpInboundPacket(
+            logger,
+            LogPrefix,
+            $"frame counter={counter}{(isHandshake ? " handshake" : " pre-keyed")} from {remoteAddress}",
+            decoded);
 
         foreach (var message in frame.Messages)
         {
@@ -199,7 +212,11 @@ public sealed partial class GameplayServerService
         var frame = MessageCodecUtility.DecodeFrame(decoded);
         session.LastSeenAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         session.Established = true;
-        logger.LogDebug("Inbound keyed frame counter={Counter} key={SessionKey:x8}", counter, sessionKey);
+        TrafficLogger.LogUdpInboundPacket(
+            logger,
+            LogPrefix,
+            $"frame counter={counter} key={sessionKey:x8} messages={frame.Messages.Count} from {session.DialBack}",
+            decoded);
 
         foreach (var message in frame.Messages)
         {
@@ -223,7 +240,9 @@ public sealed partial class GameplayServerService
                 if (session.SeenAcknowledgements.Add(message.Type))
                 {
                     logger.LogDebug(
-                        "Acknowledgement naming sequence {Sequence} received (flags={Flags})",
+                        "[{LogPrefix}] IN {RemoteAddress} acknowledgement naming sequence {Sequence} (flags={Flags})",
+                        LogPrefix,
+                        session.RemoteAddress,
                         message.Type & UdpCommandConstants.AcknowledgementIdentifierMask,
                         message.Flags);
                 }
@@ -269,6 +288,11 @@ public sealed partial class GameplayServerService
             LastSeenAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             LastInboundSequence = 0,
         });
+
+        TrafficLogger.LogPeerConnection(
+            logger,
+            LogPrefix,
+            $"{remoteAddress} (peer {peerIdentifier}, answered on {remote})");
     }
 
     /// <param name="message">Message to hand to its handler.</param>
@@ -292,9 +316,10 @@ public sealed partial class GameplayServerService
             // was invisible in the noise, and a join that stalls on an
             // unhandled type logged nothing at all while the joiner waited.
             logger.LogWarning(
-                "No handler for peer message type {MessageType:x4} from {RemoteAddress}: {BodyLength} bytes dropped",
-                message.Type,
+                "[{LogPrefix}] IN {RemoteAddress} message type {MessageType:x4}: {BodyLength} bytes dropped, no handler",
+                LogPrefix,
                 remoteAddress,
+                message.Type,
                 message.Body.Length);
             return;
         }

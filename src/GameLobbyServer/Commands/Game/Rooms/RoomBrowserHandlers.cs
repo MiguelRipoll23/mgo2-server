@@ -61,8 +61,14 @@ public sealed class GetGameListHandler(
         {
             var writer = new PacketWriter();
             var hostOptions = game.Password.Length > 0 ? HostPasswordBit : 0;
+
+            // A dedicated host's own room hosts without playing, so its roster
+            // counts the host's seat and not a participant. Reporting that seat
+            // would read as a room somebody is already in.
             var playerCount = Math.Min(
-                await gameService.CountPlayersAsync(game.Identifier, cancellationToken),
+                GameRosterUtils.ReportedParticipants(
+                    game,
+                    await gameService.CountPlayersAsync(game.Identifier, cancellationToken)),
                 Math.Min(game.MaximumPlayers, MaximumPlayers));
             var rating = ratings.TryGetValue(game.HostIdentifier, out var summary) ? summary : default;
 
@@ -240,7 +246,9 @@ public sealed class GetGameDetailsHandler(
             return;
         }
 
-        var roster = (await gameService.GetPlayersAsync(game.Identifier, game.HostIdentifier, cancellationToken))
+        var roster = GameRosterUtils.ReportedRoster(
+                game,
+                await gameService.GetPlayersAsync(game.Identifier, game.HostIdentifier, cancellationToken))
             .Take(MaximumPlayers)
             .ToList();
         var pings = await gameService.GetPlayerPingsAsync(game.Identifier, cancellationToken);

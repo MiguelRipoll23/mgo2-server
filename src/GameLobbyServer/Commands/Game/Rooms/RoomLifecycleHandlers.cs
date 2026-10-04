@@ -1,4 +1,5 @@
 using Mgo2Server.Shared.Constants;
+using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Interfaces;
@@ -28,11 +29,13 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 /// </para>
 /// </summary>
 /// <param name="gameService">Service that owns the rooms.</param>
+/// <param name="characterService">Service that owns the characters' host settings.</param>
 /// <param name="assignmentService">Service that knows which match a room is leased to.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class JoinGameHandler(
     GameService gameService,
+    CharacterService characterService,
     EventAssignmentService assignmentService,
     SessionHelper sessionHelper,
     ILogger<JoinGameHandler> logger) : ICommandHandler
@@ -74,7 +77,17 @@ public sealed class JoinGameHandler(
         var requestedSubtype = reader.Remaining >= 1
             ? reader.ReadUInt8()
             : EventHostEligibilityUtils.UnnamedSubtype;
-        if (!EventHostEligibilityUtils.AcceptsJoinMode(game, requestedSubtype))
+
+        // Whether a room is holding a host role is its host's own claim, read
+        // from the settings it saved. It is read only for a room named for a
+        // role: an ordinary room's answer is its own mode either way, so the
+        // query would be spent on every join to learn nothing.
+        var hostSettings = EventHostEligibilityUtils.IsReservedHostName(game.Name)
+            ? (await characterService.FindHostSettingsAsync([game.HostIdentifier], cancellationToken))
+                .GetValueOrDefault(game.HostIdentifier)
+            : null;
+
+        if (!EventHostEligibilityUtils.AcceptsJoinMode(game, hostSettings, requestedSubtype))
         {
             // Logged with both modes because this is the rule a live client can
             // contradict: the refusal names the mismatch rather than leaving it to
@@ -88,7 +101,7 @@ public sealed class JoinGameHandler(
             return;
         }
 
-        if (EventHostEligibilityUtils.IsSurvivalHost(game))
+        if (EventHostEligibilityUtils.IsSurvivalHost(game, hostSettings))
         {
             var assignment = await assignmentService.FindByGameAsync(game.Identifier, cancellationToken);
             var participant = session.CharacterIdentifier ?? 0;

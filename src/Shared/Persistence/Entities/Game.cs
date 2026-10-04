@@ -68,14 +68,6 @@ public sealed class Game
     [Column("ping")]
     public int Ping { get; set; }
 
-    /// <summary>Serialized common settings block.</summary>
-    [Column("common")]
-    public string Common { get; set; } = "{}";
-
-    /// <summary>Serialized rule settings block.</summary>
-    [Column("rules")]
-    public string Rules { get; set; } = "{}";
-
     /// <summary>Status of the room.</summary>
     [Column("status")]
     public int Status { get; set; }

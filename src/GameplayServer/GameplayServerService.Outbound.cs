@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
+using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameplayServer;
 
@@ -84,13 +85,13 @@ public sealed partial class GameplayServerService
             ? session.SessionKey ^ UdpCryptoKeyConstants.TailDigestKey
             : UdpCryptoKeyConstants.TailDigestKey;
 
-        Send(FrameCryptoUtility.EncodeFrame(plain, counter, key, digestKey), session.DialBack);
-        logger.LogDebug(
-            "Outbound counter={Counter} messages={MessageCount} to {DialBack}{PreKeyed}",
-            counter,
-            messages.Count,
-            session.DialBack,
-            session.Established ? string.Empty : " pre");
+        var wire = FrameCryptoUtility.EncodeFrame(plain, counter, key, digestKey);
+        Send(wire, session.DialBack);
+        TrafficLogger.LogUdpOutboundPacket(
+            logger,
+            LogPrefix,
+            $"frame counter={counter} messages={messages.Count}{(session.Established ? string.Empty : " pre-keyed")} to {session.DialBack}",
+            wire);
     }
 
     private void Send(byte[] data, IPEndPoint remote)
@@ -101,7 +102,11 @@ public sealed partial class GameplayServerService
         }
         catch (SocketException exception)
         {
-            logger.LogWarning("Send to {RemoteAddress} failed: {Message}", remote, exception.Message);
+            logger.LogWarning(
+                "[{LogPrefix}] OUT {RemoteAddress} send failed: {Message}",
+                LogPrefix,
+                remote,
+                exception.Message);
         }
     }
 }

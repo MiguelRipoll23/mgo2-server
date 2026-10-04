@@ -135,6 +135,41 @@ public sealed partial class CharacterService
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Finds the settings a set of characters saved, one row per character.
+    /// <para>
+    /// The event-host rules ask what each candidate room's host is running, and
+    /// asking that one room at a time would put a query inside a loop over every
+    /// room in the deployment. The row per character is the one of type
+    /// <see cref="HostSettingsType.Value"/>, which is the settings the host last
+    /// pushed rather than one of the presets that sit beside it.
+    /// </para>
+    /// </summary>
+    /// <param name="characterIdentifiers">Characters to ask about.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The settings row of each character that has one, keyed by character.</returns>
+    public async Task<Dictionary<int, CharacterHostSettings>> FindHostSettingsAsync(
+        IEnumerable<int> characterIdentifiers,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(characterIdentifiers);
+
+        var identifiers = characterIdentifiers.Distinct().ToList();
+        if (identifiers.Count == 0)
+        {
+            return [];
+        }
+
+        await using var context = await CreateContextAsync(cancellationToken);
+        var rows = await context.CharacterHostSettings
+            .AsNoTracking()
+            .Where(settings => identifiers.Contains(settings.CharacterIdentifier)
+                && settings.Type == HostSettingsType.Value)
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(row => row.CharacterIdentifier);
+    }
+
     /// <summary>Replaces the host settings of one game type for a character.</summary>
     /// <param name="characterIdentifier">Identifier of the character.</param>
     /// <param name="type">Game type the settings apply to.</param>

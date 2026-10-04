@@ -1,5 +1,6 @@
 using System.Net;
 using Mgo2Server.Shared.Types;
+using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.Shared.Udp;
 
@@ -7,9 +8,19 @@ namespace Mgo2Server.Shared.Udp;
 /// Holds the negotiated peer-to-peer sessions, keyed by remote endpoint. The
 /// sessions are reaped once they have gone quiet, which releases the peers that
 /// never completed a handshake.
+/// <para>
+/// A reaped session is logged when a logger is supplied, because the reaper is
+/// the only place a peer is let go: there is no close to watch, so a session
+/// that times out is otherwise a peer that leaves the log without a line.
+/// </para>
 /// </summary>
 /// <param name="idleTimeout">How long a session may stay quiet before it is dropped.</param>
-public sealed class PeerSessionService(TimeSpan idleTimeout)
+/// <param name="logger">Logger the reaper writes to, or null to stay silent.</param>
+/// <param name="logPrefix">Prefix of the server, so a line names its port.</param>
+public sealed class PeerSessionService(
+    TimeSpan idleTimeout,
+    ILogger? logger = null,
+    string logPrefix = "udp")
 {
     private readonly Lock gate = new();
     private readonly Dictionary<string, PeerSession> sessions = [];
@@ -103,6 +114,7 @@ public sealed class PeerSessionService(TimeSpan idleTimeout)
     private void Reap()
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        List<string> reaped = [];
         lock (gate)
         {
             foreach (var (remoteAddress, session) in sessions.ToList())
@@ -110,8 +122,18 @@ public sealed class PeerSessionService(TimeSpan idleTimeout)
                 if (now - session.LastSeenAt > idleTimeout.TotalMilliseconds)
                 {
                     sessions.Remove(remoteAddress);
+                    reaped.Add($"{remoteAddress} (peer {session.PeerIdentifier})");
                 }
             }
+        }
+
+        foreach (var remoteAddress in reaped)
+        {
+            logger?.LogInformation(
+                "[{LogPrefix}] Peer disconnected: {RemoteAddress} went quiet for more than {IdleSeconds} seconds",
+                logPrefix,
+                remoteAddress,
+                idleTimeout.TotalSeconds);
         }
     }
 }

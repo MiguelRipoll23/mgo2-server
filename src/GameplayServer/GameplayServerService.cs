@@ -29,7 +29,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly PeerCommandRegistry registry;
     private readonly ILogger<GameplayServerService> logger;
     private readonly ServerOptions options;
-    private readonly PeerSessionService sessions = new(TimeSpan.FromSeconds(60));
+    private readonly PeerSessionService sessions;
     private readonly CancellationTokenSource receiveLifetime = new();
     private readonly int port;
     private UdpClient? socket;
@@ -55,6 +55,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         this.logger = logger;
         this.options = options.Value;
         port = this.options.GameplayServerPort;
+        sessions = new PeerSessionService(TimeSpan.FromSeconds(60), logger, $"udp:{port}");
         gameService = serviceProvider.GetRequiredService<GameService>();
         accountService = serviceProvider.GetRequiredService<AccountService>();
         matchService = serviceProvider.GetRequiredService<MatchService>();
@@ -86,7 +87,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         socket = new UdpClient(new IPEndPoint(IPAddress.Any, port));
         sessions.Start();
         matchService.Start();
-        logger.LogInformation("Listening on port {Port}", port);
+        logger.LogInformation("[{LogPrefix}] Listening on port {Port}", LogPrefix, port);
 
         // Receiving does not run on the token that asks for the stop. A stop ends
         // the matches that are playing when they end, not where they are, and a
@@ -158,7 +159,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
             {
                 // A dial-back send to an unreachable endpoint surfaces as an
                 // ICMP port-unreachable on the next receive.
-                logger.LogDebug("Receive failed: {Message}", exception.Message);
+                logger.LogDebug("[{LogPrefix}] Receive failed: {Message}", LogPrefix, exception.Message);
                 continue;
             }
 

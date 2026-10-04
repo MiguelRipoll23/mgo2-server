@@ -5,6 +5,7 @@ using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.Shared.Options;
+using Mgo2Server.Shared.Telemetry;
 using Mgo2Server.Shared.Udp;
 using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,11 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddServerLogging(builder.Configuration);
 
 builder.Services.AddServerServices(builder.Configuration);
+
+// The same exporter every lobby registers, under this server's own service
+// name: a gameplay host's logs are read beside the lobby that leased the match,
+// and they are only in one place if they arrive through the same collector.
+builder.Services.AddServerTelemetry(builder.Configuration, "mgo2-gameplay");
 
 builder.Services.AddSingleton<HostIdentityService>();
 builder.Services.AddSingleton<AccountService>();

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Persistence.Entities;
 
@@ -73,12 +72,12 @@ public static class EventHostEligibilityUtils
 
     /// <summary>
     /// Whether a room is a dedicated event host: named for the role, and saying so
-    /// in its own settings rather than having the name taken as the claim.
+    /// in its host's own settings rather than having the name taken as the claim.
     /// </summary>
     /// <param name="name">Name of the room.</param>
-    /// <param name="common">Room settings blob.</param>
-    public static bool IsDedicatedEventHost(string? name, string? common) =>
-        IsReservedHostName(name) && IsDedicated(common);
+    /// <param name="hostSettings">Settings of the character hosting it, or null when it has none.</param>
+    public static bool IsDedicatedEventHost(string? name, CharacterHostSettings? hostSettings) =>
+        IsReservedHostName(name) && IsDedicated(hostSettings);
 
     /// <summary>
     /// Whether a room is the Survival host role: named for it and saying so. It is
@@ -88,12 +87,13 @@ public static class EventHostEligibilityUtils
     /// be entered by nobody but the two teams it was leased to.
     /// </summary>
     /// <param name="room">Room being asked about.</param>
-    public static bool IsSurvivalHost(Game room)
+    /// <param name="hostSettings">Settings of the character hosting it, or null when it has none.</param>
+    public static bool IsSurvivalHost(Game room, CharacterHostSettings? hostSettings)
     {
         ArgumentNullException.ThrowIfNull(room);
 
         return string.Equals(room.Name, SurvivalHostName, StringComparison.OrdinalIgnoreCase)
-            && IsDedicated(room.Common);
+            && IsDedicated(hostSettings);
     }
 
     /// <summary>
@@ -105,38 +105,28 @@ public static class EventHostEligibilityUtils
     /// mode before that exception can be granted.
     /// </summary>
     /// <param name="room">Room being asked about.</param>
-    public static bool IsTournamentHost(Game room)
+    /// <param name="hostSettings">Settings of the character hosting it, or null when it has none.</param>
+    public static bool IsTournamentHost(Game room, CharacterHostSettings? hostSettings)
     {
         ArgumentNullException.ThrowIfNull(room);
 
         return string.Equals(room.Name, TournamentHostName, StringComparison.OrdinalIgnoreCase)
-            && IsDedicated(room.Common)
+            && IsDedicated(hostSettings)
             && room.LobbySubtype == TournamentHostSubtype;
     }
 
-    /// <summary>Reads the dedicated flag out of the room settings.</summary>
-    /// <param name="common">Room settings blob, or null.</param>
-    public static bool IsDedicated(string? common)
-    {
-        if (string.IsNullOrWhiteSpace(common))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(common);
-            return document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("dedicated", out var dedicated)
-                && dedicated.ValueKind is JsonValueKind.True;
-        }
-        catch (JsonException)
-        {
-            // A settings blob that cannot be read is not evidence of a dedicated
-            // room, so the room is left out rather than guessed at.
-            return false;
-        }
-    }
+    /// <summary>
+    /// Whether a host says it is hosting as a dedicated host.
+    /// <para>
+    /// The flag is the host's own claim about how it is hosting, read from its
+    /// stored settings: a host that turns the toggle on after opening a room is
+    /// read as dedicated rather than as it was when the room was created. A host
+    /// that has never pushed its settings has no claim to make, so it is refused.
+    /// </para>
+    /// </summary>
+    /// <param name="hostSettings">Settings of the hosting character, or null.</param>
+    public static bool IsDedicated(CharacterHostSettings? hostSettings) =>
+        hostSettings?.Dedicated is true;
 
     /// <summary>
     /// Whether every player in the room is the host and the host is there. A
@@ -209,8 +199,9 @@ public static class EventHostEligibilityUtils
     /// </para>
     /// </summary>
     /// <param name="room">Room being asked about.</param>
+    /// <param name="hostSettings">Settings of the character hosting it, or null when it has none.</param>
     /// <param name="requestedSubtype">Mode the request named, or <see cref="UnnamedSubtype"/>.</param>
-    public static bool AcceptsJoinMode(Game room, int requestedSubtype)
+    public static bool AcceptsJoinMode(Game room, CharacterHostSettings? hostSettings, int requestedSubtype)
     {
         ArgumentNullException.ThrowIfNull(room);
 
@@ -220,7 +211,7 @@ public static class EventHostEligibilityUtils
         }
 
         return requestedSubtype == room.LobbySubtype
-            || (requestedSubtype == LobbySubtypeConstants.FreeBattle && IsTournamentHost(room));
+            || (requestedSubtype == LobbySubtypeConstants.FreeBattle && IsTournamentHost(room, hostSettings));
     }
 
     /// <summary>
@@ -239,31 +230,36 @@ public static class EventHostEligibilityUtils
     /// can still serve the mode it is named for.
     /// </para>
     /// <para>
-    /// A fourth rule joins the three when an environment is passed: the room has
-    /// to be running the settings it was asked for, read out of the copy the room
-    /// kept when it was created rather than out of the settings its host has
-    /// saved, which the host may have changed since. It is asked only when the
-    /// event requires the room to be running that environment, so a deployment
-    /// that does not ask it is not narrowed by a rule it never stated.
+    /// A fourth rule joins the three when an environment is passed: the room's
+    /// host has to have the settings it was asked for saved, read out of the
+    /// host's own settings row. It is asked only when the event requires the room
+    /// to be running that environment, so a deployment that does not ask it is
+    /// not narrowed by a rule it never stated.
     /// </para>
     /// </summary>
     /// <param name="room">Room being asked about.</param>
     /// <param name="matchType">Mode of the match.</param>
     /// <param name="participantCount">Players the match brings.</param>
+    /// <param name="hostSettings">Settings of the character hosting it, or null when it has none.</param>
     /// <param name="requiredSettings">Environment the room has to be running, or null when any will do.</param>
     public static bool IsEligibleHost(
         Game room,
         int matchType,
         int participantCount,
+        CharacterHostSettings? hostSettings,
         EventHostEnvironment? requiredSettings = null)
     {
         ArgumentNullException.ThrowIfNull(room);
 
-        return IsDedicatedEventHost(room.Name, room.Common)
+        return IsDedicatedEventHost(room.Name, hostSettings)
             && IsIdle(
                 room.HostIdentifier,
                 room.Players.Select(player => player.CharacterIdentifier))
             && AcceptsMatch(room.LobbySubtype, matchType, room.MaximumPlayers, participantCount)
-            && (requiredSettings is null || EventHostRoomSettingsUtils.Matches(room.Common, requiredSettings));
+            && (requiredSettings is null
+                || (hostSettings is not null
+                    && EventHostSettingsEnvironmentUtils.HasSameStaticSettings(
+                        EventHostSettingsEnvironmentUtils.ToEnvironment(hostSettings),
+                        requiredSettings)));
     }
 }

@@ -118,7 +118,6 @@ internal static class ColumnDefaultConfiguration
             nameof(Game.Status));
         ApplyDefault<Game>(modelBuilder, 8, nameof(Game.MaximumPlayers));
         ApplyDefault<Game>(modelBuilder, "[]", nameof(Game.Games));
-        ApplyDefault<Game>(modelBuilder, "{}", nameof(Game.Common), nameof(Game.Rules));
         ApplyNow<Game>(modelBuilder, nameof(Game.CreatedAt), nameof(Game.UpdatedAt));
 
         ApplyDefault<GamePlayer>(modelBuilder, (short)0, nameof(GamePlayer.Team));

@@ -122,12 +122,11 @@ public sealed class CreateGameHandler(
             room.MaximumPlayers = defaultMaximumPlayers;
             room.Games = JsonSerializer.Serialize(rotation);
 
-            // The room keeps the settings it was created from, in its own row,
-            // and that copy is what the event's settings rule reads. Taking it
-            // from the host's saved settings instead would read an edit: the
-            // settings are the host's to change once the room is open, while
-            // what the room runs is fixed at the moment it is created.
-            room.Common = EventHostRoomSettingsUtils.Compose(isDedicatedRoom, pushed);
+            // Nothing else is written onto the room: the settings it runs are
+            // the ones its host saved, read from that row when the event rules
+            // ask. A copy here would be a second place the same settings live,
+            // and a room whose copy and whose host's row disagreed would be read
+            // as running settings nobody chose.
         }, cancellationToken);
 
         // The host is the room's first roster member: the roster row carries

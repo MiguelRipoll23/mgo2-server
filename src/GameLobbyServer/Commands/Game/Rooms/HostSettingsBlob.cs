@@ -1,14 +1,8 @@
+using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Persistence.Entities;
 using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
-
-/// <summary>The stored host-settings slot the client reads and writes.</summary>
-public static class HostSettingsType
-{
-    /// <summary>The single current settings row of a character.</summary>
-    public const short Value = 0;
-}
 
 /// <summary>
 /// Codec of the host-settings block. The block is the 0x4310 payload the client pushes
