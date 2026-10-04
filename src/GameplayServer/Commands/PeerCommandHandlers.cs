@@ -86,7 +86,7 @@ public sealed class AcceptHandshakeHandler(
         //    discard this frame: the state<8 -> pre-key rule is absolute, and
         //    the keep-alive does not get to carry the session key ahead of the
         //    handshake reply that earns it.
-        await context.Send(UdpCommandConstants.KeepAlive, []);
+        await context.Send(UdpCommandConstants.KeepAlive, [], 0);
 
         // 2. The handshake reply, also pre-keyed for the same reason. It
         //    advertises the address this host is reached on, which is the
@@ -96,7 +96,7 @@ public sealed class AcceptHandshakeHandler(
             hostIdentity.CounterBase,
             hostIdentity.AdvertisedAddress,
             hostIdentity.AdvertisedPort);
-        await context.Send(UdpCommandConstants.Handshake, reply);
+        await context.Send(UdpCommandConstants.Handshake, reply, 0);
 
         // Only now. The joiner reaches its keyed state when it accepts this
         // reply, so anything sent before it is refused at the digest gate, and
@@ -138,7 +138,7 @@ public sealed class AcknowledgeKeepAliveHandler : IPeerCommandHandler
 {
     /// <inheritdoc />
     public Task HandleAsync(PeerContext context) =>
-        context.Send(UdpCommandConstants.KeepAlive, context.Message.Body);
+        context.Send(UdpCommandConstants.KeepAlive, context.Message.Body, context.Message.Flags);
 }
 
 /// <summary>
@@ -288,7 +288,7 @@ public sealed class PlayerProfileHandler(
         // than closing it; what it says is unresolved, and it is sent because the
         // host sends it.
         var trailer = RoomRosterService.BuildRosterTrailer();
-        await context.Send(trailer.Type, trailer.Body);
+        await context.Send(trailer.Type, trailer.Body, trailer.Ordinal);
 
         // Then the burst, which the recorded host sends once, about two and a
         // half seconds after the roster it is answering here. The capture holds
@@ -302,7 +302,7 @@ public sealed class PlayerProfileHandler(
         await SendRunAsync(context, burst.BuildBurst());
 
         var followUp = PostJoinBurstService.BuildFollowUp();
-        await context.Send(followUp.Type, followUp.Body);
+        await context.Send(followUp.Type, followUp.Body, 0);
 
         // The peers already in the room are told as well. A player who is only
         // announced to the peer that just joined is never announced to the ones
@@ -327,12 +327,13 @@ public sealed class PlayerProfileHandler(
         {
             foreach (var record in run)
             {
-                await context.Send(record.Type, record.Body);
+                await context.Send(record.Type, record.Body, record.Ordinal);
             }
 
             return;
         }
 
-        await sendRecords([.. run.Select(record => FrameBuilderUtility.MessageOf(record.Type, record.Body))]);
+        await sendRecords(
+            [.. run.Select(record => FrameBuilderUtility.MessageOf(record.Type, record.Body, record.Ordinal))]);
     }
 }

@@ -12,7 +12,9 @@ namespace Mgo2Server.Shared.Types;
 /// <param name="Send">
 /// Writes a message back to the peer through the session's shared outbound
 /// counter. Frames are keyed with the pre-handshake key or with the session
-/// key according to <see cref="PeerSession.Established"/>.
+/// key according to <see cref="PeerSession.Established"/>. The last argument
+/// is the record's fourth byte, which the recorded host fills on a roster
+/// run and leaves at zero elsewhere.
 /// </param>
 /// <param name="Broadcast">
 /// Writes a message to every other peer in the room, each through its own
@@ -32,6 +34,6 @@ public sealed record PeerContext(
     UdpMessage Message,
     IPEndPoint Remote,
     int LocalPort,
-    Func<ushort, byte[], Task> Send,
+    Func<ushort, byte[], byte, Task> Send,
     Func<ushort, byte[], Task> Broadcast,
     Func<IReadOnlyList<UdpMessage>, Task>? SendRecords = null);

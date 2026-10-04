@@ -50,9 +50,9 @@ public sealed partial class GameplayServerService
     /// <param name="session">Session to write through.</param>
     /// <param name="messageType">Type of the message.</param>
     /// <param name="body">Body of the message.</param>
-    private void SendMessage(PeerSession session, ushort messageType, byte[] body)
+    private void SendMessage(PeerSession session, ushort messageType, byte[] body, byte ordinal = 0)
     {
-        SendMessages(session, [FrameBuilderUtility.MessageOf(messageType, body)]);
+        SendMessages(session, [FrameBuilderUtility.MessageOf(messageType, body, ordinal)]);
     }
 
     /// <summary>

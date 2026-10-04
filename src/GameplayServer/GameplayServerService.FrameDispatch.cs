@@ -330,9 +330,9 @@ public sealed partial class GameplayServerService
             message,
             remote,
             port,
-            (type, body) =>
+            (type, body, ordinal) =>
             {
-                SendMessage(session, type, body);
+                SendMessage(session, type, body, ordinal);
                 return Task.CompletedTask;
             },
             (type, body) =>

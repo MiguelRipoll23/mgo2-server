@@ -186,16 +186,21 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
         var entries = BuildRecords();
         var run = new List<RosterRecord>(entries.Count + 2)
         {
-            new(UdpCommandConstants.RosterHead, []),
-            new(HostEntryType, entries[0]),
+            new(UdpCommandConstants.RosterHead, [], 0),
+            new(HostEntryType, entries[0], 0),
         };
 
+        // Each joining player carries its slot: the first reads one, so the
+        // count runs from the host's own entry rather than from the head.
         for (var index = 1; index < entries.Count; index++)
         {
-            run.Add(new(UdpCommandConstants.PlayerProfile, entries[index]));
+            run.Add(new(UdpCommandConstants.PlayerProfile, entries[index], (byte)index));
         }
 
-        run.Add(new(UdpCommandConstants.PlayerProfile, PlayerProfileRecordUtility.BuildRosterClose()));
+        run.Add(new(
+            UdpCommandConstants.PlayerProfile,
+            PlayerProfileRecordUtility.BuildRosterClose(),
+            (byte)entries.Count));
         return run;
     }
 
@@ -269,7 +274,31 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
 /// <summary>One record of the roster run, with the type it travels as.</summary>
 /// <param name="Type">Message type the record is sent under.</param>
 /// <param name="Body">Record body.</param>
-public sealed record RosterRecord(ushort Type, byte[] Body);
+/// <param name="Ordinal">
+/// Value for the record's fourth byte, which the recorded host fills with the
+/// record's position in the run rather than leaving at zero.
+/// </param>
+/// <remarks>
+/// Measured off the live capture's opening exchange, where the host sends the
+/// run twice and both frames carry the same numbers:
+/// <code>
+/// hdr 0x8002  0x5001 byte 0   0x9001 byte 0   0x1001 byte 1   0x1001 byte 2
+/// hdr 0x8003  0x9001 byte 0   0x1001 byte 1   0x1001 byte 2
+/// hdr 0x0004  0x5001 byte 0
+/// </code>
+/// The head and the host's own entry both read zero, the first player reads
+/// one, and the record that closes the run reads the number of players after
+/// the host. The repeat drops the head and keeps every other number, so the
+/// value belongs to the record's place in the run and not to its position in
+/// the frame. Later frames continue the same count rather than restarting it
+/// — three players at <c>hdr 0x8005</c> read 4, 5 and 6 — so this is a counter
+/// over the roster as it grows, not a per-frame index.
+/// <para>
+/// What the number <em>means</em> is still unresolved; it is written because the
+/// recorded host writes it and a peer may read it. Nothing here depends on it.
+/// </para>
+/// </remarks>
+public sealed record RosterRecord(ushort Type, byte[] Body, byte Ordinal = 0);
 
 /// <summary>One joining player on the room roster.</summary>
 /// <param name="RemoteAddress">Endpoint the player is reached at, formatted as "address:port".</param>
