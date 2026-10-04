@@ -1,0 +1,249 @@
+# Reclaim the registry.
+#
+# Every commit that reaches a service publishes a version of that image, and
+# nothing in the pipeline that published it ever removes one. A version is a
+# multi-arch manifest list, so it is not a small thing to leave behind: after a
+# few months a package is mostly versions no manifest names and no install will
+# ever pull. This job is the only place a published image is deleted, and it
+# runs nightly.
+#
+# Four rules decide per version, and only the last is a policy the `keep` input
+# moves. The first three are what makes a purge safe at all.
+#
+#   A version carrying `latest` or the default branch's name is never deleted.
+#   Those are the two names that follow the newest build instead of naming one,
+#   and the docker-compose install path defaults to `latest`.
+#
+#   A version carrying a SHA that `deploy/` pins is never deleted. Whatever Argo
+#   is reconciling has to be pullable, and this rule is read from the manifests
+#   rather than guessed from an age, so it holds for the pin that is there now
+#   and not for the one that was there last week.
+#
+#   A version carrying a SHA that one of the last `keep` release tags points at
+#   is never deleted. That is the rollback window: a rollback is a one-line
+#   commit, so the last few releases have to still pull after this runs.
+#
+#   Of what is left, the newest `keep` versions of each image are kept and the
+#   rest deleted. This is what bounds the growth between two releases, when one
+#   service's builds pile up faster than another's.
+#
+# One consequence is worth stating plainly. The registry API deletes a version
+# whole and cannot drop a single tag from it, so an old release's version tag —
+# the `1.4.0` that MGO2_IMAGE_TAG takes — goes down with the SHA beside it,
+# because the two are one version. Keeping a release means keeping all of it,
+# which is why only the last `keep` releases can be kept and why past that a
+# version name stops resolving.
+#
+# The buildx caches the pipeline writes (`cache-to: type=gha`) are deliberately
+# not here. GitHub expires a cache that has gone unread for seven days and
+# evicts the least recently used past the repository's ten-gigabyte limit, so
+# they bound themselves without this job guessing at them.
+name: Purge old images
+
+on:
+  schedule:
+    # 04:17 UTC. An odd minute is deliberate: the top of the hour is where every
+    # other repository's cron lands, and the queue there is the slowest place to
+    # run a job that makes API calls per version.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: Versions to keep per image, and releases to keep whole.
+        type: number
+        default: 3
+      dry_run:
+        description: List what would be deleted, without deleting it.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+# One purge at a time. A manual run overlapping the nightly one would read the
+# same version list and the second delete of each version would fail.
+concurrency:
+  group: purge-images
+  cancel-in-progress: false
+
+jobs:
+  purge:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      # One image's failure must not hide what the others reclaimed; the log of
+      # a run that failed halfway is the record of what was deleted.
+      fail-fast: false
+      matrix:
+        image:
+          - mgo2-gate-lobby-server
+          - mgo2-account-lobby-server
+          - mgo2-game-lobby-server
+          - mgo2-gameplay-server
+          - mgo2-http
+          - mgo2-dns
+          - mgo2-stun
+          - mgo2-postgres
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          # Tags as well as history: the last few releases are the rollback
+          # window, and they are read with `git tag`.
+          fetch-depth: 0
+
+      - name: Delete the versions nothing needs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ matrix.image }}
+          KEEP: ${{ inputs.keep || 3 }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          keep="$KEEP"
+
+          case "$keep" in
+            '' | *[!0-9]*)
+              echo "::error::keep must be a whole number, got '${keep}'."
+              exit 1
+              ;;
+          esac
+
+          # The SHAs nothing may delete. Neither set is a date: one is what
+          # deploy/ names, the other is what the last few releases were cut
+          # from. A manifest's pin is a bare SHA under `newTag`; the migrate
+          # folder's bundle marker carries the same SHA as an image URL, which
+          # is why both shapes are read here. The URL form is taken only with
+          # the SHA ending the line, so a digest-pinned image (`@sha256:...`)
+          # contributes nothing rather than a fragment of its digest.
+          pinned="$(
+            for manifest in deploy/*/kustomization.yaml deploy/*/bundle.yaml; do
+              [ -e "$manifest" ] || continue
+              sed -n \
+                -e 's/^ *newTag: *//p' \
+                -e 's|^\( *image: [^@]*:\)\([0-9a-f]\{40\}\)$|\2|p' \
+                "$manifest"
+            done | { grep -E '^[0-9a-f]{40}$' || true; } | sort -u
+          )"
+
+          # `--count` rather than `head`, so the limit is git's own: a pipeline
+          # into a command that stops reading early ends in a SIGPIPE, which
+          # under `pipefail` reads as a failed listing rather than a short one.
+          released="$(
+            git for-each-ref --count="$keep" --sort=-creatordate \
+              --format='%(refname:short)' 'refs/tags/v*' \
+              | while read -r tag; do
+                  # An annotated tag pushes its tag object as the SHA and a
+                  # lightweight one pushes the commit; the pipeline published
+                  # whichever it was handed, so both names are protected.
+                  git rev-parse --verify --quiet "refs/tags/${tag}" || true
+                  git rev-parse --verify --quiet "refs/tags/${tag}^{commit}" || true
+                done
+          )"
+
+          declare -A protected=()
+          while read -r sha; do
+            if [ -n "$sha" ]; then
+              protected["$sha"]=1
+            fi
+          done < <(printf '%s\n%s\n' "$pinned" "$released" \
+            | { grep -E '^[0-9a-f]{40}$' || true; } | sort -u)
+
+          echo "Keeping ${#protected[@]} pinned or released SHAs, and the newest ${keep} versions."
+
+          packages="$(mktemp)"
+          listing="$(mktemp)"
+          trap 'rm -f "$packages" "$listing"' EXIT
+
+          # Every container package linked to this repository, and then the one
+          # version list that belongs to this job's image. Going through the
+          # repository rather than naming the owner type means this does not
+          # have to know whether the owner is a user or an organisation.
+          gh api "repos/${GITHUB_REPOSITORY}/packages?package_type=container&per_page=100" \
+            --paginate \
+            --jq '.[] | select(.name == env.IMAGE) | .versions_url' > "$packages"
+
+          versions_url="$(head -n 1 "$packages")"
+
+          if [ -z "$versions_url" ]; then
+            echo "No container package named ${IMAGE} is linked to this repository."
+            exit 0
+          fi
+
+          # One line per version: the id the delete takes, when it was created,
+          # and the tags that name it. Sorted newest first, because the window
+          # below counts from the top.
+          gh api --paginate "$versions_url" \
+            --jq '.[] | [.id, .created_at, ((.metadata.container.tags // []) | join(" "))] | @tsv' \
+            > "$listing"
+
+          sort -t$'\t' -k2,2r -o "$listing" "$listing"
+
+          # A version with no tag at all is the residue of a tag that moved onto
+          # another digest, so no name can pull it. It is deleted rather than
+          # counted against the window — but never one created within the day,
+          # which would be a publish still in flight when the list was taken.
+          hold_off="$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)"
+
+          kept=0
+          failed=0
+
+          while IFS=$'\t' read -r id created tags; do
+            if [ -z "$id" ]; then
+              continue
+            fi
+
+            named="${tags:-<no tags>}"
+            reason=""
+
+            # Rules one to three, in the order they are worth breaking. Both
+            # the moving names and the protected SHAs are tags on the version,
+            # so one pass over the tags finds either.
+            for tag in $tags; do
+              if [ "$tag" = "latest" ] || [ "$tag" = "$DEFAULT_BRANCH" ]; then
+                reason="${tag} follows the newest build"
+                break
+              fi
+
+              if [ -n "${protected["$tag"]:-}" ]; then
+                reason="${tag:0:7} is pinned or released"
+                break
+              fi
+            done
+
+            if [ -z "$reason" ] && [ -z "$tags" ] && [ "$created" \> "$hold_off" ]; then
+              reason="untagged, and created within the day"
+            fi
+
+            if [ -z "$reason" ] && [ -n "$tags" ] && [ "$kept" -lt "$keep" ]; then
+              kept=$((kept + 1))
+              reason="one of the newest ${keep}"
+            fi
+
+            if [ -n "$reason" ]; then
+              echo "keep  ${id}  ${created}  ${named}  ${reason}"
+              continue
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "would delete  ${id}  ${created}  ${named}"
+              continue
+            fi
+
+            if gh api --method DELETE "${versions_url}/${id}" --silent; then
+              echo "deleted  ${id}  ${created}  ${named}"
+            else
+              echo "::warning::Could not delete version ${id} of ${IMAGE}."
+              failed=$((failed + 1))
+            fi
+          done < "$listing"
+
+          echo "Kept ${kept} within the window."
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::${failed} version(s) of ${IMAGE} could not be deleted."
+            exit 1
+          fi

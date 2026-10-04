@@ -59,6 +59,63 @@ manifest change is ArgoCD's to reconcile rather than a reason to rebuild an
 image, and it keeps the tag-bump commit each pipeline pushes to `main` from
 starting another run.
 
+## What reclaims the registry
+
+Publishing adds a version and nothing takes one away. Every commit that reaches
+a service leaves a version of that image behind — a multi-arch manifest list
+rather than a layer — and no pipeline deletes what an earlier one made, so the
+packages grow monotonically with the commit history and the releases on top of
+it.
+
+`purge-images.yml` is what stops that. It runs nightly at 04:17 UTC, over a
+matrix of the eight images, and each version is kept unless one of four rules
+lets it go:
+
+| Kept                                                                             | Because                                                                   |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| a version carrying `latest` or the default branch's name                          | those two names follow the newest build, and the compose install pulls `latest` |
+| a version carrying a SHA any `deploy/*/kustomization.yaml` or `bundle.yaml` pins  | whatever Argo is reconciling has to be pullable                             |
+| a version carrying a SHA one of the last `keep` release tags points at             | that is the rollback window, and a rollback is a one-line commit           |
+| the newest `keep` versions of each image                                           | this is what bounds the growth *between* releases                          |
+
+The second rule is read out of the manifests rather than derived from an age,
+which is what lets the third be short: the pin that is there now is protected
+whatever the retention window says, and so is every release inside the window.
+The third rule matches on the **SHA** a release tag points at, not on the tag's
+name, because the two names are not the same string — git has `v1.4.0`, the
+registry has `1.4.0`. Both the tag object and the commit it peels to are
+protected, because an annotated tag pushes the former as `GITHUB_SHA` and a
+lightweight one pushes the latter, and the pipeline published whichever it was
+handed.
+
+**An old release loses its version tag with the SHA.** The registry API deletes
+a version whole and cannot drop one tag from it, so `1.4.0` cannot be kept while
+the digest beside it goes. Keeping a release therefore means keeping all of it,
+and past the last `keep` releases a version name stops resolving. That is the
+trade this workflow makes, and it is the reason the window is expressed in
+release tags rather than in versions kept.
+
+`packages: write` is the one permission it asks for beyond `contents: read`, and
+it is the only workflow here that can delete anything. It runs with
+`fail-fast: false`, because a run that failed halfway still has to say what it
+deleted; a version it could not delete is a warning and a non-zero exit at the
+end, not a stop.
+
+Run it by hand with `dry_run: true` first — it prints one line per version with
+the reason it was kept or deleted, which is the whole audit trail:
+
+```
+keep  10  2026-10-04T10:00:00Z  7b043cd… main latest  main follows the newest build
+keep  12  2026-10-03T08:00:00Z  9cb959ee5581…      9cb959 is pinned or released
+keep  9   2026-10-04T09:00:00Z  4a1f0e2…             one of the newest 3
+would delete  13  2026-09-28T09:00:00Z  8f029a58… 0.6.0
+```
+
+The buildx caches the pipeline writes (`cache-to: type=gha`) are deliberately
+not in it. GitHub expires a cache that has gone unread for seven days and evicts
+the least recently used past the repository's ten-gigabyte limit, so they bound
+themselves without a job guessing at them.
+
 ## Cluster access
 
 No workflow has any. The pipelines build an image and commit a tag; they never
@@ -232,7 +289,7 @@ which is the case the split was for.
 
 ## Validation
 
-The four checks that matter, and how to run each:
+The five checks that matter, and how to run each:
 
 - **One service changes.** Touch a file under `src/Dns/` and push. Only
   `dns.yml` should run to completion; the other seven start (their paths match
@@ -250,6 +307,13 @@ The four checks that matter, and how to run each:
   (which rebuilds the bundle and re-pins `deploy/migrate`) and watch Argo: the
   `mgo2-migrate` Application's PreSync hook Job must reach `Completed` before
   any wave-2 Application begins to sync.
+- **The purge keeps what it should.** Dispatch `purge-images.yml` with
+  `dry_run: true`, and read the log: every `newTag` in `deploy/` and the last
+  `keep` release tags must appear on a `keep` line, and nothing carrying
+  `latest` or the default branch's name may appear on a `would delete` line.
+  That is the check that the rules still describe the repository's real state —
+  in particular that no manifest moved to a digest pin, which would change what
+  "the SHA it pins" means.
 
 ## What the old workflow's answers were
 
