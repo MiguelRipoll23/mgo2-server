@@ -104,16 +104,10 @@ public sealed class AcceptHandshakeHandler(
         // session-keyed, which is what the capture shows from counter 32770 on.
         context.Session.Established = true;
 
-        // Accepting the reply only carries a joiner to its handshake phase, and
-        // nothing it sends from there can move it on: the only path that sets
-        // its session-key flag is a frame whose tail digest verifies with the
-        // session key, and handshakes and keep-alives are pre-keyed. One
-        // session-keyed keep-alive is what takes it to the data phase, and
-        // without it the join never leaves the handshake phase - the joiner sits
-        // silent and the session times out. The recorded host does not send this
-        // frame; the reference host does, and a live client needs it.
-        await context.Send(UdpCommandConstants.KeepAlive, [], 0);
-
+        // Nothing is sent here. The recorded host sends no keyed frame between
+        // its reply and the joiner's profile: its first keyed frame is the
+        // roster that answers that profile, and the joiner is already able to
+        // encode with the session key as soon as it accepts this reply.
         logger.LogInformation(
             "UDP {LocalPort}: session with peer=0x{PeerIdentifier:x8} established",
             context.LocalPort,
