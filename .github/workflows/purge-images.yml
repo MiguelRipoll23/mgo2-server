@@ -112,10 +112,20 @@ jobs:
               ;;
           esac
 
-          packages="$(mktemp)"
+          api_error="$(mktemp)"
           listing="$(mktemp)"
           owner_file="$(mktemp)"
-          trap 'rm -f "$packages" "$listing" "$owner_file"' EXIT
+          trap 'rm -f "$api_error" "$listing" "$owner_file"' EXIT
+
+          # `gh api` puts the HTTP status and GitHub's own message on stderr
+          # when a request fails, and every call below turns that into a run
+          # annotation. A step whose only annotation reads "exit code 1" names
+          # no cause at all, and the log that does name one is behind a sign-in,
+          # so a permission that had quietly stopped the purge would read the
+          # same as a mistake in the arithmetic below.
+          report() {
+            echo "::error::$(tr '\n' ' ' < "$api_error" | cut -c1-500)"
+          }
 
           # The packages API is namespace-scoped and there is no
           # repository-scoped one: `GET /repos/{owner}/{repo}/packages` is a 404
@@ -124,7 +134,12 @@ jobs:
           # account, `orgs/{login}` for an organization. Both are documented;
           # the repository one is not, which is a 404 rather than a permission
           # error and reads like the package is missing.
-          gh api "repos/${GITHUB_REPOSITORY}" --jq '.owner | "\(.login) \(.type)"' > "$owner_file"
+          if ! gh api "repos/${GITHUB_REPOSITORY}" --jq '.owner | "\(.login) \(.type)"' \
+            > "$owner_file" 2> "$api_error"; then
+            report
+            exit 1
+          fi
+
           read -r owner owner_type < "$owner_file"
 
           case "$owner_type" in
@@ -178,41 +193,72 @@ jobs:
 
           echo "Keeping ${#protected[@]} pinned or released SHAs, and the newest ${keep} versions."
 
-          # Every container package in the owner's namespace, and then the one
-          # version list that belongs to this job's image. The package is matched
-          # on its name *and* on the repository it is linked to: a namespace can
-          # hold packages from several repositories, and one of them having this
-          # image's name is not this repository's image to delete.
+          # The package this job purges. The registry names a package after the
+          # image's whole path under the owner rather than after the image alone:
+          # the pipeline publishes `ghcr.io/<owner>/<repo>/<image>` (see the
+          # image name in .github/workflows/service.yml), so the package is
+          # `<repo>/<image>` and the bare image name names no package at all.
+          # Both halves are lowercased because the registry requires a lower-case
+          # path, and the slash becomes %2F because the name sits inside one path
+          # segment.
           #
-          # The image name is interpolated into the filter rather than read from
-          # the environment inside it, so what the filter matches on is visible
-          # in the log line above. It comes from the matrix in this file, and the
-          # case below says so rather than trusting it.
-          case "$IMAGE" in
+          # The name is checked against a plain lowercase pattern before it is
+          # interpolated into that path. It comes from the matrix in this file,
+          # and the case says so rather than trusting it.
+          image_name="${IMAGE,,}"
+          repository_name="${GITHUB_REPOSITORY,,}"
+          repository_name="${repository_name#*/}"
+
+          case "$image_name" in
             '' | *[!a-z0-9-]*)
               echo "::error::image name '${IMAGE}' is not a plain lowercase name."
               exit 1
               ;;
           esac
 
-          gh api "${namespace}/${owner}/packages?package_type=container&per_page=100" \
-            --paginate \
-            --jq ".[] | select(.name == \"${IMAGE}\" and .repository.full_name == \"${GITHUB_REPOSITORY}\") | .versions_url" \
-            > "$packages"
+          # One version list per candidate name, and the first that resolves is
+          # this job's package. Naming the package is the route the API
+          # documents; the two revisions before this one listed the owner's whole
+          # namespace and filtered it here, which put a repository-linkage check
+          # in the way of an endpoint that already names one package. The bare
+          # image name is tried second so a registry that does not prefix the
+          # package with the repository still purges rather than quietly doing
+          # nothing.
+          versions_path=""
 
-          versions_url="$(head -n 1 "$packages")"
+          for package in "${repository_name}/${image_name}" "${image_name}"; do
+            encoded="${package//\//%2F}"
+            path="${namespace}/${owner}/packages/container/${encoded}/versions"
 
-          if [ -z "$versions_url" ]; then
-            echo "No container package named ${IMAGE} is linked to ${GITHUB_REPOSITORY}."
+            # One line per version: the id the delete takes, when it was created,
+            # and the tags that name it. Sorted newest first below, because the
+            # window counts from the top.
+            if gh api --paginate "${path}?per_page=100" \
+              --jq '.[] | [.id, .created_at, ((.metadata.container.tags // []) | join(" "))] | @tsv' \
+              > "$listing" 2> "$api_error"; then
+              versions_path="$path"
+              break
+            fi
+
+            # A package that is not there is nothing to purge, and is not a
+            # failure: an image whose pipeline has never run leaves no package.
+            # Anything else is a permission or an API error and has to be said
+            # out loud rather than read as an empty registry.
+            if ! grep -q 'HTTP 404' "$api_error"; then
+              echo "::error::Reading the versions of ${package} under ${owner} failed."
+              report
+              exit 1
+            fi
+
+            echo "No container package named ${package} under ${owner}."
+          done
+
+          if [ -z "$versions_path" ]; then
+            echo "::warning::${IMAGE} names no container package under ${owner}; there was nothing to purge."
             exit 0
           fi
 
-          # One line per version: the id the delete takes, when it was created,
-          # and the tags that name it. Sorted newest first, because the window
-          # below counts from the top.
-          gh api --paginate "${versions_url}?per_page=100" \
-            --jq '.[] | [.id, .created_at, ((.metadata.container.tags // []) | join(" "))] | @tsv' \
-            > "$listing"
+          echo "Purging ${IMAGE} from ${versions_path}."
 
           sort -t$'\t' -k2,2r -o "$listing" "$listing"
 
@@ -267,10 +313,10 @@ jobs:
               continue
             fi
 
-            if gh api --method DELETE "${versions_url}/${id}" --silent; then
+            if gh api --method DELETE "${versions_path}/${id}" --silent 2> "$api_error"; then
               echo "deleted  ${id}  ${created}  ${named}"
             else
-              echo "::warning::Could not delete version ${id} of ${IMAGE}."
+              echo "::warning::Could not delete version ${id} of ${IMAGE}: $(tr '\n' ' ' < "$api_error" | cut -c1-200)"
               failed=$((failed + 1))
             fi
           done < "$listing"
