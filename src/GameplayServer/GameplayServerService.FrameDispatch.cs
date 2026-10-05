@@ -344,6 +344,11 @@ public sealed partial class GameplayServerService
             {
                 SendMessages(session, records);
                 return Task.CompletedTask;
+            },
+            records =>
+            {
+                SendMessages(session, records, compressed: true);
+                return Task.CompletedTask;
             });
 
         await handler.HandleAsync(context);

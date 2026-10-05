@@ -22,13 +22,27 @@ public static class FrameBuilderUtility
     /// </summary>
     /// <param name="counter">Frame counter.</param>
     /// <param name="messages">Messages to wrap.</param>
-    public static byte[] BuildMessageFrame(ushort counter, IReadOnlyList<UdpMessage> messages)
+    /// <param name="compressed">
+    /// Whether the content region goes out as an LZSS stream with the
+    /// compression marker set in the header word. The recorded host marks the
+    /// roster run, the roster repeat and the post-join burst and leaves the
+    /// short records that close them unmarked, so this is per run rather than
+    /// a property of the peer.
+    /// </param>
+    public static byte[] BuildMessageFrame(
+        ushort counter,
+        IReadOnlyList<UdpMessage> messages,
+        bool compressed = false)
     {
         var header = new byte[UdpCommandConstants.HeaderSize];
-        BinaryUtility.WriteUInt16LittleEndian(header, 0, counter);
+        BinaryUtility.WriteUInt16LittleEndian(
+            header,
+            0,
+            compressed ? (ushort)(counter | UdpCommandConstants.CompressionMarker) : counter);
+        var content = MessageCodecUtility.SerializeMessages(messages);
         return BinaryUtility.Concatenate(
             header,
-            MessageCodecUtility.SerializeMessages(messages),
+            compressed ? LzssUtility.Compress(content) : content,
             new byte[UdpCommandConstants.TailSize]);
     }
 

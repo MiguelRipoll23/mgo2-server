@@ -29,6 +29,14 @@ namespace Mgo2Server.Shared.Types;
 /// roster it never saw assembled. Null where the context was built without it,
 /// and a handler falls back to sending one message at a time.
 /// </param>
+/// <param name="SendRecordsCompressed">
+/// The same run, written LZSS-compressed with the header's compression marker
+/// set. The recorded host sends the roster run, the roster repeat and the
+/// post-join burst this way and the short records that close them plain, so a
+/// handler picks per run. Null where the context was built without it, and a
+/// handler falls back to <see cref="SendRecords"/> rather than sending the run
+/// in a format the recorded host never writes.
+/// </param>
 public sealed record PeerContext(
     PeerSession Session,
     UdpMessage Message,
@@ -36,4 +44,5 @@ public sealed record PeerContext(
     int LocalPort,
     Func<ushort, byte[], byte, Task> Send,
     Func<ushort, byte[], Task> Broadcast,
-    Func<IReadOnlyList<UdpMessage>, Task>? SendRecords = null);
+    Func<IReadOnlyList<UdpMessage>, Task>? SendRecords = null,
+    Func<IReadOnlyList<UdpMessage>, Task>? SendRecordsCompressed = null);

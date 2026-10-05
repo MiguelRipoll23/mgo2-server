@@ -282,7 +282,7 @@ public sealed class PlayerProfileHandler(
         // a single frame, and one record per datagram spends an outbound
         // sequence on each and hands the joiner a roster it never saw
         // assembled.
-        await SendRunAsync(context, run);
+        await SendRunAsync(context, run, compressed: true);
 
         // Then the run again, without its head, which is what the recorded host
         // sends. It is not a retransmission and nothing waits for an
@@ -290,7 +290,7 @@ public sealed class PlayerProfileHandler(
         // sequences with the tick stream between them, and the joiner never
         // acknowledged either. RoomRosterService.BuildRosterRunRepeat carries
         // the measurement.
-        await SendRunAsync(context, roster.BuildRosterRunRepeat());
+        await SendRunAsync(context, roster.BuildRosterRunRepeat(), compressed: true);
 
         // Then one more empty 0x5001 on its own, the record the live host closes
         // a roster exchange with. It repeats the type that opened the run rather
@@ -308,7 +308,7 @@ public sealed class PlayerProfileHandler(
         // slot and zeros: the capture's own are one character's equipment and
         // are deliberately not copied. PostJoinBurstService carries the
         // measurement and what it does not settle.
-        await SendRunAsync(context, burst.BuildBurst());
+        await SendRunAsync(context, burst.BuildBurst(), compressed: true);
 
         var followUp = PostJoinBurstService.BuildFollowUp();
         await context.Send(followUp.Type, followUp.Body, 0);
@@ -330,9 +330,24 @@ public sealed class PlayerProfileHandler(
     /// </summary>
     /// <param name="context">Context of the message being answered.</param>
     /// <param name="run">Records to write, in order.</param>
-    private static async Task SendRunAsync(PeerContext context, IReadOnlyList<RosterRecord> run)
+    /// <param name="compressed">
+    /// Whether the run goes out LZSS-compressed with the header's compression
+    /// marker set. The recorded host sends the roster run, the roster repeat
+    /// and the post-join burst compressed and the two one-byte records that
+    /// close the exchange plain; where the context cannot batch, the fallback
+    /// is the uncompressed path because a plain record cannot be made
+    /// compressed without changing what it means.
+    /// </param>
+    private static async Task SendRunAsync(
+        PeerContext context,
+        IReadOnlyList<RosterRecord> run,
+        bool compressed = false)
     {
-        if (context.SendRecords is not { } sendRecords)
+        var batch = compressed
+            ? context.SendRecordsCompressed ?? context.SendRecords
+            : context.SendRecords;
+
+        if (batch is not { } sendRecords)
         {
             foreach (var record in run)
             {

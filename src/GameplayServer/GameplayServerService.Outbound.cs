@@ -69,7 +69,16 @@ public sealed partial class GameplayServerService
     /// </remarks>
     /// <param name="session">Session to write through.</param>
     /// <param name="messages">Messages to write, in order.</param>
-    private void SendMessages(PeerSession session, IReadOnlyList<UdpMessage> messages)
+    /// <param name="compressed">
+    /// Whether the run goes out LZSS-compressed with the compression marker
+    /// set. The recorded host compresses the roster run, the roster repeat
+    /// and the post-join burst, and sends the short records that close them
+    /// plain, so the flag belongs to the run rather than to the peer.
+    /// </param>
+    private void SendMessages(
+        PeerSession session,
+        IReadOnlyList<UdpMessage> messages,
+        bool compressed = false)
     {
         if (messages.Count == 0)
         {
@@ -79,7 +88,7 @@ public sealed partial class GameplayServerService
         var counter = session.OutboundCounter;
         session.OutboundCounter = FrameCounterUtility.Next(counter);
 
-        var plain = FrameBuilderUtility.BuildMessageFrame(counter, messages);
+        var plain = FrameBuilderUtility.BuildMessageFrame(counter, messages, compressed);
         var key = session.Established ? session.SessionKey : UdpCryptoKeyConstants.PreHandshakeKey;
         var digestKey = session.Established
             ? session.SessionKey ^ UdpCryptoKeyConstants.TailDigestKey
