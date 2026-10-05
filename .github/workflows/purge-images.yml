@@ -112,6 +112,30 @@ jobs:
               ;;
           esac
 
+          packages="$(mktemp)"
+          listing="$(mktemp)"
+          owner_file="$(mktemp)"
+          trap 'rm -f "$packages" "$listing" "$owner_file"' EXIT
+
+          # The packages API is namespace-scoped and there is no
+          # repository-scoped one: `GET /repos/{owner}/{repo}/packages` is a 404
+          # route, not an endpoint, so the namespace is resolved from the
+          # repository's own owner instead — `users/{login}` for a personal
+          # account, `orgs/{login}` for an organization. Both are documented;
+          # the repository one is not, which is a 404 rather than a permission
+          # error and reads like the package is missing.
+          gh api "repos/${GITHUB_REPOSITORY}" --jq '.owner | "\(.login) \(.type)"' > "$owner_file"
+          read -r owner owner_type < "$owner_file"
+
+          case "$owner_type" in
+            User) namespace="users" ;;
+            Organization) namespace="orgs" ;;
+            *)
+              echo "::error::${GITHUB_REPOSITORY} has owner type '${owner_type}'; expected User or Organization."
+              exit 1
+              ;;
+          esac
+
           # The SHAs nothing may delete. Neither set is a date: one is what
           # deploy/ names, the other is what the last few releases were cut
           # from. A manifest's pin is a bare SHA under `newTag`; the migrate
@@ -154,29 +178,39 @@ jobs:
 
           echo "Keeping ${#protected[@]} pinned or released SHAs, and the newest ${keep} versions."
 
-          packages="$(mktemp)"
-          listing="$(mktemp)"
-          trap 'rm -f "$packages" "$listing"' EXIT
+          # Every container package in the owner's namespace, and then the one
+          # version list that belongs to this job's image. The package is matched
+          # on its name *and* on the repository it is linked to: a namespace can
+          # hold packages from several repositories, and one of them having this
+          # image's name is not this repository's image to delete.
+          #
+          # The image name is interpolated into the filter rather than read from
+          # the environment inside it, so what the filter matches on is visible
+          # in the log line above. It comes from the matrix in this file, and the
+          # case below says so rather than trusting it.
+          case "$IMAGE" in
+            '' | *[!a-z0-9-]*)
+              echo "::error::image name '${IMAGE}' is not a plain lowercase name."
+              exit 1
+              ;;
+          esac
 
-          # Every container package linked to this repository, and then the one
-          # version list that belongs to this job's image. Going through the
-          # repository rather than naming the owner type means this does not
-          # have to know whether the owner is a user or an organisation.
-          gh api "repos/${GITHUB_REPOSITORY}/packages?package_type=container&per_page=100" \
+          gh api "${namespace}/${owner}/packages?package_type=container&per_page=100" \
             --paginate \
-            --jq '.[] | select(.name == env.IMAGE) | .versions_url' > "$packages"
+            --jq ".[] | select(.name == \"${IMAGE}\" and .repository.full_name == \"${GITHUB_REPOSITORY}\") | .versions_url" \
+            > "$packages"
 
           versions_url="$(head -n 1 "$packages")"
 
           if [ -z "$versions_url" ]; then
-            echo "No container package named ${IMAGE} is linked to this repository."
+            echo "No container package named ${IMAGE} is linked to ${GITHUB_REPOSITORY}."
             exit 0
           fi
 
           # One line per version: the id the delete takes, when it was created,
           # and the tags that name it. Sorted newest first, because the window
           # below counts from the top.
-          gh api --paginate "$versions_url" \
+          gh api --paginate "${versions_url}?per_page=100" \
             --jq '.[] | [.id, .created_at, ((.metadata.container.tags // []) | join(" "))] | @tsv' \
             > "$listing"
 
