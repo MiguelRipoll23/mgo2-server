@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Mgo2Server.GameLobbyServer.Commands.Game.Chat;
+using Mgo2Server.Http.Discord;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Automatch;
 using Mgo2Server.Shared.Domain.Characters;
@@ -40,20 +41,22 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 /// match before it is told the room it is in exists — the reference buys the same
 /// ordering with the half-second delay before it publishes an assignment.
 /// </para>
-/// </summary>
-/// <param name="gameService">Service that owns the rooms.</param>
-/// <param name="characterService">Service that owns the stored settings.</param>
-/// <param name="automatchService">Queue told about the new room.</param>
-/// <param name="assignmentService">Service told the new room may host a match.</param>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
-/// <param name="externalJoinHintService">Service that raises the tailnet host's joinability line.</param>
+/// </summary>/// <param name="gameService">Service that owns the rooms.</param>
+    /// <param name="characterService">Service that owns the stored settings.</param>
+    /// <param name="automatchService">Queue told about the new room.</param>
+    /// <param name="assignmentService">Service told the new room may host a match.</param>
+    /// <param name="sessionHelper">Helper used to write the replies.</param>
+    /// <param name="externalJoinHintService">Service that raises the tailnet host's joinability line.</param>
+    /// <param name="discordGameEventService">Service that posts game events to Discord.</param>
 public sealed class CreateGameHandler(
     GameService gameService,
     CharacterService characterService,
     AutomatchService automatchService,
     EventAssignmentService assignmentService,
     SessionHelper sessionHelper,
-    ExternalJoinHintService externalJoinHintService) : ICommandHandler
+    ExternalJoinHintService externalJoinHintService,
+    DiscordGameEventService discordGameEventService,
+    ILogger<CreateGameHandler> logger) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
@@ -144,6 +147,10 @@ public sealed class CreateGameHandler(
         // line arrives in a room the client has already been placed in.
         await externalJoinHintService.SendAsync(session, characterIdentifier, cancellationToken);
 
+        // Post to Discord that a game was created.
+        var characterName = await CharacterNameAsync(characterIdentifier, cancellationToken);
+        await discordGameEventService.PostGameCreatedAsync(characterName, game.Name, game.Name, cancellationToken);
+
         // The room is offered to the waiting matches now rather than at the next
         // sweep. A room that cannot host one is not asked about twice: the rule is
         // applied here and the call returns as soon as no match is waiting.
@@ -171,6 +178,23 @@ public sealed class CreateGameHandler(
             CommandConstants.CreateGameResult,
             writer.Build(),
             cancellationToken);
+    }
+
+    /// <summary>Reads the character name from the database.</summary>
+    private async Task<string> CharacterNameAsync(int characterIdentifier, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken);
+            return string.IsNullOrWhiteSpace(character?.Name)
+                ? $"Player_{characterIdentifier}"
+                : character.Name;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Could not read character name for {CharacterIdentifier}", characterIdentifier);
+            return $"Player_{characterIdentifier}";
+        }
     }
 
     /// <summary>Reads the non-empty rotation triples a push stored, rule first.</summary>

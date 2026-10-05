@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Shared\Mgo2Server.Shared.csproj" />
     <ProjectReference Include="..\Infrastructure\Mgo2Server.Infrastructure.csproj" />
+    <ProjectReference Include="..\Http\Mgo2Server.Http.csproj" />
   </ItemGroup>
 
 </Project>

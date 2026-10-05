@@ -99,6 +99,7 @@ builder.Services.AddSingleton<IPlayerPresenceObserver>(
 builder.Services.AddSingleton<DiscordLoginNotificationService>();
 builder.Services.AddSingleton<DiscordChannelRenameService>();
 builder.Services.AddSingleton<DiscordEventScheduleCommandService>();
+builder.Services.AddSingleton<DiscordGameEventService>();
 builder.Services.AddSingleton<DiscordCommandService>();
 builder.Services.AddSingleton<DiscordGatewayClientService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<DiscordGatewayClientService>());

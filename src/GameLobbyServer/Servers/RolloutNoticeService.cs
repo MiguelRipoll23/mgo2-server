@@ -40,8 +40,7 @@ public sealed class RolloutNoticeService(
 
     /// <summary>What the players of a draining lobby are told.</summary>
     public static readonly string Message =
-        $"Server rollout in progress: players will be disconnected in {RolloutHours} hours. " +
-        "If you are disconnected, reconnect to keep playing.";
+        "Server is being updated, if you get disconnected reconnect after a few minutes";
 
     private volatile bool platformRequestedStop;
 

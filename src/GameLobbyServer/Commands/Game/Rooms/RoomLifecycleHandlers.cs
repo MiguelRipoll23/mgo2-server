@@ -1,3 +1,4 @@
+using Mgo2Server.Http.Discord;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Events;
@@ -27,19 +28,39 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 /// stops being an idle host for the next match. So the rule is applied here, where
 /// the join is served.
 /// </para>
-/// </summary>
-/// <param name="gameService">Service that owns the rooms.</param>
-/// <param name="characterService">Service that owns the characters' host settings.</param>
-/// <param name="assignmentService">Service that knows which match a room is leased to.</param>
-/// <param name="sessionHelper">Helper used to write the replies.</param>
-/// <param name="logger">Logger of this handler.</param>
+/// </summary>/// <param name="gameService">Service that owns the rooms.</param>
+    /// <param name="characterService">Service that owns the characters' host settings.</param>
+    /// <param name="assignmentService">Service that knows which match a room is leased to.</param>
+    /// <param name="sessionHelper">Helper used to write the replies.</param>
+    /// <param name="logger">Logger of this handler.</param>
+    /// <param name="discordGameEventService">Service that posts game events to Discord.</param>
 public sealed class JoinGameHandler(
     GameService gameService,
     CharacterService characterService,
     EventAssignmentService assignmentService,
     SessionHelper sessionHelper,
-    ILogger<JoinGameHandler> logger) : ICommandHandler
+    ILogger<JoinGameHandler> logger,
+    DiscordGameEventService discordGameEventService) : ICommandHandler
 {
+    /// <summary>
+    /// Reads the character name from the database.
+    /// </summary>
+    private async Task<string> CharacterNameAsync(int characterIdentifier, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken);
+            return string.IsNullOrWhiteSpace(character?.Name)
+                ? $"Player_{characterIdentifier}"
+                : character.Name;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Could not read character name for {CharacterIdentifier}", characterIdentifier);
+            return $"Player_{characterIdentifier}";
+        }
+    }
+
     /// <summary>Size of the success reply, including the two unread trailing bytes.</summary>
     private const int SuccessSize = 43;
 
@@ -143,6 +164,10 @@ public sealed class JoinGameHandler(
 
         await gameService.AddPlayerAsync(game.Identifier, session.CharacterIdentifier ?? 0, cancellationToken);
         session.GameIdentifier = game.Identifier;
+
+        // Post to Discord that a player joined the game.
+        var characterName = await CharacterNameAsync(session.CharacterIdentifier!.Value, cancellationToken);
+        await discordGameEventService.PostGameJoinedAsync(characterName, game.Name, game.Name, cancellationToken);
 
         // The rating gate that actually decides: the client keeps no memory
         // across joins, so only the server can stop a repeat vote.
