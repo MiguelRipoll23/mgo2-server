@@ -11,6 +11,7 @@ using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Telemetry;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 
@@ -47,10 +48,7 @@ builder.WebHost.ConfigureKestrel(options =>
         listen => listen.Protocols = HttpProtocols.Http2);
 });
 
-var httpApiOptions = new HttpApiOptions
-{
-    LauncherServer = builder.Configuration["LAUNCHER_SERVER"] ?? "http://mgo2pc.com",
-};
+var httpApiOptions = new HttpApiOptions();
 
 var discordOptions = new DiscordOptions
 {
@@ -75,7 +73,6 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<PolicyService>();
 builder.Services.AddSingleton<HelpService>();
 builder.Services.AddSingleton<VersionService>();
-builder.Services.AddSingleton<LauncherService>();
 builder.Services.AddSingleton<RankingResponseService>();
 
 // The coordination the HTTP API owns: the streams of the gameplay lobbies, the
@@ -149,6 +146,15 @@ app.UseExceptionHandler(_ => { });
 app.UseMiddleware<LegacyPathNormalizer>();
 app.UseRouting();
 app.UseCors();
+
+// The patch files ship inside the image and are never fetched from an upstream
+// launcher, so they are served straight out of the static directory rather than
+// through an endpoint of their own.
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(httpApiOptions.LocalLauncherPath),
+    RequestPath = "/files",
+});
 
 app.MapOpenApi("/.well-known/openapi");
 app.MapOpenApi("/.well-known/openapi.json");

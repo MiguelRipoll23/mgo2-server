@@ -325,7 +325,6 @@ echo 'Applying the database migrations'
 http_port="$(setting_value HTTP_PORT 80)"
 dns_port="$(setting_value DNS_PORT 53)"
 stun_port="$(setting_value STUN_PORT 3478)"
-launcher_server="$(setting_value LAUNCHER_SERVER http://mgo2pc.com)"
 dedicated_advertised_address="$(setting_value ADVERTISED_ADDRESS 127.0.0.1)"
 
 echo ''
@@ -372,8 +371,7 @@ start_server gameplay-5731 GameplayServer 'Gameplay server (5731/udp)' \
     "DEDICATED_ADVERTISED_ADDRESS=${dedicated_advertised_address}"
 
 start_server http Http "HTTP API (${http_port}/tcp)" \
-    "HTTP_PORT=${http_port}" \
-    "LAUNCHER_SERVER=${launcher_server}"
+    "HTTP_PORT=${http_port}"
 
 start_server dns Dns "DNS (${dns_port}/udp)" \
     "DNS_PORT=${dns_port}"

@@ -376,7 +376,6 @@ try {
     $httpPort = Get-SettingValue 'HTTP_PORT' '80' $projectDirectory
     $dnsPort = Get-SettingValue 'DNS_PORT' '53' $projectDirectory
     $stunPort = Get-SettingValue 'STUN_PORT' '3478' $projectDirectory
-    $launcherServer = Get-SettingValue 'LAUNCHER_SERVER' 'http://mgo2pc.com' $projectDirectory
 
     try {
         Write-Host ''
@@ -427,7 +426,6 @@ try {
 
         Start-Server 'http' 'Http' "HTTP API ($httpPort/tcp)" @{
             HTTP_PORT = $httpPort
-            LAUNCHER_SERVER = $launcherServer
         }
 
         Start-Server 'dns' 'Dns' "DNS ($dnsPort/udp)" @{

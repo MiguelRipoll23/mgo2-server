@@ -17,6 +17,5 @@ internal static class PublicEndpoints
         group.MapCheckVerEndpoints();
         group.MapDataListEdnpoints();
         group.MapRankingEndpoints();
-        group.MapLauncherEndpoints();
     }
 }

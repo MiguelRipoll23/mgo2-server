@@ -3,7 +3,6 @@ using Mgo2Server.Shared.Domain;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameplayServer.Identity;
@@ -20,12 +19,10 @@ namespace Mgo2Server.GameplayServer.Identity;
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 /// <param name="cryptographyService">Service that hashes the account password.</param>
 /// <param name="options">Options of this instance.</param>
-/// <param name="logger">Logger of the service.</param>
 public sealed class AccountService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
     CryptographyService cryptographyService,
-    IOptions<ServerOptions> options,
-    ILogger<AccountService> logger)
+    IOptions<ServerOptions> options)
 {
     /// <summary>Comment shown for the gameplay server character.</summary>
     public const string CharacterComment = "Gameplay server";
@@ -90,12 +87,6 @@ public sealed class AccountService(
                 $"{characterIdentifier}. The Gameplay server announces its character identifier as its " +
                 "peer identifier, so the account must own that identifier.");
         }
-
-        logger.LogDebug(
-            "Gameplay server account ready: {AccountName}, character {CharacterName} ({Identifier})",
-            accountName,
-            characterName,
-            actualIdentifier);
 
         return actualIdentifier;
     }

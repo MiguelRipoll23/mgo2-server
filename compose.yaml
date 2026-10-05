@@ -278,7 +278,7 @@ services:
     container_name: mgo2-http
     # A mounted volume at the Data Protection key ring silences the framework's
     # "keys may not be persisted" warning and keeps protected payloads valid
-    # across restarts. The shared settings it serves (HTTP_PORT, LAUNCHER_SERVER,
+    # across restarts. The shared settings it serves (HTTP_PORT,
     # INTERNAL_GRPC_PORT and its secrets) come from the mounted appsettings.json.
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
