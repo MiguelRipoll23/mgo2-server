@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Mgo2Server.GameLobbyServer.Commands.Game.Chat;
-using Mgo2Server.Http.Discord;
+using Mgo2Server.GameLobbyServer.Coordination;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Automatch;
 using Mgo2Server.Shared.Domain.Characters;
@@ -45,9 +45,8 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
     /// <param name="characterService">Service that owns the stored settings.</param>
     /// <param name="automatchService">Queue told about the new room.</param>
     /// <param name="assignmentService">Service told the new room may host a match.</param>
-    /// <param name="sessionHelper">Helper used to write the replies.</param>
-    /// <param name="externalJoinHintService">Service that raises the tailnet host's joinability line.</param>
-    /// <param name="discordGameEventService">Service that posts game events to Discord.</param>
+    /// <param name="sessionHelper">Helper used to write the replies.</param>/// <param name="externalJoinHintService">Service that raises the tailnet host's joinability line.</param>
+/// <param name="coordination">Stream the new room is announced on.</param>
 public sealed class CreateGameHandler(
     GameService gameService,
     CharacterService characterService,
@@ -55,8 +54,7 @@ public sealed class CreateGameHandler(
     EventAssignmentService assignmentService,
     SessionHelper sessionHelper,
     ExternalJoinHintService externalJoinHintService,
-    DiscordGameEventService discordGameEventService,
-    ILogger<CreateGameHandler> logger) : ICommandHandler
+    LobbyCoordinationClientService coordination) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
@@ -147,9 +145,9 @@ public sealed class CreateGameHandler(
         // line arrives in a room the client has already been placed in.
         await externalJoinHintService.SendAsync(session, characterIdentifier, cancellationToken);
 
-        // Post to Discord that a game was created.
-        var characterName = await CharacterNameAsync(characterIdentifier, cancellationToken);
-        await discordGameEventService.PostGameCreatedAsync(characterName, game.Name, game.Name, cancellationToken);
+        // Announced up the coordination stream, where the HTTP API turns it into
+        // the channel message: a lobby knows nothing of Discord itself.
+        coordination.GameCreated(characterIdentifier, game.Name);
 
         // The room is offered to the waiting matches now rather than at the next
         // sweep. A room that cannot host one is not asked about twice: the rule is
@@ -178,23 +176,6 @@ public sealed class CreateGameHandler(
             CommandConstants.CreateGameResult,
             writer.Build(),
             cancellationToken);
-    }
-
-    /// <summary>Reads the character name from the database.</summary>
-    private async Task<string> CharacterNameAsync(int characterIdentifier, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken);
-            return string.IsNullOrWhiteSpace(character?.Name)
-                ? $"Player_{characterIdentifier}"
-                : character.Name;
-        }
-        catch (Exception exception)
-        {
-            logger.LogWarning(exception, "Could not read character name for {CharacterIdentifier}", characterIdentifier);
-            return $"Player_{characterIdentifier}";
-        }
     }
 
     /// <summary>Reads the non-empty rotation triples a push stored, rule first.</summary>

@@ -21,6 +21,7 @@ message LobbyEvent {
   oneof event {
     LobbyRegistration registration = 1;
     PlayerPresenceChange player_presence = 2;
+    GameActivityChange game_activity = 3;
   }
 }
 
@@ -44,6 +45,18 @@ message PlayerPresenceChange {
   int32 lobby_identifier = 1;
   int32 character_identifier = 2;
   bool connected = 3;
+}
+
+// A game was created in a lobby, or a player entered one. It is announced
+// rather than counted: nothing of the coordinator changes because of a game, so
+// only a destination that reports what the players are doing reacts to it. The
+// character is named by its identifier for the same reason a presence change
+// is: the coordinator already reads names from the database.
+message GameActivityChange {
+  int32 lobby_identifier = 1;
+  int32 character_identifier = 2;
+  string game_name = 3;
+  bool created = 4;
 }
 
 // Everything the coordinator pushes to a gameplay lobby.

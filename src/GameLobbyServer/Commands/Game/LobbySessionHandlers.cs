@@ -1,4 +1,3 @@
-using Mgo2Server.Http.Discord;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Authentication;
 using Mgo2Server.Shared.Domain.Characters;
@@ -29,7 +28,6 @@ public sealed class GameCheckSessionHandler(
     LobbyTrackerService lobbyTrackerService,
     SessionHelper sessionHelper,
     IOptions<LobbyOptions> lobbyOptions,
-    DiscordGameEventService discordGameEventService,
     ILogger<GameCheckSessionHandler> logger) : ICommandHandler
 {
     /// <summary>Length of the session field the client derives from its login token.</summary>
@@ -108,10 +106,6 @@ public sealed class GameCheckSessionHandler(
         }
 
         session.CharacterIdentifier = claimedCharacterIdentifier;
-
-        // The character has been accepted into the lobby, which is the point at
-        // which it is genuinely online rather than merely connected.
-        await discordGameEventService.PostPlayerConnectedAsync(character.Name, cancellationToken);
 
         // The lobby is the server the client connected to, stamped on the
         // session when the connection was accepted. It is kept there and not on

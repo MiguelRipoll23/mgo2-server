@@ -12,8 +12,9 @@ namespace Mgo2Server.GameLobbyServer.Coordination;
 
 /// <summary>
 /// Keeps one persistent coordination stream open from this lobby to the HTTP
-/// API, and uses it in both directions: the presence of this lobby travels up,
-/// the flash news the API relays comes back down the same stream.
+/// API, and uses it in both directions: what this lobby reports travels up (the
+/// players it holds, and the games that are opened and entered in it), and the
+/// flash news the API relays comes back down the same stream.
 /// </summary>
 /// <remarks>
 /// The HTTP API is not a dependency of a gameplay lobby. A lobby whose
@@ -104,6 +105,18 @@ public sealed class LobbyCoordinationClientService(
         Publish(characterIdentifier, connected: false);
     }
 
+    /// <summary>Reports that a game was opened in this lobby.</summary>
+    /// <param name="characterIdentifier">Identifier of the host that opened it.</param>
+    /// <param name="gameName">Name the host gave it.</param>
+    public void GameCreated(int characterIdentifier, string gameName) =>
+        PublishGameActivity(characterIdentifier, gameName, created: true);
+
+    /// <summary>Reports that a player entered a game of this lobby.</summary>
+    /// <param name="characterIdentifier">Identifier of the character that joined.</param>
+    /// <param name="gameName">Name of the game that was joined.</param>
+    public void GameJoined(int characterIdentifier, string gameName) =>
+        PublishGameActivity(characterIdentifier, gameName, created: false);
+
     /// <summary>
     /// Queues one presence event for the coordinator. The lobby identifier is
     /// the one this process registered, never the one the caller passed, so a
@@ -113,11 +126,6 @@ public sealed class LobbyCoordinationClientService(
     /// <param name="connected">Whether the character connected rather than left.</param>
     private void Publish(int characterIdentifier, bool connected)
     {
-        if (!IsRunning)
-        {
-            return;
-        }
-
         var message = new LobbyEvent
         {
             PlayerPresence = new PlayerPresenceChange
@@ -128,11 +136,54 @@ public sealed class LobbyCoordinationClientService(
             },
         };
 
+        Enqueue(message, "a presence event");
+    }
+
+    /// <summary>
+    /// Queues one announcement of a game for the coordinator. Like a presence
+    /// event it is queued rather than awaited: a lobby that is not coordinated
+    /// keeps serving its players, and the stream carries the announcement the
+    /// next time it opens.
+    /// </summary>
+    /// <param name="characterIdentifier">Identifier of the character behind the game.</param>
+    /// <param name="gameName">Name of the game.</param>
+    /// <param name="created">Whether the game was created rather than joined.</param>
+    private void PublishGameActivity(int characterIdentifier, string gameName, bool created)
+    {
+        var message = new LobbyEvent
+        {
+            GameActivity = new GameActivityChange
+            {
+                LobbyIdentifier = lobbyIdentifier,
+                CharacterIdentifier = characterIdentifier,
+                GameName = gameName,
+                Created = created,
+            },
+        };
+
+        Enqueue(message, created ? "a created game" : "a joined game");
+    }
+
+    /// <summary>
+    /// Puts one message on the queue of the coordinator, if a stream is being
+    /// kept. The queue is bounded, so a message that does not fit is dropped:
+    /// the lobby is not blocked by a coordinator that is reading slowly.
+    /// </summary>
+    /// <param name="message">Event the lobby reports.</param>
+    /// <param name="description">What the message was, for the log of a dropped one.</param>
+    private void Enqueue(LobbyEvent message, string description)
+    {
+        if (!IsRunning)
+        {
+            return;
+        }
+
         if (!outgoingEvents.TryEnqueue(message))
         {
             logger.LogDebug(
-                "The coordination queue of lobby {LobbyIdentifier} is full; a presence event was dropped",
-                lobbyIdentifier);
+                "The coordination queue of lobby {LobbyIdentifier} is full; {Description} was dropped",
+                lobbyIdentifier,
+                description);
         }
     }
 

@@ -14,9 +14,12 @@ GameLobbyServer (one per lobby)                  Http (one)
   LobbyCoordinationClientService                   LobbyCoordinationGrpcService
    ├─ opens the stream, retries every minute       ├─ one stream per connected lobby
    ├─ reports connect / disconnect ───────────────▶├─ PlayerPresenceNotificationService
-   └─ writes the ticker to its own clients ◀───────┤  ├─ LobbyPresenceService (global count)
-                                                    │  └─ IPlayerPresenceObserver
+   ├─ reports games opened / joined ─────────────▶│  ├─ LobbyPresenceService (global count)
+   └─ writes the ticker to its own clients ◀───────┤  └─ IPlayerPresenceObserver
                                                     │     └─ DiscordPlayerCountService
+                                                    ├─ GameActivityNotificationService
+                                                    │  └─ IGameActivityObserver
+                                                    │     └─ DiscordGameEventService
                                                     └─ FlashNewsDispatcherService
                                                        ▲
                          Discord /flash command ────────┘
@@ -55,6 +58,27 @@ carries the players connected at that moment. The coordinator replaces what it
 knew about the lobby with it, which is what makes a reconnect (or an API
 restart) converge on the truth. A stream that ends releases the players of its
 lobby, because a lobby that is not connected cannot have anybody in it.
+
+### The games a lobby reports
+
+A game that is opened, and a player who enters one, travel up the same stream as
+a `GameActivityChange` and nowhere else. The lobby names the character by its
+identifier rather than by its name, for the same reason a presence change does:
+the coordinator already reads names from the database, and two ways of naming a
+character would be two ways of being wrong about it.
+
+Nothing of the coordinator changes because of a game, so nothing is counted and
+no state is kept: `GameActivityNotificationService` resolves the names and hands
+the event to `DiscordGameEventService`, which writes the line. An announcement
+lost to a lobby that is not coordinated costs a line in the channel rather than a
+discrepancy in the count.
+
+This is what the lobby-side announcements became. A gameplay lobby used to hold
+a `DiscordGameEventService` of the HTTP API and post to the channel itself, which
+resolved in neither container: the lobby never registered it, so the first
+player to enter the room failed to activate a handler. The project reference
+that made the dependency compile was removed with it, so the boundary holds on
+its own rather than by convention.
 
 ### Flash news
 
@@ -125,7 +149,9 @@ requirement of anything:
   whether or not Discord answers.
 * A gameplay lobby knows nothing about Discord. The integration lives in the
   HTTP API because the global player count is what it publishes, and no lobby
-  has that count.
+  has that count. The lobby reports a game over its coordination stream and the
+  API writes it down, and it does not carry a project reference to the API that
+  would let it reach past that.
 
 ### Settings
 

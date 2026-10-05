@@ -17,10 +17,12 @@ namespace Mgo2Server.Http.Coordination;
 /// </remarks>
 /// <param name="registry">Registry the open streams are held in.</param>
 /// <param name="notifications">Service the presence events are applied to.</param>
+/// <param name="gameActivity">Service the games a lobby reports are announced by.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class LobbyCoordinationGrpcService(
     LobbyConnectionRegistryService registry,
     PlayerPresenceNotificationService notifications,
+    GameActivityNotificationService gameActivity,
     ILogger<LobbyCoordinationGrpcService> logger)
     : LobbyCoordination.LobbyCoordinationBase
 {
@@ -116,6 +118,27 @@ public sealed class LobbyCoordinationGrpcService(
                     await notifications.PlayerDisconnectedAsync(
                         presence.LobbyIdentifier,
                         presence.CharacterIdentifier,
+                        cancellationToken);
+                }
+
+                break;
+
+            case LobbyEvent.EventOneofCase.GameActivity:
+                var activity = message.GameActivity;
+                if (activity.Created)
+                {
+                    await gameActivity.GameCreatedAsync(
+                        activity.LobbyIdentifier,
+                        activity.CharacterIdentifier,
+                        activity.GameName,
+                        cancellationToken);
+                }
+                else
+                {
+                    await gameActivity.GameJoinedAsync(
+                        activity.LobbyIdentifier,
+                        activity.CharacterIdentifier,
+                        activity.GameName,
                         cancellationToken);
                 }
 

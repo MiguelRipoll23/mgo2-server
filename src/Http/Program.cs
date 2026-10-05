@@ -82,6 +82,7 @@ builder.Services.AddGrpc();
 builder.Services.AddSingleton<LobbyPresenceService>();
 builder.Services.AddSingleton<LobbyConnectionRegistryService>();
 builder.Services.AddSingleton<PlayerPresenceNotificationService>();
+builder.Services.AddSingleton<GameActivityNotificationService>();
 builder.Services.AddSingleton<FlashNewsDispatcherService>();
 
 // Discord is optional and only ever observes and relays: it is switched off by
@@ -100,6 +101,8 @@ builder.Services.AddSingleton<DiscordLoginNotificationService>();
 builder.Services.AddSingleton<DiscordChannelRenameService>();
 builder.Services.AddSingleton<DiscordEventScheduleCommandService>();
 builder.Services.AddSingleton<DiscordGameEventService>();
+builder.Services.AddSingleton<IGameActivityObserver>(
+    provider => provider.GetRequiredService<DiscordGameEventService>());
 builder.Services.AddSingleton<DiscordCommandService>();
 builder.Services.AddSingleton<DiscordGatewayClientService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<DiscordGatewayClientService>());
