@@ -6,8 +6,13 @@ using Microsoft.Extensions.Options;
 namespace Mgo2Server.Http.Discord;
 
 /// <summary>
-/// Posts messages to the players Discord channel when a player creates or joins a game.
+/// Posts messages to the players Discord channel when a player creates or joins a
+/// game, and when a player connects or disconnects.
 /// </summary>
+/// <remarks>
+/// Character and game names are bold; lobby names are italic. No emoji is used, so
+/// the channel reads as one consistent list rather than a stream of pictographs.
+/// </remarks>
 /// <param name="restClient">REST side of the integration.</param>
 /// <param name="options">Options of the integration.</param>
 /// <param name="logger">Logger of this service.</param>
@@ -43,7 +48,7 @@ public sealed class DiscordGameEventService(
             return;
         }
 
-        var message = $"🎮 **{characterName}** created a game: **{gameName}** in lobby *{lobbyName}*";
+        var message = $"**{characterName}** created a game: **{gameName}** in lobby *{lobbyName}*";
 
         await SendMessageAsync(message, cancellationToken);
     }
@@ -67,9 +72,41 @@ public sealed class DiscordGameEventService(
             return;
         }
 
-        var message = $"🎮 **{characterName}** joined the game: **{gameName}** in lobby *{lobbyName}*";
+        var message = $"**{characterName}** joined the game: **{gameName}** in lobby *{lobbyName}*";
 
         await SendMessageAsync(message, cancellationToken);
+    }
+
+    /// <summary>
+    /// Posts a message when a player connects.
+    /// </summary>
+    /// <param name="characterName">Name of the player who connected.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task PostPlayerConnectedAsync(string characterName, CancellationToken cancellationToken)
+    {
+        if (!IsConfigured)
+        {
+            logger.LogDebug("Discord game events not configured; skipping player connected message");
+            return;
+        }
+
+        await SendMessageAsync($"**{characterName}** is online", cancellationToken);
+    }
+
+    /// <summary>
+    /// Posts a message when a player disconnects.
+    /// </summary>
+    /// <param name="characterName">Name of the player who disconnected.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task PostPlayerDisconnectedAsync(string characterName, CancellationToken cancellationToken)
+    {
+        if (!IsConfigured)
+        {
+            logger.LogDebug("Discord game events not configured; skipping player disconnected message");
+            return;
+        }
+
+        await SendMessageAsync($"**{characterName}** is offline", cancellationToken);
     }
 
     /// <summary>
