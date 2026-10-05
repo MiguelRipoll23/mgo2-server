@@ -49,7 +49,7 @@
 #   5733 Free Battle   5735 Survival           5740 Automatching
 #   5734 Replays       5737 Basic Training     5741 Registration
 #   5738 Combat Training  5739 Survival Hosts  5742 Tournament
-#   5731 gate          5732 account            5730 Gameplay Host (UDP)
+#   5731 gate          5732 account            5731 Gameplay Host (UDP)
 #     80 HTTP API        53 Name server (UDP)    3478 Port check, 3479 (UDP)
 
 name: mgo2
@@ -266,10 +266,10 @@ services:
     # when this host's clients bind their socket somewhere ADVERTISED_ADDRESS
     # cannot reach; leave it unset when it does not.
     environment:
-      GAMEPLAY_SERVER_PORT: "5730"
+      GAMEPLAY_SERVER_PORT: "5731"
       GAMEPLAY_SERVER_LOBBY_NAME: Free Battle
     ports:
-      - "5730:5730/udp"
+      - "5731:5731/udp"
 
   # Public HTTP API and its Scalar reference UI.
   mgo2-http:

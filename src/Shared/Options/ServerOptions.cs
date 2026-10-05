@@ -32,7 +32,7 @@ public sealed class ServerOptions
     public int LobbiesRefreshIntervalMinutes { get; set; } = 60;
 
     /// <summary>Port of the dedicated UDP gameplay host, when this instance runs one.</summary>
-    public int GameplayServerPort { get; set; } = 5730;
+    public int GameplayServerPort { get; set; } = 5731;
 
     /// <summary>
     /// Address the dedicated host announces to peers. Defaults to the advertised

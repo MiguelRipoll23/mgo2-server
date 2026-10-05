@@ -31,5 +31,5 @@ public static class PortConstants
     public const int AccountPort = 5732;
 
     /// <summary>Default port of the dedicated UDP gameplay host.</summary>
-    public const int GameplayServerPort = 5730;
+    public const int GameplayServerPort = 5731;
 }

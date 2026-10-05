@@ -1,5 +1,5 @@
 # Headless. The pod is on the node's own network (hostNetwork, see
-# deployment.yaml), so it already answers on the node's 5730 and the console
+# deployment.yaml), so it already answers on the node's 5731 and the console
 # reaches it there directly, through the port forward on the public address.
 #
 # There is deliberately no load balancer in front of it, and this is not a
@@ -35,9 +35,9 @@ spec:
   - IPv4
   ipFamilyPolicy: SingleStack
   ports:
-  - port: 5730
+  - port: 5731
     protocol: UDP
-    targetPort: 5730
+    targetPort: 5731
   selector:
     app: mgo2-gameplay-1
   sessionAffinity: None

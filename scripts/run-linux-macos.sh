@@ -366,8 +366,8 @@ for lobby in "${lobbies[@]}"; do
         'LOBBY_REPLAYS_ONLY=false'
 done
 
-start_server gameplay-5730 GameplayServer 'Gameplay server (5730/udp)' \
-    'GAMEPLAY_SERVER_PORT=5730' \
+start_server gameplay-5731 GameplayServer 'Gameplay server (5731/udp)' \
+    'GAMEPLAY_SERVER_PORT=5731' \
     'GAMEPLAY_SERVER_LOBBY_NAME=Free Battle' \
     "DEDICATED_ADVERTISED_ADDRESS=${dedicated_advertised_address}"
 

@@ -283,7 +283,7 @@ gameplay host is on the node's own network:
   port, and the reply leaves from the address and port the console dialled;
 - `dnsPolicy: ClusterFirstWithHostNet`, without which it loses cluster DNS;
 - a headless Service, so there is no virtual IP and nothing to proxy through;
-- `type: Recreate`, not `RollingUpdate`: the pod owns the host's 5730, so a
+- `type: Recreate`, not `RollingUpdate`: the pod owns the host's 5731, so a
   surge would start the replacement while the old pod still holds the port.
 
 Two consequences worth stating plainly:
@@ -295,7 +295,7 @@ Two consequences worth stating plainly:
   so a match in progress drains instead of being cut. **A second node is the
   only thing that would make this outage-free** — not a load balancer.
 - **The public address is the node's, and that is stable.** The port forward on
-  the router points at the node rather than at a pod, so `89.129.16.203:5730`
+  the router points at the node rather than at a pod, so `89.129.16.203:5731`
   stays valid across rollouts and clients never re-dial a different endpoint.
 
 `clusterIP` is immutable, so this Service cannot be moved to or from a
@@ -374,7 +374,7 @@ s.sendto(b"x", ("127.0.0.1", 45999))
 ```
 
 Every datagram left from the bound port. The pod's replies already leave from
-5730, which is what the console matches on.
+5731, which is what the console matches on.
 
 What *did* need a pin was the pod-network topology, for a different reason
 entirely: flannel's masquerade, not the socket.
@@ -384,7 +384,7 @@ entirely: flannel's masquerade, not the socket.
 ```
 
 `--random-fully` rewrites the source *port* of anything leaving the pod CIDP, so
-a correct 5730 was randomized on the way out. On `hostNetwork` there is no
+a correct 5731 was randomized on the way out. On `hostNetwork` there is no
 flannel masquerade at all and the reply leaves the node untouched.
 
 So the pin is a **pod-network-only** workaround. It is not installed on this
@@ -400,7 +400,7 @@ necessary again, and it is still a **host** concern rather than a workload one:
 - `/etc/nftables.d-mgo2-gameplay.nft` holds the rule, and
   `/etc/systemd/system/mgo2-gameplay-nft.service` loads it at boot
   (`Before=k3s.service`, so the pin is in place before any pod sends);
-- it matches `udp dport 5730`, not `udp sport 5730` — the destination port is
+- it matches `udp dport 5731`, not `udp sport 5731` — the destination port is
   the console's, and the source port is what flannel randomizes;
 - it runs at `srcnat - 10`, before flannel, or the pin is applied and then
   randomized away;

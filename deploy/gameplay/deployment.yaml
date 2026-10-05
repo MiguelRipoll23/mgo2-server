@@ -22,7 +22,7 @@ spec:
     matchLabels:
       app: mgo2-gameplay-1
   strategy:
-    # Recreate, not RollingUpdate: the pod binds the node's own 5730, so a
+    # Recreate, not RollingUpdate: the pod binds the node's own 5731, so a
     # surge would start the replacement while the old pod still holds the port
     # and the new one would never come up. Same reason the STUN responder is
     # Recreate.
@@ -42,7 +42,7 @@ spec:
       containers:
       - env:
         - name: GAMEPLAY_SERVER_PORT
-          value: '5730'
+          value: '5731'
         - name: GAMEPLAY_SERVER_LOBBY_NAME
           value: Free Battle
         # DEDICATED_ADVERTISED_ADDRESS overrides the address this host announces
@@ -64,7 +64,7 @@ spec:
               - sleep 5
         name: gameplay
         ports:
-        - containerPort: 5730
+        - containerPort: 5731
           protocol: UDP
         resources: {}
         securityContext:
@@ -78,7 +78,7 @@ spec:
             type: RuntimeDefault
         startupProbe:
           # Kubernetes has no UDP probe, so this asks /proc whether the socket is
-          # bound. 5730 is 0x1662, and /proc/net/udp is per network namespace, so
+          # bound. 5731 is 0x1663, and /proc/net/udp is per network namespace, so
           # the line only exists once the host's UdpClient is listening. A TCP
           # probe would pass against a port nothing ever accepts on.
           #
@@ -92,7 +92,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - grep -qE ':1662[[:space:]]' /proc/net/udp
+            - grep -qE ':1663[[:space:]]' /proc/net/udp
           periodSeconds: 5
           # 5s x 120 is two minutes to bind before the container is restarted.
           failureThreshold: 120

@@ -419,8 +419,8 @@ try {
             }
         }
 
-        Start-Server 'gameplay-5730' 'GameplayServer' 'Gameplay server (5730/udp)' @{
-            GAMEPLAY_SERVER_PORT = '5730'
+        Start-Server 'gameplay-5731' 'GameplayServer' 'Gameplay server (5731/udp)' @{
+            GAMEPLAY_SERVER_PORT = '5731'
             GAMEPLAY_SERVER_LOBBY_NAME = 'Free Battle'
             DEDICATED_ADVERTISED_ADDRESS = Get-SettingValue 'ADVERTISED_ADDRESS' '127.0.0.1' $projectDirectory
         }
