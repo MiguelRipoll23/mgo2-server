@@ -16,9 +16,6 @@ public static class CharacterInfoPayloadBuilder
     /// </summary>
     private const int ContentMaskOffset = 0x22a;
 
-    /// <summary>Offset of the trailing feature byte, one past the fixed grid.</summary>
-    private const int FeatureByteOffset = 0x242;
-
     /// <summary>
     /// Number of identifiers in each friend and blocked array. The client reads
     /// 64 (its loops compare against 0x40), so each array is 256 bytes: a short
@@ -78,7 +75,10 @@ public static class CharacterInfoPayloadBuilder
         // availability mask, two reserved u32s and the feature byte.
         writer.WritePadding(ContentMaskOffset - writer.Size);
         writer.WriteBytes(FeatureFlags.ContentMask);
-        writer.WritePadding(FeatureByteOffset - writer.Size);
+        // The two words the reference capture carries between the mask and the
+        // feature byte: a dead word and grade points, which mirror experience.
+        writer.WriteUInt32(0);
+        writer.WriteUInt32((uint)experience);
         // The parser reads this byte's four low bits as separate feature flags
         // and greys out the expansion maps and modes when they are clear.
         writer.WriteUInt8(FeatureFlags.MainMenuFlags);
@@ -105,13 +105,14 @@ public static class FeatureFlags
     /// Map, rule and expansion availability mask. The client reads it as a bit
     /// field in which bit 0 through bit 55 each stand for one selectable map or
     /// rule, and it offers the real row for a set bit and a greyed row whose
-    /// name is the shipped <c>????</c> translation for a clear one. Every bit is
-    /// set so the whole catalogue is offered; the trailing nine bytes are past
-    /// the highest bit the client ever tests.
+    /// name is the shipped <c>????</c> translation for a clear one. These are
+    /// the bytes the reference server sent at this offset in
+    /// <c>mgo2-game.pcapng</c>; the trailing nine bytes are past the highest bit
+    /// the client ever tests.
     /// </summary>
     public static readonly byte[] ContentMask =
     [
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xb7, 0xfd, 0xcb, 0xfc, 0xff, 0xff, 0x7b,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
 }
