@@ -1,0 +1,24 @@
+[Unit]
+Description=Nightly node image prune
+
+[Timer]
+# 04:47 UTC, and deliberately not the top of the hour. Two reasons, both from
+# what this box already does. The hour is where every other repository's cron
+# lands, so it is the slowest place to touch a slow card; and
+# purge-images.yml runs at 04:17 UTC against the registry, so half an hour
+# later this lands after it rather than across it. The registry purge is
+# API-bound and light, this one is I/O-bound and heavy, and overlapping them
+# buys nothing.
+OnCalendar=*-*-* 04:47:00 UTC
+
+# Nudge off the exact minute anyway. A timer that always fires at :47 is a
+# timer that always collides with whatever else fires at :47.
+RandomizedDelaySec=10m
+
+# A raspberrypi that was powered off overnight should still prune when it comes
+# back. Without this the run is simply missed, and the node that was off is
+# usually the one that most needs it.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

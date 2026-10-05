@@ -1,0 +1,24 @@
+[Unit]
+# Ordering only, never a requirement. The script skips whichever container
+# store is absent rather than failing, so a node that runs only k3s, or only
+# docker, must still have its images pruned. `Requires=` here would turn a
+# missing docker into a failed timer and stop the k3s half from ever running.
+Description=Reclaim node disk by pruning unused container images
+Documentation=https://github.com/MiguelRipoll23/mgo2-server/blob/main/deploy/node/prune-images.sh
+After=k3s.service docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/prune-images
+
+# The journal rather than a file of its own: `journalctl -u prune-images`
+# already answers "when did this last run and what did it free", which is the
+# only question this unit raises.
+StandardOutput=journal
+StandardError=journal
+
+# Nothing here should be cut short. The card is slow and a prune that walks
+# fourteen hundred snapshots has been seen to take minutes; a timeout that
+# killed it halfway would leave the disk in a state neither pruned nor
+# reported.
+TimeoutStartSec=30min

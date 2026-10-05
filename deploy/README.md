@@ -423,6 +423,60 @@ For a schema change, rolling the image back is not enough: migrations are
 forward-only. The rollback for a breaking change is the next migration — which
 is the reason for the expand/contract rule above, rather than a down script.
 
+## Keeping the node's disk
+
+Nothing in this folder keeps the **node**'s disk from filling. Every commit that
+reaches a service publishes an image, Argo pulls it, and the layers of every
+build the cluster has ever run stay on the card afterwards. A 58G node that
+starts clean is back to 83% full inside a fortnight, and what fills it is not a
+log file or a packet capture — it is container images. The two together are
+about 130MB, which is a rounding error against the 26GB of snapshots they sit
+beside. Diagnosing that by deleting logs is the wrong half of the answer.
+
+`.github/workflows/purge-images.yml` bounds the **registry**. Nothing bounds the
+**node**, and neither substitutes for the other: a registry that still holds a
+version is precisely what makes pruning the node safe.
+
+`node/` is the node's half. It is the only folder here that Argo does not
+reconcile — there is nothing to apply — and it is deliberately absent from the
+table above for that reason.
+
+| File                      | Role                                              |
+| ------------------------- | ------------------------------------------------- |
+| `node/prune-images.sh`    | the prune, as an idempotent script               |
+| `node/prune-images.service` | runs it as root, output to the journal           |
+| `node/prune-images.timer`  | nightly, off-peak, catching up after downtime   |
+
+Install, on the node:
+
+```sh
+sudo install -m 0755 node/prune-images.sh /usr/local/sbin/prune-images
+sudo install -m 0644 node/prune-images.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now prune-images.timer
+```
+
+Each step removes only what a running workload cannot want:
+
+- `crictl rmi --prune` removes **only** images no container references, so an
+  image a running pod started from stays on disk and a rollout in flight is not
+  disturbed;
+- `docker builder prune --filter until=168h` keeps a week of build cache. An
+  unfiltered prune throws away cache a build published minutes ago and makes the
+  next one cold, which on this node is minutes rather than seconds;
+- `docker image prune` is left unfiltered so it removes only **dangling** images
+  — the untagged residue of a retag — and never an image a stopped container
+  still names. An unattended nightly job has no business removing something a
+  compose stack expects to start tomorrow. This is the same prune
+  `scripts/install-linux-macos.sh` already runs.
+
+A missing runtime is skipped, not fatal: the unit orders itself after both
+`k3s.service` and `docker.service` but requires neither, so a node running only
+one of them still gets that half pruned.
+
+[Rolling back](#rolling-back) survives all of this. It is a `newTag` edit and a
+commit, it works because every image the cluster has run is pinned in git, and a
+pruned node costs that rollback one pull it would otherwise have skipped.
+
 ## What is not here
 
 - **No `latest` in a tag Argo deploys.** The registry may still carry `latest`
@@ -435,6 +489,9 @@ is the reason for the expand/contract rule above, rather than a down script.
   holds a workload — see [Changing the ConfigMap](#changing-the-configmap).
 - **No load balancer in front of the port check**, and none to be added — see
   [Source addresses and the load balancer](#source-addresses-and-the-load-balancer).
+- **No workload in `node/`.** It is a systemd timer on the host, not something
+  Argo reconciles, and it is in this folder only so the node's half of the image
+  lifecycle is versioned beside the registry's half.
 
 ## Checking this folder
 
