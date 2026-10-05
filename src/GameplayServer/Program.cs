@@ -29,6 +29,7 @@ builder.Services.AddSingleton<AccountService>();
 builder.Services.AddSingleton<MatchService>();
 builder.Services.AddSingleton<RoomRosterService>();
 builder.Services.AddSingleton<PostJoinBurstService>();
+builder.Services.AddSingleton<PostJoinBurstSchedulerService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 // The peer command handlers are registered beside the types their messages are
 // bound to, so a handler cannot be mapped without being resolvable.

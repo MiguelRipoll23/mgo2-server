@@ -17,9 +17,9 @@ namespace Mgo2Server.GameplayServer.Commands;
 /// The live host sends the keep-alive <b>first</b>, as outbound counter 0, and
 /// the handshake reply behind it as counter 1
 /// (<c>docs/mgo2-game.pcapng</c>: a 16-byte <c>0x5000</c> and a 44-byte
-/// <c>0x1000</c>, both at t+1.6681). The reply leads here only because it reads
-/// as the more important of the two; the capture puts the other way, and the
-/// counters are observable, so the keep-alive takes counter 0.
+/// <c>0x1000</c>, both at t+1.6681). The reply reads as the more important of
+/// the two, so it is easy to send first; the capture puts the other way round,
+/// and the counters are observable, so the keep-alive takes counter 0.
 /// <para>
 /// <b>Both</b> of those frames travel pre-keyed, and the flag that decides it
 /// cannot be set before them. Searching the capture's digest over every
@@ -80,28 +80,24 @@ public sealed class AcceptHandshakeHandler(
             handshake.CounterBase,
             dialBack);
 
-        // 1. The handshake reply first, as outbound counter 0. Pre-keyed,
-        //    because the session is not established yet and marking it so here
-        //    is what made the joiner discard these frames: the state<8 ->
-        //    pre-key rule is absolute, and nothing may carry the session key
-        //    ahead of the reply that earns it. The reply leads because a joiner
-        //    that treats the first datagram from the host as its answer stops
-        //    re-dialling on it: a keep-alive ahead of the reply leaves such a
-        //    client answered but unaccepted, waiting for a reply it will not ask
-        //    for again. The reference host leads with the reply, and a live
-        //    client that goes silent after the leading keep-alive is why.
+        // 1. The keep-alive first, as outbound counter 0. The recorded host
+        //    leads with it, and the counters are observable, so a client keying
+        //    anything off them sees the order: a 16-byte 0x5000 at hdr 0x0000
+        //    and the 44-byte reply behind it at hdr 0x0001, both at t+1.6681
+        //    (docs/protocol/UDP_GAME_CAPTURE.md §4).
+        await context.Send(UdpCommandConstants.KeepAlive, [], 0);
+
+        // 2. The handshake reply behind it, as counter 1, and pre-keyed for the
+        //    same reason as the keep-alive: the session is not established yet,
+        //    and marking it so here is what made the joiner discard these
+        //    frames. The state<8 -> pre-key rule is absolute, and nothing may
+        //    carry the session key ahead of the reply that earns it.
         var reply = FrameBuilderUtility.BuildHandshakeBody(
             hostIdentity.PeerIdentifier,
             hostIdentity.CounterBase,
             hostIdentity.AdvertisedAddress,
             hostIdentity.AdvertisedPort);
         await context.Send(UdpCommandConstants.Handshake, reply, 0);
-
-        // 2. The keep-alive behind it, also pre-keyed for the same reason. The
-        //    recorded host sends it as counter 0, but that host answers a joiner
-        //    which re-dials until it reads the reply, not one that stops at the
-        //    first datagram; the two frames are the same set either way.
-        await context.Send(UdpCommandConstants.KeepAlive, [], 0);
 
         // Only now. The joiner reaches its keyed state when it accepts this
         // reply, so anything sent before it is refused at the digest gate, and
@@ -142,12 +138,33 @@ public sealed class AcceptHandshakeHandler(
     }
 }
 
-/// <summary>Mirrors a peer's keep-alive straight back.</summary>
-public sealed class AcknowledgeKeepAliveHandler : IPeerCommandHandler
+/// <summary>
+/// Reads a peer's keyed keep-alive and answers nothing.
+/// </summary>
+/// <remarks>
+/// The recorded host sends no session-keyed keep-alive at all: the only
+/// <c>0x5000</c> it writes is the pre-keyed one that leads its handshake reply
+/// (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4), and §3's keyed inventory lists
+/// the type in the joiner-to-server direction only. A joiner's profile frame
+/// carries one beside its profile, and the live host answers the profile with
+/// the roster and not the keep-alive. Mirroring it back spends an outbound
+/// sequence the capture never spends and shifts every later counter away from
+/// it, which is the frame the joiner is not looking for after the handshake.
+/// So it is logged and dropped rather than answered.
+/// </remarks>
+/// <param name="logger">Logger of this handler.</param>
+public sealed class PeerKeepAliveHandler(ILogger<PeerKeepAliveHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
-    public Task HandleAsync(PeerContext context) =>
-        context.Send(UdpCommandConstants.KeepAlive, context.Message.Body, context.Message.Flags);
+    public Task HandleAsync(PeerContext context)
+    {
+        logger.LogDebug(
+            "UDP {LocalPort}: keyed keep-alive from {RemoteAddress}; not answered, the recorded host sends none",
+            context.LocalPort,
+            context.Remote);
+
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>
@@ -213,11 +230,11 @@ public sealed class InGameControlHandler(ILogger<InGameControlHandler> logger) :
 /// to every peer in the room turns a quiet host into a flood.
 /// </remarks>
 /// <param name="roster">Roster of the room this host is playing.</param>
-/// <param name="burst">Builder of the one-shot burst that follows the roster exchange.</param>
+/// <param name="burstScheduler">Scheduler of the one-shot burst that follows the roster exchange.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
     RoomRosterService roster,
-    PostJoinBurstService burst,
+    PostJoinBurstSchedulerService burstScheduler,
     ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
@@ -282,7 +299,7 @@ public sealed class PlayerProfileHandler(
         // a single frame, and one record per datagram spends an outbound
         // sequence on each and hands the joiner a roster it never saw
         // assembled.
-        await SendRunAsync(context, run, compressed: true);
+        await RosterRunSendUtils.SendAsync(context, run, compressed: true);
 
         // Then the run again, without its head, which is what the recorded host
         // sends. It is not a retransmission and nothing waits for an
@@ -290,7 +307,7 @@ public sealed class PlayerProfileHandler(
         // sequences with the tick stream between them, and the joiner never
         // acknowledged either. RoomRosterService.BuildRosterRunRepeat carries
         // the measurement.
-        await SendRunAsync(context, roster.BuildRosterRunRepeat(), compressed: true);
+        await RosterRunSendUtils.SendAsync(context, roster.BuildRosterRunRepeat(), compressed: true);
 
         // Then one more empty 0x5001 on its own, the record the live host closes
         // a roster exchange with. It repeats the type that opened the run rather
@@ -299,19 +316,10 @@ public sealed class PlayerProfileHandler(
         var trailer = RoomRosterService.BuildRosterTrailer();
         await context.Send(trailer.Type, trailer.Body, trailer.Ordinal);
 
-        // Then the burst, which the recorded host sends once, about two and a
-        // half seconds after the roster it is answering here. The capture holds
-        // exactly one of them in the whole round, and the three peers that join
-        // later do not each get one, so it goes to the peer that was just
-        // answered and not to the room. It is one datagram, like the roster run
-        // and for the same reason. Its payload bodies are built as the tag, the
-        // slot and zeros: the capture's own are one character's equipment and
-        // are deliberately not copied. PostJoinBurstService carries the
-        // measurement and what it does not settle.
-        await SendRunAsync(context, burst.BuildBurst(), compressed: true);
-
-        var followUp = PostJoinBurstService.BuildFollowUp();
-        await context.Send(followUp.Type, followUp.Body, 0);
+        // Then the burst, which the recorded host does not send with the roster
+        // but a measured pause after it. It is scheduled rather than awaited, so
+        // the dispatch loop keeps reading every peer while the pause runs.
+        burstScheduler.Schedule(context);
 
         // The peers already in the room are told as well. A player who is only
         // announced to the peer that just joined is never announced to the ones
@@ -324,40 +332,4 @@ public sealed class PlayerProfileHandler(
         }
     }
 
-    /// <summary>
-    /// Writes a run of records as one datagram, or one message at a time where
-    /// the context cannot batch.
-    /// </summary>
-    /// <param name="context">Context of the message being answered.</param>
-    /// <param name="run">Records to write, in order.</param>
-    /// <param name="compressed">
-    /// Whether the run goes out LZSS-compressed with the header's compression
-    /// marker set. The recorded host sends the roster run, the roster repeat
-    /// and the post-join burst compressed and the two one-byte records that
-    /// close the exchange plain; where the context cannot batch, the fallback
-    /// is the uncompressed path because a plain record cannot be made
-    /// compressed without changing what it means.
-    /// </param>
-    private static async Task SendRunAsync(
-        PeerContext context,
-        IReadOnlyList<RosterRecord> run,
-        bool compressed = false)
-    {
-        var batch = compressed
-            ? context.SendRecordsCompressed ?? context.SendRecords
-            : context.SendRecords;
-
-        if (batch is not { } sendRecords)
-        {
-            foreach (var record in run)
-            {
-                await context.Send(record.Type, record.Body, record.Ordinal);
-            }
-
-            return;
-        }
-
-        await sendRecords(
-            [.. run.Select(record => FrameBuilderUtility.MessageOf(record.Type, record.Body, record.Ordinal))]);
-    }
 }

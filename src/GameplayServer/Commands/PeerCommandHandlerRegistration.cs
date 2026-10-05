@@ -15,7 +15,7 @@ public static class PeerCommandHandlerRegistration
     public static void RegisterCommandHandlers(PeerCommandRegistry registry)
     {
         registry.Register<AcceptHandshakeHandler>(UdpCommandConstants.Handshake);
-        registry.Register<AcknowledgeKeepAliveHandler>(UdpCommandConstants.KeepAlive);
+        registry.Register<PeerKeepAliveHandler>(UdpCommandConstants.KeepAlive);
         registry.Register<PlayerProfileHandler>(UdpCommandConstants.PlayerProfile);
         // The tag a live joiner opens with. It carries the same player record
         // as the roster type, so it is answered the same way; registering only
@@ -52,7 +52,7 @@ public static class PeerCommandHandlerRegistration
     public static IServiceCollection AddCommandHandlers(this IServiceCollection services)
     {
         services.AddSingleton<AcceptHandshakeHandler>();
-        services.AddSingleton<AcknowledgeKeepAliveHandler>();
+        services.AddSingleton<PeerKeepAliveHandler>();
         services.AddSingleton<PlayerProfileHandler>();
         services.AddSingleton<InGameControlHandler>();
         services.AddSingleton<PlayerVitalsHandler>();

@@ -15,8 +15,8 @@ namespace Mgo2Server.GameplayServer;
 /// <summary>
 /// The standalone Gameplay server: it owns one UDP port, decodes the peer-to-peer
 /// frames, keeps a session per peer and dispatches the messages to their
-/// handlers. Handshake acceptance and keep-alive acknowledgements are ordinary
-/// command handlers, so this class stays transport-only. The frame pipeline it
+/// handlers. Handshake acceptance and keep-alive handling are ordinary command
+/// handlers, so this class stays transport-only. The frame pipeline it
 /// feeds lives in the dispatch half of this class.
 /// </summary>
 public sealed partial class GameplayServerService : IAsyncDisposable
