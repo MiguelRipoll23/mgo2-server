@@ -318,6 +318,7 @@ identifier is what tells them apart.
 | `udp_unresolved_probe.py` | The unresolved session records in time order, with what shares their frame. |
 | `udp_pairing_probe.py` | Tests the `0x1x..`/`0x5x..` families as request/answer, both directions, with the latency distribution. |
 | `udp_join_replay.py` | Replays the opening exchange in time order with every record decoded, for diffing against the server's own answer. |
+| `handshake_layout.py` | **Verifies the 44-byte handshake field by field against the wire bytes** and exits non-zero when the structure stops holding — the `16 + 6*count` identity, the magic, the tail digest, and that each entry's four bytes really are an address in dotted form. Every offset is pinned to the `MGO2.ELF` instruction that writes it, so the binary and the capture are checked against each other rather than a prose copy of one of them. Run it after touching `FrameBuilderUtility`; `--elf MGO2.ELF` also re-derives the two crypto constants from the binary and catches a decoder pointed at the wrong build. The layout itself is walked step by step in `docs/protocol/UDP_JOIN_FLOW.md` §3. |
 
 | tool | what |
 | --- | --- |

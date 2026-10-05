@@ -182,8 +182,12 @@ Decoded layout (offsets relative to the datagram start, after §5 unscramble+cha
                                                carries the host's id — see §4 gate 1)
 [10 ..14)   counter_base (LE u32)              — key material (§6)
 [14 ..18)   module_magic (LE u32) = b7 8a 25 4d — validated; mismatch = silent drop
-[18]        ver (u8; 2 in captures; receiver rejects bit 2, so send 2 or 3)
-[19 ..21)   unk (u16 LE; 1 in captures)
+[18]        capability (u8; 2 in captures) — computed from the SENDER's own
+            session flags word (session+0x14) and can only ever be 2, 3, 6 or 7;
+            the peer folds it back into its own flags on receipt. NOT a version:
+            the send path contains no version number — see UDP_JOIN_FLOW.md §4
+[19 ..21)   u16 LE, taken from the peer struct at +6 (2 joiner / 1 host in
+            captures); meaning unresolved [U]
 [21]        count (u8, 0..2; 2 in captures)
 [22 ..28)   entry 0 { ip[4], port u16 LE }
 [28 ..34)   entry 1
@@ -191,11 +195,13 @@ Decoded layout (offsets relative to the datagram start, after §5 unscramble+cha
             host must compute it or the decoder drops the datagram
 ```
 
-- **Byte order is mixed**: `peer_id`/`counter_base`/`module_magic`/`unk`/`port` are
-  **LE** (reversed-copy helpers `FUN_0026cc10`/`FUN_0026cc88`), the entry `ip` u32s are
-  **BE** (plain-copy helpers `FUN_0026cb98`/`FUN_0026cb20`); `ver`/`count` are single
-  bytes. Verified via the receiver's magic compare — wire bytes for `0x4d258ab7` are
-  `b7 8a 25 4d` **[V]**.
+- **Byte order is mixed**: `peer_id`/`counter_base`/`module_magic`/the u16 at `[19..21)`/`port`
+  are **LE** (reversed-copy helpers `FUN_0026cc10`/`FUN_0026cc88`, which walk the cursor
+  *backwards* from `src+len-1`), the entry `ip` u32s are
+  **BE** (plain-copy helpers `FUN_0026cb98`/`FUN_0026cb20`, a forward copy); the
+  capability byte and `count` are single bytes. Verified via the receiver's magic compare —
+  wire bytes for `0x4d258ab7` are `b7 8a 25 4d`, and against a live capture's bytes at
+  every offset — see `UDP_JOIN_FLOW.md` §3 **[V]**.
 - **Entries = the sender's OWN endpoints** (public + private): a live capture showed
   `89.129.16.203:5730` (public) and `192.168.1.50:5730` (private). The host replies to
   the joiner's source address and uses these entries to dial the joiner back **[V]**.
@@ -282,26 +288,43 @@ The joiner's reply is routed by the receive loop (`FUN_002620d8`) to its dial se
    its own id, 2 in all captures — so the field is not an echo of the receiver). The
    gate therefore asks "is this reply from the peer I am dialing": for a joiner's
    dial session that is the **HOST's character id** (1 = the seeded NPC), NOT an echo
-   of the joiner's id. Gate check at decoder `0x269340`
-   (`lwz session+0x18; cmpw; beq accept-side / li r27,0 skip-side`).
+   of the joiner's id. Gate check at `0x268ef4`
+   (`lwz session+0x18; cmpw; beq 0x268f58 / li r27,0 skip-side`).
    **A peer_id mismatch fails SILENTLY** — the record is skipped, state stays 5, the
    peer base is never stored, and the joiner keeps re-dialing every ~1.9 s — while a
    wrong `module_magic` would instead move the session to state 6. That asymmetry is
    diagnostic live: continued re-dialing after byte-perfect replies means peer_id,
    not magic, is the failing gate. This was the real fake-host blocker: echoing
    the joiner's id (the tempting, wrong reading) fails this gate silently.
-2. **`module_magic` (message[8..12)) == `0x4d258ab7`** (decoder `0x269420`:
-   `lwz` of the magic global, `cmpw` against the message word; mismatch → `0x269524`,
-   state → 6).
-3. **`ver & 0x4 == 0`**, unless the session flags word (`session+0x14`) already has bit
-   `0x800` set — i.e. a reply carrying `ver` bit 2 only passes for sessions without the
-   `0x800` flag (decoder `0x269458`–`0x269474`: `rlwinm …,0x1d,0x1d` = mask `0x4`;
-   when the bit is set the fallback path ORs `4` into the ver byte copy if flags bit
-   `0x800` is also set). The fake host's `ver=2` has bit 2 clear and passes for
-   dialing sessions.
-4. On acceptance: session flags |= `0x2|0x4`, peer `counter_base` → `session[8]`,
-   `session[0xc] = base ^ 0x2b58de69`, and the joiner re-sends its own handshake
-   (the ping-pong); subsequent frames use the keyed seed (§6).
+2. **`module_magic` (message[8..12)) == `0x4d258ab7`** (`0x268fd8`:
+   `lwz` of the magic global, `cmpw` against the message word; mismatch → `0x2690d0`,
+   which stores **state 6** at `0x2690d8` and calls `0x26b1c8`).
+3. **The capability byte's bit 2, against our own flags bit `0x800`** (`0x269008`–`0x269020`:
+   read one byte, test `& 0x4`; if clear, test `session+0x14 & 0x800`; `bne-` to the same
+   failure path as gate 2). The condition is a **disjunction**: reject only when the peer's
+   bit 2 is clear *and* our `0x800` is set. It is symmetric with the builder, which sets
+   that bit exactly when our own `0x800` is set — so it is a negotiated capability being
+   checked for agreement, not a version gate. **[V]**
+
+   > The mask rule these two tests depend on is in `UDP_JOIN_FLOW.md` §0. Read the other
+   > way round, `MB`/`ME` come out as bits 29 and 20 against a zero-extended `lhz` and the
+   > branch is unreachable; complemented they are `0x4` and `0x800`, which the builder
+   > confirms independently.
+
+   **The field at `[18]` is therefore not a version.** It is computed from the sender's own
+   flags word on the way out (`2`, or `3` when `flags & 0x100`, with bit 2 set when
+   `flags & 0x800`) and folded back into the receiver's flags on the way in. "ver" was the
+   wrong name for it throughout this file. **[V]**
+
+   Note what this means for a peer: a host that rejects every handshake whose capability
+   has bit 2 set rejects peers a real host answers. In the capture the three flows that
+   never establish both sent `0x06` — bit 2 set — and were still answered. **[V]**
+4. On acceptance: session flags |= `0x2|0x4` (`0x268f6c`, `0x268fb0`), the peer's
+   capability byte is OR'd back into `session+0x14` (`0x269064`), peer `counter_base` →
+   `session[8]` and `session[0xc] = base ^ 0x2b58de69` (`0x268c30`–`0x268c40`), and the
+   joiner re-sends its own handshake (the ping-pong); subsequent frames use the keyed
+   seed (§6). `session[0xc]` is stored **pre-XORed** — that is why it exists, and it makes
+   the tail-digest key one XOR away. **[V]**
 
 > **Plugin interaction (MGO2PC builds):** in the MGO2PC revival client the two decoder
 > call sites inside the receive loop `FUN_002620d8` (`0x002623f4`, `0x00262528`) are
@@ -429,20 +452,29 @@ tail[i] = D[i]  ^  (i < 6 ? D[10+i] : 0)      for i in 0..9
 | `session+4` | session state (u8): 0 teardown, 2 socket-open, 3 handshake sent, 5 awaiting reply, 6 reply accepted, 8 data phase, 12 teardown (store sites in §6.1) |
 | `session+8` | peer's `counter_base` (from the peer's handshake) |
 | `session+0x10` | own `counter_base` (sent in our handshake) |
-| `session+0xc` | `peer_base ^ 0x2b58de69` (derived) — confirmed directly in the
-  binary: the session-accept helper stores `+8 = block[0]` and
-  `+0xc = block[0] ^ 0x2b58de69` back-to-back (`0x26908c`/`0x269094`) |
-| `session+0x14` | flags (u16): role bits `0x1`/`0x2` (state-8 gate needs both), `0x4` reply accepted, `0x8` session key established (`flags |= 9` path, §6.1), `0x100`/`0x400`/`0x800` session-init bits, `0x200` LZSS gate (§7) |
+| `session+0xc` | `peer_base ^ 0x2b58de69` (derived) — stored **pre-XORed** so that the tail-digest key is one XOR away (§6): the accept path writes `+8 = base` then `+0xc = base ^ 0x2b58de69` back-to-back at `0x268c38`/`0x268c40` |
+| `session+0x14` | flags (u16): role bits `0x1`/`0x2` (state-8 gate needs both), `0x4` reply accepted, `0x8` session key established (`flags \|= 9` path, §6.1), `0x100`/`0x400`/`0x800` session-init bits, `0x200` LZSS gate (§7). The peer's handshake `[18]` byte is OR'd into this word on acceptance (`0x269064`), so it is partly negotiated rather than purely local — see `UDP_JOIN_FLOW.md` §4 **[I]** |
 | `session+0x18..+0x2b` | peer descriptor (5 words; `peer_id` at `+0x18` — §4 gate 1) |
 | `session+0x2c..0x30` | peer sockaddr — source ip/port match in the receive loop (§9.1) |
 | `session+0x42` | header seq (u16) — expected incoming hdr counter (§5.2 gate) |
 | `session+0x44` | sliding-window reorder bitmask (u32, §5.2 gate) |
 | `session+0x48` | key slot: `-1` = pre-keyed; else session-keyed (decoder `FUN_002666c8` gate) |
 
-The decoder computes the post-handshake key as `K = session[+8] ^ session[+0x10]`
-(`xor r16, r9, r0` over ctx+8 / ctx+0x10 in `FUN_002666c8`). Both directions use the
-**same value** (`peer_base ^ own_base`), so the session is symmetric — no per-direction
-keying **[V]**.
+The decoder computes the post-handshake **chain** key as `K = session[+8] ^ session[+0x10]`
+(`xor r16, r9, r0` over ctx+8 / ctx+0x10 at `0x266b7c` in `FUN_002666c8`). Both directions
+use the **same value** (`peer_base ^ own_base`), so the session is symmetric — no
+per-direction keying **[V]**.
+
+> **There are two keys, not one — and the second one is easy to miss.** The **tail
+> digest** key is a *separate* XOR in the same function: `session[+0xc] ^ session[+0x10]`
+> at `0x26695c`, which is `K ^ 0x2b58de69` precisely because `session[+0xc]` was stored
+> pre-XORed (§4 gate 4). The pre-keyed path uses the bare constant `0x2b58de69` as the
+> digest key (`lis r0,0x2b58` / `ori r0,r0,0xde69` at `0x267010`) against the pre-keyed
+> **chain** key `0x87103c2f`. So a frame has two independently-derived keys, and the
+> offline decoder's `digest_key_for()` is the offline twin of that second site, not of
+> the first. **[V]**, confirmed on a live capture by decoding every opening frame against
+> all four candidate keys — frames 1–3 verify only with `0x87103c2f`, frames 4+ only with
+> `K`, and none verify under two (`UDP_JOIN_FLOW.md` §6).
 
 Handshake frames always travel with the **pre-handshake constant**
 `K = 0x87103c2f` (state < 8), even though the handshake itself is scrambled/chained
@@ -480,15 +512,21 @@ Facts established from two runs with different joiner counter-bases:
   usual ~2 s cadence alongside the pings, and per the key rule above the
   session must reach **state 8** before session-keyed frames flow.
 
-State machine (u8 at `session+4`; all store sites in the module): 2
-(`0x268890`, `0x268b58`, `0x268ecc`, `0x269514`), 3 (`0x268b04`, `0x2693a0`),
-5→6 acceptance (`0x268e00`; magic-mismatch also lands at 6, `0x269524`),
-**8** (`0x2690a8`), 12 (`0x26966c`), 0 = teardown/unused. The state-8 store
-sits in the session-accept helper at `0x268ffc` (called from the receive loop
-at `0x2629a4`/`0x262a14`): entry requires `flags & 2`; states 2/3/4 branch to
-their own handlers; otherwise it (re)stores `+8`/`+0xc` from the parsed
-handshake block and sets **state = 8 only when `(flags & 3) == 3`** — both
-role bits must already be set.
+State machine (u8 at `session+4`). Store sites re-verified in the accept path:
+**2** at `0x2690c8`, **3** at `0x268f50`, **6** at `0x2690d8`, **8** at
+`0x268c58`.
+
+> **Corrected.** This list previously read "5→6 acceptance (`0x268e00`;
+> magic-mismatch also lands at 6, `0x269524`)" and put the state-8 store at
+> `0x268ffc`. Neither address holds the store it was credited with. What the
+> code does: **acceptance does not go through state 6.** State 6 is written at
+> `0x2690d8`, which is the *failure* target of both the `module_magic` gate and
+> the capability gate (`0x268fdc`/`0x269020` branch to `0x2690d0`, which stores 6
+> and calls `0x26b1c8`). Success instead sets `flags |= 0x4` then `flags |= 0x2`
+> (`0x268f6c`, `0x268fb0`), and state 8 is reached independently at `0x268c58`
+> once `(flags & 0x3) == 3` — both role bits — per the test at `0x268c44`.
+
+States 12 and 0 are not re-checked here and their earlier addresses stand unverified.
 
 **How a dial session reaches state 8 — resolved from the decoder decompile
 (2026-09-08):** the handshake-phase decode path has a **second digest chance**:
@@ -589,10 +627,29 @@ looking at. The `id (12 bits) | class (top nibble)` shape itself holds. **[V]**
 So every tag on this channel reads as `id (12 bits) | class (top nibble)`, and
 the two halves move independently: id 1 appears in three classes (`0x1001`
 reliable, `0x9001` reliable+compressed, `0x5001` reliable+`0x4000`), and the
-`0x5000` class carries two ids (`0x5000` id 0, `0x5001` id 1). **The class does
-not select a handler** — the receiver's per-id lookup (`0x2614f8`) compares
-`word & 0x7f00fff`, which drops bits 12-15 — so `0x5000` and `0x5001` are two
-distinct commands, not a value and its sequence number. **[V]**
+`0x5000` class carries two ids (`0x5000` id 0, `0x5001` id 1). Whether the class
+selects a handler is **[U]**. An earlier reading here said the receiver's per-id lookup
+(`0x2614f8`) "compares `word & 0x7f00fff`, which drops bits 12-15". That is withdrawn on
+two counts. The mask constant is `0x7f000fff`, not `0x7f00fff`:
+
+```
+00261568: lis   r7, 0x7f00
+00261578: ori   r7, r7, 0xfff      ; r7 = 0x7f000fff
+00261550: clrlwi r9, r8, 0x10      ; incoming word & 0xFFFF
+00261544: addi  r4, r9, 0x18       ; 0x18 + (slot matched ? 1 : 0)
+00261554: slwi  r0, r4, 0x18
+0026155c: or    r6, r0, r9         ; r6 = (r4 << 24) | (word & 0xFFFF)
+002615a8: lwz   r3, 0(r3)
+002615ac: and   r0, r3, r7         ; entry id & 0x7f000fff
+002615b0: cmpw  r0, r6
+```
+
+and the class bits are **relocated** into bits 24–27 rather than dropped. Taken
+literally this could not dispatch `0x5001` at all, whose class nibble is non-zero — so
+`r3` is evidently not the raw type word at that point and the function's real selector is
+not established. The observation that stands is the one from the capture: `0x5000` and
+`0x5001` behave as two distinct commands rather than a value and its sequence number
+**[V]**; the mechanism that separates them is **[U]**.
 
 > **Correction, from a live dedicated-server game.** The layout above is the
 > **session-record** framing and it
@@ -1168,10 +1225,10 @@ waiting for. The host sends the roster alone. **[U]**
 | Session frame builder (encoder) | `FUN_00264c78` | rate-budgeted per-peer message aggregation → frame; applies LCG-XOR scramble (§5); optional LZSS (§7) **[V]** |
 | **Message decoder** | `FUN_002666c8` | **undoes §5 on every incoming datagram, handshake included** — header unscramble (§5.1) + LE32 XOR chain (§5.2); post-handshake key from `ctx[+8] ^ ctx[+0x10]` (§6); also called by the handshake receiver **[V]** |
 | Message serializer (encoder) | `FUN_00269860` | writes `type/len/flags2/body` per message; copies class bits from msg flags **[V]** |
-| **Handshake accept (joiner side)** | `FUN_00268ba8` queue-drain (drain body `0x268a64`…`0x26953c`) | consumes a received reply queued by the decoder: gates on `peer_id == session[0x18]` (`0x269340` — silent skip on mismatch), `module_magic` (`0x269420` — mismatch → state 6), `ver&4`/flags (`0x269458`); acceptance path: handshake block pass → `0x268df4` state-5-only entry → `0x268e00` stores `state=6`, flags `|= 0x400`, retry counter reset → `0x268e1c` zero-then-enqueue message → `0x268edc` re-encode + send (the ping-pong re-send); on success peer base → `session[8]`, flags `|= 0x2|0x4` — the joiner's acceptance path, distinct from the host's receiver `FUN_00267d58` **[V]** |
+| **Handshake accept (joiner side)** | `FUN_00268ba8` queue-drain (drain body `0x268a64`…`0x26953c`) | consumes a received reply queued by the decoder. Gates: tail digest (`0x266918`, in the decoder); `peer_id == session[0x18]` at `0x268ef4` (`lwz`/`cmpw`/`beq 0x268f58`) — **silent skip** on mismatch, `li r27,0`, state unchanged; `module_magic` at `0x268fd8` — mismatch → `0x2690d0`, which stores **state 6** at `0x2690d8`; a capability test at `0x269008` reading the peer's `[18]` byte against our own `flags & 0x800`. On success: peer sockaddr → `session+0x2c..0x30` (`0x268f70`), flags `\|= 0x4` (`0x268f6c`) and `\|= 0x2` (`0x268fb0`), peer base → `session[8]` and `session[0xc] = base ^ 0x2b58de69` (`0x268c30`–`0x268c40`), peer's capability byte OR'd into `session+0x14` (`0x269064`), then re-encode + re-send (the ping-pong) around `0x268ea0`/`0x268eb8`. State **8** is reached separately at `0x268c58` once `(flags & 0x3) == 3` — not at acceptance. The joiner's acceptance path is distinct from the host's receiver `FUN_00267d58` **[V]** |
 | Per-peer queue drain | `FUN_00269230` / `FUN_00269240` / `FUN_00269280` | message queues consumed by the frame builder **[V]** |
 | One-shot datagram writer | `_opd_FUN_00fa1af0` | string-writer for the 0x1000 datagram (`buf, 0x1000, fmt_or_state, 1, seq, arg1, game_id, 0xa0020`); exact template runtime state **[U]** |
-| Handshake sender / reply processor | `FUN_00268ba8` | builds the §4 payload (peer_id, `session+0x10` base, magic, ver, unk, count, entries) → envelope/send path; ALSO drains the receive queue and runs the joiner-side acceptance gates (§4) — the sender is the reply consumer **[V]** |
+| Handshake sender / reply processor | `FUN_00268ba8` | builds the §4 payload — peer_id (struct+0), `session+0x10` base, the magic global, the computed capability byte, the u16 at `[19..21)` (struct+6), count (struct+4), then per entry {ip BE 4, port LE 2} — at `0x268cc4`…`0x268e1c`, `16 + 6×count` bytes; the same body is emitted by four other builders at `0x267e6c`, `0x2684e0`, `0x268804`, `0x268aa0`; ALSO drains the receive queue and runs the joiner-side acceptance gates (§4) — the sender is the reply consumer **[V]** |
 | Handshake receiver (incoming connections) | `FUN_00267d58` | called by the receive loop only when **no** existing session matches the source (the global accept session path); gated on decoder `FUN_002666c8` returning nonzero; parses the §4 fields; reads wire counter base → `session+8`; `session+0xc = base ^ 0x2b58de69`; validates `module_magic` only, not peer_id; creates the peer session via `0x261fe0` **[V]** |
 | Queue node builder (receive) | decoder path at `0x266d48` | builds the internal 12-byte-node queue entries (payload at node+0xc, length at node+6) that `FUN_0026b5c8` consumes — this internal node header is **not** the wire format (§3) **[V]** |
 | Message reader (receive) | `FUN_0026b5c8` | node reader: `src = queue_entry + 0xc`, `len -= 0xc` **[V]** |
@@ -1420,11 +1477,12 @@ identity (peer id / counter base) comes from `udp-host-identity-constants.ts`.
    matches the source against each session's peer sockaddr, and routes a matched
    session (state 2..6) through the decoder → handshake **sender** queue-drain, or an
    unmatched datagram through the global accept session → handshake **receiver**
-   `FUN_00267d58` (§4). The per-type dispatch is **by the twelve-bit id with the class
-   bits masked out** (`0x2614f8` compares `word & 0x7f00fff`, §6.2), so the class is
-   delivery metadata and not a handler selector. The table itself is built on the module
+   `FUN_00267d58` (§4). The per-type dispatch site is `0x2614f8`, but **what it selects on
+   is [U]** — see §6.2; the mask is `0x7f000fff` and the class bits are relocated rather
+   than masked out, so the earlier "by the twelve-bit id with the class bits masked out"
+   reading is withdrawn. The table itself is built on the module
    instance at runtime (`0x1856c10`, outside the mapped segments) so the id-to-handler
-   entries cannot be read from this image; that part stays **[U]**.
+   entries cannot be read from this image either.
 5. Exact datagram template behind `FUN_00fa1af0` (format/state pointer is
    runtime-initialized).
 6. `FUN_00fbc1fc`'s resolved target (`PTR_FUN_0119f550`) and the meaning of
@@ -1448,6 +1506,9 @@ identity (peer id / counter base) comes from `udp-host-identity-constants.ts`.
 
 ## 13. Revision history — superseded readings [V]
 
+Later entries were added after this section was first written and are listed newest-first
+below the original block.
+
 Readings that were **replaced** by the live-verified facts above; kept for anyone
 landing on old captures or old notes.
 
@@ -1457,7 +1518,7 @@ landing on old captures or old notes.
 | 2026-09 | scramble positions from `LCG(len+10)`, `% (len+8)` | real positions in §5.1 (`LCG(len)`, `% (len-2)` / `% len`) |
 | 2026-09-07 | keyed §5.3 digest key collapses to the bare constant | `session+0xc = peer_base ^ 0x2b58de69`; keyed digest key = `K ^ 0x2b58de69` — confirmed live 2026-09-09 (§5.3/§6) |
 | 2026-09 | reply `peer_id` should **echo the joiner's id** | reply carries the **host's** character id; the joiner compares it to its stored peer descriptor (§4 gate 1) |
-| 2026-09-09 | wire prefix = `u16 LE 0x1000` + `u16 LE` message length | message header `type u16 LE | len u8 | flags2 u8` (§3/§6.2) |
+| 2026-09-09 | wire prefix = `u16 LE 0x1000` + `u16 LE` message length | message header `type u16 LE \| len u8 \| flags2 u8` (§3/§6.2) |
 | 2026-09-09 | header sequence gate at `0x2668e4..0x266914`, window `> 0x100` | gate at `0x26712c..0x267198`; signed 16-bit diff `> 0x1f` (31) drops (§5.2) |
 | 2026-09-09 | key selection reads the state byte at `session[5]` | state byte at `session+4` (§5.2/§6.1) |
 | 2026-09-09 | flags word read at `session+5` (u16) | flags word at `session+0x14` (§6/§7) |

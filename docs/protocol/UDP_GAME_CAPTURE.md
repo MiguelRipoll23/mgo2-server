@@ -18,6 +18,12 @@ and was validated against the frame pinned in `LatestJoinerFrameTests`. No field
 inferred from plausibility: a record that does not walk to the last byte is reported as
 unparsed rather than described.
 
+> **For the join specifically, read `UDP_JOIN_FLOW.md` alongside this file.** That one
+> walks the nine opening datagrams in order and ties each to the `MGO2.ELF` instruction
+> that produces or consumes it. This file measures the channel; that one checks it
+> against the binary, and it is where the handshake `[18]` field is re-read as a
+> capability byte.
+
 > Confidence tags match the rest of `docs/protocol/`: **[V]** verified against the bytes,
 > **[I]** inferred, **[U]** unresolved.
 
@@ -38,11 +44,19 @@ scope here; this file is the gameplay channel between the two parties that playe
 | compressed | 5 111 frames carry the `0x8000` marker and are LZSS |
 | duration | one round, ~13 minutes of wall clock |
 
-Both sides send `ver = 2` and both advertise **two** endpoint pairs. The joiner's pairs
-are `10.2.0.2:5730` twice; the server's are `99.66.131.177:5731` and `10.104.10.28:5731`.
-So the server is reachable on two addresses and the client on one — the public/private
-pair shape §4 of `UDP_P2P_PROTOCOL.md` describes, confirmed on a session that ran to
-completion rather than to a join. **[V]**
+Both sides send capability byte `2` at handshake offset `[18]` and both advertise **two**
+endpoint pairs. The joiner's pairs are `217.138.213.5:5730` (public) and `10.2.0.2:5730`
+(private); the server's are `99.66.131.177:5731` and `10.104.10.28:5731`. So **both**
+parties advertise the same public/private pair shape §4 of `UDP_P2P_PROTOCOL.md`
+describes, confirmed on a session that ran to completion rather than to a join. **[V]**
+
+> **Corrected.** This paragraph previously read "the joiner's pairs are `10.2.0.2:5730`
+> twice … the server is reachable on two addresses and the client on one". That came from
+> mistaking entry 0 for entry 1: entry 0 is the public address and only entry 1 is the
+> LAN address. Re-read at the byte level in `UDP_JOIN_FLOW.md` §3, which also shows the
+> `[18]` byte is a capability byte rather than the `ver` this file inherited from
+> `UDP_P2P_PROTOCOL.md` §4 — the `ver = 2` in this file's preamble is the u16 at
+> `[19..21)`, which is `2` for the joiner and `1` for the server.
 
 **The three other peer flows** (`98.26.168.27`, `89.152.226.41`, `92.191.178.103`, 17–771
 datagrams each) are one-sided: each sends exactly one handshake and never receives an

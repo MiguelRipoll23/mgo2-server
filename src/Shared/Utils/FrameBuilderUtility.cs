@@ -16,6 +16,33 @@ public static class FrameBuilderUtility
     private const byte HandshakePairCount = 2;
 
     /// <summary>
+    /// Capability byte this host puts in its own handshake.
+    /// </summary>
+    /// <remarks>
+    /// The client derives the handshake body from its session flags: the byte is
+    /// <c>2</c>, or <c>3</c> when its own flag <c>0x100</c> is set, with bit 2
+    /// (<see cref="CapabilitySessionFlagBit"/>) set when its flag <c>0x800</c>
+    /// is. This host asserts none of those extra flags, so it advertises the
+    /// plain <c>2</c> — the value the live dedicated server sent on the
+    /// gameplay channel.
+    /// </remarks>
+    public const byte HostCapability = 0x02;
+
+    /// <summary>
+    /// Bit of the capability byte that mirrors the session flag <c>0x800</c>.
+    /// </summary>
+    public const byte CapabilitySessionFlagBit = 0x04;
+
+    /// <summary>Byte written at offset 12 of a handshake body: the capability.</summary>
+    private const int CapabilityOffset = 12;
+
+    /// <summary>Offset of the u16 a handshake body carries after the capability.</summary>
+    private const int ModeOffset = 13;
+
+    /// <summary>Value this host puts in that u16; the live dedicated server's is 1.</summary>
+    private const ushort HostMode = 1;
+
+    /// <summary>
     /// Builds a plaintext frame wrapping messages: the header word, the
     /// serialized messages and the zeroed tail region that
     /// <see cref="FrameCryptoUtility.EncodeFrame"/> fills in.
@@ -66,27 +93,33 @@ public static class FrameBuilderUtility
     /// </summary>
     /// <param name="peerIdentifier">Identifier of the sending host.</param>
     /// <param name="counterBase">Counter base the sender will use.</param>
-    /// <param name="advertiseAddress">Address to advertise to the peer.</param>
+    /// <param name="advertiseAddress">Public address to advertise to the peer.</param>
     /// <param name="advertisePort">Port to advertise to the peer.</param>
+    /// <param name="privateAddress">
+    /// Second pair of the handshake. The live host advertises its public address
+    /// first and its private one second; omitted, the public address is used for
+    /// both, which is what a host reachable at one address has to do.
+    /// </param>
     public static byte[] BuildHandshakeBody(
         uint peerIdentifier,
         uint counterBase,
         string advertiseAddress,
-        int advertisePort)
+        int advertisePort,
+        string? privateAddress = null)
     {
         var body = new byte[HandshakeBodySize];
         BinaryUtility.WriteUInt32LittleEndian(body, 0, peerIdentifier);
         BinaryUtility.WriteUInt32LittleEndian(body, 4, counterBase);
         BinaryUtility.WriteUInt32LittleEndian(body, 8, UdpCryptoKeyConstants.ModuleMagic);
-        body[12] = 0x02;
-        body[13] = 0x01;
-        body[14] = 0x00;
+        body[CapabilityOffset] = HostCapability;
+        BinaryUtility.WriteUInt16LittleEndian(body, ModeOffset, HostMode);
         body[15] = HandshakePairCount;
 
-        var address = IpAddressToBytes(advertiseAddress) ?? [127, 0, 0, 1];
-        address.CopyTo(body, 16);
+        var publicBytes = IpAddressToBytes(advertiseAddress) ?? [127, 0, 0, 1];
+        var privateBytes = IpAddressToBytes(privateAddress ?? advertiseAddress) ?? publicBytes;
+        publicBytes.CopyTo(body, 16);
         BinaryUtility.WriteUInt16LittleEndian(body, 20, (ushort)advertisePort);
-        address.CopyTo(body, 22);
+        privateBytes.CopyTo(body, 22);
         BinaryUtility.WriteUInt16LittleEndian(body, 26, (ushort)advertisePort);
         return body;
     }
@@ -107,8 +140,17 @@ public static class FrameBuilderUtility
             return null;
         }
 
-        var flags = body[12];
-        if ((flags & 0x04) != 0)
+        var capability = body[CapabilityOffset];
+
+        // The client's gate is a disjunction, not a flat refusal: it refuses only
+        // when the peer left this capability bit clear while the client's own
+        // 0x800 flag requires it, and the builder sets that bit exactly when its
+        // own 0x800 is set. This host advertises the plain 2, so it requires
+        // nothing and accepts either value. Refusing every handshake that sets
+        // the bit drops peers the live dedicated server answers — the capture
+        // holds three flows whose joiner sent 0x06 and were answered anyway.
+        if ((HostCapability & CapabilitySessionFlagBit) != 0 &&
+            (capability & CapabilitySessionFlagBit) == 0)
         {
             return null;
         }
@@ -132,8 +174,8 @@ public static class FrameBuilderUtility
             BinaryUtility.ReadUInt32LittleEndian(body, 0),
             BinaryUtility.ReadUInt32LittleEndian(body, 4),
             magic,
-            flags,
-            BinaryUtility.ReadUInt16LittleEndian(body, 13),
+            capability,
+            BinaryUtility.ReadUInt16LittleEndian(body, ModeOffset),
             pairs);
     }
 
@@ -165,15 +207,15 @@ public static class FrameBuilderUtility
 /// <param name="PeerIdentifier">Identifier of the sending host.</param>
 /// <param name="CounterBase">Counter base the sender announced.</param>
 /// <param name="Magic">Module magic carried by the handshake.</param>
-/// <param name="Flags">Handshake flags byte.</param>
-/// <param name="Unknown">Trailing unknown field.</param>
+/// <param name="Capability">Capability byte the sender advertises.</param>
+/// <param name="Mode">Value of the u16 that follows the capability.</param>
 /// <param name="Pairs">Endpoint pairs advertised by the sender.</param>
 public sealed record HandshakeBody(
     uint PeerIdentifier,
     uint CounterBase,
     uint Magic,
-    byte Flags,
-    ushort Unknown,
+    byte Capability,
+    ushort Mode,
     IReadOnlyList<HandshakeEndpointPair> Pairs);
 
 /// <summary>One endpoint advertised in a handshake body.</summary>
