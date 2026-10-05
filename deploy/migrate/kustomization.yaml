@@ -13,4 +13,4 @@ resources:
 # published; see deploy/README.md for the seed value.
 images:
   - name: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres
-    newTag: 39ca56e1dc9890bab993bc7c53a2c673d192afb0
+    newTag: 84011222d54c9078555c2a8eafedd81b5610ed25
