@@ -80,23 +80,28 @@ public sealed class AcceptHandshakeHandler(
             handshake.CounterBase,
             dialBack);
 
-        // 1. The keep-alive, which the recorded host sends first, as its
-        //    outbound counter 0. Pre-keyed, because the session is not
-        //    established yet and marking it so here is what made the joiner
-        //    discard this frame: the state<8 -> pre-key rule is absolute, and
-        //    the keep-alive does not get to carry the session key ahead of the
-        //    handshake reply that earns it.
-        await context.Send(UdpCommandConstants.KeepAlive, [], 0);
-
-        // 2. The handshake reply, also pre-keyed for the same reason. It
-        //    advertises the address this host is reached on, which is the
-        //    configured one for the same reason.
+        // 1. The handshake reply first, as outbound counter 0. Pre-keyed,
+        //    because the session is not established yet and marking it so here
+        //    is what made the joiner discard these frames: the state<8 ->
+        //    pre-key rule is absolute, and nothing may carry the session key
+        //    ahead of the reply that earns it. The reply leads because a joiner
+        //    that treats the first datagram from the host as its answer stops
+        //    re-dialling on it: a keep-alive ahead of the reply leaves such a
+        //    client answered but unaccepted, waiting for a reply it will not ask
+        //    for again. The reference host leads with the reply, and a live
+        //    client that goes silent after the leading keep-alive is why.
         var reply = FrameBuilderUtility.BuildHandshakeBody(
             hostIdentity.PeerIdentifier,
             hostIdentity.CounterBase,
             hostIdentity.AdvertisedAddress,
             hostIdentity.AdvertisedPort);
         await context.Send(UdpCommandConstants.Handshake, reply, 0);
+
+        // 2. The keep-alive behind it, also pre-keyed for the same reason. The
+        //    recorded host sends it as counter 0, but that host answers a joiner
+        //    which re-dials until it reads the reply, not one that stops at the
+        //    first datagram; the two frames are the same set either way.
+        await context.Send(UdpCommandConstants.KeepAlive, [], 0);
 
         // Only now. The joiner reaches its keyed state when it accepts this
         // reply, so anything sent before it is refused at the digest gate, and
