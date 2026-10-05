@@ -7,16 +7,20 @@ namespace Mgo2Server.Shared.Domain.Games;
 /// <para>
 /// A gameplay server hosts rather than plays: it opens the room, keeps it alive
 /// and hands its endpoint to whoever joins, and its own row in the roster is the
-/// host's seat rather than a participant. Reported as one, a dedicated room
-/// looks occupied by somebody who is not in it — the room list reads
-/// "1/8" for a room nobody has entered, and the details screen names a host as
-/// the first player of a match it is not playing.
+/// host's seat rather than a participant. Counted as one, a dedicated room looks
+/// occupied by somebody who is not in it — the room list reads "1/8" for a room
+/// nobody has entered.
 /// </para>
 /// <para>
 /// The rule is about the room, not the row: it applies to a room named for a
 /// dedicated host, which is the name a gameplay server opens its room under and
 /// which no player may create. An ordinary player's room counts its host, as it
 /// always has.
+/// </para>
+/// <para>
+/// This is the count only. A room's player-list reply keeps the host's entry
+/// whatever the room is, because the joining client reads the host character id
+/// out of that list and gates the host's peer-to-peer handshake on it.
 /// </para>
 /// </summary>
 public static class GameRosterUtils
@@ -42,21 +46,4 @@ public static class GameRosterUtils
     /// <returns>The number of players in the room.</returns>
     public static int ReportedParticipants(Game room, int rosterCount) =>
         IsDedicatedHostRoom(room) ? Math.Max(0, rosterCount - DedicatedHostRosterSlots) : rosterCount;
-
-    /// <summary>
-    /// The roster a room shows, which is its own roster without a dedicated
-    /// host's seat.
-    /// </summary>
-    /// <param name="room">Room being reported on.</param>
-    /// <param name="roster">Characters in the room's roster, host first.</param>
-    /// <returns>The characters the room reports as its players.</returns>
-    public static List<int> ReportedRoster(Game room, IEnumerable<int> roster)
-    {
-        ArgumentNullException.ThrowIfNull(room);
-        ArgumentNullException.ThrowIfNull(roster);
-
-        return IsDedicatedHostRoom(room)
-            ? [.. roster.Where(characterIdentifier => characterIdentifier != room.HostIdentifier)]
-            : [.. roster];
-    }
 }

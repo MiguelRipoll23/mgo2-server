@@ -246,9 +246,15 @@ public sealed class GetGameDetailsHandler(
             return;
         }
 
-        var roster = GameRosterUtils.ReportedRoster(
-                game,
-                await gameService.GetPlayersAsync(game.Identifier, game.HostIdentifier, cancellationToken))
+        // The host is the roster's first entry and is deliberately kept here even
+        // for a dedicated room, unlike the room-list count. The joining client
+        // reads the room's host character id out of this list and stores it as
+        // the peer descriptor of the dial session it opens on the peer-to-peer
+        // channel; the host's UDP handshake reply is then gated against that id.
+        // A reply from a host this list does not name fails that gate silently
+        // and the join stalls. The capture confirms it: the reference dedicated
+        // host's own 0x4313 carries its character id as the first roster entry.
+        var roster = (await gameService.GetPlayersAsync(game.Identifier, game.HostIdentifier, cancellationToken))
             .Take(MaximumPlayers)
             .ToList();
         var pings = await gameService.GetPlayerPingsAsync(game.Identifier, cancellationToken);
