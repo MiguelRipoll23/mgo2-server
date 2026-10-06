@@ -218,6 +218,10 @@ public sealed partial class GameplayServerService
             $"frame counter={counter} key={sessionKey:x8} messages={frame.Messages.Count} from {session.DialBack}",
             decoded);
 
+        var tickMessages = frame.Messages
+            .Where(message => message.Type < UdpCommandConstants.TickRecordThreshold)
+            .ToList();
+
         foreach (var message in frame.Messages)
         {
             // An acknowledgement entry names the frame it closes: the sender's
@@ -250,7 +254,25 @@ public sealed partial class GameplayServerService
                 continue;
             }
 
+            if (message.Type < UdpCommandConstants.TickRecordThreshold &&
+                registry.ResolveHandlerType(message.Type) is null)
+            {
+                // Unknown tick identifiers are still forwarded below, but they
+                // are not session commands and should not flood warning logs.
+                continue;
+            }
+
             await DispatchMessageAsync(message, remote, session);
+        }
+
+        // Tick records are carried under the identifier range below 0x1000.
+        // The capture shows these flowing through the dedicated server in both
+        // directions; it does not show that this host simulates them. Forward
+        // these records to the other established peers as one frame, preserving
+        // their contents and the source frame's compression choice.
+        if (tickMessages.Count > 0)
+        {
+            RelayTickMessages(session, tickMessages, frame.Compressed);
         }
 
         // The recorded host answers nothing with an acknowledgement, so the

@@ -871,8 +871,11 @@ that says *no*.
 still **[U]**. Nothing was implemented on a resemblance, which is how `0x43CA`/`0x43CB` and
 `0x4442` went wrong in this project already.
 
+**Gameplay forwarding, now present but not established as sufficient.** The server relays inbound tick records below `0x1000` to its other established peers, preserving the type, body, fourth header byte and compression choice. Unknown tick identifiers are forwarded too, since the capture has 121 tick types and this server only decodes a subset. The capture shows tick traffic in both directions, but does not prove this relay alone is enough to run a game, that this is the cause of a freeze, or that the dedicated host should synthesize authoritative ticks. The Ghidra check confirms the client serializer and parser shape; it does not identify a host-side simulation requirement.
+
 **Not established.** The 8-byte trailer on 290 frames (§2); the meaning of every
-`[U]` row in §3; why the three `ver = 6` flows died.
+`[U]` row in §3; why the three `ver = 6` flows died; whether tick relay resolves the
+reported freeze.
 
 ---
 

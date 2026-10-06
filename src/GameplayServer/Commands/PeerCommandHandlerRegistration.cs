@@ -27,9 +27,8 @@ public static class PeerCommandHandlerRegistration
         registry.Register<InGameControlHandler>(UdpCommandConstants.RosterHead);
         registry.Register<InGameControlHandler>(UdpCommandConstants.InGameControl);
 
-        // The gameplay channel's tick records. Both are logged rather than
-        // answered, at the levels their own docs set out: every record at debug,
-        // a death or a revive again at information.
+        // The gameplay channel's tick records. Each is observed for logs, then
+        // forwarded unchanged to the other established peers by the dispatch path.
         registry.Register<PlayerVitalsHandler>(PlayerVitalsRecordUtility.FirstPlayerType);
         registry.Register<PlayerVitalsHandler>(PlayerVitalsRecordUtility.SecondPlayerType);
         foreach (var positionType in PlayerPositionRecordUtility.MeasuredTypes)

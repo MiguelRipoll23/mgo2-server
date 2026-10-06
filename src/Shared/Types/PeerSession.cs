@@ -19,6 +19,9 @@ public sealed class PeerSession
     /// <summary>Shared outbound frame counter; every outbound frame draws from it.</summary>
     public ushort OutboundCounter { get; set; }
 
+    /// <summary>Serializes outbound counter allocation and writes for this session.</summary>
+    public Lock OutboundGate { get; } = new();
+
     /// <summary>Session key: the peer's counter base exclusive-ORed with the host's counter base.</summary>
     public required uint SessionKey { get; set; }
 

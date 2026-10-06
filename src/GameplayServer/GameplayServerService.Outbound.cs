@@ -35,6 +35,28 @@ public sealed partial class GameplayServerService
     }
 
     /// <summary>
+    /// Writes tick records together to every established peer except their
+    /// sender, preserving record order, flags bytes and source compression.
+    /// Each destination uses its own outbound counter and session key.
+    /// </summary>
+    /// <param name="origin">Session the tick records came from.</param>
+    /// <param name="messages">Tick records from one decoded frame, in wire order.</param>
+    /// <param name="compressed">Whether the source frame used LZSS compression.</param>
+    private void RelayTickMessages(
+        PeerSession origin,
+        IReadOnlyList<UdpMessage> messages,
+        bool compressed)
+    {
+        foreach (var session in sessions.Snapshot())
+        {
+            if (session.Established && !ReferenceEquals(session, origin))
+            {
+                SendMessages(session, messages, compressed);
+            }
+        }
+    }
+
+    /// <summary>
     /// Writes a message to a peer through the session's shared counter, to the
     /// endpoint the session dials back rather than to the address a datagram
     /// happened to arrive from. The two differ whenever the host sits behind a
@@ -85,22 +107,25 @@ public sealed partial class GameplayServerService
             return;
         }
 
-        var counter = session.OutboundCounter;
-        session.OutboundCounter = FrameCounterUtility.Next(counter);
+        lock (session.OutboundGate)
+        {
+            var counter = session.OutboundCounter;
+            session.OutboundCounter = FrameCounterUtility.Next(counter);
 
-        var plain = FrameBuilderUtility.BuildMessageFrame(counter, messages, compressed);
-        var key = session.Established ? session.SessionKey : UdpCryptoKeyConstants.PreHandshakeKey;
-        var digestKey = session.Established
-            ? session.SessionKey ^ UdpCryptoKeyConstants.TailDigestKey
-            : UdpCryptoKeyConstants.TailDigestKey;
+            var plain = FrameBuilderUtility.BuildMessageFrame(counter, messages, compressed);
+            var key = session.Established ? session.SessionKey : UdpCryptoKeyConstants.PreHandshakeKey;
+            var digestKey = session.Established
+                ? session.SessionKey ^ UdpCryptoKeyConstants.TailDigestKey
+                : UdpCryptoKeyConstants.TailDigestKey;
 
-        var wire = FrameCryptoUtility.EncodeFrame(plain, counter, key, digestKey);
-        Send(wire, session.DialBack);
-        TrafficLogger.LogUdpOutboundPacket(
-            logger,
-            LogPrefix,
-            $"frame counter={counter} messages={messages.Count}{(session.Established ? string.Empty : " pre-keyed")} to {session.DialBack}",
-            wire);
+            var wire = FrameCryptoUtility.EncodeFrame(plain, counter, key, digestKey);
+            Send(wire, session.DialBack);
+            TrafficLogger.LogUdpOutboundPacket(
+                logger,
+                LogPrefix,
+                $"frame counter={counter} messages={messages.Count}{(session.Established ? string.Empty : " pre-keyed")} to {session.DialBack}",
+                wire);
+        }
     }
 
     private void Send(byte[] data, IPEndPoint remote)

@@ -819,11 +819,14 @@ outbound counter, it simply never draws from it for an acknowledgement. **[V]**
   in a live round and acknowledged none, and nothing in the binary gates one on
   the reliable class. Each acknowledgement would also spend an outbound
   sequence, shifting every later sequence number away from the capture's.
-- **No reply of any kind to an unreliable record.** `PlayerTickHandlers` (vitals
-  and position) contains no send or broadcast, so a position tick produces a log
-  line and nothing on the wire — which is what the measurement in
-  `UDP_GAME_CAPTURE.md` §3 implies, since no tick record carries the reliable
-  class bit in the first place.
+- **Unreliable tick records are relayed, not simulated.** The gameplay dispatcher
+  forwards inbound records below `0x1000` to the other established peers, keeping
+  their type, fourth header byte, body and source compression choice. It forwards
+  unknown tick identifiers too: the capture has 121 such identifiers and the
+  server only decodes a small subset. The capture shows tick traffic flowing in
+  both directions, but does not prove that this relay is sufficient to run a
+  round or that the host should synthesize gameplay state; see
+  `UDP_GAME_CAPTURE.md` §6.
 - **Inbound acknowledgements are still recognised**, by a stricter test than the
   class bit alone: `(type & 0xf000) == 0x1000`, a one-byte body, and body `0x00`.
   They are logged and deduplicated, and never answered.

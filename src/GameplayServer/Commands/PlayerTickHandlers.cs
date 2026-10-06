@@ -8,8 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Commands;
 
 /// <summary>
-/// Reports the health and stamina a peer sends, so a round can be watched
-/// without turning the log into the tick stream.
+/// Reports and forwards the health and stamina records a peer sends.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,9 +20,10 @@ namespace Mgo2Server.GameplayServer.Commands;
 /// thirteen minutes, with the repeats underneath at debug.
 /// </para>
 /// <para>
-/// Nothing is answered. The capture has the host reading these records and not
-/// writing one, and a record the host answers with a record of its own is a
-/// record this server cannot yet say is right.
+/// After it is observed it is forwarded to the other established peers without
+/// decoding and rebuilding its body. The capture contains gameplay frames in
+/// both directions, but does not establish whether this relay alone can run a
+/// round or prevent the reported freeze.
 /// </para>
 /// </remarks>
 /// <param name="playerStates">Last state seen for each peer.</param>
@@ -80,8 +80,7 @@ public sealed class PlayerVitalsHandler(
 }
 
 /// <summary>
-/// Reports where each character is and whether it is dead, so a round can be
-/// watched as movement rather than as the tick stream behind it.
+/// Reports and forwards where each character is and whether it is dead.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -101,7 +100,8 @@ public sealed class PlayerVitalsHandler(
 /// to get at the form while a session is running.
 /// </para>
 /// <para>
-/// Nothing is answered, for the same reason the vitals record is not.
+/// The record is forwarded unchanged to other established peers after it has
+/// been observed. This is a relay, not authoritative movement simulation.
 /// </para>
 /// </remarks>
 /// <param name="playerStates">Last state seen for each peer.</param>
