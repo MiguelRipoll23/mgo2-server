@@ -3,6 +3,7 @@ using Mgo2Server.GameplayServer.Commands;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.Rooms;
+using Mgo2Server.GameplayServer.Stream;
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Telemetry;
@@ -30,6 +31,7 @@ builder.Services.AddSingleton<MatchService>();
 builder.Services.AddSingleton<RoomRosterService>();
 builder.Services.AddSingleton<PostJoinBurstService>();
 builder.Services.AddSingleton<PostJoinBurstSchedulerService>();
+builder.Services.AddSingleton<HostStreamService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 // The peer command handlers are registered beside the types their messages are
 // bound to, so a handler cannot be mapped without being resolvable.

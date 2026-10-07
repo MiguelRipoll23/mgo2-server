@@ -873,9 +873,36 @@ still **[U]**. Nothing was implemented on a resemblance, which is how `0x43CA`/`
 
 **Gameplay forwarding, now present but not established as sufficient.** The server relays inbound tick records below `0x1000` to its other established peers, preserving the type, body, fourth header byte and compression choice. Unknown tick identifiers are forwarded too, since the capture has 121 tick types and this server only decodes a subset. The capture shows tick traffic in both directions, but does not prove this relay alone is enough to run a game, that this is the cause of a freeze, or that the dedicated host should synthesize authoritative ticks. The Ghidra check confirms the client serializer and parser shape; it does not identify a host-side simulation requirement.
 
+**The host stream, now replayed.** What the relay above left out is that the recorded host
+never stops writing. In the solo window — the thirteen minutes before the second player
+arrives at t+154 s — it sends the joining client a stream of its own: 0x090c `fa fa`, two
+0x0a61 `fe` per frame at a measured 29 ms, 0x1a54 / 0x9a54 `01 20 0d` and 0x0002 blobs
+inserted among them, with a sparse 0xd001 / 0x0002 phase and a **match-start run** at
+t+46.4 s (hdr 0x8019, 160 B compressed) opening the round. A server that answers the join
+and then goes quiet hands the client an open, silent channel.
+
+`HostStreamFramesUtils` carries the measured bodies and order, and
+`HostStreamService` replays them per peer, started once after the roster answer. The sparse
+delays are measured from the capture; the steady insertions repeat on measured frame
+periods. The compression marker follows the frame's content rather than the phase, as the
+capture shows: a frame carrying a state blob goes out compressed (hdr 0x8648, 0x8019) and a
+beat-only or slot-only one plain (hdr 0x0626, 0x062d, 0x0682), the 22-byte mostly-zero blob
+being the only body in the steady stream that pays for it. Every uncompressed frame the
+replay writes is **byte-identical in size** to the capture's (17 B control, 28 B base, 35 B
+slot, 33 B control-inserted), and every frame round-trips through `FrameCryptoUtility` and
+`MessageCodecUtility` with its types, bodies and fourth bytes intact.
+
+The compressed frame sizes now match the captured targets: 25 B for a lone state blob,
+160 B for the match-start run, 40 B for the steady zero-valued blob, and 41 B for the
+steady 100-valued blob, each with the beat and first tick pair. The encoder emits valid
+LZSS and the decoded records survive the normal frame codecs. The steady stream's
+**occasional `0x5001` and `0x1001` insertions** (five and one in 81 s) are not reproduced.
+And **whether the stream resolves the reported freeze is untested** — it is sent because
+the recorded host sends it, on the same grounds as the roster and the burst.
+
 **Not established.** The 8-byte trailer on 290 frames (§2); the meaning of every
-`[U]` row in §3; why the three `ver = 6` flows died; whether tick relay resolves the
-reported freeze.
+`[U]` row in §3; why the three `ver = 6` flows died; whether the stream or tick relay
+resolves the reported freeze.
 
 ---
 

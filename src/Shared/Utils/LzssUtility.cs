@@ -81,15 +81,15 @@ public static class LzssUtility
     }
 
     /// <summary>
-    /// Compresses to the same bitstream <see cref="Decompress"/> reads, so a frame
-    /// written here is one the peer rebuilds with its own decompressor.
+    /// Compresses to the bitstream <see cref="Decompress"/> reads, so a frame
+    /// written here is one the peer rebuilds with its own decompressor. The
+    /// encoder ends by exhausting the input, as the captured roster frames do.
     /// </summary>
     /// <remarks>
-    /// The recorded host marks the compression bit on the roster run, the roster
-    /// repeat and the post-join burst, and leaves the short trailer and follow-up
-    /// records unmarked, so this is the other half of a format that is only half
-    /// implemented here: <see cref="Decompress"/> reads the marker and nothing in
-    /// the outbound path ever set it.
+    /// The captured roster and sparse-state frames end by input exhaustion,
+    /// while one steady-state frame also carries the zero-offset marker.
+    /// Exhaustion is valid for this decoder and avoids appending bytes the
+    /// captured host does not put on its compressed roster and state frames.
     /// <para>
     /// The ring is written from index 1, so the byte at logical position
     /// <c>p</c> lives in slot <c>(p + 1) &amp; 0x1ff</c> and a back-reference at
@@ -97,16 +97,19 @@ public static class LzssUtility
     /// overlap itself: the decoder reads and writes the same slot on each step of
     /// a copy, so a run longer than its own distance decodes correctly, and the
     /// match search has to look ahead into the source for the part that has not
-    /// been emitted yet.
+    /// been emitted yet. The encoder caps matches at 16 bytes for content up to
+    /// 128 bytes and 15 bytes for larger content: those settings reproduce the
+    /// captured 13-byte state-blob and 148-byte match-start compressed regions.
     /// </para>
     /// </remarks>
     /// <param name="source">Bytes to compress.</param>
-    /// <returns>An LZSS stream ending on the zero-offset marker.</returns>
+    /// <returns>An LZSS stream whose end is detected by input exhaustion.</returns>
     public static byte[] Compress(ReadOnlySpan<byte> source)
     {
         const int ringMask = UdpCommandConstants.LzssRingSize - 1;
-        const int maxLength = 17;
-        const int minProfitableLength = 3;
+        const int minProfitableLength = 2;
+        const int longContentThreshold = 128;
+        var maxLength = source.Length > longContentThreshold ? 15 : 16;
 
         var ring = new byte[UdpCommandConstants.LzssRingSize];
         var writer = new BitWriter();
@@ -170,13 +173,6 @@ public static class LzssUtility
             ring[writeIndex++ & ringMask] = data[emitted];
             emitted++;
         }
-
-        // The marker is a back-reference whose offset is zero. The decoder reads
-        // the offset and the length field before it tests the offset, so both
-        // have to be on the wire even though the length is never used.
-        writer.WriteBit(0);
-        writer.WriteBits(0, 9);
-        writer.WriteBits(0, 4);
 
         return writer.ToArray();
     }

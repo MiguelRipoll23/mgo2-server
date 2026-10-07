@@ -1,6 +1,7 @@
 using System.Net;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Rooms;
+using Mgo2Server.GameplayServer.Stream;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Types;
@@ -231,10 +232,12 @@ public sealed class InGameControlHandler(ILogger<InGameControlHandler> logger) :
 /// </remarks>
 /// <param name="roster">Roster of the room this host is playing.</param>
 /// <param name="burstScheduler">Scheduler of the one-shot burst that follows the roster exchange.</param>
+/// <param name="hostStream">Stream the recorded host keeps writing after the burst.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
     RoomRosterService roster,
     PostJoinBurstSchedulerService burstScheduler,
+    HostStreamService hostStream,
     ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
@@ -320,6 +323,13 @@ public sealed class PlayerProfileHandler(
         // but a measured pause after it. It is scheduled rather than awaited, so
         // the dispatch loop keeps reading every peer while the pause runs.
         burstScheduler.Schedule(context);
+
+        // Then the stream the recorded host keeps writing, which is what the
+        // channel is made of once the join is over: the sparse control and state
+        // records, the match-start run and the steady beat under them. It is
+        // started once per peer and runs on its own, so the dispatch loop keeps
+        // reading every peer while it plays out.
+        hostStream.Start(context);
 
         // The peers already in the room are told as well. A player who is only
         // announced to the peer that just joined is never announced to the ones
