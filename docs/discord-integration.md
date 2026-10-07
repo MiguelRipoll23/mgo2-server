@@ -219,8 +219,8 @@ Every connection and disconnection is also written in it as a message:
 
 ```
 players [42]
-Snake connected
-Snake disconnected
+**Snake** is online
+**Snake** is offline
 ```
 
 The channel is remembered by its name (`players [n]`), so a restart adopts the

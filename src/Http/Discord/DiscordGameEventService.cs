@@ -13,7 +13,7 @@ namespace Mgo2Server.Http.Discord;
 /// It observes the coordinator rather than being called by it, which is why a
 /// gameplay lobby never reaches Discord: the lobby reports a game over its
 /// coordination stream and this is the destination that writes it down.
-/// Character and game names are bold; lobby names are italic. No emoji is used,
+/// Character, game and lobby names are bold. No emoji is used,
 /// so the channel reads as one consistent list rather than a stream of
 /// pictographs.
 /// </remarks>
@@ -45,8 +45,8 @@ public sealed class DiscordGameEventService(
         }
 
         var message = notification.Created
-            ? $"**{notification.CharacterName}** created a game: **{notification.GameName}** in lobby *{notification.LobbyName}*"
-            : $"**{notification.CharacterName}** joined the game: **{notification.GameName}** in lobby *{notification.LobbyName}*";
+            ? $"**{notification.CharacterName}** has created game **{notification.GameName}** in lobby **{notification.LobbyName}**"
+            : $"**{notification.CharacterName}** has joined game **{notification.GameName}** in lobby **{notification.LobbyName}**";
 
         return SendMessageAsync(message, cancellationToken);
     }

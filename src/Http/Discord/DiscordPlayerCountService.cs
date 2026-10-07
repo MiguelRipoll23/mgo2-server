@@ -139,7 +139,7 @@ public sealed partial class DiscordPlayerCountService(
             try
             {
                 await SendMessageAsync(
-                    $"{characterName} {(change > 0 ? "connected" : "disconnected")}",
+                    $"**{characterName}** {(change > 0 ? "is online" : "is offline")}",
                     CancellationToken.None);
 
                 // The settled total, so the dip of a move never reaches the
