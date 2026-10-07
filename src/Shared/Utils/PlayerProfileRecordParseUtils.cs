@@ -58,13 +58,13 @@ public static class PlayerProfileRecordParseUtils
             (name, clan) = TrailingLayoutOf(body);
         }
 
-        // The character id, the appearance block and the name marker are read
+        // The character id, endpoint data and the name marker are read
         // only off the roster layout. A join request carries its names in the
         // same place but puts a longer block in front of them, so the same
         // offsets land on structural bytes rather than on those fields: a
         // join request's offset 0x08 is part of its own header, and reading it
         // as the id yields a number that belongs to nothing. Reading the
-        // appearance out of a join request is worse than reading nothing,
+        // endpoint data out of a join request is worse than reading nothing,
         // because the block is twelve bytes long and so overwrites the markers
         // at 0x17/0x18/0x1d/0x1e with whatever the record happened to hold
         // there - on one live join, the first four bytes of the player's own
@@ -83,7 +83,7 @@ public static class PlayerProfileRecordParseUtils
             isRosterEntry
                 ? (int)BinaryUtility.ReadUInt32LittleEndian(body, PlayerProfileRecordUtility.CharacterIdOffset)
                 : 0,
-            isRosterEntry ? AppearanceOf(body) : [],
+            isRosterEntry ? AddressDataOf(body) : [],
             name,
             clan);
     }
@@ -102,15 +102,14 @@ public static class PlayerProfileRecordParseUtils
             : (sbyte)(field - PlayerProfileRecordUtility.RosterIndexBase);
 
     /// <summary>
-    /// The character's appearance block, decoded the way the record carries
-    /// bytes. Every entry of one character carries the same twelve, so this is
-    /// read whole rather than column by column: what the columns mean is
-    /// **[U]**, and only the block's position and length are established.
+    /// The twelve endpoint bytes at offsets 0x13..0x1e, in wire order. The
+    /// capture shows them matching the public/private pairs in this character's
+    /// handshake; join requests do not carry them at these offsets.
     /// </summary>
-    private static byte[] AppearanceOf(ReadOnlySpan<byte> body) =>
+    private static byte[] AddressDataOf(ReadOnlySpan<byte> body) =>
         body.Slice(
-            PlayerProfileRecordUtility.AppearanceOffset,
-            PlayerProfileRecordUtility.AppearanceLength).ToArray();
+            PlayerProfileRecordUtility.AddressDataOffset,
+            PlayerProfileRecordUtility.AddressDataLength).ToArray();
 
     /// <summary>
     /// Reads the names off the documented roster layout, or returns <c>null</c>

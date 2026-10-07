@@ -28,6 +28,9 @@ public sealed class PeerSession
     /// <summary>Character identifier the peer announced (its handshake peer identifier).</summary>
     public required uint PeerIdentifier { get; set; }
 
+    /// <summary>Public and private IPv4 endpoint pairs the peer announced in its handshake, in roster wire format.</summary>
+    public byte[] PeerAddressData { get; set; } = [];
+
     /// <summary>Peer identifier the host announced to this peer (its own character identifier).</summary>
     public required uint HostPeerIdentifier { get; init; }
 

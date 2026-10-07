@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Options;
+using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameplayServer.Identity;
 
@@ -33,6 +34,24 @@ public sealed class HostIdentityService(IOptions<ServerOptions> options)
 
     /// <summary>Clan name this host announces; empty when it runs without one.</summary>
     public string ClanName => options.Value.GameplayServerClanName ?? string.Empty;
+
+    /// <summary>
+    /// Endpoint pair bytes this host registered and advertises. The roster uses
+    /// the same public/private endpoints as the host handshake.
+    /// </summary>
+    public byte[] AddressData
+    {
+        get
+        {
+            var handshakeBody = FrameBuilderUtility.BuildHandshakeBody(
+                PeerIdentifier,
+                CounterBase,
+                AdvertisedAddress,
+                AdvertisedPort);
+            var handshake = FrameBuilderUtility.ParseHandshakeBody(handshakeBody);
+            return handshake is null ? [] : FrameBuilderUtility.EndpointData(handshake.Pairs);
+        }
+    }
 
     /// <summary>
     /// Address this host puts in its own handshake. It is the configured

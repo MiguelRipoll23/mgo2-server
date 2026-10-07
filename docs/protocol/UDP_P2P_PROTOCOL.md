@@ -105,18 +105,22 @@ joiner (RPCS3/PS3)                        game server                     fake h
   answered with `0x4323` so a joiner whose dial fails doesn't hang **[V]** (reference
   server behavior, cross-checked with the game's parsers).
 - **Fake-host continuation (decoder decompile + live, 2026-09-08):** after the
-  accepted reply (state 6) the joiner keeps re-dialing and pinging **pre-keyed** — it
-  cannot reach state 8 on handshakes alone. The host must send **one session-keyed
-  frame** (digest `K ^ 0x2b58de69`, chain `K`; an empty tag-`0x5000` keep-alive is the
-  verified shape) — that is the handshake-phase second digest chance that sets
-  `flags |= 9` (§6.1). And **all** host→joiner frames must draw from ONE outbound hdr
+  accepted reply (state 6) the joiner keeps re-dialing and pinging **pre-keyed**. A
+  host that sends **one session-keyed frame** (digest `K ^ 0x2b58de69`, chain `K`; an
+  empty tag-`0x5000` keep-alive is the verified shape) exercises the handshake-phase
+  second digest chance, which sets `flags |= 9` (§6.1). Note the `0x1` in that nine:
+  §6.1's correction shows the accept path sets bit `0x1` itself, and the reference
+  host sends no keyed frame, so this is a defence rather than a requirement. And **all** host→joiner frames must draw from ONE outbound hdr
   counter: the joiner's seq window (§5, `session[0x42]` + reorder bitmask) drops
   anything outside `last+1 .. last+0x20`, so separate reply/data counters interleave
   and get silently discarded **[V]** (verified in simulation: two-counter scheme
   produces duplicate hdrs → drops).
-  **Confirmed live 2026-09-09:** the session-keyed ESTABLISH OUT flipped the
-  joiner into state 8 — the ~2 s handshake retries stopped and the first
-  session-keyed data-phase frames were captured (§6.2).
+  **Superseded (see §6.1's correction):** the 2026-09-09 trial had the session-keyed
+  ESTABLISH OUT go out beside the reply and the joiner then reach state 8 — the ~2 s
+  handshake retries stopped and the first session-keyed data-phase frames were
+  captured (§6.2). The acceptance is what flips the session; the reference capture in
+  `P2P_CONNECT_FSM.md` §7.1 has the host send no keyed frame and the joiner keyed
+  26 ms after the reply.
   > **A real host sends both opening frames pre-keyed.** The trial above used a
   > fake host, and a session-keyed frame is accepted. The dedicated server in
   > `docs/mgo2-game.pcapng` does not send one: its 16-byte `0x5000` keep-alive
@@ -530,15 +534,27 @@ States 12 and 0 are not re-checked here and their earlier addresses stand unveri
 
 **How a dial session reaches state 8 — resolved from the decoder decompile
 (2026-09-08):** the handshake-phase decode path has a **second digest chance**:
-if the tail fails the constant key it retries with `K ^ 0x2b58de69`, and on
-success sets `session flags |= 9` (bit `0x8` = "session key established" + bit
-`0x1`) — `target_002666c8…c` lines 176–194. Bit `0x1` is one of the two role
-bits the accept pump requires (`(flags & 3) == 3`; bit `0x2` is set by the
-dialer's own handshake send), so **one session-keyed frame from the peer is
-what flips a state-6 dial session into the data phase**. This is also the only
-path that ever sets bit `0x8` — the pre-keyed paths never do. Practical proof:
-the joiner's state-6 keep-alives (below) are pre-keyed, i.e. it had not
-established the key from the handshake reply alone.
+if the tail fails the constant key it retries with `K ^ 0x2b58de69`, and onsuccess sets `session flags |= 9` (bit `0x8` = "session key established" + bit `0x1`)
+— `target_002666c8…c` lines 176–194. This is the only path that ever sets bit
+`0x8` — the pre-keyed paths never do. Practical proof: the joiner's state-6
+keep-alives (below) are pre-keyed, i.e. it had not established the key from the
+handshake reply alone.
+
+> **Corrected — bit `0x1` has a second source, and the reference host relies on
+> it.** The reply's drain sets `flags |= 4` (`0x268f6c`) and `flags |= 2`
+> (`0x268fb0`), rejoins the state dispatch (`0x269078: b 0x268c04`), and there
+> sets `flags |= 1` (`0x26907c`–`0x26908c`: `ori r0, r11, 1` →
+> `sth r0, 0x14(r28)`) before storing state 8 at `0x268c58`. So acceptance alone
+> satisfies `(flags & 3) == 3` in one call, and the claim that *only* a
+> session-keyed frame can move a dial session to state 8 is wrong. Measuring the reference join in
+> `docs/mgo2-game.pcapng` settles it: the dedicated host sends exactly two
+> frames, both pre-keyed (counters 0 and 1), its next frame is the keyed roster
+> run 2.5 s later, and the joiner is already sending session-keyed frames 26 ms
+> after the reply. `P2P_CONNECT_FSM.md` §7.1 has the frame-by-frame table. The
+> fake-host trial recorded below still observed what it observed — the re-dial
+> cadence stopped on the keyed frame — but the capture says the mechanism is the
+> accepted reply. **The handshake-phase keyed frame is therefore optional, not
+> required**; only a live run with it removed can say which the client needs. **[V]**
 
 **Confirmed live 2026-09-09:** the fake host sent exactly one session-keyed empty
 `tag-0x5000` keep-alive (ESTABLISH OUT) after its handshake reply; the joiner's
@@ -574,7 +590,9 @@ a monotonic fourth byte rather than the shape of a heartbeat.
 ### 6.2 The data phase (state ≥ 8) — live captures [V]
 
 First session-keyed frames captured **2026-09-09**, immediately after the fake
-host's ESTABLISH OUT flipped the joiner's dial session to state 8 (§6.1). All
+host's reply was accepted and the dial session reached state 8 (§6.1, and its
+correction: the acceptance flipped it, not the keep-alive that went out beside
+it). All
 decode with the §5.2 chain key `K = peer_base ^ own_base` and verify the §5.3
 tail digest with `K ^ 0x2b58de69` — the keyed path, live. Capture session:
 `K = 0xbbe4ff9c = 0xa9d0a9e4 (joiner base) ^ 0x12345678 (host base)`.
@@ -867,9 +885,10 @@ Body, little-endian:
 [0x06] u8        zero
 [0x07] u8        the same per-player value as 0x05
 [0x08] u32       character id — the byte at 0x0a is its high byte, not a field
-[0x0b..0x42]     per-player block; the character's appearance is at 0x13..0x1e
-                 and the record kind is marked at 0x17 and 0x1d (0x62 on a
-                 player's entry, 0x63 on the room's) — see below
+[0x0b..0x42]     per-player block; two IPv4 handshake endpoint pairs are at
+                 0x13..0x1e (four address octets + little-endian port per pair) —
+                 see UDP_GAME_CAPTURE.md §4; the 140-byte join profile does not
+                 contain them at those offsets
 [0x43] u8        0x03 when a clan name follows, 0x00 when none does
 [0x44] char[16]  character name, NUL-padded — ISO-8859-1, the encoding the TCP
          char[]   character list uses for the same field (`0x3049`'s

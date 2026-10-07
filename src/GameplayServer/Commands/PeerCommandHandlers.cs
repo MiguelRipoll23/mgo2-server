@@ -11,8 +11,9 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Commands;
 
 /// <summary>
-/// Accepts a joiner's handshake, then sends the keep-alive and the handshake
-/// reply behind it, and only then marks the session established.
+/// Accepts a joiner's handshake, sends the keep-alive and the handshake reply
+/// behind it, both pre-keyed, and marks the session established so everything
+/// after them — the roster run first — is signed with the session key.
 /// </summary>
 /// <remarks>
 /// The live host sends the keep-alive <b>first</b>, as outbound counter 0, and
@@ -32,10 +33,28 @@ namespace Mgo2Server.GameplayServer.Commands;
 /// (<c>UDP_P2P_PROTOCOL.md</c> §6) covers the opening exchange as well: the
 /// joiner cannot read a session-keyed frame until it has accepted a handshake
 /// reply, and it accepts that reply only after reading it. Marking the session
-/// established first sent both frames keyed, the joiner discarded them at the
-/// digest gate before parsing a field, and re-dialled every ~1.9 s until it gave
-/// up — 17 handshakes answered with 17 identical failures, each logged here as a
-/// session established.
+/// established before the reply sent both frames keyed, the joiner discarded
+/// them at the digest gate before parsing a field, and re-dialled every ~1.9 s
+/// until it gave up — 17 handshakes answered with 17 identical failures, each
+/// logged here as a session established.
+/// </para>
+/// <para>
+/// <b>Nothing else goes out here, and that is the point.</b> The joiner's
+/// connect FSM (<c>FUN_00aa1140</c>, <c>docs/protocol/P2P_CONNECT_FSM.md</c>)
+/// leaves its dial state when the module session reports the data phase, state
+/// 8, which needs flags bits <c>0x1</c> and <c>0x2</c>. One source of bit
+/// <c>0x1</c> is the decoder's second digest chance — a frame whose tail digest
+/// verifies with <c>K ^ 0x2b58de69</c> — but the accept path sets that bit
+/// itself, at <c>0x269084</c>, and the reference capture says a real client
+/// needs nothing more: measuring <c>docs/mgo2-game.pcapng</c>
+/// (<c>P2P_CONNECT_FSM.md</c> §7.1) the dedicated host writes <b>exactly two
+/// frames</b>, both pre-keyed, and the joiner is already sending session-keyed
+/// frames 26 ms after the reply — 2.5 s before the host's next frame, the keyed
+/// roster run, at counter 2. Adding a session-keyed keep-alive between the
+/// reply and the roster would satisfy the second digest chance if a client ever
+/// did require it, but it would also spend an outbound sequence and push every
+/// later host frame one counter above the capture's. The recorded sequence is
+/// therefore followed exactly: two pre-keyed frames, then the roster run.
 /// </para>
 /// </remarks>
 /// <param name="hostIdentity">Identity this host presents to its peers.</param>
@@ -62,6 +81,7 @@ public sealed class AcceptHandshakeHandler(
         context.Session.PeerIdentifier = handshake.PeerIdentifier;
         context.Session.CounterBase = handshake.CounterBase;
         context.Session.SessionKey = handshake.CounterBase ^ hostIdentity.CounterBase;
+        context.Session.PeerAddressData = FrameBuilderUtility.EndpointData(handshake.Pairs);
 
         // Answers go to the endpoint the peer advertised, not to the one the
         // datagram came from. The handshake carries the peer's own pair for
@@ -100,18 +120,15 @@ public sealed class AcceptHandshakeHandler(
             hostIdentity.AdvertisedPort);
         await context.Send(UdpCommandConstants.Handshake, reply, 0);
 
-        // Only now. The joiner reaches its keyed state when it accepts this
-        // reply, so anything sent before it is refused at the digest gate, and
-        // everything sent after it - the roster run, the post-join burst - is
-        // session-keyed, which is what the capture shows from counter 32770 on.
+        // Only now, and with nothing sent in between. The joiner cannot read a
+        // session-keyed frame until it has accepted this reply, and the
+        // recorded host writes no third frame here: its next datagram is the
+        // keyed roster run, after the joiner's profile arrives. Setting the
+        // flag is what makes that run keyed.
         context.Session.Established = true;
 
-        // Nothing is sent here. The recorded host sends no keyed frame between
-        // its reply and the joiner's profile: its first keyed frame is the
-        // roster that answers that profile, and the joiner is already able to
-        // encode with the session key as soon as it accepts this reply.
         logger.LogInformation(
-            "UDP {LocalPort}: session with peer=0x{PeerIdentifier:x8} established",
+            "UDP {LocalPort}: session with peer=0x{PeerIdentifier:x8} established; opening exchange pre-keyed",
             context.LocalPort,
             handshake.PeerIdentifier);
     }
@@ -143,15 +160,15 @@ public sealed class AcceptHandshakeHandler(
 /// Reads a peer's keyed keep-alive and answers nothing.
 /// </summary>
 /// <remarks>
-/// The recorded host sends no session-keyed keep-alive at all: the only
-/// <c>0x5000</c> it writes is the pre-keyed one that leads its handshake reply
-/// (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4), and §3's keyed inventory lists
-/// the type in the joiner-to-server direction only. A joiner's profile frame
-/// carries one beside its profile, and the live host answers the profile with
-/// the roster and not the keep-alive. Mirroring it back spends an outbound
-/// sequence the capture never spends and shifts every later counter away from
-/// it, which is the frame the joiner is not looking for after the handshake.
-/// So it is logged and dropped rather than answered.
+/// This server writes no keyed keep-alive at all. The capture's opening
+/// <c>0x5000</c> is the pre-keyed one that leads the handshake reply
+/// (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4), and §3's keyed inventory
+/// lists the type in the joiner-to-server direction only, so a keyed keep-alive
+/// is something the joiner sends and this host does not. A joiner's profile frame carries one beside its profile, and
+/// the live host answers the profile with the roster and not the keep-alive.
+/// Mirroring an inbound one back spends an outbound sequence the capture never
+/// spends at that point and shifts every later counter away from it. So it is
+/// logged and dropped rather than answered.
 /// </remarks>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PeerKeepAliveHandler(ILogger<PeerKeepAliveHandler> logger) : IPeerCommandHandler
@@ -255,7 +272,20 @@ public sealed class PlayerProfileHandler(
             return;
         }
 
-        var member = roster.Register(context.Remote, profile, context.Session.PeerIdentifier);
+        var member = roster.Register(
+            context.Remote,
+            profile,
+            context.Session.PeerIdentifier,
+            context.Session.PeerAddressData);
+
+        if (context.Session.PeerAddressData.Length != PlayerProfileRecordUtility.AddressDataLength)
+        {
+            logger.LogWarning(
+                "UDP {LocalPort}: profile from {RemoteAddress} has no valid pair of handshake endpoints; " +
+                "its roster address fields cannot be echoed faithfully",
+                context.LocalPort,
+                context.Remote);
+        }
 
         logger.LogInformation(
             "UDP {LocalPort}: profile from {RemoteAddress}: character {CharacterId} name {Name}, roster slot {RosterIndex}",

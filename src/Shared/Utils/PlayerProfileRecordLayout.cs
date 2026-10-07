@@ -41,7 +41,7 @@ namespace Mgo2Server.Shared.Utils;
 ///              with it; **[U]**, named by nothing in the capture
 /// [0x11] u8   zero
 /// [0x12] u8   BlockConstant, 0x02 in every captured record
-/// [0x13..0x1e]    the character's appearance block, AppearanceLength bytes
+/// [0x13..0x1e]    two IPv4 endpoint pairs from the character's handshake, 12 bytes
 /// [0x1f..0x42]    zero in every captured record
 /// [0x43] u8        0x03 when a clan name follows, 0x00 when none does
 /// [0x44] char[]  NUL-terminated character name
@@ -68,16 +68,13 @@ namespace Mgo2Server.Shared.Utils;
 /// id, is **[U]**.</para>
 /// </para>
 /// <para>
-/// <b>The block at <c>0x13</c>–<c>0x1e</c> is the character's appearance.</b>
-/// It is twelve bytes, and it is byte-identical across every entry of the same
-/// character, including the entries that a rejoin wrote at a different roster
-/// index with a different handle — so it is the character and not the
-/// occurrence. Inside it, <c>0x13</c>–<c>0x16</c> are four bytes unique to the
-/// character, the byte pair at <c>0x17</c>/<c>0x18</c> and the one at
-/// <c>0x1d</c>/<c>0x1e</c> are the same in both halves of every record and
-/// differ only between a player entry and the room record, and the four bytes
-/// between them are per character. Nothing here decoded further, so the block
-/// is carried verbatim rather than interpreted.
+/// <b>The twelve bytes at <c>0x13</c>–<c>0x1e</c> are two IPv4 endpoint
+/// pairs.</b> Each six-byte pair is four address octets followed by a
+/// little-endian port. In the live capture both pairs match the corresponding
+/// character's handshake, including public and private endpoints. They are not
+/// character appearance bytes. Join-request profiles do not carry the pairs at
+/// these offsets; the server must retain them from the handshake and write them
+/// into the roster response.
 /// </para>
 /// <para>
 /// Two offsets are easy to misread. The host sits at roster index

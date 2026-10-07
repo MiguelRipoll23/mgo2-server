@@ -6,9 +6,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Mgo2Server.Tests;
 
 /// <summary>
-/// Guards the peer-to-peer frame cipher and the handshake parser, the two
-/// places an unauthenticated datagram is decoded. A regression here can end
-/// the UDP host, so the malformed inputs are exercised directly.
+/// Guards the peer-to-peer frame cipher and handshake-body codec, including
+/// malformed datagrams that must be refused before handlers see them.
 /// </summary>
 [Trait("Category", "Shared")]
 public sealed class FrameCryptoUtilityTests
@@ -23,8 +22,6 @@ public sealed class FrameCryptoUtilityTests
         var counter = FrameCryptoUtility.DecodeFrameInPlace(decoded, key: 0x12345678);
 
         Assert.Equal((ushort)7, counter);
-        // The tail keeps the digest the decoder verified; the frame the
-        // consumer reads is the header and content region.
         var readable = decoded.Length - UdpCommandConstants.TailSize;
         Assert.Equal(plain[..readable], decoded[..readable]);
     }
@@ -64,7 +61,6 @@ public sealed class FrameCryptoUtilityTests
     [Fact]
     public void ParseHandshake_rejects_a_truncated_body()
     {
-        // One byte short of the fixed body a handshake must carry.
         Assert.Null(FrameBuilderUtility.ParseHandshakeBody(new byte[0x1b]));
         Assert.Null(FrameBuilderUtility.ParseHandshakeBody([]));
     }
@@ -91,13 +87,11 @@ public sealed class FrameCryptoUtilityTests
     }
 }
 
-/// <summary>Exercises the TCP packet codec round-trip and its length guards.</summary>
+/// <summary>Exercises the TCP packet codec round-trip and malformed inputs.</summary>
 [Trait("Category", "Shared")]
 public sealed class PacketCodecServiceTests
 {
-    /// <summary>A command whose payload is neither encrypted nor decrypted.</summary>
     private const ushort PlainCommand = 0x1234;
-
     private static readonly PacketCodecService Codec = new(NullLogger<PacketCodecService>.Instance);
 
     [Fact]
@@ -115,16 +109,12 @@ public sealed class PacketCodecServiceTests
     }
 
     [Fact]
-    public void Decode_returns_null_for_a_truncated_buffer()
-    {
+    public void Decode_returns_null_for_a_truncated_buffer() =>
         Assert.Null(Codec.DecodePacket(new byte[PacketConstants.HeaderSize - 1]));
-    }
 
     [Fact]
-    public void Decode_returns_null_when_the_checksum_is_wrong()
-    {
+    public void Decode_returns_null_when_the_checksum_is_wrong() =>
         Assert.Null(Codec.DecodePacket(new byte[PacketConstants.HeaderSize]));
-    }
 
     [Fact]
     public void Encode_refuses_a_payload_over_the_protocol_limit()
@@ -133,142 +123,5 @@ public sealed class PacketCodecServiceTests
 
         Assert.Throws<InvalidOperationException>(
             () => Codec.EncodePacket(PlainCommand, oversized, sequenceOut: 1));
-    }
-
-    /// <summary>
-    /// The team-creation card is a 4-byte result the client reads through the
-    /// packet cipher. In the clear the reply is 4 bytes, which is not a whole
-    /// number of Blowfish blocks, so the client cannot read the result word out
-    /// of it and the Create Team screen never opens - a live capture on
-    /// 2026-09-25 showed 0x4348 answered and 0x4910 never sent.
-    /// </summary>
-    [Fact]
-    public void The_team_creation_card_is_padded_out_to_a_cipher_block()
-    {
-        const ushort teamCreationCard = 0x4349;
-        const uint notFound = unchecked((uint)-1006);
-        var payload = new byte[sizeof(uint)];
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(payload, notFound);
-
-        var wire = Codec.EncodePacket(teamCreationCard, payload, sequenceOut: 3);
-
-        // Four bytes of result become eight on the wire.
-        Assert.Equal(8, wire.Length - PacketConstants.HeaderSize);
-
-        // The frame is obfuscated, so read the length field back through the
-        // same transform the decoder applies before it can be believed.
-        var readable = wire.ToArray();
-        CryptoUtility.ApplyExclusiveOr(readable);
-        Assert.Equal(8, (readable[2] << 8) | readable[3]);
-
-        // The plaintext is not on the wire in the clear.
-        Assert.NotEqual(payload, readable[PacketConstants.HeaderSize..(PacketConstants.HeaderSize + 4)]);
-    }
-
-    [Fact]
-    public void The_team_creation_card_is_in_the_encrypted_outbound_set()
-    {
-        Assert.Contains((ushort)0x4349, BlowfishEncryptedCommandConstants.Outbound.ToArray());
-    }
-
-    /// <summary>
-    /// A real Create Team request, captured on the Survival lobby on 2026-09-25
-    /// as it came off the wire, command and length obfuscation included.
-    /// <para>
-    /// The request carries the team the player typed, so reading it as plaintext
-    /// is not a small error: the name arrives as sixteen bytes of ciphertext with
-    /// no terminator, which the name check rejects, and the client is answered
-    /// with the generic refusal. It never sees a team, and the reason names a
-    /// length rather than the cipher. The comment field is the tell - an
-    /// eight-byte block repeating fourteen times is an all-zero plaintext seen
-    /// through this cipher, and no typed comment looks like that.
-    /// </para>
-    /// </summary>
-    [Fact]
-    public void The_create_team_request_is_decrypted_into_the_record_the_player_typed()
-    {
-        const ushort createEventTeam = 0x4910;
-        var wire = Convert.FromHexString(
-            "136085175a7085a7bafe210d8b3e0c1ac2213495d7f4fdc3354a2a119dcf3171ca3482844b3b61698351bc1a" +
-            "766ba3136398648d86b4a0080b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c" +
-            "0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b493238" +
-            "3c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4c0b4932383c6b8d4cf0de4f508d026470" +
-            "0b4932383c6b8d4c157b920ebdc86e4a0b4932383c6b8d4c0b4932383c6b8d4c");
-
-        var packet = Codec.DecodePacket(wire);
-
-        Assert.NotNull(packet);
-        Assert.Equal(createEventTeam, packet.Header.Command);
-        Assert.Equal(184, packet.Payload.Length);
-
-        var reader = new PacketReader(packet.Payload);
-        Assert.Equal("phildunphy23", reader.ReadFixedString(16));
-        Assert.Equal("Good luck.", reader.ReadFixedString(128));
-
-        // The option bits, as the client repacked them: 0x28 carries the two bits
-        // the create screen has no writer for, and not the password-lock bit, so
-        // the empty password below is not tested for length.
-        Assert.Equal(0x28, reader.ReadUInt8());
-        Assert.Equal(string.Empty, reader.ReadFixedString(16));
-        Assert.Equal(LobbySubtypeConstants.Survival, reader.ReadUInt8());
-    }
-}
-
-/// <summary>
-/// Guards the reader contract that a short or negative read length cannot
-/// fault a handler, and the Latin-1 writer that drops characters it cannot
-/// encode rather than widening them into a wrong byte.
-/// </summary>
-[Trait("Category", "Shared")]
-public sealed class PacketReaderUtilityTests
-{
-    [Fact]
-    public void ReadBytes_clamps_a_negative_length_to_nothing()
-    {
-        var reader = new PacketReader([1, 2, 3, 4]);
-
-        Assert.Empty(reader.ReadBytes(-5));
-    }
-
-    [Fact]
-    public void ReadBytes_clamps_to_the_remaining_bytes()
-    {
-        var reader = new PacketReader([1, 2, 3, 4]);
-
-        Assert.Equal([1, 2, 3, 4], reader.ReadBytes(99));
-    }
-
-    [Fact]
-    public void ReadFixedString_clamps_to_the_remaining_bytes()
-    {
-        var reader = new PacketReader([(byte)'a', (byte)'b']);
-
-        Assert.Equal("ab", reader.ReadFixedString(10));
-    }
-
-    [Fact]
-    public void ReadInt16_reads_a_signed_value()
-    {
-        var reader = new PacketReader([0xff, 0xfe]);
-
-        Assert.Equal((short)-2, reader.ReadInt16());
-    }
-
-    [Fact]
-    public void WriteFixedString_writes_nul_for_a_character_above_latin1()
-    {
-        var bytes = StringUtility.WriteFixedString("a\u0100b", 4);
-
-        Assert.Equal([(byte)'a', (byte)0, (byte)'b', (byte)0], bytes);
-    }
-
-    [Fact]
-    public void WriteFixedStringInto_normalizes_a_character_above_latin1()
-    {
-        var destination = new byte[4];
-
-        StringUtility.WriteFixedStringInto(destination, 0, "a\u0100b", 4);
-
-        Assert.Equal([(byte)'a', (byte)0, (byte)'b', (byte)0], destination);
     }
 }

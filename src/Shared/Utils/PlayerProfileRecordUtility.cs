@@ -126,7 +126,7 @@ public static class PlayerProfileRecordUtility
     public const int UnresolvedByteOffset = 0x10;
 
     /// <summary>
-    /// Marker opening the second and third halves of the appearance block. It
+    /// Marker opening the two six-byte halves of the endpoint-data field. It
     /// is 0x62 on every player entry and 0x63 on the room record, so it says
     /// which kind of record this is and nothing more.
     /// </summary>
@@ -136,13 +136,13 @@ public static class PlayerProfileRecordUtility
     private const byte RoomBlockMarker = 0x63;
 
     /// <summary>
-    /// Byte closing each half of the appearance block. It is 0x16 in all six
+    /// Byte closing each half of the endpoint-data field. It is 0x16 in all six
     /// captured records whatever the marker before it is.
     /// </summary>
     private const byte BlockTrailer = 0x16;
 
     /// <summary>
-    /// Offsets of the three constants inside the appearance block: the marker
+    /// Offsets of the three constants inside the endpoint-data field: the marker
     /// and the trailer of each of its two halves.
     /// </summary>
     private static ReadOnlySpan<int> BlockMarkerOffsets => [0x17, 0x1d];
@@ -150,11 +150,11 @@ public static class PlayerProfileRecordUtility
     /// <summary>Offsets of the two block trailers.</summary>
     private static ReadOnlySpan<int> BlockTrailerOffsets => [0x18, 0x1e];
 
-    /// <summary>First offset of the character's appearance block.</summary>
-    public const int AppearanceOffset = 0x13;
+    /// <summary>First offset of the two endpoint pairs announced in the handshake.</summary>
+    public const int AddressDataOffset = 0x13;
 
-    /// <summary>Length of the character's appearance block.</summary>
-    public const int AppearanceLength = 0x1e - AppearanceOffset + 1;
+    /// <summary>Length of the two endpoint pairs: two six-byte IPv4 endpoints.</summary>
+    public const int AddressDataLength = 0x1e - AddressDataOffset + 1;
 
     /// <summary>Offset of the character id.</summary>
     public const int CharacterIdOffset = 0x08;
@@ -197,10 +197,9 @@ public static class PlayerProfileRecordUtility
     /// <param name="characterId">Character id written at offset 8.</param>
         /// <param name="name">Character name.</param>
     /// <param name="clanName">Clan name, which may be empty.</param>
-    /// <param name="appearance">
-    /// The character's appearance block as it was read off a profile. Null or
-    /// empty writes the block's measured constants and zeros, which is what a
-    /// record built without a character to copy them from looks like.
+    /// <param name="addressData">
+    /// The two IPv4 endpoint pairs, copied from the peer handshake. Null or empty
+    /// leaves the measured structural bytes in place.
     /// </param>
     /// <param name="unresolvedByte">
     /// Value written at offset <c>0x10</c>. The captured roster reads
@@ -214,7 +213,7 @@ public static class PlayerProfileRecordUtility
         int characterId,
         string name,
         string clanName,
-        byte[]? appearance = null,
+        byte[]? addressData = null,
         byte unresolvedByte = PlayerRecordUnresolvedByte)
     {
         var nameBytes = Truncate(Encoding.ASCII.GetBytes(name ?? string.Empty), MaximumNameLength);
@@ -248,10 +247,9 @@ public static class PlayerProfileRecordUtility
             body[offset] = BlockTrailer;
         }
 
-        // The caller's block is written last so that it wins over the constants:
-        // a block read off a record is the record's own, and the two only differ
-        // where the record it came from was not a player entry.
-        WriteAppearance(body, appearance);
+        // The caller's endpoint bytes replace the structural defaults with the
+        // exact pairs announced by the peer.
+        WriteAddressData(body, addressData);
 
         body[NameMarkerOffset] = clanBytes.Length > 0 ? ClanNameMarker : (byte)0x00;
         nameBytes.CopyTo(body, NameOffset);
@@ -274,18 +272,17 @@ public static class PlayerProfileRecordUtility
     public static byte[] BuildRosterClose() => [.. ClosingRecordBytes];
 
     /// <summary>
-    /// Copies an appearance block into a record body, leaving the bytes it does
-    /// not cover at zero. A block longer than the field is truncated and a
-    /// shorter one is padded, so the record's layout never moves.
+    /// Copies endpoint data into a record body. The roster field is fixed at
+    /// twelve bytes, so a longer input is truncated and a shorter one is padded.
     /// </summary>
-    private static void WriteAppearance(Span<byte> body, byte[]? appearance)
+    private static void WriteAddressData(Span<byte> body, byte[]? addressData)
     {
-        if (appearance is null || appearance.Length == 0)
+        if (addressData is null || addressData.Length == 0)
         {
             return;
         }
 
-        appearance.AsSpan(0, Math.Min(appearance.Length, AppearanceLength)).CopyTo(body[AppearanceOffset..]);
+        addressData.AsSpan(0, Math.Min(addressData.Length, AddressDataLength)).CopyTo(body[AddressDataOffset..]);
     }
 
     private static byte[] Truncate(byte[] value, int maximum)
@@ -322,10 +319,9 @@ public static class PlayerProfileRecordUtility
 /// </param>
 /// <param name="HasClanName">Whether a clan name follows the character name.</param>
 /// <param name="CharacterId">The character id at offset 8, little-endian.</param>
-/// <param name="Appearance">
-/// The character's appearance block, twelve bytes. It is the same for a
-/// character on every entry it appears in, which is what separates it from the
-/// per-occurrence values around it.
+/// <param name="AddressData">
+/// The public and private IPv4 endpoint pairs, copied from the character's
+/// handshake and carried as twelve bytes in the roster record.
 /// </param>
 /// <param name="Name">Character name.</param>
 /// <param name="ClanName">Clan name.</param>
@@ -337,6 +333,6 @@ public sealed record PlayerProfileRecord(
     byte PlayerValue,
     bool HasClanName,
     int CharacterId,
-    byte[] Appearance,
+    byte[] AddressData,
     string Name,
     string ClanName);

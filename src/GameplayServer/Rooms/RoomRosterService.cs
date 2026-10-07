@@ -29,12 +29,11 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// keeps the slot it was first given instead of taking a new one each retry.
 /// </para>
 /// <para>
-/// Each entry repeats what the player announced about itself: its character id
-/// at offset 8 and its appearance block at <c>0x13</c>–<c>0x1e</c>. Both are
-/// per character rather than per slot — the capture shows the same character
-/// carrying the same two on entries written at different roster indices — so a
-/// peer is answered with the appearance the player arrived with rather than one
-/// this host made up.
+/// Each entry repeats the character id at offset 8 and the two public/private
+/// IPv4 endpoint pairs at <c>0x13</c>–<c>0x1e</c>. The capture shows those twelve
+/// bytes equal the corresponding pairs in that character's handshake; they are
+/// endpoint data, not appearance. The handshake bytes are retained so the
+/// roster echoes the addresses the joining client actually announced.
 /// </para>
 /// </remarks>
 /// <param name="hostIdentity">Identity this host presents to its peers.</param>
@@ -75,8 +74,16 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
     /// Identifier the peer announced in its handshake, which is what the
     /// character id of its roster entry is written from.
     /// </param>
+    /// <param name="peerAddressData">
+    /// Public and private IPv4 endpoint pairs from the peer's handshake, packed
+    /// for the roster record. Invalid or incomplete data is retained as empty.
+    /// </param>
     /// <returns>The roster entry the peer is now filed under.</returns>
-    public RosterMember Register(IPEndPoint remote, PlayerProfileRecord? profile, uint peerIdentifier)
+    public RosterMember Register(
+        IPEndPoint remote,
+        PlayerProfileRecord? profile,
+        uint peerIdentifier,
+        byte[] peerAddressData)
     {
         var key = remote.ToString();
 
@@ -92,12 +99,12 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
                 existing.Name = profile is { Name.Length: > 0 } ? profile.Name : existing.Name;
                 existing.ClanName = profile?.ClanName ?? existing.ClanName;
 
-                // The appearance block belongs to the character rather than to
-                // the slot, so a re-sent profile restates it and nothing else
-                // moves; it is only filled in the first time one arrives.
-                if (profile is { Appearance.Length: > 0 })
+                // The character's endpoint pairs arrive in its handshake, not
+                // in the profile body. Keep that announced data across profile
+                // retries; a malformed endpoint set must not overwrite it.
+                if (peerAddressData.Length == PlayerProfileRecordUtility.AddressDataLength)
                 {
-                    existing.Appearance = profile.Appearance;
+                    existing.AddressData = peerAddressData.ToArray();
                 }
 
                 return existing;
@@ -108,7 +115,7 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
                 CharacterId = (int)peerIdentifier,
                 Name = profile?.Name ?? string.Empty,
                 ClanName = profile?.ClanName ?? string.Empty,
-                Appearance = profile?.Appearance ?? [],
+                AddressData = peerAddressData.ToArray(),
             };
             members.Add(member);
             return member;
@@ -164,7 +171,7 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
                 (int)hostIdentity.PeerIdentifier,
                 hostIdentity.CharacterName,
                 hostIdentity.ClanName,
-                appearance: null,
+                addressData: hostIdentity.AddressData,
                 PlayerProfileRecordUtility.RoomRecordUnresolvedByte),
         };
         records.AddRange(ordered.Select(member => member.BuildRecord()));
@@ -318,10 +325,10 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
     public string ClanName { get; set; } = string.Empty;
 
     /// <summary>
-    /// The player's appearance block, as it was announced. Empty when the
-    /// profile carried none, which leaves the record's constants in place.
+    /// The peer's public/private endpoint pairs, copied from its handshake and
+    /// written into the roster's twelve-byte endpoint field.
     /// </summary>
-    public byte[] Appearance { get; set; } = [];
+    public byte[] AddressData { get; set; } = [];
 
     /// <summary>Builds the player-profile record that puts this player on a peer's roster.</summary>
     /// <returns>The record body.</returns>
@@ -332,6 +339,6 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
             CharacterId,
             Name,
             ClanName,
-            Appearance,
+            AddressData,
             PlayerProfileRecordUtility.PlayerRecordUnresolvedByte);
 }

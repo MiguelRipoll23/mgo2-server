@@ -85,6 +85,50 @@ public static class FrameBuilderUtility
         UdpMessage.Create(UdpCommandConstants.KeepAlive, ReadOnlySpan<byte>.Empty);
 
     /// <summary>
+    /// Packs the two IPv4 endpoint pairs as the twelve bytes carried at roster
+    /// body offsets <c>0x13</c>–<c>0x1e</c>. An incomplete or invalid pair set
+    /// produces no block rather than a fabricated endpoint.
+    /// </summary>
+    /// <param name="pairs">Public and private endpoint pairs from a handshake.</param>
+    /// <returns>Twelve bytes when both pairs are valid; otherwise an empty array.</returns>
+    public static byte[] EndpointData(IReadOnlyList<HandshakeEndpointPair> pairs)
+    {
+        if (pairs.Count < HandshakePairCount)
+        {
+            return [];
+        }
+
+        var first = EndpointPairBytes(pairs[0].Address, pairs[0].Port);
+        var second = EndpointPairBytes(pairs[1].Address, pairs[1].Port);
+        return first.Length == 6 && second.Length == 6
+            ? [.. first, .. second]
+            : [];
+    }
+
+    /// <summary>
+    /// Builds the six bytes of an IPv4 endpoint pair: four address bytes in
+    /// network order followed by a little-endian port.
+    /// </summary>
+    /// <param name="address">IPv4 address from a handshake endpoint pair.</param>
+    /// <param name="port">Port from a handshake endpoint pair.</param>
+    /// <returns>Six endpoint bytes, or an empty array for an invalid endpoint.</returns>
+    public static byte[] EndpointPairBytes(string address, int port)
+    {
+        var addressBytes = IpAddressToBytes(address);
+        if (addressBytes is null || port is < 0 or > ushort.MaxValue)
+        {
+            return [];
+        }
+
+        return
+        [
+            .. addressBytes,
+            (byte)(port & 0xff),
+            (byte)(port >> 8),
+        ];
+    }
+
+    /// <summary>
     /// Builds the handshake message body. The peer identifier is the host's
     /// character identifier, because the joining client's drain gate checks the
     /// reply's peer identifier against the peer descriptor stored in its dial
