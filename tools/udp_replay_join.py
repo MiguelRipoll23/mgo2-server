@@ -61,7 +61,14 @@ def encode(plain: bytes, counter: int, key: int) -> bytes:
     """Scramble a plaintext frame (zeroed tail) into wire bytes."""
     frame = bytearray(plain)
     chain(frame, counter, key)
-    digest_key = PRE_KEY if key == PRE_KEY else (key ^ BASE_DERIVE) & 0xFFFFFFFF
+
+    # A pre-keyed frame digests with the bare constant and not with the
+    # pre-handshake chain key: only a session-keyed frame gets the key
+    # exclusive-ORed in (udp_frame.digest_key_for, and
+    # FrameCryptoUtility.ComputeTailDigest on the sender side). Keying the
+    # digest on PRE_KEY here produced frames no decoder accepts, which is why
+    # the replay never got past the host's first gate.
+    digest_key = BASE_DERIVE if key == PRE_KEY else (key ^ BASE_DERIVE) & 0xFFFFFFFF
 
     import hashlib
 
