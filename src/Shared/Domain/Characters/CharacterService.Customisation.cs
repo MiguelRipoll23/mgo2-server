@@ -135,6 +135,36 @@ public sealed partial class CharacterService
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>Ensures the character's current host settings mark it as dedicated.</summary>
+    /// <param name="characterIdentifier">Identifier of the character.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task EnsureDedicatedHostSettingsAsync(
+        int characterIdentifier,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await CreateContextAsync(cancellationToken);
+        var settings = await context.CharacterHostSettings
+            .FirstOrDefaultAsync(
+                row => row.CharacterIdentifier == characterIdentifier && row.Type == HostSettingsType.Value,
+                cancellationToken);
+
+        if (settings is null)
+        {
+            context.CharacterHostSettings.Add(new CharacterHostSettings
+            {
+                CharacterIdentifier = characterIdentifier,
+                Type = HostSettingsType.Value,
+                Dedicated = true,
+            });
+        }
+        else
+        {
+            settings.Dedicated = true;
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
     /// <summary>
     /// Finds the settings a set of characters saved, one row per character.
     /// <para>

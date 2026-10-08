@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.Rooms;
+using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
@@ -25,6 +26,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
 {
     private readonly IServiceProvider serviceProvider;
     private readonly GameService gameService;
+    private readonly CharacterService characterService;
     private readonly AccountService accountService;
     private readonly MatchService matchService;
     private readonly RoomRosterService roster;
@@ -64,6 +66,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
             $"udp:{port}",
             DropReapedPeer);
         gameService = serviceProvider.GetRequiredService<GameService>();
+        characterService = serviceProvider.GetRequiredService<CharacterService>();
         accountService = serviceProvider.GetRequiredService<AccountService>();
         matchService = serviceProvider.GetRequiredService<MatchService>();
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
@@ -86,8 +89,13 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         // The account owns the character the host plays as, and the registered
         // endpoint references it, so it has to exist before anything is written.
         await StartupUtils.RetryAsync(
-            "publish the host account",
-            token => accountService.EnsureAccountAsync((int)hostIdentity.PeerIdentifier, token),
+            "publish the host account and character settings",
+            async token =>
+            {
+                var characterIdentifier = await accountService.GetOrCreateCharacterIdentifierAsync(token);
+                hostIdentity.SetCharacterIdentifier(characterIdentifier);
+                await characterService.EnsureDedicatedHostSettingsAsync(characterIdentifier, token);
+            },
             logger,
             cancellationToken);
         await StartupUtils.RetryAsync("register the host endpoint", RegisterConnectionAsync, logger, cancellationToken);

@@ -678,14 +678,15 @@ it with a literal `0`. The client therefore files the **host's character id**
 (taken from the TCP player list) as the dial session's `ctx+0x7c`, and gate 1
 compares the UDP handshake reply's `peer_id` against exactly that. `[V]`
 
-The server already honours this end to end: `GameLobbyServer` builds the
-`0x4313` player list host-first (`GameService.GetPlayersAsync`, and the comment
-at `RoomBrowserHandlers` records why), `AccountService` seeds the gameplay
-server's character with the explicit id `UdpHostIdentityConstants.HostPeerIdentifier`,
-and `HostIdentityService.PeerIdentifier` feeds that same constant into the
-handshake reply. So the roster id and the reply's `peer_id` are one value, and
-the gate is consistent by construction. The earlier `[U]` is resolved: this is
-not a gap the server has to close. `[V]`
+The server honours this end to end: `GameLobbyServer` builds the `0x4313`
+player list host-first (`GameService.GetPlayersAsync`, and the comment at
+`RoomBrowserHandlers` records why). The gameplay server gets or creates its
+configured character by name (default `server`) at startup, then uses that
+database id both in the host-first player list and in
+`HostIdentityService.PeerIdentifier`, which feeds the handshake reply. The
+roster id and the reply's `peer_id` therefore stay the same without assuming a
+fixed database id. The earlier `[U]` is resolved: this is not a gap the server
+has to close. `[V]`
 
 ---
 
@@ -733,8 +734,8 @@ Key addresses, all re-checked against the disassembly for this document:
    value the handshake reply is gated on).~~ **Resolved** — §7.1: the context
    constructor `0xaa1028` stores its `arg2` there, and the join path passes the
    first peer-table slot's id, which the player list makes the host. The value
-   is therefore the host character id the join advertised, and the server's
-   `HostPeerIdentifier` already matches it. **[V]**
+   is therefore the host character id the join advertised, and the server
+   resolves that id from its configured gameplay character. **[V]**
 2. **Who sets the module instance's first word to `2`**, the precondition of
    `0x261fe0`. The client's own bring-up, not the server. **[U]**
 

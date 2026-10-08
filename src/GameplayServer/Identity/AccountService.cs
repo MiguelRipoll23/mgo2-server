@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Mgo2Server.Shared.Domain;
+using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -8,13 +9,8 @@ using Microsoft.Extensions.Options;
 namespace Mgo2Server.GameplayServer.Identity;
 
 /// <summary>
-/// Creates the account and character the gameplay server presents to the clients
-/// that join its matches. The row carries an explicit identifier, because the
-/// peer identifier announced on the peer-to-peer channel is the character
-/// identifier and must not depend on how many characters exist already.
-/// The credentials come from configuration; when no password is configured a
-/// random one is generated per process, so the account cannot be logged into
-/// with a known default.
+/// Gets or creates the account and character the gameplay server presents to
+/// clients that join its matches.
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 /// <param name="cryptographyService">Service that hashes the account password.</param>
@@ -33,16 +29,24 @@ public sealed class AccountService(
         : options.Value.GameplayServerAccountPassword;
     private readonly string characterName = options.Value.GameplayServerCharacterName;
 
-    /// <summary>Creates the account and its character when they are missing.</summary>
-    /// <param name="characterIdentifier">Identifier the character must carry.</param>
+    /// <summary>Gets or creates the gameplay server account and character by name.</summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    /// <exception cref="InvalidOperationException">Thrown when another character already holds the identifier.</exception>
     /// <returns>The identifier of the gameplay server character.</returns>
-    public async Task<int> EnsureAccountAsync(
-        int characterIdentifier,
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the configured character is inactive or belongs to another account.
+    /// </exception>
+    public async Task<int> GetOrCreateCharacterIdentifierAsync(
         CancellationToken cancellationToken = default)
     {
+        if (!DedicatedHostNameUtils.IsDedicatedHostName(characterName))
+        {
+            throw new InvalidOperationException(
+                $"The gameplay server character name '{characterName}' must start with " +
+                $"'{DedicatedHostNameUtils.DedicatedHostNamePrefix}'.");
+        }
+
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
         // MD5 is unsalted because the client computes and sends the digest
         // itself; the server only reproduces what the protocol carries, so this
@@ -51,7 +55,7 @@ public sealed class AccountService(
             $"""
              INSERT INTO accounts (display_name, password)
              VALUES ({accountName}, {cryptographyService.ComputeMd5Hex(accountPassword)})
-             ON CONFLICT (display_name) DO UPDATE SET password = EXCLUDED.password
+             ON CONFLICT (display_name) DO NOTHING
              """,
             cancellationToken);
 
@@ -62,32 +66,30 @@ public sealed class AccountService(
 
         await context.Database.ExecuteSqlAsync(
             $"""
-             INSERT INTO characters (id, account_id, name, comment, created_at)
-             VALUES ({characterIdentifier}, {accountIdentifier}, {characterName}, {CharacterComment}, {DateTimeOffset.UtcNow})
-             ON CONFLICT DO NOTHING
+             INSERT INTO characters (account_id, name, comment, created_at)
+             VALUES ({accountIdentifier}, {characterName}, {CharacterComment}, {DateTimeOffset.UtcNow})
+             ON CONFLICT (name) DO NOTHING
              """,
             cancellationToken);
 
-        // The character was inserted with an explicit identifier, so the
-        // sequence has to move past it, or the next account would collide. The
-        // coalesce keeps this from failing on an empty table.
-        await context.Database.ExecuteSqlRawAsync(
-            "SELECT setval(pg_get_serial_sequence('characters', 'id'), (SELECT coalesce(MAX(id), 1) FROM characters))",
-            cancellationToken);
-
-        var actualIdentifier = await context.Characters
-            .Where(character => character.Name == characterName)
-            .Select(character => character.Identifier)
+        var character = await context.Characters
+            .Where(candidate => candidate.Name == characterName)
+            .Select(candidate => new
+            {
+                candidate.Identifier,
+                candidate.AccountIdentifier,
+                candidate.Active,
+            })
             .FirstAsync(cancellationToken);
 
-        if (actualIdentifier != characterIdentifier)
+        if (!character.Active || character.AccountIdentifier != accountIdentifier)
         {
             throw new InvalidOperationException(
-                $"The character '{characterName}' carries identifier {actualIdentifier} instead of " +
-                $"{characterIdentifier}. The Gameplay server announces its character identifier as its " +
-                "peer identifier, so the account must own that identifier.");
+                $"The configured gameplay server character '{characterName}' must be active and belong " +
+                $"to account '{accountName}'.");
         }
 
-        return actualIdentifier;
+        await transaction.CommitAsync(cancellationToken);
+        return character.Identifier;
     }
 }

@@ -12,10 +12,8 @@ namespace Mgo2Server.Shared.Domain.Games;
 /// <para>
 /// It is a separate rule from the host-role names in
 /// <c>EventHostEligibilityUtils</c> even though both are read off a room name.
-/// Those say which event a room may host and are not refused; this one says who
-/// may open the room at all, so it is answered in the opposite direction by its
-/// two callers — the create-room path refuses a name that carries it, and the
-/// room-details path reads it as the dedicated flag the client is shown.
+/// Those say which event a room may host and are not refused; this one reserves
+/// the gameplay server's room-name prefix so a player cannot claim it.
 /// </para>
 /// </summary>
 public static class DedicatedHostNameUtils

@@ -274,7 +274,7 @@ public sealed class GetGameDetailsHandler(
         var averageExperience = roster.Count > 0 ? (int)Math.Round((double)totalExperience / roster.Count) : 0;
         var viewerIsHost = session.CharacterIdentifier == game.HostIdentifier;
         var rotation = ParseRotation(game.Games);
-        var isDedicated = await IsDedicatedAsync(game.Name, game.HostIdentifier, cancellationToken);
+        var isDedicated = await IsDedicatedAsync(game.HostIdentifier, cancellationToken);
 
         var writer = new PacketWriter();
         writer.WriteUInt32(ErrorCodeConstants.ResultNone);
@@ -355,28 +355,16 @@ public sealed class GetGameDetailsHandler(
     /// Whether the room is hosted as a dedicated host, which is the byte the
     /// client draws as the Create Game toggle's own value.
     /// <para>
-    /// Two things say so and either is enough. A room whose name carries the
-    /// dedicated-host prefix is one the gameplay server opened, and it is
-    /// dedicated by that name whatever its settings row holds. Otherwise the
-    /// host's own live settings row is asked: the column is the host's claim
-    /// about how it is hosting, so a host that turned the toggle on after
-    /// opening the room is reported as dedicated rather than as it was when the
-    /// room was created.
+    /// The host's current settings row is the source of truth. The gameplay
+    /// server ensures its row exists and carries the dedicated flag at startup.
     /// </para>
     /// </summary>
-    /// <param name="roomName">Name of the room being described.</param>
     /// <param name="hostIdentifier">Character hosting the room.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     private async Task<bool> IsDedicatedAsync(
-        string roomName,
         int hostIdentifier,
         CancellationToken cancellationToken)
     {
-        if (DedicatedHostNameUtils.IsDedicatedHostName(roomName))
-        {
-            return true;
-        }
-
         var settings = await characterService.GetHostSettingsAsync(hostIdentifier, cancellationToken);
         return settings.FirstOrDefault(row => row.Type == HostSettingsType.Value)?.Dedicated is true;
     }

@@ -14,8 +14,25 @@ namespace Mgo2Server.GameplayServer.Identity;
 /// <param name="options">Options of this instance.</param>
 public sealed class HostIdentityService(IOptions<ServerOptions> options)
 {
+    private uint? peerIdentifier;
+
     /// <summary>Identifier of the character this host plays as.</summary>
-    public uint PeerIdentifier => UdpHostIdentityConstants.HostPeerIdentifier;
+    public uint PeerIdentifier => peerIdentifier
+        ?? throw new InvalidOperationException("The gameplay server character has not been resolved.");
+
+    /// <summary>Sets the peer identifier to the configured character's database identifier.</summary>
+    /// <param name="characterIdentifier">Identifier of the configured character.</param>
+    public void SetCharacterIdentifier(int characterIdentifier)
+    {
+        if (characterIdentifier <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(characterIdentifier),
+                "The gameplay server character identifier must be positive.");
+        }
+
+        peerIdentifier = checked((uint)characterIdentifier);
+    }
 
     /// <summary>Counter base this host announces.</summary>
     public uint CounterBase => UdpHostIdentityConstants.HostCounterBase;

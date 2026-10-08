@@ -19,14 +19,12 @@ namespace Mgo2Server.GameplayServer.Match;
 /// </summary>
 /// <param name="gameService">Service that owns the rooms.</param>
 /// <param name="lobbyService">Service that owns the lobby rows.</param>
-/// <param name="accountService">Service that owns the gameplay server account.</param>
 /// <param name="hostIdentity">Identity the gameplay server presents.</param>
 /// <param name="options">Options of this instance.</param>
 /// <param name="logger">Logger of the service.</param>
 public sealed class MatchService(
     GameService gameService,
     LobbyService lobbyService,
-    AccountService accountService,
     HostIdentityService hostIdentity,
     IOptions<ServerOptions> options,
     ILogger<MatchService> logger)
@@ -109,8 +107,6 @@ public sealed class MatchService(
     /// <inheritdoc />
     protected override async Task RunOnceAsync(CancellationToken cancellationToken)
     {
-        await accountService.EnsureAccountAsync((int)hostIdentity.PeerIdentifier, cancellationToken);
-
         while (matchIdentifier == 0)
         {
             matchIdentifier = await EnsureMatchAsync(cancellationToken);
