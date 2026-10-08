@@ -35,6 +35,21 @@ public sealed class ServerOptions
     public int GameplayServerPort { get; set; } = 5731;
 
     /// <summary>
+    /// Whether the dedicated host keeps writing to a peer after it has answered
+    /// that peer's profile: the timed burst that follows the roster exchange and
+    /// the recorded host stream under it. On by default, because the recorded
+    /// host writes both.
+    /// <para>
+    /// Turning it off leaves the join untouched - the handshake, the roster run
+    /// and its repeat still go out - and sends nothing after the closing roster
+    /// record. That is what tells a join that stalls on the traffic after the
+    /// roster apart from one that stalls on the roster itself, which no single
+    /// log separates because both end with the same roster lines.
+    /// </para>
+    /// </summary>
+    public bool GameplayServerPostJoinTraffic { get; set; } = true;
+
+    /// <summary>
     /// Address the dedicated host announces to peers. Defaults to the advertised
     /// address of this instance, and to loopback when no advertised address is
     /// configured.

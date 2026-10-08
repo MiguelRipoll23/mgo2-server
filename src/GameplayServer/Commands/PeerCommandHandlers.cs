@@ -4,9 +4,11 @@ using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.GameplayServer.Stream;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Interfaces;
+using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameplayServer.Commands;
 
@@ -250,11 +252,17 @@ public sealed class InGameControlHandler(ILogger<InGameControlHandler> logger) :
 /// <param name="roster">Roster of the room this host is playing.</param>
 /// <param name="burstScheduler">Scheduler of the one-shot burst that follows the roster exchange.</param>
 /// <param name="hostStream">Stream the recorded host keeps writing after the burst.</param>
+/// <param name="options">
+/// Options of this instance. The one this handler reads is whether the traffic
+/// that follows the roster is written at all, which is the switch that tells a
+/// join stalled on that traffic apart from one stalled on the roster.
+/// </param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
     RoomRosterService roster,
     PostJoinBurstSchedulerService burstScheduler,
     HostStreamService hostStream,
+    IOptions<ServerOptions> options,
     ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
@@ -352,14 +360,28 @@ public sealed class PlayerProfileHandler(
         // Then the burst, which the recorded host does not send with the roster
         // but a measured pause after it. It is scheduled rather than awaited, so
         // the dispatch loop keeps reading every peer while the pause runs.
-        burstScheduler.Schedule(context);
-
+        //
         // Then the stream the recorded host keeps writing, which is what the
         // channel is made of once the join is over: the sparse control and state
         // records, the match-start run and the steady beat under them. It is
         // started once per peer and runs on its own, so the dispatch loop keeps
         // reading every peer while it plays out.
-        hostStream.Start(context);
+        //
+        // Both are held behind one switch, because the join above is not: with
+        // it off a peer still gets the handshake, the roster run, its repeat and
+        // the trailer, and the only thing that changes is what comes after.
+        if (options.Value.GameplayServerPostJoinTraffic)
+        {
+            burstScheduler.Schedule(context);
+            hostStream.Start(context);
+        }
+        else
+        {
+            logger.LogInformation(
+                "UDP {LocalPort}: post-join traffic is off; sending nothing after the roster to {RemoteAddress}",
+                context.LocalPort,
+                context.Remote);
+        }
 
         // The peers already in the room are told as well. A player who is only
         // announced to the peer that just joined is never announced to the ones

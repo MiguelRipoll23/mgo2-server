@@ -136,16 +136,27 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
         }
     }
 
-    /// <summary>Removes a peer from the roster and frees its slot.</summary>
-    /// <param name="remote">Endpoint the peer was reached at.</param>
+    /// <summary>
+    /// Removes a peer from the roster and frees its slot.
+    /// </summary>
+    /// <remarks>
+    /// A peer leaves by going quiet, and the session reaper is the only place
+    /// that is noticed, so this is called from there with the endpoint the
+    /// session is keyed on. Calling it back is what keeps a departed peer from
+    /// being answered to the next joiner: the roster is handed out whole on
+    /// every profile, and an entry that is never removed is a peer every later
+    /// joiner is told to dial, at the address it really held.
+    /// </remarks>
+    /// <param name="remoteAddress">
+    /// Endpoint the peer was filed under, formatted as "address:port", the same
+    /// form <see cref="Register"/> files it by.
+    /// </param>
     /// <returns>True when the peer was on the roster.</returns>
-    public bool Remove(IPEndPoint remote)
+    public bool Remove(string remoteAddress)
     {
-        var key = remote.ToString();
-
         lock (gate)
         {
-            return members.RemoveAll(member => member.RemoteAddress == key) > 0;
+            return members.RemoveAll(member => member.RemoteAddress == remoteAddress) > 0;
         }
     }
 

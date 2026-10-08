@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Sockets;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Match;
+using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Options;
+using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Udp;
 using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +27,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly GameService gameService;
     private readonly AccountService accountService;
     private readonly MatchService matchService;
+    private readonly RoomRosterService roster;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
     private readonly ILogger<GameplayServerService> logger;
@@ -55,10 +58,15 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         this.logger = logger;
         this.options = options.Value;
         port = this.options.GameplayServerPort;
-        sessions = new PeerSessionService(TimeSpan.FromSeconds(60), logger, $"udp:{port}");
+        sessions = new PeerSessionService(
+            TimeSpan.FromSeconds(60),
+            logger,
+            $"udp:{port}",
+            DropReapedPeer);
         gameService = serviceProvider.GetRequiredService<GameService>();
         accountService = serviceProvider.GetRequiredService<AccountService>();
         matchService = serviceProvider.GetRequiredService<MatchService>();
+        roster = serviceProvider.GetRequiredService<RoomRosterService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
     }
@@ -140,6 +148,39 @@ public sealed partial class GameplayServerService : IAsyncDisposable
                 hostIdentity.AdvertisedAddress,
                 port),
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Takes a peer off the room roster when its session is reaped.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The reaper is the only place a peer is let go, so it is the only place
+    /// the roster can hear that one has left. Without this the roster keeps
+    /// every peer that ever sent a profile, and hands each one to every later
+    /// joiner in the roster run - with the endpoint the peer announced, which is
+    /// a real address a real client will dial.
+    /// </para>
+    /// <para>
+    /// Both endpoints are cleared. The roster is filed under the endpoint the
+    /// profile arrived from, which is the observed source, while the session
+    /// is keyed on the one its handshake arrived from and answers at the one the
+    /// peer advertised; those three are the same for a peer out on the internet
+    /// and differ wherever something rewrites the source in between.
+    /// </para>
+    /// </remarks>
+    /// <param name="session">Session the reaper has dropped.</param>
+    private void DropReapedPeer(PeerSession session)
+    {
+        // Both lookups are made: '|' and not '||', because the second endpoint
+        // has to be tried even when the first one found the entry.
+        if (roster.Remove(session.RemoteAddress) | roster.Remove(session.DialBack.ToString()))
+        {
+            logger.LogInformation(
+                "[{LogPrefix}] Took {RemoteAddress} off the room roster: its session was reaped",
+                LogPrefix,
+                session.RemoteAddress);
+        }
     }
 
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)

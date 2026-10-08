@@ -17,10 +17,17 @@ namespace Mgo2Server.Shared.Udp;
 /// <param name="idleTimeout">How long a session may stay quiet before it is dropped.</param>
 /// <param name="logger">Logger the reaper writes to, or null to stay silent.</param>
 /// <param name="logPrefix">Prefix of the server, so a line names its port.</param>
+/// <param name="onReaped">
+/// Invoked once per session the reaper drops, after it has been logged and is
+/// no longer held here. Anything keyed on a session - a room roster, a stream -
+/// has no other way to hear that the peer is gone, because there is no close to
+/// watch; without it that state keeps a peer the reaper has already let go.
+/// </param>
 public sealed class PeerSessionService(
     TimeSpan idleTimeout,
     ILogger? logger = null,
-    string logPrefix = "udp")
+    string logPrefix = "udp",
+    Action<PeerSession>? onReaped = null)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<string, PeerSession> sessions = [];
@@ -114,7 +121,7 @@ public sealed class PeerSessionService(
     private void Reap()
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        List<string> reaped = [];
+        List<PeerSession> reaped = [];
         lock (gate)
         {
             foreach (var (remoteAddress, session) in sessions.ToList())
@@ -122,18 +129,24 @@ public sealed class PeerSessionService(
                 if (now - session.LastSeenAt > idleTimeout.TotalMilliseconds)
                 {
                     sessions.Remove(remoteAddress);
-                    reaped.Add($"{remoteAddress} (peer {session.PeerIdentifier})");
+                    reaped.Add(session);
                 }
             }
         }
 
-        foreach (var remoteAddress in reaped)
+        foreach (var session in reaped)
         {
             logger?.LogInformation(
-                "[{LogPrefix}] Peer disconnected: {RemoteAddress} went quiet for more than {IdleSeconds} seconds",
+                "[{LogPrefix}] Peer disconnected: {RemoteAddress} (peer {PeerIdentifier}) went quiet for more than {IdleSeconds} seconds",
                 logPrefix,
-                remoteAddress,
+                session.RemoteAddress,
+                session.PeerIdentifier,
                 idleTimeout.TotalSeconds);
+
+            // The callback runs outside the lock and after the line, so it sees
+            // a session this service no longer holds and cannot deadlock it by
+            // taking a lock of its own back.
+            onReaped?.Invoke(session);
         }
     }
 }
