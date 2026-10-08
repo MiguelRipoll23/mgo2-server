@@ -386,14 +386,19 @@ keep-alive and the 44-byte reply verify with the **bare constant `0x2b58de69`** 
 `hdr 0x8001`, verifies **only** with `K ^ 0x2b58de69`. **[V]**
 
 So the keep-alive described above as "key-establishing" does not carry the session key. It is
-what the joiner counts as the host answering, and the joiner reaches its keyed state on
-**accepting the handshake reply** — which it can only do after reading it. `UDP_P2P_PROTOCOL.md`
-§2 and §6.1 record the opposite, from a fake-host trial on 2026-09-09 where a session-keyed
-`ESTABLISH OUT` did flip the joiner to state 8. Both can be true: a session-keyed frame is
-accepted there, and this host never sends one at that point. What settles it for a real host is
-the capture, and a host that marks its session established **before** the handshake reply sends
-both opening frames keyed — which the joiner then discards at the §5.3 digest gate before
-parsing a field, so it re-dials every ~1.9 s and gives up. That is the failure this server hit:
+what the joiner counts as the host answering, and the joiner reaches its **keyed** state on
+**accepting the handshake reply** — which it can only do after reading it. The **data phase** is
+a second step, and it is the one a live client needs help with: `UDP_P2P_PROTOCOL.md` §6.1 and
+§11.4 record that only a frame whose tail digest verifies with `K ^ 0x2b58de69` flips the
+joiner's key flag, from a fake-host trial on 2026-09-09. §7.1's reading of this capture — that
+the reply's acceptance is enough — does not hold for a live client: answered with these two
+frames and nothing else, a joiner sat in its reply-accepted state and its connect FSM failed
+the join 35.0 s after the dial with `0B09` (`P2P_CONNECT_FSM.md` §7). So one session-keyed
+`0x5000` now goes out behind the reply, and the counters shift one place. What is settled here is
+that this host sends no keyed frame *of its own accord*; and a host that marks its session
+established **before** the handshake reply sends both opening frames keyed — which the joiner
+then discards at the §5.3 digest gate before parsing a field, so it re-dials every ~1.9 s and
+gives up. That is the other failure this server hit:
 17 handshakes answered, 17 identical silent rejections, every one of them logged here as a
 session established.
 

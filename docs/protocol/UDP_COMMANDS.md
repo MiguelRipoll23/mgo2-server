@@ -116,11 +116,15 @@ lives in the same u16 as the type, so it must be masked off before dispatch.
 frame carrying no body. The joiner emits these pre-keyed after each host reply (state 6). The
 host's keep-alive is what the joiner counts as the host answering, but it is **pre-keyed** — its
 tail digest verifies with the bare constant `0x2b58de69`, not with `K ^ 0x2b58de69`. What flips
-the joiner into the data phase (state 8) is its **acceptance of the handshake reply** behind it,
-which cannot happen until that reply is read. A host that marks its session established before
-sending the reply sends both frames keyed, and the joiner drops them at the digest gate
+the joiner out of its reply-accepted state and into the data phase (state 8) is a host frame
+that **does** verify with `K ^ 0x2b58de69` (`UDP_P2P_PROTOCOL.md` §11.4), so accepting the
+handshake reply is not enough on its own: a join answered with the two recorded frames sat in
+that state and failed 35.0 s after the dial with `0B09` (`P2P_CONNECT_FSM.md` §7).
+`AcceptHandshakeHandler` therefore writes one session-keyed `0x5000` behind the reply, and
+`PeerKeepAliveHandler` reads the joiner's. A host that marks its session established before
+sending the reply sends both opening frames keyed, and the joiner drops them at the digest gate
 (`UDP_GAME_CAPTURE.md` §4). In the data phase the host mirrors
-them. Implemented by `AcknowledgeKeepAliveHandler`.
+them.
 
 ### `0x5001` — **[U]**; an earlier keep-alive reading is refuted by the live capture [V]
 

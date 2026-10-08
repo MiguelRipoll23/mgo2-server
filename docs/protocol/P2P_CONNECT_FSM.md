@@ -526,24 +526,31 @@ into state 8 by itself, so the FSM's state 2 succeeds and states 3–4–6 follo
 ### What the gameplay server sends (implemented)
 
 `src/GameplayServer/Commands/PeerCommandHandlers.cs` (`AcceptHandshakeHandler`)
-sends exactly the two frames the capture holds, in order:
+sends the two frames the capture holds, in order:
 
 * the keep-alive **pre-keyed** at counter 0;
 * the handshake reply **pre-keyed** at counter 1;
 
 then sets `Session.Established = true` so that everything after them — the
 roster run first — is signed with the session key and the keyed digest on the
-shared outbound counter. Its counters therefore line up with the capture's: the
-roster run is the host's counter 2, as recorded.
+shared outbound counter, and sends **one session-keyed empty keep-alive**
+between the reply and that run.
 
-An earlier revision sent a third frame here — a session-keyed empty keep-alive,
-the *ESTABLISH OUT* — reasoning that `flags` bit `0x1` came only from the
-decoder's second digest chance. §7.1 and the accept-path disassembly refute
-that, and the frame was removed so the wire matches the reference. If a live
-join ever stalls in state 2 with counters matching, re-adding exactly that frame
+That third frame is not in the reference, and a live join is why it is there.
+§7.1 read the capture's two frames as sufficient — the accept path sets `flags`
+bit `0x1` at `0x269084`, and the captured joiner keys up 26 ms after the reply —
+while the 2026-09-09 fake-host trial found a keyed frame was what stopped the
+re-dial. The game that raised `0B09` settles it the other way: answered with the
+two recorded frames and nothing else, the session sat in its reply-accepted
+state, and state 2 counted **both** of its deadlines out — 6000 units, a tick
+that still reported that state and reset the countdown to 4500, then the failure
+path. That is 35.0 s after the dial, exactly as measured, and the session never
+reached 8. So one session-keyed `0x5000` goes out
 (`Session.Established = true` followed by
-`context.Send(UdpCommandConstants.KeepAlive, [], 0)`) is the one-line
-restoration of it. `[V]`
+`context.Send(UdpCommandConstants.KeepAlive, [], 0)`). It costs the capture's
+counters one place — the roster run leaves at 3 rather than 2 — and the joiner's
+window is `last+1 .. last+0x20` (§11.5 of `UDP_P2P_PROTOCOL.md`), so only
+consecutiveness has to hold. `[V]`
 
 Two more requirements that are easy to miss because they are not on this FSM at
 all but decide whether it ever gets a reply:
@@ -622,10 +629,12 @@ rejoin and stores state **8**. The FSM's state 2 sees `8` on its next tick, 26 m
 later. `[V]`
 
 The fake-host trial behind §6.1's "one session-keyed frame is what flips a
-state-6 dial session into the data phase" saw a real effect, but the capture
-says the effect is not the *mechanism*: the reply's acceptance is. Which of the
-two a live client needs is exactly what a run with the ESTABLISH OUT removed
-would settle.
+state-6 dial session into the data phase" saw a real effect, and it is the one a
+live client needs: a run with the ESTABLISH OUT removed did happen, the joiner
+sat in the reply-accepted state, and the join failed 35.0 s after the dial with
+`0B09` (see "What the gameplay server sends" above). §7.1's reading of the
+capture — that acceptance alone stores state 8 — is what a capture alone cannot
+tell from a client that never got there.
 
 ---
 
@@ -729,10 +738,12 @@ Key addresses, all re-checked against the disassembly for this document:
 2. **Who sets the module instance's first word to `2`**, the precondition of
    `0x261fe0`. The client's own bring-up, not the server. **[U]**
 
-2b. **Whether the removed ESTABLISH OUT is needed after all.** §7.1 measured the
-   reference host sending no keyed frame and the joiner keying up regardless,
-   while a fake-host trial reported the opposite. The frame is out; a live join
-   is what confirms it never had to be there. **[U]**
+2b. ~~**Whether the removed ESTABLISH OUT is needed after all.**~~ **Resolved,
+   and the answer is yes.** §7.1 measured the reference host sending no keyed
+   frame and the joiner keying up regardless, while the fake-host trial reported
+   the opposite. A live join that stalls in state 2 with counters matching is
+   what the removal predicted — it happened, and the join failed 35.0 s after the
+   dial with `0B09`. The frame is back. **[V]**
 3. **The `0x270e00` handoff codes** (`0x1002` / `0x2002`-family) and the
    `0x27e198` option indices `0xa1`/`0x52`/`0x58` — the shapes are certain, the
    meaning is not. **[U]**

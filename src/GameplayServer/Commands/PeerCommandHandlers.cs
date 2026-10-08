@@ -14,8 +14,8 @@ namespace Mgo2Server.GameplayServer.Commands;
 
 /// <summary>
 /// Accepts a joiner's handshake, sends the keep-alive and the handshake reply
-/// behind it, both pre-keyed, and marks the session established so everything
-/// after them — the roster run first — is signed with the session key.
+/// behind it, both pre-keyed, then one session-keyed keep-alive and the flag
+/// that signs everything after it — the roster run first — with the session key.
 /// </summary>
 /// <remarks>
 /// The live host sends the keep-alive <b>first</b>, as outbound counter 0, and
@@ -41,22 +41,23 @@ namespace Mgo2Server.GameplayServer.Commands;
 /// logged here as a session established.
 /// </para>
 /// <para>
-/// <b>Nothing else goes out here, and that is the point.</b> The joiner's
-/// connect FSM (<c>FUN_00aa1140</c>, <c>docs/protocol/P2P_CONNECT_FSM.md</c>)
-/// leaves its dial state when the module session reports the data phase, state
-/// 8, which needs flags bits <c>0x1</c> and <c>0x2</c>. One source of bit
-/// <c>0x1</c> is the decoder's second digest chance — a frame whose tail digest
-/// verifies with <c>K ^ 0x2b58de69</c> — but the accept path sets that bit
-/// itself, at <c>0x269084</c>, and the reference capture says a real client
-/// needs nothing more: measuring <c>docs/mgo2-game.pcapng</c>
-/// (<c>P2P_CONNECT_FSM.md</c> §7.1) the dedicated host writes <b>exactly two
-/// frames</b>, both pre-keyed, and the joiner is already sending session-keyed
-/// frames 26 ms after the reply — 2.5 s before the host's next frame, the keyed
-/// roster run, at counter 2. Adding a session-keyed keep-alive between the
-/// reply and the roster would satisfy the second digest chance if a client ever
-/// did require it, but it would also spend an outbound sequence and push every
-/// later host frame one counter above the capture's. The recorded sequence is
-/// therefore followed exactly: two pre-keyed frames, then the roster run.
+/// <b>One session-keyed frame goes out after the reply, and a live join is
+/// why.</b> The joiner's connect FSM (<c>FUN_00aa1140</c>,
+/// <c>docs/protocol/P2P_CONNECT_FSM.md</c>) leaves its dial state when the
+/// module session reports the data phase, state 8, which needs flags bits
+/// <c>0x1</c> and <c>0x2</c>. Bit <c>0x1</c> comes from the decoder's second
+/// digest chance — a frame whose tail digest verifies with
+/// <c>K ^ 0x2b58de69</c> (<c>UDP_P2P_PROTOCOL.md</c> §11.4) — and accepting the
+/// reply does not set it, which reading the reference capture alone
+/// (<c>P2P_CONNECT_FSM.md</c> §7.1) is what said otherwise. A live client
+/// settles it: answered with the two recorded frames and nothing else, the
+/// session sits in its reply-accepted state and state 2 counts <em>both</em> of
+/// its deadlines out — 6000 units, a tick that still reports that state and
+/// resets the countdown to 4500, then the failure path. That is 35.0 s after the
+/// dial, and it is the join that produced <c>0B09</c>. The frame costs the
+/// capture's counters one place, so the roster run leaves at counter 3 rather
+/// than 2; a joiner's sequence window is <c>last+1 .. last+0x20</c> (§11.5), so
+/// only consecutiveness has to hold.
 /// </para>
 /// </remarks>
 /// <param name="hostIdentity">Identity this host presents to its peers.</param>
@@ -122,15 +123,14 @@ public sealed class AcceptHandshakeHandler(
             hostIdentity.AdvertisedPort);
         await context.Send(UdpCommandConstants.Handshake, reply, 0);
 
-        // Only now, and with nothing sent in between. The joiner cannot read a
-        // session-keyed frame until it has accepted this reply, and the
-        // recorded host writes no third frame here: its next datagram is the
-        // keyed roster run, after the joiner's profile arrives. Setting the
-        // flag is what makes that run keyed.
+        // Only now, and with nothing sent in between: the flag is what makes
+        // this frame keyed, and one keyed frame is what a live joiner needs to
+        // reach its data phase (P2P_CONNECT_FSM.md §7).
         context.Session.Established = true;
+        await context.Send(UdpCommandConstants.KeepAlive, [], 0);
 
         logger.LogInformation(
-            "UDP {LocalPort}: session with peer=0x{PeerIdentifier:x8} established; opening exchange pre-keyed",
+            "UDP {LocalPort}: session with peer=0x{PeerIdentifier:x8} established; opening exchange pre-keyed, then the keyed keep-alive",
             context.LocalPort,
             handshake.PeerIdentifier);
     }
@@ -162,15 +162,16 @@ public sealed class AcceptHandshakeHandler(
 /// Reads a peer's keyed keep-alive and answers nothing.
 /// </summary>
 /// <remarks>
-/// This server writes no keyed keep-alive at all. The capture's opening
-/// <c>0x5000</c> is the pre-keyed one that leads the handshake reply
-/// (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4), and §3's keyed inventory
-/// lists the type in the joiner-to-server direction only, so a keyed keep-alive
-/// is something the joiner sends and this host does not. A joiner's profile frame carries one beside its profile, and
-/// the live host answers the profile with the roster and not the keep-alive.
-/// Mirroring an inbound one back spends an outbound sequence the capture never
-/// spends at that point and shifts every later counter away from it. So it is
-/// logged and dropped rather than answered.
+/// The one keyed keep-alive this host writes is the frame
+/// <see cref="AcceptHandshakeHandler"/> puts behind its reply, and it exists to
+/// carry a live joiner into its data phase. This handler is the other direction.
+/// The capture's opening <c>0x5000</c> is the pre-keyed one that leads the
+/// handshake reply (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4), and a joiner's
+/// profile frame carries one beside its profile, and the live host answers the
+/// profile with the roster and not the keep-alive. Mirroring an inbound one back
+/// spends an outbound sequence the capture never spends at that point and shifts
+/// every later counter away from it. So it is logged and dropped rather than
+/// answered.
 /// </remarks>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PeerKeepAliveHandler(ILogger<PeerKeepAliveHandler> logger) : IPeerCommandHandler

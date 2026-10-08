@@ -552,9 +552,12 @@ handshake reply alone.
 > run 2.5 s later, and the joiner is already sending session-keyed frames 26 ms
 > after the reply. `P2P_CONNECT_FSM.md` §7.1 has the frame-by-frame table. The
 > fake-host trial recorded below still observed what it observed — the re-dial
-> cadence stopped on the keyed frame — but the capture says the mechanism is the
-> accepted reply. **The handshake-phase keyed frame is therefore optional, not
-> required**; only a live run with it removed can say which the client needs. **[V]**
+> cadence stopped on the keyed frame — and **that is the mechanism a live client
+> needs**. A run with it removed did happen: the joiner sat in its reply-accepted
+> state, its connect FSM's state 2 counted both deadlines out — 6000 units, then
+> 4500 — and the join failed 35.0 s after the dial with `0B09`. So the frame is
+> required, not optional, and `AcceptHandshakeHandler` sends it.
+> `P2P_CONNECT_FSM.md` §7 has the measurement. **[V]**
 
 **Confirmed live 2026-09-09:** the fake host sent exactly one session-keyed empty
 `tag-0x5000` keep-alive (ESTABLISH OUT) after its handshake reply; the joiner's
