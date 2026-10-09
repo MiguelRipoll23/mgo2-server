@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Events;
@@ -76,8 +77,9 @@ public sealed class GetGameListHandler(
             writer.WriteFixedString(game.Name, 16);
             writer.WriteUInt8(hostOptions);
             writer.WriteUInt8(0x8);
-            writer.WriteUInt8(0);
-            writer.WriteUInt8(0);
+            var currentRound = GetCurrentRound(game);
+            writer.WriteUInt8(currentRound is { Length: > 0 } ? currentRound[0] : 0);
+            writer.WriteUInt8(currentRound is { Length: > 1 } ? currentRound[1] : 0);
             writer.WriteUInt8(0);
             writer.WriteUInt8(Math.Min(game.MaximumPlayers, MaximumPlayers));
             writer.WriteUInt8(game.Stance);
@@ -99,6 +101,14 @@ public sealed class GetGameListHandler(
         }
 
         await sessionHelper.SendStartEndPacketAsync(session, CommandConstants.GetGameListEnd, cancellationToken);
+    }
+
+    private static int[] GetCurrentRound(Mgo2Server.Shared.Persistence.Entities.Game game)
+    {
+        var rotation = JsonSerializer.Deserialize<List<int[]>>(game.Games) ?? [];
+        return game.CurrentGame >= 0 && game.CurrentGame < rotation.Count
+            ? rotation[game.CurrentGame]
+            : [];
     }
 }
 
