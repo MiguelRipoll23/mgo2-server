@@ -183,7 +183,7 @@ public sealed class SurvivalTestOpponentService(
         string text,
         CancellationToken cancellationToken)
     {
-        var request = new ChatRequest(ChatPayloadBuilder.PublicChannelDigit, $"[test] {text}");
+        var request = new ChatRequest(ChatPayloadBuilder.PublicChannelDigit, text);
         return sessionHelper.SendPacketAsync(
             session,
             CommandConstants.SendChatResult,
