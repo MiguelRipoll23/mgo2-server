@@ -78,9 +78,10 @@ public static class PlayerProfileRecordUtility
     internal const byte HostRosterField = 0x00;
 
     /// <summary>
-    /// Value written at offsets 5 and 7 — a per-player value of unresolved
-    /// meaning, not the roster index as an earlier replay reading had it — so
-    /// it is sent as zero.
+    /// Value written at offsets 5 and 7. Its captured values match the member
+    /// bytes in the <c>0x0261</c>/<c>0x0a61</c> rules-roster-shaped records, so
+    /// it is likely a per-player handle rather than a roster index. The
+    /// allocation rule is unresolved; the current builder still writes zero.
     /// </summary>
     private const byte PlayerValue = 0x00;
 
@@ -314,8 +315,9 @@ public static class PlayerProfileRecordUtility
 /// </param>
 /// <param name="PlayerValue">
 /// The value at offset 5, repeated at offset 7. It varies per player without
-/// following roster order, so it is a per-player value of unresolved meaning
-/// rather than an index.
+/// following roster order and matches member bytes in the
+/// <c>0x0261</c>/<c>0x0a61</c> rules-roster-shaped records. This makes it a
+/// per-player handle candidate, not an index; its allocation rule is unresolved.
 /// </param>
 /// <param name="HasClanName">Whether a clan name follows the character name.</param>
 /// <param name="CharacterId">The character id at offset 8, little-endian.</param>

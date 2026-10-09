@@ -181,15 +181,15 @@ stream with **no** wire message header; the `type | len | flags2 | body` message
 only after decompression. Masked out of the seed by `hdr & 0x7fff`. The joiner's profile frame
 arrives marked (`hdr 0x8001`).
 
-### `0x9001` — join request [V]
+### `0x1001` — join profile and player roster record [V]
 
-**Guess: the tag a joiner opens the exchange with — its own player record, a request rather
-than a roster entry.** **[V]**
+**The joiner opens the exchange with its own player record.** The host also uses
+this type for the joining players' entries in its roster answer. **[V]**
 
-Live capture: `type 0x9001, len 0x95` holding the player record; `0x1001` is the
-tag the host's roster answer uses. The handler registers the same profile parser under this
-type, which is what a stalled join was missing. Not present in the replay, because the replay
-is the host's stream and the host never sends it.
+Live capture: the joiner's `type 0x1001` profile opens the exchange; the host's
+own head entry is sent as `0x9001`, followed by joining-player entries under
+`0x1001`. The handler registers the same profile parser for both tags. Do not
+infer sender role from the record layout or assume `0x9001` is a join request.
 
 ---
 
@@ -201,30 +201,27 @@ Four shapes share the type. Counts are per replay; they are identical in all fiv
 
 **Guess: one player's room entry — name and clan.** **[V]**
 
-Body layout (§6.4), little-endian: byte `0x00 = 0x07`, the record **sub-type** at `0x01`, `0x04 = 0xe2 + roster
-index` (or a plain `0x00` for the host), the same per-player value at `0x05` and `0x07`, the
-**character id** as a u32 at `0x08`, a per-player block carrying the character's **appearance** at
-`0x13`–`0x1e`, then `0x43 = 0x03` when
-a clan follows, a 16-byte NUL-padded ISO-8859-1 **name**, and a **non-terminated** clan name
-to end of record. The host's own entry is first and sits at roster index `-1`, which it
-writes as `0x00` rather than as `0xe2 - 1`; joining players fill `0`, `1`, `2`, … and are
-written `0xe2`, `0xe3`, `0xe4`… The `0x05`/`0x07` value and the rest of the per-player block
-are unresolved (`[U]`); the builder writes zeros there and a test asserts it. **There is no
-field at `0x0a`**: it was read as an unresolved flag (`0` on the host, `1` on every joiner) and
-it is the high byte of the character id at `0x08`.**Corrected from a live dedicated-server game** (`UDP_GAME_CAPTURE.md` §4). The layout was
-first read off a recorded replay, which put the index at `0x04` as `0x32 + index` and treated
-`0x05`/`0x07` as the same index under a second base. Six roster records in the live session
-— the host and five joining players at indices `-1` and `0` to `4` — show `0xe2 + index` at
-`0x04`, a **zero** rather than `0xe1` for the host, and per-player values at `0x05`/`0x07` that do not follow roster order. The live capture is the reference; the replay reading is
-superseded.
+Body layout (§6.4), little-endian: byte `0x00 = 0x07`, record **sub-type** at `0x01`,
+`0x04 = 0xe2 + roster index` (or a plain `0x00` for the host), and the same per-player
+value at `0x05` and `0x07`. Those values match the member bytes in the `0x0261`/`0x0a61`
+rules-roster-shaped records, making them likely opaque per-player handles **[I]**; their
+allocation is unresolved. The **character id** is a u32 at `0x08`. The block from
+`0x0b` to `0x42` is not decoded as a whole; it contains the two endpoint pairs copied
+from the handshake at `0x13`–`0x1e`. At `0x43`, `0x03` marks a clan name; the character
+name starts at `0x44` and is NUL-terminated, with the non-terminated clan name running
+to the end of the record. The host's own entry is first at roster index `-1` and writes
+`0x00` rather than `0xe2 - 1`; joining players fill `0`, `1`, `2`, … and are written
+`0xe2`, `0xe3`, `0xe4`… The live capture supersedes the replay-derived `0x32 + index`
+and secondary-index readings.
 
 **Also corrected from the same capture**: `0x08` is a **u32 character id**, not a u16 value of
 unresolved meaning, and the byte at `0x0a` is its high byte rather than a flag. Every one of
 the fifteen player entries in the capture carries the same id at `0x08` for the same character,
 including the entries a rejoin wrote at a different roster index under a different handle, and
-the local player's id there matches the one the TCP character record of the same session
-carries. `0x13`–`0x1e` is the character's **appearance** block — twelve bytes, byte-identical
-across every entry of one character. Both are **[V]** and both are now parsed and written.
+carries. The twelve bytes at `0x13`–`0x1e` match that character's public/private handshake
+endpoint pairs; the remainder of the per-player block is not decoded. The u32 character-id
+interpretation is **[V]**; the handle interpretation is **[I]**. The endpoint bytes are
+copied into the roster response.
 
 ### Roster close — 1 per roster run, body 7 bytes [V] — **implemented**
 

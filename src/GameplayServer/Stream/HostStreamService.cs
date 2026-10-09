@@ -123,25 +123,25 @@ public sealed class HostStreamService(ILogger<HostStreamService> logger)
     /// <summary>
     /// The steady phase: the fixed frame every 29 ms, with a slot, blob or
     /// control record inserted in front of it on the periods the capture shows.
-    /// The fourth byte is the host's own running value, carried through from the
-    /// match-start run's first entry.
+    /// Session-record flags2 values start from the match-start run's
+    /// join-tagged entry. Tick records in each frame carry attribute classes.
     /// </summary>
     /// <param name="context">Context the stream is written through.</param>
     private async Task RunSteadyAsync(PeerContext context)
     {
         var session = context.Session;
         var frameIndex = 0;
-        var ordinal = HostStreamFramesUtils.SteadyOrdinalStart;
+        var sessionFlags2 = HostStreamFramesUtils.SteadySessionFlagsStart;
         var blobsWritten = 0;
 
         while (IsAlive(session))
         {
-            var insertion = InsertionFor(frameIndex, ref ordinal, ref blobsWritten);
+            var insertion = InsertionFor(frameIndex, ref sessionFlags2, ref blobsWritten);
 
             // The marker follows the frame's content, not the phase: the
             // recorded host compresses a steady frame exactly when a state blob
-            // rides in it (hdr 0x8648) and leaves the beat-only and slot-only
-            // ones plain (hdr 0x0626, 0x062d, 0x0682), because a 22-byte mostly
+            // rides in it (hdr 0x8648) and leaves periodic-tick-only and slot-only
+            // frames uncompressed (hdr 0x0626, 0x062d, 0x0682), because a 22-byte mostly
             // zero body is the only thing in the steady stream that pays for the
             // compression. Sending them all plain writes bytes the capture does
             // not, and sending them all compressed would mark frames the peer
@@ -160,17 +160,17 @@ public sealed class HostStreamService(ILogger<HostStreamService> logger)
 
     private static HostStreamFramesUtils.StreamMessage? InsertionFor(
         int frameIndex,
-        ref byte ordinal,
+        ref byte sessionFlags2,
         ref int blobsWritten)
     {
         if (frameIndex % HostStreamFramesUtils.SlotAlphaPeriodFrames == 0)
         {
-            return HostStreamFramesUtils.SlotInsertion(beta: false, ordinal++);
+            return HostStreamFramesUtils.SlotInsertion(beta: false, sessionFlags2++);
         }
 
         if (frameIndex % HostStreamFramesUtils.SlotBetaPeriodFrames == HostStreamFramesUtils.SlotBetaPhaseFrames)
         {
-            return HostStreamFramesUtils.SlotInsertion(beta: true, ordinal++);
+            return HostStreamFramesUtils.SlotInsertion(beta: true, sessionFlags2++);
         }
 
         if (frameIndex % HostStreamFramesUtils.StateBlobPeriodFrames == 0)
@@ -185,7 +185,7 @@ public sealed class HostStreamService(ILogger<HostStreamService> logger)
         {
             return HostStreamFramesUtils.ControlInsertion(
                 HostStreamFramesUtils.SteadyControlBody(),
-                ordinal++);
+                sessionFlags2++);
         }
 
         return null;

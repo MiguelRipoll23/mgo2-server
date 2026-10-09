@@ -625,14 +625,16 @@ twelve bits of the message's own first word as the **id**, then ORs in the
 | body length `> 0xff` | `0x2000` long form (`0x2698e8`) |
 | `flags & 0x20` | `0x8000` LZSS-compressed (`0x2699b4`) |
 
-**The first row does not reproduce the live wire.** On the dedicated server's
-game, bit 0 of a record's fourth header byte agrees with bit 12 of its type on
-only **44.8%** of 152 668 records — barely better than chance. On that wire the
-fourth byte is a **running counter**: 13 distinct values (0–21) across tick
-records, 202 (0–201) across session records, climbing monotonically over a
-round. Either the dedicated server is a different build from the one
-`FUN_00269860` was read in, or the flags byte is a field this reading is not
-looking at. The `id (12 bits) | class (top nibble)` shape itself holds. **[V]**
+**The first row does not reproduce the live wire's session records.** Comparing
+bit 0 of the fourth byte with type bit 12 across all **152 668** records gives
+44.8%, but that mixes two different framings: identifiers below `0x1000` carry
+an attribute class, while session records carry `flags2`. The capture has
+**146 224 tick records** with 13 attribute-class values (0–21), and **6 444
+session records** with 202 `flags2` values (0–201). Among session records only,
+`flags2 & 1` agrees with type bit 12 in **51.5%** (3 319 of 6 444), so the
+client serializer's `flags & 0x01` rule still does not explain the server's
+session metadata. A build difference or a different source field remains
+possible; the captured `flags2` semantics are unresolved. **[V]**
 
 So every tag on this channel reads as `id (12 bits) | class (top nibble)`, and
 the two halves move independently: id 1 appears in three classes (`0x1001`
@@ -882,10 +884,8 @@ Body, little-endian:
                  see UDP_GAME_CAPTURE.md §4; the 140-byte join profile does not
                  contain them at those offsets
 [0x43] u8        0x03 when a clan name follows, 0x00 when none does
-[0x44] char[16]  character name, NUL-padded — ISO-8859-1, the encoding the TCP
-         char[]   character list uses for the same field (`0x3049`'s
-                  `selected_name`), not UTF-8 and not the console's own code page
-         char[]   clan name, running to the end of the record
+[0x44] char[]    character name, NUL-terminated; if present, the clan name follows
+         char[]   clan name, running to the end of the record without a terminator
 ```
 
 Three things are worth stating because they are easy to get wrong:
@@ -898,9 +898,11 @@ Three things are worth stating because they are easy to get wrong:
   somewhere else; zero is the host. **[V]**
 - **Offsets 5 and 7 are a per-player value, not the index.** The same byte
   appears at both, and across a live roster it runs `0x00`, `0x14`, `0x0f`,
-  `0x04`, `0x0b`, `0x06` for indices -1 to 4 — which follows no order. Its
-  meaning is **[U]** and the builder writes zero. **[V]** that it is not an
-  index, **[U]** as to what it is.
+  `0x04`, `0x0b`, `0x06` for indices -1 to 4 — which follows no order. The five
+  joiner values match the member bytes in the `0x0261`/`0x0a61` rules-roster-shaped
+  tick records, making them likely opaque per-player handles **[I]**; their
+  allocation remains unresolved, and the builder still writes zero. **[V]** that
+  it is not an index; see `UDP_GAME_CAPTURE.md` §5 for the cross-source evidence.
 - **The name is NUL-terminated; the clan name is not**, because the record ends
   there. Every record ends exactly on the last clan byte. **[V]**
 

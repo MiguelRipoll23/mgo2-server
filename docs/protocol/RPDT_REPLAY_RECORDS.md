@@ -170,10 +170,12 @@ as the opcode and interprets only the listed shapes:
 | GameplayServer UDP message(s) | Current C# interpretation | RPDT relationship |
 |---|---|---|
 | `0x0080`, `0x0880` | Two-byte body `[health, stamina]` (`PlayerVitalsRecordUtility`) | Strong semantic match to RPDT `TYPE_HEALTH` `[0x03, health, stamina]`; RPDT has its discriminator in the body and a different record container. |
+| `0x090c` | Two-byte body `[0xfa, 0xfa]`, tick attribute class `3`, repeated in the steady host stream | Same body size and class value as the confirmed vitals shape, and RPDT `TYPE_HEALTH` uses discriminator `0x03`; all captured samples are synchronized with `0x0a61`. Likely a second actor's full vitals or a heartbeat/state marker, but its meaning and actor are unresolved. |
 | `0x0081`, `0x0881`, `0x00b3`, `0x08b3`, `0x006d`, `0x00db` | Variable P2P position bodies (`PlayerPositionRecordUtility`) | Strong semantic match to RPDT `TYPE_POS` coordinates/state, but IDs, lengths, offsets, and surrounding framing differ. |
+| `0x0261`, `0x0a61` | Tick bodies with classes 0/1; capture bodies include `fe` and `ff <members> fe fe` | Strong structural match to replay `RULES_VIDS` payload type `0x00`: prepending its discriminator to the UDP body makes every captured record parse under the replay parser's rules-roster grammar. Member bytes match roster profile offsets `0x05`/`0x07`; group meaning and membership policy remain unresolved. See [the live-capture comparison](UDP_GAME_CAPTURE.md#0x0261-and-0x0a61-carry-rules-roster-shaped-records-i). |
 | `0x1001`, `0x9001` | Profile/join records parsed by `PlayerProfileRecordParseUtils` | Conceptual roster match to RPDT `TYPE_ROSTER`; do not apply RPDT offsets to the P2P profile. |
 | `0x1000`, `0x5000`, `0x5001`, `0xd001`, `0x0002` | Handshake, keep-alive, roster head/control, and state blob handling | No direct equivalent is decoded by `rpdt.js`. |
-| `0x090c`, `0x0a61`, `0x1a54`, `0x9a54`, `0x5ade`, `0x1ade` | Host stream IDs replayed by `HostStreamFramesUtils` | The RPDT parser does not name these as its `TYPE_*` records or map them to its body fields. A superficially equal numeric byte is not evidence of an ID match. |
+| `0x1a54`, `0x9a54`, `0x5ade`, `0x1ade` | Slot, match-start, and control records replayed by `HostStreamFramesUtils` | The RPDT parser does not name these as its `TYPE_*` records or map them to its body fields. A superficially equal numeric byte is not evidence of an ID match. |
 
 The P2P decoder in this repository reads a two-byte message type and the
 network message framing defined in `UDP_P2P_PROTOCOL.md`. `rpdt.js` reads an
@@ -197,6 +199,13 @@ server codec, not the RPDT layouts listed earlier. The server intentionally
 returns no parsed position for the observed 44-byte UDP form because no
 coordinate offset has been placed for it; its handler logs and ignores that
 sample. The RPDT parser has its own supported length/version table.
+
+The `0x0261`/`0x0a61` match is based on the replay parser's dedicated rules-roster
+grammar, not on a numerical VID coincidence: all captured P2P bodies fit exactly
+after adding the replay-only `0x00` payload discriminator. It still does not reveal
+what group `0xff` represents or how its member set is assigned. Likewise, the
+`0x090c` body agrees with a known health/stamina encoding but never changes in this
+capture, so it is not safe to treat it as a live player's vitals input.
 
 ## What this crosswalk is safe to use for
 

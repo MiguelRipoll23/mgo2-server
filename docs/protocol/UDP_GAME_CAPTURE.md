@@ -458,9 +458,11 @@ t=4s, 156s, 208s, 387s and 494s). Sorted by index they give the rule directly:
 
 Four things follow. `[0x04]` is `0xe2 + index` and the host is written as a **distinct
 zero**, not as `0xe2 - 1`. `[0x05]`/`[0x07]` are the same byte in all six and follow no
-order, so they are a per-player value of unresolved meaning rather than the second copy of
-the index the replay reading claimed. `[0x08]` is the **character id**, and `[0x0a]` is its
-high byte rather than a flag of its own — see below.
+order, so they are not the second copy of the index the replay reading claimed. Their
+values match the member bytes in the later `0x0261`/`0x0a61` rules-roster-shaped tick
+records, making them likely opaque per-player handles **[I]**; how those handles are
+allocated remains unknown. `[0x08]` is the **character id**, and `[0x0a]` is its high byte
+rather than a flag of its own — see below.
 
 ### `[0x08]` is the character id, and `[0x0a]` is not a field [V]
 
@@ -478,8 +480,8 @@ Three things make it the character id rather than a coincidence of the roster or
 - **It is stable per character, not per slot.** The capture holds **fifteen** player entries
   across the round, and every entry of one character carries the same id — including the
   rejoin written at roster index `4` under handle `0x06` where that character's first entry at
-  index `1` carried handle `0x0f`. Nothing else in the record is stable that way except the
-  name and the appearance block.
+  index `1` carried handle `0x0f`. The name is also stable; the endpoint pair describes the
+  peer's announced network addresses, not the character's identity.
 - **It matches the other channel.** The local player's id here is the same number as the one
   the TCP `0x4101` character record of the same session carries — the cross-check that names
   the field rather than merely numbering it.
@@ -497,44 +499,32 @@ of commands `0x0700`, `0x0f00` and `0x4313`, with the name `Low Level Host` in t
 (40961). It is a character id and it is on the character record; it is **not** a room
 identifier, and the earlier reading of it as "not this host's character id" was wrong.
 
-### `[0x13]`–`[0x1e]` is the character's appearance [V]
+### `[0x13]`–`[0x1e]` are the character's handshake endpoints [V]
 
-Twelve bytes, and they are the only part of the record that describes what the character
-*looks like*. Like the name and the id they belong to the character: all fifteen entries
-carry the same twelve for the same character, and the four characters that played carry four
-different blocks.
+These twelve bytes are not appearance data. They are two six-byte IPv4 endpoint pairs:
+the public address at `0x13`–`0x16`, its little-endian port at `0x17`–`0x18`, the private
+address at `0x19`–`0x1c`, and its little-endian port at `0x1d`–`0x1e`. Each roster entry
+matches the public/private endpoint pairs that character announced in its handshake,
+including the host's own entry. They locate the peer; the capture does not establish
+them as character identity or appearance fields.
 
-| character | `0x13`–`0x1e` |
-| --- | --- |
-| `NightOwl77` | `d9 8a d5 05 62 16 0a 02 00 02 62 16` |
-| `IronFalcon` | `62 1a a8 1b 62 16 c0 a8 01 16 62 16` |
-| `SteelHart` | `59 98 e2 29 62 16 c0 a8 01 4d 62 16` |
-| `CopperKite` | `5c bf b2 67 62 16 c0 a8 01 5a 62 16` |
-| room record | `63 42 83 b1 63 16 0a 68 0a 1c 63 16` |
-
-`0x13`–`0x16` are four bytes unique to the character; the pair at `0x17`/`0x18` and the one
-at `0x1d`/`0x1e` are `62 16` on every player entry and `63 16` on the room record — a marker
-of the record kind and nothing else; the four bytes between them are per character. What the
-bytes *mean* is **[U]**, so the block is carried verbatim rather than decoded into fields.
-
-**This is only half of the appearance on the wire.** A second record, `0b <slot> 02 …`
-(50–56 bytes), arrives about 90 ms after each roster entry and carries more of it — sixteen
-zero bytes, `00 00`, `50 02 ff`, four varying bytes, then `1e` and a per-character tail. The
-local player's own appearance proves the shape: its 140-byte join request carries the same
-tail (`1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 0b 16 00 0e 0e 07 0f 00 00`), and the server
-re-broadcasts it. That record is **not implemented** — its slot byte is neither the roster
-handle (`0x14 0f 04 0b`) nor the character id, slots are reused across rejoins, and four of
-its columns are still **[U]**.
+Appearance-like data is carried separately. A `0b <slot> 02 …` record (50–56 bytes)
+arrives about 90 ms after roster entries and carries a repeated structure ending in a
+per-character tail. The local player's 140-byte join request carries the same tail
+(`1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 0b 16 00 0e 0e 07 0f 00 00`), which the
+server re-broadcasts. That record is **not implemented**: its slot byte is neither the
+roster handle (`0x14 0f 04 0b`) nor the character id, slots are reused across rejoins,
+and four of its columns remain **[U]**.
 
 **Implemented.** `PlayerProfileRecordUtility` writes `0xe2 + index` (or zero for the
-host), writes zero at `0x05`/`[0x07]`, writes the **character id** as a u32 at `0x08` —
-there is no `0x0a` field — carries the **appearance block** at `0x13`–`0x1e`, and recovers
-the index with `RosterIndexOf`, which reads a zero as the host. `PlayerProfileRecordParseUtils`
-reads all three back, and `RoomRosterService` answers a peer with the id and the appearance
-the player announced rather than with values it invented. `PlayerNumber` is renamed `PlayerValue` and is reported raw,
-because it is no longer an index. The per-player block also carries **three** non-zero
-constants — `0x02` at `0x12` and `0x16` at both `0x18` and `0x1e` — against the replay's
-one, and the builder writes all three.
+host), writes zero at `0x05`/`0x07`, writes the **character id** as a u32 at `0x08` —
+there is no `0x0a` field — and copies the handshake endpoint pairs at `0x13`–`0x1e`.
+`PlayerProfileRecordParseUtils` reads the profile fields, and `RoomRosterService` answers
+a peer with its id and announced endpoints rather than values it invented. The separate
+appearance-like `0x0b` record remains unimplemented. `PlayerNumber` is renamed
+`PlayerValue` and is reported raw, because it is no longer an index. The block has a
+constant `0x02` at `0x12`; `0x18` and `0x1e` are endpoint-port bytes, not structural
+constants.
 
 The builder is written against the six captured records verbatim, with same-length placeholder
 names. The replay-derived vectors are gone: the live capture is the reference.
@@ -692,28 +682,45 @@ deliberately. **[V]**
 ## 5. Tick records
 
 The game itself. `id < 0x1000`, length byte is `data + 1`, fourth byte is the attribute
-class. There are **121 distinct ids**; the busiest are below. Nothing here is named beyond
-the class, because nothing here could be named honestly.
+class. There are **121 distinct ids**; the busiest are below. The table records wire facts,
+not application meanings; cross-source readings and their confidence are documented after it.
 
-| id | count (server → joiner) | body lengths | class byte |
+| id | count (server → joiner) | body lengths | attribute-class byte |
 | --- | --- | --- | --- |
-| `0x0261` | 20 852 | 1, 4, 5 | 1, 2, 3 |
-| `0x0a61` | 15 954 | 1, 4, 5 | 1, 2, 3 |
-| `0x00dd` | 10 932 | 1, 5 | 1, 2 |
-| `0x010c` | 9 997 | 2 | 1 |
-| `0x00b5` | 8 752 | 1, 5 | 1, 2 |
-| `0x0083` | 6 173 | 1, 5 | 1, 2 |
-| `0x0081` | 3 087 | 16, 32, 38, 44 | 1, 2, 3 |
-| `0x0080` | 3 269 | 2 | 1 |
-| `0x007f` | 3 087 | 3, 9 | 1, 2 |
-| `0x00b1` | 4 377 | 3, 9 | 1, 2 |
-| `0x087f` | 1 140 | 3, 9 | 1, 2 |
-| `0x0881` | 1 140 | 16, 32, 44 | 1, 2, 3 |
+| `0x0261` | 20 852 | 1, 4, 5 | 0, 1 |
+| `0x0a61` | 15 954 | 1, 4, 5 | 0, 1 |
+| `0x00dd` | 10 932 | 1, 5 | 4, 6 |
+| `0x010c` | 9 997 | 2 | 3 |
+| `0x00b5` | 8 752 | 1, 5 | 4, 6 |
+| `0x0083` | 6 173 | 1, 5 | 4, 6 |
+| `0x0081` | 3 087 | 16, 17, 32, 38, 44 | 2 |
+| `0x0080` | 3 269 | 2 | 3 |
+| `0x007f` | 3 087 | 3, 9 | 1 |
+| `0x00b1` | 4 377 | 3, 9 | 1 |
+| `0x087f` | 1 140 | 3, 9 | 1 |
+| `0x0881` | 1 140 | 16, 32, 44 | 2 |
 
-**`0x0081` is the position record.** Its body lengths are **16, 32, 38 and 44** — exactly
-the four sizes `mgo2_replay_parser.py` maps to the compressed position and the yaw pair, and
-at the same offsets. The capture confirms the replay parser's transform table on live wire
-bytes rather than on a recorded file. **[V]**
+These are the literal fourth-byte values from the tick framing, not inferred
+operation names. In particular, `0x0a61`'s one-byte `fe` records use classes 0
+and 1; its four- and five-byte bodies use class 0. The steady host stream's
+`0x090c fa fa` record uses class 3. These values match the records emitted by
+`HostStreamFramesUtils`; by themselves, the capture framing and generic P2P codec
+do not explain their application meaning. The RPDT cross-check below supplies
+structure for the `0x0261`/`0x0a61` bodies and a candidate for `0x090c`.
+
+The stripped `MGO2.ELF` has a static lookup entry mapping `0x0a61` to selector
+`0xbe` (nearby entries include `0x0a60 -> 0xbd`, `0x0a62 -> 0xbc`, and
+`0x0a63 -> 0xbf`). The entry does not name the selector's consumer, and the
+generic P2P serializer/receiver only establishes record framing and routing.
+The RPDT grammar reads `fe` as an empty rules-roster list for these IDs, but the
+selector consumer and group membership policy remain unresolved; they are not
+enough to synthesize the required live membership state.
+
+**`0x0081` is the position record.** Its 16-, 32-, 38- and 44-byte bodies are the
+four sizes `mgo2_replay_parser.py` maps to the compressed position and the yaw
+pair, at the same offsets. The capture also has three 17-byte bodies whose meaning
+remains unresolved. The capture confirms the replay parser's transform table on
+live wire bytes rather than on a recorded file. **[V]**
 
 ### `0x0080` is health, and `0` is death [V]
 
@@ -750,6 +757,64 @@ claimed as vitals.
 `PlayerVitalsRecordUtility` (the record), written against the bodies above.
 `PlayerVitalsHandler` dispatches `0x0080` and `0x0880` and logs each record at
 debug, with a death or a revive logged again at information; nothing is answered.
+
+### `0x090c` is a health/stamina-shaped host record [I]
+
+The steady stream's `0x090c` has the same two-byte body shape and class `3` as the
+verified `0x0080` vitals record. Its body is `fa fa` in all **4 298** observations.
+This is also the replay parser's `TYPE_HEALTH` shape after its leading `0x03`
+discriminator: `[0x03, health, stamina]`. All 4 298 `0x090c` observations are within
+1 ms of a server-to-joiner `0x0a61` transmission, tying it to the repeated live-game
+stream rather than to roster exchange.
+
+That is a strong format and timing correlation, not proof that `0x090c` is a vitals
+update. Unlike `0x0080`, its values never change, including while `0x0080` reports
+damage and death. It could be a second actor's full vitals or a heartbeat/state marker
+whose bytes happen to match full vitals. Neither the record's actor nor its purpose is
+identified by the capture, replay parser, or the currently traced ELF path. Keep the
+record as `0x090c [fa fa]` until one of those sources resolves the identity and
+semantics; do not substitute a joining player's live vitals.
+
+### `0x0261` and `0x0a61` carry rules-roster-shaped records [I]
+
+The replay parser registers both VIDs as `RULES_VIDS`. For payload type `0x00`, it
+parses a compact group/member list: a group marker, zero or more member bytes, `0xfe`
+to end that group, and a final `0xfe` to end the list. The UDP tick has already selected
+the message type, so its body does not repeat the replay payload's leading `0x00`.
+Prepending that discriminator to every captured body makes every one of the
+**20 852 `0x0261`** and **15 954 `0x0a61`** records parse exactly under that grammar.
+This is a strong cross-source structural match, not a full semantic decoding.
+
+| UDP id | class 0 | class 1 | observed class-0 member sets |
+| --- | ---: | ---: | --- |
+| `0x0261` | 10 426 | 10 426 | empty 4 395; `{0f}` 272; `{0f,14}` 124; `{04,14}` 429; `{0b}` 56; `{06}` 534; `{14}` 4 532; `{06,14}` 84 |
+| `0x0a61` | 7 977 | 7 977 | empty 7 018; `{14}` 862; `{06,14}` 97 |
+
+Every class-1 record is the empty-list body `fe`. Class 0 carries either that same
+empty list or a group `ff` followed by the listed member bytes and two `fe` terminators;
+for example, UDP body `ff 06 14 fe fe` becomes replay payload
+`00 ff 06 14 fe fe`. The parser retains `ff` as a group key and the following bytes as
+members. It does **not** name the group or explain why the two UDP IDs have different
+membership sets. The values cannot be translated into a team or another game concept
+from these bytes alone.
+
+The member-byte values exactly match the five joiners' per-player bytes at profile
+offsets `0x05` and `0x07`: `14`, `0f`, `04`, `0b`, and `06`. Those are distinct from the
+roster-index field at offset `0x04` (`e2` through `e6`), and the capture shows a
+rejoining character can receive a different member byte. This makes them strong
+per-player-handle candidates, but does not reveal how the game allocates them or which
+handles belong in each group.
+
+**This is not yet enough to replace the captured records with generated ones.** The
+GameplayServer's `RosterMember` stores roster slots, not these handles or group
+assignments; `PlayerProfileRecordUtility` writes zero at offsets `0x05`/`0x07`.
+Roster slots must not be reused as handles, and deriving group membership from roster
+order would invent semantics absent from all three sources. The RPDT grammar is
+straightforward to encode, but valid live inputs for its members and groups are still
+missing. The current `HostStreamFramesUtils` emits only the two empty `0x0a61 fe`
+records in its steady frame; it does not emit `0x0261` or the member-bearing updates
+seen for either ID in the capture. The present fixed replay is therefore incomplete,
+not just semantically opaque.
 
 ### The 3D position, and the bit that says a character is dead [V]
 
@@ -891,7 +956,8 @@ and then goes quiet hands the client an open, silent channel.
 delays are measured from the capture; the steady insertions repeat on measured frame
 periods. The compression marker follows the frame's content rather than the phase, as the
 capture shows: a frame carrying a state blob goes out compressed (hdr 0x8648, 0x8019) and a
-beat-only or slot-only one plain (hdr 0x0626, 0x062d, 0x0682), the 22-byte mostly-zero blob
+periodic-tick-only or slot-only one uncompressed (hdr 0x0626, 0x062d, 0x0682),
+the 22-byte mostly-zero blob
 being the only body in the steady stream that pays for it. Every uncompressed frame the
 replay writes is **byte-identical in size** to the capture's (17 B control, 28 B base, 35 B
 slot, 33 B control-inserted), and every frame round-trips through `FrameCryptoUtility` and

@@ -16,7 +16,9 @@ namespace Mgo2Server.GameplayServer.Stream;
 /// recorded host actually wrote, and the order and delays are the ones the
 /// capture shows. The stream is what the earlier reading left out — the server
 /// answered the join and then went quiet, while the recorded host keeps the
-/// channel moving for the whole round.
+/// channel moving for the whole round. The steady-frame replay is incomplete:
+/// it emits only the empty <c>0x0a61</c> list pair, not the captured
+/// <c>0x0261</c> records or member-bearing updates for either ID.
 /// </para>
 /// <para>
 /// Three phases are reproduced, on the capture's own clock, counted from the
@@ -38,20 +40,29 @@ namespace Mgo2Server.GameplayServer.Stream;
 /// </item>
 /// </list>
 /// <para>
-/// <b>What none of this is:</b> understood. The record identifiers are not in
-/// <see cref="UdpCommandConstants"/> because nothing has decoded them, the
-/// bodies are constant and no field in them is named here, and the fourth byte
-/// of each record is the host's own running value carried through from the
-/// capture. The stream is sent because the recorded host sends it, on the same
-/// grounds as the roster and the post-join burst.
+/// The fourth byte depends on record framing. Tick identifiers below
+/// <c>0x1000</c> carry an attribute class; session identifiers at or above
+/// <c>0x1000</c> carry a <c>flags2</c> byte. The <c>0x0261</c> and
+/// <c>0x0a61</c> bodies match the RPDT rules-roster grammar, and their members
+/// match the per-player values in captured roster records. Group meaning and
+/// handle allocation remain unresolved. The <c>0x090c</c> body matches the
+/// two-byte vitals shape but stays <c>fa fa</c> in the capture, so its actor
+/// and application role also remain unresolved. The captured values are
+/// preserved without inventing state.
 /// </para>
 /// </remarks>
 public static class HostStreamFramesUtils
 {
-    /// <summary>Measured identifier of the host's two-byte beat record. **[U]**</summary>
-    public const ushort Beat = 0x090c;
+    /// <summary>
+    /// Measured identifier of the host's periodic two-byte tick record. Its body
+    /// matches the health/stamina shape, but its actor and role remain **[U]**.
+    /// </summary>
+    public const ushort PeriodicTick = 0x090c;
 
-    /// <summary>Measured identifier of the host's one-byte tick record. **[U]**</summary>
+    /// <summary>
+    /// Measured identifier of one of the two tick records matching the RPDT
+    /// rules-roster grammar. Group semantics remain **[U]**.
+    /// </summary>
     public const ushort Tick = 0x0a61;
 
     /// <summary>Measured identifier of the first slot record the host inserts. **[U]**</summary>
@@ -70,10 +81,10 @@ public static class HostStreamFramesUtils
     public const int SteadyFramePeriodMilliseconds = 29;
 
     /// <summary>
-    /// Fourth byte the steady phase starts from, which continues the running
-    /// value the match-start run's first entry carried. **[U]**
+    /// Session-record flags2 value copied from the match-start run's
+    /// join-tagged entry. Its meaning is unresolved.
     /// </summary>
-    public const byte SteadyOrdinalStart = MatchStartEntryFourthByte;
+    public const byte SteadySessionFlagsStart = MatchStartEntryFlags2;
 
     /// <summary>Steady frames between one <see cref="SlotAlpha"/> insertion and the next.</summary>
     public const int SlotAlphaPeriodFrames = 86;
@@ -90,26 +101,25 @@ public static class HostStreamFramesUtils
     /// <summary>Offset of the first <see cref="SlotBeta"/> insertion within its period.</summary>
     public const int SlotBetaPhaseFrames = 43;
 
-    /// <summary>Fourth byte of the beat record, as measured.</summary>
-    private const byte BeatFourthByte = 0x03;
+    /// <summary>Attribute class of the periodic tick record, as measured.</summary>
+    private const byte PeriodicTickAttributeClass = 0x03;
 
-    /// <summary>Fourth bytes of the paired tick records, as measured.</summary>
-    private const byte TickFourthByteFirst = 0x00;
+    /// <summary>Attribute class of the first paired tick record.</summary>
+    private const byte TickAttributeClassFirst = 0x00;
 
-    /// <summary>Fourth byte of the second tick record of the pair.</summary>
-    private const byte TickFourthByteSecond = 0x01;
+    /// <summary>Attribute class of the second paired tick record.</summary>
+    private const byte TickAttributeClassSecond = 0x01;
 
     /// <summary>
-    /// The host's own value carried on the match-start run's join-tagged entry,
-    /// which continues the roster's running number. **[U]**
+    /// Session-record flags2 value on the match-start run's join-tagged entry.
     /// </summary>
-    private const byte MatchStartEntryFourthByte = 0x07;
+    private const byte MatchStartEntryFlags2 = 0x07;
 
-    /// <summary>Fourth byte the sparse state-blob frames carry, as measured.</summary>
-    private const byte StateBlobFourthByte = 0x01;
+    /// <summary>Attribute class of the sparse state-blob tick record.</summary>
+    private const byte StateBlobAttributeClass = 0x01;
 
-    /// <summary>Body of the beat record: two bytes, constant across the round.</summary>
-    private static ReadOnlySpan<byte> BeatBody => [0xfa, 0xfa];
+    /// <summary>Body of the periodic tick record: constant across the round.</summary>
+    private static ReadOnlySpan<byte> PeriodicTickBody => [0xfa, 0xfa];
 
     /// <summary>Body of the tick record: one byte, constant across the round.</summary>
     private static ReadOnlySpan<byte> TickBody => [0xfe];
@@ -144,7 +154,7 @@ public static class HostStreamFramesUtils
     /// <summary>
     /// State blob the sparse phase carries: 18 zero bytes, the <c>0x40</c>
     /// marker, a zero and a big-endian value; the capture's sparse-phase value
-    /// is 100, with record fourth byte <c>0x01</c>.
+    /// is 100, with attribute class <c>0x01</c>.
     /// </summary>
     private static ReadOnlySpan<byte> SparseStateBlobBody =>
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -155,11 +165,11 @@ public static class HostStreamFramesUtils
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00];
 
-    /// <summary>Fourth byte paired with a zero-valued steady blob.</summary>
-    private const byte StateBlobSteadyZeroFourthByte = 0x15;
+    /// <summary>Attribute class paired with a zero-valued steady blob.</summary>
+    private const byte StateBlobSteadyZeroAttributeClass = 0x15;
 
-    /// <summary>Fourth byte paired with a 100-valued steady blob.</summary>
-    private const byte StateBlobSteadyLiveFourthByte = 0x01;
+    /// <summary>Attribute class paired with a 100-valued steady blob.</summary>
+    private const byte StateBlobSteadyLiveAttributeClass = 0x01;
 
     /// <summary>
     /// Body of the ninety-byte slot record carried in the match-start run,
@@ -240,22 +250,22 @@ public static class HostStreamFramesUtils
     public static List<StreamStep> SparseSteps() =>
     [
         new(4930, [new(UdpCommandConstants.InGameControl, [.. ControlBodyEarly], 0x02)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobFourthByte)], Compressed: true),
+        new(0, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobAttributeClass)], Compressed: true),
         new(0, [new(UdpCommandConstants.InGameControl, [.. ControlBodyEarly], 0x02)]),
         new(4800, [new(UdpCommandConstants.InGameControl, [.. ControlBodyAlternate], 0x03)]),
         new(2400, [new(UdpCommandConstants.InGameControl, [.. ControlBodyEarly], 0x03)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobFourthByte)], Compressed: true),
+        new(0, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobAttributeClass)], Compressed: true),
         new(2370, [new(UdpCommandConstants.InGameControl, [.. ControlBodyEarly], 0x04)]),
-        new(2750, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobFourthByte)], Compressed: true),
+        new(2750, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobAttributeClass)], Compressed: true),
         new(2370, [new(UdpCommandConstants.InGameControl, [.. ControlBodyAlternate], 0x05)]),
-        new(4750, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobFourthByte)], Compressed: true),
+        new(4750, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobAttributeClass)], Compressed: true),
         new(0, [new(UdpCommandConstants.InGameControl, [.. ControlBodyEarly], 0x06)]),
         new(4770, [new(UdpCommandConstants.InGameControl, [.. ControlBodyAlternate], 0x07)]),
-        new(110, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobFourthByte)], Compressed: true),
+        new(110, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobAttributeClass)], Compressed: true),
         new(4250, [new(UdpCommandConstants.InGameControl, [.. ControlBodyEarly], 0x08)]),
-        new(2490, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobFourthByte)], Compressed: true),
+        new(2490, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobAttributeClass)], Compressed: true),
         new(6250, [new(UdpCommandConstants.InGameControl, [.. ControlBodyAlternate], 0x09)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobFourthByte)], Compressed: true),
+        new(0, [new(UdpCommandConstants.GameStateBlob, [.. SparseStateBlobBody], StateBlobAttributeClass)], Compressed: true),
         new(0, [new(MatchStartMarker, [])]),
         new(0, MatchStartRun(), Compressed: true),
     ];
@@ -273,7 +283,7 @@ public static class HostStreamFramesUtils
         new(UdpCommandConstants.RosterHead, [], 11),
         new(SlotAlpha, [.. MatchStartSlotBody], 0),
         new(SlotAlpha, [.. SlotAlphaShortBody], 1),
-        new(UdpCommandConstants.JoinRequest, [.. MatchStartEntryBody], MatchStartEntryFourthByte),
+        new(UdpCommandConstants.JoinRequest, [.. MatchStartEntryBody], MatchStartEntryFlags2),
         new(UdpCommandConstants.PlayerProfile, [.. MatchStartRosterBody], 8),
         new(UdpCommandConstants.PlayerProfile, [.. MatchStartCloseFirstBody], 9),
         new(UdpCommandConstants.PlayerProfile, [.. MatchStartCloseSecondBody], 10),
@@ -298,9 +308,9 @@ public static class HostStreamFramesUtils
             frame.Add(insertion);
         }
 
-        frame.Add(new(Beat, [.. BeatBody], BeatFourthByte));
-        frame.Add(new(Tick, [.. TickBody], TickFourthByteFirst));
-        frame.Add(new(Tick, [.. TickBody], TickFourthByteSecond));
+        frame.Add(new(PeriodicTick, [.. PeriodicTickBody], PeriodicTickAttributeClass));
+        frame.Add(new(Tick, [.. TickBody], TickAttributeClassFirst));
+        frame.Add(new(Tick, [.. TickBody], TickAttributeClassSecond));
         return frame;
     }
 
@@ -319,11 +329,11 @@ public static class HostStreamFramesUtils
             ? new(
                 UdpCommandConstants.GameStateBlob,
                 [.. SparseStateBlobBody],
-                StateBlobSteadyLiveFourthByte)
+                StateBlobSteadyLiveAttributeClass)
             : new(
                 UdpCommandConstants.GameStateBlob,
                 [.. SteadyZeroStateBlobBody],
-                StateBlobSteadyZeroFourthByte);
+                StateBlobSteadyZeroAttributeClass);
 
     /// <summary>A control-byte insertion.</summary>
     /// <param name="body">Control body to carry.</param>
