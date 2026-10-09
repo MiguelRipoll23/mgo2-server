@@ -114,23 +114,31 @@ public sealed class PostJoinBurstService(RoomRosterService roster)
     /// <returns>The records in send order, each with the type it travels as.</returns>
     public List<RosterRecord> BuildBurst()
     {
+        // The fourth byte continues the roster run's numbering instead of
+        // restarting it. At the join the run reads 0 for its head and the host's
+        // own entry, 1 for the player and 2 for the close, and the burst that
+        // follows reads 3, 4, 5 and 6 — the host's own payload, the player's, and
+        // the two unknown payloads, in that order. Writing zero on all four, as
+        // this did, tells the peer the same sequence four times over.
+        var ordinal = roster.NextRunOrdinal;
         var burst = new List<RosterRecord>
         {
             new(UdpCommandConstants.InGameControl, [OpeningControlByte]),
-            new(RoomRosterService.HostEntryType, HostPayload()),
+            new(RoomRosterService.HostEntryType, HostPayload(), ordinal++),
         };
 
         for (var joiner = 0; joiner < roster.JoinerCount; joiner++)
         {
             burst.Add(new(
                 UdpCommandConstants.PlayerProfile,
-                PlayerPayload()));
+                PlayerPayload(),
+                ordinal++));
         }
 
         // The capture writes these two once, byte for byte identical, and does
         // not repeat them for the peers that join later in the round.
-        burst.Add(new(UdpCommandConstants.PlayerProfile, UnknownPayload()));
-        burst.Add(new(UdpCommandConstants.PlayerProfile, UnknownPayload()));
+        burst.Add(new(UdpCommandConstants.PlayerProfile, UnknownPayload(), ordinal++));
+        burst.Add(new(UdpCommandConstants.PlayerProfile, UnknownPayload(), ordinal));
 
         burst.Add(new(UdpCommandConstants.GameStateBlob, BuildStateBlob()));
         return burst;

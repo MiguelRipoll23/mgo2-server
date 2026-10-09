@@ -137,6 +137,29 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
     }
 
     /// <summary>
+    /// The fourth byte the next record of the roster exchange takes.
+    /// </summary>
+    /// <remarks>
+    /// The run numbers its positions from zero: the head and the host's own entry
+    /// both read zero, the joining players read one upwards, and the close reads
+    /// <see cref="JoinerCount"/> + 1. What follows the run keeps counting rather
+    /// than restarting — the burst the recorded host sends 2.5 s later reads 3, 4,
+    /// 5 and 6 under a one-player roster, which is this value and the three after
+    /// it — so a sender that restarts the count writes numbers the peer has
+    /// already seen.
+    /// </remarks>
+    public byte NextRunOrdinal
+    {
+        get
+        {
+            lock (gate)
+            {
+                return (byte)(members.Count + 2);
+            }
+        }
+    }
+
+    /// <summary>
     /// Removes a peer from the roster and frees its slot.
     /// </summary>
     /// <remarks>

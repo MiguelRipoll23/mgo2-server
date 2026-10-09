@@ -220,24 +220,28 @@ public sealed partial class GameplayServerService
             .Where(message => message.Type < UdpCommandConstants.TickRecordThreshold)
             .ToList();
 
-        // This host does not answer the peer's numbered records. An earlier
-        // reading had it do so — the peer's records retransmitted on a loop, and
-        // the same identifier with the acknowledgement bit set returned for each
-        // — and the reading measured wrong. Serving those answers against a live
-        // join (2026-10-09) left state 2 exactly where it was: the client
-        // accepted the reply and installed the key, this host answered every
-        // 0x9001 the client sent with a 0xd001 carrying the same fourth byte
-        // within a millisecond, and the client still counted state 2 out and
-        // raised 0B09. The records the two rounds in `docs/` pair up by their
-        // fourth byte are two streams that count at the same rate over the same
-        // round, not one answering the other.
+        // Answer the peer's numbered records before handing any of them to a
+        // handler, which is what the recorded host does: an answer is built from
+        // the record it answers rather than from anything this host is tracking,
+        // so it needs no state and no counter of its own.
         //
-        // Nor could the answer be shaped like the capture's: every 0xd001 in
-        // both rounds carries a one-byte body, and its value is the host's own
-        // control byte rather than anything from the record it would be
-        // answering. `docs/protocol/P2P_CONNECT_FSM.md` §7.1c has the
-        // measurement and why the gate it was said to break is now read
-        // differently.
+        // An earlier reading of this host's answers was that they cannot be what
+        // the peer waits for, because a live join was served them and still
+        // stalled. The measurement says otherwise once the answers are read
+        // beside the capture's: the answers served then carried an empty body,
+        // and every answer a 0x8000-class record draws in either capture carries
+        // one byte. The peer went on building records — eighteen of them, its
+        // sequence climbing a step each time — while the window's base stood
+        // still, which is what a window whose base is never moved does.
+        // `PeerAcknowledgementUtils` carries the rule and
+        // `docs/protocol/P2P_CONNECT_FSM.md` §7.1c the measurement, including
+        // what the object at `[0xc]` — the base the window advances from — is
+        // written by.
+        var answers = frame.Messages
+            .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
+            .Select(PeerAcknowledgementUtils.AcknowledgementOf)
+            .ToList();
+        SendMessages(session, answers);
 
         foreach (var message in frame.Messages)
         {

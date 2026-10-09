@@ -709,12 +709,33 @@ join and state 8 — `0x268f24`, the branch on `0x26ab58`, is the only path to t
 state-8 store — and §7.1's "stores state 8 in one call" should be read as
 "reaches the state-8 store once this test passes".
 
-What advances `[0xc]` is **not located**. No store to that byte appears anywhere
-in the module but the initialiser at `0x26b1b4`, so either it is reached through a
-computed base or the object the gate looks at is not the one the builders write.
-The single candidate the scan found is `0x2676e0`, on the receive path, which
-advances `[0xc]` and `[0xd]` together as records are consumed — and that may well
-be a different object's copy of the same layout. **[U]**
+What advances `[0xc]` is the **answer path**, and it is located. The store is
+`0x2676e0`, on the receive side, on the object `0x261438` returns at `0x266f14`,
+and its arithmetic is the builder's in reverse — `[0xc]` and `[0xd]` move by the
+same amount in opposite directions, so what one gains the other loses:
+
+```
+002676b8: lbz  r0, 0xa(r28)      ; the sequence the matched entry names
+002676bc: subf r0, r21, r0       ; r21 = [0xc], so r0 = named - [0xc]
+002676c4: cmpw cr7, r26, r0
+002676cc: mr   r26, r0           ; r26 := min([0xd], named - [0xc])
+002676d8: add  r9, r26, r21      ; [0xc] + r26
+002676e0: stb  r9, 0xc(r23)      ; [0xc] := [0xc] + r26
+002676e4: subf r0, r9, r0        ; ([0xc] + [0xd]) - [0xc]_new
+002676e8: stb  r0, 0xd(r23)      ; [0xd] := [0xd] - r26
+```
+
+So `[0xc]` is the sequence the window has been answered up to and `[0xd]` is what
+is still outstanding; their sum is invariant, which is what a sliding window
+means, and it is the peer's answers that move `[0xc]`. That settles the earlier
+hesitation about the two objects being different: a builder that refuses the
+24th unacknowledged record would be handing out sequences nothing ever released
+if the receive path did not release them. The entry the receive path reads its
+sequence from (`[0xa]`, matched by the low twelve bits of its first word and the
+record's fourth byte) is the bookkeeping the sender kept for the record it built.
+**[V]** for the instructions, **[I]** for the identification of the two objects
+as one — no type table exists in the image to confirm it, and the arithmetic is
+what stands in for one.
 
 #### The measurement that forced this reading
 
@@ -743,15 +764,18 @@ test.
 
 #### Divergences from the reference left open
 
-These are the differences between our live join and the reference join that remain
-unexplained. None of them has been shown to be the cause of the "no".
+These are the differences between our live join and the reference join. The first
+three are open; the fourth is what the 2026-10-09 join did instead of the
+reference's, and the last two were measured in that join and are now fixed.
 
 | what | reference | ours |
 | --- | --- | --- |
 | reply's endpoint pair | host public, then host private (`99.66.131.177:5731`, `10.104.10.28:5731`) | the same public address twice |
 | reply fields | `peer_id 0xa001`, magic, capability `02`, `[19..21) 1`, count 2 | `peer_id 1`, magic, capability `02`, `[19..21) 1`, count 2 |
 | the joiner's own handshake | capability byte `02`, `[19..21) 2` | capability byte `03`, `[19..21) 1` |
-| the joiner's non-profile records | `0x1001` one-byte acks; `0x9001` only closes its post-roster answer | `0x9001` and `0x1001` one-byte records alternate from the first second |
+| the joiner's non-profile records | `0x1001` one-byte answers, then one `0x9001` per sequence, `1`, `2`, `3` … | 18 one-byte `0x9001`, fourth bytes `1`…`0x12`, one every ~5 s: its sequence climbing while its window's base stands still |
+| the host's answers to `0x9001` | `0xd001` with **one** body byte | `0xd001` with **none** (2026-10-09 run) — **fixed**: `PeerAcknowledgementUtils` builds answers with the body length the captures give, §7.1c |
+| the burst's fourth bytes | `3 4 5 6` over a one-player roster | `0 0 0 0` (2026-10-09 run) — **fixed**: `RoomRosterService.NextRunOrdinal` continues the run's numbering |
 
 The joiner's own handshake is built from the session descriptor our TCP `0x4321`
 reply filled in, so its two differing bytes point at that reply rather than at the
@@ -771,34 +795,37 @@ with no further trace. It is the first thing to read out next. **[U]**
 
 §7.1b once left the promotion gate's two cursors unidentified, and this section
 was written to fill them in: the host's records whose fourth byte matches the
-joiner's, read as answers that drain the joiner's send window. The cursors are
-identified below, the reading is not what drains them, and the section keeps both
-halves so the next reader does not re-run the same experiment.
+joiner's, read as answers that drain the joiner's send window. **Both halves hold.**
+The cursors are identified (§7.1b) and the records do pair up as answers; what
+went wrong in between is the shape of the answer, which a live join measured and
+which the section keeps, because the answer that was served and the answer the
+captures show differ by one byte and by nothing else.
 
 Every session record a peer sends carries its sequence in its fourth byte, and a
 record of **the same identifier with class bit `0x4000` set** and the same fourth
 byte follows it:
 
-| the joiner sends | the host's next record of the pair |
-| --- | --- |
-| `0x9001` | `0xd001` |
-| `0x1001` | `0x5001` |
-| `0x5001` | `0x9001` |
+| a record of | is answered by | with |
+| --- | --- | --- |
+| `0x1001` | `0x5001` | an empty body |
+| `0x9001` | `0xd001` | **one** body byte |
 
-This section read that as an answer per record. It is not one — the count
-argument below is what looked like proof and the live measurement at the end of
-this section is what refutes it — and the table is kept only because the
-identifiers still pair up.
+and a record that already carries `0x4000` is not answered again, which is why
+`0x5001` and `0xd001` are senders and never the thing answered. The earlier
+version of this table listed `0x5001` → `0x9001` as a third pair; that is the
+same mistake as reading the pairs as a cadence — `0x5001` carries `0x4000`, so
+by the rule it is answered by nothing, and the `0x9001` records opposite it are
+the joiner's own next sequence.
 
 Measured over the reference round (`mgo2-game.pcapng`, joiner `10.2.0.2:5730`):
 191 joiner `0x9001` records and 176 host `0xd001`, 49 `0x1001` and 60 `0x5001`,
 481 `0x5001` and 71 `0x9001`. Two further captured rounds (`mgo2-game2.pcapng`
 and `mgo2-game3.pcapng`, host `143.47.227.126`, ports `5721` and `5720`) show the
 same counts and the same reply bit: 87 joiner `0x9001` records and 86 host
-`0xd001` in game2, 14 and 14 in game3, plus `0x1001`→`0x5001` and
-`0x5001`→`0x9001` in both. Records that already carry `0x4000` were not counted
-again, and tick records (below `0x1000`) are not numbered at all. **[V]** for the
-counts and the identifiers; the pairing they were read as is refuted below.
+`0xd001` in game2, 14 and 14 in game3, plus `0x1001`→`0x5001` in both. Records that
+already carry `0x4000` were not counted again, and tick records (below `0x1000`)
+are not numbered at all. **[V]** for the counts and the identifiers; what the check
+at the bottom of this section makes of the pairing is there, and it holds.
 
 > **Reading those two captures.** Their host keys differently from the reference:
 > its own direction verifies with the bare pre-key constant and not with a
@@ -807,39 +834,62 @@ counts and the identifiers; the pairing they were read as is refuted below.
 > that assumes a 44-byte reply and a session-keyed host, as `udp_flow_summary.py`
 > does, finds only the joiner's half of these captures and derives no key at all.
 
-**The answer reading is wrong, and a live join settled it.** Serving exactly
-those answers was tried: the gameplay server (image built from `f2e33e9`) was
-made to reply to every numbered record with `T | 0x4000` and the same fourth
-byte, and the join was run again on 2026-10-09. The client accepted the reply and
-installed the key, as before — every keyed frame it sent verified under
-`client_base ^ host_base`, so the accept path had run — and this time the server
-answered each of its `0x9001` records with a `0xd001` carrying the same fourth
-byte, **within the same millisecond** (inbound `9001 b4=01` at 11:41:33.469,
-answered at 11:41:33.469; the pair repeated for `b4=0x02` … `b4=0x12`). The client
-went on sending `0x9001` every ~5 s with the next fourth byte, stopped 18 records
-and ~87 s in, and never left state 2: no tick record, no slot record, no `0x5001`
-of its own — nothing from the data phase. `0B09` again.
+**The reading was right and the answers were wrong.** Serving them was tried on
+2026-10-09: the gameplay server (image built from `f2e33e9`) answered every
+numbered record with `T | 0x4000` and the same fourth byte, and that join is the
+one whose client sat in state 2 — so this section first rejected the reading. The
+error is in the shape of the answer, not in the pairing. **Every answer to a
+record carrying `0x8000` carries one body byte, and ours carried an empty body** —
+no `0xd001` in any of the three rounds has zero bytes, and none of the six
+directions of answer in the reference's opening exchange does either:
 
-Two readings fit that, and the second is the one the table above supports.
-`0xd001` is `UdpCommandConstants.InGameControl`, and the fourth-byte pairing is
-two streams counting at the same rate over the same round rather than one
-answering the other: over the whole of game2 the joiner sends 87 `0x9001` and the
-host 86 `0xd001`, over game3 14 and 14, and over the reference round 191 and 176 —
-what a common cadence gives, not a reply, whose count would also have to grow with
-the re-sends. The `d001` bodies agree: **every one of them is one byte long**
-(176/176 and 86/86), and its value is the host's own control byte — `0x02` and
-`0x03` alternating through the reference round, which is the sparse-phase control
-`HostStreamFramesUtils` already replays — and never anything derived from the
-record it would be answering (`0x9001 b4=01 body=0a` is answered by `body=0b`, its
-`b4=03 body=00` by `body=07`). An answer of that shape cannot be synthesised from
-the inbound record at all; ours carried an empty body, which no `0xd001` in
-either round does.
+```
+ t+4.170 host -> 5001 b4=0  9001 b4=0  1001 b4=1  1001 b4=2
+ t+4.226 join -> d001 b4=0 body=03 , 5001 b4=1 , 5001 b4=2 , 9001 b4=1 body=0a
+ t+6.687 host -> d001 b4=1 body=24 , 9001 b4=3 , 1001 b4=4 , 1001 b4=5 , 1001 b4=6
+ t+6.751 join -> d001 b4=3 body=23 , 5001 b4=4 , 5001 b4=5 , 5001 b4=6 , 9001 b4=2 body=0c010000 00
+```
 
-The promotion gate §7.1b reads is a window over the records this session builds
-(`[0xb]` the next sequence, `[0xc]` its far end), so acknowledgements are still in
-the picture — but they are the *client's* answers to what the host sends, and
-answering the client's records is not the half that drains it. A host that never
-acknowledges a record was therefore never established to be the stall. **[U]**
+The fourth bytes pair one for one — `9001 b4=0` is answered by `d001 b4=0`,
+`1001 b4=4` by `5001 b4=4`, and so on through every record of the exchange — and
+the body lengths follow the identifier's `0x8000` bit in all six. Checked over
+both readable rounds as a rule rather than read off one exchange:
+`tools/probe_ack_rule.py` pairs 2803 of the reference's 2952 answers and all 1025
+of game2's with a record the other side sent, and **every one of those 3828 carries
+exactly the body length the rule gives**. Of the reference's 250 answers, 239 pair
+(11 do not, all of them to a `0x1001` whose fourth byte the joiner never sent); of
+the joiner's 2702, the 138 that do not pair are steady-phase answers to the slot
+records, where the fourth byte of the answer stops tracking the record answered.
+**[V]** for the join window, which is where the host's answers decide the join.
+
+The count argument this section used to make — 191 joiner `0x9001` against 176
+host `0xd001`, 87 against 86, 14 against 14 — does not survive the pairing: an
+answer summarises records already answered, so the two counts need only agree
+roughly and drift behind by whatever is in flight at the end of a capture. The
+body-value argument was sound and is answered by the same table: the byte is the
+acker's own control value, `0x02`/`0x03`/`0x24`/`0x23` in the reference round, and
+nothing needs to be derived from the record answered. Only the length has to be
+right, and the length is the part that was wrong.
+
+**What the live run then shows is the window, not the absence of an answer.** In
+that run our server answered each `0x9001` the client sent, within a millisecond,
+with `d001 b4=<same>` and an *empty* body. The client did not treat them as
+answers: it went on building records — `9001` of one byte, fourth bytes `1`, `2`,
+`3` … `0x12` in order, ~5 s apart — and reached 18 before the join was given up,
+which is its `[0xb]` climbing a step per record while `[0xc]` stood still. 18 is
+still inside the 24 records the window allows (§7.1b), so what it ran into first
+was the timeout, not the window's limit; nothing it sent after the first record
+was from the data phase, and it never sent the `0x5001` answers of the roster the
+reference's joiner sends. **[V]**
+
+So a host that answers the client's records in the shape the captures show is
+still the one candidate that accounts for all of it, and the served-and-failed
+run is evidence *for* the mechanism once the answers are read beside the
+capture's: `[0xc]` is moved by an answer, the answers served could not move it,
+and the window ran out. Whether the one-byte body is what the client matches on —
+as opposed to its own bookkeeping rejecting a plain-text-less record — is not
+separated here. **[U]** for that last step; the fix itself is in
+`PeerAcknowledgementUtils`, and what settles it is another live join.
 
 ---
 
@@ -957,7 +1007,14 @@ Key addresses, all re-checked against the disassembly for this document:
    mean.**~~ **Resolved** — §7.1b: `[0xb]` is the sequence the session hands to the
    next record it builds and `[0xc]` is the far end of a 24-deep window over those
    records; the gate at `0x268f18` is the only path to state 8 and asks whether
-   that window has drained. **What drains it is not located.** The reading that the
-   host's answers did (answering each of the peer's numbered records with the same
-   identifier plus `0x4000`) was served against a live join and did not move the
-   joiner out of state 2 at all (§7.1c). **[U]**
+   that window has drained.
+   ~~**What drains it is not located.**~~ **Located** — §7.1b: the answer path at
+   `0x266f14`/`0x2676e0`, where `[0xc]` gains and `[0xd]` loses the same amount,
+   `min([0xd], named - [0xc])`, off an inbound record's fourth byte. The reading
+   that the host's answers drain it (answering each of the peer's records with the
+   same identifier plus `0x4000`) **stands**: the live run that seemed to refute it
+   (§7.1c) served those answers with an empty body, and every answer to a
+   `0x8000`-class record in every readable round carries **one** byte — which
+   `PeerAcknowledgementUtils` now builds. What is still open is the narrower one:
+   whether the client refuses the empty body or never treats that record as an
+   answer at all. **[U]** for the last step only; a live join decides it.
