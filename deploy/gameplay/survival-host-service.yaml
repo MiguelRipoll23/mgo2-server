@@ -1,0 +1,35 @@
+# Headless. The pod is on the node's own network (hostNetwork, see
+# survival-host-deployment.yaml), so it already answers on the node's 60190 and
+# the console reaches it there directly, through the port forward on the public
+# address.
+#
+# There is deliberately no load balancer in front of it, for the same reason the
+# Free Battle host has none. This host files its session under the exact
+# "address:port" a datagram arrived from -- the same match the console makes on
+# its side (MGO2.ELF, the receive loop at 0x262880) -- so it has to see the wire
+# as it really is. k3s's ServiceLB is klipper-lb, a userspace proxy in a pod: the
+# datagram reaches it carrying the console's address, and it forwards to the
+# backend from a fresh socket, so the pod would see the proxy's address and an
+# ephemeral port. See deploy/README.md, "Source addresses and the load balancer".
+#
+# `clusterIP: None` is also why this Service cannot be changed in place.
+# clusterIP is immutable, so moving between this and a LoadBalancer is a
+# delete and a recreate and never a patch.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mgo2-survival-host-1
+  namespace: mgo2
+spec:
+  clusterIP: None
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 60190
+    protocol: UDP
+    targetPort: 60190
+  selector:
+    app: mgo2-survival-host-1
+  sessionAffinity: None
+  type: ClusterIP

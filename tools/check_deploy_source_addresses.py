@@ -22,7 +22,7 @@ DEPLOY = pathlib.Path("deploy")
 # forwards and never needs the peer's address, so a proxying load balancer costs
 # it nothing; a host files the session under the endpoint the datagram arrived
 # from, so a proxying load balancer takes the session away from it.
-HOSTING_UDP_SERVICES = {"mgo2-gameplay-1"}
+HOSTING_UDP_SERVICES = {"mgo2-gameplay-1", "mgo2-survival-host-1"}
 
 # A Service that preserves the source IP is one whose pods must be Ready before
 # the load balancer sends them anything, so its Deployment owes a probe and a
