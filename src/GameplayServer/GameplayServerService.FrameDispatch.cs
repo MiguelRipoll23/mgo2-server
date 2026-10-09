@@ -1,9 +1,7 @@
 using System.Net;
 using Mgo2Server.Shared.Constants;
-using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Mgo2Server.GameplayServer;
 
@@ -56,6 +54,12 @@ public sealed partial class GameplayServerService
         // one of those peer's frames as undecodable, because the digest cannot
         // be verified without the session key.
         var session = sessions.Get(remoteAddress) ?? sessions.FindByDialBack(remote);
+        logger.LogDebug(
+            "[{LogPrefix}] IN {RemoteAddress} looking up session: {SessionLookup} ({SessionCount} sessions)",
+            LogPrefix,
+            remoteAddress,
+            session is null ? "none" : $"peer=0x{session.PeerIdentifier:x8}, dial-back={session.DialBack}",
+            sessions.Count);
         var preKeyedCounter = TryUnscrambleWith(work, UdpCryptoKeyConstants.TailDigestKey);
         ushort? keyedCounter = null;
         uint sessionKey = 0;
@@ -68,6 +72,11 @@ public sealed partial class GameplayServerService
 
         if (preKeyedCounter is { } preCounter)
         {
+            logger.LogDebug(
+                "[{LogPrefix}] IN {RemoteAddress} passed the pre-key tail-digest check at counter {Counter}",
+                LogPrefix,
+                remoteAddress,
+                preCounter);
             FrameCryptoUtility.RemoveChainInPlace(work, preCounter, UdpCryptoKeyConstants.PreHandshakeKey);
             await DispatchPreKeyedAsync(work, preCounter, remote, remoteAddress);
             return;
@@ -75,6 +84,11 @@ public sealed partial class GameplayServerService
 
         if (keyedCounter is { } keyed && session is not null)
         {
+            logger.LogDebug(
+                "[{LogPrefix}] IN {RemoteAddress} passed the session tail-digest check at counter {Counter}",
+                LogPrefix,
+                remoteAddress,
+                keyed);
             FrameCryptoUtility.RemoveChainInPlace(work, keyed, sessionKey);
             await DispatchKeyedAsync(work, keyed, sessionKey, session, remote);
             return;
@@ -162,11 +176,18 @@ public sealed partial class GameplayServerService
         TrafficLogger.LogUdpInboundPacket(
             logger,
             LogPrefix,
-            $"frame counter={counter}{(isHandshake ? " handshake" : " pre-keyed")} from {remoteAddress}",
+            $"frame counter={counter}{(isHandshake ? " handshake" : " pre-keyed")} " +
+            $"compression={(frame.Compressed ? "compressed" : "uncompressed")} from {remoteAddress}",
             decoded);
 
         foreach (var message in frame.Messages)
         {
+            logger.LogDebug(
+                "[{LogPrefix}] IN {RemoteAddress} dispatching pre-keyed message 0x{MessageType:x4} ({BodyLength} body bytes)",
+                LogPrefix,
+                remoteAddress,
+                message.Type,
+                message.Body.Length);
             await DispatchMessageAsync(message, remote, session);
         }
 
@@ -213,7 +234,8 @@ public sealed partial class GameplayServerService
         TrafficLogger.LogUdpInboundPacket(
             logger,
             LogPrefix,
-            $"frame counter={counter} key={sessionKey:x8} messages={frame.Messages.Count} from {session.DialBack}",
+            $"frame counter={counter} key={sessionKey:x8} messages={frame.Messages.Count} " +
+            $"compression={(frame.Compressed ? "compressed" : "uncompressed")} from {session.DialBack}",
             decoded);
 
         var tickMessages = frame.Messages
@@ -244,6 +266,15 @@ public sealed partial class GameplayServerService
                 PlayerProfileRecordParseUtils.Parse(message.Body) is not { Name.Length: > 0 })
             .Select(PeerAcknowledgementUtils.AcknowledgementOf)
             .ToList();
+        if (answers.Count > 0)
+        {
+            logger.LogDebug(
+                "[{LogPrefix}] OUT {RemoteAddress} answering {AnswerCount} reliable records: {MessageTypes}",
+                LogPrefix,
+                session.DialBack,
+                answers.Count,
+                string.Join(", ", answers.Select(message => $"0x{message.Type:x4}")));
+        }
         SendMessages(session, answers);
 
         foreach (var message in frame.Messages)
@@ -283,6 +314,12 @@ public sealed partial class GameplayServerService
         // their contents and the source frame's compression choice.
         if (tickMessages.Count > 0)
         {
+            logger.LogDebug(
+                "[{LogPrefix}] Relaying {TickCount} tick records from {RemoteAddress}; compression={Compression}",
+                LogPrefix,
+                tickMessages.Count,
+                session.DialBack,
+                frame.Compressed ? "compressed" : "uncompressed");
             RelayTickMessages(session, tickMessages, frame.Compressed);
         }
 
@@ -292,97 +329,4 @@ public sealed partial class GameplayServerService
         TrackInbound(session, counter);
     }
 
-    /// <summary>
-    /// Provisions a session from a decoded handshake datagram: the peer
-    /// identifier and the counter base come from the handshake body, and the
-    /// session key is the two counter bases combined.
-    /// </summary>
-    /// <param name="decoded">Decoded handshake frame.</param>
-    /// <param name="remote">Endpoint the handshake came from.</param>
-    /// <param name="remoteAddress">Endpoint formatted as "address:port".</param>
-    private void ProvisionSession(byte[] decoded, IPEndPoint remote, string remoteAddress)
-    {
-        // After the two-byte header and the four-byte message header, the body
-        // starts at six: the peer identifier then the counter base.
-        var peerIdentifier = BinaryUtility.ReadUInt32LittleEndian(decoded, 6);
-        var counterBase = BinaryUtility.ReadUInt32LittleEndian(decoded, 10);
-
-        sessions.Put(new PeerSession
-        {
-            RemoteAddress = remoteAddress,
-            DialBack = remote,
-            CounterBase = counterBase,
-            OutboundCounter = 0,
-            SessionKey = counterBase ^ hostIdentity.CounterBase,
-            PeerIdentifier = peerIdentifier,
-            HostPeerIdentifier = hostIdentity.PeerIdentifier,
-            Established = false,
-            LastSeenAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            LastInboundSequence = 0,
-        });
-
-        TrafficLogger.LogPeerConnection(
-            logger,
-            LogPrefix,
-            $"{remoteAddress} (peer {peerIdentifier}, answered on {remote})");
-    }
-
-    /// <param name="message">Message to hand to its handler.</param>
-    /// <param name="remote">Endpoint the message arrived from.</param>
-    /// <param name="session">
-    /// Session the frame was decoded against. It is passed in rather than looked
-    /// up again by the observed source: a peer that advertised a different
-    /// endpoint than its handshake arrived from - a hairpining router, or a load
-    /// balancer - sends every later frame from the advertised one, so a second
-    /// lookup by source alone misses the session and drops the message silently.
-    /// </param>
-    private async Task DispatchMessageAsync(UdpMessage message, IPEndPoint remote, PeerSession session)
-    {
-        var remoteAddress = $"{remote.Address}:{remote.Port}";
-
-        var handlerType = registry.ResolveHandlerType(message.Type);
-        if (handlerType is null)
-        {
-            // A warning and not a debug line: a type the host cannot answer is
-            // a gap in the protocol table, not per-frame chatter. At Debug it
-            // was invisible in the noise, and a join that stalls on an
-            // unhandled type logged nothing at all while the joiner waited.
-            logger.LogWarning(
-                "[{LogPrefix}] IN {RemoteAddress} message type {MessageType:x4}: {BodyLength} bytes dropped, no handler",
-                LogPrefix,
-                remoteAddress,
-                message.Type,
-                message.Body.Length);
-            return;
-        }
-
-        var handler = (IPeerCommandHandler)serviceProvider.GetRequiredService(handlerType);
-        var context = new PeerContext(
-            session,
-            message,
-            remote,
-            port,
-            (type, body, ordinal) =>
-            {
-                SendMessage(session, type, body, ordinal);
-                return Task.CompletedTask;
-            },
-            (type, body, ordinal) =>
-            {
-                SendToOthers(session, type, body, ordinal);
-                return Task.CompletedTask;
-            },
-            records =>
-            {
-                SendMessages(session, records);
-                return Task.CompletedTask;
-            },
-            records =>
-            {
-                SendMessages(session, records, compressed: true);
-                return Task.CompletedTask;
-            });
-
-        await handler.HandleAsync(context);
-    }
 }

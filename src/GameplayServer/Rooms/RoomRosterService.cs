@@ -3,6 +3,7 @@ using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
+using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameplayServer.Rooms;
 
@@ -37,7 +38,9 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </para>
 /// </remarks>
 /// <param name="hostIdentity">Identity this host presents to its peers.</param>
-public sealed class RoomRosterService(HostIdentityService hostIdentity)
+public sealed class RoomRosterService(
+    HostIdentityService hostIdentity,
+    ILogger<RoomRosterService> logger)
 {
     /// <summary>Roster slot of the first joining player.</summary>
     public const sbyte FirstJoinerRosterIndex = 0;
@@ -107,6 +110,11 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
                     existing.AddressData = peerAddressData.ToArray();
                 }
 
+                logger.LogDebug(
+                    "Refreshed roster member {RemoteAddress}: character {CharacterId}, slot {RosterIndex}",
+                    key,
+                    existing.CharacterId,
+                    existing.RosterIndex);
                 return existing;
             }
 
@@ -118,6 +126,12 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
                 AddressData = peerAddressData.ToArray(),
             };
             members.Add(member);
+            logger.LogDebug(
+                "Added roster member {RemoteAddress}: character {CharacterId}, slot {RosterIndex}; {JoinerCount} joiners",
+                key,
+                member.CharacterId,
+                member.RosterIndex,
+                members.Count);
             return member;
         }
     }
@@ -179,7 +193,13 @@ public sealed class RoomRosterService(HostIdentityService hostIdentity)
     {
         lock (gate)
         {
-            return members.RemoveAll(member => member.RemoteAddress == remoteAddress) > 0;
+            var removed = members.RemoveAll(member => member.RemoteAddress == remoteAddress) > 0;
+            logger.LogDebug(
+                "Roster removal for {RemoteAddress}: removed={Removed}, remaining joiners={JoinerCount}",
+                remoteAddress,
+                removed,
+                members.Count);
+            return removed;
         }
     }
 

@@ -4,6 +4,7 @@ using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameplayServer.Identity;
@@ -18,7 +19,8 @@ namespace Mgo2Server.GameplayServer.Identity;
 public sealed class AccountService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
     CryptographyService cryptographyService,
-    IOptions<ServerOptions> options)
+    IOptions<ServerOptions> options,
+    ILogger<AccountService> logger)
 {
     /// <summary>Comment shown for the gameplay server character.</summary>
     public const string CharacterComment = "Gameplay server";
@@ -38,6 +40,11 @@ public sealed class AccountService(
     public async Task<int> GetOrCreateCharacterIdentifierAsync(
         CancellationToken cancellationToken = default)
     {
+        logger.LogDebug(
+            "Ensuring gameplay host account {AccountName} and character {CharacterName}",
+            accountName,
+            characterName);
+
         if (!DedicatedHostNameUtils.IsDedicatedHostName(characterName))
         {
             throw new InvalidOperationException(
@@ -63,6 +70,10 @@ public sealed class AccountService(
             .Where(account => account.DisplayName == accountName)
             .Select(account => account.Identifier)
             .FirstAsync(cancellationToken);
+        logger.LogDebug(
+            "Gameplay host account {AccountName} resolved to account {AccountIdentifier}",
+            accountName,
+            accountIdentifier);
 
         await context.Database.ExecuteSqlAsync(
             $"""
@@ -90,6 +101,10 @@ public sealed class AccountService(
         }
 
         await transaction.CommitAsync(cancellationToken);
+        logger.LogDebug(
+            "Gameplay host character {CharacterName} resolved to character {CharacterIdentifier}; account transaction committed",
+            characterName,
+            character.Identifier);
         return character.Identifier;
     }
 }

@@ -26,6 +26,11 @@ public sealed class AcceptHandshakeHandler(
     /// <inheritdoc />
     public async Task HandleAsync(PeerContext context)
     {
+        logger.LogDebug(
+            "UDP {LocalPort}: parsing handshake from {RemoteAddress} ({BodyLength} body bytes)",
+            context.LocalPort,
+            context.Remote,
+            context.Message.Body.Length);
         var handshake = FrameBuilderUtility.ParseHandshakeBody(context.Message.Body);
         if (handshake is null)
         {
@@ -43,6 +48,14 @@ public sealed class AcceptHandshakeHandler(
 
         var dialBack = AdvertisedEndpointOf(handshake) ?? context.Remote;
         context.Session.DialBack = dialBack;
+        logger.LogDebug(
+            "UDP {LocalPort}: configured peer=0x{PeerIdentifier:x8}, counter base=0x{CounterBase:x8}, " +
+            "advertised endpoint={AdvertisedEndpoint}, dial-back={DialBack}",
+            context.LocalPort,
+            handshake.PeerIdentifier,
+            handshake.CounterBase,
+            string.Join(", ", handshake.Pairs.Select(pair => $"{pair.Address}:{pair.Port}")),
+            dialBack);
 
         logger.LogInformation(
             "UDP {LocalPort}: handshake from {RemoteAddress} peer=0x{PeerIdentifier:x8} base=0x{CounterBase:x8}, answering {DialBack}",
@@ -53,6 +66,10 @@ public sealed class AcceptHandshakeHandler(
             dialBack);
 
         await context.Send(UdpCommandConstants.KeepAlive, [], 0);
+        logger.LogDebug(
+            "UDP {LocalPort}: sent pre-keyed opening keep-alive to {RemoteAddress}",
+            context.LocalPort,
+            dialBack);
 
         var reply = FrameBuilderUtility.BuildHandshakeBody(
             hostIdentity.PeerIdentifier,
@@ -60,6 +77,10 @@ public sealed class AcceptHandshakeHandler(
             hostIdentity.AdvertisedAddress,
             hostIdentity.AdvertisedPort);
         await context.Send(UdpCommandConstants.Handshake, reply, 0);
+        logger.LogDebug(
+            "UDP {LocalPort}: sent pre-keyed handshake reply to {RemoteAddress}",
+            context.LocalPort,
+            dialBack);
 
         context.Session.Established = true;
 

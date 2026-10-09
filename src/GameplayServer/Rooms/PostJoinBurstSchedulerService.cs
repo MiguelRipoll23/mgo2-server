@@ -47,9 +47,18 @@ public sealed class PostJoinBurstSchedulerService(
     {
         if (Interlocked.Exchange(ref scheduled, 1) != 0)
         {
+            logger.LogDebug(
+                "UDP {LocalPort}: post-join burst already scheduled; not scheduling another for {RemoteAddress}",
+                context.LocalPort,
+                context.Remote);
             return;
         }
 
+        logger.LogDebug(
+            "UDP {LocalPort}: scheduled post-join burst for {RemoteAddress} after {Delay}",
+            context.LocalPort,
+            context.Remote,
+            Delay);
         _ = SendAsync(context);
     }
 
@@ -63,8 +72,17 @@ public sealed class PostJoinBurstSchedulerService(
             context.Remote);
 
         await RosterRunSendUtils.SendAsync(context, burst.BuildBurst(), compressed: true);
+        logger.LogDebug(
+            "UDP {LocalPort}: post-join burst sent to {RemoteAddress}; sending its follow-up control",
+            context.LocalPort,
+            context.Remote);
 
         var followUp = PostJoinBurstService.BuildFollowUp();
         await context.Send(followUp.Type, followUp.Body, 0);
+        logger.LogDebug(
+            "UDP {LocalPort}: post-join follow-up 0x{MessageType:x4} sent to {RemoteAddress}",
+            context.LocalPort,
+            followUp.Type,
+            context.Remote);
     }
 }

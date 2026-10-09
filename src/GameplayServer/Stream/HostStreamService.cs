@@ -72,10 +72,19 @@ public sealed class HostStreamService(ILogger<HostStreamService> logger)
 
         try
         {
+            logger.LogDebug(
+                "UDP {LocalPort}: playing {StepCount} sparse host-stream steps to {RemoteAddress}",
+                context.LocalPort,
+                HostStreamFramesUtils.SparseSteps().Count,
+                session.RemoteAddress);
             foreach (var step in HostStreamFramesUtils.SparseSteps())
             {
                 if (!IsAlive(session))
                 {
+                    logger.LogDebug(
+                        "UDP {LocalPort}: host stream to {RemoteAddress} stopped during sparse phase because the peer is idle",
+                        context.LocalPort,
+                        session.RemoteAddress);
                     return;
                 }
 
@@ -103,6 +112,11 @@ public sealed class HostStreamService(ILogger<HostStreamService> logger)
             {
                 streaming.Remove(session);
             }
+
+            logger.LogDebug(
+                "UDP {LocalPort}: host stream worker finished for {RemoteAddress}",
+                context.LocalPort,
+                session.RemoteAddress);
         }
     }
 
@@ -137,6 +151,11 @@ public sealed class HostStreamService(ILogger<HostStreamService> logger)
             frameIndex++;
             await Task.Delay(HostStreamFramesUtils.SteadyFramePeriodMilliseconds);
         }
+
+        logger.LogDebug(
+            "UDP {LocalPort}: steady host stream stopped for {RemoteAddress} because the peer is idle",
+            context.LocalPort,
+            session.RemoteAddress);
     }
 
     private static HostStreamFramesUtils.StreamMessage? InsertionFor(

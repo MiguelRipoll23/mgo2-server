@@ -108,6 +108,9 @@ public sealed class MatchService(
     {
         while (matchIdentifier == 0)
         {
+            logger.LogDebug(
+                "Looking for gameplay lobby '{LobbyName}' and its dedicated host match",
+                options.GameplayLobbyName);
             matchIdentifier = await EnsureMatchAsync(cancellationToken);
 
             if (matchIdentifier == 0)
@@ -140,8 +143,16 @@ public sealed class MatchService(
 
         if (lobby is null)
         {
+            logger.LogDebug(
+                "Gameplay lobby '{LobbyName}' is not currently available",
+                options.GameplayLobbyName);
             return 0;
         }
+        logger.LogDebug(
+            "Found gameplay lobby {LobbyIdentifier} ({LobbyName}, subtype {SubtypeIdentifier})",
+            lobby.Identifier,
+            lobby.Name,
+            lobby.SubtypeIdentifier);
 
         var name = options.GameplayServerGameName ?? $"server-{port}";
         var hostIdentifier = (int)hostIdentity.PeerIdentifier;
@@ -150,6 +161,11 @@ public sealed class MatchService(
 
         if (existing is not null)
         {
+            logger.LogDebug(
+                "Reusing existing gameplay match {GameIdentifier} ({GameName}) in lobby {LobbyIdentifier}",
+                existing.Identifier,
+                existing.Name,
+                lobby.Identifier);
             return existing.Identifier;
         }
 

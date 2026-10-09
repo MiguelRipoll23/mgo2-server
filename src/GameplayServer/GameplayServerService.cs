@@ -86,6 +86,10 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     /// </param>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        logger.LogDebug(
+            "[{LogPrefix}] Preparing gameplay host account, character and connection endpoint",
+            LogPrefix);
+
         // The account owns the character the host plays as, and the registered
         // endpoint references it, so it has to exist before anything is written.
         await StartupUtils.RetryAsync(
@@ -98,11 +102,24 @@ public sealed partial class GameplayServerService : IAsyncDisposable
             },
             logger,
             cancellationToken);
+        logger.LogDebug(
+            "[{LogPrefix}] Host character {CharacterIdentifier} ({CharacterName}) is ready",
+            LogPrefix,
+            hostIdentity.PeerIdentifier,
+            hostIdentity.CharacterName);
         await StartupUtils.RetryAsync("register the host endpoint", RegisterConnectionAsync, logger, cancellationToken);
 
         socket = new UdpClient(new IPEndPoint(IPAddress.Any, port));
+        logger.LogDebug(
+            "[{LogPrefix}] UDP socket bound to 0.0.0.0:{Port}",
+            LogPrefix,
+            port);
         sessions.Start();
+        logger.LogDebug("[{LogPrefix}] Peer idle-session reaper started", LogPrefix);
         matchService.Start();
+        logger.LogDebug(
+            "[{LogPrefix}] Match publisher started; match heartbeats are intentionally not logged",
+            LogPrefix);
         logger.LogInformation("[{LogPrefix}] Listening on port {Port}", LogPrefix, port);
 
         // Receiving does not run on the token that asks for the stop. A stop ends
@@ -113,20 +130,27 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         await WaitForStopAsync(cancellationToken);
 
         draining = true;
+        logger.LogDebug(
+            "[{LogPrefix}] Stop requested; entering drain mode with {SessionCount} peer sessions",
+            LogPrefix,
+            sessions.Count);
         await ConnectionDrainUtils.WaitForConnectionsToLeaveAsync(LogPrefix, () => sessions.Count, logger);
 
         receiveLifetime.Cancel();
         await receiveLoop;
+        logger.LogDebug("[{LogPrefix}] Receive loop stopped after peer drain", LogPrefix);
     }
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
+        logger.LogDebug("[{LogPrefix}] Disposing gameplay server services", LogPrefix);
         await matchService.StopAsync();
         sessions.Stop();
         socket?.Dispose();
         socket = null;
         receiveLifetime.Dispose();
+        logger.LogDebug("[{LogPrefix}] Gameplay server services disposed", LogPrefix);
     }
 
     /// <summary>Completes once a stop has been asked for.</summary>
@@ -148,6 +172,12 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         // The address published here is the same one the host puts in its own
         // handshake, read from the same property, so a joining client is never
         // handed one endpoint and given another to answer on.
+        logger.LogDebug(
+            "[{LogPrefix}] Registering host endpoint {Address}:{Port} for character {PeerIdentifier}",
+            LogPrefix,
+            hostIdentity.AdvertisedAddress,
+            port,
+            hostIdentity.PeerIdentifier);
         await gameService.SaveConnectionInformationAsync(
             (int)hostIdentity.PeerIdentifier,
             new ConnectionInformation(
@@ -156,6 +186,10 @@ public sealed partial class GameplayServerService : IAsyncDisposable
                 hostIdentity.AdvertisedAddress,
                 port),
             cancellationToken);
+        logger.LogDebug(
+            "[{LogPrefix}] Host endpoint registered for character {PeerIdentifier}",
+            LogPrefix,
+            hostIdentity.PeerIdentifier);
     }
 
     /// <summary>
@@ -182,10 +216,19 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     {
         // Both lookups are made: '|' and not '||', because the second endpoint
         // has to be tried even when the first one found the entry.
-        if (roster.Remove(session.RemoteAddress) | roster.Remove(session.DialBack.ToString()))
+        var removedObservedEndpoint = roster.Remove(session.RemoteAddress);
+        var removedDialBackEndpoint = roster.Remove(session.DialBack.ToString());
+        if (removedObservedEndpoint | removedDialBackEndpoint)
         {
             logger.LogInformation(
                 "[{LogPrefix}] Took {RemoteAddress} off the room roster: its session was reaped",
+                LogPrefix,
+                session.RemoteAddress);
+        }
+        else
+        {
+            logger.LogDebug(
+                "[{LogPrefix}] Reaped peer {RemoteAddress} had no roster entry to remove",
                 LogPrefix,
                 session.RemoteAddress);
         }

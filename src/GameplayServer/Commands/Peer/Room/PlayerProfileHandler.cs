@@ -52,6 +52,14 @@ public sealed class PlayerProfileHandler(
             profile,
             context.Session.PeerIdentifier,
             context.Session.PeerAddressData);
+        logger.LogDebug(
+            "UDP {LocalPort}: registered roster entry for {RemoteAddress}: character {CharacterId}, " +
+            "slot {RosterIndex}, current joiner count {JoinerCount}",
+            context.LocalPort,
+            context.Remote,
+            member.CharacterId,
+            member.RosterIndex,
+            roster.JoinerCount);
 
         if (context.Session.PeerAddressData.Length != PlayerProfileRecordUtility.AddressDataLength)
         {
@@ -71,6 +79,14 @@ public sealed class PlayerProfileHandler(
             member.RosterIndex);
 
         var run = roster.BuildRosterRun();
+        logger.LogDebug(
+            "UDP {LocalPort}: built roster response for {RemoteAddress}: {RecordCount} records, " +
+            "{JoinerCount} joiners, {FrameCount} outbound roster frames including repeat and trailer",
+            context.LocalPort,
+            context.Remote,
+            run.Count,
+            roster.JoinerCount,
+            3);
         foreach (var record in run.Where(record => record.Type == RoomRosterService.HostEntryType))
         {
             logger.LogInformation(
@@ -83,14 +99,32 @@ public sealed class PlayerProfileHandler(
                 UdpCommandConstants.PlayerProfile);
         }
 
+        var repeat = roster.BuildRosterRunRepeat();
+        logger.LogDebug(
+            "UDP {LocalPort}: sending roster response ({RecordCount} records, compressed)",
+            context.LocalPort,
+            run.Count);
         await RosterRunSendUtils.SendAsync(context, run, compressed: true);
-        await RosterRunSendUtils.SendAsync(context, roster.BuildRosterRunRepeat(), compressed: true);
+        logger.LogDebug(
+            "UDP {LocalPort}: sending roster repeat ({RecordCount} records, compressed)",
+            context.LocalPort,
+            repeat.Count);
+        await RosterRunSendUtils.SendAsync(context, repeat, compressed: true);
 
         var trailer = RoomRosterService.BuildRosterTrailer();
+        logger.LogDebug(
+            "UDP {LocalPort}: sending roster trailer 0x{MessageType:x4} to {RemoteAddress}",
+            context.LocalPort,
+            trailer.Type,
+            context.Remote);
         await context.Send(trailer.Type, trailer.Body, trailer.Ordinal);
 
         if (options.Value.GameplayServerPostJoinTraffic)
         {
+            logger.LogDebug(
+                "UDP {LocalPort}: scheduling post-join burst and host stream for {RemoteAddress}",
+                context.LocalPort,
+                context.Remote);
             burstScheduler.Schedule(context);
             hostStream.Start(context);
         }
@@ -102,6 +136,11 @@ public sealed class PlayerProfileHandler(
                 context.Remote);
         }
 
+        logger.LogDebug(
+            "UDP {LocalPort}: announcing {RecordCount} roster records from {RemoteAddress} to other peers",
+            context.LocalPort,
+            run.Count,
+            context.Remote);
         foreach (var record in run)
         {
             await context.Broadcast(record.Type, record.Body, record.Ordinal);

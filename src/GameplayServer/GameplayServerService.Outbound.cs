@@ -25,12 +25,22 @@ public sealed partial class GameplayServerService
     /// <param name="body">Body of the message.</param>
     private void SendToOthers(PeerSession origin, ushort messageType, byte[] body, byte ordinal)
     {
-        foreach (var session in sessions.Snapshot())
+        var recipients = sessions.Snapshot()
+            .Where(session => session.Established && !ReferenceEquals(session, origin))
+            .ToList();
+        logger.LogDebug(
+            "[{LogPrefix}] Broadcasting 0x{MessageType:x4} ({BodyLength} body bytes, ordinal={Ordinal}) " +
+            "from {Origin} to {RecipientCount} established peers",
+            LogPrefix,
+            messageType,
+            body.Length,
+            ordinal,
+            origin.DialBack,
+            recipients.Count);
+
+        foreach (var session in recipients)
         {
-            if (session.Established && !ReferenceEquals(session, origin))
-            {
-                SendMessage(session, messageType, body, ordinal);
-            }
+            SendMessage(session, messageType, body, ordinal);
         }
     }
 
@@ -47,12 +57,19 @@ public sealed partial class GameplayServerService
         IReadOnlyList<UdpMessage> messages,
         bool compressed)
     {
-        foreach (var session in sessions.Snapshot())
+        var recipients = sessions.Snapshot()
+            .Where(session => session.Established && !ReferenceEquals(session, origin))
+            .ToList();
+        logger.LogDebug(
+            "[{LogPrefix}] Relaying {MessageCount} records from {Origin} to {RecipientCount} established peers",
+            LogPrefix,
+            messages.Count,
+            origin.DialBack,
+            recipients.Count);
+
+        foreach (var session in recipients)
         {
-            if (session.Established && !ReferenceEquals(session, origin))
-            {
-                SendMessages(session, messages, compressed);
-            }
+            SendMessages(session, messages, compressed);
         }
     }
 
@@ -119,11 +136,23 @@ public sealed partial class GameplayServerService
                 : UdpCryptoKeyConstants.TailDigestKey;
 
             var wire = FrameCryptoUtility.EncodeFrame(plain, counter, key, digestKey);
+            logger.LogDebug(
+                "[{LogPrefix}] OUT {RemoteAddress} building frame counter={Counter}, compression={Compression}, " +
+                "keyed={Keyed}, records=[{Records}]",
+                LogPrefix,
+                session.DialBack,
+                counter,
+                compressed ? "compressed" : "uncompressed",
+                session.Established,
+                string.Join(", ", messages.Select(message =>
+                    $"0x{message.Type:x4}/{message.Body.Length}B/ordinal={message.Flags}")));
             Send(wire, session.DialBack);
             TrafficLogger.LogUdpOutboundPacket(
                 logger,
                 LogPrefix,
-                $"frame counter={counter} messages={messages.Count}{(session.Established ? string.Empty : " pre-keyed")} to {session.DialBack}",
+                $"frame counter={counter} messages={messages.Count}" +
+                $"{(session.Established ? string.Empty : " pre-keyed")} " +
+                $"compression={(compressed ? "compressed" : "uncompressed")} to {session.DialBack}",
                 wire);
         }
     }
