@@ -400,7 +400,7 @@ try {
             @{ Name = 'Survival'; Subtype = 'SURVIVAL'; Port = '5735' }
             @{ Name = 'Basic Training'; Subtype = 'BASIC TRAINING'; Port = '5737' }
             @{ Name = 'Combat Training'; Subtype = 'COMBAT TRAINING'; Port = '5738' }
-            @{ Name = 'Survival Hosts'; Subtype = 'SURVIVAL'; Port = '5739' }
+            @{ Name = 'Survival Hosts'; Subtype = 'SURVIVAL HOSTS'; Port = '5739' }
             @{ Name = 'Automatching'; Subtype = 'AUTOMATCHING'; Port = '5740' }
             @{ Name = 'Registration'; Subtype = 'TOURNAMENT REGISTRATION'; Port = '5741' }
             @{ Name = 'Tournament'; Subtype = 'TOURNAMENT'; Port = '5742' }

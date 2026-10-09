@@ -27,6 +27,13 @@ public static class LobbySubtypeConstants
     public const int Survival = 4;
 
     /// <summary>
+    /// Survival Hosts. It is not a mode a player plays: it is the game type the
+    /// dedicated Survival hosts publish under, so a host room carries a mode of
+    /// its own rather than sharing the Survival one with the player lobby.
+    /// </summary>
+    public const int SurvivalHosts = 5;
+
+    /// <summary>
     /// Basic training. Its sessions report nothing at all, so the only measurement
     /// of time spent in one is presence.
     /// </summary>

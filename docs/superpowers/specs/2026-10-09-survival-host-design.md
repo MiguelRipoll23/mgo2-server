@@ -15,8 +15,11 @@ A dedicated host is identified by the flag its host character carries and by
 the mode of the room it publishes, never by a reserved name. The gameplay
 server's startup path marks its character's host settings as dedicated, and
 `MatchService` gives the room the mode of the lobby it publishes in. The
-Survival Hosts lobby runs the Survival selector, so the room it hosts is a
-Survival host. A deployment that wants a host for another mode publishes it in
+Survival Hosts lobby runs the Survival Hosts game type (`5`, renamed from the
+placeholder `Unknown`), so the room it hosts carries a mode of its own rather
+than the Survival player lobby's. The eligibility rule translates that host mode
+to the event it hosts, so a Survival Hosts room serves Survival matches and
+nothing else. A deployment that wants a host for another mode publishes it in
 that mode's lobby or names the mode in the room's own settings.
 
 The `*_HOST` name convention is gone. A room named `SURVIVAL_HOST` or

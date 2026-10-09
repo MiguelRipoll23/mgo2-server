@@ -48,7 +48,7 @@ spec:
         # Names this host's room Survival Host 1 instead of the default
         # server-{port}. The name is only a display name: the room is a host
         # because its host says it is dedicated and because it runs the mode of
-        # the lobby it publishes in, which is Survival.
+        # the lobby it publishes in, the Survival Hosts game type.
         - name: GAMEPLAY_SERVER_GAME_NAME
           value: Survival Host 1
         - name: GAMEPLAY_SERVER_ACCOUNT_NAME

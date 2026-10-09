@@ -42,7 +42,7 @@ spec:
         - name: LOBBY_NAME
           value: Survival Hosts
         - name: LOBBY_SUBTYPE
-          value: SURVIVAL
+          value: SURVIVAL HOSTS
         - name: LOBBY_PORT
           value: '5739'
         - name: LOBBY_BEGINNER_ONLY

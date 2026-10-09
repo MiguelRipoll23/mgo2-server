@@ -37,7 +37,7 @@ internal static partial class EntityModelConfiguration
             new LobbyGameType { Identifier = 2, GameIdentifier = 2, Name = "Automatching" },
             new LobbyGameType { Identifier = 3, GameIdentifier = 3, Name = "Tournament" },
             new LobbyGameType { Identifier = 4, GameIdentifier = 4, Name = "Survival" },
-            new LobbyGameType { Identifier = 5, GameIdentifier = 5, Name = "Unknown" },
+            new LobbyGameType { Identifier = 5, GameIdentifier = 5, Name = "Survival Hosts" },
             new LobbyGameType { Identifier = 6, GameIdentifier = 6, Name = "Unknown" },
             new LobbyGameType { Identifier = 7, GameIdentifier = 7, Name = "Basic Training" },
             new LobbyGameType { Identifier = 8, GameIdentifier = 8, Name = "Combat Training" },

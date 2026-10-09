@@ -15,8 +15,12 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// </summary>
 public static class EventHostEligibilityUtils
 {
-    /// <summary>Mode a dedicated Survival host runs.</summary>
-    public const int SurvivalHostSubtype = EventConstants.SurvivalSelector;
+    /// <summary>
+    /// Game type a dedicated Survival host runs. It is the Survival Hosts game
+    /// type rather than the Survival one: the host lobby is a mode of its own,
+    /// so a host room is never mistaken for a player's Survival room.
+    /// </summary>
+    public const int SurvivalHostSubtype = LobbySubtypeConstants.SurvivalHosts;
 
     /// <summary>Mode a dedicated Tournament host runs.</summary>
     public const int TournamentHostSubtype = EventConstants.TournamentSelector;
@@ -41,6 +45,16 @@ public static class EventHostEligibilityUtils
         subtype is SurvivalHostSubtype or TournamentHostSubtype;
 
     /// <summary>
+    /// The event mode a room of a given mode serves. A dedicated host runs its
+    /// own host mode rather than the event's player mode, so the two are
+    /// translated before they are compared: a Survival Hosts room hosts Survival
+    /// matches, and every other room is its own mode.
+    /// </summary>
+    /// <param name="roomMode">Mode of the room.</param>
+    private static int EventMode(int roomMode) =>
+        roomMode == SurvivalHostSubtype ? EventConstants.SurvivalSelector : roomMode;
+
+    /// <summary>
     /// Whether a room is a dedicated event host: a room whose host says it is
     /// hosting as a dedicated host, running a mode a host serves. The name is not
     /// read at all, so a host may be named for the deployment rather than for a
@@ -51,11 +65,12 @@ public static class EventHostEligibilityUtils
         IsDedicated(hostSettings);
 
     /// <summary>
-    /// Whether a room is the Survival host role: dedicated and running Survival.
-    /// It is narrower than <see cref="IsDedicatedEventHost"/> because the two
-    /// roles are served by different rules — a Tournament host is handed its
-    /// players by a draw, while a Survival host is leased a match, and only the
-    /// Survival one may be entered by nobody but the two teams it was leased to.
+    /// Whether a room is the Survival host role: dedicated and running the
+    /// Survival Hosts game type. It is narrower than
+    /// <see cref="IsDedicatedEventHost"/> because the two roles are served by
+    /// different rules — a Tournament host is handed its players by a draw, while
+    /// a Survival host is leased a match, and only the Survival one may be
+    /// entered by nobody but the two teams it was leased to.
     /// </summary>
     /// <param name="room">Room being asked about.</param>
     /// <param name="hostSettings">Settings of the character hosting it, or null when it has none.</param>
@@ -140,7 +155,7 @@ public static class EventHostEligibilityUtils
     /// host is only dedicated to one, and the room has to seat everyone including
     /// itself.
     /// </summary>
-    /// <param name="gameLobbySubtype">Mode of the room's lobby.</param>
+    /// <param name="gameLobbySubtype">Mode the room serves, already translated from a host mode.</param>
     /// <param name="matchType">Mode of the match.</param>
     /// <param name="maximumPlayers">Players the room holds.</param>
     /// <param name="participantCount">Players the match brings.</param>
@@ -176,7 +191,7 @@ public static class EventHostEligibilityUtils
             return true;
         }
 
-        return requestedSubtype == room.LobbySubtype
+        return requestedSubtype == EventMode(room.LobbySubtype)
             || (requestedSubtype == LobbySubtypeConstants.FreeBattle && IsTournamentHost(room, hostSettings));
     }
 
@@ -190,9 +205,10 @@ public static class EventHostEligibilityUtils
     /// disagree about which rooms qualify.
     /// </para>
     /// <para>
-    /// The mode that has to agree is the room's own: a dedicated host runs the
-    /// mode of the lobby it was published in, so a host opened anywhere can still
-    /// serve the mode it is running.
+    /// The mode that has to agree is the room's own, translated from a host mode
+    /// to the event it hosts: a dedicated host runs the mode of the lobby it was
+    /// published in, so a host opened anywhere can still serve the event it is
+    /// running.
     /// </para>
     /// <para>
     /// A fourth rule joins the three when an environment is passed: the room's
@@ -220,7 +236,7 @@ public static class EventHostEligibilityUtils
             && IsIdle(
                 room.HostIdentifier,
                 room.Players.Select(player => player.CharacterIdentifier))
-            && AcceptsMatch(room.LobbySubtype, matchType, room.MaximumPlayers, participantCount)
+            && AcceptsMatch(EventMode(room.LobbySubtype), matchType, room.MaximumPlayers, participantCount)
             && (requiredSettings is null
                 || (hostSettings is not null
                     && EventHostSettingsEnvironmentUtils.HasSameStaticSettings(

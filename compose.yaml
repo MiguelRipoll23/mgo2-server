@@ -204,7 +204,7 @@ services:
     container_name: mgo2-survival-hosts
     environment:
       LOBBY_NAME: Survival Hosts
-      LOBBY_SUBTYPE: SURVIVAL
+      LOBBY_SUBTYPE: SURVIVAL HOSTS
       LOBBY_PORT: "5739"
       LOBBY_BEGINNER_ONLY: "false"
       LOBBY_EXPANSION_ONLY: "false"

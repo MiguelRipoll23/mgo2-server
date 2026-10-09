@@ -347,7 +347,7 @@ lobbies=(
     'Survival|SURVIVAL|5735'
     'Basic Training|BASIC TRAINING|5737'
     'Combat Training|COMBAT TRAINING|5738'
-    'Survival Hosts|SURVIVAL|5739'
+    'Survival Hosts|SURVIVAL HOSTS|5739'
     'Automatching|AUTOMATCHING|5740'
     'Registration|TOURNAMENT REGISTRATION|5741'
     'Tournament|TOURNAMENT|5742'
