@@ -34,8 +34,8 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 /// player's to use.
 /// </para>
 /// <para>
-/// The room is also offered to the event queue as soon as it exists, rather than
-/// at the next sweep: the room that was just created may be the host two paired
+/// A player-created survival-host room is offered to the event queue as soon
+/// as it exists, rather than at the next sweep: it may be the host two paired
 /// teams are waiting on. The offer is made after the client has been answered,
 /// where the reference makes it just before, so that a client is never handed a
 /// match before it is told the room it is in exists — the reference buys the same
@@ -152,7 +152,10 @@ public sealed class CreateGameHandler(
         // The room is offered to the waiting matches now rather than at the next
         // sweep. A room that cannot host one is not asked about twice: the rule is
         // applied here and the call returns as soon as no match is waiting.
-        await assignmentService.TryAssignWaitingAsync(lobbyIdentifier, cancellationToken);
+        if (string.Equals(game.Name, EventHostEligibilityUtils.SurvivalHostName, StringComparison.OrdinalIgnoreCase))
+        {
+            await assignmentService.TryAssignWaitingAsync(lobbyIdentifier, cancellationToken);
+        }
     }
 
     /// <summary>
