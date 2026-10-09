@@ -64,7 +64,7 @@ public static class ServerServiceCollectionExtensions
             options.GameplayServerAccountPassword = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_PASSWORD")
                 ?? options.GameplayServerAccountPassword;
             options.GameplayServerCharacterName = configuration.ReadText("GAMEPLAY_SERVER_CHARACTER_NAME")
-                ?? options.GameplayServerCharacterName;
+                ?? DedicatedHostNameUtils.HostCharacterName(options.GameplayServerPort);
         });
 
         services.Configure<LobbyOptions>(options =>

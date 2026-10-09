@@ -47,8 +47,6 @@ spec:
           value: Free Battle
         - name: GAMEPLAY_SERVER_ACCOUNT_NAME
           value: server
-        - name: GAMEPLAY_SERVER_CHARACTER_NAME
-          value: server
         # DEDICATED_ADVERTISED_ADDRESS overrides the address this host announces
         # as the rendezvous point, independently of ADVERTISED_ADDRESS. It exists
         # for a node whose clients bind their socket somewhere ADVERTISED_ADDRESS

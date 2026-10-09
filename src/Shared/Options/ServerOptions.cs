@@ -1,3 +1,5 @@
+using Mgo2Server.Shared.Domain.Games;
+
 namespace Mgo2Server.Shared.Options;
 
 /// <summary>
@@ -6,6 +8,9 @@ namespace Mgo2Server.Shared.Options;
 /// </summary>
 public sealed class ServerOptions
 {
+    /// <summary>Backing field for <see cref="GameplayServerCharacterName"/>.</summary>
+    private string? gameplayServerCharacterName;
+
     /// <summary>
     /// Private address of this machine on the network the game clients share.
     /// Leaving it unset answers every local domain with the wildcard address,
@@ -89,8 +94,19 @@ public sealed class ServerOptions
     /// </summary>
     public string? GameplayServerAccountPassword { get; set; }
 
-    /// <summary>Name of the character the gameplay server plays as.</summary>
-    public string GameplayServerCharacterName { get; set; } = "server";
+    /// <summary>
+    /// Name of the character the gameplay server plays as. It is the host prefix
+    /// and this host's own port when it is not configured, which keeps every
+    /// dedicated host on a character of its own without an index being handed
+    /// out: the port is already unique and stable, and the registered
+    /// peer-to-peer endpoint is filed per character.
+    /// </summary>
+    public string GameplayServerCharacterName
+    {
+        get => gameplayServerCharacterName
+            ?? DedicatedHostNameUtils.HostCharacterName(GameplayServerPort);
+        set => gameplayServerCharacterName = value;
+    }
 
     /// <summary>
     /// Clan name the gameplay server announces in its peer-to-peer

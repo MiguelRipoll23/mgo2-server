@@ -29,4 +29,18 @@ public static class DedicatedHostNameUtils
     /// <param name="name">Name of the room.</param>
     public static bool IsDedicatedHostName(string? name) =>
         name is not null && name.StartsWith(DedicatedHostNamePrefix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Name of the host character that belongs to one dedicated gameplay server.
+    /// <para>
+    /// Every dedicated host keeps a character of its own so the peer-to-peer
+    /// endpoint it registers, which is filed per character, cannot be overwritten
+    /// by another host. The port tells the hosts apart because it is already
+    /// unique and stable for a deployment; the account does not, because one
+    /// account may hold many characters. Nothing has to hand out an index.
+    /// </para>
+    /// </summary>
+    /// <param name="port">UDP port the gameplay server binds.</param>
+    public static string HostCharacterName(int port) =>
+        $"{DedicatedHostNamePrefix}-{port}";
 }
