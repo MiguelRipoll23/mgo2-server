@@ -144,7 +144,7 @@ public sealed class MatchService(
             return 0;
         }
 
-        var name = $"server-{port}";
+        var name = options.GameplayServerGameName ?? $"server-{port}";
         var hostIdentifier = (int)hostIdentity.PeerIdentifier;
         var existing = (await gameService.FindByLobbyAsync(lobby.Identifier, cancellationToken))
             .FirstOrDefault(game => game.HostIdentifier == hostIdentifier && game.Name == name);
@@ -165,6 +165,7 @@ public sealed class MatchService(
             room.HostIdentifier = hostIdentifier;
             room.LobbyIdentifier = lobby.Identifier;
             room.Name = name;
+            room.LobbySubtype = EventHostEligibilityUtils.HostSubtype(name) ?? room.LobbySubtype;
             room.Password = string.Empty;
             room.Comment = "Gameplay server";
             room.MaximumPlayers = 8;

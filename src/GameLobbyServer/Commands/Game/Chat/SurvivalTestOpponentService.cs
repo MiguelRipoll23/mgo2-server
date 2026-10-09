@@ -22,23 +22,20 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// cannot invent a second opponent for a team that already has one.
 /// </para>
 /// <para>
-/// The room the match is played in is not opened here and not looked for: a room
-/// exists because a client asked for one, and the dedicated room this pairing
-/// needs is opened by the player afterwards. Until it is, the pairing simply
-/// waits, and the room's own creation is what offers it to the waiting match.
+/// The room the match is played in is not opened here. Pairing immediately
+/// offers the match to an idle host; if none is available, the pairing waits
+/// for a room to become available.
 /// </para>
 /// </summary>
 /// <param name="characterMemoryService">Store that owns the simulated characters.</param>
 /// <param name="teamService">Service that owns the teams, real and simulated.</param>
 /// <param name="matchmakingService">Service that pairs the teams.</param>
-/// <param name="assignmentService">Service that claims a room and publishes the match.</param>
 /// <param name="sessionHelper">Helper used to write the chat lines.</param>
 /// <param name="logger">Logger of the service.</param>
 public sealed class SurvivalTestOpponentService(
     CharacterMemoryService characterMemoryService,
     EventTeamService teamService,
     EventMatchmakingService matchmakingService,
-    EventAssignmentService assignmentService,
     SessionHelper sessionHelper,
     ILogger<SurvivalTestOpponentService> logger)
 {
@@ -156,25 +153,17 @@ public sealed class SurvivalTestOpponentService(
             PairingMessage(team, opponent, pairing),
             cancellationToken);
 
-        // Claiming a room is attempted now, so a room the player already opened
-        // is used without waiting for the next sweep. A run that finds none is
-        // not a failure: the pairing waits, and the room's own creation publishes
-        // it whenever it comes.
-        var assignments = pairing.Status == MatchmakingStatus.Paired
-            ? await assignmentService.TryAssignWaitingAsync(team.LobbyIdentifier, cancellationToken)
-            : [];
         await SayAsync(
             session,
             characterIdentifier,
-            OutcomeMessage(pairing, assignments),
+            OutcomeMessage(pairing),
             cancellationToken);
 
         logger.LogInformation(
-            "Survival self-test opposed team {TeamIdentifier} with in-memory team {OpponentIdentifier}: {Pairing}, {AssignmentCount} assignment(s)",
+            "Survival self-test opposed team {TeamIdentifier} with in-memory team {OpponentIdentifier}: {Pairing}",
             teamIdentifier,
             opponent.Identifier,
-            pairing.Status,
-            assignments.Count);
+            pairing.Status);
     }
 
     private List<Character> CreateCharacters(int count)
@@ -216,21 +205,13 @@ public sealed class SurvivalTestOpponentService(
                 $"In-memory team \"{opponent.Name}\" was registered, but \"{team.Name}\" was already paired or gone.",
         };
 
-    private static string OutcomeMessage(
-        MatchmakingResult pairing,
-        List<EventAssignment> assignments)
+    private static string OutcomeMessage(MatchmakingResult pairing)
     {
         if (pairing.Status != MatchmakingStatus.Paired)
         {
             return "Nothing was published: both teams have to be paired before a room can be claimed.";
         }
 
-        if (assignments.Count == 0)
-        {
-            return $"Match {pairing.MatchIdentifier} is paired and waiting for a host. Open a dedicated room named \"{EventHostEligibilityUtils.SurvivalHostName}\" and the match is published to it.";
-        }
-
-        var assignment = assignments[0];
-        return $"Match {assignment.MatchIdentifier} leased room {assignment.GameIdentifier}; the match-found packets went out to both teams.";
+        return $"Match {pairing.MatchIdentifier} is paired; it may still be waiting for a host.";
     }
 }

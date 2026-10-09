@@ -73,6 +73,12 @@ public sealed class ServerOptions
     /// <summary>Name of the lobby the gameplay server publishes its match in.</summary>
     public string GameplayLobbyName { get; set; } = "Free Battle";
 
+    /// <summary>
+    /// Optional name of the room the gameplay server publishes. When unset,
+    /// the room name is derived from the gameplay server port.
+    /// </summary>
+    public string? GameplayServerGameName { get; set; }
+
     /// <summary>Display name of the account the gameplay server logs in with.</summary>
     public string GameplayServerAccountName { get; set; } = "server";
 

@@ -39,10 +39,12 @@ public readonly record struct MatchmakingResult(
 /// <param name="matchService">Service that persists pairings.</param>
 /// <param name="teamService">Service that owns the teams.</param>
 /// <param name="teamStateService">Service that marks a team as queued or joinable.</param>
+/// <param name="assignmentService">Service that assigns a host to a new pairing.</param>
 public sealed class EventMatchmakingService(
     EventMatchService matchService,
     EventTeamService teamService,
-    EventTeamStateService teamStateService)
+    EventTeamStateService teamStateService,
+    EventAssignmentService assignmentService)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<(int Lobby, int MatchType), Queue<int>> waiting = [];
@@ -180,6 +182,8 @@ public sealed class EventMatchmakingService(
             pairedByTeam[teamIdentifier] = (match.Identifier, opponentIdentifier);
             pairedByTeam[opponentIdentifier] = (match.Identifier, teamIdentifier);
         }
+
+        await assignmentService.TryAssignWaitingAsync(team.LobbyIdentifier, cancellationToken);
 
         return new MatchmakingResult(MatchmakingStatus.Paired, match.Identifier, opponentIdentifier);
     }

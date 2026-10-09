@@ -57,6 +57,8 @@ public static class ServerServiceCollectionExtensions
                 configuration.ReadText("DEDICATED_ADVERTISED_ADDRESS") ?? options.PublicHostAddress;
             options.GameplayLobbyName = configuration.ReadText("GAMEPLAY_SERVER_LOBBY_NAME")
                 ?? options.GameplayLobbyName;
+            options.GameplayServerGameName = configuration.ReadText("GAMEPLAY_SERVER_GAME_NAME")
+                ?? options.GameplayServerGameName;
             options.GameplayServerAccountName = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_NAME")
                 ?? options.GameplayServerAccountName;
             options.GameplayServerAccountPassword = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_PASSWORD")
