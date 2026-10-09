@@ -182,13 +182,9 @@ public sealed partial class GameplayServerService
     /// Records how far the peer's frame counter has got, without transmitting.
     /// </summary>
     /// <remarks>
-    /// The acknowledgement of a peer's records is a separate thing and is
-    /// written by <see cref="DispatchKeyedAsync"/> — one record per inbound one,
-    /// in that record's own identifier with the acknowledgement bit set
-    /// (<see cref="PeerAcknowledgementUtils"/>). This tracks the *frame* counter
-    /// beside it: the counter a frame travels under is not the sequence a peer's
-    /// record is acknowledged by, and tracking it is what makes a stale or
-    /// replayed frame visible.
+    /// The counter a frame travels under is not the sequence a peer's record is
+    /// numbered by, and tracking it is what makes a stale or replayed frame
+    /// visible before its records reach their handlers.
     ///
     /// The comparison is wrap-aware. A plain <c>&gt;</c> would report every
     /// frame as stale once the fifteen-bit counter had gone past 32 767.
@@ -224,29 +220,24 @@ public sealed partial class GameplayServerService
             .Where(message => message.Type < UdpCommandConstants.TickRecordThreshold)
             .ToList();
 
-        // The peer's session records are numbered, and it holds every one of
-        // them until this host says it arrived: its join driver reaches its data
-        // phase only when the record it built shows as many sent as
-        // acknowledged (docs/protocol/P2P_CONNECT_FSM.md §7.1b). The answer is
-        // one record per inbound one, of the same identifier with the
-        // acknowledgement bit set and the same fourth byte — the joiner's 0x9001
-        // answered by 0xd001, its 0x1001 by the host's 0x5001 — and the
-        // reference round and two further captures agree on it record for
-        // record. A host that answers the handshake, the profile and the roster
-        // but acknowledges nothing is the stall a live join ends in, sending the
-        // same records on a loop until state 2 raises 0B09.
+        // This host does not answer the peer's numbered records. An earlier
+        // reading had it do so — the peer's records retransmitted on a loop, and
+        // the same identifier with the acknowledgement bit set returned for each
+        // — and the reading measured wrong. Serving those answers against a live
+        // join (2026-10-09) left state 2 exactly where it was: the client
+        // accepted the reply and installed the key, this host answered every
+        // 0x9001 the client sent with a 0xd001 carrying the same fourth byte
+        // within a millisecond, and the client still counted state 2 out and
+        // raised 0B09. The records the two rounds in `docs/` pair up by their
+        // fourth byte are two streams that count at the same rate over the same
+        // round, not one answering the other.
         //
-        // The answers go out as one frame, before the records are dispatched, so
-        // an answer is timely whether or not the record's own handler writes
-        // anything back.
-        var acknowledgements = frame.Messages
-            .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
-            .Select(PeerAcknowledgementUtils.AcknowledgementOf)
-            .ToList();
-        if (acknowledgements.Count > 0)
-        {
-            SendMessages(session, acknowledgements);
-        }
+        // Nor could the answer be shaped like the capture's: every 0xd001 in
+        // both rounds carries a one-byte body, and its value is the host's own
+        // control byte rather than anything from the record it would be
+        // answering. `docs/protocol/P2P_CONNECT_FSM.md` §7.1c has the
+        // measurement and why the gate it was said to break is now read
+        // differently.
 
         foreach (var message in frame.Messages)
         {

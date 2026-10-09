@@ -678,14 +678,43 @@ when they differ.
 ```
 
 The object is created by `0x261ab0` (handle out-parameter), its fields are written
-through `0x26b2b0(&handle, selector, value)` — selector 0 never touches `0xb`/`0xc`
-— and the session's `+0x48` slot is filled from those handles in the send builders
-(`0x268478`, `0x2686d0`, `0x268734`, `0x26879c`) and cleared to `-1` at `0x2682cc`.
-So the promotion asks a question about **a record this session built**, and it is
-answered "no" while that record's two bytes disagree. What those two bytes are,
-and what makes them equal, is **not established**. **[U]** It is now the single
-gate between the live join and state 8, and §7.1's "stores state 8 in one call"
-should be read as "reaches the state-8 store once this test passes".
+through `0x26b2b0(&handle, selector, value)` — selectors 0, 1, 2 and 3 write bytes
+`[0xa]`, `[0xd]`, `[9]` and the halfword at `[4]`, and **none of them touches
+`[0xb]` or `[0xc]`** — and the session's `+0x48` slot is filled from those handles
+in the send builders (`0x268478`, `0x2686d0`, `0x268734`, `0x26879c`) and cleared
+to `-1` at `0x2682cc`.
+
+The two bytes are a **sliding window over the records this session builds**.
+`0x26b190` initialises `[0xb]`, `[0xc]`, `[0xd]` and `[0xe]` from the same
+register, so they start equal; the record builder at `0x26b0a4` then reads them as
+a window and stamps the outgoing record's fourth byte with `[0xb]`:
+
+```
+0026b0dc: lbz   r9, 0xb(r31)      ; the sequence being handed out
+0026b0e0: lbz   r0, 0xc(r31)      ; the window's far end
+0026b0e4: addi  r11, r9, 1
+0026b0e8: subf  r0, r0, r9        ; r9 - r0 = how far the window is open
+0026b0f0: cmplwi cr7, r0, 0x17    ; more than 23 out -> refuse this record
+0026b104: stb   r9, 0x7a(r1)      ; the record's fourth byte := [0xb]
+0026b108: stb   r11, 0xb(r31)     ; [0xb] := [0xb] + 1
+```
+
+Four builders repeat that tail — `0x26afd8`, `0x26b848`, `0x26b988` and the
+`0x26b108` above — one for each record family they build. So `[0xb]` is the
+sequence this session hands to the next record it builds and `[0xc]` is the far
+end of a window 24 records deep, and the promotion test at `0x268f18` asks
+whether that window has drained: whether every record this session built has been
+answered. **[V]** for the instructions. It is the single gate between the live
+join and state 8 — `0x268f24`, the branch on `0x26ab58`, is the only path to the
+state-8 store — and §7.1's "stores state 8 in one call" should be read as
+"reaches the state-8 store once this test passes".
+
+What advances `[0xc]` is **not located**. No store to that byte appears anywhere
+in the module but the initialiser at `0x26b1b4`, so either it is reached through a
+computed base or the object the gate looks at is not the one the builders write.
+The single candidate the scan found is `0x2676e0`, on the receive path, which
+advances `[0xc]` and `[0xd]` together as records are consumed — and that may well
+be a different object's copy of the same layout. **[U]**
 
 #### The measurement that forced this reading
 
@@ -738,32 +767,38 @@ role lives — and on `== 1` it stores state **3**instead of following the rest 
 and the send-site table in `UDP_JOIN_FLOW.md` §3 gives `[19..21)` as "struct +6"
 with no further trace. It is the first thing to read out next. **[U]**
 
-### 7.1c The records the host answers — the joiner's send window is acknowledged
+### 7.1c The records that pair up — a reading, and what a live join did to it
 
-§7.1b leaves the promotion gate's two cursors unidentified. Three captures now
-show what the host writes against them, and it is a reply the whole opening
-exchange depends on.
+§7.1b once left the promotion gate's two cursors unidentified, and this section
+was written to fill them in: the host's records whose fourth byte matches the
+joiner's, read as answers that drain the joiner's send window. The cursors are
+identified below, the reading is not what drains them, and the section keeps both
+halves so the next reader does not re-run the same experiment.
 
-Every session record a peer sends carries its sequence in its fourth byte, and
-the host answers it with a record of **the same identifier with class bit
-`0x4000` set**, carrying the same fourth byte and an empty body:
+Every session record a peer sends carries its sequence in its fourth byte, and a
+record of **the same identifier with class bit `0x4000` set** and the same fourth
+byte follows it:
 
-| the joiner sends | the host answers |
+| the joiner sends | the host's next record of the pair |
 | --- | --- |
 | `0x9001` | `0xd001` |
 | `0x1001` | `0x5001` |
 | `0x5001` | `0x9001` |
 
+This section read that as an answer per record. It is not one — the count
+argument below is what looked like proof and the live measurement at the end of
+this section is what refutes it — and the table is kept only because the
+identifiers still pair up.
+
 Measured over the reference round (`mgo2-game.pcapng`, joiner `10.2.0.2:5730`):
 191 joiner `0x9001` records and 176 host `0xd001`, 49 `0x1001` and 60 `0x5001`,
-481 `0x5001` and 71 `0x9001` — one answer per inbound record rather than one per
-sequence. Two further captured rounds (`mgo2-game2.pcapng` and
-`mgo2-game3.pcapng`, host `143.47.227.126`, ports `5721` and `5720`) show the
-same rule and the same reply bit: 87 joiner `0x9001` records and 86 host
+481 `0x5001` and 71 `0x9001`. Two further captured rounds (`mgo2-game2.pcapng`
+and `mgo2-game3.pcapng`, host `143.47.227.126`, ports `5721` and `5720`) show the
+same counts and the same reply bit: 87 joiner `0x9001` records and 86 host
 `0xd001` in game2, 14 and 14 in game3, plus `0x1001`→`0x5001` and
-`0x5001`→`0x9001` in both. A record
-that already carries `0x4000`, and so any answer, is not answered again, and tick
-records (below `0x1000`) are not numbered and are not answered. **[V]**
+`0x5001`→`0x9001` in both. Records that already carry `0x4000` were not counted
+again, and tick records (below `0x1000`) are not numbered at all. **[V]** for the
+counts and the identifiers; the pairing they were read as is refuted below.
 
 > **Reading those two captures.** Their host keys differently from the reference:
 > its own direction verifies with the bare pre-key constant and not with a
@@ -772,17 +807,39 @@ records (below `0x1000`) are not numbered and are not answered. **[V]**
 > that assumes a 44-byte reply and a session-keyed host, as `udp_flow_summary.py`
 > does, finds only the joiner's half of these captures and derives no key at all.
 
-The rule is what a selective-repeat window needs, and game2 shows it deciding the
-join: the joiner re-sent `0x9001` sequence 1 at t+6.26, 8.28 and 10.21 s and sent
-nothing new until the host's `0xd001` sequence 1 arrived at t+10.24 s, after which
-its next `0x9001` carried sequence 3. A host that answers the handshake, the
-profile and the roster but never acknowledges a record leaves the joiner
-re-sending its window until state 2 raises `0B09` — which is the live join of
-§7.1b: 17-byte one-byte records on a loop, ~1 s apart, for 39 s.
+**The answer reading is wrong, and a live join settled it.** Serving exactly
+those answers was tried: the gameplay server (image built from `f2e33e9`) was
+made to reply to every numbered record with `T | 0x4000` and the same fourth
+byte, and the join was run again on 2026-10-09. The client accepted the reply and
+installed the key, as before — every keyed frame it sent verified under
+`client_base ^ host_base`, so the accept path had run — and this time the server
+answered each of its `0x9001` records with a `0xd001` carrying the same fourth
+byte, **within the same millisecond** (inbound `9001 b4=01` at 11:41:33.469,
+answered at 11:41:33.469; the pair repeated for `b4=0x02` … `b4=0x12`). The client
+went on sending `0x9001` every ~5 s with the next fourth byte, stopped 18 records
+and ~87 s in, and never left state 2: no tick record, no slot record, no `0x5001`
+of its own — nothing from the data phase. `0B09` again.
 
-Whether these answers are exactly the `0xb`/`0xc` pair the promotion test reads
-is not proved from the image, but the deployed server that sent none is the one
-that stalled, and it now answers each record as the captures do. **[I]**
+Two readings fit that, and the second is the one the table above supports.
+`0xd001` is `UdpCommandConstants.InGameControl`, and the fourth-byte pairing is
+two streams counting at the same rate over the same round rather than one
+answering the other: over the whole of game2 the joiner sends 87 `0x9001` and the
+host 86 `0xd001`, over game3 14 and 14, and over the reference round 191 and 176 —
+what a common cadence gives, not a reply, whose count would also have to grow with
+the re-sends. The `d001` bodies agree: **every one of them is one byte long**
+(176/176 and 86/86), and its value is the host's own control byte — `0x02` and
+`0x03` alternating through the reference round, which is the sparse-phase control
+`HostStreamFramesUtils` already replays — and never anything derived from the
+record it would be answering (`0x9001 b4=01 body=0a` is answered by `body=0b`, its
+`b4=03 body=00` by `body=07`). An answer of that shape cannot be synthesised from
+the inbound record at all; ours carried an empty body, which no `0xd001` in
+either round does.
+
+The promotion gate §7.1b reads is a window over the records this session builds
+(`[0xb]` the next sequence, `[0xc]` its far end), so acknowledgements are still in
+the picture — but they are the *client's* answers to what the host sends, and
+answering the client's records is not the half that drains it. A host that never
+acknowledges a record was therefore never established to be the stall. **[U]**
 
 ---
 
@@ -896,9 +953,11 @@ Key addresses, all re-checked against the disassembly for this document:
    up earlier is not established here; the FSM admits both. What a live run does
    with a keyed frame *and* an accepted reply is now measured (§7.1b): no re-dial
    at all, state 2 counting both deadlines out to `0B09`. **[U]**
-5. **What the object at `session+0x48` is, and what its bytes `0xb` and `0xc`
-   mean** — the promotion test of §7.1b. What the *host* can do about it is now
-   measured (§7.1c): it answers each of the peer's numbered records with the same
-   identifier plus `0x4000`, and the joiner's window advances on the answer. Which
-   byte that answer moves, and whether it is the whole of the gate, is still not
-   read out of the image. **[U]**
+5. ~~**What the object at `session+0x48` is, and what its bytes `0xb` and `0xc`
+   mean.**~~ **Resolved** — §7.1b: `[0xb]` is the sequence the session hands to the
+   next record it builds and `[0xc]` is the far end of a 24-deep window over those
+   records; the gate at `0x268f18` is the only path to state 8 and asks whether
+   that window has drained. **What drains it is not located.** The reading that the
+   host's answers did (answering each of the peer's numbered records with the same
+   identifier plus `0x4000`) was served against a live join and did not move the
+   joiner out of state 2 at all (§7.1c). **[U]**
