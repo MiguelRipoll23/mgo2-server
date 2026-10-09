@@ -232,10 +232,13 @@ public sealed class EventMatchmakingService(
 
         if (matchIdentifier > 0)
         {
-            await matchService.SetStateAsync(
-                matchIdentifier,
-                EventConstants.MatchCancelledState,
-                cancellationToken: cancellationToken);
+            // The match leaving the queue is where its room is handed back. The
+            // assignment is what holds the room, so the cancellation goes through
+            // it rather than moving the match alone: it releases the claim and
+            // tears the live screens down. Cancelling here without releasing
+            // would keep the room leased to a match that is over, and the next
+            // pairing would be offered a room that refuses its claim.
+            await assignmentService.CancelAsync(matchIdentifier, cancellationToken);
             return new MatchmakingResult(MatchmakingStatus.Unchanged, matchIdentifier, 0);
         }
 

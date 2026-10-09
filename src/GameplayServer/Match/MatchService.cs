@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.Shared.Domain.Automatch;
-using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Options;
@@ -165,17 +164,21 @@ public sealed class MatchService(
             room.HostIdentifier = hostIdentifier;
             room.LobbyIdentifier = lobby.Identifier;
             room.Name = name;
-            room.LobbySubtype = EventHostEligibilityUtils.HostSubtype(name) ?? room.LobbySubtype;
+            // The room runs the mode of the lobby it is published in, which is
+            // what makes it a host for that mode: the Survival host publishes in
+            // the Survival hosts lobby, so its room is a Survival room without
+            // the name having to say so.
+            room.LobbySubtype = lobby.SubtypeIdentifier;
             room.Password = string.Empty;
             room.Comment = "Gameplay server";
             room.MaximumPlayers = 8;
             room.Games = JsonSerializer.Serialize(rotation);
 
             // A gameplay server hosts rather than plays, so its room is a
-            // dedicated host, and the room's own name is what says so: the name
-            // is written a few lines above and is the same prefix the details
-            // reply reads, so the flag and the name cannot disagree. Nothing is
-            // stored against the host to carry it, because the name already does.
+            // dedicated host: the flag that says so is written against the host
+            // character at startup, and the room's mode is the mode of the lobby
+            // it is published in. Neither the name nor the lobby decides the
+            // role on its own.
             room.Ping = ReportedPingMilliseconds;
         }, cancellationToken);
 

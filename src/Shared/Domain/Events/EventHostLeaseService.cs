@@ -100,6 +100,57 @@ public sealed class EventHostLeaseService(IDbContextFactory<Mgo2DatabaseContext>
                 cancellationToken);
     }
 
+    /// <summary>
+    /// The rooms an active lease is held on, as the set the host choice excludes.
+    /// A room hosts one match at a time, and the lease is what makes that true:
+    /// offering a leased room to a second match would have that match choose the
+    /// room and then fail its own claim after the choice was already made.
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Identifiers of the rooms currently leased.</returns>
+    public async Task<IReadOnlySet<int>> FindActiveGameIdentifiersAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await CreateContextAsync(cancellationToken);
+        var identifiers = await context.EventHostLeases
+            .Where(lease => lease.Status == EventConstants.LeaseActiveState)
+            .Select(lease => lease.GameIdentifier)
+            .ToListAsync(cancellationToken);
+        return identifiers.ToHashSet();
+    }
+
+    /// <summary>
+    /// Releases every active lease whose match is no longer live. A lease is a
+    /// match's claim on a room, so a match that has been cancelled or completed
+    /// claims nothing and the room belongs to the pool again.
+    /// <para>
+    /// It is the recovery for a release that never happened — a process stopped
+    /// between the cancellation and the release, or a cancellation path that did
+    /// not give the room back — and without it the room stays out of the pool for
+    /// the life of the row.
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>How many leases were released.</returns>
+    public async Task<int> ReleaseOrphansAsync(CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        await using var context = await CreateContextAsync(cancellationToken);
+        return await context.EventHostLeases
+            .Where(lease => lease.Status == EventConstants.LeaseActiveState
+                && !context.EventMatches.Any(match =>
+                    match.Identifier == lease.MatchIdentifier
+                    && (match.State == EventConstants.MatchPairedState
+                        || match.State == EventConstants.MatchAssignedState)))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(lease => lease.Status, EventConstants.LeaseReleasedState)
+                    .SetProperty(lease => lease.ReleasedAt, now)
+                    .SetProperty(lease => lease.UpdatedAt, now),
+                cancellationToken);
+    }
+
     /// <summary>Returns a room to the pool by releasing its lease.</summary>
     /// <param name="gameIdentifier">Room being released.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>

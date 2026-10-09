@@ -30,10 +30,12 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// </summary>
 /// <param name="gameService">Service that owns the rooms.</param>
 /// <param name="characterService">Service that owns the characters' host settings.</param>
+/// <param name="leaseService">Service that owns the claims matches hold on rooms.</param>
 /// <param name="options">Event configuration, for the rule about the room's own settings.</param>
 public sealed class EventHostRoomPoolService(
     GameService gameService,
     CharacterService characterService,
+    EventHostLeaseService leaseService,
     IOptions<EventOptions> options)
 {
     /// <summary>
@@ -79,7 +81,18 @@ public sealed class EventHostRoomPoolService(
             rooms.Select(room => room.HostIdentifier),
             cancellationToken);
 
-        return SelectHost(rooms, matchType, participantCount, hostSettings, requiredSettings);
+        // A room that already holds an active lease has been assigned to a
+        // match, so it is not a host this match may choose. The rules above say
+        // whether a room can host; this says whether it is free to.
+        var assignedRooms = await leaseService.FindActiveGameIdentifiersAsync(cancellationToken);
+
+        return SelectHost(
+            rooms,
+            matchType,
+            participantCount,
+            hostSettings,
+            requiredSettings,
+            assignedRooms);
     }
 
     /// <summary>
@@ -94,19 +107,25 @@ public sealed class EventHostRoomPoolService(
     /// Passed in rather than read from the service so the rule can be exercised
     /// without one, and so a reader can see which answer it is asking for.
     /// </param>
+    /// <param name="assignedRooms">
+    /// Rooms that already hold an active lease, which are not free to host.
+    /// <c>null</c> when the caller has no claim state to apply.
+    /// </param>
     /// <returns>The first room that may take the match, or null when none may.</returns>
     public static Game? SelectHost(
         List<Game> rooms,
         int matchType,
         int participantCount,
         IReadOnlyDictionary<int, CharacterHostSettings> hostSettings,
-        EventHostEnvironment? requiredSettings)
+        EventHostEnvironment? requiredSettings,
+        IReadOnlySet<int>? assignedRooms = null)
     {
         ArgumentNullException.ThrowIfNull(rooms);
         ArgumentNullException.ThrowIfNull(hostSettings);
 
         return rooms.FirstOrDefault(room =>
-            EventHostEligibilityUtils.IsEligibleHost(
+            (assignedRooms is null || !assignedRooms.Contains(room.Identifier))
+            && EventHostEligibilityUtils.IsEligibleHost(
                 room,
                 matchType,
                 participantCount,

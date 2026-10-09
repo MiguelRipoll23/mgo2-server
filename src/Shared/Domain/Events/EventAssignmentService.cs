@@ -59,6 +59,13 @@ public sealed partial class EventAssignmentService(
             return [];
         }
 
+        // A room that looks free may still be holding a lease whose match is
+        // over: a cancellation that did not give the room back leaves the claim
+        // active, and the choice below would be made from a room that refuses
+        // the claim. The orphan is settled before the rooms are listed, so the
+        // choice is made from the rooms that are actually free.
+        await leaseService.ReleaseOrphansAsync(cancellationToken);
+
         var games = await roomPool.ListAsync(cancellationToken);
         var assignments = new List<EventAssignment>();
 

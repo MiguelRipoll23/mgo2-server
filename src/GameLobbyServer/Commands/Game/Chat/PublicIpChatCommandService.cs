@@ -55,11 +55,14 @@ public sealed class PublicIpChatCommandService(
             ChatPayloadBuilder.PublicChannelDigit,
             BuildMessage(information?.PublicIpAddress));
 
-        await sessionHelper.SendPacketAsync(
-            session,
-            CommandConstants.SendChatResult,
-            ChatPayloadBuilder.BuildServerReply(characterIdentifier, line),
-            cancellationToken);
+        foreach (var payload in ChatPayloadBuilder.BuildServerReplies(characterIdentifier, line))
+        {
+            await sessionHelper.SendPacketAsync(
+                session,
+                CommandConstants.SendChatResult,
+                payload,
+                cancellationToken);
+        }
     }
 
     /// <summary>

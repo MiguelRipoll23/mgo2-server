@@ -44,13 +44,13 @@ spec:
         - name: GAMEPLAY_SERVER_PORT
           value: '60190'
         - name: GAMEPLAY_SERVER_LOBBY_NAME
-          value: Free Battle
-        # Names this host's room SURVIVAL_HOST instead of the default
-        # server-{port}. The name is what the room-creation path in the Survival
-        # lobby gates assignment on, and it is also what sets the room's subtype
-        # to the Survival selector.
+          value: Survival Hosts
+        # Names this host's room Survival Host 1 instead of the default
+        # server-{port}. The name is only a display name: the room is a host
+        # because its host says it is dedicated and because it runs the mode of
+        # the lobby it publishes in, which is Survival.
         - name: GAMEPLAY_SERVER_GAME_NAME
-          value: SURVIVAL_HOST
+          value: Survival Host 1
         - name: GAMEPLAY_SERVER_ACCOUNT_NAME
           value: server
         - name: GAMEPLAY_SERVER_CHARACTER_NAME

@@ -268,18 +268,21 @@ public sealed class SurvivalTestService(
         }
     }
 
-    private Task SayAsync(
+    private async Task SayAsync(
         TcpSession session,
         int characterIdentifier,
         string text,
         CancellationToken cancellationToken)
     {
         var request = new ChatRequest(ChatPayloadBuilder.PublicChannelDigit, text);
-        return sessionHelper.SendPacketAsync(
-            session,
-            CommandConstants.SendChatResult,
-            ChatPayloadBuilder.BuildServerReply(characterIdentifier, request),
-            cancellationToken);
+        foreach (var payload in ChatPayloadBuilder.BuildServerReplies(characterIdentifier, request))
+        {
+            await sessionHelper.SendPacketAsync(
+                session,
+                CommandConstants.SendChatResult,
+                payload,
+                cancellationToken);
+        }
     }
 
     private static List<int> FreeSlots(EventTeam team) =>

@@ -81,10 +81,10 @@ public sealed class JoinGameHandler(
             : EventHostEligibilityUtils.UnnamedSubtype;
 
         // Whether a room is holding a host role is its host's own claim, read
-        // from the settings it saved. It is read only for a room named for a
-        // role: an ordinary room's answer is its own mode either way, so the
-        // query would be spent on every join to learn nothing.
-        var hostSettings = EventHostEligibilityUtils.IsReservedHostName(game.Name)
+        // from the settings it saved. It is read only for a room running a mode a
+        // dedicated host serves: an ordinary room's answer is its own mode either
+        // way, so the query would be spent on every join to learn nothing.
+        var hostSettings = EventHostEligibilityUtils.IsHostRoleMode(game.LobbySubtype)
             ? (await characterService.FindHostSettingsAsync([game.HostIdentifier], cancellationToken))
                 .GetValueOrDefault(game.HostIdentifier)
             : null;

@@ -32,6 +32,27 @@ public static class TextUtils
             return text;
         }
 
+        return string.Join(LineBreak, Split(text, width));
+    }
+
+    /// <summary>
+    /// Breaks every line of <paramref name="text"/> that is longer than
+    /// <paramref name="width"/> and returns the lines separately. It is the same
+    /// break <see cref="Wrap"/> takes, without joining the result back together:
+    /// a caller that writes each line as its own message wants the lines, not a
+    /// string with a break character inside it.
+    /// </summary>
+    /// <param name="text">Text to break.</param>
+    /// <param name="width">Longest line the splitter may produce.</param>
+    /// <returns>The lines, in order; empty when there is nothing to return.</returns>
+    public static IReadOnlyList<string> Split(string text, int width)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
+        if (string.IsNullOrEmpty(text))
+        {
+            return [];
+        }
+
         // Every break the text may already carry is folded to one character so the
         // lines below are split on a single separator, whatever the source used.
         var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
@@ -41,7 +62,7 @@ public static class TextUtils
             AppendWrapped(lines, line, width);
         }
 
-        return string.Join(LineBreak, lines);
+        return lines;
     }
 
     /// <summary>Appends one line, broken into as many lines as its width needs.</summary>

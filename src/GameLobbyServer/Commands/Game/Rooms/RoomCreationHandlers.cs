@@ -98,19 +98,11 @@ public sealed class CreateGameHandler(
             return;
         }
 
-        // A room the host flagged as dedicated is the one the event hosts are
-        // chosen from, so the flag travels into the room settings the event
-        // host-eligibility reads.
-        var isDedicatedRoom = pushed is { Dedicated: true };
-
-        // A room runs the mode its own settings named, because that is the mode the
-        // host picked on the settings screen. A room named for a host role runs the
-        // role's mode instead, so a host opened in one lobby is still found by the
-        // mode it is named for. The rule is the reference's, and so is consulting
-        // the name only for a room that says it is dedicated: a name on its own is
-        // not a claim to the role.
-        var reservedSubtype = isDedicatedRoom ? EventHostEligibilityUtils.HostSubtype(name) : null;
-        var roomSubtype = reservedSubtype ?? pushed?.SettingsLobbySubtype ?? 0;
+        // A room runs the mode its own settings named, because that is the mode
+        // the host picked on the settings screen. A dedicated host is chosen by
+        // that mode and its flag rather than by its name, so the name is only a
+        // display name.
+        var roomSubtype = pushed?.SettingsLobbySubtype ?? 0;
 
         var game = await gameService.CreateAsync(room =>
         {
@@ -151,11 +143,8 @@ public sealed class CreateGameHandler(
 
         // The room is offered to the waiting matches now rather than at the next
         // sweep. A room that cannot host one is not asked about twice: the rule is
-        // applied here and the call returns as soon as no match is waiting.
-        if (string.Equals(game.Name, EventHostEligibilityUtils.SurvivalHostName, StringComparison.OrdinalIgnoreCase))
-        {
-            await assignmentService.TryAssignWaitingAsync(lobbyIdentifier, cancellationToken);
-        }
+        // applied there and the call returns as soon as no match is waiting.
+        await assignmentService.TryAssignWaitingAsync(lobbyIdentifier, cancellationToken);
     }
 
     /// <summary>

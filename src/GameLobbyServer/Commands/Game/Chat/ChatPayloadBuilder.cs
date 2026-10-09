@@ -21,8 +21,6 @@ public static class ChatPayloadBuilder
     /// <summary>Longest message the wire can carry, as the client's reader takes it.</summary>
     public const int MaximumTextLength = 127;
 
-    private const int VisibleLineWidth = 58;
-
     /// <summary>
     /// The channel digit of team chat — the one channel that does not reach the whole
     /// room. Channels 0 and 2 are public and 3 resolves speakers against a
@@ -66,17 +64,21 @@ public static class ChatPayloadBuilder
     }
 
     /// <summary>
-    /// Builds the <c>0x4401</c> line for a message the server authored itself. A
-    /// line relayed from a client already carries the client's own wrapping, but a
-    /// line the server raises has none, so it is wrapped to the longest text the
-    /// client's chat reader takes.
+    /// Builds the <c>0x4401</c> lines for a message the server authored itself,
+    /// one per message the client's chat line holds. The text is split rather
+    /// than wrapped with a break character: the client draws one line and honours
+    /// no break, so a message that does not fit is a second message and not one
+    /// line with a gap in it.
     /// </summary>
-    /// <param name="speakerCharacterIdentifier">Character id the line is spoken as.</param>
+    /// <param name="speakerCharacterIdentifier">Character id the lines are spoken as.</param>
     /// <param name="request">Line the server authored.</param>
-    public static byte[] BuildServerReply(int speakerCharacterIdentifier, ChatRequest request) =>
-        BuildReply(
-            speakerCharacterIdentifier,
-            request with { Text = TextUtils.Wrap(request.Text, VisibleLineWidth) });
+    /// <returns>One payload per message, in order.</returns>
+    public static IReadOnlyList<byte[]> BuildServerReplies(int speakerCharacterIdentifier, ChatRequest request) =>
+        [.. ChatTextUtils
+            .SplitMessages(request.Text)
+            .Select(line => BuildReply(
+                speakerCharacterIdentifier,
+                request with { Text = line }))];
 
     /// <summary>
     /// Builds the <c>0x4401</c> line to display: the speaker's character id, then the
