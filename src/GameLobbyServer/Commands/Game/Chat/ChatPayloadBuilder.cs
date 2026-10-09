@@ -21,6 +21,8 @@ public static class ChatPayloadBuilder
     /// <summary>Longest message the wire can carry, as the client's reader takes it.</summary>
     public const int MaximumTextLength = 127;
 
+    private const int VisibleLineWidth = 58;
+
     /// <summary>
     /// The channel digit of team chat — the one channel that does not reach the whole
     /// room. Channels 0 and 2 are public and 3 resolves speakers against a
@@ -74,7 +76,7 @@ public static class ChatPayloadBuilder
     public static byte[] BuildServerReply(int speakerCharacterIdentifier, ChatRequest request) =>
         BuildReply(
             speakerCharacterIdentifier,
-            request with { Text = TextUtils.Wrap(request.Text, MaximumTextLength) });
+            request with { Text = TextUtils.Wrap(request.Text, VisibleLineWidth) });
 
     /// <summary>
     /// Builds the <c>0x4401</c> line to display: the speaker's character id, then the
