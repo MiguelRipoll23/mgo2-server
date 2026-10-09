@@ -71,12 +71,20 @@ An import interrupted part way leaves exactly this, so finish it once:
   -analysisTimeoutPerFile 21600
 ```
 
-`-analysisTimeoutPerFile` is in seconds and its default is an hour, which a
-20-megabyte game image can exceed. In the GUI the same thing is **Analysis →
-Auto Analyze 'MGO2.ELF'**; the headless form is preferred here because it prints
-the coverage numbers before and after. The pass preserves whatever the project
-already holds, including renamed functions, so it is safe to run on a project
-somebody has been working in.
+`-analysisTimeoutPerFile` is in seconds, and the distribution's own description
+says what it is for: *"if analysis on a file exceeds the specified time, analysis
+is interrupted and processing continues as scheduled"*. That is the state this
+project was found in, so the value here is six hours — the pass is the slow part
+and a second interruption costs another one. How long it actually takes is the
+wall clock of the run; the script prints the counts when it ends, and until then
+the log is the only progress there is, since headless reports nothing between
+"ANALYZING all memory and code" and the result. On a run that takes an hour, the
+Java process's CPU time is the way to tell a slow pass from a stuck one.
+
+In the GUI the same thing is **Analysis → Auto Analyze 'MGO2.ELF'**; the headless
+form is preferred here because it prints the coverage numbers before and after.
+The pass preserves whatever the project already holds, including renamed
+functions, so it is safe to run on a project somebody has been working in.
 
 ## The scripts
 
