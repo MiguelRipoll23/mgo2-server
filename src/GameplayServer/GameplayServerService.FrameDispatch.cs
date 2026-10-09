@@ -179,14 +179,16 @@ public sealed partial class GameplayServerService
     }
 
     /// <summary>
-    /// Records how far the peer's counter has got, without transmitting.
+    /// Records how far the peer's frame counter has got, without transmitting.
     /// </summary>
     /// <remarks>
-    /// The recorded host does not answer frames with acknowledgements at all: it
-    /// received 492 frames in a live round and sent none, while the joiner sent
-    /// 27. Following the capture means tracking the counter and staying silent.
-    /// <c>UDP_P2P_PROTOCOL.md</c> §6.3 says a host should acknowledge each
-    /// inbound sequence, and the capture contradicts it for this host.
+    /// The acknowledgement of a peer's records is a separate thing and is
+    /// written by <see cref="DispatchKeyedAsync"/> — one record per inbound one,
+    /// in that record's own identifier with the acknowledgement bit set
+    /// (<see cref="PeerAcknowledgementUtils"/>). This tracks the *frame* counter
+    /// beside it: the counter a frame travels under is not the sequence a peer's
+    /// record is acknowledged by, and tracking it is what makes a stale or
+    /// replayed frame visible.
     ///
     /// The comparison is wrap-aware. A plain <c>&gt;</c> would report every
     /// frame as stale once the fifteen-bit counter had gone past 32 767.
@@ -221,6 +223,30 @@ public sealed partial class GameplayServerService
         var tickMessages = frame.Messages
             .Where(message => message.Type < UdpCommandConstants.TickRecordThreshold)
             .ToList();
+
+        // The peer's session records are numbered, and it holds every one of
+        // them until this host says it arrived: its join driver reaches its data
+        // phase only when the record it built shows as many sent as
+        // acknowledged (docs/protocol/P2P_CONNECT_FSM.md §7.1b). The answer is
+        // one record per inbound one, of the same identifier with the
+        // acknowledgement bit set and the same fourth byte — the joiner's 0x9001
+        // answered by 0xd001, its 0x1001 by the host's 0x5001 — and the
+        // reference round and two further captures agree on it record for
+        // record. A host that answers the handshake, the profile and the roster
+        // but acknowledges nothing is the stall a live join ends in, sending the
+        // same records on a loop until state 2 raises 0B09.
+        //
+        // The answers go out as one frame, before the records are dispatched, so
+        // an answer is timely whether or not the record's own handler writes
+        // anything back.
+        var acknowledgements = frame.Messages
+            .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
+            .Select(PeerAcknowledgementUtils.AcknowledgementOf)
+            .ToList();
+        if (acknowledgements.Count > 0)
+        {
+            SendMessages(session, acknowledgements);
+        }
 
         foreach (var message in frame.Messages)
         {
@@ -275,10 +301,9 @@ public sealed partial class GameplayServerService
             RelayTickMessages(session, tickMessages, frame.Compressed);
         }
 
-        // The recorded host answers nothing with an acknowledgement, so the
-        // counter is only tracked. Acknowledging here would add a frame the live
-        // host never sends and spend an outbound sequence on it, which shifts
-        // every later sequence number away from the capture's.
+        // The frame counter is tracked as well as the records being
+        // acknowledged: it is what the peer's own window is checked against, and
+        // the acknowledgement above names a record sequence rather than it.
         TrackInbound(session, counter);
     }
 

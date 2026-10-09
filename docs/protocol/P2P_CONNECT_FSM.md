@@ -638,6 +638,154 @@ tell from a client that never got there.
 
 ---
 
+### 7.1b Acceptance is not the promotion — the gate §7.1 called "the same call"
+
+§7.1 walks the accept path as if it stored state 8 in the call that accepts the
+reply. Re-read instruction by instruction, it does not: the accept block sets
+`flags |= 4`, `|= 2`, folds the capability in and sets `r23`, and the **state-8
+store is a separate pass**, reached only when the state dispatch is re-entered and
+one more test says go.
+
+```
+00268c00: beq      cr7, 0x268e20      ; flags bit 0x2 clear -> read the peer's record (the reply)
+;; accept block 0x268e20 .. 0x269068: 0x268f6c ori 4 (accepted), 0x268fb0 ori 2 (role),
+;; 0x269044-64 capability fold, 0x269048 li r23,1; 0x269068 b 0x268ea0 (back to the queue loop)
+00268c04: lbz      r9, 4(r28)         ; state, on the next pass
+00268c0c: cmpwi    r0, 3 ; beq 0x268cac
+00268c14: cmpwi    r0, 4 ; beq 0x268c94   ; dial/launch session state
+00268c1c: cmpwi    r0, 2 ; beq 0x268c94
+00268c94: clrlwi   r0, r11, 0x1f       ; flags & 1   (the other role bit)
+00268c9c: beq      cr7, 0x268f04       ; clear -> the promotion test
+00268f04: addi     r3, r24, 0x48
+00268f0c: bl       0x26ad58            ; lookup(the handle at session+0x48)
+00268f18: bl       0x26ab58            ; 0 = go, -1 = no
+00268f20: cmpwi    cr7, r3, 0 ; beq 0x26907c
+0026907c: lhz r11,0x14(r28) ; ori r0,r11,1 ; sth   ; flags |= 1   <-- only on "go"
+00268c44: clrlwi   r0, r11, 0x1e       ; flags & 3
+00268c4c: cmpwi    r0, 3
+00268c58: stb      8, 4(r28)           ; state := 8
+```
+
+`0x26ab58` is three instructions of substance: it returns **0** when the object
+looked up is null or when its byte `[0xb]` equals its byte `[0xc]`, and **-1**
+when they differ.
+
+```
+0026ab58: cmpdi r3, 0 ; bne 0x26ab70
+0026ab70: lbz   r0, 0xc(r3)
+0026ab74: lbz   r9, 0xb(r3)
+0026ab78: cmpw  cr7, r9, r0 ; bne -> -1
+```
+
+The object is created by `0x261ab0` (handle out-parameter), its fields are written
+through `0x26b2b0(&handle, selector, value)` — selector 0 never touches `0xb`/`0xc`
+— and the session's `+0x48` slot is filled from those handles in the send builders
+(`0x268478`, `0x2686d0`, `0x268734`, `0x26879c`) and cleared to `-1` at `0x2682cc`.
+So the promotion asks a question about **a record this session built**, and it is
+answered "no" while that record's two bytes disagree. What those two bytes are,
+and what makes them equal, is **not established**. **[U]** It is now the single
+gate between the live join and state 8, and §7.1's "stores state 8 in one call"
+should be read as "reaches the state-8 store once this test passes".
+
+#### The measurement that forced this reading
+
+A live join against the deployed k3s gameplay server (2026-10-08, image
+`87a3d9a`, logs kept out of the repository) took the "no" branch — and it is the
+first run that shows *which* gate holds it:
+
+* **The reply was accepted.** The client's own key came from the reply's
+  `counter_base`: the session key our server derives for the client's frames
+  (`0x9bdda542 ^ 0x12345678`) verified on every keyed frame the client sent, and
+  that base is stored (`0x268c30`–`0x268c40`) only on the accept path, behind all
+  three gates. So gates 1–3 passed and `r23` was set.
+* **The join never reached the data phase.** The client sent its profile once,
+  never re-sent it, and its next 25 s are 17-byte one-byte-body records
+  (`0x9001` flags 1 / `0x1001` flags 2…5) at about one a second. Nothing from the
+  data phase. The FSM's state 2 timed out and `0B09` was raised ~39 s after the
+  dial, which is the 6000 + 4500 countdown with no re-dial in between.
+* That is exactly the path above with the promotion test answering no: the key
+  installed (`r23`), `flags & 3 == 2`, no state-8 store.
+
+So `P2P_CONNECT_FSM.md` §7's "acceptance carries the module into state 8 by
+itself" is too strong, and so is the trial reading that only the keyed frame
+matters: with the frame present the join still stops here. Section 7.1's
+measurement of the reference stands, but it measures a client that *did* pass this
+test.
+
+#### Divergences from the reference left open
+
+These are the differences between our live join and the reference join that remain
+unexplained. None of them has been shown to be the cause of the "no".
+
+| what | reference | ours |
+| --- | --- | --- |
+| reply's endpoint pair | host public, then host private (`99.66.131.177:5731`, `10.104.10.28:5731`) | the same public address twice |
+| reply fields | `peer_id 0xa001`, magic, capability `02`, `[19..21) 1`, count 2 | `peer_id 1`, magic, capability `02`, `[19..21) 1`, count 2 |
+| the joiner's own handshake | capability byte `02`, `[19..21) 2` | capability byte `03`, `[19..21) 1` |
+| the joiner's non-profile records | `0x1001` one-byte acks; `0x9001` only closes its post-roster answer | `0x9001` and `0x1001` one-byte records alternate from the first second |
+
+The joiner's own handshake is built from the session descriptor our TCP `0x4321`
+reply filled in, so its two differing bytes point at that reply rather than at the
+UDP channel — §7's requirement about the `0x4321` payload is worth re-checking
+field by field.
+
+**`[19..21)` is worth the most attention.** It is the one field where our joiner
+and the reference joiner disagree *about themselves* (`1` against `2`), it is a
+small integer rather than an address, and the promotion path consults a small
+integer of the same shape: `0x268f40` reads `session[5]` — the byte the session
+constructor fills from the mode argument (`0x2681ac`), which is where the client's
+role lives — and on `== 1` it stores state **3**instead of following the rest of the promotion path to 8. That is not a proof that the two are the same value,
+and the send-site table in `UDP_JOIN_FLOW.md` §3 gives `[19..21)` as "struct +6"
+with no further trace. It is the first thing to read out next. **[U]**
+
+### 7.1c The records the host answers — the joiner's send window is acknowledged
+
+§7.1b leaves the promotion gate's two cursors unidentified. Three captures now
+show what the host writes against them, and it is a reply the whole opening
+exchange depends on.
+
+Every session record a peer sends carries its sequence in its fourth byte, and
+the host answers it with a record of **the same identifier with class bit
+`0x4000` set**, carrying the same fourth byte and an empty body:
+
+| the joiner sends | the host answers |
+| --- | --- |
+| `0x9001` | `0xd001` |
+| `0x1001` | `0x5001` |
+| `0x5001` | `0x9001` |
+
+Measured over the reference round (`mgo2-game.pcapng`, joiner `10.2.0.2:5730`):
+191 joiner `0x9001` records and 176 host `0xd001`, 49 `0x1001` and 60 `0x5001`,
+481 `0x5001` and 71 `0x9001` — one answer per inbound record rather than one per
+sequence. Two further captured rounds (`mgo2-game2.pcapng` and
+`mgo2-game3.pcapng`, host `143.47.227.126`, ports `5721` and `5720`) show the
+same rule and the same reply bit: 87 joiner `0x9001` records and 86 host
+`0xd001` in game2, 14 and 14 in game3, plus `0x1001`→`0x5001` and
+`0x5001`→`0x9001` in both. A record
+that already carries `0x4000`, and so any answer, is not answered again, and tick
+records (below `0x1000`) are not numbered and are not answered. **[V]**
+
+> **Reading those two captures.** Their host keys differently from the reference:
+> its own direction verifies with the bare pre-key constant and not with a
+> session key, while the joiner's verifies with `joiner_base ^ host_base` as
+> usual, and its handshake reply is a 31-byte frame rather than 44. A decoder
+> that assumes a 44-byte reply and a session-keyed host, as `udp_flow_summary.py`
+> does, finds only the joiner's half of these captures and derives no key at all.
+
+The rule is what a selective-repeat window needs, and game2 shows it deciding the
+join: the joiner re-sent `0x9001` sequence 1 at t+6.26, 8.28 and 10.21 s and sent
+nothing new until the host's `0xd001` sequence 1 arrived at t+10.24 s, after which
+its next `0x9001` carried sequence 3. A host that answers the handshake, the
+profile and the roster but never acknowledges a record leaves the joiner
+re-sending its window until state 2 raises `0B09` — which is the live join of
+§7.1b: 17-byte one-byte records on a loop, ~1 s apart, for 39 s.
+
+Whether these answers are exactly the `0xb`/`0xc` pair the promotion test reads
+is not proved from the image, but the deployed server that sent none is the one
+that stalled, and it now answers each record as the captures do. **[I]**
+
+---
+
 ### 7.2 Where the gating id comes from — traced, and consistent
 
 The gating id is the FSM context's second constructor argument. `0xaa1028`
@@ -739,16 +887,18 @@ Key addresses, all re-checked against the disassembly for this document:
 2. **Who sets the module instance's first word to `2`**, the precondition of
    `0x261fe0`. The client's own bring-up, not the server. **[U]**
 
-2b. ~~**Whether the removed ESTABLISH OUT is needed after all.**~~ **Resolved,
-   and the answer is yes.** §7.1 measured the reference host sending no keyed
-   frame and the joiner keying up regardless, while the fake-host trial reported
-   the opposite. A live join that stalls in state 2 with counters matching is
-   what the removal predicted — it happened, and the join failed 35.0 s after the
-   dial with `0B09`. The frame is back. **[V]**
-3. **The `0x270e00` handoff codes** (`0x1002` / `0x2002`-family) and the
-   `0x27e198` option indices `0xa1`/`0x52`/`0x58` — the shapes are certain, the
-   meaning is not. **[U]**
+2b. ~~**Whether the removed ESTABLISH OUT is needed after all.**~~ **Half answered.**
+   The fake-host trial measured a real effect (the re-dials stopped), so the frame
+   stays — but it is not sufficient: the same deployed image that sends it took
+   `0B09` anyway (§7.1b). The frame is not what decides the join.
 4. **State 2's re-dial vs. state 5.** Whether a real client that never gets a
    keyed frame stays in the state-2 re-dial loop for the whole timeout or gives
-   up earlier is not established here; the FSM admits both, and which one a
-   live run takes is a capture away. **[U]**
+   up earlier is not established here; the FSM admits both. What a live run does
+   with a keyed frame *and* an accepted reply is now measured (§7.1b): no re-dial
+   at all, state 2 counting both deadlines out to `0B09`. **[U]**
+5. **What the object at `session+0x48` is, and what its bytes `0xb` and `0xc`
+   mean** — the promotion test of §7.1b. What the *host* can do about it is now
+   measured (§7.1c): it answers each of the peer's numbered records with the same
+   identifier plus `0x4000`, and the joiner's window advances on the answer. Which
+   byte that answer moves, and whether it is the whole of the gate, is still not
+   read out of the image. **[U]**
