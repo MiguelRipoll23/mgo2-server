@@ -9,4 +9,4 @@ resources:
 # deploy/README.md for the seed value and why it must not survive a sync.
 images:
   - name: ghcr.io/miguelripoll23/mgo2-server/mgo2-gameplay-server
-    newTag: 7829c93e562b4b063b608f0405269742b69f9141
+    newTag: a83a4112d030ed94df694d8cb8522270392c31c3
