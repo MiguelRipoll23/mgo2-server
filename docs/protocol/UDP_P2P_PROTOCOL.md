@@ -104,34 +104,24 @@ joiner (RPCS3/PS3)                        game server                     fake h
   peer FSM (30 s timeout → `0x4342` disconnect) — and `0x4322` (join failed) must be
   answered with `0x4323` so a joiner whose dial fails doesn't hang **[V]** (reference
   server behavior, cross-checked with the game's parsers).
-- **Fake-host continuation (decoder decompile + live, 2026-09-08):** after the
-  accepted reply (state 6) the joiner keeps re-dialing and pinging **pre-keyed**. A
-  host that sends **one session-keyed frame** (digest `K ^ 0x2b58de69`, chain `K`; an
-  empty tag-`0x5000` keep-alive is the verified shape) exercises the handshake-phase
-  second digest chance, which sets `flags |= 9` (§6.1). Note the `0x1` in that nine:
-  §6.1's correction shows the accept path sets bit `0x1` itself, and the reference
-  host sends no keyed frame, so this is a defence rather than a requirement. And **all** host→joiner frames must draw from ONE outbound hdr
-  counter: the joiner's seq window (§5, `session[0x42]` + reorder bitmask) drops
-  anything outside `last+1 .. last+0x20`, so separate reply/data counters interleave
-  and get silently discarded **[V]** (verified in simulation: two-counter scheme
-  produces duplicate hdrs → drops).
-  **Superseded (see §6.1's correction):** the 2026-09-09 trial had the session-keyed
-  ESTABLISH OUT go out beside the reply and the joiner then reach state 8 — the ~2 s
-  handshake retries stopped and the first session-keyed data-phase frames were
-  captured (§6.2). The acceptance is what flips the session; the reference capture in
-  `P2P_CONNECT_FSM.md` §7.1 has the host send no keyed frame and the joiner keyed
-  26 ms after the reply.
-  > **A real host sends both opening frames pre-keyed.** The trial above used a
-  > fake host, and a session-keyed frame is accepted. The dedicated server in
-  > `docs/mgo2-game.pcapng` does not send one: its 16-byte `0x5000` keep-alive
-  > and its 44-byte handshake reply verify with the bare constant
-  > `0x2b58de69` and with `K ^ 0x2b58de69` at neither, while the joiner's first
-  > session-keyed frame verifies only with `K ^ 0x2b58de69`. The joiner reaches
-  > its keyed state on **accepting the handshake reply**, so a host that marks
-  > the session established before sending it hands the joiner two frames it
-  > drops at the §5.3 digest gate, and watches it re-dial for ~40 s. The capture
-  > is the reference here; `AcceptHandshakeHandler` sets the flag after the
-  > reply for that reason. See `UDP_GAME_CAPTURE.md` §4. **[V]**
+- **Fake-host continuation (decoder decompile + live trials):** a keyed frame
+  after an accepted reply was observed to stop handshake re-dials and keyed
+  client traffic followed. That proves the accepted session can use the derived
+  key; it does **not** prove the connect FSM reached outer state 6 or the P2P
+  session passed its state-8 promotion gate. A later live join remained in
+  outer state 2 despite keyed traffic. The promotion gate is the reliable-record
+  window test in `P2P_CONNECT_FSM.md` §7.1b–c; a successful live run after the
+  corrected one-byte record answers is still needed. The shared outbound header
+  counter remains required: the joiner's sequence window (§5,
+  `session[0x42]` + reorder bitmask) drops anything outside `last+1 .. last+0x20`.
+  **[V]** for the window and observed trials; end-to-end promotion remains
+  unverified.
+  > **The reference host's opening frames are pre-keyed.** The dedicated server
+  > in `docs/mgo2-game.pcapng` sends a 16-byte `0x5000` keep-alive and a 44-byte
+  > handshake reply that verify with the bare digest constant, not the keyed
+  > digest. The current `AcceptHandshakeHandler` preserves that order and
+  > pre-keying, then marks the session established for subsequent keyed
+  > responses. Do not mark it established before sending those two frames.
 
 ---
 
@@ -484,12 +474,11 @@ Handshake frames always travel with the **pre-handshake constant**
 `K = 0x87103c2f` (state < 8), even though the handshake itself is scrambled/chained
 (the old "handshake travels plaintext" claim was wrong) **[V]**.
 
-**The state < 8 → pre-key rule covers the WHOLE frame** — chain and digest
-alike — and is confirmed live: the joiner's state-6 keep-alives (§6.1) decode
-with the §5 pre-key and verify the §5.3 digest with the bare constant, while
-their wire bytes stay identical across runs with different session keys. Any
-session-keyed (`K`) frame sent to a session that hasn't reached state 8 is
-undecodable garbage to it.
+**Handshake-message frames use the pre-key; keyed session traffic uses the
+derived key.** The joiner's opening keep-alives and handshake verify with the
+pre-key, while later keyed records verify with `K`. The client can accept keyed
+traffic while its outer connect FSM is still in state 2; keyed traffic alone
+does not prove that the P2P session passed the separate state-8 promotion gate.
 
 ### 6.1 Live observation — the state-6 keep-alive (what acceptance looks like)
 
@@ -512,9 +501,11 @@ Facts established from two runs with different joiner counter-bases:
 - They **never appeared** while the reply was being silently dropped (wrong
   `peer_id`), so they are the reliable live signal that the reply reached the
   dial session and passed the acceptance gates into state 6.
-- The session is **not** in the data phase: handshake re-sends continue at the
-  usual ~2 s cadence alongside the pings, and per the key rule above the
-  session must reach **state 8** before session-keyed frames flow.
+- Handshake re-sends continue at the usual ~2 s cadence alongside the pings.
+  These pre-keyed keep-alives prove the reply was accepted, not that the
+  connect FSM completed. Later captures show keyed session traffic can begin
+  while the outer connect FSM remains in state 2; state-8 promotion is gated
+  separately by the reliable-record window (§7.1b).
 
 State machine (u8 at `session+4`). Store sites re-verified in the accept path:
 **2** at `0x2690c8`, **3** at `0x268f50`, **6** at `0x2690d8`, **8** at
@@ -540,41 +531,38 @@ if the tail fails the constant key it retries with `K ^ 0x2b58de69`, and onsucce
 keep-alives (below) are pre-keyed, i.e. it had not established the key from the
 handshake reply alone.
 
-> **Corrected — bit `0x1` has a second source, and the reference host relies on
-> it.** The reply's drain sets `flags |= 4` (`0x268f6c`) and `flags |= 2`
-> (`0x268fb0`), rejoins the state dispatch (`0x269078: b 0x268c04`), and there
-> sets `flags |= 1` (`0x26907c`–`0x26908c`: `ori r0, r11, 1` →
-> `sth r0, 0x14(r28)`) before storing state 8 at `0x268c58`. So acceptance alone
-> satisfies `(flags & 3) == 3` in one call, and the claim that *only* a
-> session-keyed frame can move a dial session to state 8 is wrong. Measuring the reference join in
-> `docs/mgo2-game.pcapng` settles it: the dedicated host sends exactly two
-> frames, both pre-keyed (counters 0 and 1), its next frame is the keyed roster
-> run 2.5 s later, and the joiner is already sending session-keyed frames 26 ms
-> after the reply. `P2P_CONNECT_FSM.md` §7.1 has the frame-by-frame table. The
-> fake-host trial recorded below still observed what it observed — the re-dial
-> cadence stopped on the keyed frame — and **that is the mechanism a live client
-> needs**. A run with it removed did happen: the joiner sat in its reply-accepted
-> state, its connect FSM's state 2 counted both deadlines out — 6000 units, then
-> 4500 — and the join failed 35.0 s after the dial with `0B09`. So the frame is
-> required, not optional, and `AcceptHandshakeHandler` sends it.
-> `P2P_CONNECT_FSM.md` §7 has the measurement. **[V]**
+> **Corrected — acceptance is not promotion.** The reply's drain sets
+> `flags |= 4` (`0x268f6c`) and `flags |= 2` (`0x268fb0`), then rejoins the
+> state dispatch. The later promotion test at `0x268f18` must return zero
+> before the path sets bit `0x1` and stores state 8. The test checks whether the
+> reliable-record window has drained; see `P2P_CONNECT_FSM.md` §7.1b. The
+> reference host's pre-keyed keep-alive and reply are followed by a keyed roster
+> run after the joiner's profile, so the capture does not establish that a
+> session-keyed keep-alive is required. A fake-host trial found that such a
+> keep-alive stopped handshake re-dials, but a later live join still failed in
+> outer state 2 despite the keyed phase. The subsequent failed run was traced
+> to record answers with empty bodies where the captured shape has one byte.
+> The current implementation now sends that one-byte shape; a successful live
+> join is still required to verify promotion. **[V]** for the branch and
+> measured attempts; end-to-end success remains unverified.
 
-**Confirmed live 2026-09-09:** the fake host sent exactly one session-keyed empty
-`tag-0x5000` keep-alive (ESTABLISH OUT) after its handshake reply; the joiner's
-~2 s handshake re-dials stopped within one retry cycle and its next frames were
-session-keyed. The key-establishment path is not just in the decompile — it works
-on a real client. What the joiner sends next is documented in §6.2.
+**Confirmed live 2026-09-09:** after a fake host sent one session-keyed empty
+`tag-0x5000` keep-alive, the joiner's ~2 s handshake re-dials stopped and its
+next frames were session-keyed. This establishes that the client can accept
+keyed traffic; it does **not** establish that the connect FSM reached outer
+state 6 or that the P2P session passed its state-8 promotion gate. A later live
+join remained in outer state 2 despite reaching the keyed phase.
 
-**The real host does not do this**, and the difference is the whole point. In
-`docs/mgo2-game.pcapng` the dedicated server's keep-alive and handshake reply are
-**both pre-keyed** — measured over every derivation of the two counter bases and
-the two constants, they verify with the bare constant `0x2b58de69` and with
-`K ^ 0x2b58de69` at neither (`UDP_GAME_CAPTURE.md` §4). So the state-<8 → pre-key
-rule above is absolute and covers the opening exchange: the joiner cannot read a
-session-keyed frame until it has accepted a handshake reply, and it accepts that
-reply only after reading it. A host that marks its session established before
-sending the reply therefore gets both frames dropped at the digest gate
-(`0x266918`), before a field is parsed, and the joiner re-dials until it gives up. **[V]**
+**The real host does not send a keyed keep-alive between its reply and roster.**
+In `docs/mgo2-game.pcapng` the dedicated server's keep-alive and handshake
+reply are **both pre-keyed** — measured over every derivation of the two
+counter bases and the two constants, they verify with the bare constant
+`0x2b58de69` and with `K ^ 0x2b58de69` at neither (`UDP_GAME_CAPTURE.md` §4).
+The opening frames must therefore remain pre-keyed so the client can parse and
+accept the reply; after acceptance, keyed traffic can be decoded even before
+the state-8 promotion gate passes. A host that marks its session established
+before sending the reply gets both opening frames dropped at the digest gate
+(`0x266918`), before a field is parsed, and the joiner re-dials. **[V]**
 
 **Decryption (offline, no brute force):** decode the peer's handshake (§5) for its
 `counter_base` → `peer_base`; own base is what we sent. Then per data frame: undo the
@@ -590,12 +578,13 @@ itself carries is unresolved and is **not** answered — see §6.2's table and
 [`UDP_GAME_CAPTURE.md`](UDP_GAME_CAPTURE.md) §3, where a live capture shows it with
 a monotonic fourth byte rather than the shape of a heartbeat.
 
-### 6.2 The data phase (state ≥ 8) — live captures [V]
+### 6.2 Keyed session records — live captures [V]
 
-First session-keyed frames captured **2026-09-09**, immediately after the fake
-host's reply was accepted and the dial session reached state 8 (§6.1, and its
-correction: the acceptance flipped it, not the keep-alive that went out beside
-it). All
+The first session-keyed frames were captured **2026-09-09**, after the fake
+host's reply was accepted. They prove the session key was in use, not by
+themselves that the connect FSM reached outer state 6 or that the transport
+passed its state-8 promotion gate; a later live attempt showed keyed traffic
+while the connect FSM remained in state 2. All
 decode with the §5.2 chain key `K = peer_base ^ own_base` and verify the §5.3
 tail digest with `K ^ 0x2b58de69` — the keyed path, live. Capture session:
 `K = 0xbbe4ff9c = 0xa9d0a9e4 (joiner base) ^ 0x12345678 (host base)`.
@@ -1399,30 +1388,27 @@ encodeFrame(plain, hdr, chainKey = 0x87103c2f, digestKey = 0x2b58de69)
     = xorChain(encrypt) → computeTailDigest → header scramble (sender order)
 ```
 
-### 11.4 Establish the session key (state 6 → 8)
+### 11.4 Promote the P2P session
 
-After the reply is accepted the joiner sits at state 6 and emits pre-keyed 16-byte
-keep-alives (type `0x5000`, len 0) — mirror them back pre-keyed on the same
-counter. Handshakes and keep-alives alone can NEVER move it to state 8: the only
-path that sets its key flag is the decoder's second digest chance — a frame whose
-**tail digest verifies with `K ^ 0x2b58de69`** flips `flags |= 9`, and the accept
-pump sets state 8 when `(flags & 3) == 3` (§6.1). So send exactly one
-session-keyed frame right after the reply:
+Do not treat key establishment and state-8 promotion as the same event. The
+reply must be sent with the pre-key digest and must pass the peer-ID, magic and
+capability gates. The accepted reply supplies the peer counter base, so keyed
+client records may follow, but the connect FSM can remain in outer state 2
+until the reliable-record window drains. The module's state-8 store is gated by
+the role flags and the window test at `0x268f18`
+(`P2P_CONNECT_FSM.md` §7.1b).
 
-```
-K     = joiner_counter_base ^ our_base
-wire  = encodeFrame(buildKeepaliveFrame(hdr), hdr,
-                    chainKey = K, digestKey = K ^ 0x2b58de69)
-      // 16-byte plaintext: hdr | 00 50 00 00 | (tail added by the encoder)
-```
-
-Verified live: the joiner stops re-dialing within one retry cycle and starts
-streaming K-keyed frames (§6.2). Without this frame the join never leaves state 6.
+The server's measured response to each numbered client record is the same
+identifier with `0x4000` set and the same fourth byte. The body length follows
+the record class: one byte for `0x8000` records, empty otherwise; see §7.1c.
+The current implementation emits this one-byte shape, but the byte value and
+successful promotion after this correction still need live confirmation.
+There is no evidence that an extra keyed keep-alive alone satisfies the gate.
 
 ### 11.5 Outbound discipline — ONE counter
 
-All host→joiner frames — handshake replies, keep-alive mirrors, the establish
-frame, data frames — draw from **one per-peer `outHdr`**, incremented by exactly 1
+All host→joiner frames — opening keep-alive, handshake reply, record answers,
+and data frames — draw from **one per-peer `outHdr`**, incremented by exactly 1
 per frame. The joiner's seq window (`session[0x42]` + reorder bitmask, §5.2)
 drops anything outside `last+1..last+0x20`; two independent counters interleave
 into the window and are silently discarded. The joiner's own stream is the live

@@ -82,13 +82,26 @@ public static class PeerAcknowledgementUtils
     public const byte HostControlByte = Rooms.PostJoinBurstService.OpeningControlByte;
 
     /// <summary>
+    /// Whether a message is a frame acknowledgement rather than a record that
+    /// needs a record-level answer.
+    /// </summary>
+    /// <param name="message">Decoded message to test.</param>
+    /// <returns><c>true</c> when this is a one-byte zero acknowledgement entry.</returns>
+    public static bool IsFrameAcknowledgement(UdpMessage message) =>
+        (message.Type & 0xf000) == UdpCommandConstants.AcknowledgementClass &&
+        message.Length == 1 &&
+        message.Body.Length == 1 &&
+        message.Body[0] == 0;
+
+    /// <summary>
     /// Whether a record waits for this host to answer it.
     /// </summary>
     /// <param name="message">Decoded record to test.</param>
     /// <returns><c>true</c> when the record is a session record carrying no answer bit yet.</returns>
     public static bool WaitsForAcknowledgement(UdpMessage message) =>
         message.Type >= UdpCommandConstants.TickRecordThreshold &&
-        (message.Type & AcknowledgementBit) == 0;
+        (message.Type & AcknowledgementBit) == 0 &&
+        !IsFrameAcknowledgement(message);
 
     /// <summary>
     /// Builds the record that answers one of the peer's.

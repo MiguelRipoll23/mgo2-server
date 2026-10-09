@@ -220,9 +220,10 @@ public sealed partial class GameplayServerService
             .Where(message => message.Type < UdpCommandConstants.TickRecordThreshold)
             .ToList();
 
-        // Answer numbered records before handing them to a handler. A valid
-        // profile is the exception: its roster response starts with the same
-        // 0x5001 acknowledgement, so sending one here would duplicate it.
+        // Answer numbered records before handing them to a handler. Frame ACK
+        // entries are excluded by the utility, and a valid profile is the
+        // exception because its roster response starts with the same 0x5001
+        // record-level answer.
         //
         // An earlier reading of this host's answers was that they cannot be what
         // the peer waits for, because a live join was served them and still
@@ -247,22 +248,9 @@ public sealed partial class GameplayServerService
 
         foreach (var message in frame.Messages)
         {
-            // An acknowledgement entry names the frame it closes: the sender's
-            // reliable-class identifier with a one-byte zero body. The length
-            // guard matters, because the profile record shares the class.
-            //
-            // Only twelve bits of it are a sequence, so the value is logged as
-            // it arrives rather than as the frame it closes: sequences 1, 4097,
-            // 8193, 12289 and 16385 all arrive as this same type. A live round
-            // ended at counter 18665 with every one of its 27 acknowledgements
-            // reading this way.
-            var isAcknowledgementEntry =
-                (message.Type & 0xf000) == UdpCommandConstants.AcknowledgementClass &&
-                message.Length == 1 &&
-                message.Body.Length == 1 &&
-                message.Body[0] == 0;
-
-            if (isAcknowledgementEntry)
+            // A frame acknowledgement closes an outbound frame and must not
+            // itself receive a record-level answer.
+            if (PeerAcknowledgementUtils.IsFrameAcknowledgement(message))
             {
                 if (session.SeenAcknowledgements.Add(message.Type))
                 {
@@ -379,9 +367,9 @@ public sealed partial class GameplayServerService
                 SendMessage(session, type, body, ordinal);
                 return Task.CompletedTask;
             },
-            (type, body) =>
+            (type, body, ordinal) =>
             {
-                SendToOthers(session, type, body);
+                SendToOthers(session, type, body, ordinal);
                 return Task.CompletedTask;
             },
             records =>

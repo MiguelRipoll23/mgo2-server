@@ -20,6 +20,7 @@ namespace Mgo2Server.Shared.Types;
 /// Writes a message to every other peer in the room, each through its own
 /// session and counter. The peer this message came from is not included: a
 /// handler that has to answer it as well uses <paramref name="Send"/> for that.
+/// The last argument is the record's fourth byte.
 /// </param>
 /// <param name="SendRecords">
 /// Writes several messages to the peer as one datagram on one outbound
@@ -43,6 +44,6 @@ public sealed record PeerContext(
     IPEndPoint Remote,
     int LocalPort,
     Func<ushort, byte[], byte, Task> Send,
-    Func<ushort, byte[], Task> Broadcast,
+    Func<ushort, byte[], byte, Task> Broadcast,
     Func<IReadOnlyList<UdpMessage>, Task>? SendRecords = null,
     Func<IReadOnlyList<UdpMessage>, Task>? SendRecordsCompressed = null);

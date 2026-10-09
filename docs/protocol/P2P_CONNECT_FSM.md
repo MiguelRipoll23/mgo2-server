@@ -81,7 +81,7 @@ table:
 | 0 | `0x00000018` | `0xaa11a0` | send `0x4320` → state 1 |
 | 1 | `0x0000006c` | `0xaa11f4` | await `0x4321`, dial peer → state 2 or 5 |
 | 2 | `0x00000194` | `0xaa131c` | await module state 8 → state 3 |
-| 3 | `0x000003d8` | `0xaa1560` | await net-ready bit → state 4 |
+| 3 | `0x000003d8` | `0xaa1560` | readiness bit clear → state 4; set → countdown/failure |
 | 4 | `0x00000440` | `0xaa15c8` | apply net options → state 6 |
 | 5 | `0x000004f8` | `0xaa1680` | post-failure wait → **raise `0B09`** / `0B08` |
 | >5 | — | `0xaa16dc` | epilogue |
@@ -115,7 +115,7 @@ called by the game's per-frame driver, not from this module directly. **[V]**
         │                 expiry, flags&1 set, session==6 → re-arm, keep waiting
         │                 expiry, flags&1 set, session!=6 → destroy + re-dial peer
         ▼
-   state 3 ──────  await net-ready bit (0x281db0) ─────────────▶ state 4
+   state 3 ──────  helper returns 0 ───────────────────────────▶ state 4
         │            timeout 3000 → destroy → 0x4322 → state 5
         ▼
    state 4 ──────  net options 0xa1/0x52/0x58 (0x27e198) ──────▶ state 6  (success)
@@ -328,10 +328,11 @@ That re-dial loop is the client-side twin of the wire's "handshake every
 00aa15c4: b    0xaa1294                 ; → 0x4322 → state 5
 ```
 
-`0x281db0` is a five-instruction global reader: it returns bit `23` of the
-word at `global+0x88` (`rlwinm r3,r3,0,0x17,0x17`) as `0x100` or `0`, i.e. a
-single network-readiness flag. **[V]** When it is clear the same 3000-tick
-countdown runs; expiry is a join failure.
+`0x281db0` reads bit `23` of the word at `global+0x88` and returns it as
+`0x100` or `0`. **[V]** The branch is easy to misread: **zero advances to
+state 4**, while nonzero decrements the 3000-tick countdown; expiry tears the
+session down and enters the failure path. The bit's name/meaning is not
+established by this branch alone.
 
 ### State 4 — `0xaa15c8`, apply the network options
 
@@ -486,42 +487,43 @@ question: **why the peer session never reached the module's data phase.**
 
 ## 7. How the client reaches the full joined state
 
-The progression the server has to enable is short and precise:
+There are two related state fields. The connect FSM uses `ctx+0x70`; the P2P
+transport session uses `session+4`. The successful progression is:
 
 ```
 state 0  send TCP 0x4320
 state 1  read TCP 0x4321, build the endpoint descriptor, 0x261fe0 → state 2
-state 2  the module session tick returns 8   ← the whole problem lives here
-state 3  net-ready bit set
+state 2  the module session tick returns 8
+state 3  readiness helper returns 0
 state 4  net options 0xa1/0x52/0x58 applied → state 6 (finished)
 ```
 
-Only two of those depend on the server at all:
+The critical boundary is state 2. It waits for the transport session to report
+its data phase, **state 8**. If state 2 times out, the connect FSM reports
+failure; outer state 6 is reached only after state 8 and the later state-3/4
+work. State 6 is the connect FSM's terminal success value, not the P2P
+session's state 6.
 
-1. **The `0x4321` reply must be correct enough to be parsed and to carry the
-   host's identity.** The descriptor's first word is `ctx+0x7c`, which the
-   client only learns from the join exchange; the module constructor then
-   stores it and the handshake reply is gated on it (gate 1 in
-   `UDP_JOIN_FLOW.md` §6 — `peer_id` must equal `session[0x18]`, the host's
-   character id, **not** an echo of the joiner's). A reply that carries the
-   wrong id fails that gate *silently*: the joiner re-dials for the full
-   timeout and state 2 never sees `8`. `[V]`
-2. **The UDP handshake must complete and the session must be keyed.** The
-   module's data phase (its state 8) is gated on `(flags & 3) == 3`
-   (`0x268c44`, `0x268c58`). Bit `0x2` comes from the dialer's own handshake
-   send; bit `0x1` is set by the decoder's second digest chance — a frame whose
-   tail digest verifies with **`K ^ 0x2b58de69`** (`UDP_P2P_PROTOCOL.md` §6.1
-   and §11.4) — and **also**, on the accept path itself, at `0x269084`
-   (`ori r0, r11, 1` → `sth r0, 0x14(r28)`), on the path the accepted reply
-   rejoins — so acceptance alone satisfies the gate. §7.1 measures the reference
-   join and finds the joiner in its keyed phase with no host keyed frame
-   anywhere before it.
+The server-dependent requirements are:
 
-So the minimum server behaviour is the set the protocol doc names and §7.1
-measures: answer the handshake so the reply is accepted (correct `peer_id`,
-magic, capability, digest), keep **both** opening frames pre-keyed, and send
-nothing else until the joiner's profile arrives. Acceptance carries the module
-into state 8 by itself, so the FSM's state 2 succeeds and states 3–4–6 follow.
+1. **The `0x4321` reply must advertise a usable host and identity.** The
+   descriptor's first word is `ctx+0x7c`, which the client gets from the
+   host-first player list. The UDP reply's `peer_id` must equal that host
+   character ID (not the joiner's). A mismatch is silently ignored, so the
+   transport never promotes.
+2. **The UDP reply must pass all handshake gates.** Its tail digest, peer ID,
+   module magic and negotiated capability must be valid. Passing these gates
+   accepts the reply and derives the session key, but **does not by itself
+   prove that the transport reached state 8**.
+3. **The client's reliable-record window must drain.** The module's state-8
+   path requires both role bits and the promotion test at `0x268f18` to pass.
+   The test checks the send/answer window described in §7.1b. The captured
+   server answers each numbered client record with the same identifier plus
+   `0x4000`, matching fourth byte, and a body length appropriate to its
+   `0x8000` class bit (§7.1c). The latest failed live join received empty
+   bodies for one-byte-required answers; the current server now sends a
+   one-byte answer for that class. A successful live join after this correction
+   is still needed to confirm that the window drains in the deployed path.
 
 ### What the gameplay server sends (implemented)
 
@@ -531,26 +533,21 @@ sends the two frames the capture holds, in order:
 * the keep-alive **pre-keyed** at counter 0;
 * the handshake reply **pre-keyed** at counter 1;
 
-then sets `Session.Established = true` so that everything after them — the
-roster run first — is signed with the session key and the keyed digest on the
-shared outbound counter, and sends **one session-keyed empty keep-alive**
-between the reply and that run.
+then sets `Session.Established = true` so that the roster response and later
+traffic use the session key and keyed digest on the shared outbound counter.
+It does not send a separate keyed keep-alive after the handshake; the first
+keyed host response is sent when the client submits a valid profile and
+receives the roster.
 
-That third frame is not in the reference, and a live join is why it is there.
-§7.1 read the capture's two frames as sufficient — the accept path sets `flags`
-bit `0x1` at `0x269084`, and the captured joiner keys up 26 ms after the reply —
-while the 2026-09-09 fake-host trial found a keyed frame was what stopped the
-re-dial. The game that raised `0B09` settles it the other way: answered with the
-two recorded frames and nothing else, the session sat in its reply-accepted
-state, and state 2 counted **both** of its deadlines out — 6000 units, a tick
-that still reported that state and reset the countdown to 4500, then the failure
-path. That is 35.0 s after the dial, exactly as measured, and the session never
-reached 8. So one session-keyed `0x5000` goes out
-(`Session.Established = true` followed by
-`context.Send(UdpCommandConstants.KeepAlive, [], 0)`). It costs the capture's
-counters one place — the roster run leaves at 3 rather than 2 — and the joiner's
-window is `last+1 .. last+0x20` (§11.5 of `UDP_P2P_PROTOCOL.md`), so only
-consecutiveness has to hold. `[V]`
+The earlier fake-host trial showed that a session-keyed keep-alive stopped
+handshake re-dials, but that observation is not evidence of state-8 promotion.
+The later live failure reached the reply-accepted/keyed phase yet remained in
+outer state 2, then timed out. The disassembly identifies the additional
+reliable-record-window promotion gate (§7.1b); the subsequent live attempt
+showed the server's empty answers did not advance that window (§7.1c). The
+current server sends one-byte answers for the affected record class, matching
+the capture's shape. This correction still needs a successful live join to
+verify.
 
 Two more requirements that are easy to miss because they are not on this FSM at
 all but decide whether it ever gets a reply:
@@ -623,18 +620,14 @@ call** (`FUN_00268ba8`, the handshake sender's queue-drain).
 00268c58: stb    r0=8, 4(r28)             ; state := 8, no keyed frame anywhere
 ```
 
-So the sequence the capture shows is the sequence the code takes: the pre-keyed
-reply is accepted, the same call folds the capability in, sets bit `0x1` on the
-rejoin and stores state **8**. The FSM's state 2 sees `8` on its next tick, 26 ms
-later. `[V]`
-
-The fake-host trial behind §6.1's "one session-keyed frame is what flips a
-state-6 dial session into the data phase" saw a real effect, and it is the one a
-live client needs: a run with the ESTABLISH OUT removed did happen, the joiner
-sat in the reply-accepted state, and the join failed 35.0 s after the dial with
-`0B09` (see "What the gameplay server sends" above). §7.1's reading of the
-capture — that acceptance alone stores state 8 — is what a capture alone cannot
-tell from a client that never got there.
+An earlier reading treated this rejoin as an unconditional state-8 store. That
+is wrong: it omits the branch through `0x26ab58` before `0x26907c`. The
+acceptance path installs the peer identity/key and sets flags `0x4` and `0x2`;
+the separate promotion pass sets bit `0x1` and stores state 8 only after the
+reliable-record window test succeeds. The reference capture proves keyed
+traffic follows the accepted reply, but keyed traffic alone does not prove
+state 8. The later live run remained in outer state 2 and failed with `0B09`,
+which is consistent with the promotion gate remaining closed. See §7.1b–c.
 
 ---
 

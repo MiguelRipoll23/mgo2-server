@@ -113,18 +113,17 @@ lives in the same u16 as the type, so it must be masked off before dispatch.
 **Guess: an empty heartbeat; mirrored straight back.** **[V]**
 
 `0x5000` is **id 0** in the `0x1000\|0x4000` class. `type 0x5000, len 0, flags2 0` — a 16-byte
-frame carrying no body. The joiner emits these pre-keyed after each host reply (state 6). The
-host's keep-alive is what the joiner counts as the host answering, but it is **pre-keyed** — its
-tail digest verifies with the bare constant `0x2b58de69`, not with `K ^ 0x2b58de69`. What flips
-the joiner out of its reply-accepted state and into the data phase (state 8) is a host frame
-that **does** verify with `K ^ 0x2b58de69` (`UDP_P2P_PROTOCOL.md` §11.4), so accepting the
-handshake reply is not enough on its own: a join answered with the two recorded frames sat in
-that state and failed 35.0 s after the dial with `0B09` (`P2P_CONNECT_FSM.md` §7).
-`AcceptHandshakeHandler` therefore writes one session-keyed `0x5000` behind the reply, and
-`PeerKeepAliveHandler` reads the joiner's. A host that marks its session established before
-sending the reply sends both opening frames keyed, and the joiner drops them at the digest gate
-(`UDP_GAME_CAPTURE.md` §4). In the data phase the host mirrors
-them.
+frame carrying no body. The joiner emits these pre-keyed after each host reply (internal session
+state 6). The recorded host's opening keep-alive is also **pre-keyed** — its tail digest verifies
+with the bare constant `0x2b58de69`, not with `K ^ 0x2b58de69`. A fake-host trial found that a
+keyed keep-alive stopped handshake re-dials, but a later live join reached the keyed phase and
+still timed out in connect-FSM state 2. It therefore does not establish the state-8 promotion
+condition. The current `AcceptHandshakeHandler` sends the two captured opening frames pre-keyed
+and does not send an extra keyed keep-alive; the first keyed host response is the roster after a
+valid client profile. See `P2P_CONNECT_FSM.md` §7 and `UDP_P2P_PROTOCOL.md` §6.1. A host that
+marks its session established before sending the reply sends both opening frames keyed, and the
+joiner drops them at the digest gate (`UDP_GAME_CAPTURE.md` §4). The joiner's keep-alive is read
+and not answered by `PeerKeepAliveHandler`.
 
 ### `0x5001` — **[U]**; an earlier keep-alive reading is refuted by the live capture [V]
 

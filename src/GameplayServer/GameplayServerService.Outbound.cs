@@ -23,13 +23,13 @@ public sealed partial class GameplayServerService
     /// <param name="origin">Session the message came from, which is left out.</param>
     /// <param name="messageType">Type of the message.</param>
     /// <param name="body">Body of the message.</param>
-    private void SendToOthers(PeerSession origin, ushort messageType, byte[] body)
+    private void SendToOthers(PeerSession origin, ushort messageType, byte[] body, byte ordinal)
     {
         foreach (var session in sessions.Snapshot())
         {
             if (session.Established && !ReferenceEquals(session, origin))
             {
-                SendMessage(session, messageType, body);
+                SendMessage(session, messageType, body, ordinal);
             }
         }
     }
