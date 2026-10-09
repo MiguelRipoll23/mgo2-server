@@ -212,6 +212,6 @@ public sealed class SurvivalTestOpponentService(
             return "Nothing was published: both teams have to be paired before a room can be claimed.";
         }
 
-        return $"Match {pairing.MatchIdentifier} is paired; host assignment is handled automatically.";
+        return $"Match {pairing.MatchIdentifier} is paired; it may still be waiting for a host.";
     }
 }
