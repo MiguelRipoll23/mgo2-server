@@ -220,10 +220,9 @@ public sealed partial class GameplayServerService
             .Where(message => message.Type < UdpCommandConstants.TickRecordThreshold)
             .ToList();
 
-        // Answer the peer's numbered records before handing any of them to a
-        // handler, which is what the recorded host does: an answer is built from
-        // the record it answers rather than from anything this host is tracking,
-        // so it needs no state and no counter of its own.
+        // Answer numbered records before handing them to a handler. A valid
+        // profile is the exception: its roster response starts with the same
+        // 0x5001 acknowledgement, so sending one here would duplicate it.
         //
         // An earlier reading of this host's answers was that they cannot be what
         // the peer waits for, because a live join was served them and still
@@ -239,6 +238,9 @@ public sealed partial class GameplayServerService
         // written by.
         var answers = frame.Messages
             .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
+            .Where(message =>
+                (message.Type & ~PeerAcknowledgementUtils.PayloadClassBit) != UdpCommandConstants.PlayerProfile ||
+                PlayerProfileRecordParseUtils.Parse(message.Body) is not { Name.Length: > 0 })
             .Select(PeerAcknowledgementUtils.AcknowledgementOf)
             .ToList();
         SendMessages(session, answers);

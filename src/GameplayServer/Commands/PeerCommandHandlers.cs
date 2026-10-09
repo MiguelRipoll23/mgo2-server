@@ -13,9 +13,8 @@ using Microsoft.Extensions.Options;
 namespace Mgo2Server.GameplayServer.Commands;
 
 /// <summary>
-/// Accepts a joiner's handshake, sends the keep-alive and the handshake reply
-/// behind it, both pre-keyed, then one session-keyed keep-alive and the flag
-/// that signs everything after it — the roster run first — with the session key.
+/// Accepts a joiner's handshake and sends the pre-keyed keep-alive followed by
+/// the handshake reply. Later traffic uses the session key.
 /// </summary>
 /// <remarks>
 /// The live host sends the keep-alive <b>first</b>, as outbound counter 0, and
@@ -39,25 +38,6 @@ namespace Mgo2Server.GameplayServer.Commands;
 /// them at the digest gate before parsing a field, and re-dialled every ~1.9 s
 /// until it gave up — 17 handshakes answered with 17 identical failures, each
 /// logged here as a session established.
-/// </para>
-/// <para>
-/// <b>One session-keyed frame goes out after the reply, and a live join is
-/// why.</b> The joiner's connect FSM (<c>FUN_00aa1140</c>,
-/// <c>docs/protocol/P2P_CONNECT_FSM.md</c>) leaves its dial state when the
-/// module session reports the data phase, state 8, which needs flags bits
-/// <c>0x1</c> and <c>0x2</c>. Bit <c>0x1</c> comes from the decoder's second
-/// digest chance — a frame whose tail digest verifies with
-/// <c>K ^ 0x2b58de69</c> (<c>UDP_P2P_PROTOCOL.md</c> §11.4) — and accepting the
-/// reply does not set it, which reading the reference capture alone
-/// (<c>P2P_CONNECT_FSM.md</c> §7.1) is what said otherwise. A live client
-/// settles it: answered with the two recorded frames and nothing else, the
-/// session sits in its reply-accepted state and state 2 counts <em>both</em> of
-/// its deadlines out — 6000 units, a tick that still reports that state and
-/// resets the countdown to 4500, then the failure path. That is 35.0 s after the
-/// dial, and it is the join that produced <c>0B09</c>. The frame costs the
-/// capture's counters one place, so the roster run leaves at counter 3 rather
-/// than 2; a joiner's sequence window is <c>last+1 .. last+0x20</c> (§11.5), so
-/// only consecutiveness has to hold.
 /// </para>
 /// </remarks>
 /// <param name="hostIdentity">Identity this host presents to its peers.</param>
@@ -123,14 +103,11 @@ public sealed class AcceptHandshakeHandler(
             hostIdentity.AdvertisedPort);
         await context.Send(UdpCommandConstants.Handshake, reply, 0);
 
-        // Only now, and with nothing sent in between: the flag is what makes
-        // this frame keyed, and one keyed frame is what a live joiner needs to
-        // reach its data phase (P2P_CONNECT_FSM.md §7).
+        // The working captures' first keyed host frame is the roster response.
         context.Session.Established = true;
-        await context.Send(UdpCommandConstants.KeepAlive, [], 0);
 
         logger.LogInformation(
-            "UDP {LocalPort}: session with peer=0x{PeerIdentifier:x8} established; opening exchange pre-keyed, then the keyed keep-alive",
+            "UDP {LocalPort}: session with peer=0x{PeerIdentifier:x8} established; opening exchange pre-keyed",
             context.LocalPort,
             handshake.PeerIdentifier);
     }
@@ -162,10 +139,7 @@ public sealed class AcceptHandshakeHandler(
 /// Reads a peer's keyed keep-alive and answers nothing.
 /// </summary>
 /// <remarks>
-/// The one keyed keep-alive this host writes is the frame
-/// <see cref="AcceptHandshakeHandler"/> puts behind its reply, and it exists to
-/// carry a live joiner into its data phase. This handler is the other direction.
-/// The capture's opening <c>0x5000</c> is the pre-keyed one that leads the
+/// The capture's opening <c>0x5000</c> is pre-keyed and leads the
 /// handshake reply (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4), and a joiner's
 /// profile frame carries one beside its profile, and the live host answers the
 /// profile with the roster and not the keep-alive. Mirroring an inbound one back
