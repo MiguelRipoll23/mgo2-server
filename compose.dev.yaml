@@ -26,6 +26,13 @@ x-lobby-build: &game-lobby-build
     PROJECT: src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj
     ASSEMBLY: Mgo2Server.GameLobbyServer
 
+x-gameplay-build: &gameplay-build
+  context: .
+  dockerfile: docker/Dockerfile
+  args:
+    PROJECT: src/GameplayServer/Mgo2Server.GameplayServer.csproj
+    ASSEMBLY: Mgo2Server.GameplayServer
+
 services:
   postgres:
     build:
@@ -89,12 +96,11 @@ services:
     image: mgo2-game-lobby-server:dev
 
   mgo2-gameplay-1:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      args:
-        PROJECT: src/GameplayServer/Mgo2Server.GameplayServer.csproj
-        ASSEMBLY: Mgo2Server.GameplayServer
+    build: *gameplay-build
+    image: mgo2-gameplay-server:dev
+
+  mgo2-survival-host-1:
+    build: *gameplay-build
     image: mgo2-gameplay-server:dev
 
   mgo2-http:

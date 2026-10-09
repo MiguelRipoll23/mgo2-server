@@ -271,6 +271,16 @@ services:
     ports:
       - "5731:5731/udp"
 
+  mgo2-survival-host-1:
+    <<: *gameplay-server
+    container_name: mgo2-survival-host-1
+    environment:
+      GAMEPLAY_SERVER_PORT: "60190"
+      GAMEPLAY_SERVER_LOBBY_NAME: Free Battle
+      GAMEPLAY_SERVER_GAME_NAME: SURVIVAL_HOST
+    ports:
+      - "60190:60190/udp"
+
   # Public HTTP API and its Scalar reference UI.
   mgo2-http:
     <<: *database
