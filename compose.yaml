@@ -48,10 +48,13 @@
 # Ports of the gameplay lobbies that reference the original server:
 #   5733 Free Battle   5735 Survival           5740 Automatching
 #   5734 Replays       5737 Basic Training     5741 Registration
-#   5738 Combat Training  5739 Survival Hosts  5743 Tournament Hosts
+#   5738 Combat Training  5739 Survival Hosts  5744 Tournament Hosts
 #   5742 Tournament
 #   5731 gate          5732 account            5731 Gameplay Host (UDP)
 #     80 HTTP API        53 Name server (UDP)    3478 Port check, 3479 (UDP)
+# 5743 is not a lobby port: it is the HTTP server's internal gRPC endpoint
+# (INTERNAL_GRPC_PORT), which the deployment binds on the node, so no lobby
+# may be published there.
 
 name: mgo2
 
@@ -262,13 +265,13 @@ services:
     environment:
       LOBBY_NAME: Tournament Hosts
       LOBBY_SUBTYPE: TOURNAMENT HOSTS
-      LOBBY_PORT: "5743"
+      LOBBY_PORT: "5744"
       LOBBY_BEGINNER_ONLY: "false"
       LOBBY_EXPANSION_ONLY: "false"
       LOBBY_NO_HEADSHOT: "false"
       LOBBY_REPLAYS_ONLY: "false"
     ports:
-      - "5743:5743/tcp"
+      - "5744:5744/tcp"
 
   # Gameplay hosts. Add one block per host, each with its own UDP
   # port and the lobby it publishes its match in. The host waits for that lobby

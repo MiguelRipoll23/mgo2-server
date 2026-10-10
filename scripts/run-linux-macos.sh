@@ -351,7 +351,9 @@ lobbies=(
     'Automatching|AUTOMATCHING|5740'
     'Registration|TOURNAMENT REGISTRATION|5741'
     'Tournament|TOURNAMENT|5742'
-    'Tournament Hosts|TOURNAMENT HOSTS|5743'
+    # 5744, not 5743: the HTTP server's internal gRPC endpoint has 5743
+    # (INTERNAL_GRPC_PORT), and this runs on the same host.
+    'Tournament Hosts|TOURNAMENT HOSTS|5744'
 )
 
 for lobby in "${lobbies[@]}"; do

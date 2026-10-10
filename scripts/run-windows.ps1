@@ -404,7 +404,9 @@ try {
             @{ Name = 'Automatching'; Subtype = 'AUTOMATCHING'; Port = '5740' }
             @{ Name = 'Registration'; Subtype = 'TOURNAMENT REGISTRATION'; Port = '5741' }
             @{ Name = 'Tournament'; Subtype = 'TOURNAMENT'; Port = '5742' }
-            @{ Name = 'Tournament Hosts'; Subtype = 'TOURNAMENT HOSTS'; Port = '5743' }
+            # 5744, not 5743: the HTTP server's internal gRPC endpoint has 5743
+            # (INTERNAL_GRPC_PORT), and this runs on the same host.
+            @{ Name = 'Tournament Hosts'; Subtype = 'TOURNAMENT HOSTS'; Port = '5744' }
         )
 
         foreach ($lobby in $lobbies) {

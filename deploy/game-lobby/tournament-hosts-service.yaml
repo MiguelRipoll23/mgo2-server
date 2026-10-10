@@ -12,10 +12,15 @@ spec:
   ipFamilies:
   - IPv4
   ipFamilyPolicy: SingleStack
+  # 5744, not 5743: this Service is a LoadBalancer, so its external port is
+  # bound on the node by a ServiceLB pod, and 5743 is already held there by
+  # mgo2-http's internal gRPC endpoint. A second Service on the same port never
+  # schedules, and a LoadBalancer with no address reads as Progressing in Argo
+  # CD. See deploy/game-lobby/tournament-hosts-deployment.yaml.
   ports:
-  - port: 5743
+  - port: 5744
     protocol: TCP
-    targetPort: 5743
+    targetPort: 5744
   selector:
     app: mgo2-tournament-hosts
   sessionAffinity: None
