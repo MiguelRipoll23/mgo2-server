@@ -1286,11 +1286,20 @@ Two consequences worth stating plainly:
 The first thing that is not yet known from the wire is **which state byte our
 client's session holds during those 92 s** — `[U]`. If it is `2` or `4`, the
 window is the whole story and the pacing change is the fix. If the client's
-session has already moved past them (the accept path is reachable from other
-states), then no answer can promote it and the failure is on the client, which
-would redirect the investigation from the wire to the client's own bring-up.
-The server side of that measurement is a log line of the decoded reply's gates,
-which this host does not print today.
+session has already moved past them, no answer can promote it: the promotion is
+reachable only from those two values, and the failure would be on the client,
+which redirects the investigation from the wire to the client's own bring-up.
+
+The second is on the client too, and §7.1b has already traced it: the mode its
+handshake carries is its own P2P role, resolved by its UPnP/NAT module into its
+connection record — `mode 1` (host) for our live joiner against `mode 2` (guest)
+for the reference's. Neither `0x4313` nor `0x4321` is consulted to compute it, so
+it is not a field this server can set, but a client that resolves to a guest for
+the same host is the cheapest way to tell whether that role gates the join.
+
+Neither measurement exists in a log today. The server side of the first would
+be the reply's gate results as this host decodes them, which it does not print;
+the second is read on the client.
 
 ---
 
