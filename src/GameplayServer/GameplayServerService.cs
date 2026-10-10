@@ -32,6 +32,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly RoomRosterService roster;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
+    private readonly PeerAnswerSchedulerService answerScheduler;
     private readonly ILogger<GameplayServerService> logger;
     private readonly ServerOptions options;
     private readonly PeerSessionService sessions;
@@ -72,6 +73,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
+        answerScheduler = serviceProvider.GetRequiredService<PeerAnswerSchedulerService>();
     }
 
     private string LogPrefix => $"udp:{port}";

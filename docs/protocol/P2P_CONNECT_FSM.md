@@ -1149,6 +1149,50 @@ there is no tie to resolve: the field is recorded and not read. **[V]**
 
 ---
 
+### 7.1d The answer's *timing* — the other thing the captures refuse
+
+The body length was one half of the answer. The other is *when* it is written,
+and it is measured the same way. Pairing every answer in the reference round
+with the record it answers — same identifier with `0x4000` set, same fourth byte,
+same direction — gives 2 801 pairs (`mgo2-game1.pcapng`, joiner
+`10.2.0.2:5730` ↔ host `99.66.131.177:5731`, session key `0x4fed1670`):
+
+| latency from the record to its answer | s |
+| --- | --- |
+| shortest | **0.0130** |
+| 10th percentile | 0.3336 |
+| median | 1.1093 |
+| 90th percentile | 3.7879 |
+
+**Nothing answers in the millisecond its record arrived.** A console host
+dequeues on one pass, acts, and writes on the next, so the floor is a tick and
+the observed floor is 13 ms; 102 of the 2 801 land inside 50 ms and the body
+lengths follow §7.1c again from the other side (2 619 answers with no body, the
+182 answers to `0x8000`-class records with one byte).
+
+Our host answered **inside the dispatch that received the record**, which is why
+the served-and-failed join of §7.1c looked the way it did: the client's own
+bookkeeping for the record it had just built — the entry `[0xc]` is advanced
+from — is written on its next pass, and an answer already in flight before that
+entry exists has nothing to match. Two live joins, one with the wrong body
+length and one with the right one, both climbed their sequence without the base
+moving, and both got their answers in under a millisecond.
+
+The correction is `PeerAnswerSchedulerService`: the answers a frame's numbered
+records are owed are queued and written **300 ms** later — the capture's tenth
+percentile rounded down, inside the measured envelope rather than at its edge —
+not awaited, so the dispatch loop keeps reading every other peer of the room.
+The counter is still the session's, so an answer goes out on the sequence after
+whatever the host wrote meanwhile, which is what the recorded host's own frames
+show.
+
+Both halves of the answer are now the captures': the length (§7.1c) and the
+timing. What confirms it is still a live join — the promotion gate at `0x268f18`
+is the thing to watch, and a client that reaches the data phase is the only
+measurement that closes it.
+
+---
+
 ### 7.2 Where the gating id comes from — traced, and consistent
 
 The gating id is the FSM context's second constructor argument. `0xaa1028`

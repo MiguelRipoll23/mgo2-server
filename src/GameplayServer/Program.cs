@@ -31,6 +31,7 @@ builder.Services.AddSingleton<MatchService>();
 builder.Services.AddSingleton<RoomRosterService>();
 builder.Services.AddSingleton<PostJoinBurstService>();
 builder.Services.AddSingleton<PostJoinBurstSchedulerService>();
+builder.Services.AddSingleton<PeerAnswerSchedulerService>();
 builder.Services.AddSingleton<HostStreamService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 // The peer command handlers are registered beside the types their messages are

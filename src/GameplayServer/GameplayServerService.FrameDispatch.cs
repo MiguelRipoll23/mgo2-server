@@ -274,8 +274,14 @@ public sealed partial class GameplayServerService
                 session.DialBack,
                 answers.Count,
                 string.Join(", ", answers.Select(message => $"0x{message.Type:x4}")));
+
+            // Written a beat after this frame, not inside its dispatch: the
+            // recorded host answers on its next pass and never in the
+            // millisecond the record arrived, and an answer served instantly is
+            // outside the only envelope a peer has been shown.
+            // `PeerAnswerSchedulerService` carries the measurement.
+            answerScheduler.Schedule(session, answers, (peerSession, messages) => SendMessages(peerSession, messages));
         }
-        SendMessages(session, answers);
 
         foreach (var message in frame.Messages)
         {
