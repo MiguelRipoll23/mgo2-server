@@ -45,19 +45,13 @@ spec:
           value: '60191'
         - name: GAMEPLAY_SERVER_LOBBY_NAME
           value: Tournament Hosts
-        # Names this host's room Tournament Host instead of the default
+        # Names this host's room Tournament instead of the default
         # server-{port}. The name is only a display name: the room is a host
         # because its host says it is dedicated and because it runs the mode of
-        # the lobby it publishes in, the Tournament Hosts game type.
-        #
-        # No index on the end, unlike the Survival host's "Survival Host 1". A
-        # room name is sixteen bytes on the wire (the name field of 0x4902) and
-        # that is the width of games.name, so "Tournament Host 1" is one byte
-        # too long: the store refuses the row and the host retries the room it
-        # cannot create for as long as the pod runs. Sixteen is a ceiling on
-        # this name, not a target.
+        # the lobby it publishes in, the Tournament Hosts game type. It is the
+        # mode, not the role: the room's own subtype is what makes it a host.
         - name: GAMEPLAY_SERVER_GAME_NAME
-          value: Tournament Host
+          value: Tournament
         - name: GAMEPLAY_SERVER_ACCOUNT_NAME
           value: server
         # DEDICATED_ADVERTISED_ADDRESS overrides the address this host announces

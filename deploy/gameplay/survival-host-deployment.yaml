@@ -45,12 +45,12 @@ spec:
           value: '60190'
         - name: GAMEPLAY_SERVER_LOBBY_NAME
           value: Survival Hosts
-        # Names this host's room Survival Host 1 instead of the default
-        # server-{port}. The name is only a display name: the room is a host
-        # because its host says it is dedicated and because it runs the mode of
-        # the lobby it publishes in, the Survival Hosts game type.
+        # Names this host's room Survival instead of the default server-{port}.
+        # The name is only a display name: the room is a host because its host
+        # says it is dedicated and because it runs the mode of the lobby it
+        # publishes in, the Survival Hosts game type.
         - name: GAMEPLAY_SERVER_GAME_NAME
-          value: Survival Host 1
+          value: Survival
         - name: GAMEPLAY_SERVER_ACCOUNT_NAME
           value: server
         # DEDICATED_ADVERTISED_ADDRESS overrides the address this host announces

@@ -295,7 +295,7 @@ services:
     environment:
       GAMEPLAY_SERVER_PORT: "60190"
       GAMEPLAY_SERVER_LOBBY_NAME: Survival Hosts
-      GAMEPLAY_SERVER_GAME_NAME: Survival Host 1
+      GAMEPLAY_SERVER_GAME_NAME: Survival
     ports:
       - "60190:60190/udp"
 
@@ -305,9 +305,7 @@ services:
     environment:
       GAMEPLAY_SERVER_PORT: "60191"
       GAMEPLAY_SERVER_LOBBY_NAME: Tournament Hosts
-      # Sixteen bytes is the whole room name the wire carries (0x4902) and the
-      # width of games.name, so this name has no index on the end.
-      GAMEPLAY_SERVER_GAME_NAME: Tournament Host
+      GAMEPLAY_SERVER_GAME_NAME: Tournament
     ports:
       - "60191:60191/udp"
 
