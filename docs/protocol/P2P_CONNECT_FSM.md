@@ -1193,6 +1193,107 @@ measurement that closes it.
 
 ---
 
+### 7.1f Every state above ours — the exact condition on each edge
+
+What follows is the ladder from where the live join stands to the terminal
+success, with each edge's test read out of the image. Nothing here is inferred
+from the outcome: each condition below is an instruction sequence, and the last
+section says which of them a server can move.
+
+#### The transport session (`session+4`), from the accepted reply
+
+Our join has the key installed (`session+8` base, `session+0xc` key), which the
+accept block writes only after **all five** of its gates returned the byte count
+they asked for (`0x26cc88` is the record reader and returns
+`min(remaining, requested)`; every gate tests **the count, not the value**):
+
+```
+00268ef4: cmpw cr7, session[0x18], record[0]   ; gate 1  peer id must equal the expected host id
+00268f8c: 4 bytes -> r1+0x7c   (== 4)          ; gate 2  then 0x268fb0: flags |= 2
+00268fbc: 4 bytes -> r1+0x78   (== 4)          ; gate 3  and == the module magic, else skip
+00268ff4: 1 byte  -> r1+0x70   (== 1)          ; gate 4  the capability byte
+00269034: 2 bytes -> session+0x1e (== 2)       ; gate 5  the last one
+00269048: li r23, 1 ; flags |= (cap << 8) & 0x100 | (cap & 1) << 9   ; 0x269044
+00268f6c: flags |= 4                           ; the first accepted record
+```
+
+All five hold for our reply (28-byte body, peer id 26 = the advertised host id,
+magic `0x4d258ab7`), which is why the client's next frames verify with the
+session key. With `flags` bits `4` and `2` set, **one bit is missing: `1`**.
+
+**The dispatch is what decides whether that bit can arrive at all.** The state
+byte is read and tested at `0x268c04`, and only three values reach the pass that
+runs the window test:
+
+| `session[4]` | branch | window pass |
+| --- | --- | --- |
+| `3` | `0x268cac` | no |
+| `4` | `0x268c94` → `0x268f04` | **yes** |
+| `2` | `0x268c94` → `0x268f04` | **yes** |
+| anything else | `0x268c24` | no |
+
+So the promotion is reachable only while the session is in state `2` or `4`.
+From `0x268f04`:
+
+```
+00268f04: r3 = r24 + 0x48          ; the handle the send builders install
+00268f0c: bl 0x26ad58              ; handle -> object (0x261438), or 0
+00268f18: bl 0x26ab58              ; 0 = go   when the object is null
+00268f20: cmpwi cr7, r3, 0         ;        or when object[0xb] == object[0xc]
+00268f24: beq cr7, 0x26907c        ; go -> flags |= 1 (0x26907c), then:
+00268f34: class != 1 -> 0x268c24   ; key install (r23), then 0x268c44
+00268c44: clrlwi r0, flags, 0x1e   ; flags & 3
+00268c4c: cmpwi  cr7, r0, 3
+00268c58: stb    r0=8, 4(r28)      ; ◀── state := 8, the data phase
+```
+
+And the miss (`0x26ab58` returns −1) goes to `0x268f28` → `0x268ca0` → `0x268f34`,
+where bit `1` unset means `0x268c24` and `0x268c44` declines to store 8 — the
+state our client sat in for 92 s. `[0xb]` is the sequence the next built record
+is stamped with (`0x26b108`) and `[0xc]` is the base the answers move
+(`0x2676d0`, `0x2676d4`); a client that builds records without their answers
+landing climbs `[0xb]` away from `[0xc]` and can never satisfy this test.
+**That is the only server-side input between us and state 8.** Everything the
+accept block reads — the ids, the magic, the byte lengths — our reply already
+satisfies.
+
+#### The connect FSM above state 2
+
+| from | handler | condition to advance | evidence |
+| --- | --- | --- | --- |
+| 2 | `0xaa131c` | the session tick returns **8** → `0x270e00(0, session, 0x1002/0x2002, scratch)` → `0x281dd8` → state 3, countdown 3000 | doc §4; the handoff is the only caller of `0x270e00` on this path |
+| 3 | `0xaa1560` | `0x281db0` returns **0**, i.e. `global[0x88] & 0x100 == 0` — the helper masks exactly that bit (`0x281dc4`–`0x281dc8`) and returns it as `0x100`; nonzero takes the countdown branch and its expiry tears the session down into the `0x4322` failure path | `[V]` disassembled |
+| 4 | `0xaa15c8` | `0x27e198(manager, 0xa1, 1)` must return **1**: the option walk finds the entry for `0xa1`, tests the option bit for the handle and **clears** it (`0x27e284`–`0x27e294`, `li r3, 1`), returning `0` when the bit was already clear or the entry is missing. On `1` it notifies (`0x26f158`) and clears `0x52` and `0x58` the same way, clears `ctx+0x84` and stores **state 6**. On `0` the same 3000-tick countdown expires into the failure path | `[V]` disassembled |
+| 5 | `0xaa1680` | never advances: its two exits raise `0B09` (channel `0x2b` completed) or `0B08` (the 12 000-tick timeout) | doc §5 |
+| 6 | — | terminal: the dispatcher's `bgt r0,5` sends the tick straight to the epilogue, so state 6 is the finished value and does no work | doc §2 |
+
+Two consequences worth stating plainly:
+
+1. **The server has no lever above state 8.** States 3 and 4 read the client's own
+   network module — a ready bit at `global[0x88]` and a per-handle option bitmap —
+   both of which the client's game side owns once the handoff at `0x270e00` has
+   happened. Nothing on the wire reaches them directly, so they are consequences
+   of the transport promoting, not conditions to satisfy separately.
+2. **A session that leaves states 2 and 4 before the window drains cannot
+   promote.** The dispatch has no window pass for any other value, so the
+   promotion window is exactly the time the session spends in `2`/`4` with the
+   accept done. That is the state to keep it in — and the reason the answer's
+   pacing (§7.1e) is the change that matters: it is what lets `[0xc]` catch
+   `[0xb]` on one of those passes.
+
+#### What to measure next
+
+The first thing that is not yet known from the wire is **which state byte our
+client's session holds during those 92 s** — `[U]`. If it is `2` or `4`, the
+window is the whole story and the pacing change is the fix. If the client's
+session has already moved past them (the accept path is reachable from other
+states), then no answer can promote it and the failure is on the client, which
+would redirect the investigation from the wire to the client's own bring-up.
+The server side of that measurement is a log line of the decoded reply's gates,
+which this host does not print today.
+
+---
+
 ### 7.2 Where the gating id comes from — traced, and consistent
 
 The gating id is the FSM context's second constructor argument. `0xaa1028`

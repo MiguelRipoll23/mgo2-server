@@ -139,7 +139,25 @@ counter `3474`.
   not spell out, or the countdown's tick base is not constant. The wait that
   this state's budget measures is therefore not pinned by a single run.
 
-## 4. Reproducing the reading
+## 4. The ladder above this state, and what moves it
+
+Each rung read out of the image; `P2P_CONNECT_FSM.md` §7.1f has the
+instruction-level detail.
+
+| from | to | the condition | who can move it |
+| --- | --- | --- | --- |
+| transport accepted (key installed) | transport **8** (data phase) | the window pass: `0x26ab58` says the handle at `session+0x48` has `[0xb] == [0xc]` → `flags \|= 1` → `flags & 3 == 3` → `state := 8`. Reachable only from state `2` or `4` (the dispatch tests exactly those two). | **the server**, by answering the peer's numbered records so its `[0xc]` catches `[0xb]` — §7.1e's pacing |
+| FSM 2 | FSM 3 | the session tick returns `8` → the `0x270e00` handoff + `0x281dd8`, then a 3000-tick countdown starts | the client, once the transport is at 8 |
+| FSM 3 | FSM 4 | `0x281db0 == 0`, i.e. `global[0x88] & 0x100 == 0` | the client's own module; nothing on the wire |
+| FSM 4 | FSM 6 (terminal success) | `0x27e198(manager, 0xa1, 1)` returns `1` — it must find the option entry and **clear a bit that is set** — then `0x52` and `0x58` the same way | the client's own option bitmap, filled after the `0x270e00` handoff |
+| any | FSM 5 → `0B09`/`0B08` | a countdown expiry destroys the session and sends `0x4322` | the failure path this run took |
+
+Two things follow. Above state 8 **the server has no lever at all**: states 3 and
+4 read the client's network module, not the wire. And the promotion is only
+reachable while the session is in state `2` or `4` — a session that has moved on
+before its window drains can never promote, whatever the server writes.
+
+## 5. Reproducing the reading
 
 ```bash
 export KUBECONFIG=/tmp/k3s.yaml
