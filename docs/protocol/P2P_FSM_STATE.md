@@ -42,7 +42,7 @@ served, the recorded host stream ran, every client record was answered — and t
 transport still never reported the data phase, so the wait expired into the
 polite `0B09` failure**. The two halves of that answer have since been corrected
 against the captures — its body length (`PeerAcknowledgementUtils`) and its
-timing (`PeerAnswerSchedulerService`, `P2P_CONNECT_FSM.md` §7.1d) — so the next
+timing (`PeerAnswerSchedulerService`, `P2P_CONNECT_FSM.md` §7.1e) — so the next
 live join is the measurement that closes this run's reading.
 
 The state fields, and what in the run says so:
@@ -121,7 +121,7 @@ counter `3474`.
   nothing to move it while its `[0xb]` climbs to 18. 18 is still inside the 24
   the window allows, so the limit was not what stopped it. The answers this run
   was served arrived in the millisecond the record did; the reference never
-  answers faster than 13 ms (§7.1d). `PeerAnswerSchedulerService` now writes
+  answers faster than 13 ms (§7.1e). `PeerAnswerSchedulerService` now writes
   them 300 ms after the frame, which is the half of this the captures could
   settle.
 * Whether the client answers the host's records at all once the window is

@@ -1149,7 +1149,7 @@ there is no tie to resolve: the field is recorded and not read. **[V]**
 
 ---
 
-### 7.1d The answer's *timing* — the other thing the captures refuse
+### 7.1e The answer's *timing* — the other thing the captures refuse
 
 The body length was one half of the answer. The other is *when* it is written,
 and it is measured the same way. Pairing every answer in the reference round
