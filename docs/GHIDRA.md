@@ -5,6 +5,13 @@ ELFv1) is the game binary every protocol document in `docs/protocol/` was read
 from. This is how to get Ghidra to open it, and the two ways the command goes
 wrong on this machine.
 
+**Most questions do not need it.** The Capstone readers in `tools/` disassemble
+any range or any function of the image directly — no project, no import, no
+analysis pass — and every instruction cited in `docs/protocol/` is reproducible
+that way (see the last section). Ghidra is worth its cost when a
+*decompilation* is what the question needs; the pass below takes hours, and on
+this machine that is the whole cost of it.
+
 On this machine the pieces are:
 
 | | |

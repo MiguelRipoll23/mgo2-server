@@ -203,7 +203,10 @@ sample. The RPDT parser has its own supported length/version table.
 The `0x0261`/`0x0a61` match is based on the replay parser's dedicated rules-roster
 grammar, not on a numerical VID coincidence: all captured P2P bodies fit exactly
 after adding the replay-only `0x00` payload discriminator. It still does not reveal
-what group `0xff` represents or how its member set is assigned. Likewise, the
+what group `0xff` represents or how its member set is assigned; the member bytes
+are the per-session handles measured in
+[`UDP_GAME_CAPTURE.md` §8.4](UDP_GAME_CAPTURE.md#84-the-roster-handle-is-a-per-session-host-side-allocation-v),
+whose allocation rule the captures do not contain. Likewise, the
 `0x090c` body agrees with a known health/stamina encoding but never changes in this
 capture, so it is not safe to treat it as a live player's vitals input.
 

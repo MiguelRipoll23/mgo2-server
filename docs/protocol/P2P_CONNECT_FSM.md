@@ -627,7 +627,7 @@ the separate promotion pass sets bit `0x1` and stores state 8 only after the
 reliable-record window test succeeds. The reference capture proves keyed
 traffic follows the accepted reply, but keyed traffic alone does not prove
 state 8. The later live run remained in outer state 2 and failed with `0B09`,
-which is consistent with the promotion gate remaining closed. See §7.1b–c.
+which is consistent with the promotion gate remaining closed. See §7.1b–d.
 
 ---
 
@@ -757,14 +757,16 @@ test.
 
 #### Divergences from the reference left open
 
-These are the differences between our live join and the reference join. The first
-three are open; the fourth is what the 2026-10-09 join did instead of the
-reference's, and the last two were measured in that join and are now fixed.
+These are the differences between our live join and the reference join. The
+endpoint and role rows are open; the joiner's own handshake row is what the
+2026-10-09 join did instead of the reference's, and the rows marked **fixed**
+were measured in a later join and corrected.
 
 | what | reference | ours |
 | --- | --- | --- |
-| reply's endpoint pair | host public, then host private (`99.66.131.177:5731`, `10.104.10.28:5731`) | the same public address twice |
+| reply's endpoint pair | host public, then host private (`99.66.131.177:5731`, `10.104.10.28:5731`) | the same public address twice — re-measured 2026-10-10, byte for byte: `0x4321` carries `89.129.16.203:5731` in both endpoint fields |
 | reply fields | `peer_id 0xa001`, magic, capability `02`, `[19..21) 1`, count 2 | `peer_id 1`, magic, capability `02`, `[19..21) 1`, count 2 |
+| reply's trailing bytes (the 43-byte payload ends `canRate`, `currentGame`, one more) | `00 01 01` | `01 00 00` — canRate set for the joiner, `currentGame` written as 0 |
 | the joiner's own handshake | capability byte `02`, `[19..21) 2` | capability byte `03`, `[19..21) 1` |
 | the joiner's non-profile records | `0x1001` one-byte answers, then one `0x9001` per sequence, `1`, `2`, `3` … | 18 one-byte `0x9001`, fourth bytes `1`…`0x12`, one every ~5 s: its sequence climbing while its window's base stands still |
 | the host's answers to `0x9001` | `0xd001` with **one** body byte | `0xd001` with **none** (2026-10-09 run) — **fixed**: `PeerAcknowledgementUtils` builds answers with the body length the captures give, §7.1c |
@@ -776,13 +778,199 @@ UDP channel — §7's requirement about the `0x4321` payload is worth re-checkin
 field by field.
 
 **`[19..21)` is worth the most attention.** It is the one field where our joiner
-and the reference joiner disagree *about themselves* (`1` against `2`), it is a
-small integer rather than an address, and the promotion path consults a small
-integer of the same shape: `0x268f40` reads `session[5]` — the byte the session
-constructor fills from the mode argument (`0x2681ac`), which is where the client's
-role lives — and on `== 1` it stores state **3**instead of following the rest of the promotion path to 8. That is not a proof that the two are the same value,
-and the send-site table in `UDP_JOIN_FLOW.md` §3 gives `[19..21)` as "struct +6"
-with no further trace. It is the first thing to read out next. **[U]**
+and the reference joiner disagree *about themselves* (`1` against `2`), and it is a
+small integer rather than an address. A first reading gave its reader as
+`0x268f40`, which tests `session[5] == 1` and then stores state **3** instead of
+following the rest of the promotion path to 8, with `session[5]` taken for the
+client's own mode. Re-read with `tools/mgo2_disasm.py` it is not: `session[5]` is
+the session constructor's **class argument**, and the join dial passes a literal
+`4` (§7.1d). The mode byte is a different field, and that test is not what holds a
+joining client back. **Measured 2026-10-10 across the three readable rounds
+(`UDP_GAME_CAPTURE.md` §8.3): the field is `2` on every joining client and `1` on
+every host, and the deployed gameplay server's own frame dump agrees — the live
+joiner sent `1` with capability `03`.** The source is traced below, and it is not
+in our `0x4321` reply, our `0x4313` player list or the room record — no field of
+ours can name it. **[V]** for the value, **[U]** for the input that makes a client
+choose it.
+
+#### Where both bytes come from, disassembled (2026-10-10)
+
+Neither byte is a field the server sends. Both are read out of the client's own
+state by the handshake builder at `0x268d40`, which is entered from the
+queue-drain at `0x268ba8` and writes the handshake record field by field:
+
+```
+00268d40: lhz   r11, 0x14(r28)          ; r11 = the session's flags halfword
+00268d44: rlwinm r9, r11, 0, 0x17, 0x17 ; test bit 8
+00268d48: li    r0, 2
+00268d50: stb   r0, 0x70(r1)            ; capability := 2
+00268d54: beq   cr7, 0x268d60           ; bit clear -> keep 2
+00268d58: li    r0, 3
+00268d5c: stb   r0, 0x70(r1)            ; bit set   -> capability := 3
+00268d60: rlwinm r0, r11, 0, 0x14, 0x14 ; test bit 11
+00268d68: beq   cr7, 0x268d78
+00268d70: ori   r0, r0, 4               ; capability |= 4
+00268d78: addi  r4, r1, 0x70
+00268d84: bl    0x26cc10                ; write 1 byte -> capability [18]
+00268d8c: addi  r4, r27, 6
+00268d9c: bl    0x26cc10                ; write 2 bytes -> mode [19..21)
+```
+
+* **The capability is derived from the session's own flags** — `2`, or `3` when
+  flag bit `0x100` is set, with bit `0x4` OR-ed in when `0x800` is set. It is the
+  same field the accept path folds into flags at `0x269064` (§7.1d). So `02` against `03`
+  distinguishes two *session states*, not two servers.
+* **The mode comes from `r27 + 6`**, and `r27` is the object `0x261730` returns,
+  which is three instructions: `*(module_globals) + 0x74`. The mode is therefore
+  the u16 at **`module_instance + 0x7a`**, which resolves the earlier note that
+  called it `module_base + 0x7a` with no trace. Its only writer in the image is a
+  four-instruction setter at **`0x261718`**, published once through the OPD slot
+  at `0x11f0d58`, so the value is client state written by the client's own
+  bring-up. **No server packet carries it**, which is why a capture comparison of
+  the TCP channel alone cannot name the trigger; the caller of `0x261718` is
+  reached indirectly (there is no `bl` to it and no `lis`/`ori` building its OPD
+  address), and locating it is the open item.
+
+**`AcceptHandshakeHandler` now logs `capability` and `mode`** for every handshake
+it parses, so the next live join records the role the client presented in the
+server's own log rather than in another capture. `FrameBuilderUtility.ParseHandshakeBody`
+already read both; only the log line was missing them. **[V]**
+
+#### What the client's own game object decides it from (2026-10-10)
+
+`0x261718` has exactly two callers in the image, and both apply the same rule.
+`docs/analysis/module-sweep.txt` carries them decompiled:
+
+```c
+/* FUN_00ea1bb0, the room-entry step */
+iVar1 = (*(code *)**(undefined4 **)(**(int **)(param_1 + 0x41c0) + 8))
+                  (*(int **)(param_1 + 0x41c0), &uStack_6c);
+if (iVar1 == 2) return;              /* not settled yet, poll again  */
+*(int *)(param_1 + 0x80) = iVar1;    /* the state the mode is set from */
+...
+_opd_FUN_0027e578(uVar2, 0x100, 2, param_1 + 0x41ae);
+if (iVar1 == 1) {
+  _opd_FUN_00261718(2);              /* state 1 -> mode 2, a joiner  */
+}
+else {
+  _opd_FUN_00261718(1);              /* anything else -> mode 1, host */
+}
+```
+
+```c
+/* FUN_00ea2570, the poll step */
+piVar5 = (int *)_opd_FUN_00d7d9c0();
+param_1[0x1070] = (int)piVar5;                 /* ctx+0x41c0 */
+if (*(short *)((int)param_1 + 0x41ae) == 0) {  /* my own port is unknown */
+  param_1[0x20] = 5;                           /* -> state 5 -> mode 1  */
+  return;
+}
+iVar6 = (*(code *)**(undefined4 **)(*piVar5 + 0xc))(piVar5, *(short *)((int)param_1 + 0x41ae));
+param_1[0x20] = iVar6;
+```
+
+Three things follow, and none of them is a byte on the wire:
+
+1. **The rule is `state == 1` → mode `2`, else mode `1`.** `param_1[0x20]` and
+   `param_1 + 0x80` are the same field (a `u32`), and the states the code writes
+   into it are `1`, `2` (retry), `3`, `4` and `5`. So mode `2` means "the client
+   ended up a guest in someone else's game"; every other outcome, including the
+   `port == 0` fallback that stores `5`, means mode `1` — with no server packet
+   involved at all.
+2. **The state is the return of a virtual call on a lazily-built singleton.**
+   `ctx+0x41c0` holds the object `0x00d7d9c0` returns: a **0x30160**-byte singleton
+   — `lis r4, 3` and `ori r4, r4, 0x160` at `0xd7d9d0`, so the size the earlier
+   note read as `0x3160` was missing the `lis` — allocated on first use with its
+   vtable stored from a module global. Its method
+   at vtable `+0xc` is entered with the port at `ctx+0x41ae` (a `0x100` net option)
+   and its method at `+0x8` is polled for `(state, address-string)`.
+3. **The same call supplies the address this client dials.** The 16-byte string it
+   returns is copied to `ctx+0x418a` / `ctx+0x419a` and parsed by `0x00fbb79c` into
+   the P2P endpoint — the same string-to-address parser the connect FSM uses on the
+   `0x4321` reply at `0xaa1468`. So the role and the dial address are produced by
+   one object, which is why the mode tracks the room the client believes it is
+   entering and not the handshake it sends.
+
+The question that paragraph names is answered below, and the answer is a negative
+one: the mode is the client's own role code, written by its own UPnP/NAT module
+into its connection record and read back over an *internal* message. No packet we
+send, and no pass of our own, takes part.
+
+#### The role value, traced from the handshake byte to the table (2026-10-10)
+
+| step | where | what |
+| --- | --- | --- |
+| the mode the handshake carries | `0x261718` | `module_instance+0x7a`, read into `[19..21)` by the handshake builder `0x268d40` |
+| its only caller on the join path | `0xea1df0` | `mode := (ctx[0x80] == 1) ? 2 : 1` — `li r3, 2` at `0xea1ef0`, `li r3, 1` at `0xea1dfc` |
+| `ctx[0x80]` | the room object's poll | vtable `+0x8` → OPD `0x01211820` → code `0x00d7e7a8`, called at `0xea1bf4` |
+| the poll's states | field `this+0x30010`, table `0x00d7e87c` | `0` → return `0`, `> 5` → return `2`, `1..5` → one table entry each |
+| the only `1` it can return | states 3 and 4 | `this+0x3001c`, filled by the `+0xc` method in state 1 |
+| that method | vtable `+0xc` → OPD `0x01211790` → code `0x00d7d530` | called at `0xd7e958` with `this+0x30154`; its result stored at `0xd7e968` |
+
+`0x00d7d530` is eleven instructions and one return, and it is the whole decision:
+
+```
+r4 = arg & 0xfcff                ; 0xd7d538-3c: bits 0x100/0x200 are flags, not value
+if (r4 == 0x10) return 0         ; 0xd7d544
+if (r4 <  0x10) return (r4 > 2) ? 1 : 3     ; 0xd7d550 -> 0xd7d568
+if (r4 == 0x90) return 0         ; 0xd7d554
+return 1                         ; 0xd7d558
+```
+
+So the poll answers `1` — "this client is a guest" — for **any value outside
+`{0, 1, 2, 0x10, 0x90}`**, and every other outcome the poll can produce (`0`, `2`,
+`0x1532`, `0x2000`, and those five values through a state that returns them)
+leaves the mode at `1`. A 1200-instruction sweep of the poll holds no `li r7, 1`
+at all, so `this+0x3001c` is the only source of the one value that matters.
+
+`this+0x30154` is the third halfword of the peer block the object keeps at
+`this+0x30130` — `addr1` (16 bytes), `addr2` (16), `port1` (2), `port2` (2),
+`port3` (2) — and that block is filled from the client's **own connection record**
+by internal messages, not by a packet. The connection object publishes them at
+`0xf4c68c`–`0xf4c898`: `0x2103`/`0x2104` carry the two addresses from `+0xa0c` and
+`+0xa10`, `0x2105`/`0x2106`/`0x2102` the three halfwords from `+0xa14`, `+0xa16`
+and `+0xa18`, and each of the six is skipped when its source is absent — the two
+addresses when the value is `-1` (`0xf4c694`, `0xf4c6dc`), the three ports when it
+is `0` (`0xf4c724`, `0xf4c76c`, `0xf4c844`). The receiver writes them at
+`0xd7e6a4`, `0xd7e6dc`, `0xd7e798` and `0xd7e6e8`.
+
+**`+0xa18` is therefore the value, and the mrd module writes it three ways:**
+
+| writer | value | when |
+| --- | --- | --- |
+| the connection initialiser `0xf4bc30` | `0` | a fresh record, with `+0xa00 = 0x1102`, both addresses `-1` and all three ports `0` |
+| `_opd_FUN_00f4ebc8`, the UPnP port bind (`mrd/upnp_port_bind.c`, `mrdUPnP_test2`, `less_than_1024_port_%d`) | **`2`** | the bind produced a port `>= 0x400`, `+0xa84 == -1`, the state is `0x2202`, `+0xac8 != 0`, and the `0x2301` task answers something other than `0x1201` (the code this module returns while a task is unfinished) — `0xf4eb78`, and again at `0xf4ecfc` |
+| `0x00f5b0f8`, the NAT task driver (`0x2301`, `0x2303`, `0x2304`; fields read by name as `RESULT`, `MAPPED-ADDRESS`, `true`, `false`) | **`0x10`, `0x30`, `0x90`, `0xd0`** | `0xf5c8b8`–`0xf5c8e8`: a four-entry table indexed by `r25 + 2·bit`, `r25` the parsed boolean (`1` when the value equals `true`, `0` when `false`) and the bit one bit of `abs((frame+0xb8) ^ parsed)` |
+
+The two sets line up with the classifier exactly:
+
+| `+0xa18` | classifier | the handshake carries |
+| --- | --- | --- |
+| `0` (never set) | `3` | mode `1`, host |
+| `2` (the port bind succeeded) | `3` | mode `1`, host |
+| `0x10`, `0x90` (the `true` half of the table) | `0` | mode `1`, host |
+| `0x30`, `0xd0` (the `false` half) | `1` | **mode `2`, guest** |
+
+A value that is none of those — a real port such as `0x1662` — is `1` as well, so
+the guest test is "anything but the four role codes and the two small numbers".
+**[V]** for every address, value and branch above, and for the parse that
+distinguishes `true` from `false` (`0xf4f2b8` is a case-insensitive compare that
+returns `0` on equality). **[I]** for the step from that boolean to *which* NAT
+state it describes: the field is one of a UPnP/NAT response and the two halves of
+the table are one enum, but the field's name is not carried into the code that
+reads it. **[U]** for the bit that picks between the two host codes (`0x10`
+against `0x90`) and between the two guest codes (`0x30` against `0xd0`).
+
+**What this means for the join.** The byte our joiner sent is not a value the
+server can name: it is the client's own P2P role, computed by the client's own
+UPnP/NAT module into its connection record and read back over an internal
+message. Our `0x4313` and `0x4321` payloads, and the room record behind them, are
+never consulted. So the divergence between our live join and the reference is a
+client-side one — the reference's joining client resolved to a guest code and
+ours to a host code — and the check that closes it is on the client: a client
+whose port-mapping state resolves the other way presents mode `2` against the
+same server. **[V]** for the mechanism; **[U]** for which of the six values that
+client's record held.
 
 ### 7.1c The records that pair up — a reading, and what a live join did to it
 
@@ -884,6 +1072,81 @@ as opposed to its own bookkeeping rejecting a plain-text-less record — is not
 separated here. **[U]** for that last step; the fix itself is in
 `PeerAcknowledgementUtils`, and what settles it is another live join.
 
+### 7.1d What the receiving side does with the byte — and what `session[5]` really is
+
+§7.1b once read the field through `0x268f40`, which tests `session[5] == 1` and
+stores state **3** instead of the rest of the promotion path, and took `session[5]`
+for the client's own mode. Re-read with `tools/mgo2_disasm.py` (Capstone, no Ghidra
+project), both halves of that are measured, and the second is wrong.
+
+**The byte arrives, is stored, and is never tested.** The accept block reads the
+peer's record field by field, and each read refuses the record unless it returns
+the whole count:
+
+```
+00268ed0: mr    r3, r31            ; the received record
+00268ed4: addi  r4, r1, 0x74
+00268ed8: li    r5, 4
+00268edc: bl    0x26cc88           ; 4 bytes -> r1+0x74    gate 1: == session[0x18]
+;; 0x268f8c 4 bytes -> r1+0x7c     counter base -> session[8], key -> session[0xc] (0x268c30)
+;; 0x268fac 4 bytes -> r1+0x78     module magic, compared with the module's own
+;; 0x268ff0 1 byte  -> r1+0x70     capability, folded into flags at 0x269064
+00269024: addi  r4, r24, 0x1e      ; r24 == r28 == the session (0x268be4/0x268bf4)
+00269030: li    r5, 2
+00269034: bl    0x26cc88           ; 2 bytes -> session+0x1e   ◀── the mode
+0026903c: cmpwi cr7, r3, 2 ; bne-  0x2690d0   ; the *count* is what is tested
+```
+
+`0x26cc88` is the record reader, not a writer: it returns
+`min(remaining, requested)` and copies a byte loop to `r4`. So the byte our reply
+carries lands at `session+0x1e` and the tests around it are on the read's length.
+In `0x260000`–`0x27a000`, the module that owns this object, the only reads of
+`+0x1e` are struct copies (`0x26033c`, `0x26c360`), and no code compares a
+session's peer mode with the client's own at `module_instance+0x7a`. **The client
+decides no role from either byte.**
+
+**`session[5]` is the session's class, and the join dial's is `4`.** `0x2681ac`
+writes the constructor's third argument into it (`stb r5, 5(r27)` with `r27 = r3`,
+the slot being initialised), and `0x261fe0` forwards its **second** argument there
+(`mr r11, r4` at `0x261ffc`, `extsw r5, r11` at `0x26206c`). At every direct call
+site in the image:
+
+| site | caller | class passed |
+| --- | --- | --- |
+| `0xaa1528` | the connect FSM's dial | `4` — `li r4, 4` at `0xaa1518` |
+| `0x8ee48c` | the game module's room entry | `4` |
+| `0x270f74` | the room module, the room owner's own session | `2` |
+| `0x268024` | this module's own answer path | `5` |
+| `0x276cb0` | the room module, a per-peer session | `0`, or `1` when reached from `0x276e28` |
+
+A class-`1` session therefore exists — the room module creates one — but the
+joining client's dial uses `4`, so `0x268f40`'s `== 1` never holds for it. The
+class byte and the mode byte share the value `2` at one site each, which is what
+made the two look like one field. **[V]** for the instructions, the call sites and
+the argument each passes; **[U]** for what a class means.
+
+**The promotion itself, unchanged.** State 8 — the data phase the connect FSM's
+state 2 waits for — is stored when both role bits are set:
+
+```
+00268c44: clrlwi r0, r11, 0x1e    ; flags & 3
+00268c4c: cmpwi  cr7, r0, 3 ; bne
+00268c58: stb    r0=8, 4(r28)     ; state := 8
+```
+
+Bit `2` comes from the accept (`0x268fb0`), bit `1` from the window pass once
+`0x26ab58` reports the 24-record window drained (`0x26907c`), and neither depends
+on the mode or the class byte.
+
+**What the live run says.** The deployed gameplay server logs every inbound frame
+with its bytes, and its own record of the join agrees with the capture
+comparison: the joiner's handshake at `2026-10-09 23:30:49` decodes to
+`peer=0x00000002 base=0xb712cbf1 cap=0x03 mode=1 pairs=2` — a host's mode from a
+joining client, against the `2` every joining client sends in
+`mgo2-game*.pcapng` (the joins at `99.66.131.177:5731`, `98.26.168.27:5730`,
+`143.47.227.126:5721` and `:5720`). Both sides of our wire present mode `1`, and
+there is no tie to resolve: the field is recorded and not read. **[V]**
+
 ---
 
 ### 7.2 Where the gating id comes from — traced, and consistent
@@ -949,12 +1212,34 @@ python3 tools/ppc_function_disasm.py 0xaa131c MGO2.ELF 0x280
 python3 tools/ppc_function_disasm.py 0x261fe0 MGO2.ELF 0x260   # session create
 python3 tools/ppc_function_disasm.py 0xf015d0 MGO2.ELF 0x100   # channel poll
 python3 tools/ppc_function_disasm.py 0x97f1b8 MGO2.ELF 0x120   # raise()
+
+# the role chain: the code each vtable slot really names (through its OPD), with
+# every off(r2) operand resolved to the data it reads
+python3 tools/ppc_vtable_dump.py 0x011db824 --slots 6
+python3 tools/ppc_vtable_dump.py 0x011db824 --disasm 0xc --count 14   # the classifier
+python3 tools/ppc_function_disasm.py 0xd7e7a8 MGO2.ELF 0x1000  # the poll's dispatcher
+python3 tools/ppc_function_disasm.py 0xea1bb0 MGO2.ELF 0x300   # the mode set
+# the poll's five state handlers, from the table at 0xd7e87c
+python3 tools/ppc_function_disasm.py 0xd7e894 MGO2.ELF 0x120   # state 1
+python3 tools/ppc_function_disasm.py 0xd7e9fc MGO2.ELF 0x60    # state 4, which returns +0x3001c
+
+# §7.1d: what the receiving side does with the mode byte, and the session class
+python3 tools/mgo2_disasm.py 0x268f80 0x269070 MGO2.ELF      # the accept block's field reads
+python3 tools/mgo2_disasm.py 0x26901c 0x269048 MGO2.ELF      # the 2-byte read into session+0x1e
+python3 tools/mgo2_disasm.py 0x2681a8 0x2681b4 MGO2.ELF      # the class store
+python3 tools/mgo2_disasm.py 0x26206c 0x262078 MGO2.ELF      # the class argument
+python3 tools/mgo2_disasm.py 0x268f30 0x268f58 MGO2.ELF      # the session[5] == 1 branch
+python3 tools/mgo2_disasm.py 0x268c44 0x268c5c MGO2.ELF      # the state-8 store
 ```
 
-The two tools exist because a linear sweep stops at `0xaa1188`: Capstone halts
-on the first word it cannot decode, and the six jump-table offsets are exactly
-that. `p2p_fsm_disasm.py` hard-codes the six handler entries from the table and
-walks basic blocks; `ppc_function_disasm.py` does the same for any entry.
+The first two tools exist because a linear sweep stops at `0xaa1188`: Capstone
+halts on the first word it cannot decode, and the six jump-table offsets are
+exactly that. `p2p_fsm_disasm.py` hard-codes the six handler entries from the table
+and walks basic blocks; `ppc_function_disasm.py` does the same for any entry; and
+`ppc_vtable_dump.py` is the third step a vtable needs on this machine, where a
+slot holds an official procedure descriptor rather than a code address — it reads
+the descriptor, and resolves every `off(r2)` operand of the code it names, which
+is how `+0xa18` was found.
 
 Key addresses, all re-checked against the disassembly for this document:
 
@@ -973,6 +1258,19 @@ Key addresses, all re-checked against the disassembly for this document:
 | session destroy | `0x261de0` |
 | TCP `0x4320` send | `0xf1203c` |
 | TCP `0x4322` send | `0xf10dec` |
+| module TOC (`r2`) | `0x01222a00`, from the entry descriptor at `0x011e7368` |
+| the room object's vtable | `*(0x011db824)` = `0x0119e490` |
+| vtable `+0x8` / `+0xc` | OPD `0x01211820` → `0x00d7e7a8` / OPD `0x01211790` → `0x00d7d530` |
+| the poll's per-state table | `0x00d7e87c` (six i32 offsets) |
+| the mode store | `0xea1df0`, `li r3, 2` at `0xea1ef0` and `li r3, 1` at `0xea1dfc` |
+| the role's slot on the object | `this+0x30154`, in the peer block at `this+0x30130` |
+| the connection record's role field | `+0xa18` (with `+0xa0c`/`+0xa10` addresses and `+0xa14`/`+0xa16` ports) |
+| the messages that fill the peer block | `0x2102`/`0x2105`/`0x2106` built at `0xf4c88c`/`0xf4c754`/`0xf4c79c`, received at `0xd7e6a4`/`0xd7e6dc`/`0xd7e798` |
+| the role's writers | `0xf4eb78`, `0xf4ecfc` (the literal `2`), `0xf5c8b8`–`0xf5c8e8` (the four codes) |
+| received mode lands at | `session+0x1e`, read at `0x269024` with the cursor reader `0x26cc88` |
+| the session's class store | `0x2681ac` (`stb r5, 5(r27)`), argument forwarded at `0x26206c` |
+| the class each creator passes | `0xaa1518` `4`, `0x8ee484` `4`, `0x270f68` `2`, `0x268018` `5`, `0x276cbc` `0` (`0x276e28` `1`) |
+| the state-8 store | `0x268c58`, after `(flags & 3) == 3` at `0x268c44` |
 
 ---
 
@@ -986,6 +1284,15 @@ Key addresses, all re-checked against the disassembly for this document:
    resolves that id from its configured gameplay character. **[V]**
 2. **Who sets the module instance's first word to `2`**, the precondition of
    `0x261fe0`. The client's own bring-up, not the server. **[U]**
+
+3. ~~**What sets the module instance's mode to `1` or `2`**, the handshake's
+   `[19..21)`.~~ **Resolved** — §7.1b: the client's own role code at
+   `connection+0xa18`, written by its UPnP/NAT module, read back over internal
+   message `0x2102` and classified by `0x00d7d530`. `{0x30, 0xd0}` is a guest and
+   `{0, 2, 0x10, 0x90}` a host; no field the server sends takes part, and the
+   receiving side stores the byte at `session+0x1e` without testing it (§7.1d).
+   What is left is only which of those values a given client's NAT state produces.
+   **[V]**
 
 2b. ~~**Whether the removed ESTABLISH OUT is needed after all.**~~ **Half answered.**
    The fake-host trial measured a real effect (the re-dials stopped), so the frame

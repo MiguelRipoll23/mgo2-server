@@ -208,15 +208,15 @@ Session records only (`id >= 0x1000`). Tick records are in §5.
 | `0x890d` | — | 34 | 16 | **[U]** |
 | `0x8a5c` | — | 2 | 2 | **[U]** |
 | `0x9001` | 71 | **191** | 1–161 | **[U]** — §4 |
-| `0x9250` | 10 | — | **[U]** |
-| `0x9254` | 139 | — | **[U]** |
-| `0x9256` | 3 | — | **[U]** |
-| `0x92de` | 3 | — | **[U]** |
-| `0x9a50` | 13 | — | **[U]** |
-| `0x9a54` | 94 | 1 | **[U]** |
-| `0x9a5a` | 2 | — | **[U]** |
+| `0x9250` | 10 | — | — | **[U]** |
+| `0x9254` | 139 | — | — | **[U]** |
+| `0x9256` | 3 | — | — | **[U]** |
+| `0x92de` | 3 | — | — | **[U]** |
+| `0x9a50` | 13 | — | — | **[U]** |
+| `0x9a54` | 94 | 1 | — | **[U]** |
+| `0x9a5a` | 2 | — | — | **[U]** |
 | `0xd001` | **176** | 5 | 1 | **[U]** — see below |
-| `0xda54` | 1 | — | **[U]** |
+| `0xda54` | 1 | — | — | **[U]** |
 
 **`0x1001` is the only type both parties use in volume, and it is the one this project
 already implements.** The roster it carries is the whole of the join.
@@ -991,5 +991,165 @@ python3 tools/udp_join_replay.py     docs/mgo2-game.pcapng     # the join, frame
 ```
 
 `tools/pcap_conversations.py` is a stdlib pcapng reader — there is no tshark on this
-machine, and none is needed. The session key is derived from the two handshake counter
-bases rather than configured, so the tools work on any capture of this protocol.
+machine, and none is needed. The session key is derived from the two handshake
+counter bases rather than configured, so the tools work on any capture of this
+protocol.
+
+---
+
+## 8. What the second and third captures map
+
+`mgo2-game2.pcapng` and `mgo2-game3.pcapng` are further rounds against a **second
+dedicated host** (`143.47.227.126`, ports `5721` and `5720`) with the same joiner
+character as `mgo2-game1.pcapng`. They were decoded with the same
+`tools/udp_frame.py` walk of the handshakes and the roster records, and they
+settle three fields this server writes without knowing what they are. Everything
+in this section is measured from the three captures; nothing is inferred from
+plausibility. It reproduces with
+`python3 tools/map_roster_fields.py mgo2-game1.pcapng mgo2-game2.pcapng mgo2-game3.pcapng`,
+which prints every handshake, roster entry and rules-roster record beside the
+character it belongs to.
+
+### 8.1 The handshake `peer_id` is the character id, on every party [V]
+
+| capture | party | `peer_id` | that character's roster entry |
+| --- | --- | --- | --- |
+| game1 | joiner `10.2.0.2:5730` | `0x0001232f` | `MyPlayerName`, `0x0001232f` |
+| game1 | host `99.66.131.177:5731` | `0x0000a001` | the room record, `0x0000a001` |
+| game2 | joiner `10.2.0.2:5730` | `0x0001232f` | (same character) |
+| game2 | host `143.47.227.126:5721` | `0x00012448` | — |
+| game3 | joiner `10.2.0.2:5730` | `0x0001232f` | — |
+
+The joiner's `peer_id` is byte-for-byte its own character id, and the host's is
+byte-for-byte the room record's character id — including in game2, where the host
+is a different character from game1's. So `peer_id == character id` holds on both
+roles and across rounds, which is what `P2P_CONNECT_FSM.md` §7.2 requires of our
+reply. **[V]**
+
+### 8.2 The host may advertise no endpoints at all [V]
+
+`mgo2-game2.pcapng`'s host answers the joiner's 44-byte handshake with a **32-byte
+reply that carries `count = 0`** — no endpoint entries at all, capability byte
+`03` — and the round still ran. `mgo2-game3.pcapng` has no host reply at all.
+
+This retracts the reading that our reply's duplicated public endpoint is what
+stops the join. The reference host in game1 advertises a public/private pair and
+this one advertises nothing, so a working join does not depend on the endpoint
+pair's contents, and a decode that assumes a 44-byte, two-entry reply simply finds
+only the joiner's half of game2 — which is the note §7.1c already carries beside
+these captures. The endpoint divergence recorded in `P2P_CONNECT_FSM.md` §7.1b
+stays a difference from the reference, but it is **not** the gate. **[V]**
+
+### 8.3 The handshake role field is `2` for a joiner and `1` for a host [V]
+
+The u16 at handshake `[19..21)` — `handshake_layout.py`'s `mode`, read from
+`module_base + 0x7a` — is **not** a per-build constant. Measured on every 44-byte
+handshake in the three captures:
+
+| capture | party | capability `[18]` | mode `[19..21)` | count `[21]` |
+| --- | --- | --- | --- | --- |
+| game1 | joiner | `02` | **2** | 2 |
+| game1 | host | `02` | **1** | 2 |
+| game2 | joiner | `02` | **2** | 2 |
+| game2 | host | `03` | **1** | 0 |
+| game3 | joiner | `02` | **2** | 2 |
+| game1, three dead flows | joiner re-dials | `06` | `2` | 2 |
+
+The joiner is `2` and the host is `1` in every readable handshake, on both hosts;
+the three one-sided flows of game1 (`ver = 6`) are the same joiner re-dialling
+with the same value, so the mode does not track the capability byte either.
+The live join of 2026-10-08 recorded in `P2P_CONNECT_FSM.md` §7.1b sent
+**capability `03`, mode `1`** from the *joining* client, and the same section
+traces the promotion path: `0x268f40` reads the session's mode byte, and on `1` it
+stores state **3** instead of following the reliable-window path to state **8**.
+A client that presents itself with the host's mode is therefore sent down the
+branch that never reaches the data phase, which is the `0B09` stall. That reading
+was `[U]` when §7.1b was written; the two additional rounds make the value
+role-bearing rather than build-constant, and leave the open question narrower:
+*what in our server's `0x4321` reply, `0x4313` player list, or room record tells a
+joining client it is the host.* **[V]** for the measurement, **[I]** for the
+mechanism.
+
+### 8.4 The roster handle is a per-session host-side allocation [V]
+
+The byte at roster offsets `0x05`/`0x07` (`PlayerProfileRecordUtility.PlayerValue`,
+which we write as zero) and the member bytes of the `0x0261`/`0x0a61` rules-roster
+records are the same value. Across the readable rounds:
+
+| character | round | handle |
+| --- | --- | --- |
+| room record (`0x9001` head) | game1 | `0x00` |
+| room / host member | game2 | `0x02` |
+| `MyPlayerName` | game1 | `0x14` |
+| `MyPlayerName` | game2 | `0x01` |
+| `SOLID KYO!` (first join) | game1 | `0x0f` |
+| `SOLID KYO!` (rejoin) | game1 | `0x06` |
+| `Libertine` | game1 | `0x04` |
+| `Pancor3000` | game1 | `0x0b` |
+
+and the member sets the rules-roster records carry are exactly the handles
+currently live: `{14}`, `{14,0f}`, `{14,04}`, `{0b}`, `{06}`, `{06,14}` in game1,
+and `{01}`, `{02}`, `{01,02}` in game2.
+
+Three things follow, and the third is why this server must not fill the field:
+
+- **The same character gets a different handle every session.** `MyPlayerName` is
+  `0x14` in game1 and `0x01` in game2; `SOLID KYO!` is `0x0f` then `0x06` in one
+  round. It is not a property of the character.
+- **It is not the roster index, the character id, the peer address or the port.**
+  The five game1 handles (`0x14, 0x0f, 0x04, 0x0b, 0x06`) were checked against
+  each of those and match none; the host's own handle is `0x00` in game1 and
+  `0x02` in game2.
+- **It is allocated per session, on the host side.** No client record announces
+  it — the 140-byte join request does not carry it — and the host's roster entry,
+  its `0x0261`/`0x0a61` membership sets and its own handle all agree. The
+  allocation rule is therefore **not recoverable from these captures**, and
+  filling the field by derivation would be inventing the very semantics the
+  capture cannot supply. It stays zero, as `PlayerProfileRecordUtility` and
+  `UDP_GAME_CAPTURE.md` §5 record.
+
+The practical gap that leaves is unchanged and now precisely stated: our roster
+entries carry handle `0` for every player, and the steady stream emits only the
+**empty** `0x0a61 fe` list, so nothing tells the client which handles are live.
+The records it would need are the member-bearing `0x0261`/`0x0a61` ones, which
+this server never emits (its steady frame carries only the empty `0x0a61 fe`
+bodies). **[V]** for the measurement; whether the client needs them to run a game
+is not established by any of the three captures.
+
+### 8.5 The lobby TCP channel, our frames beside the reference's [V]
+
+The same capture also holds the lobby flow the client joined
+(`10.2.0.2:65217` ↔ `15.204.239.231:5733`), and decoding it settles what our own
+lobby writes differently. The frame layout is the same on both sides —
+`cmd(2) | len(2 BE) | counter(4) | checksum(16) | payload(len)`, with the payload
+at offset 24 — so the differences below are content, not framing:
+
+| command | reference | ours |
+| --- | --- | --- |
+| `0x4301` list start | 4-byte `00 00 00 00` | 4-byte `00 00 00 00` — same |
+| `0x4302` list page | a **770-byte page carrying many rooms**, each record `63 00 05 <id> <name×16> … 63` | a **55-byte page carrying one room**, the same record shape, ending `63` |
+| `0x4303` list end | 4-byte body | 4-byte body — same |
+| `0x4312`/`0x4313` details | request `00 05 a8 22`, reply `877` bytes: result, id, name, comment, 372-byte fixed part, then `28`-byte roster entries | request `00 00 00 bd`, reply `400` bytes: the same structure with **one** roster entry, the host (`0000001a` + `server-5731`) |
+| `0x4320`/`0x4321` join | reply carries the host's public **and** a distinct LAN endpoint | reply carries the host's public address **in both endpoint fields** |
+
+**The reference packs several frames into one TCP segment; we write one frame per
+segment.** Its `0x4301` segment is 850 bytes holding three frames back to back
+(`0x4301` 28 B, `0x4302` 794 B, `0x4303` 28 B). Both are legal streams — the client
+frames per record, not per segment — so this is recorded as a difference and not
+a defect.
+
+**The room-list record shape agrees**, which is the part worth keeping: our 55-byte
+`0x4302` page and the reference's per-room records both open with the room id and
+carry a 16-byte name, and both end on the `0x63` terminator. And **the details
+record places the host first in its roster**, as `RoomBrowserHandlers` intends,
+with the host's character id followed by its name — the reference's own record
+ends with its roster of `28`-byte entries in the same arrangement. Neither of
+these differences explains the role byte in §8.3, which is set from the client's
+own room object and not from a byte in any of these replies.
+
+**And it is now traced to its source** (`P2P_CONNECT_FSM.md` §7.1b): the byte is
+the client's own role code at `connection+0xa18`, written by the client's own
+UPnP/NAT module and read back over an internal message, classified by
+`0x00d7d530` into "guest" (`0x30`, `0xd0`) or "host" (`0`, `2`, `0x10`, `0x90`).
+No field of this channel takes part in it, so the row above is a difference of
+content that stays open for another reason or none. **[V]**
