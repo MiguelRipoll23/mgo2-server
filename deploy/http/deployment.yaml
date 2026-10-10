@@ -46,14 +46,27 @@ spec:
           protocol: TCP
         - containerPort: 5743
           protocol: TCP
-        # Two probes, because the two questions are different. The startupProbe
-        # asks only "has it bound yet", which is what externalTrafficPolicy: Local
-        # needs: until it passes the pod is not Ready, so the load balancer
-        # cannot send to a listener that has not bound. It is polled every five
-        # seconds until it passes once and then stops, so the steady state costs
-        # nothing. The readinessProbe then watches the server while it serves,
-        # hourly, because an hourly poll is enough to notice a wedged process and
-        # costs one request an hour against an endpoint that is trivially cheap.
+        # One probe, and a startupProbe rather than a readinessProbe. It asks
+        # only "has it bound yet", which is what externalTrafficPolicy: Local
+        # needs: until it passes the pod is not Ready, so kube-proxy does not
+        # advertise a local endpoint and the load balancer cannot send to a
+        # listener that has not bound. It is polled every five seconds until it
+        # passes once and then stops, so the steady state costs nothing.
+        #
+        # There used to be a readinessProbe here, hourly, to notice a wedged
+        # process. kubelet cannot be asked for that. Its probe worker begins
+        # with a random sleep of up to the period before the first probe --
+        # "let the worker wait for a random portion of tickerPeriod" in
+        # `pkg/kubelet/prober/worker.go`, taken whenever the period is longer
+        # than the kubelet's own uptime -- and the manual trigger
+        # `UpdatePodStatus` sends is only read after that sleep. At 3600s the
+        # pod sat NotReady for up to an hour after every node reboot, the
+        # Service had no endpoints, and the Gateway had nothing to forward to;
+        # this was the only deployment with a readinessProbe, so it was the only
+        # one that stopped serving. A period short enough to be safe polls and
+        # logs for the life of the pod, which is what the other fifteen
+        # deployments reject, so a wedged HTTP process is not detected here. The
+        # game servers are what carry the players.
         startupProbe:
           httpGet:
             path: /health
@@ -63,16 +76,6 @@ spec:
           # restarted.
           failureThreshold: 120
           timeoutSeconds: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 80
-          periodSeconds: 3600
-          # Three misses is three hours of an already-suspect server before the
-          # pod is pulled out of rotation; this is a slow sanity check, not a
-          # fast failover, and the game servers are what carry the players.
-          failureThreshold: 3
-          timeoutSeconds: 10
         resources: {}
         securityContext:
           allowPrivilegeEscalation: false
