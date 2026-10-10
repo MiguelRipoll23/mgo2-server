@@ -30,12 +30,17 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// <param name="characterMemoryService">Store that owns the simulated characters.</param>
 /// <param name="teamService">Service that owns the teams, real and simulated.</param>
 /// <param name="matchmakingService">Service that pairs the teams.</param>
+/// <param name="assignmentService">
+/// Service that owns the host assignment, read back so the run reports whether a
+/// host was actually found rather than guessing.
+/// </param>
 /// <param name="sessionHelper">Helper used to write the chat lines.</param>
 /// <param name="logger">Logger of the service.</param>
 public sealed class SurvivalTestOpponentService(
     CharacterMemoryService characterMemoryService,
     EventTeamService teamService,
     EventMatchmakingService matchmakingService,
+    EventAssignmentService assignmentService,
     SessionHelper sessionHelper,
     ILogger<SurvivalTestOpponentService> logger)
 {
@@ -153,17 +158,26 @@ public sealed class SurvivalTestOpponentService(
             PairingMessage(team, opponent, pairing),
             cancellationToken);
 
+        // Pairing hands the match to an idle host inside the same call, so by the
+        // time it returns the assignment either exists or the match is genuinely
+        // waiting for a room. Reading it back is what tells the two apart: the
+        // pairing alone cannot say whether a host was found.
+        var assignment = pairing.Status == MatchmakingStatus.Paired
+            ? await assignmentService.FindByTeamAsync(team.Identifier, cancellationToken)
+            : null;
+
         await SayAsync(
             session,
             characterIdentifier,
-            OutcomeMessage(pairing),
+            OutcomeMessage(pairing, assignment),
             cancellationToken);
 
         logger.LogInformation(
-            "Survival self-test opposed team {TeamIdentifier} with in-memory team {OpponentIdentifier}: {Pairing}",
+            "Survival self-test opposed team {TeamIdentifier} with in-memory team {OpponentIdentifier}: {Pairing}, host room {HostRoom}",
             teamIdentifier,
             opponent.Identifier,
-            pairing.Status);
+            pairing.Status,
+            assignment?.GameIdentifier);
     }
 
     private List<Character> CreateCharacters(int count)
@@ -208,13 +222,15 @@ public sealed class SurvivalTestOpponentService(
                 $"In-memory team \"{opponent.Name}\" was registered, but \"{team.Name}\" was already paired or gone.",
         };
 
-    private static string OutcomeMessage(MatchmakingResult pairing)
+    private static string OutcomeMessage(MatchmakingResult pairing, EventAssignment? assignment)
     {
         if (pairing.Status != MatchmakingStatus.Paired)
         {
             return "Nothing was published: both teams have to be paired before a room can be claimed.";
         }
 
-        return $"Match {pairing.MatchIdentifier} is paired; it may still be waiting for a host.";
+        return assignment is null
+            ? $"Match {pairing.MatchIdentifier} is paired; no host is free yet, so it is waiting for one."
+            : $"Match {pairing.MatchIdentifier} was assigned to host room {assignment.GameIdentifier}.";
     }
 }

@@ -48,12 +48,24 @@ public sealed class AcceptHandshakeHandler(
 
         var dialBack = AdvertisedEndpointOf(handshake) ?? context.Remote;
         context.Session.DialBack = dialBack;
+
+        // The capability byte and the mode are what tell a joiner from a host on
+        // the wire: every joining client in the captures sends mode 2 and every
+        // host 1, while the one live join logged here sent 1 from a joiner. That is
+        // the divergence P2P_CONNECT_FSM.md §7.1b–d records: the mode is the
+        // client's own and never a value this server sends, and the receiving side
+        // stores it without testing it. Logging it is what makes a failed join say
+        // which role the client presented, instead of leaving it to be recovered
+        // from a capture afterwards.
         logger.LogDebug(
             "UDP {LocalPort}: configured peer=0x{PeerIdentifier:x8}, counter base=0x{CounterBase:x8}, " +
-            "advertised endpoint={AdvertisedEndpoint}, dial-back={DialBack}",
+            "capability=0x{Capability:x2}, mode={Mode}, advertised endpoint={AdvertisedEndpoint}, " +
+            "dial-back={DialBack}",
             context.LocalPort,
             handshake.PeerIdentifier,
             handshake.CounterBase,
+            handshake.Capability,
+            handshake.Mode,
             string.Join(", ", handshake.Pairs.Select(pair => $"{pair.Address}:{pair.Port}")),
             dialBack);
 
