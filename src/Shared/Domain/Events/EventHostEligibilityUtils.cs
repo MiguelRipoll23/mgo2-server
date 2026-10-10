@@ -35,10 +35,12 @@ public static class EventHostEligibilityUtils
     public const int DedicatedHostPlayerSlots = 1;
 
     /// <summary>
-    /// Whether a mode is one the dedicated hosts serve. It is the reader of a
-    /// room's own settings: the host role is read off a room only when its mode
-    /// is one a host exists for, so an ordinary room is never asked a question
-    /// whose answer changes nothing.
+    /// Whether a mode is one the dedicated hosts publish under. It is the reader
+    /// of a room's own settings: the host role is read off a room only when its
+    /// mode is one a host exists for, so an ordinary room is never asked a
+    /// question whose answer changes nothing. It is also what makes a room
+    /// eligible to host a match: a match is hosted by a room a dedicated host
+    /// published in a host lobby, never by a room a player opened ad hoc.
     /// </summary>
     /// <param name="subtype">Mode of the room.</param>
     public static bool IsHostRoleMode(int subtype) =>
@@ -196,13 +198,19 @@ public static class EventHostEligibilityUtils
     }
 
     /// <summary>
-    /// Whether a room may host a specific match: a dedicated event host, idle
+    /// Whether a room may host a specific match: a dedicated host room, idle
     /// with its own host in it, in the match's own mode and sized for everyone.
     /// <para>
-    /// The three rules are asked as one because they are one answer, which is
-    /// whether the room can take the match. The assignment that leases a room and
-    /// the readers that report which room is free both ask it here, so they cannot
+    /// The rules are asked as one because they are one answer, which is whether
+    /// the room can take the match. The assignment that leases a room and the
+    /// readers that report which room is free both ask it here, so they cannot
     /// disagree about which rooms qualify.
+    /// </para>
+    /// <para>
+    /// The room has to be published under a host mode — Survival Hosts or
+    /// Tournament. Those rooms are the ones the dedicated gameplay hosts create
+    /// and heartbeat; a room a player opened is not one of them, so a Survival
+    /// match is never played in a room a player had to open by hand.
     /// </para>
     /// <para>
     /// The mode that has to agree is the room's own, translated from a host mode
@@ -211,7 +219,7 @@ public static class EventHostEligibilityUtils
     /// running.
     /// </para>
     /// <para>
-    /// A fourth rule joins the three when an environment is passed: the room's
+    /// A further rule joins these when an environment is passed: the room's
     /// host has to have the settings it was asked for saved, read out of the
     /// host's own settings row. It is asked only when the event requires the room
     /// to be running that environment, so a deployment that does not ask it is
@@ -233,6 +241,7 @@ public static class EventHostEligibilityUtils
         ArgumentNullException.ThrowIfNull(room);
 
         return IsDedicatedEventHost(hostSettings)
+            && IsHostRoleMode(room.LobbySubtype)
             && IsIdle(
                 room.HostIdentifier,
                 room.Players.Select(player => player.CharacterIdentifier))

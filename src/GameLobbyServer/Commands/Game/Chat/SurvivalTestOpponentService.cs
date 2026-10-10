@@ -22,9 +22,9 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// cannot invent a second opponent for a team that already has one.
 /// </para>
 /// <para>
-/// The room the match is played in is not opened here. Pairing immediately
-/// offers the match to an idle host; if none is available, the pairing waits
-/// for a room to become available.
+/// The room the match is played in is not opened here: it is a dedicated host
+/// already published in the Survival Hosts lobby. Pairing immediately offers the
+/// match to an idle one of those; if none is available, the pairing waits.
 /// </para>
 /// </summary>
 /// <param name="characterMemoryService">Store that owns the simulated characters.</param>

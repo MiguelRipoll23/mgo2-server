@@ -277,6 +277,15 @@ public static partial class CommandConstants
     /// <summary>Initialises the assigned event game for its host.</summary>
     public const ushort EventGameHostInitialize = 0x43F1;
 
+    /// <summary>
+    /// Ready acknowledgement that opens the assignment sequence, written under
+    /// the same wire id as <see cref="LeaveEventTeamResult"/>. It carries a zero
+    /// result and is written before the unsolicited assignment snapshot, because
+    /// the client will not consume that snapshot while a team operation is still
+    /// pending; it doubles as the team-record reset the snapshot fills.
+    /// </summary>
+    public const ushort EventAssignmentReady = 0x4915;
+
     // Screens whose success body is unknown --------------------------------
 
     /// <summary>A directly reachable Survival screen whose body is unrecovered.</summary>

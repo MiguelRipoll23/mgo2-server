@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.Shared.Domain.Automatch;
+using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Domain.Lobbies;
 using Mgo2Server.Shared.Options;
@@ -42,6 +43,13 @@ public sealed class MatchService(
     /// (`docs/BUILD_1_36.md`, "0x4320's third field").
     /// </summary>
     private const int FreeBattleRule = 1;
+
+    /// <summary>
+    /// Player cap a Free Battle host's room advertises. It is unrelated to the
+    /// event capacity: this host plays with whoever joins it, so it keeps a
+    /// normal room's size.
+    /// </summary>
+    private const int FreeBattleRoomCapacity = 8;
 
     /// <summary>
     /// The latency this host's room reports, in milliseconds.
@@ -187,7 +195,15 @@ public sealed class MatchService(
             room.LobbySubtype = lobby.SubtypeIdentifier;
             room.Password = string.Empty;
             room.Comment = "Gameplay server";
-            room.MaximumPlayers = 8;
+            // The room's size is the role's size. A Free Battle host advertises
+            // the small cap it plays at; a host that serves an event has to seat
+            // the match it can be leased, which is the event's own player
+            // capacity. Sizing a Survival host at the Free Battle cap made the
+            // host ineligible for every match bigger than seven players, so a
+            // team that found an opponent was never assigned one.
+            room.MaximumPlayers = EventHostEligibilityUtils.IsHostRoleMode(lobby.SubtypeIdentifier)
+                ? EventHostEligibilityUtils.MatchPlayerCapacity
+                : FreeBattleRoomCapacity;
             room.Games = JsonSerializer.Serialize(rotation);
 
             // A gameplay server hosts rather than plays, so its room is a

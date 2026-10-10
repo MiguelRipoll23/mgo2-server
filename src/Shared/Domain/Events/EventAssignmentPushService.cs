@@ -7,7 +7,9 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// <summary>
 /// Tells both teams that their match was found and which room is hosting it.
 /// <para>
-/// The order within a recipient is not arbitrary. The snapshot reply clears the
+/// The order within a recipient is not arbitrary. A ready acknowledgement opens
+/// the sequence, because the client will not consume the snapshot while its team
+/// operation is still pending; the snapshot reply then clears the
 /// client's event caches, so the live state is restored immediately after it; the
 /// event-game cache clears itself before reading its body, so it arrives before
 /// the notification that names the two teams; the next-match card seeds the
@@ -55,6 +57,14 @@ public sealed class EventAssignmentPushService(
         if (hostCharacterIdentifier > 0
             && sessionDirectory.FindByCharacter(hostCharacterIdentifier) is { } hostSession)
         {
+            // The host receives the same ready acknowledgement the teams do, so
+            // its own pending operation is completed before the host cache lands.
+            await sessionHelper.SendResultAsync(
+                hostSession,
+                CommandConstants.EventAssignmentReady,
+                ErrorCodeConstants.ResultNone,
+                cancellationToken);
+
             var hostWriter = new PacketWriter();
             EventAssignmentUtils.WriteEventGameHostInitialize(
                 hostWriter,
@@ -145,6 +155,18 @@ public sealed class EventAssignmentPushService(
             }
 
             var characterIdentifier = session.CharacterIdentifier.Value;
+
+            // The assignment opens with the ready acknowledgement. The client
+            // does not consume the unsolicited snapshot below while its team
+            // operation is still pending, and this zero result completes it; it
+            // is also the team-record reset the snapshot itself performs, so it
+            // is safe to write unconditionally (the reference's assignment
+            // transition opens the same way).
+            await sessionHelper.SendResultAsync(
+                session,
+                CommandConstants.EventAssignmentReady,
+                ErrorCodeConstants.ResultNone,
+                cancellationToken);
 
             var snapshotWriter = new PacketWriter();
             EventSnapshotUtils.WriteFull(snapshotWriter, team);

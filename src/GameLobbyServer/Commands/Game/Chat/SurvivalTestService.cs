@@ -24,11 +24,11 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// the player: ready the last slot, and the opponent appears.
 /// </para>
 /// <para>
-/// No room is opened here and none is looked for. A room exists because a client
-/// asked for one and the create-room command served that request, and the
-/// dedicated room this pairing needs is opened by the player afterwards, from
-/// their own client. Until then the pairing waits, which is a state the match
-/// screens are built for; the room's own creation is what offers the match to it.
+/// No room is opened here and none is looked for. The room this pairing needs is
+/// a dedicated host already published in the Survival Hosts lobby by a gameplay
+/// server, which heartbeats it for the life of the container. Pairing offers the
+/// match to whichever such host is idle; until one is free the pairing waits,
+/// which is a state the match screens are built for.
 /// </para>
 /// <para>
 /// The division of authorship is strict. The team's state and the leader's own
