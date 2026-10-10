@@ -5,8 +5,8 @@
 .DESCRIPTION
     Installs the gate, the account server, one gameplay lobby per container (Free
     Battle, Replays, Survival, Basic Training, Combat Training, Survival Hosts,
-    Automatching, Registration, Tournament), a gameplay server, the HTTP API, the
-    name server, the port-check responder and PostgreSQL.
+    Tournament Hosts, Automatching, Registration, Tournament), a gameplay server,
+    the HTTP API, the name server, the port-check responder and PostgreSQL.
 
     Running it again installs the update: it refreshes the compose file, pulls
     the newest images, recreates the containers whose image or configuration

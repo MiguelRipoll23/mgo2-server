@@ -22,8 +22,13 @@ public static class EventHostEligibilityUtils
     /// </summary>
     public const int SurvivalHostSubtype = LobbySubtypeConstants.SurvivalHosts;
 
-    /// <summary>Mode a dedicated Tournament host runs.</summary>
-    public const int TournamentHostSubtype = EventConstants.TournamentSelector;
+    /// <summary>
+    /// Game type a dedicated Tournament host runs. It is the Tournament Hosts
+    /// game type rather than the Tournament one, for the same reason the Survival
+    /// host runs its own: the host lobby is a mode of its own, so a host room is
+    /// never mistaken for a player's Tournament room.
+    /// </summary>
+    public const int TournamentHostSubtype = LobbySubtypeConstants.TournamentHosts;
 
     /// <summary>Mode a join request that stops before naming one is treated as naming.</summary>
     public const int UnnamedSubtype = -1;
@@ -47,14 +52,30 @@ public static class EventHostEligibilityUtils
         subtype is SurvivalHostSubtype or TournamentHostSubtype;
 
     /// <summary>
+    /// Whether an event mode is one a dedicated host room serves, and so whether
+    /// the room an assignment leases for it is a host room the lock marks. It is
+    /// the event-side answer to <see cref="IsHostRoleMode"/>: an assignment knows
+    /// the match's mode and not the room's, and the two roles are the two events
+    /// those hosts exist for.
+    /// </summary>
+    /// <param name="eventMode">Mode of the event.</param>
+    public static bool IsHostedEventMode(int eventMode) =>
+        eventMode is EventConstants.SurvivalSelector or EventConstants.TournamentSelector;
+
+    /// <summary>
     /// The event mode a room of a given mode serves. A dedicated host runs its
     /// own host mode rather than the event's player mode, so the two are
     /// translated before they are compared: a Survival Hosts room hosts Survival
-    /// matches, and every other room is its own mode.
+    /// matches, a Tournament Hosts room hosts Tournament matches, and every other
+    /// room is its own mode.
     /// </summary>
     /// <param name="roomMode">Mode of the room.</param>
-    private static int EventMode(int roomMode) =>
-        roomMode == SurvivalHostSubtype ? EventConstants.SurvivalSelector : roomMode;
+    private static int EventMode(int roomMode) => roomMode switch
+    {
+        SurvivalHostSubtype => EventConstants.SurvivalSelector,
+        TournamentHostSubtype => EventConstants.TournamentSelector,
+        _ => roomMode,
+    };
 
     /// <summary>
     /// Whether a room is a dedicated event host: a room whose host says it is
@@ -65,6 +86,39 @@ public static class EventHostEligibilityUtils
     /// <param name="hostSettings">Settings of the character hosting it, or null when it has none.</param>
     public static bool IsDedicatedEventHost(CharacterHostSettings? hostSettings) =>
         IsDedicated(hostSettings);
+
+    /// <summary>
+    /// Whether a host room is free of an assignment.
+    /// <para>
+    /// The assignment marks a host as taken by writing its password, which is
+    /// the lock the room browser draws and the pool reads: a host of either role
+    /// with a password is assigned and one without is free. Every other room is
+    /// not locked this way, so it is free on this rule and is narrowed by the
+    /// rules around it instead.
+    /// </para>
+    /// </summary>
+    /// <param name="room">Room being asked about.</param>
+    /// <param name="hostSettings">Settings of the character hosting it, or null when it has none.</param>
+    public static bool IsFreeHost(Game room, CharacterHostSettings? hostSettings)
+    {
+        ArgumentNullException.ThrowIfNull(room);
+
+        return !IsEventHostRole(room, hostSettings) || room.Password.Length == 0;
+    }
+
+    /// <summary>
+    /// Whether a room is a dedicated host of either role: the Survival one or
+    /// the Tournament one. It is the pair the assignment leases its rooms from,
+    /// and so the pair whose occupancy the password lock marks.
+    /// </summary>
+    /// <param name="room">Room being asked about.</param>
+    /// <param name="hostSettings">Settings of the character hosting it, or null when it has none.</param>
+    public static bool IsEventHostRole(Game room, CharacterHostSettings? hostSettings)
+    {
+        ArgumentNullException.ThrowIfNull(room);
+
+        return IsSurvivalHost(room, hostSettings) || IsTournamentHost(room, hostSettings);
+    }
 
     /// <summary>
     /// Whether a room is the Survival host role: dedicated and running the
@@ -84,10 +138,10 @@ public static class EventHostEligibilityUtils
     }
 
     /// <summary>
-    /// Whether a room is the Tournament host role: dedicated and running
-    /// Tournament. A client reaches the Tournament host through the ordinary room
-    /// screen and may name Free Battle as it joins, so the room has to be sure of
-    /// its own mode before that exception can be granted.
+    /// Whether a room is the Tournament host role: dedicated and running the
+    /// Tournament Hosts game type. A client reaches the Tournament host through
+    /// the ordinary room screen and may name Free Battle as it joins, so the room
+    /// has to be sure of its own mode before that exception can be granted.
     /// </summary>
     /// <param name="room">Room being asked about.</param>
     /// <param name="hostSettings">Settings of the character hosting it, or null when it has none.</param>
@@ -208,9 +262,17 @@ public static class EventHostEligibilityUtils
     /// </para>
     /// <para>
     /// The room has to be published under a host mode — Survival Hosts or
-    /// Tournament. Those rooms are the ones the dedicated gameplay hosts create
-    /// and heartbeat; a room a player opened is not one of them, so a Survival
-    /// match is never played in a room a player had to open by hand.
+    /// Tournament Hosts. Those rooms are the ones the dedicated gameplay hosts
+    /// create and heartbeat; a room a player opened is not one of them, so an
+    /// event match is never played in a room a player had to open by hand.
+    /// </para>
+    /// <para>
+    /// And it has to be free: a host the assignment has already taken carries its
+    /// lock as a password, so it is not offered to a second pairing. That is the
+    /// second half of the exclusivity, and it is the one a reader outside this
+    /// process can see. It holds for either role, because one assignment serves
+    /// both: the Survival pairing and the Tournament draw lease their rooms the
+    /// same way.
     /// </para>
     /// <para>
     /// The mode that has to agree is the room's own, translated from a host mode
@@ -242,6 +304,7 @@ public static class EventHostEligibilityUtils
 
         return IsDedicatedEventHost(hostSettings)
             && IsHostRoleMode(room.LobbySubtype)
+            && IsFreeHost(room, hostSettings)
             && IsIdle(
                 room.HostIdentifier,
                 room.Players.Select(player => player.CharacterIdentifier))

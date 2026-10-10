@@ -40,7 +40,9 @@ container_names=(
     mgo2-automatching
     mgo2-registration
     mgo2-tournament
+    mgo2-tournament-hosts
     mgo2-gameplay-1
+    mgo2-tournament-host-1
     mgo2-http
     mgo2-dns
     mgo2-stun

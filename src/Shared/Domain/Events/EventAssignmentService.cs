@@ -1,14 +1,14 @@
 using Mgo2Server.Shared.Domain;
+using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mgo2Server.Shared.Domain.Events;
 
 /// <summary>
-/// Assigns a host to a paired match. It joins three rows — the pairing, the room
-/// it is leased and the two teams — into the view the assignment packets are
-/// written from, and it is the only place a match moves from waiting to
-/// assigned.
+/// Assigns a host to a paired match. It joins the pairing, the room the pairing
+/// holds and the two teams into the view the assignment packets are written
+/// from, and it is the only place a match moves from waiting to assigned.
 /// <para>
 /// Nothing here invents a host. A match that cannot lease a room stays waiting,
 /// because a snapshot carrying a room that does not exist is worse than a client
@@ -18,18 +18,18 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 /// <param name="matchService">Service that owns the pairings.</param>
 /// <param name="teamService">Service that owns the paired teams, real and simulated.</param>
-/// <param name="leaseService">Service that owns the room claims.</param>
 /// <param name="rewardService">Service that pays a completed match.</param>
 /// <param name="roomPool">The rooms a host is chosen from.</param>
+/// <param name="gameService">Service that owns the rooms, which carry the assignment lock.</param>
 /// <param name="rosterService">Service that owns the frozen rosters a pairing names.</param>
 /// <param name="pushService">Service that tells the teams their match was found.</param>
 public sealed partial class EventAssignmentService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
     EventMatchService matchService,
     EventTeamService teamService,
-    EventHostLeaseService leaseService,
     EventRewardService rewardService,
     EventHostRoomPoolService roomPool,
+    GameService gameService,
     TournamentRosterService rosterService,
     EventAssignmentPushService pushService)
     : DomainService(contextFactory)
@@ -59,12 +59,20 @@ public sealed partial class EventAssignmentService(
             return [];
         }
 
-        // A room that looks free may still be holding a lease whose match is
-        // over: a cancellation that did not give the room back leaves the claim
-        // active, and the choice below would be made from a room that refuses
-        // the claim. The orphan is settled before the rooms are listed, so the
-        // choice is made from the rooms that are actually free.
-        await leaseService.ReleaseOrphansAsync(cancellationToken);
+        // A lock can outlive the match it was taken for: the process that would
+        // have released it stopped, or a cancellation gave the room back without
+        // clearing the marker. The lock names no match, so what settles it is the
+        // claims that are still live: a locked room no live match holds is
+        // holding a lock for a match that is over. It is cleared before the rooms
+        // are listed, so the choice below is made from the rooms that are free.
+        var liveRooms = await matchService.FindActiveGameIdentifiersAsync(cancellationToken);
+        foreach (var lockedRoom in await gameService.FindLockedIdentifiersAsync(cancellationToken))
+        {
+            if (!liveRooms.Contains(lockedRoom))
+            {
+                await gameService.UnlockAsync(lockedRoom, cancellationToken);
+            }
+        }
 
         var games = await roomPool.ListAsync(cancellationToken);
         var assignments = new List<EventAssignment>();
@@ -107,9 +115,9 @@ public sealed partial class EventAssignmentService(
 
         return assignments;
     }
-    /// <summary>Leases a room for a waiting match.</summary>
+    /// <summary>Takes a room for a waiting match.</summary>
     /// <param name="matchIdentifier">Match to assign.</param>
-    /// <param name="gameIdentifier">Room to lease.</param>
+    /// <param name="gameIdentifier">Room to take.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The assignment, or null when the match or the room was taken.</returns>
     public async Task<EventAssignment?> AssignAsync(
@@ -119,6 +127,7 @@ public sealed partial class EventAssignmentService(
     {
         await using var context = await CreateContextAsync(cancellationToken);
         var match = await context.EventMatches
+            .AsNoTracking()
             .FirstOrDefaultAsync(candidate => candidate.Identifier == matchIdentifier, cancellationToken);
         if (match is null || match.State != EventConstants.MatchPairedState)
         {
@@ -132,48 +141,25 @@ public sealed partial class EventAssignmentService(
             return null;
         }
 
-        // The claim is taken before the match moves, and it is what settles the
-        // race: a room another match took between the choice and here leaves this
-        // match waiting rather than pointing at a room it does not hold.
-        var state = await TryClaimAsync(
-            matchIdentifier,
-            gameIdentifier,
-            matchIdentifier,
-            firstTeam.Sequence,
-            match.LobbyIdentifier,
-            match.MatchType,
-            cancellationToken);
-
-        if (state is null)
+        // The claim is taken before anything is read back, and it is what settles
+        // the race: a room another match took between the choice and here, or a
+        // pairing that stopped waiting in the meantime, leaves this match waiting
+        // rather than pointing at a room it does not hold.
+        if (!await TryClaimAsync(matchIdentifier, gameIdentifier, cancellationToken))
         {
             return null;
         }
 
-        if (!await matchService.SetStateAsync(
-                matchIdentifier,
-                EventConstants.MatchAssignedState,
-                cancellationToken: cancellationToken))
+        var assignment = await LoadAsync(matchIdentifier, cancellationToken);
+        if (assignment is null)
         {
-            // The pairing vanished between the two writes, so the claim it holds
-            // is released rather than left pointing at a match that is gone.
-            await ReleaseAsync(gameIdentifier, cancellationToken);
-            return null;
+            // The room cannot be reported — a team went away between the claim
+            // and the read — so it is given back rather than held for a match
+            // whose assignment packets cannot be written.
+            await ReleaseAsync(matchIdentifier, gameIdentifier, cancellationToken);
         }
 
-        return new EventAssignment
-        {
-            MatchIdentifier = matchIdentifier,
-            GameIdentifier = gameIdentifier,
-            ActiveStateIdentifier = state.Value.ActiveStateIdentifier,
-            Sequence = state.Value.ActiveStateSequence,
-            ActivationTimeSeconds = state.Value.BaseTimeSeconds(),
-            LobbyIdentifier = match.LobbyIdentifier,
-            LobbySubtype = match.MatchType,
-            FirstTeam = EventTeamService.BuildSnapshot(firstTeam),
-            SecondTeam = EventTeamService.BuildSnapshot(secondTeam),
-            FirstRoster = await rosterService.LoadAsync(EventOf(firstTeam), firstTeam.Identifier, cancellationToken),
-            SecondRoster = await rosterService.LoadAsync(EventOf(secondTeam), secondTeam.Identifier, cancellationToken),
-        };
+        return assignment;
     }
 
     /// <summary>Finds the assignment one team is in.</summary>
@@ -184,18 +170,10 @@ public sealed partial class EventAssignmentService(
         CancellationToken cancellationToken = default)
     {
         var match = await matchService.FindActiveByTeamAsync(teamIdentifier, cancellationToken);
-        if (match is null)
-        {
-            return null;
-        }
 
-        var claim = await FindClaimAsync(match.Identifier, cancellationToken);
-        if (claim is null)
-        {
-            return null;
-        }
-
-        return await LoadAsync(match.Identifier, claim.Value, cancellationToken);
+        // A match that holds no room has no assignment to report, which is what
+        // the load asks for itself.
+        return match is null ? null : await LoadAsync(match.Identifier, cancellationToken);
     }
 
     /// <summary>Finds the assignment of a room.</summary>
@@ -205,16 +183,8 @@ public sealed partial class EventAssignmentService(
         int gameIdentifier,
         CancellationToken cancellationToken = default)
     {
-        var lease = await leaseService.FindActiveByGameAsync(gameIdentifier, cancellationToken);
-        if (lease is null)
-        {
-            return null;
-        }
-
-        return await LoadAsync(
-            lease.MatchIdentifier,
-            EventAssignmentState.From(lease),
-            cancellationToken);
+        var match = await matchService.FindActiveByGameAsync(gameIdentifier, cancellationToken);
+        return match is null ? null : await LoadAsync(match.Identifier, cancellationToken);
     }
 
     /// <summary>Records an outcome and releases the room.</summary>
@@ -247,7 +217,7 @@ public sealed partial class EventAssignmentService(
             return [];
         }
 
-        await ReleaseAsync(claim.Value.GameIdentifier, cancellationToken);
+        await ReleaseAsync(matchIdentifier, claim.GameIdentifier!.Value, cancellationToken);
         return await rewardService.PayAsync(matchIdentifier, winningTeamIdentifier, cancellationToken);
     }
 
@@ -262,7 +232,7 @@ public sealed partial class EventAssignmentService(
         var claim = await FindClaimAsync(matchIdentifier, cancellationToken);
         var assignment = claim is null
             ? null
-            : await LoadAsync(matchIdentifier, claim.Value, cancellationToken);
+            : await LoadAsync(matchIdentifier, cancellationToken);
         var cancelled = await matchService.SetStateAsync(
             matchIdentifier,
             EventConstants.MatchCancelledState,
@@ -270,7 +240,7 @@ public sealed partial class EventAssignmentService(
 
         if (claim is not null)
         {
-            await ReleaseAsync(claim.Value.GameIdentifier, cancellationToken);
+            await ReleaseAsync(claim.Identifier, claim.GameIdentifier!.Value, cancellationToken);
 
             // A Survival match that was live is a pair of teams holding a
             // match-found screen; the teardown empties the event record on both
@@ -291,15 +261,22 @@ public sealed partial class EventAssignmentService(
         return cancelled;
     }
 
-    private async Task<EventAssignment?> LoadAsync(
-        int matchIdentifier,
-        EventAssignmentState claim,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Reads an assignment: the pairing, the room it holds and the two teams it
+    /// pairs. A match that holds no room has no assignment to read, which is the
+    /// same gate the claim itself is.
+    /// </summary>
+    /// <param name="matchIdentifier">Match to read.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task<EventAssignment?> LoadAsync(int matchIdentifier, CancellationToken cancellationToken)
     {
         await using var context = await CreateContextAsync(cancellationToken);
         var match = await context.EventMatches
+            .AsNoTracking()
             .FirstOrDefaultAsync(candidate => candidate.Identifier == matchIdentifier, cancellationToken);
-        if (match is null)
+        if (match is null
+            || match.GameIdentifier is not { } gameIdentifier
+            || match.AssignedAt is not { } assignedAt)
         {
             return null;
         }
@@ -314,10 +291,13 @@ public sealed partial class EventAssignmentService(
         return new EventAssignment
         {
             MatchIdentifier = match.Identifier,
-            GameIdentifier = claim.GameIdentifier,
-            ActiveStateIdentifier = claim.ActiveStateIdentifier,
-            Sequence = claim.ActiveStateSequence,
-            ActivationTimeSeconds = claim.BaseTimeSeconds(),
+            GameIdentifier = gameIdentifier,
+            // The active state the client correlates with is the match itself, and
+            // the sequence it echoes back is the first team's: both were stored
+            // beside the claim, and both are read from where they really live.
+            ActiveStateIdentifier = match.Identifier,
+            Sequence = firstTeam.Sequence,
+            ActivationTimeSeconds = (int)assignedAt.ToUnixTimeSeconds(),
             LobbyIdentifier = match.LobbyIdentifier,
             LobbySubtype = match.MatchType,
             FirstTeam = EventTeamService.BuildSnapshot(firstTeam),

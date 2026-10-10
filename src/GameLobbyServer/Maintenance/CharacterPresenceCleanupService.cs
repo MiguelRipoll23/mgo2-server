@@ -13,7 +13,7 @@ namespace Mgo2Server.GameLobbyServer.Maintenance;
 /// happen on the interval the staleness window is measured in; the delete happens
 /// after a process that died, and a process that never comes back does not need
 /// its rows gone any particular hour. Doing it in the ticker made every beat a
-/// nine-instance cluster-wide <c>DELETE</c> for a case that is rare.
+/// ten-instance cluster-wide <c>DELETE</c> for a case that is rare.
 /// </para>
 /// <para>
 /// The sweep is not scoped to this lobby, and that is the point: cleaning up after

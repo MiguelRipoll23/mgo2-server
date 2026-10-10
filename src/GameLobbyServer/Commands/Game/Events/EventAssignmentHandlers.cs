@@ -87,9 +87,9 @@ public sealed class GetAssignedGameSnapshotHandler(
 
 /// <summary>
 /// Confirms the assignment the client selected. A confirmation is only accepted
-/// while the lease it names is still active and still holds the confirming
-/// character, so a confirmation that lost a race is answered as a mismatch
-/// rather than silently replacing a newer assignment.
+/// while the room it names is still held by that match and the match still holds
+/// the confirming character, so a confirmation that lost a race is answered as a
+/// mismatch rather than silently replacing a newer assignment.
 /// </summary>
 public sealed class ConfirmEventAssignmentHandler(
     EventAssignmentService assignmentService,

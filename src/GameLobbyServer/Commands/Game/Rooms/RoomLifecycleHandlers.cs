@@ -103,7 +103,10 @@ public sealed class JoinGameHandler(
             return;
         }
 
-        if (EventHostEligibilityUtils.IsSurvivalHost(game, hostSettings))
+        var isSurvivalHost = EventHostEligibilityUtils.IsSurvivalHost(game, hostSettings);
+        var isHostRole = EventHostEligibilityUtils.IsEventHostRole(game, hostSettings);
+
+        if (isSurvivalHost)
         {
             var assignment = await assignmentService.FindByGameAsync(game.Identifier, cancellationToken);
             var participant = session.CharacterIdentifier ?? 0;
@@ -118,7 +121,12 @@ public sealed class JoinGameHandler(
             }
         }
 
-        if (game.Password.Length > 0 && game.Password != password)
+        // A dedicated host carries its assignment in its password rather than a
+        // password a player would be asked for, so it is not challenged for it:
+        // the Survival host admits the two teams its match named through the gate
+        // above, and the Tournament host admits the players its draw placed in
+        // it. Every other room keeps the ordinary rule.
+        if (!isHostRole && game.Password.Length > 0 && game.Password != password)
         {
             await SendResultAsync(session, ErrorCodeConstants.ResultGamePasswordIncorrect, null, cancellationToken);
             return;

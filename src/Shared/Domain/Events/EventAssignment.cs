@@ -1,29 +1,28 @@
 namespace Mgo2Server.Shared.Domain.Events;
 
 /// <summary>
-/// A match with the room it was leased and the two team snapshots the
-/// assignment packets are written from. It is a read-time view assembled from
-/// three rows rather than a fourth thing stored: the match, its lease and the
-/// two teams stay authoritative, so a restart re-reads the same assignment
-/// instead of reconstructing it.
+/// A match with the room it holds and the two team snapshots the assignment
+/// packets are written from. It is a read-time view assembled rather than a thing
+/// stored: the match, the room it names and the two teams stay authoritative, so a
+/// restart re-reads the same assignment instead of reconstructing it.
 /// </summary>
 public sealed class EventAssignment
 {
     /// <summary>Match that was assigned.</summary>
     public int MatchIdentifier { get; init; }
 
-    /// <summary>Room the match was leased to.</summary>
+    /// <summary>Room the match holds.</summary>
     public int GameIdentifier { get; init; }
 
     /// <summary>Active-state identifier the client correlates its cache with.</summary>
     public int ActiveStateIdentifier { get; init; }
 
-    /// <summary>Sequence of the active state when the lease was taken.</summary>
+    /// <summary>Sequence of the active state the assignment was taken under.</summary>
     public int Sequence { get; init; }
 
     /// <summary>
-    /// Absolute base time the assignment advertises. It is the committed lease
-    /// time rather than the send time, so every recipient of one assignment sees
+    /// Absolute base time the assignment advertises. It is the moment the room was
+    /// taken rather than the send time, so every recipient of one assignment sees
     /// the same clock even when the packets are written at different moments.
     /// </summary>
     public int ActivationTimeSeconds { get; init; }

@@ -16,8 +16,8 @@ namespace Mgo2Server.Shared.Utils;
 /// <para>
 /// Nothing runs at startup. A worker that keeps a row alive must run the moment
 /// it starts, because the row it keeps is already ageing; a daily cleanup is
-/// not holding anything up, so it waits for its hour, and nine containers
-/// restarting do not turn into nine cleanups at nine different times.
+/// not holding anything up, so it waits for its hour, and ten containers
+/// restarting do not turn into ten cleanups at ten different times.
 /// </para>
 /// <para>
 /// A failed run is retried within the day rather than after a whole one: the

@@ -4,9 +4,9 @@
 #
 # Runs the gate, the account server, one gameplay lobby per process (Free
 # Battle, Replays, Survival, Basic Training, Combat Training, Survival Hosts,
-# Automatching, Registration, Tournament), a gameplay server, the HTTP API, the
-# name server and the port-check responder: the same servers compose.yaml starts,
-# minus PostgreSQL.
+# Tournament Hosts, Automatching, Registration, Tournament), a gameplay server,
+# the HTTP API, the name server and the port-check responder: the same servers
+# compose.yaml starts, minus PostgreSQL.
 #
 # PostgreSQL is not started by this script. The servers connect to the
 # database of DATABASE_CONNECTION_STRING, which must be set in appsettings.json
@@ -351,6 +351,7 @@ lobbies=(
     'Automatching|AUTOMATCHING|5740'
     'Registration|TOURNAMENT REGISTRATION|5741'
     'Tournament|TOURNAMENT|5742'
+    'Tournament Hosts|TOURNAMENT HOSTS|5743'
 )
 
 for lobby in "${lobbies[@]}"; do

@@ -1,6 +1,6 @@
-# One image backs nine deployments: every lobby role is the same executable
+# One image backs ten deployments: every lobby role is the same executable
 # started with a different LOBBY_NAME and LOBBY_PORT. They share an image tag,
-# so a single `newTag` below moves all nine together.
+# so a single `newTag` below moves all ten together.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -23,6 +23,8 @@ resources:
   - survival-hosts-service.yaml
   - tournament-deployment.yaml
   - tournament-service.yaml
+  - tournament-hosts-deployment.yaml
+  - tournament-hosts-service.yaml
 
 # The deploy pipeline rewrites `newTag` with the commit SHA it published. See
 # deploy/README.md for the seed value and why it must not survive a sync.

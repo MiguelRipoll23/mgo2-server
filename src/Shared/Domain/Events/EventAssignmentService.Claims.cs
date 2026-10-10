@@ -1,67 +1,84 @@
+using Mgo2Server.Shared.Persistence.Entities;
+
 namespace Mgo2Server.Shared.Domain.Events;
 
 /// <summary>
 /// The claim half of <see cref="EventAssignmentService"/>: taking a room for a
-/// match, finding the one a match holds, and giving it back.
+/// match, and giving it back.
 /// <para>
-/// A room's claim is an <see cref="Persistence.Entities.EventHostLease"/> row,
-/// because the lobby that pairs the teams and the gameplay server that hosts the
-/// game are separate processes and the row is what settles a race between them.
-/// There is one kind of room now — a games row — so there is one kind of claim,
-/// and it is read back as an <see cref="EventAssignmentState"/> so the entry
-/// screen, the teardown and the outcome all ask the same question the same way.
+/// The claim is written twice, and the two written together are what it is. The
+/// room's own password field carries the lock, because that is the marker every
+/// other reader looks at — the room list draws it and the host choice refuses it —
+/// and the pairing carries the room itself, because that is the link a result
+/// report and a join both have to follow back to the match. Either one alone is
+/// half a claim: a lock nobody can attribute to a match, or a match pointing at a
+/// room the pool still offers.
+/// </para>
+/// <para>
+/// Both writes are conditional, so the race is settled rather than shared. The
+/// lock is taken only if the field is empty and the pairing names the room only
+/// while it is still waiting, so two matches that chose the same room, or the same
+/// match chosen twice, end with one claimant and one refusal.
 /// </para>
 /// </summary>
 public sealed partial class EventAssignmentService
 {
-    /// <summary>Claims a room for a match.</summary>
-    /// <param name="matchIdentifier">Match the claim belongs to.</param>
-    /// <param name="gameIdentifier">Room being claimed.</param>
-    /// <param name="activeStateIdentifier">Active state the client will correlate with.</param>
-    /// <param name="sequence">Initial sequence of the active state.</param>
-    /// <param name="lobbyIdentifier">Lobby the room belongs to.</param>
-    /// <param name="lobbySubtype">Game type of the lobby.</param>
+    /// <summary>
+    /// Takes a room for a match: the lock on the room, then the room on the match.
+    /// </summary>
+    /// <param name="matchIdentifier">Match taking the room.</param>
+    /// <param name="gameIdentifier">Room being taken.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    /// <returns>The claim, or null when the match or the room was already claimed.</returns>
-    private async Task<EventAssignmentState?> TryClaimAsync(
+    /// <returns>Whether the match now holds the room.</returns>
+    private async Task<bool> TryClaimAsync(
         int matchIdentifier,
         int gameIdentifier,
-        int activeStateIdentifier,
-        int sequence,
-        int lobbyIdentifier,
-        int lobbySubtype,
         CancellationToken cancellationToken)
     {
-        var lease = await leaseService.TryCreateAsync(
-            matchIdentifier,
-            gameIdentifier,
-            activeStateIdentifier,
-            sequence,
-            lobbyIdentifier,
-            lobbySubtype,
-            cancellationToken);
+        // The lock first, because it is the write that keeps the room out of the
+        // pool and the one a reader outside this process sees. A room another
+        // claim took between the choice and here is refused here rather than
+        // shared, and the caller waits for the next pass.
+        if (!await gameService.TryLockAsync(gameIdentifier, cancellationToken))
+        {
+            return false;
+        }
 
-        return lease is null ? null : EventAssignmentState.From(lease);
+        if (await matchService.TryClaimAsync(matchIdentifier, gameIdentifier, cancellationToken))
+        {
+            return true;
+        }
+
+        // The match was gone, was no longer waiting, or lost the room to another
+        // match. The lock is this claim's own, so it is given back with it, or
+        // the room would sit locked for a match that never took it.
+        await gameService.UnlockAsync(gameIdentifier, cancellationToken);
+        return false;
     }
 
-    /// <summary>Releases a room's claim.</summary>
-    /// <param name="gameIdentifier">Room being released.</param>
+    /// <summary>
+    /// Gives a room back: the match stops naming it and the room stops carrying
+    /// the lock. The two together are what returns the room to the pool.
+    /// </summary>
+    /// <param name="matchIdentifier">Match giving the room back.</param>
+    /// <param name="gameIdentifier">Room being given back.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    private Task ReleaseAsync(int gameIdentifier, CancellationToken cancellationToken) =>
-        leaseService.ReleaseAsync(gameIdentifier, cancellationToken);
+    private async Task ReleaseAsync(
+        int matchIdentifier,
+        int gameIdentifier,
+        CancellationToken cancellationToken)
+    {
+        await matchService.ReleaseAsync(matchIdentifier, cancellationToken);
+        await gameService.UnlockAsync(gameIdentifier, cancellationToken);
+    }
 
     /// <summary>
     /// The claim a match holds, or null when it holds none. A match holding no
-    /// claim on a room has already been completed or cancelled, which is what
-    /// makes this the gate both of those read.
+    /// room has already been completed or cancelled, which is what makes this the
+    /// gate both of those read.
     /// </summary>
     /// <param name="matchIdentifier">Match to read the claim of.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    private async Task<EventAssignmentState?> FindClaimAsync(
-        int matchIdentifier,
-        CancellationToken cancellationToken)
-    {
-        var lease = await leaseService.FindActiveByMatchAsync(matchIdentifier, cancellationToken);
-        return lease is null ? null : EventAssignmentState.From(lease);
-    }
+    private Task<EventMatch?> FindClaimAsync(int matchIdentifier, CancellationToken cancellationToken) =>
+        matchService.FindClaimAsync(matchIdentifier, cancellationToken);
 }

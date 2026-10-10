@@ -1,5 +1,5 @@
 # Wave 2: a workload, and so only ever synced after the migration hook has
-# succeeded. The nine lobby deployments share one image and one tag, so they
+# succeeded. The ten lobby deployments share one image and one tag, so they
 # move together here.
 apiVersion: argoproj.io/v1alpha1
 kind: Application

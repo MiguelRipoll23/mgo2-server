@@ -117,9 +117,6 @@ public sealed class Mgo2DatabaseContext(DbContextOptions<Mgo2DatabaseContext> op
     /// <summary>Pairings of two event teams.</summary>
     public DbSet<EventMatch> EventMatches => Set<EventMatch>();
 
-    /// <summary>Gameplay rooms leased to event matches.</summary>
-    public DbSet<EventHostLease> EventHostLeases => Set<EventHostLease>();
-
     /// <summary>Rewards paid for completed event matches.</summary>
     public DbSet<EventRoundReward> EventRoundRewards => Set<EventRoundReward>();
 

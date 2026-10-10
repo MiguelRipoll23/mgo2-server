@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    # Reloader rolls this pod when mgo2-appsettings changes; see deploy/README.md.
+    configmap.reloader.stakater.com/reload: "mgo2-appsettings"
+  name: mgo2-tournament-host-1
+  namespace: mgo2
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  # Two, not the default ten. Reloader writes an annotation onto the pod
+  # template on every ConfigMap change, and each of those is a new ReplicaSet,
+  # so a busy week accumulates a revision per reload. The history worth keeping
+  # is in git; the cluster keeps only enough to roll back the last change.
+  revisionHistoryLimit: 2
+  # A pod is only counted available once it has been Ready this long, which is
+  # what keeps a rollout from killing the old pod before anything has health
+  # checked the new pod's node.
+  minReadySeconds: 10
+  selector:
+    matchLabels:
+      app: mgo2-tournament-host-1
+  strategy:
+    # Recreate, not RollingUpdate: the pod binds the node's own 60191, so a
+    # surge would start the replacement while the old pod still holds the port
+    # and the new one would never come up. Same reason the Free Battle and
+    # Survival hosts are Recreate.
+    #
+    # The cost is that a rollout is a short outage rather than a seamless one,
+    # and on a single node with one replica there is no surge available to avoid
+    # it. A second node is what would make this outage-free; nothing in this
+    # manifest can. What keeps it short is the preStop sleep below plus the six
+    # hour grace period, so a match in progress drains instead of being cut.
+    # See deploy/README.md, "Source addresses and the load balancer".
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: mgo2-tournament-host-1
+    spec:
+      containers:
+      - env:
+        - name: GAMEPLAY_SERVER_PORT
+          value: '60191'
+        - name: GAMEPLAY_SERVER_LOBBY_NAME
+          value: Tournament Hosts
+        # Names this host's room Tournament Host 1 instead of the default
+        # server-{port}. The name is only a display name: the room is a host
+        # because its host says it is dedicated and because it runs the mode of
+        # the lobby it publishes in, the Tournament Hosts game type.
+        - name: GAMEPLAY_SERVER_GAME_NAME
+          value: Tournament Host 1
+        - name: GAMEPLAY_SERVER_ACCOUNT_NAME
+          value: server
+        # DEDICATED_ADVERTISED_ADDRESS overrides the address this host announces
+        # as the rendezvous point, independently of ADVERTISED_ADDRESS. It exists
+        # for a node whose clients bind their socket somewhere ADVERTISED_ADDRESS
+        # does not reach -- a LAN address that cannot leave over the tailnet, or a
+        # public address behind NAT -- because that node has to announce the
+        # address its clients can actually be reached at. Set it only when that is
+        # true; when a client reaches this host at ADVERTISED_ADDRESS, leave it
+        # unset so the two cannot drift apart.
+        image: ghcr.io/miguelripoll23/mgo2-server/mgo2-gameplay-server:latest
+        imagePullPolicy: Always
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 5
+        name: gameplay
+        ports:
+        - containerPort: 60191
+          protocol: UDP
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        startupProbe:
+          # Kubernetes has no UDP probe, so this asks /proc whether the socket is
+          # bound. 60191 is 0xEB1F, and /proc lists the port in upper-case hex, so
+          # the match is case-insensitive; /proc/net/udp is per network namespace,
+          # so the line only exists once the host's UdpClient is listening. A TCP
+          # probe would pass against a port nothing ever accepts on.
+          #
+          # A startupProbe rather than a readinessProbe, for the same reason as
+          # the other hosts: this opens no connection either way, but the
+          # readiness probe ran for the life of the pod and there is nothing to
+          # learn from the tenth poll that the first did not. The bind is still
+          # verified before the pod is Ready.
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - grep -qiE ':eb1f[[:space:]]' /proc/net/udp
+          periodSeconds: 5
+          # 5s x 120 is two minutes to bind before the container is restarted.
+          failureThreshold: 120
+          timeoutSeconds: 3
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app/appsettings.json
+          name: appsettings
+          readOnly: true
+          subPath: appsettings.json
+        envFrom:
+        - secretRef:
+            name: mgo2-secrets
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: mgo2-tournament-host-1
+      # On the node's own network, so a datagram arrives with the console's real
+      # address and port, and the reply leaves from the address and port the
+      # console dialled. A load balancer stands between the two and rewrites
+      # both, and this host files its session under the exact "address:port" a
+      # datagram arrived from, so it needs to see the wire as it really is.
+      # This is the same shape the Free Battle host and the STUN responder use,
+      # and for the same reason: it identifies the peer by where the datagram
+      # came from. See deploy/README.md, "Source addresses and the load balancer".
+      hostNetwork: true
+      # Without WithHostNet the pod resolves cluster names against the
+      # cluster's DNS from inside the host's namespace, where that address
+      # means nothing, and the internal gRPC call to mgo2-http fails.
+      dnsPolicy: ClusterFirstWithHostNet
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 21600
+      volumes:
+      - name: appsettings
+        configMap:
+          name: mgo2-appsettings

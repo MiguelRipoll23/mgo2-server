@@ -16,7 +16,7 @@ namespace Mgo2Server.GameLobbyServer.Maintenance;
 /// invisible: every list read — the gate's, the HTTP API's — drops a gameplay
 /// lobby whose <c>updated_at</c> is older than the stale window, so a client never
 /// waits on this delete to stop seeing a lobby that is gone. What the delete
-/// buys is the space, and reaping it once a day against nine lobby processes'
+/// buys is the space, and reaping it once a day against ten lobby processes'
 /// worth of the same statement is what the beat being hourly already made
 /// sensible.
 /// </para>

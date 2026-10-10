@@ -37,13 +37,4 @@ public sealed class EventActiveEventService
 
         return states;
     }
-
-    /// <summary>Returns the absolute base time an assignment advertises.</summary>
-    /// <param name="lease">Lease the assignment was taken under.</param>
-    public static int BaseTimeSeconds(EventHostLease lease)
-    {
-        ArgumentNullException.ThrowIfNull(lease);
-
-        return (int)lease.LeasedAt.ToUnixTimeSeconds();
-    }
 }

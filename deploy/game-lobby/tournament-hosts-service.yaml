@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: mgo2-combat-training
+  name: mgo2-tournament-hosts
   namespace: mgo2
 spec:
   # Local, so the pod sees the console's real address instead of the load
@@ -13,10 +13,10 @@ spec:
   - IPv4
   ipFamilyPolicy: SingleStack
   ports:
-  - port: 5738
+  - port: 5743
     protocol: TCP
-    targetPort: 5738
+    targetPort: 5743
   selector:
-    app: mgo2-combat-training
+    app: mgo2-tournament-hosts
   sessionAffinity: None
   type: LoadBalancer

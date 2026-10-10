@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Mgo2Server.Shared.Persistence.Configurations;
 
-/// <summary>Event subsystem mappings: teams, matches, leases and tournaments.</summary>
+/// <summary>Event subsystem mappings: teams, matches and tournaments.</summary>
 internal static partial class EntityModelConfiguration
 {
     private static void ConfigureEvents(ModelBuilder modelBuilder)
@@ -40,26 +40,19 @@ internal static partial class EntityModelConfiguration
                 .IsUnique()
                 .HasFilter("state in (1, 2)");
             entity.HasIndex(match => match.LobbyIdentifier);
-        });
 
-        modelBuilder.Entity<EventHostLease>(entity =>
-        {
-            entity.HasIndex(lease => lease.MatchIdentifier).IsUnique();
-            // Scoped to the active status: a released lease keeps its history,
-            // and the room it named returns to the pool for the next match.
-            entity.HasIndex(lease => lease.GameIdentifier)
+            // A room hosts one match at a time. The guard is scoped to the live
+            // states, so a finished match keeps the room it played in and the
+            // room returns to the pool for the next pairing — the same guard the
+            // claim's own row carried, now on the row that holds the claim.
+            entity.HasIndex(match => match.GameIdentifier)
                 .IsUnique()
-                .HasFilter("status = 1");
-            // The claim goes with the room. A lease says "this match is playing
-            // in that room", and a room that no longer exists cannot be playing
-            // anything — worse, the stale-room reaper deletes games in one
-            // statement, so a lease left behind would fail that delete and stop
-            // every abandoned room in the lobby from ever being reaped.
-            entity.HasOne<Game>()
-                .WithMany()
-                .HasForeignKey(lease => lease.GameIdentifier)
-                .OnDelete(DeleteBehavior.Cascade);
-            entity.Property(lease => lease.Version).IsRowVersion();
+                .HasFilter("game_id is not null and state in (1, 2)");
+
+            // Deliberately no foreign key to the room: the room is the row that
+            // goes away, and a constraint would either block the reaper's single
+            // statement or take the pairing with it. See EventMatch.GameIdentifier.
+            entity.Property(match => match.Version).IsRowVersion();
         });
 
         modelBuilder.Entity<EventRoundReward>(entity =>

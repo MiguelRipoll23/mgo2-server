@@ -95,11 +95,19 @@ services:
     build: *game-lobby-build
     image: mgo2-game-lobby-server:dev
 
+  mgo2-tournament-hosts:
+    build: *game-lobby-build
+    image: mgo2-game-lobby-server:dev
+
   mgo2-gameplay-1:
     build: *gameplay-build
     image: mgo2-gameplay-server:dev
 
   mgo2-survival-host-1:
+    build: *gameplay-build
+    image: mgo2-gameplay-server:dev
+
+  mgo2-tournament-host-1:
     build: *gameplay-build
     image: mgo2-gameplay-server:dev
 

@@ -2,9 +2,9 @@
 #
 # Installs the whole deployment from the published container images: the gate,
 # the account server, one gameplay lobby per container (Free Battle, Replays,
-# Survival, Basic Training, Combat Training, Survival Hosts, Automatching,
-# Registration, Tournament), a gameplay server, the HTTP API, the name server, the
-# port-check responder and PostgreSQL.
+# Survival, Basic Training, Combat Training, Survival Hosts, Tournament Hosts,
+# Automatching, Registration, Tournament), a gameplay server, the HTTP API, the
+# name server, the port-check responder and PostgreSQL.
 #
 # Linux and macOS. Windows runs scripts/install-windows.ps1 instead.
 #

@@ -6,6 +6,8 @@ resources:
   - service.yaml
   - survival-host-deployment.yaml
   - survival-host-service.yaml
+  - tournament-host-deployment.yaml
+  - tournament-host-service.yaml
 
 # The deploy pipeline rewrites `newTag` with the commit SHA it published. See
 # deploy/README.md for the seed value and why it must not survive a sync.

@@ -200,7 +200,6 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<EventSessionDirectoryService>();
         services.AddSingleton<EventMatchService>();
         services.AddSingleton<EventMatchmakingService>();
-        services.AddSingleton<EventHostLeaseService>();
         services.AddSingleton<EventAssignmentService>();
         services.AddSingleton<EventAssignmentPushService>();
         services.AddSingleton<EventScheduleNameService>();

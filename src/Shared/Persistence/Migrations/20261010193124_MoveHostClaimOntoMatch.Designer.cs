@@ -3,6 +3,7 @@ using System;
 using Mgo2Server.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mgo2Server.Shared.Persistence.Migrations
 {
     [DbContext(typeof(Mgo2DatabaseContext))]
-    partial class Mgo2DatabaseContextModelSnapshot : ModelSnapshot
+    [Migration("20261010193124_MoveHostClaimOntoMatch")]
+    partial class MoveHostClaimOntoMatch
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1427,6 +1430,73 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("clans_members");
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventHostLease", b =>
+                {
+                    b.Property<int>("Identifier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Identifier"));
+
+                    b.Property<int>("ActiveStateIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("active_state_id");
+
+                    b.Property<int>("ActiveStateSequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("active_state_sequence");
+
+                    b.Property<int>("GameIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("game_id");
+
+                    b.Property<DateTimeOffset>("LeasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("leased_at");
+
+                    b.Property<int>("LobbyIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("lobby_id");
+
+                    b.Property<int>("LobbySubtype")
+                        .HasColumnType("integer")
+                        .HasColumnName("lobby_subtype");
+
+                    b.Property<int>("MatchIdentifier")
+                        .HasColumnType("integer")
+                        .HasColumnName("match_id");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Identifier");
+
+                    b.HasIndex("GameIdentifier")
+                        .IsUnique()
+                        .HasFilter("status = 1");
+
+                    b.HasIndex("MatchIdentifier")
+                        .IsUnique();
+
+                    b.ToTable("event_host_leases");
                 });
 
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventMatch", b =>
@@ -3033,6 +3103,15 @@ namespace Mgo2Server.Shared.Persistence.Migrations
                     b.Navigation("Character");
 
                     b.Navigation("Clan");
+                });
+
+            modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventHostLease", b =>
+                {
+                    b.HasOne("Mgo2Server.Shared.Persistence.Entities.Game", null)
+                        .WithMany()
+                        .HasForeignKey("GameIdentifier")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Mgo2Server.Shared.Persistence.Entities.EventTeamMember", b =>

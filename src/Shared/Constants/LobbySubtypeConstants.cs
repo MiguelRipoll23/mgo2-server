@@ -34,6 +34,15 @@ public static class LobbySubtypeConstants
     public const int SurvivalHosts = 5;
 
     /// <summary>
+    /// Tournament Hosts. It is the same kind of thing as
+    /// <see cref="SurvivalHosts"/>: not a mode a player plays, but the game type
+    /// the dedicated Tournament hosts publish under, so a host room carries a
+    /// mode of its own rather than sharing the Tournament one with the player
+    /// lobby.
+    /// </summary>
+    public const int TournamentHosts = 6;
+
+    /// <summary>
     /// Basic training. Its sessions report nothing at all, so the only measurement
     /// of time spent in one is presence.
     /// </summary>

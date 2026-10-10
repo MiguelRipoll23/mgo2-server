@@ -52,6 +52,7 @@ public enum EventReportOutcome
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
 /// <param name="assignmentService">Service that pays and releases a completed match.</param>
+/// <param name="matchService">Service that owns the pairings, which carry the room they hold.</param>
 /// <param name="outcomePushService">Service that tells both teams how the match ended.</param>
 /// <param name="bracketService">Service that advances a Tournament bracket.</param>
 /// <param name="bracketPushService">Service that shows the advanced bracket to its entrants.</param>
@@ -60,6 +61,7 @@ public enum EventReportOutcome
 public sealed class EventOutcomeService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
     EventAssignmentService assignmentService,
+    EventMatchService matchService,
     EventOutcomePushService outcomePushService,
     TournamentBracketService bracketService,
     EventBracketPushService bracketPushService,
@@ -352,12 +354,7 @@ public sealed class EventOutcomeService(
         int gameIdentifier,
         CancellationToken cancellationToken = default)
     {
-        await using var context = await CreateContextAsync(cancellationToken);
-        var lease = await context.EventHostLeases
-            .FirstOrDefaultAsync(
-                candidate => candidate.GameIdentifier == gameIdentifier
-                    && candidate.Status == EventConstants.LeaseActiveState,
-                cancellationToken);
-        return lease?.MatchIdentifier ?? 0;
+        var match = await matchService.FindActiveByGameAsync(gameIdentifier, cancellationToken);
+        return match?.Identifier ?? 0;
     }
 }

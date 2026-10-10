@@ -110,12 +110,6 @@ public static class EventConstants
     /// <summary>Match state of a pairing that was cancelled.</summary>
     public const int MatchCancelledState = 4;
 
-    /// <summary>Lease status of an active assignment.</summary>
-    public const int LeaseActiveState = 1;
-
-    /// <summary>Lease status of a released assignment.</summary>
-    public const int LeaseReleasedState = 2;
-
     /// <summary>Size of the Survival match-found push.</summary>
     public const int MatchFoundWireSize = 53;
 
@@ -144,7 +138,7 @@ public static class EventConstants
 
     /// <summary>
     /// Official ACTIVE_STATE_MISMATCH(-1018). An assignment reply carries it
-    /// when the client's cached active state does not match the lease it holds.
+    /// when the client's cached active state does not match the claim it holds.
     /// </summary>
     public const uint ResultActiveStateMismatch = unchecked((uint)-1018);
 

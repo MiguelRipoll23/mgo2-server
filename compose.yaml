@@ -48,7 +48,8 @@
 # Ports of the gameplay lobbies that reference the original server:
 #   5733 Free Battle   5735 Survival           5740 Automatching
 #   5734 Replays       5737 Basic Training     5741 Registration
-#   5738 Combat Training  5739 Survival Hosts  5742 Tournament
+#   5738 Combat Training  5739 Survival Hosts  5743 Tournament Hosts
+#   5742 Tournament
 #   5731 gate          5732 account            5731 Gameplay Host (UDP)
 #     80 HTTP API        53 Name server (UDP)    3478 Port check, 3479 (UDP)
 
@@ -255,6 +256,20 @@ services:
     ports:
       - "5742:5742/tcp"
 
+  mgo2-tournament-hosts:
+    <<: *game-lobby-server
+    container_name: mgo2-tournament-hosts
+    environment:
+      LOBBY_NAME: Tournament Hosts
+      LOBBY_SUBTYPE: TOURNAMENT HOSTS
+      LOBBY_PORT: "5743"
+      LOBBY_BEGINNER_ONLY: "false"
+      LOBBY_EXPANSION_ONLY: "false"
+      LOBBY_NO_HEADSHOT: "false"
+      LOBBY_REPLAYS_ONLY: "false"
+    ports:
+      - "5743:5743/tcp"
+
   # Gameplay hosts. Add one block per host, each with its own UDP
   # port and the lobby it publishes its match in. The host waits for that lobby
   # to be registered by its game lobby server.
@@ -280,6 +295,16 @@ services:
       GAMEPLAY_SERVER_GAME_NAME: Survival Host 1
     ports:
       - "60190:60190/udp"
+
+  mgo2-tournament-host-1:
+    <<: *gameplay-server
+    container_name: mgo2-tournament-host-1
+    environment:
+      GAMEPLAY_SERVER_PORT: "60191"
+      GAMEPLAY_SERVER_LOBBY_NAME: Tournament Hosts
+      GAMEPLAY_SERVER_GAME_NAME: Tournament Host 1
+    ports:
+      - "60191:60191/udp"
 
   # Public HTTP API and its Scalar reference UI.
   mgo2-http:

@@ -12,7 +12,7 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// detail.
 /// </summary>
 /// <param name="contextFactory">Factory used to create database contexts.</param>
-public sealed class EventMatchService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
+public sealed partial class EventMatchService(IDbContextFactory<Mgo2DatabaseContext> contextFactory)
     : DomainService(contextFactory)
 {
     /// <summary>Creates a pairing in the waiting-for-host state.</summary>
@@ -77,12 +77,20 @@ public sealed class EventMatchService(IDbContextFactory<Mgo2DatabaseContext> con
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    /// <summary>Moves a match to a new state.</summary>
+    /// <summary>
+    /// Moves a match to a new state.
+    /// <para>
+    /// The write is guarded by the row's version, so a state that lost a race —
+    /// a completion arriving for a match another process has already cancelled —
+    /// is a refusal rather than an overwrite. The caller reads false as "it did
+    /// not happen", which is what both of those paths already do.
+    /// </para>
+    /// </summary>
     /// <param name="matchIdentifier">Match to change.</param>
     /// <param name="state">State to move to.</param>
     /// <param name="winnerTeamIdentifier">Winning team, when the state records one.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    /// <returns>Whether the match existed.</returns>
+    /// <returns>Whether the match existed and was changed.</returns>
     public async Task<bool> SetStateAsync(
         int matchIdentifier,
         int state,
@@ -106,7 +114,18 @@ public sealed class EventMatchService(IDbContextFactory<Mgo2DatabaseContext> con
             match.CompletedAt = DateTimeOffset.UtcNow;
         }
 
-        await context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // Somebody else moved the same match first, so this state is the one
+            // that looks stale and it is dropped.
+            context.Entry(match).State = EntityState.Detached;
+            return false;
+        }
+
         return true;
     }
 }

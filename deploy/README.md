@@ -12,7 +12,7 @@ an image tag here, and Argo does the rest. No workflow runs `kubectl apply`.
 | `migrate/`         | the one-shot schema migration, as a PreSync hook Job    | `mgo2-postgres`           |
 | `gate/`            | the gate lobby                                          | `mgo2-gate-lobby-server`  |
 | `account/`         | the account lobby                                       | `mgo2-account-lobby-server` |
-| `game-lobby/`      | the nine lobby roles                                    | `mgo2-game-lobby-server`  |
+| `game-lobby/`      | the ten lobby roles                                     | `mgo2-game-lobby-server`  |
 | `gameplay/`        | the gameplay hosts                                      | `mgo2-gameplay-server`    |
 | `http/`            | the HTTP API                                            | `mgo2-http`               |
 | `dns/`             | the name server                                         | `mgo2-dns`                |
@@ -20,7 +20,7 @@ an image tag here, and Argo does the rest. No workflow runs `kubectl apply`.
 | `argocd/`          | the Application objects themselves, not the workloads    | —                         |
 
 Each service folder is a kustomization with exactly one `images:` entry, and
-that entry's `newTag` is the only thing a deploy changes there. Nine lobby
+that entry's `newTag` is the only thing a deploy changes there. Ten lobby
 deployments share one image, so they share one tag and move together.
 
 ## How a change reaches the cluster
@@ -158,8 +158,8 @@ Each workload rolls if, and only if, its Deployment names the ConfigMap:
 configmap.reloader.stakater.com/reload: "mgo2-appsettings"
 ```
 
-All sixteen do, so a change to any value is a rollout of the whole stack — the
-nine lobbies included, and a lobby with players in it closes its listener,
+All eighteen do, so a change to any value is a rollout of the whole stack — the
+ten lobbies included, and a lobby with players in it closes its listener,
 refuses anyone new and waits for the players it has, up to its six hour grace
 period. The trigger is the ConfigMap rather than the setting, so a key only the
 name server reads still restarts the lobbies. Splitting the ConfigMap per service
@@ -193,7 +193,7 @@ behind a scaled-to-zero ReplicaSet, and a reindent of the JSON leaves one behind
 too.
 
 Two is the compromise. The default ten accumulates a revision per reload across
-all sixteen workloads, which buries the objects in `kubectl get rs` without
+all eighteen workloads, which buries the objects in `kubectl get rs` without
 holding anything the git history does not already hold better; zero would leave
 no way back at all from a bad rollout, and `kubectl rollout undo` is the fastest
 remedy when one goes wrong mid-deploy. Everything further back is a revert of a
