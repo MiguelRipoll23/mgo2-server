@@ -21,7 +21,7 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// member of the field. So the run arms the second half,
 /// <see cref="SurvivalTestOpponentService"/>, which forms the simulated opponent
 /// the moment the team is recorded as waiting, and hands the finishing move to
-/// the player: ready the last slot, and the opponent appears.
+/// the player: select "Enter With This Team", and the opponent appears.
 /// </para>
 /// <para>
 /// No room is opened here and none is looked for. The room this pairing needs is
@@ -34,8 +34,10 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// The division of authorship is strict. The team's state and the leader's own
 /// slot belong to the leader: the test never readies their slot for them and
 /// never moves the team on its own initiative — it only adds the in-memory
-/// players to the real team and moves <em>those</em> players from NG to Ready,
-/// which is the state a pairing needs. Every state change is announced with a
+/// players to the real team and moves <em>those</em> players from NG to Ready.
+/// The leader has no NG/OK toggle of their own; once every other slot is OK the
+/// leader's screen offers "Enter With This Team", and that single action is what
+/// readies the leader and enters the field. Every state change is announced with a
 /// chat line the server sends back as if the player had written it, which is the
 /// only log a client can show, and the simulated roster changes are pushed as
 /// ordinary roster notifications so the player's screens update the way they
@@ -166,14 +168,15 @@ public sealed class SurvivalTestService(
 
         // 3. Arm the second half and hand the player the move that starts it. The
         // opponent is not formed here: the team is still joinable, and it is the
-        // player's own state change — readying the last slot, which takes the
-        // team out of the joinable list and into the field — that is the moment
-        // an opponent exists for.
+        // leader's own entry — "Enter With This Team", which takes the team out
+        // of the joinable list and into the field — that is the moment an
+        // opponent exists for. The leader has no NG/OK toggle; the entry is the
+        // only action their screen offers once every other member is ready.
         opponentService.ExpectOpponent(team.Identifier);
         await SayAsync(
             session,
             characterIdentifier,
-            "Ready your own slot now: the team is queued the moment you do, and the in-memory opponent is formed for it then.",
+            "Select \"Enter With This Team\" now: the team enters the field the moment you do, and the in-memory opponent is formed for it then.",
             cancellationToken);
     }
 

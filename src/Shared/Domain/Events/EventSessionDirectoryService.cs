@@ -25,4 +25,14 @@ public sealed class EventSessionDirectoryService(ActiveGameSessionsService activ
         [.. activeGameSessions.List().Where(session =>
             session.EventTeamIdentifier == teamIdentifier
             && !ReferenceEquals(session, excludedSession))];
+
+    /// <summary>
+    /// Returns the sessions sitting in one lobby. It is the audience a lobby-wide
+    /// announcement addresses, which is wider than any one team and narrower than
+    /// every client this process serves.
+    /// </summary>
+    /// <param name="lobbyIdentifier">Lobby to look for.</param>
+    public List<TcpSession> LobbySessions(int lobbyIdentifier) =>
+        [.. activeGameSessions.List().Where(session =>
+            session.LobbyIdentifier == lobbyIdentifier)];
 }

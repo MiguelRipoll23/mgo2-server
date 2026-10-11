@@ -40,11 +40,13 @@ public readonly record struct MatchmakingResult(
 /// <param name="teamService">Service that owns the teams.</param>
 /// <param name="teamStateService">Service that marks a team as queued or joinable.</param>
 /// <param name="assignmentService">Service that assigns a host to a new pairing.</param>
+/// <param name="pushService">Service that tells the team its lifecycle state changed.</param>
 public sealed class EventMatchmakingService(
     EventMatchService matchService,
     EventTeamService teamService,
     EventTeamStateService teamStateService,
-    EventAssignmentService assignmentService)
+    EventAssignmentService assignmentService,
+    EventTeamPushService pushService)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<(int Lobby, int MatchType), Queue<int>> waiting = [];
@@ -134,10 +136,21 @@ public sealed class EventMatchmakingService(
         // joinable list is served from another process. It is written outside the
         // lock for the same reason the pairing is: a database round trip is not
         // something to hold a queue lock across.
-        await teamStateService.SetAsync(
+        var queued = await teamStateService.SetAsync(
             teamIdentifier,
             EventTeamRegistrationUtils.QueuedState,
             cancellationToken);
+        if (queued)
+        {
+            // The team just left the joinable list and entered the field, which
+            // is a state change every member's screen has to be told about; the
+            // joinable list alone cannot show it, because the team is no longer
+            // in it.
+            await pushService.PushActiveEventStateAsync(
+                EventTeamService.BuildSnapshot(team),
+                EventTeamRegistrationUtils.QueuedState,
+                cancellationToken);
+        }
 
         if (opponentIdentifier == 0)
         {
@@ -228,6 +241,19 @@ public sealed class EventMatchmakingService(
         if (releasedState is int state)
         {
             await teamStateService.SetAsync(teamIdentifier, state, cancellationToken);
+
+            // Leaving the field is the same kind of change as entering it: the
+            // members have to be told the team is joinable again, or they stay
+            // on a waiting screen that no longer matches the server. Only the
+            // Survival screens read this state vector; a Tournament team's
+            // lifecycle belongs to its bracket.
+            if (team!.MatchType == EventConstants.SurvivalSelector)
+            {
+                await pushService.PushActiveEventStateAsync(
+                    EventTeamService.BuildSnapshot(team),
+                    state,
+                    cancellationToken);
+            }
         }
 
         if (matchIdentifier > 0)

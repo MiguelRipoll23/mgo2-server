@@ -110,6 +110,61 @@ public sealed class EventTeamPushService(
             cancellationToken);
     }
 
+    /// <summary>
+    /// Re-opens the team's event with its changed lifecycle state and pushes it
+    /// to every member.
+    /// <para>
+    /// The team screens are built for an event that was opened, and the one
+    /// record that carries the team's event-participation state is the
+    /// active-event start. A state change that is not pushed therefore leaves
+    /// every member on the screen the state they held before — which for a team
+    /// that has just entered is the difference between "Forming a team" and
+    /// "Entry Complete". The record is written once and fanned out, because the
+    /// state is the team's rather than the recipient's.
+    /// </para>
+    /// </summary>
+    /// <param name="team">Team whose state changed.</param>
+    /// <param name="teamState">State the team now holds.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task PushActiveEventStateAsync(
+        EventSnapshot team,
+        int teamState,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(team);
+
+        var sessions = Recipients(team.SnapshotIdentifier, excludedSession: null);
+        if (sessions.Count == 0)
+        {
+            // A team whose members have all left has no screen to move; the
+            // state is already recorded and the next read serves it.
+            return;
+        }
+
+        var writer = new PacketWriter();
+        EventActiveEventUtils.WriteActiveEventState(
+            writer,
+            team.SnapshotIdentifier,
+            team.Sequence,
+            team.EventIdentifier,
+            teamState,
+            EventActiveEventService.BuildParticipantStates(team),
+            team.HostEnvironment,
+            baseTimeSeconds: 0,
+            flagByte: 0,
+            detailByte: 0);
+        var payload = writer.Build();
+
+        foreach (var session in sessions)
+        {
+            await sessionHelper.SendPacketAsync(
+                session,
+                CommandConstants.ActiveEventStart,
+                payload,
+                cancellationToken);
+        }
+    }
+
     /// <summary>Tells every remaining member that the team is gone.</summary>
     /// <param name="team">Team that ended.</param>
     /// <param name="excludedSession">Session that is already being answered, when there is one.</param>

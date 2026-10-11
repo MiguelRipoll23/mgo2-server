@@ -1,4 +1,5 @@
 using Mgo2Server.Shared.Tcp;
+using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.Shared.Domain.News;
@@ -70,13 +71,27 @@ public sealed class FlashNewsService(
     /// <summary>Broadcasts an announcement to every client of this process's lobbies.</summary>
     /// <param name="announcement">Announcement to broadcast.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task<FlashNewsBroadcastResult> BroadcastAsync(
+    public Task<FlashNewsBroadcastResult> BroadcastAsync(
+        FlashNewsAnnouncement announcement,
+        CancellationToken cancellationToken = default) =>
+        BroadcastToAsync(activeGameSessions.List(), announcement, cancellationToken);
+
+    /// <summary>
+    /// Broadcasts an announcement to the clients named by the caller. It is the
+    /// scoped form: an announcement that belongs to one lobby, or to one group of
+    /// players, must not reach every client the process serves.
+    /// </summary>
+    /// <param name="sessions">Sessions to write the announcement to.</param>
+    /// <param name="announcement">Announcement to broadcast.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    public async Task<FlashNewsBroadcastResult> BroadcastToAsync(
+        IReadOnlyList<TcpSession> sessions,
         FlashNewsAnnouncement announcement,
         CancellationToken cancellationToken = default)
     {
-        var payload = BuildPayload(announcement);
-        var sessions = activeGameSessions.List();
+        ArgumentNullException.ThrowIfNull(sessions);
 
+        var payload = BuildPayload(announcement);
         foreach (var session in sessions)
         {
             await sessionHelper.SendPacketAsync(session, FlashNewsCommand, payload, cancellationToken);

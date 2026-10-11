@@ -212,6 +212,7 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<EventRewardService>();
         services.AddSingleton<EventOutcomeService>();
         services.AddSingleton<EventOutcomePushService>();
+        services.AddSingleton<SurvivalStreakAnnouncementService>();
         services.AddSingleton<EventBracketPushService>();
         services.AddSingleton<EventGameEntryService>();
         services.AddSingleton<EventEntryService>();

@@ -57,6 +57,7 @@ public enum EventReportOutcome
 /// <param name="bracketService">Service that advances a Tournament bracket.</param>
 /// <param name="bracketPushService">Service that shows the advanced bracket to its entrants.</param>
 /// <param name="registrationService">Service that owns the places a field holds.</param>
+/// <param name="streakAnnouncementService">Service that announces a Survival winning streak.</param>
 /// <param name="options">Event configuration, which carries the settling grace.</param>
 public sealed class EventOutcomeService(
     IDbContextFactory<Mgo2DatabaseContext> contextFactory,
@@ -66,6 +67,7 @@ public sealed class EventOutcomeService(
     TournamentBracketService bracketService,
     EventBracketPushService bracketPushService,
     TournamentRegistrationService registrationService,
+    SurvivalStreakAnnouncementService streakAnnouncementService,
     IOptions<EventOptions> options)
     : DomainService(contextFactory)
 {
@@ -301,6 +303,11 @@ public sealed class EventOutcomeService(
             winnerTeamIdentifier,
             loserTeamIdentifier,
             cancellationToken);
+
+        // A Survival team on a run is a lobby-wide story, so the streak is
+        // announced once the payment has moved it. It is inert for every other
+        // mode and for a streak too short to be news.
+        await streakAnnouncementService.AnnounceAsync(winnerTeamIdentifier, cancellationToken);
 
         // A Survival match answers nothing here rather than freezing an event
         // that never entered a team.
