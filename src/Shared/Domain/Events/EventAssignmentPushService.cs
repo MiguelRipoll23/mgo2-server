@@ -40,11 +40,18 @@ public sealed class EventAssignmentPushService(
     {
         ArgumentNullException.ThrowIfNull(assignment);
 
-        var delivered = await PushToTeamAsync(
-            assignment,
-            assignment.FirstTeam,
-            assignment.SecondTeam,
-            cancellationToken);
+        // The client settles into state 37 after its 0x4915 response and before the
+        // 0x4A00 event opens. Delivering the assignment burst against that gate
+        // stalls the server side of the exchange instead of leaving the client
+        // parse the live state before it is in the right lifecycle: the client
+        // keeps its ready-state loop alive and reports it repeatedly while the
+        // run it already received is never re-sent. The two teams are pushed
+        // back-to-back, but only after the first batch has waited such that its
+        // first response is delivered and both clients have entered state 37.
+        var delay = Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
+        var teamPush = PushToTeamAsync(assignment, assignment.FirstTeam, assignment.SecondTeam, cancellationToken);
+        await Task.WhenAll(delay, teamPush);
+        var delivered = await teamPush;
         delivered += await PushToTeamAsync(
             assignment,
             assignment.SecondTeam,
@@ -157,6 +164,7 @@ public sealed class EventAssignmentPushService(
             var characterIdentifier = session.CharacterIdentifier.Value;
 
             // The assignment opens with the ready acknowledgement. The client
+            // The assignment opens with the ready acknowledgement. The client
             // does not consume the unsolicited snapshot below while its team
             // operation is still pending, and this zero result completes it; it
             // is also the team-record reset the snapshot itself performs, so it
@@ -176,6 +184,12 @@ public sealed class EventAssignmentPushService(
                 snapshotWriter.Build(),
                 cancellationToken);
 
+            // The active-event record is the client's own reservation, not a
+            // server state update. In the Survival flow the client writes its
+            // state before the room opens, so the server must not place this
+            // ahead of the client's record, and the identical ordering is kept
+            // for the event-game cache that follows and for the notification that
+            // names the two teams at the end.
             var activeEventWriter = new PacketWriter();
             EventActiveEventUtils.WriteActiveEventState(
                 activeEventWriter,

@@ -140,17 +140,13 @@ public sealed class EventMatchmakingService(
             teamIdentifier,
             EventTeamRegistrationUtils.QueuedState,
             cancellationToken);
-        if (queued)
-        {
-            // The team just left the joinable list and entered the field, which
-            // is a state change every member's screen has to be told about; the
-            // joinable list alone cannot show it, because the team is no longer
-            // in it.
-            await pushService.PushActiveEventStateAsync(
-                EventTeamService.BuildSnapshot(team),
-                EventTeamRegistrationUtils.QueuedState,
-                cancellationToken);
-        }
+        // Do NOT push 0x4A00 here. The client enters async UI state 37 after
+        // receiving 0x4931, and that transition is not complete by the time
+        // this call runs. An immediate 0x4A00 (callback 25) fires before state
+        // 37 is established and leaves the client stuck. The assignment burst
+        // (0x4915 → 0x4987 → 0x4A00 → …) delivers the correct state packet
+        // after a settling delay, so no push is needed from this path.
+        _ = queued;
 
         if (opponentIdentifier == 0)
         {
