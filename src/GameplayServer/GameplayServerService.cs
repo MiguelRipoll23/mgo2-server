@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Match;
+using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Domain.Games;
@@ -29,6 +30,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly CharacterService characterService;
     private readonly AccountService accountService;
     private readonly MatchService matchService;
+    private readonly MatchRoundService matchRounds;
     private readonly RoomRosterService roster;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
@@ -69,6 +71,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         characterService = serviceProvider.GetRequiredService<CharacterService>();
         accountService = serviceProvider.GetRequiredService<AccountService>();
         matchService = serviceProvider.GetRequiredService<MatchService>();
+        matchRounds = serviceProvider.GetRequiredService<MatchRoundService>();
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
@@ -99,6 +102,17 @@ public sealed partial class GameplayServerService : IAsyncDisposable
                 var characterIdentifier = await accountService.GetOrCreateCharacterIdentifierAsync(token);
                 hostIdentity.SetCharacterIdentifier(characterIdentifier);
                 await characterService.EnsureDedicatedHostSettingsAsync(characterIdentifier, token);
+
+                // The room's round limit is the round word of the rule it
+                // advertises, read from the same saved settings the lobby reads.
+                // Zero means the host has no limit set, and the room plays on.
+                var rounds = MatchRoundSettingsUtils.MaximumRounds(
+                    await characterService.GetHostSettingsAsync(characterIdentifier, token));
+                matchRounds.Configure(rounds);
+                logger.LogDebug(
+                    "[{LogPrefix}] Room round limit: {RoundLimit}",
+                    LogPrefix,
+                    rounds > 0 ? rounds.ToString() : "none (the room plays on)");
             },
             logger,
             cancellationToken);
@@ -117,8 +131,9 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         sessions.Start();
         logger.LogDebug("[{LogPrefix}] Peer idle-session reaper started", LogPrefix);
         matchService.Start();
+        matchRounds.Start();
         logger.LogDebug(
-            "[{LogPrefix}] Match publisher started; match heartbeats are intentionally not logged",
+            "[{LogPrefix}] Match publisher and round opener started; match heartbeats are intentionally not logged",
             LogPrefix);
         logger.LogInformation("[{LogPrefix}] Listening on port {Port}", LogPrefix, port);
 
@@ -145,6 +160,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         logger.LogDebug("[{LogPrefix}] Disposing gameplay server services", LogPrefix);
+        await matchRounds.StopAsync();
         await matchService.StopAsync();
         sessions.Stop();
         socket?.Dispose();

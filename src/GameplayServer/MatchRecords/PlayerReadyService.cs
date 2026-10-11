@@ -32,6 +32,7 @@ public sealed class PlayerReadyService
 {
     private readonly Lock gate = new();
     private readonly Dictionary<PeerSession, byte> reports = [];
+    private readonly Dictionary<PeerSession, byte> lastReported = [];
 
     /// <summary>
     /// Notes that a peer has reported itself ready, and reports whether this is
@@ -44,7 +45,42 @@ public sealed class PlayerReadyService
     {
         lock (gate)
         {
+            // The last byte survives the round it arrived for, because the run
+            // that answers the report echoes it and is written after the room has
+            // taken the pending report.
+            lastReported[session] = reported;
             return reports.TryAdd(session, reported);
+        }
+    }
+
+    /// <summary>
+    /// Whether a peer has a readiness report the room has not taken yet. It is a
+    /// read and not a take: the room asks it of every peer before it opens a
+    /// round, so asking must not spend the report of a peer that is still the
+    /// only one ready.
+    /// </summary>
+    /// <param name="session">Peer to ask about.</param>
+    /// <returns><c>true</c> when a report is waiting.</returns>
+    public bool HasReport(PeerSession session)
+    {
+        lock (gate)
+        {
+            return reports.ContainsKey(session);
+        }
+    }
+
+    /// <summary>
+    /// The last byte a peer reported, which is what its round's payload record
+    /// echoes back. It stays after the report is taken, because the run is written
+    /// after the room has consumed it.
+    /// </summary>
+    /// <param name="session">Peer to ask about.</param>
+    /// <returns>The byte, or zero for a peer that has not reported.</returns>
+    public byte ReportedByte(PeerSession session)
+    {
+        lock (gate)
+        {
+            return lastReported.GetValueOrDefault(session);
         }
     }
 
@@ -78,6 +114,7 @@ public sealed class PlayerReadyService
         lock (gate)
         {
             reports.Remove(session);
+            lastReported.Remove(session);
         }
     }
 }

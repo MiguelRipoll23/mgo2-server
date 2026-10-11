@@ -32,6 +32,7 @@ builder.Services.AddSingleton<RoomRosterService>();
 builder.Services.AddSingleton<PlayerSettingsBurstService>();
 builder.Services.AddSingleton<PlayerSettingsBurstSchedulerService>();
 builder.Services.AddSingleton<PlayerReadyService>();
+builder.Services.AddSingleton<MatchRoundService>();
 builder.Services.AddSingleton<MatchRecordService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 // The peer command handlers are registered beside the types their messages are

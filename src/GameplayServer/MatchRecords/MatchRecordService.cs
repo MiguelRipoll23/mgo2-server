@@ -1,4 +1,3 @@
-using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
 
@@ -7,9 +6,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <summary>
 /// Keeps writing the dedicated host's in-game records to a peer once the join
 /// has been answered, replaying the measured frames of the capture's solo
-/// session: a sparse control and state-blob phase, then — once the client
-/// reports itself ready — the match-start run, then the beat frame with its
-/// round-clock, state-blob and control insertions.
+/// session: a sparse control and state-blob phase, then the rounds of the room
+/// it is in.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,25 +21,28 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </para>
 /// <para>
 /// The stream is a replay rather than a simulation: the timelines and bodies are
-/// <see cref="MatchRecordFramesUtils"/>', read off <c>docs/mgo2-game.pcapng</c>,
-/// and nothing here invents a value the capture does not show. It runs per peer,
-/// so a room of several joiners gives each the stream the solo session recorded,
-/// and it stops when that peer has been quiet for as long as the session reaper
-/// allows — the records are not a reason to keep a departed peer alive.
+/// <see cref="MatchRecordFramesUtils"/>', read off <c>mgo2-game1.pcapng</c>, and
+/// nothing here invents a value the capture does not show. It runs per peer, so
+/// a room of several joiners gives each the beat, and it stops when that peer has
+/// been quiet for as long as the session reaper allows — the records are not a
+/// reason to keep a departed peer alive.
 /// </para>
 /// <para>
-/// <b>The round opens when the client reports itself ready.</b> The sparse
-/// phase ends at its last state blob and the writer waits: the match-start run
-/// is the host's answer to that report, which arrives through
-/// <c>PlayerReadyHandler</c>. A server that wrote the run on the sparse phase's
-/// own clock opened a round nobody had announced readiness for, and the client
-/// then reported again and again with nothing reading it — the stuck ready state
-/// this replaces.
+/// <b>The room opens the round, and this writes it out.</b> The sparse phase
+/// ends at its last state blob and the writer waits for <see cref="MatchRoundService"/>
+/// to open a round — which it does only once every peer has reported itself
+/// ready, so no match-start run reaches a client on its loading screen. A peer
+/// that entered while a round was already open beats that round under its own
+/// generation and writes the run for the next one, which is the second player in
+/// game1: it joins at t+154.3 s, plays the round under the first identifier set,
+/// and takes the run at t+194.0 s when the room opens the second.
 /// </para>
 /// </remarks>
-/// <param name="ready">Readiness reports peers have sent that open their rounds.</param>
+/// <param name="rounds">Rounds the room opens and every peer plays.</param>
+/// <param name="ready">Readiness reports the room bars a round on.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class MatchRecordService(
+    MatchRoundService rounds,
     PlayerReadyService ready,
     ILogger<MatchRecordService> logger)
 {
@@ -51,6 +52,16 @@ public sealed class MatchRecordService(
     /// records never outlive the session they are written to.
     /// </summary>
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>Repeats of the match-start run the capture writes after it.</summary>
+    private const int MatchStartRunRepeatCount = 4;
+
+    /// <summary>
+    /// How often the writer looks for a new round. The room is a service, so this
+    /// is only how long a writer waits to notice a round it is owed — 33 ms, one
+    /// beat frame, which is the capture's own resolution.
+    /// </summary>
+    private const int RoundPollMilliseconds = 33;
 
     private readonly Lock gate = new();
     private readonly HashSet<PeerSession> writing = [];
@@ -82,7 +93,7 @@ public sealed class MatchRecordService(
     private async Task RunAsync(PeerContext context)
     {
         var session = context.Session;
-        var round = new RoundState();
+        rounds.Enter(session);
 
         try
         {
@@ -110,20 +121,7 @@ public sealed class MatchRecordService(
                 await SendAsync(context, step.Records, step.Compressed);
             }
 
-            // The sparse phase ends at the last state blob and the round opens
-            // only once the client reports itself ready, so this is where the two
-            // meet. A report that arrives before the writer gets here is already
-            // recorded and is taken on the first poll.
-            if (!await WaitForReadyAsync(context, round))
-            {
-                logger.LogDebug(
-                    "UDP {LocalPort}: {RemoteAddress} never reported itself ready; the match records stop at the sparse phase",
-                    context.LocalPort,
-                    session.RemoteAddress);
-                return;
-            }
-
-            await RunBeatAsync(context, round);
+            await RunRoundsAsync(context);
         }
         catch (Exception exception)
         {
@@ -140,9 +138,9 @@ public sealed class MatchRecordService(
                 writing.Remove(session);
             }
 
-            // A request this worker will never spend — a peer that went quiet
-            // while waiting for its round — goes with it, so the session does not
-            // outlive the records that were to be written for it.
+            // The peer leaves the room before its last report is dropped, so the
+            // room never bars a round on a session the reaper is about to take.
+            rounds.Leave(session);
             ready.Forget(session);
 
             logger.LogDebug(
@@ -153,40 +151,64 @@ public sealed class MatchRecordService(
     }
 
     /// <summary>
-    /// The beat phase: the frame the recorded host repeats every
-    /// <see cref="MatchRecordFramesUtils.FramePeriodMilliseconds"/> ms, with a
-    /// round-clock, state-blob or control record inserted in front of the beat
-    /// on the periods the capture shows, and the vitals record joining the beat
-    /// once the round has run for <see cref="MatchRecordFramesUtils.VitalsOnsetFrames"/>
-    /// frames.
+    /// Plays the room's rounds to this peer. The room decides when a round opens
+    /// and which identifier set it plays under; this writer follows it — writing
+    /// the match-start run when the round is one the peer is owed, and the beat
+    /// frame under it until the room opens the next.
     /// </summary>
     /// <remarks>
-    /// A round lasts <see cref="MatchRecordFramesUtils.RoundLengthMilliseconds"/>,
-    /// which is where the next round becomes <em>due</em> under the sibling
-    /// identifier set — the same records a <c>0x800</c> bit along (see
-    /// <see cref="MatchRecordGenerationUtils"/>). It is not what opens it: the
-    /// client asking does, so the beat phase waits at the boundary for the
-    /// request rather than writing a run unasked. The capture's round ended when
-    /// a team reached the goal, and this replay uses that measured length rather
-    /// than the 420 s the round's own clock carries, because it does not simulate
-    /// the match and so cannot see a team reach anything.
+    /// <b>A peer that joined mid-round is owed the run only from the next round.</b>
+    /// Its entry round is read once, here: a peer already in the room when a
+    /// round opens takes that round's run, and a peer that arrived while one was
+    /// being played beats that round and takes the run when the room opens the
+    /// next. Writing the run for the round in progress to a late arrival would
+    /// reset the stream under a client that is already in it.
     /// </remarks>
     /// <param name="context">Context the records are written through.</param>
-    /// <param name="round">The round the first run has already opened.</param>
-    private async Task RunBeatAsync(PeerContext context, RoundState round)
+    private async Task RunRoundsAsync(PeerContext context)
     {
         var session = context.Session;
+        var enteredOn = rounds.EnteredOnRound(session);
+        var writtenVersion = -1L;
+        var round = new RoundCounters();
 
         while (IsAlive(session))
         {
-            if (round.ElapsedMilliseconds >= MatchRecordFramesUtils.RoundLengthMilliseconds)
+            var snapshot = rounds.Current;
+            if (!snapshot.IsOpen)
             {
-                await WaitForReadyAsync(context, round);
+                // No round has opened yet. The room is waiting on readiness
+                // reports, so the writer waits on the room.
+                await Task.Delay(RoundPollMilliseconds);
+                continue;
+            }
+
+            if (snapshot.Version != writtenVersion)
+            {
+                writtenVersion = snapshot.Version;
+                round.Reset();
+
+                if (snapshot.Number > enteredOn)
+                {
+                    await SendRoundStartAsync(
+                        context,
+                        snapshot.Generation,
+                        ready.ReportedByte(session));
+                }
+                else
+                {
+                    logger.LogDebug(
+                        "UDP {LocalPort}: {RemoteAddress} joined round {RoundNumber} in progress; beating it "
+                        + "under its identifier set and opening the next one for it",
+                        context.LocalPort,
+                        session.RemoteAddress,
+                        snapshot.Number);
+                }
             }
 
             var plan = new BeatFramePlan(
                 round.FrameIndex,
-                round.Generation,
+                snapshot.Generation,
                 round.SessionFlags2,
                 round.BlobsWritten);
 
@@ -207,7 +229,6 @@ public sealed class MatchRecordService(
             }
 
             round.FrameIndex++;
-            round.ElapsedMilliseconds += MatchRecordFramesUtils.FramePeriodMilliseconds;
             await Task.Delay(MatchRecordFramesUtils.FramePeriodMilliseconds);
         }
 
@@ -218,65 +239,28 @@ public sealed class MatchRecordService(
     }
 
     /// <summary>
-    /// Waits for the client to report itself ready, then opens the round: the
-    /// rare control the capture's later rounds carry at their head, the round's
-    /// marker, the match-start run and its four repeats, then the beat phase back
-    /// with the round's own counters reset.
-    /// </summary>
-    /// <remarks>
-    /// <b>The client reporting ready opens the round; the clock does not.</b>
-    /// Measured across the three captures, every round begins within 0.6–5.5 s of
-    /// a client's <c>e1 NN</c> report and no round begins without one. A server
-    /// that opens the round on a timer instead writes a run the client never
-    /// announced readiness for, and the client then reports again and again — the
-    /// live run reported twenty-three times over two minutes and was answered to
-    /// none of them, which is the shape of a game stuck in its ready state.
-    /// </remarks>
-    /// <param name="context">Context the records are written through.</param>
-    /// <param name="round">Round whose generation and counters advance.</param>
-    /// <returns><c>false</c> when the peer went quiet before it reported.</returns>
-    private async Task<bool> WaitForReadyAsync(PeerContext context, RoundState round)
-    {
-        var session = context.Session;
-
-        while (true)
-        {
-            if (ready.TryTake(session, out var reported))
-            {
-                round.StartNextGeneration(reported);
-                await SendRoundStartAsync(context, round.Generation);
-                return true;
-            }
-
-            if (!IsAlive(session))
-            {
-                return false;
-            }
-
-            await Task.Delay(ReadyPollMilliseconds);
-        }
-    }
-
-    /// <summary>
     /// Writes the round's opening run and its repeats under the given identifier
-    /// set.
+    /// set, echoing the byte this peer reported.
     /// </summary>
     /// <param name="context">Context the records are written through.</param>
     /// <param name="generation">Identifier set of the round being opened.</param>
+    /// <param name="reported">Byte the peer's readiness report carried.</param>
     private async Task SendRoundStartAsync(
         PeerContext context,
-        MatchRecordGenerationUtils generation)
+        MatchRecordGenerationUtils generation,
+        byte reported)
     {
         logger.LogInformation(
             "UDP {LocalPort}: opening a round for {RemoteAddress} under "
             + "(operations 0x{Operations:x4}, rules 0x{Rules:x4}, vitals 0x{Vitals:x4}, marker 0x{Marker:x4}) "
-            + "in answer to the client's readiness report",
+            + "in answer to the client's readiness report, echoing 0x{Reported:x2}",
             context.LocalPort,
             context.Session.RemoteAddress,
             generation.RoundClock,
             generation.RulesRoster,
             generation.Vitals,
-            generation.MatchStartMarker);
+            generation.MatchStartMarker,
+            reported);
 
         await SendAsync(
             context,
@@ -287,40 +271,25 @@ public sealed class MatchRecordService(
         await SendAsync(context, [new(generation.MatchStartMarker, [])], compressed: false);
         await SendAsync(
             context,
-            MatchStartRunFramesUtils.MatchStartRun(generation, generation.ReportedByte),
+            MatchStartRunFramesUtils.MatchStartRun(generation, reported),
             compressed: true);
         for (var repeat = 0; repeat < MatchStartRunRepeatCount; repeat++)
         {
             await Task.Delay(MatchStartRunFramesUtils.MatchStartRepeatDelayMilliseconds);
             await SendAsync(
                 context,
-                MatchStartRunFramesUtils.MatchStartRunRepeat(generation, generation.ReportedByte),
+                MatchStartRunFramesUtils.MatchStartRunRepeat(generation, reported),
                 compressed: true);
         }
     }
 
-    /// <summary>Repeats of the match-start run the capture writes after it.</summary>
-    private const int MatchStartRunRepeatCount = 4;
-
     /// <summary>
-    /// How often the writer looks for a readiness report. The report is recorded
-    /// by the dispatch loop and taken here, so this is only how long a round waits
-    /// to open after the client has already said it is ready — 33 ms, one beat
-    /// frame, which is the capture's own resolution.
+    /// One round's mutable beat counters. Held in a class rather than in locals
+    /// because the round is crossed from an async method, which cannot take them
+    /// by reference. The identifier set is not here: it belongs to the room.
     /// </summary>
-    private const int ReadyPollMilliseconds = 33;
-
-    /// <summary>
-    /// One round's mutable state: the identifier set it plays under and the
-    /// counters the beat phase advances. Held in a class rather than in locals
-    /// because the round boundary is crossed from an async method, which cannot
-    /// take them by reference.
-    /// </summary>
-    private sealed class RoundState
+    private sealed class RoundCounters
     {
-        /// <summary>Identifier set of the round being played.</summary>
-        public MatchRecordGenerationUtils Generation { get; private set; } = MatchRecordGenerationUtils.First;
-
         /// <summary>Beat frames written in this round.</summary>
         public int FrameIndex { get; set; }
 
@@ -330,21 +299,12 @@ public sealed class MatchRecordService(
         /// <summary>State blobs written in this round.</summary>
         public int BlobsWritten { get; set; }
 
-        /// <summary>Round time elapsed so far, in milliseconds.</summary>
-        public int ElapsedMilliseconds { get; set; }
-
-        /// <summary>
-        /// Advances to the next round's identifier set, carrying the byte the
-        /// client reported, and resets the counters.
-        /// </summary>
-        /// <param name="reported">Byte from the client's readiness report.</param>
-        public void StartNextGeneration(byte reported)
+        /// <summary>Resets the counters for a newly opened round.</summary>
+        public void Reset()
         {
-            Generation = Generation.Next(reported);
             FrameIndex = 0;
             SessionFlags2 = MatchRecordFramesUtils.SteadySessionFlagsStart;
             BlobsWritten = 0;
-            ElapsedMilliseconds = 0;
         }
     }
 

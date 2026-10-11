@@ -55,12 +55,11 @@ public sealed record MatchRecordGenerationUtils(
 
     /// <summary>
     /// The set the next round uses: every identifier of this one with
-    /// <see cref="SiblingBit"/> flipped, carrying the byte this round is opened
-    /// with.
+    /// <see cref="SiblingBit"/> flipped. The byte a round is opened on is the
+    /// reporting client's own, so it stays out of the identifier set and this
+    /// keeps whatever byte it already carried.
     /// </summary>
-    /// <param name="reported">Byte the client's readiness report carried.</param>
-    /// <returns>The next round's generation.</returns>
-    public MatchRecordGenerationUtils Next(byte reported) =>
+    public MatchRecordGenerationUtils Sibling =>
         new(
             (ushort)(Vitals ^ SiblingBit),
             (ushort)(RulesRoster ^ SiblingBit),
@@ -68,7 +67,17 @@ public sealed record MatchRecordGenerationUtils(
             (ushort)(RoundClockAlternate ^ SiblingBit),
             (ushort)(MatchStartMarker ^ SiblingBit),
             (ushort)(MatchStartPayload ^ SiblingBit),
-            reported);
+            ReportedByte);
+
+    /// <summary>
+    /// The set the next round uses, carrying the byte a client is opening it
+    /// with. It is the older per-peer form of <see cref="Sibling"/>; a room that
+    /// opens one round for several peers derives the identifiers once and echoes
+    /// each report's own byte, so it uses <see cref="Sibling"/> instead.
+    /// </summary>
+    /// <param name="reported">Byte the client's readiness report carried.</param>
+    /// <returns>The next round's generation.</returns>
+    public MatchRecordGenerationUtils Next(byte reported) => Sibling with { ReportedByte = reported };
 
     /// <summary>
     /// The identifiers a readiness report can arrive under: each round's
