@@ -53,7 +53,11 @@ public sealed class MatchRecordService(
     /// </summary>
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(60);
 
-    /// <summary>Repeats of the match-start run the capture writes after it.</summary>
+    /// <summary>
+    /// Times the recorded host writes the run-shaped frame inside the beat that
+    /// follows the run. Measured: the solo window's first round carries the run
+    /// at counter 32793 and four repeats at 32849, 32905, 32961 and 33017.
+    /// </summary>
     private const int MatchStartRunRepeatCount = 4;
 
     /// <summary>
@@ -194,6 +198,12 @@ public sealed class MatchRecordService(
                         context,
                         snapshot.Generation,
                         ready.ReportedByte(session));
+                    // The run is frame 0 of the round, so the beat that follows
+                    // starts at 1. That is the counting the capture uses: its
+                    // item-box group sits at offset 6, 14, … from the run and
+                    // its repeats at 56, 112, …, which the phases below only
+                    // produce when the run owns the first index.
+                    round.FrameIndex = 1;
                 }
                 else
                 {
@@ -204,6 +214,30 @@ public sealed class MatchRecordService(
                         session.RemoteAddress,
                         snapshot.Number);
                 }
+            }
+
+            // The run's repeats ride inside the beat; they do not replace it.
+            // The recorded host keeps the 33 ms frame moving after the run and
+            // writes the run-shaped frame in place of a beat at frame 56, 112,
+            // 168 and 224 — measured as the four repeats each round carries, and
+            // as the item-box frames every eighth frame between them. Writing
+            // them back to back ahead of the beat, as this did, is a round with
+            // no beat under it for the seven seconds the client is leaving its
+            // loading screen, which is where a live client went black.
+            if (round.FrameIndex > 0
+                && round.FrameIndex % MatchStartRunFramesUtils.MatchStartRepeatPeriodFrames == 0
+                && round.RepeatsWritten < MatchStartRunRepeatCount)
+            {
+                round.RepeatsWritten++;
+                await SendAsync(
+                    context,
+                    MatchStartRunFramesUtils.MatchStartRunRepeat(
+                        snapshot.Generation,
+                        ready.ReportedByte(session)),
+                    compressed: true);
+                round.FrameIndex++;
+                await Task.Delay(MatchRecordFramesUtils.FramePeriodMilliseconds);
+                continue;
             }
 
             var plan = new BeatFramePlan(
@@ -239,8 +273,9 @@ public sealed class MatchRecordService(
     }
 
     /// <summary>
-    /// Writes the round's opening run and its repeats under the given identifier
-    /// set, echoing the byte this peer reported.
+    /// Writes the round's opening marker and run under the given identifier set,
+    /// echoing the byte this peer reported. The run's repeats are not here: they
+    /// ride inside the beat that follows, in <see cref="RunRoundsAsync"/>.
     /// </summary>
     /// <remarks>
     /// <b>The marker is the answer to the readiness report.</b> The marker's
@@ -284,14 +319,6 @@ public sealed class MatchRecordService(
             context,
             MatchStartRunFramesUtils.MatchStartRun(generation, reported),
             compressed: true);
-        for (var repeat = 0; repeat < MatchStartRunRepeatCount; repeat++)
-        {
-            await Task.Delay(MatchStartRunFramesUtils.MatchStartRepeatDelayMilliseconds);
-            await SendAsync(
-                context,
-                MatchStartRunFramesUtils.MatchStartRunRepeat(generation, reported),
-                compressed: true);
-        }
     }
 
     /// <summary>
@@ -310,12 +337,16 @@ public sealed class MatchRecordService(
         /// <summary>State blobs written in this round.</summary>
         public int BlobsWritten { get; set; }
 
+        /// <summary>Run-shaped repeats written inside this round's beat.</summary>
+        public int RepeatsWritten { get; set; }
+
         /// <summary>Resets the counters for a newly opened round.</summary>
         public void Reset()
         {
             FrameIndex = 0;
             SessionFlags2 = MatchRecordFramesUtils.SteadySessionFlagsStart;
             BlobsWritten = 0;
+            RepeatsWritten = 0;
         }
     }
 

@@ -47,7 +47,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <para>
 /// <b>What the replay reproduces from the run on</b>: the beat frame's
 /// <see cref="VitalsOnsetFrames"/>-frame delay before the vitals record joins it,
-/// the run's four 11-record repeats (see
+/// the run's four 11-record repeats written inside that beat, one every
+/// <see cref="MatchStartRunFramesUtils.MatchStartRepeatPeriodFrames"/> frames (see
 /// <see cref="MatchStartRunFramesUtils.MatchStartRunRepeat"/>), and
 /// the item-box state group riding in every
 /// <see cref="ItemBoxFramesUtils.ItemBoxPeriodFrames"/>th frame (see

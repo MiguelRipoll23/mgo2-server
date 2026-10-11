@@ -19,9 +19,13 @@ public static class ItemBoxRecordBodiesUtils
     /// the rest is the box's state. The spawn bodies the groups alternate with
     /// (index <c>0</c> at head code <c>0x74</c>, index <c>1</c> at <c>0x8c</c>,
     /// index <c>2</c> at <c>0xb4</c>) are the live round's own item placement and
-    /// are not replayed; only the recurring state group is. Its two sibling
-    /// forms, <c>0x9a50</c> and <c>0x9a5a</c>, are the same records a
-    /// <c>0x800</c> bit along.
+    /// are not replayed; only the recurring state group is. Two other forms of
+    /// the identifier are on the wire: the round's own sibling,
+    /// <c>0x1250</c>/<c>0x125a</c> (a <c>0x800</c> bit along), which a round
+    /// played under the sibling set writes instead — see
+    /// <see cref="MatchRecordGenerationUtils"/> — and the payload-class form
+    /// <c>0x9a50</c>/<c>0x9a5a</c> (<c>0x8000</c> along), which the capture
+    /// writes occasionally alongside it.
     /// </remarks>
     public const ushort ItemBoxIdentifier = 0x1a50;
 

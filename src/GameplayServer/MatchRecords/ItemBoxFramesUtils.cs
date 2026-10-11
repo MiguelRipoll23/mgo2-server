@@ -23,17 +23,29 @@ public static class ItemBoxFramesUtils
     public const int ItemBoxPhaseFrames = 6;
 
     /// <summary>
-    /// The item-box group: the two boxes' state under
-    /// <see cref="ItemBoxRecordBodiesUtils.ItemBoxIdentifier"/> and under
-    /// <see cref="ItemBoxRecordBodiesUtils.ItemBoxStateIdentifier"/>, each a
-    /// six-byte body of the box's index and five zero bytes.
+    /// The item-box group: the two boxes' state under the round's first
+    /// item-box identifier and under its second, each a six-byte body of the
+    /// box's index and five zero bytes.
     /// </summary>
+    /// <remarks>
+    /// The two identifiers come from the round's own generation rather than
+    /// from <see cref="ItemBoxRecordBodiesUtils"/>, because the group is
+    /// generation-bound: a round played under the sibling set writes
+    /// <c>0x1250</c>/<c>0x125a</c> where the first round writes
+    /// <c>0x1a50</c>/<c>0x1a5a</c>, and a round uses one pair only. game1 shows
+    /// it from both ends — 106 s of its first round carry the first pair and no
+    /// sibling form, its second carries the sibling pair and none of the
+    /// first — and game2 the same way round, its client having opened that
+    /// capture's first round with a <c>0x12de</c> report.
+    /// </remarks>
+    /// <param name="generation">Identifier set of the round being played.</param>
     /// <returns>The records of the group, in the captured order.</returns>
-    public static List<MatchRecordFramesUtils.RecordMessage> ItemBoxGroup() =>
+    public static List<MatchRecordFramesUtils.RecordMessage> ItemBoxGroup(
+        MatchRecordGenerationUtils generation) =>
     [
-        new(ItemBoxRecordBodiesUtils.ItemBoxIdentifier, ItemBoxRecordBodiesUtils.ItemBoxState(0)),
-        new(ItemBoxRecordBodiesUtils.ItemBoxIdentifier, ItemBoxRecordBodiesUtils.ItemBoxState(1)),
-        new(ItemBoxRecordBodiesUtils.ItemBoxStateIdentifier, ItemBoxRecordBodiesUtils.ItemBoxState(0)),
-        new(ItemBoxRecordBodiesUtils.ItemBoxStateIdentifier, ItemBoxRecordBodiesUtils.ItemBoxState(1)),
+        new(generation.ItemBox, ItemBoxRecordBodiesUtils.ItemBoxState(0)),
+        new(generation.ItemBox, ItemBoxRecordBodiesUtils.ItemBoxState(1)),
+        new(generation.ItemBoxState, ItemBoxRecordBodiesUtils.ItemBoxState(0)),
+        new(generation.ItemBoxState, ItemBoxRecordBodiesUtils.ItemBoxState(1)),
     ];
 }

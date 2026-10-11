@@ -10,10 +10,24 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// Measured from the two rounds of <c>mgo2-game1.pcapng</c>. Its first round's
 /// run (t+46.4 s, counter 0x8019) carries the operations record <c>0x1a54</c>,
 /// the payload <c>0x1ade</c>, the rules-roster record <c>0x0a61</c>, the
-/// match-start marker <c>0x5ade</c> and the beat's vitals record <c>0x090c</c>;
-/// its second round's run (t+194.0 s, counter 0x9023) carries <c>0x1254</c>,
-/// <c>0x12de</c>, <c>0x0261</c>, <c>0x52de</c> and <c>0x010c</c>, each the first
-/// round's identifier with bit <see cref="SiblingBit"/> set.
+/// match-start marker <c>0x5ade</c>, the beat's vitals record <c>0x090c</c> and
+/// the item-box group <c>0x1a50</c>/<c>0x1a5a</c>; its second round's run
+/// (t+194.0 s, counter 0x9023) carries <c>0x1254</c>, <c>0x12de</c>, <c>0x0261</c>,
+/// <c>0x52de</c>, <c>0x010c</c> and the item-box group <c>0x1250</c>/<c>0x125a</c>,
+/// each the first round's identifier with bit <see cref="SiblingBit"/> set.
+/// </para>
+/// <para>
+/// <b>The set follows the round, item boxes included.</b> The item-box group is
+/// generation-bound like the rest, and the two forms do not mix inside a round:
+/// over the 106 s of game1's first round that follow its run the recorded host
+/// writes <c>0x1a50</c> and <c>0x1a5a</c> and not one <c>0x1250</c> or
+/// <c>0x125a</c>, while its second round writes <c>0x1250</c>/<c>0x125a</c> and
+/// none of the first form. game2 is the same across its two rounds — its first
+/// is the sibling one, its client having reported <c>0x12de</c>, and carries
+/// <c>0x1250</c>/<c>0x125a</c>; its second carries <c>0x1a50</c>/<c>0x1a5a</c>,
+/// and its third, the sibling again, carries the sibling pair back.
+/// Replaying the group under one pair for every round sends the wrong pair in
+/// half of them.
 /// </para>
 /// <para>
 /// The switch is a <em>round</em> boundary, not a join: the second player's
@@ -30,6 +44,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="RoundClockAlternate">The same record with the sibling bit set.</param>
 /// <param name="MatchStartMarker">Record that opens the round.</param>
 /// <param name="MatchStartPayload">Payload record inside the run.</param>
+/// <param name="ItemBox">First identifier of the beat's item-box group.</param>
+/// <param name="ItemBoxState">Second identifier of the beat's item-box group.</param>
 /// <param name="ReportedByte">
 /// Byte the round was opened on — the one the client carried in its readiness
 /// report and the one the run's payload record hands back.
@@ -41,6 +57,8 @@ public sealed record MatchRecordGenerationUtils(
     ushort RoundClockAlternate,
     ushort MatchStartMarker,
     ushort MatchStartPayload,
+    ushort ItemBox,
+    ushort ItemBoxState,
     byte ReportedByte)
 {
     /// <summary>The bit one round's identifiers differ from the next round's by.</summary>
@@ -51,7 +69,7 @@ public sealed record MatchRecordGenerationUtils(
     /// carry it.
     /// </summary>
     public static MatchRecordGenerationUtils First { get; } =
-        new(0x090c, 0x0a61, 0x1a54, 0x9a54, 0x5ade, 0x1ade, 0x00);
+        new(0x090c, 0x0a61, 0x1a54, 0x9a54, 0x5ade, 0x1ade, 0x1a50, 0x1a5a, 0x00);
 
     /// <summary>
     /// The set the next round uses: every identifier of this one with
@@ -67,6 +85,8 @@ public sealed record MatchRecordGenerationUtils(
             (ushort)(RoundClockAlternate ^ SiblingBit),
             (ushort)(MatchStartMarker ^ SiblingBit),
             (ushort)(MatchStartPayload ^ SiblingBit),
+            (ushort)(ItemBox ^ SiblingBit),
+            (ushort)(ItemBoxState ^ SiblingBit),
             ReportedByte);
 
     /// <summary>
@@ -78,6 +98,43 @@ public sealed record MatchRecordGenerationUtils(
     /// <param name="reported">Byte the client's readiness report carried.</param>
     /// <returns>The next round's generation.</returns>
     public MatchRecordGenerationUtils Next(byte reported) => Sibling with { ReportedByte = reported };
+
+    /// <summary>
+    /// The identifier set a round plays under when its readiness report arrived
+    /// on this identifier: the generation the reporting client is on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The first round's set is not a function of the round number.</b>
+    /// <c>mgo2-game1.pcapng</c> opens its first round under
+    /// <see cref="First"/> — the report at t+44.76 s is <c>0x1ade</c> and the
+    /// run at t+46.42 s carries <c>0x1a54</c> — while <c>mgo2-game2.pcapng</c>
+    /// opens its first under the sibling, its report at t+56.72 s being
+    /// <c>0x12de</c> and its run at t+62.18 s carrying <c>0x1254</c>. A room
+    /// that opened every first round as <see cref="First"/> would answer that
+    /// client's own report with a <c>0x5ade</c> marker where it asked under
+    /// <c>0x12de</c>, and would stream the round under a set its client is not
+    /// on.
+    /// </para>
+    /// <para>
+    /// The report names the round's set in all five rounds of the two captures
+    /// that carry a report, and the eight rounds the two captures open alternate
+    /// without a break — game1's five are <c>0x1a54</c>, <c>0x1254</c>,
+    /// <c>0x1a54</c>, <c>0x1254</c>, <c>0x1a54</c> (t+46.4 s to t+765.8 s) and
+    /// game2's three are <c>0x1254</c>, <c>0x1a54</c>, <c>0x1254</c> — so the
+    /// parity is carried from the rounds the client has already played rather
+    /// than reset with the match. That is the reading **[I]**; the measurement
+    /// is that the set a round plays under is the one its own report arrived
+    /// under. A room therefore takes its first round's set from the report and
+    /// alternates from there (<see cref="MatchRoundService"/>).
+    /// </para>
+    /// </remarks>
+    /// <param name="identifier">Identifier the report arrived on, class bit included.</param>
+    /// <returns>The generation the round the report opens plays under.</returns>
+    public static MatchRecordGenerationUtils OfReadinessReport(ushort identifier) =>
+        (identifier & ~PeerAcknowledgementUtils.PayloadClassBit) == First.MatchStartPayload
+            ? First
+            : First.Sibling;
 
     /// <summary>
     /// The identifiers a readiness report can arrive under: each round's

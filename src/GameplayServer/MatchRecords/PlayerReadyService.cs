@@ -18,14 +18,18 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <para>
 /// A client re-reports until the round opens: the live run reported twenty-three
 /// times over two minutes and was answered to none of them, which is what a stuck
-/// ready state looks like on the wire. One report is therefore kept per peer — the
-/// byte it carried, since that is what the host echoes back — so a repeat costs
-/// nothing and cannot queue a round per datagram.
+/// ready state looks like on the wire. One report is therefore kept per peer, so a
+/// repeat costs nothing and cannot queue a round per datagram: the byte it carried,
+/// because that is what the host echoes back, and the identifier it arrived on,
+/// because that names the generation the round has to be opened under.
 /// </para>
 /// <para>
 /// The byte the report carries is **[U]**. It is echoed verbatim in the host's
 /// reply and nothing measured here varies with it, so it is carried rather than
-/// interpreted; see <c>docs/protocol/UDP_GAME_CAPTURE.md</c> §3.2.
+/// interpreted; see <c>docs/protocol/UDP_GAME_CAPTURE.md</c> §3.2. The identifier
+/// is the round's own payload record and it *does* vary: it is the generation the
+/// client's counter is on, which the room's first round takes from it rather than
+/// assuming one (see <see cref="MatchRecordGenerationUtils.OfReadinessReport"/>).
 /// </para>
 /// </remarks>
 public sealed class PlayerReadyService
@@ -33,6 +37,7 @@ public sealed class PlayerReadyService
     private readonly Lock gate = new();
     private readonly Dictionary<PeerSession, byte> reports = [];
     private readonly Dictionary<PeerSession, byte> lastReported = [];
+    private readonly Dictionary<PeerSession, ushort> reportIdentifiers = [];
 
     /// <summary>
     /// Notes that a peer has reported itself ready, and reports whether this is
@@ -40,15 +45,17 @@ public sealed class PlayerReadyService
     /// </summary>
     /// <param name="session">Peer that reported.</param>
     /// <param name="reported">Byte the report carried.</param>
+    /// <param name="identifier">Identifier the report arrived on.</param>
     /// <returns><c>true</c> when the peer had not reported before.</returns>
-    public bool Report(PeerSession session, byte reported)
+    public bool Report(PeerSession session, byte reported, ushort identifier)
     {
         lock (gate)
         {
-            // The last byte survives the round it arrived for, because the run
-            // that answers the report echoes it and is written after the room has
-            // taken the pending report.
+            // The last byte and identifier survive the round they arrived for,
+            // because the run that answers the report echoes the byte and is
+            // written after the room has taken the pending report.
             lastReported[session] = reported;
+            reportIdentifiers[session] = identifier;
             return reports.TryAdd(session, reported);
         }
     }
@@ -85,6 +92,21 @@ public sealed class PlayerReadyService
     }
 
     /// <summary>
+    /// The identifier of the last record a peer reported itself ready under,
+    /// which is the generation the round it is owed plays under. It stays after
+    /// the report is taken, because the room opens the round after consuming it.
+    /// </summary>
+    /// <param name="session">Peer to ask about.</param>
+    /// <returns>The identifier, or <c>null</c> for a peer that has not reported.</returns>
+    public ushort? ReportedIdentifier(PeerSession session)
+    {
+        lock (gate)
+        {
+            return reportIdentifiers.TryGetValue(session, out var identifier) ? identifier : null;
+        }
+    }
+
+    /// <summary>
     /// Takes a peer's readiness report, if it has sent one.
     /// </summary>
     /// <remarks>
@@ -115,6 +137,7 @@ public sealed class PlayerReadyService
         {
             reports.Remove(session);
             lastReported.Remove(session);
+            reportIdentifiers.Remove(session);
         }
     }
 }

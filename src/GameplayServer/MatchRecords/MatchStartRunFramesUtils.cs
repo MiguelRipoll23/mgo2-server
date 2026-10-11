@@ -4,20 +4,28 @@ using Mgo2Server.Shared.Utils;
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The frame that opens the round and the four repeats the recorded host sends
-/// after it, as measured from the solo window of <c>mgo2-game1.pcapng</c>. Split
-/// out of <see cref="MatchRecordFramesUtils"/> so neither file exceeds the
-/// repository's size limit; the bodies are built by
+/// The frame that opens the round and the four times the recorded host writes it
+/// again <em>inside the beat that follows</em>, as measured from the solo window
+/// of <c>mgo2-game1.pcapng</c>. Split out of <see cref="MatchRecordFramesUtils"/>
+/// so neither file exceeds the repository's size limit; the bodies are built by
 /// <see cref="MatchRecordBodiesUtils"/>.
 /// </summary>
 public static class MatchStartRunFramesUtils
 {
     /// <summary>
-    /// Delay between the run and each of its repeats: 56 beat frames, 1.85 s,
-    /// measured between the five run-shaped frames of the solo window (counters
-    /// 25, 81, 137, 193 and 249).
+    /// Beat frames between one run-shaped frame and the next: 56, 1.85 s at the
+    /// measured 33 ms beat. Measured from the solo window's own frame counters —
+    /// the run at 32793 and its four repeats at 32849, 32905, 32961 and 33017,
+    /// each 56 frames after the last.
     /// </summary>
-    public const int MatchStartRepeatDelayMilliseconds = 1848;
+    /// <remarks>
+    /// It is a beat-frame interval and not a delay, because the repeats ride in
+    /// the beat rather than in front of it: the recorded host keeps the 33 ms
+    /// frame moving and writes the run-shaped frame <em>instead of</em> the beat
+    /// at those four indices. The writer uses it as a frame index, which is what
+    /// keeps the seven seconds after the run alive.
+    /// </remarks>
+    public const int MatchStartRepeatPeriodFrames = 56;
 
     /// <summary>
     /// The frame that opens the round, written once the client has reported

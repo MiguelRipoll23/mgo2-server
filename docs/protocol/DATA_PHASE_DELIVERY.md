@@ -93,7 +93,7 @@ the mistake this document exists to prevent. **[V]**
 | --- | --- |
 | current round | counted from one; zero before the first opens |
 | maximum rounds | the room's own rule: team deathmatch's round word in the host's saved settings (`MatchRoundSettingsUtils`), zero meaning the room plays on |
-| generation | the identifier set the round plays under — the first round's, then the same set a `0x800` bit along, alternating |
+| generation | the identifier set the round plays under — the first round's is the one its readiness report arrived on (`MatchRecordGenerationUtils.OfReadinessReport`), because the client carries the parity from the rounds it has already played, and each round after it is the same set a `0x800` bit along |
 | round boundary | `MatchRecordFramesUtils.RoundLengthMilliseconds`, 147.6 s, the measured gap between game1's first run (t+46.42 s) and its second (t+194.04 s) |
 
 A round is **due** when it is the first or when the boundary has elapsed, and it
@@ -102,6 +102,16 @@ barrier that keeps a run off a loading screen. The reports are taken when it
 opens, so a client that reports again while the round goes out queues one for the
 round after it, which is the capture's own cadence (game1's client reports 1.66 s
 before each of its rounds, not continuously).
+
+**A queued repeat is a report and not a generation.** The identifier the report
+arrived on is the set the round it is owed plays under, so it decides the first
+round — game1's first reports `0x1ade` and game2's first reports `0x12de` — and
+every round after that takes the sibling of the one before it. Taking the
+alternation from a repeat instead would invert the rest of the room's rounds:
+game1's client sends `0x12de` twice inside its second round (t+190.39 s and
+t+192.68 s) and the next round is the `0x1a54` set again. **[V]** on the
+identifiers; see `UDP_GAME_CAPTURE.md` §3.2 for the alternation across the two
+captures.
 
 **A peer that joins mid-round joins the round.** Its entry round is remembered;
 it beats the round in progress under that round's generation and takes the run

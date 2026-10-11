@@ -383,6 +383,20 @@ report/payload pair in the captures agrees on it — `e1 14` is answered `e0 14 
 arrives under `0x1ade` in one round and `0x12de` (`| 0x0800`) in the next; a live client
 additionally sets the payload-class bit and sends `0x9ade`.
 
+**The parity is the client's, and the first round is not always `0x1a54`.** Every round in
+the captures plays under the set its own report arrived on — five reports, five rounds, no
+disagreement — and the set is not a function of the round number: game1's first round opens
+on the report `0x1ade` under `0x1a54`, and game2's first opens on `0x12de` under `0x1254`.
+Read in capture order the eight rounds the two files open alternate without a break —
+`0x1a54`, `0x1254`, `0x1a54`, `0x1254`, `0x1a54` (game1, t+46.4 s to t+765.8 s), then
+`0x1254`, `0x1a54`, `0x1254` (game2, t+57.4 s to t+224.6 s) — so the client carries the
+parity from the rounds it has already played rather than resetting it with the match. **[V]**
+on the measurement; that the parity is a client-side counter is the reading **[I]** that
+fits it. A host that opened every first round as `0x1a54` would answer game2's client with a
+`0x5ade` marker where that client asked under `0x12de`, and would stream the round under a
+set the client is not on, so `MatchRoundService` takes its first round's set from the report
+(`MatchRecordGenerationUtils.OfReadinessReport`) and alternates from there.
+
 **The answer is written once, with the round.** The `0x5ade` above is the report's own
 identifier with the answer bit set, so the record that opens the round and the answer to
 the report are the same one, and the recorded host writes it once: game1's solo round
@@ -1081,10 +1095,15 @@ counters restart with it.
 
 **The round is opened by the client's readiness report, not by either clock.** §3.2
 measures the pairing: every round in every capture begins 0.6–5.5 s after an `e1 NN`
-report on the round's own payload record, and none begins without one. So the sparse phase
+report on the round's own payload record, and none begins without one. The set the round
+plays under is the one that report arrived on, which is why the first round's is read from
+the report rather than fixed (§3.2). So the sparse phase
 now stops at its last state blob, `PlayerReadyHandler` latches the report, and the writer
-takes it and writes the marker, the match-start run and its four repeats — echoing the
-byte the client sent, as every captured payload does. The 147.6 s goal-ended length remains
+takes it and writes the marker and the match-start run, then writes the run again four
+times *inside* the beat that follows (one every 56 frames, counters 32849/32905/32961/33017)
+— echoing the byte the client sent, as every captured payload does. The repeats are not
+sent ahead of the beat: the recorded host keeps the 33 ms frame moving after the run and
+writes the run-shaped frame in place of the beat at those four indices. The 147.6 s goal-ended length remains
 as the beat phase's round *boundary*: it still decides when the next round becomes due, and
 the round then waits for the client to say it is ready for it.
 

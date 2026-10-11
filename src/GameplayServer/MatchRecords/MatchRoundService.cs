@@ -31,6 +31,23 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// the round after it, the way the capture's client reports once per round.
 /// </para>
 /// <para>
+/// <b>The first round plays under the set its own report names.</b> The
+/// generation is the client's and not the room's: game1's first round opens on
+/// the report <c>0x1ade</c> under the <c>0x1a54</c> set and game2's first on
+/// <c>0x12de</c> under <c>0x1254</c>, because the client carries the parity from
+/// the rounds it has already played — the eight rounds the two captures open
+/// alternate without a break, game1's five <c>0x1a54</c>, <c>0x1254</c>,
+/// <c>0x1a54</c>, <c>0x1254</c>, <c>0x1a54</c> then game2's three
+/// <c>0x1254</c>, <c>0x1a54</c>, <c>0x1254</c>. A room that opened every first
+/// round as <see cref="MatchRecordGenerationUtils.First"/> would answer that
+/// client under the other set's marker and stream a round it is not on. Each
+/// round after the first takes the sibling of the one before it, which is what
+/// keeps a queued repeat in step: game1's client reports <c>0x12de</c> twice
+/// inside its second round (t+190.39 s and t+192.68 s) and the next round is
+/// <c>0x1a54</c> again — read as naming the next round's set, that repeat would
+/// open it under the round just played.
+/// </para>
+/// <para>
 /// <b>A peer that joins mid-round joins the round.</b> The round it entered on
 /// is remembered, so its writer beats the round in progress and writes the
 /// match-start run only for the next one — which is what the capture shows when
@@ -60,6 +77,11 @@ public sealed class MatchRoundService(
     private readonly Dictionary<PeerSession, int> joinRounds = [];
     private int maximumRounds;
     private int currentRound;
+    /// <summary>
+    /// Identifier set of the round being played. Before the first round opens it
+    /// is a placeholder: that round's set comes from the reports it opens on
+    /// (<see cref="OpeningGeneration"/>).
+    /// </summary>
     private MatchRecordGenerationUtils generation = MatchRecordGenerationUtils.First;
     private long roundOpenedAtMilliseconds;
     private long version;
@@ -196,7 +218,7 @@ public sealed class MatchRoundService(
 
                 currentRound++;
                 generation = currentRound == 1
-                    ? MatchRecordGenerationUtils.First
+                    ? OpeningGeneration()
                     : generation.Sibling;
                 roundOpenedAtMilliseconds = now;
                 version++;
@@ -238,6 +260,46 @@ public sealed class MatchRoundService(
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The identifier set the first round opens under: the generation the peers
+    /// reported themselves ready under. The caller holds <see cref="gate"/>.
+    /// </summary>
+    /// <remarks>
+    /// The peers are expected to name the same generation, because the room opens
+    /// one round for all of them; a peer that names the other one is counted and
+    /// named in the log, and the rest decide, since neither set can be written
+    /// for it alone. A room resets to <see cref="MatchRecordGenerationUtils.First"/>
+    /// as its pre-round placeholder when its last peer leaves, and reads its next
+    /// first round's set here again, so a client that arrives with the parity of
+    /// the rounds it has already played is still answered with its own.
+    /// </remarks>
+    /// <returns>The generation the room's first round plays under.</returns>
+    private MatchRecordGenerationUtils OpeningGeneration()
+    {
+        var reported = peers
+            .Select(peer => ready.ReportedIdentifier(peer))
+            .OfType<ushort>()
+            .Distinct()
+            .ToList();
+
+        if (reported.Count == 0)
+        {
+            return MatchRecordGenerationUtils.First;
+        }
+
+        if (reported.Count > 1)
+        {
+            logger.LogWarning(
+                "The room's peers reported themselves ready under {Count} identifier sets ({Identifiers}); "
+                + "opening the first round under 0x{Identifier:x4}",
+                reported.Count,
+                string.Join(", ", reported.Select(identifier => $"0x{identifier:x4}")),
+                reported[0]);
+        }
+
+        return MatchRecordGenerationUtils.OfReadinessReport(reported[0]);
     }
 
     /// <summary>Reads the room's state. The caller holds <see cref="gate"/>.</summary>

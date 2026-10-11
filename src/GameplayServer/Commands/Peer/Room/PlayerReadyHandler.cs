@@ -20,6 +20,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// <item>game1 — <c>0x12de</c> <c>e1 14</c> at t+190.39 s, round open at t+194.04 s.</item>
 /// <item>game2 — <c>0x12de</c> <c>e1 01</c> at t+56.72 s, round open at t+62.18 s.</item>
 /// <item>game2 — <c>0x1ade</c> <c>e1 01</c> at t+107.98 s, round open at t+109.12 s.</item>
+/// <item>game2 — <c>0x12de</c> <c>e1 01</c> at t+223.63 s, round open at t+224.62 s.</item>
 /// </list>
 /// <para>
 /// The report and the host's reply are one record read in two directions: the
@@ -40,9 +41,20 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// that keeps asking.
 /// </para>
 /// <para>
+/// <b>The identifier is also which set the round plays under.</b> It is the
+/// round's own payload record, and the client carries its generation from the
+/// rounds it has already played rather than resetting it with the match: game1's
+/// first round reports <c>0x1ade</c> and game2's first reports <c>0x12de</c>. So
+/// the handler passes the identifier on with the byte, and the room opens its
+/// first round under the generation the report names instead of assuming
+/// <see cref="MatchRecordGenerationUtils.First"/> — see
+/// <see cref="MatchRecordGenerationUtils.OfReadinessReport"/>.
+/// </para>
+/// <para>
 /// The round itself is opened by <see cref="MatchRecordService"/>, which takes
-/// the report from <see cref="PlayerReadyService"/> and writes the marker, the
-/// match-start run and the run's four repeats. The marker <em>is</em> the answer
+/// the report from <see cref="PlayerReadyService"/>, writes the marker and the
+/// match-start run, and writes the run again four times inside the beat that
+/// follows. The marker <em>is</em> the answer
 /// to the report — the same identifier with the answer bit set — which is why
 /// the dispatcher leaves the report unanswered in the pass that received it: a
 /// report answered both ways puts two markers on the wire.
@@ -74,7 +86,7 @@ public sealed class PlayerReadyHandler(
         }
 
         var reported = body[MatchRecordBodiesUtils.ReadinessReportValueIndex];
-        var first = ready.Report(context.Session, reported);
+        var first = ready.Report(context.Session, reported, context.Message.Type);
 
         logger.LogInformation(
             "UDP {LocalPort}: {RemoteAddress} reported itself ready (0x{MessageType:x4} carrying "

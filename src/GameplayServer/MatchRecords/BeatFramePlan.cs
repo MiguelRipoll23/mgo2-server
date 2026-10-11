@@ -134,7 +134,7 @@ public sealed record BeatFramePlan(
         var insertions = new List<MatchRecordFramesUtils.RecordMessage>();
         if (CarriesItemBoxes)
         {
-            insertions.AddRange(ItemBoxFramesUtils.ItemBoxGroup());
+            insertions.AddRange(ItemBoxFramesUtils.ItemBoxGroup(Generation));
         }
 
         if (Insertion is { } insertion)
