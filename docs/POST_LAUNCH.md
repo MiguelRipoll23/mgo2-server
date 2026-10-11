@@ -97,11 +97,14 @@ carriers (no 0x4Axx parser branches on subtype — the split is all consumer-sid
    `ori`; bit 10 is what lets the client send `0x43B0` (the Survival match report), which
    then needs a 4-byte `0x43B1` result. Subtype reaches that record via `0x43F0`/`0x43F1`
    or copied from the team record by six parsers (`mgo2_cmd_4e00_c2s.ksy`, `AUTOMATCH.md`
-   §11).
-8. **Serve the match-flow packets**: `0x4A00` opens the event AND seeds the next-match
-   card's identity (its `new_id` lands in ladder+0 — `0x4A13`'s `card_id` must echo it or
-   the card is dropped, -1106); `0x4A13`/`0x4E20` carry the pairing; `0x4E21`..`0x4E23`
-   update the roster column; `0x4E23` tears the event down.
+   §11).8. **Serve the match-flow packets**: `0x4A00` opens the event AND seeds the next-match card's
+   identity (its `new_id` lands in ladder+0 — `0x4A13`'s `card_id` must echo it or the card is
+   dropped, -1106); `0x4A13`/`0x4E20` carry the pairing; `0x4E21`..`0x4E23` update the roster
+   column; `0x4E23` tears the event down. **The assigned team's record must name its room in
+   `game_id`** (`mgo2_cmd_4987_s2c.ksy`, team+0x268): the Join Game row the `team_state == 5`
+   panel offers sends `0x4312` carrying that word, so a deployed team whose word is zero or a
+   character id cannot ask for its own room — the lobby answers the details request with the
+   room-less reply and the join goes nowhere.
 
 ### Tournament (subtypes 3 and 5)
 

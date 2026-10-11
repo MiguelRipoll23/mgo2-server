@@ -64,7 +64,7 @@ public static class EventSnapshotUtils
         writer.WriteUInt8(snapshot.PrimaryEquipmentType);
         writer.WriteUInt16(snapshot.Field296);
         writer.WriteUInt16(snapshot.Field298);
-        writer.WriteInt32(snapshot.HostIdentifier);
+        writer.WriteInt32(snapshot.GameIdentifier);
         writer.WriteFixedString(snapshot.HostName, 16);
         writer.WriteInt32(snapshot.Field2B4);
         writer.WriteFixedString(snapshot.SecondaryName, 16);

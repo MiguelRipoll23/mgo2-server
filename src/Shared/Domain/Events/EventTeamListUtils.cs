@@ -28,7 +28,7 @@ public static class EventTeamListUtils
         writer.WriteUInt8(EventConstants.TeamMemberLimit);
         writer.WriteUInt8(snapshot.OccupiedParticipantCount());
         writer.WriteUInt8(snapshot.State);
-        writer.WriteInt32(snapshot.HostIdentifier);
+        writer.WriteInt32(snapshot.GameIdentifier);
         writer.WriteUInt8(snapshot.Field0A8);
         writer.WriteUInt8(snapshot.Field0A9);
         writer.WriteInt32(snapshot.Field0AC);

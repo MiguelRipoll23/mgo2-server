@@ -78,10 +78,24 @@ public sealed class EventSnapshot
     /// <summary>Unestablished field at snapshot offset 0x298.</summary>
     public int Field298 { get; set; }
 
-    /// <summary>Character hosting the team.</summary>
-    public int HostIdentifier { get; set; }
+    /// <summary>
+    /// Identifier of the room the team is deployed to, or zero when it holds
+    /// none.
+    /// <para>
+    /// It is not a character: the client's Join Game row sends <c>0x4312</c>
+    /// with this word, so a non-zero value has to name a room the lobby can
+    /// answer for. The client reads a non-zero word as "this team is already in
+    /// a game", which is why a team that holds no room must carry zero — any
+    /// other value offers a rejoin of a room that does not exist.
+    /// </para>
+    /// </summary>
+    public int GameIdentifier { get; set; }
 
-    /// <summary>Name of the hosting character.</summary>
+    /// <summary>
+    /// The snapshot's 16-byte name slot, set from the leader's slot. It is the
+    /// block's game-name field on the wire, and the client's own analysis of the
+    /// disc build finds no reader for it (<c>mgo2_cmd_4987_s2c.ksy</c>).
+    /// </summary>
     public string HostName { get; set; } = string.Empty;
 
     /// <summary>Unestablished field at snapshot offset 0x2b4.</summary>

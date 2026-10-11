@@ -288,6 +288,17 @@ public sealed partial class EventAssignmentService(
             return null;
         }
 
+        var firstSnapshot = EventTeamService.BuildSnapshot(firstTeam);
+        var secondSnapshot = EventTeamService.BuildSnapshot(secondTeam);
+
+        // A deployed team names its room in the team record: the client's Join
+        // Game row sends 0x4312 carrying that word, so the room this assignment
+        // holds is what has to be there. The projection leaves it at zero — a team
+        // that holds no room is not deployed — and the pair of snapshots below is
+        // the deployed pair for exactly as long as the claim exists.
+        firstSnapshot.GameIdentifier = gameIdentifier;
+        secondSnapshot.GameIdentifier = gameIdentifier;
+
         return new EventAssignment
         {
             MatchIdentifier = match.Identifier,
@@ -300,8 +311,8 @@ public sealed partial class EventAssignmentService(
             ActivationTimeSeconds = (int)assignedAt.ToUnixTimeSeconds(),
             LobbyIdentifier = match.LobbyIdentifier,
             LobbySubtype = match.MatchType,
-            FirstTeam = EventTeamService.BuildSnapshot(firstTeam),
-            SecondTeam = EventTeamService.BuildSnapshot(secondTeam),
+            FirstTeam = firstSnapshot,
+            SecondTeam = secondSnapshot,
             FirstRoster = await rosterService.LoadAsync(EventOf(firstTeam), firstTeam.Identifier, cancellationToken),
             SecondRoster = await rosterService.LoadAsync(EventOf(secondTeam), secondTeam.Identifier, cancellationToken),
         };

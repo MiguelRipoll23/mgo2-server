@@ -227,7 +227,6 @@ public sealed class EventTeamService(
             LobbyIdentifier = team.LobbyIdentifier,
             MatchType = team.MatchType,
             EventIdentifier = team.EventIdentifier,
-            HostIdentifier = team.OwnerCharacterIdentifier,
             ConsecutiveWins = team.ConsecutiveWins,
             PaidReward = team.PaidReward,
         };
