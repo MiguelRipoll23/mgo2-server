@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Events;
@@ -7,14 +8,35 @@ using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Events;
 
-/// <summary>Disbands a team the caller leads, or removes the caller from one.</summary>
+/// <summary>
+/// Disbands a team the caller leads, or removes the caller from one.
+/// <para>
+/// The command has a second meaning once the team has been assigned a room. The
+/// client sends the same empty record one more time as the last step of its own
+/// move into the assigned game — after the match-found notification has taken its
+/// team screen through the room's details — and what it is owed then is the ready
+/// acknowledgement, not a team it has just left. Leaving on that record would
+/// cancel the matched pair and hand its room back in the interval before the client
+/// joins it, so a team that holds an assignment is answered and kept.
+/// </para>
+/// </summary>
+/// <param name="teamService">Service that owns the teams.</param>
+/// <param name="memberService">Service that owns the rosters.</param>
+/// <param name="pushService">Service that pushes roster changes.</param>
+/// <param name="invitationService">Service that owns the team invitations.</param>
+/// <param name="matchmakingService">Service that pairs the teams.</param>
+/// <param name="assignmentService">Service that knows which room a team holds.</param>
+/// <param name="sessionHelper">Helper used to write the replies.</param>
+/// <param name="logger">Logger of this handler.</param>
 public sealed class LeaveEventTeamHandler(
     EventTeamService teamService,
     EventTeamMemberService memberService,
     EventTeamPushService pushService,
     EventInvitationService invitationService,
     EventMatchmakingService matchmakingService,
-    SessionHelper sessionHelper) : ICommandHandler
+    EventAssignmentService assignmentService,
+    SessionHelper sessionHelper,
+    ILogger<LeaveEventTeamHandler> logger) : ICommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(TcpSession session, Packet packet, CancellationToken cancellationToken)
@@ -41,6 +63,29 @@ public sealed class LeaveEventTeamHandler(
         if (packet.Payload.Length != 0)
         {
             await RefuseAsync(session, cancellationToken);
+            return;
+        }
+
+        // A team the pairing has put in a room is not a team to leave on this
+        // record: the same empty body is the client's own transition-complete
+        // step, and it is owed the result the assignment sequence answers with.
+        // The pair, its room and its lease are all left alone here, because the
+        // client joins that room next.
+        if (await assignmentService.FindByTeamAsync(teamIdentifier, cancellationToken) is not null)
+        {
+            logger.LogInformation(
+                "Character {CharacterIdentifier} finished entering the room assigned to team {TeamIdentifier}; "
+                + "the team and its assignment are kept",
+                characterIdentifier,
+                teamIdentifier);
+
+            // The ready acknowledgement is the team-leave result record: one
+            // command id, 0x4915, read as a bare result by the client.
+            await sessionHelper.SendResultAsync(
+                session,
+                CommandConstants.EventAssignmentReady,
+                ErrorCodeConstants.ResultNone,
+                cancellationToken);
             return;
         }
 

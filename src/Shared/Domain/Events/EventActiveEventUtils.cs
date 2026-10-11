@@ -23,8 +23,14 @@ public static class EventActiveEventUtils
     /// event state afterwards.
     /// </summary>
     /// <param name="writer">Writer to append to.</param>
-    /// <param name="activeStateIdentifier">Active state the record belongs to; never zero.</param>
-    /// <param name="sequence">Sequence of that active state.</param>
+    /// <param name="teamIdentifier">
+    /// Identity of the recipient's team record, which every record written for
+    /// that team quotes: the client compares the leading word against its open
+    /// record and discards the record with the active-state-mismatch code when
+    /// they differ, before reading another byte. Never an assignment's own
+    /// selector, and never one team's identity written for the other.
+    /// </param>
+    /// <param name="teamSerial">Serial of that same team record, validated with it.</param>
     /// <param name="eventIdentifier">Event being started; never zero.</param>
     /// <param name="globalState">Global phase byte.</param>
     /// <param name="participantStates">Eight participant states.</param>
@@ -34,8 +40,8 @@ public static class EventActiveEventUtils
     /// <param name="detailByte">Detail byte whose meaning is not established.</param>
     public static void WriteActiveEventState(
         PacketWriter writer,
-        int activeStateIdentifier,
-        int sequence,
+        int teamIdentifier,
+        int teamSerial,
         int eventIdentifier,
         int globalState,
         byte[] participantStates,
@@ -49,7 +55,7 @@ public static class EventActiveEventUtils
         RequireParticipants(participantStates);
 
         var start = writer.Size;
-        WritePrefix(writer, activeStateIdentifier, sequence);
+        WritePrefix(writer, teamIdentifier, teamSerial);
         writer.WriteInt32(eventIdentifier);
         writer.WriteUInt8(globalState);
         WriteParticipantStates(writer, participantStates);
@@ -241,17 +247,31 @@ public static class EventActiveEventUtils
         AssertSize(writer, start, EventConstants.EventListBoundaryWireSize, "event list boundary");
     }
 
-    private static void WritePrefix(PacketWriter writer, int activeStateIdentifier, int sequence)
+    /// <summary>
+    /// Writes the six-byte identity header every active-event record opens with.
+    /// The client runs the same check on it before anything else in the record:
+    /// the word is compared against the identity its team record holds and the
+    /// halfword against that record's serial, and a mismatch discards the whole
+    /// record with the active-state-mismatch code rather than a parse error. So
+    /// the pair has to be the identity and serial the team's other records
+    /// carry — the ones a snapshot reply, a roster delta and a team push quote —
+    /// and it is the recipient's own team that is quoted, never the match or the
+    /// assignment.
+    /// </summary>
+    /// <param name="writer">Writer to append to.</param>
+    /// <param name="teamIdentifier">Identity of the receiving team record; never zero.</param>
+    /// <param name="teamSerial">Serial of that same team record.</param>
+    private static void WritePrefix(PacketWriter writer, int teamIdentifier, int teamSerial)
     {
-        if (activeStateIdentifier == 0)
+        if (teamIdentifier == 0)
         {
             throw new ArgumentException(
-                "An active-event record needs a nonzero active-state identifier.",
-                nameof(activeStateIdentifier));
+                "An active-event record needs a nonzero team identity.",
+                nameof(teamIdentifier));
         }
 
-        writer.WriteInt32(activeStateIdentifier);
-        writer.WriteUInt16(sequence);
+        writer.WriteInt32(teamIdentifier);
+        writer.WriteUInt16(teamSerial);
     }
 
     private static void WriteParticipantStates(PacketWriter writer, byte[] states)

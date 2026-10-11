@@ -16,15 +16,19 @@ public static class EventAssignmentUtils
 {
     /// <summary>Writes the match-found notification.</summary>
     /// <param name="writer">Writer to append to.</param>
-    /// <param name="activeStateIdentifier">Active state the assignment established.</param>
-    /// <param name="sequence">Sequence the recipient's snapshot carries.</param>
+    /// <param name="teamIdentifier">
+    /// Identity of the recipient's own team record. The client checks this word
+    /// against its open team record and discards the record on a mismatch, so an
+    /// assignment's own selector here loses the notification.
+    /// </param>
+    /// <param name="teamSerial">Serial of that same record, checked with it.</param>
     /// <param name="ownTeam">Recipient's team.</param>
     /// <param name="opponentTeam">Opposing team.</param>
     /// <param name="recipientCharacterIdentifier">Character the record is written for.</param>
     public static void WriteMatchFound(
         PacketWriter writer,
-        int activeStateIdentifier,
-        int sequence,
+        int teamIdentifier,
+        int teamSerial,
         EventSnapshot ownTeam,
         EventSnapshot opponentTeam,
         int recipientCharacterIdentifier)
@@ -33,9 +37,10 @@ public static class EventAssignmentUtils
         ArgumentNullException.ThrowIfNull(ownTeam);
         ArgumentNullException.ThrowIfNull(opponentTeam);
 
-        // The first identity is recipient-relative: the client compares it with
-        // the local character to decide which of the two cached names is the
-        // opponent, so it must be the character even for a non-leader member.
+        // The identity inside the body is recipient-relative: the client compares
+        // it with the local character to decide which of the two cached names is
+        // the opponent, so it must be the character even for a non-leader member.
+        // It is a different word from the record's leading identity.
         var ownTeamIdentity = recipientCharacterIdentifier;
         var opponentTeamIdentity = opponentTeam.Participants[0].CharacterIdentifier;
         if (ownTeamIdentity == 0 || opponentTeamIdentity == 0
@@ -46,8 +51,8 @@ public static class EventAssignmentUtils
         }
 
         var start = writer.Size;
-        writer.WriteInt32(activeStateIdentifier);
-        writer.WriteUInt16(sequence);
+        writer.WriteInt32(teamIdentifier);
+        writer.WriteUInt16(teamSerial);
         writer.WriteInt32(ownTeam.EventIdentifier);
         writer.WriteUInt8(EventConstants.ActiveEventAssignedState);
         writer.WriteInt32(ownTeamIdentity);
@@ -72,7 +77,7 @@ public static class EventAssignmentUtils
     /// </para>
     /// </summary>
     /// <param name="writer">Writer to append to.</param>
-    /// <param name="cardIdentifier">Identity the active event was opened with; never zero.</param>
+    /// <param name="cardIdentifier">Entry word the active-event record was opened with; never zero.</param>
     /// <param name="ownTeam">Recipient's team.</param>
     /// <param name="opponentTeam">Opposing team.</param>
     /// <param name="recipientCharacterIdentifier">Character the record is written for.</param>
@@ -143,21 +148,21 @@ public static class EventAssignmentUtils
     /// only in the command they are sent under.
     /// </summary>
     /// <param name="writer">Writer to append to.</param>
-    /// <param name="activeStateIdentifier">Active state the recipient holds.</param>
-    /// <param name="sequence">Sequence the recipient's snapshot carries.</param>
+    /// <param name="teamIdentifier">Identity of the recipient's own team record.</param>
+    /// <param name="teamSerial">Serial of that same team record.</param>
     /// <param name="team">Team the recipient is in.</param>
     public static void WriteStateUpdate(
         PacketWriter writer,
-        int activeStateIdentifier,
-        int sequence,
+        int teamIdentifier,
+        int teamSerial,
         EventSnapshot team)
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(team);
 
         var start = writer.Size;
-        writer.WriteInt32(activeStateIdentifier);
-        writer.WriteUInt16(sequence);
+        writer.WriteInt32(teamIdentifier);
+        writer.WriteUInt16(teamSerial);
         writer.WriteUInt8(team.State);
         foreach (var participant in team.Participants)
         {

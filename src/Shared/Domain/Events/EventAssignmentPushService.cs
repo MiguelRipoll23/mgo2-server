@@ -28,6 +28,14 @@ public sealed class EventAssignmentPushService(
     EventSessionDirectoryService sessionDirectory,
     SessionHelper sessionHelper)
 {
+    /// <summary>
+    /// How long the burst waits for the client's own screen transition to land.
+    /// It is measured from the result that answers the client's entry request,
+    /// which is written in the same server call this runs in, so the wait covers
+    /// the client's own settling rather than any network delay.
+    /// </summary>
+    private const int AssignmentSettlingMilliseconds = 500;
+
     /// <summary>Pushes an assignment to both teams and to the room's host.</summary>
     /// <param name="assignment">Assignment to publish.</param>
     /// <param name="hostCharacterIdentifier">Character hosting the room.</param>
@@ -40,18 +48,21 @@ public sealed class EventAssignmentPushService(
     {
         ArgumentNullException.ThrowIfNull(assignment);
 
-        // The client settles into state 37 after its 0x4915 response and before the
-        // 0x4A00 event opens. Delivering the assignment burst against that gate
-        // stalls the server side of the exchange instead of leaving the client
-        // parse the live state before it is in the right lifecycle: the client
-        // keeps its ready-state loop alive and reports it repeatedly while the
-        // run it already received is never re-sent. The two teams are pushed
-        // back-to-back, but only after the first batch has waited such that its
-        // first response is delivered and both clients have entered state 37.
-        var delay = Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
-        var teamPush = PushToTeamAsync(assignment, assignment.FirstTeam, assignment.SecondTeam, cancellationToken);
-        await Task.WhenAll(delay, teamPush);
-        var delivered = await teamPush;
+        // The client moves to its asynchronous state only once the answer to its
+        // own entry request has been consumed, and that answer is the result this
+        // burst immediately follows. An assignment published into that settling
+        // screen is overwritten by it — the client ends up holding no match at all
+        // and never joins the room it was given — so the burst waits the interval
+        // out before it is written. The wait belongs to the client that has just
+        // changed state rather than to either team, so it happens once, and the
+        // two teams' bursts then follow back-to-back the way the reference
+        // publishes them.
+        await Task.Delay(TimeSpan.FromMilliseconds(AssignmentSettlingMilliseconds), cancellationToken);
+        var delivered = await PushToTeamAsync(
+            assignment,
+            assignment.FirstTeam,
+            assignment.SecondTeam,
+            cancellationToken);
         delivered += await PushToTeamAsync(
             assignment,
             assignment.SecondTeam,
@@ -123,11 +134,15 @@ public sealed class EventAssignmentPushService(
             return 0;
         }
 
+        // The teardown is a team notification like the rest, so it quotes the
+        // recipient's own team record: it is validated against that record's
+        // identity and serial before its state byte is read, and an assignment
+        // selector there is discarded instead of emptying the Survival record.
         var writer = new PacketWriter();
         EventAssignmentUtils.WriteStateUpdate(
             writer,
-            assignment.ActiveStateIdentifier,
-            assignment.Sequence,
+            team.SnapshotIdentifier,
+            team.Sequence,
             team);
         var payload = writer.Build();
 
@@ -164,7 +179,6 @@ public sealed class EventAssignmentPushService(
             var characterIdentifier = session.CharacterIdentifier.Value;
 
             // The assignment opens with the ready acknowledgement. The client
-            // The assignment opens with the ready acknowledgement. The client
             // does not consume the unsolicited snapshot below while its team
             // operation is still pending, and this zero result completes it; it
             // is also the team-record reset the snapshot itself performs, so it
@@ -184,17 +198,20 @@ public sealed class EventAssignmentPushService(
                 snapshotWriter.Build(),
                 cancellationToken);
 
-            // The active-event record is the client's own reservation, not a
-            // server state update. In the Survival flow the client writes its
-            // state before the room opens, so the server must not place this
-            // ahead of the client's record, and the identical ordering is kept
-            // for the event-game cache that follows and for the notification that
-            // names the two teams at the end.
+            // The active-event record opens the client's event, and it quotes the
+            // receiving team's own identity rather than the assignment's: the
+            // client checks the record's leading pair against the team record the
+            // snapshot above has just filled, and an assignment selector there is
+            // rejected with the active-state-mismatch code before the event ever
+            // opens — which is a client that ignores its assignment and never
+            // enters the room. The same pair is what every later record for that
+            // team carries, so the team's own is the only value that keeps the
+            // exchange on one identity.
             var activeEventWriter = new PacketWriter();
             EventActiveEventUtils.WriteActiveEventState(
                 activeEventWriter,
-                assignment.ActiveStateIdentifier,
-                assignment.Sequence,
+                team.SnapshotIdentifier,
+                team.Sequence,
                 team.EventIdentifier,
                 EventConstants.ActiveEventAssignedState,
                 EventActiveEventService.BuildParticipantStates(team),
@@ -224,10 +241,14 @@ public sealed class EventAssignmentPushService(
             // Survival client a Tournament pairing instead.
             if (assignment.LobbySubtype == EventConstants.TournamentSelector)
             {
+                // The card echoes the identity the active-event record above was
+                // opened with, which is the event the team record now carries at
+                // its entry slot; the client compares the two and drops a card
+                // that names anything else.
                 var cardWriter = new PacketWriter();
                 EventAssignmentUtils.WriteNextMatchCard(
                     cardWriter,
-                    assignment.ActiveStateIdentifier,
+                    team.EventIdentifier,
                     team,
                     opponent,
                     characterIdentifier,
@@ -244,11 +265,15 @@ public sealed class EventAssignmentPushService(
                     cancellationToken);
             }
 
+            // The match-found notification is the record the client acts on, and
+            // it is validated against the team record exactly as the active-event
+            // record above is: it quotes the receiving team's own identity, so the
+            // two agree with the snapshot that opened the exchange.
             var matchWriter = new PacketWriter();
             EventAssignmentUtils.WriteMatchFound(
                 matchWriter,
-                assignment.ActiveStateIdentifier,
-                assignment.Sequence,
+                team.SnapshotIdentifier,
+                team.Sequence,
                 team,
                 opponent,
                 characterIdentifier);

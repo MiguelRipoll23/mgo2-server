@@ -57,12 +57,14 @@ public sealed class GetAssignedGameSnapshotHandler(
 
         // The snapshot reply clears the client's event caches, so the live
         // event state is restored immediately after it rather than on the next
-        // screen the player opens.
+        // screen the player opens. The restore quotes the team the snapshot just
+        // wrote, because the client checks the record's leading pair against that
+        // team record and drops a record quoting anything else.
         var activeEventWriter = new PacketWriter();
         EventActiveEventUtils.WriteActiveEventState(
             activeEventWriter,
-            assignment.ActiveStateIdentifier,
-            assignment.Sequence,
+            team.SnapshotIdentifier,
+            team.Sequence,
             team.EventIdentifier,
             EventConstants.ActiveEventAssignedState,
             EventActiveEventService.BuildParticipantStates(team),
