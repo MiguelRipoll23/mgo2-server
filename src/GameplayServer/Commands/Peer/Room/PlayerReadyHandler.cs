@@ -42,7 +42,10 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// <para>
 /// The round itself is opened by <see cref="MatchRecordService"/>, which takes
 /// the report from <see cref="PlayerReadyService"/> and writes the marker, the
-/// match-start run and the run's four repeats.
+/// match-start run and the run's four repeats. The marker <em>is</em> the answer
+/// to the report — the same identifier with the answer bit set — which is why
+/// the dispatcher leaves the report unanswered in the pass that received it: a
+/// report answered both ways puts two markers on the wire.
 /// </para>
 /// </remarks>
 /// <param name="ready">Reports peers have sent that open their rounds.</param>

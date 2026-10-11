@@ -242,6 +242,15 @@ public sealed class MatchRecordService(
     /// Writes the round's opening run and its repeats under the given identifier
     /// set, echoing the byte this peer reported.
     /// </summary>
+    /// <remarks>
+    /// <b>The marker is the answer to the readiness report.</b> The marker's
+    /// identifier is the report's own with the answer bit set — <c>0x5ade</c>
+    /// for <c>0x1ade</c>, <c>0x52de</c> for <c>0x12de</c> — which is why the
+    /// dispatcher leaves the report unanswered in the pass that received it and
+    /// this writes the one answer that goes out. The capture agrees: game1's
+    /// solo round carries a single host <c>0x5ade</c>, at t+46.4155 with the run
+    /// and 1.66 s after the report.
+    /// </remarks>
     /// <param name="context">Context the records are written through.</param>
     /// <param name="generation">Identifier set of the round being opened.</param>
     /// <param name="reported">Byte the peer's readiness report carried.</param>
@@ -268,6 +277,8 @@ public sealed class MatchRecordService(
                 MatchRecordFramesUtils.RareControlBody(),
                 MatchRecordFramesUtils.RareControlFourthByte)],
             compressed: false);
+        // The report's answer, written here rather than in the pass that
+        // received it: the recorded host answers with the round.
         await SendAsync(context, [new(generation.MatchStartMarker, [])], compressed: false);
         await SendAsync(
             context,

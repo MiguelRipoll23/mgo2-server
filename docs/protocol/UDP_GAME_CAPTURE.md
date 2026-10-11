@@ -383,6 +383,14 @@ report/payload pair in the captures agrees on it — `e1 14` is answered `e0 14 
 arrives under `0x1ade` in one round and `0x12de` (`| 0x0800`) in the next; a live client
 additionally sets the payload-class bit and sends `0x9ade`.
 
+**The answer is written once, with the round.** The `0x5ade` above is the report's own
+identifier with the answer bit set, so the record that opens the round and the answer to
+the report are the same one, and the recorded host writes it once: game1's solo round
+carries a single host `0x5ade`, at t+46.4155 and in the round's opening burst, and no
+host frame between the report (t+44.76) and that burst carries it. Answering the report
+in the pass that received it as well leaves a second `0x5ade` on the wire; see
+`DATA_PHASE_DELIVERY.md`, which carries the delivery rule built on this pairing.
+
 **What the client means by it is [I], not [V].** The pairing and the timing below are
 measured. That the client's intent is specifically *"my map has loaded and I am ready"* is
 the reading, and it is the one that makes the sequence coherent — a client that cannot

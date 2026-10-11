@@ -69,7 +69,7 @@ from udp_record_semantics import (  # noqa: E402
     profile_name,
     render_name,
     roster_index,
-    waits_for_acknowledgement,
+    waits_for_immediate_answer,
 )
 
 # Ports that are not the peer-to-peer channel. STUN shares the client's p2p
@@ -174,14 +174,17 @@ class Replay:
     def answer_types_due(self, frame: Frame) -> list[int]:
         """The record types this host owes an answer to for one keyed frame.
 
-        A player-profile record is the exception: its roster response opens with
-        the same 0x5001 that would otherwise be its answer, so it is not
-        answered separately (`GameplayServerService.DispatchKeyedAsync`).
+        Two exceptions, both because the answer is written elsewhere. A
+        player-profile record's roster response opens with the same 0x5001 that
+        would otherwise be its answer, so it is not answered separately. And a
+        readiness report's answer is the marker that opens the round -- the same
+        identifier with the answer bit set, written with the run -- so the pass
+        that received it leaves it unanswered (`GameplayServerService.FrameDispatch`).
         """
         return [
             message_type
             for message_type, _, _, body in frame.messages
-            if waits_for_acknowledgement(message_type, body)
+            if waits_for_immediate_answer(message_type, body)
             and not (
                 (message_type & ~PAYLOAD_CLASS_BIT) == PLAYER_PROFILE and profile_name(body)
             )

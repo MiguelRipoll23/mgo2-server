@@ -98,4 +98,19 @@ public sealed record MatchRecordGenerationUtils(
         First.Next(0).MatchStartPayload,
         (ushort)(First.Next(0).MatchStartPayload | PeerAcknowledgementUtils.PayloadClassBit),
     ];
+
+    /// <summary>
+    /// Whether a record identifier is one a client's readiness report arrives
+    /// under.
+    /// </summary>
+    /// <remarks>
+    /// Read by the dispatcher, which has to leave the report unanswered in the
+    /// pass that received it: its answer is the round's own opening marker
+    /// (<see cref="MatchStartMarker"/>), so answering it here as well puts two
+    /// of them on the wire — see <c>docs/protocol/DATA_PHASE_DELIVERY.md</c>.
+    /// </remarks>
+    /// <param name="identifier">Record identifier to test.</param>
+    /// <returns><c>true</c> when the identifier is one a report arrives under.</returns>
+    public static bool IsReadinessReportIdentifier(ushort identifier) =>
+        ReadinessReportIdentifiers.Contains(identifier);
 }

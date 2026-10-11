@@ -1,4 +1,5 @@
 using System.Net;
+using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
@@ -200,6 +201,16 @@ public sealed partial class GameplayServerService
     }
 
     /// <summary>
+    /// Whether a record is the client's readiness report, which this pass does
+    /// not answer: the round's opening marker is its answer.
+    /// </summary>
+    /// <param name="message">Record to test.</param>
+    /// <returns><c>true</c> when the record is a readiness report.</returns>
+    private static bool IsReadinessReport(UdpMessage message) =>
+        MatchRecordGenerationUtils.IsReadinessReportIdentifier(message.Type) &&
+        MatchRecordBodiesUtils.IsReadinessReport(message.Body);
+
+    /// <summary>
     /// Records how far the peer's frame counter has got, without transmitting.
     /// </summary>
     /// <remarks>
@@ -243,6 +254,16 @@ public sealed partial class GameplayServerService
         // exception because its roster response starts with the same 0x5001
         // record-level answer.
         //
+        // The readiness report is the other exception, and it is the round that
+        // answers it. The recorded host answers `e1 NN` with the marker that
+        // opens the round — `0x5ade`, and `0x52de` a 0x800 bit along — and never
+        // with a bare answer in the pass that received it. game1's solo round
+        // carries exactly one host `0x5ade` per report, at t+46.4155, with its
+        // run. Answering it here as well puts a second `0x5ade` on the wire in
+        // the same second, ahead of the round and of the `0xd001` the capture
+        // writes first. `docs/protocol/DATA_PHASE_DELIVERY.md` carries the rule
+        // and `docs/protocol/UDP_GAME_CAPTURE.md` §3.2 the pairing.
+        //
         // An earlier reading of this host's answers was that they cannot be what
         // the peer waits for, because a live join was served them and still
         // stalled. The measurement says otherwise once the answers are read
@@ -257,6 +278,7 @@ public sealed partial class GameplayServerService
         // written by.
         var answers = frame.Messages
             .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
+            .Where(message => !IsReadinessReport(message))
             .Where(message =>
                 (message.Type & ~PeerAcknowledgementUtils.PayloadClassBit) != UdpCommandConstants.PlayerProfile ||
                 PlayerProfileRecordParseUtils.Parse(message.Body) is not { Name.Length: > 0 })

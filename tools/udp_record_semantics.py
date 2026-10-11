@@ -30,6 +30,21 @@ COMPRESSION_MARKER = 0x8000
 # its own entry under, so it is both what is asked and what is answered.
 ROSTER_TYPES = (PLAYER_PROFILE, JOIN_REQUEST)
 
+# MatchRecordBodiesUtils / MatchRecordGenerationUtils: a client's readiness
+# report. The report and the host's answer to it are one record read in two
+# directions -- `e1 NN` from the client, `e0 NN ...` from the host -- and its
+# identifier alternates with the round (`0x1ade`, then `0x12de` a 0x800 bit
+# along), each also with the payload-class bit set, because a live client sends
+# `0x9ade` where the captures show `0x1ade`.
+READINESS_REPORT_OPCODE = 0xE1
+READINESS_REPORT_LENGTH = 2
+READINESS_REPORT_IDENTIFIERS = (
+    0x1ADE,
+    0x1ADE | PAYLOAD_CLASS_BIT,
+    0x12DE,
+    0x12DE | PAYLOAD_CLASS_BIT,
+)
+
 # PeerCommandHandlerRegistration.
 HANDLERS = {
     HANDSHAKE: "AcceptHandshakeHandler",
@@ -219,6 +234,33 @@ def waits_for_acknowledgement(message_type: int, body: bytes) -> bool:
     if message_type < TICK_RECORD_THRESHOLD or message_type & ACKNOWLEDGEMENT_BIT:
         return False
     return not is_frame_acknowledgement(message_type, body)
+
+
+def is_readiness_report(message_type: int, body: bytes) -> bool:
+    """Whether a record is a client's readiness report, which the round answers.
+
+    The report's answer is the marker that opens the round -- its identifier
+    with the answer bit set -- so the host writes it once, with the run, and not
+    in the pass that received the report. Answering it both ways puts two of
+    them on the wire; game1's solo round carries one host `0x5ade` per report.
+    """
+    return (
+        message_type in READINESS_REPORT_IDENTIFIERS
+        and len(body) == READINESS_REPORT_LENGTH
+        and body[0] == READINESS_REPORT_OPCODE
+    )
+
+
+def waits_for_immediate_answer(message_type: int, body: bytes) -> bool:
+    """Whether this host answers a record in the pass that received it.
+
+    Everything that owes an answer is answered at once, except the readiness
+    report: its answer is the round's opening marker, written when the round
+    opens.
+    """
+    return waits_for_acknowledgement(message_type, body) and not is_readiness_report(
+        message_type, body
+    )
 
 
 def answer_type_of(message_type: int) -> int:
