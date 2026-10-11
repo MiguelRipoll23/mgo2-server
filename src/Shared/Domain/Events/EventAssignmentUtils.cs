@@ -54,7 +54,16 @@ public static class EventAssignmentUtils
         writer.WriteInt32(teamIdentifier);
         writer.WriteUInt16(teamSerial);
         writer.WriteInt32(ownTeam.EventIdentifier);
-        writer.WriteUInt8(EventConstants.ActiveEventAssignedState);
+
+        // The byte here is the team's own event-participation state, not the
+        // active-event phase. It was written as ActiveEventAssignedState (5),
+        // which is the constant 0x4A00 uses to open the assigned screen; on this
+        // command (0x4E20) the same position is team_state, and 5 is the value
+        // the client draws as "a game is already in progress" with a Join Game
+        // row. A team that has only just been paired has not started a game, so
+        // the honest value is the state the team itself holds — the client
+        // renders the pairing from the notification's team block either way.
+        writer.WriteUInt8(Clamped(ownTeam.State));
         writer.WriteInt32(ownTeamIdentity);
         writer.WriteFixedString(ownTeam.Name, 16);
         writer.WriteUInt8(Clamped(ownTeam.ConsecutiveWins));

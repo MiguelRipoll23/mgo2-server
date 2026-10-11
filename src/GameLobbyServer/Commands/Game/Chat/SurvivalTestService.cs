@@ -44,10 +44,10 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// would with a real teammate.
 /// </para>
 /// <para>
-/// The steps are spaced a second apart so the client's screens settle between
-/// them, and each run starts from a clean slate: the in-memory stores and the
-/// half-finished runs are reset first, so a second run does not build on the
-/// first one's rows.
+/// The steps are spaced ten seconds apart so the client's screens settle between
+/// them the way they do in a live field, and each run starts from a clean slate:
+/// the in-memory stores and the half-finished runs are reset first, so a second
+/// run does not build on the first one's rows.
 /// </para>
 /// </summary>
 /// <param name="teamMemoryService">Store that owns the simulated teams and members.</param>
@@ -77,8 +77,13 @@ public sealed class SurvivalTestService(
     /// <summary>Text that triggers the test.</summary>
     public const string CommandText = "/test";
 
-    /// <summary>Seconds between one scripted step and the next.</summary>
-    private const int StepDelaySeconds = 1;
+    /// <summary>
+    /// Seconds between one scripted step and the next. It is the same interval
+    /// the real field spends in each state — the assignment burst waits the same
+    /// ten seconds before it advances the team — so the scripted run shows the
+    /// states for as long as a live one does.
+    /// </summary>
+    private const int StepDelaySeconds = 10;
 
     /// <summary>Simulated players the real team is padded with.</summary>
     private const int AddedMemberCount = 2;

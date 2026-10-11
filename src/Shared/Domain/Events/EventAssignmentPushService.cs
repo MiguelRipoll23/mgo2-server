@@ -29,12 +29,20 @@ public sealed class EventAssignmentPushService(
     SessionHelper sessionHelper)
 {
     /// <summary>
-    /// How long the burst waits for the client's own screen transition to land.
-    /// It is measured from the result that answers the client's entry request,
-    /// which is written in the same server call this runs in, so the wait covers
-    /// the client's own settling rather than any network delay.
+    /// How long the burst waits before it is written. It is measured from the
+    /// result that answers the client's entry or decision request, which is
+    /// written by the same server call this runs in, so the wait covers the
+    /// client's own settling rather than any network delay.
+    /// <para>
+    /// The wait is also the interval the client spends on its "entry complete /
+    /// searching for an opponent" state: the burst is what advances it to the
+    /// "opponent determined" state and then to the room, so a wait that is too
+    /// short makes the two states overlap the modal before them. Ten seconds is
+    /// the intended per-transition time for both the real field and the scripted
+    /// <c>/test</c> run, which both reach the room through this burst.
+    /// </para>
     /// </summary>
-    private const int AssignmentSettlingMilliseconds = 500;
+    private const int AssignmentSettlingMilliseconds = 10_000;
 
     /// <summary>Pushes an assignment to both teams and to the room's host.</summary>
     /// <param name="assignment">Assignment to publish.</param>
