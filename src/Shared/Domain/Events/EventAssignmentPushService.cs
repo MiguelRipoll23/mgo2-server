@@ -12,9 +12,9 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// operation is still pending; the snapshot reply then clears the
 /// client's event caches, so the live state is restored immediately after it; the
 /// event-game cache clears itself before reading its body, so it arrives before
-/// the notification that names the two teams; the next-match card seeds the
-/// shared ladder record the notification fills; and the notification is written
-/// last because it is the one the client acts on.
+/// the notification that names the two teams; a Tournament assignment's pairing
+/// card seeds the shared record before the notification that fills it; and the
+/// notification is written last because it is the one the client acts on.
 /// </para>
 /// <para>
 /// The notification is written per recipient, not once per team: its first
@@ -202,26 +202,33 @@ public sealed class EventAssignmentPushService(
                 gameWriter.Build(),
                 cancellationToken);
 
-            // The next-match card seeds the shared ladder record the notification
-            // below names from, so it lands before the client acts on the pairing.
-            var cardWriter = new PacketWriter();
-            EventAssignmentUtils.WriteNextMatchCard(
-                cardWriter,
-                assignment.ActiveStateIdentifier,
-                team,
-                opponent,
-                characterIdentifier,
-                ReferenceEquals(team, assignment.FirstTeam)
-                    ? assignment.FirstRoster
-                    : assignment.SecondRoster,
-                ReferenceEquals(team, assignment.FirstTeam)
-                    ? assignment.SecondRoster
-                    : assignment.FirstRoster);
-            await sessionHelper.SendPacketAsync(
-                session,
-                CommandConstants.EventNextMatchCard,
-                cardWriter.Build(),
-                cancellationToken);
+            // The next-match card (0x4A13) belongs to the Tournament draw: it
+            // names the bracket's frozen rosters and the client routes it to the
+            // Tournament screen family. A Survival pairing is announced by the
+            // match-found notification below, which writes the same shared record
+            // from the pair's own snapshot, so sending the card here would hand a
+            // Survival client a Tournament pairing instead.
+            if (assignment.LobbySubtype == EventConstants.TournamentSelector)
+            {
+                var cardWriter = new PacketWriter();
+                EventAssignmentUtils.WriteNextMatchCard(
+                    cardWriter,
+                    assignment.ActiveStateIdentifier,
+                    team,
+                    opponent,
+                    characterIdentifier,
+                    ReferenceEquals(team, assignment.FirstTeam)
+                        ? assignment.FirstRoster
+                        : assignment.SecondRoster,
+                    ReferenceEquals(team, assignment.FirstTeam)
+                        ? assignment.SecondRoster
+                        : assignment.FirstRoster);
+                await sessionHelper.SendPacketAsync(
+                    session,
+                    CommandConstants.EventNextMatchCard,
+                    cardWriter.Build(),
+                    cancellationToken);
+            }
 
             var matchWriter = new PacketWriter();
             EventAssignmentUtils.WriteMatchFound(
