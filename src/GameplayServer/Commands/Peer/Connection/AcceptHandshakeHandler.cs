@@ -46,7 +46,7 @@ public sealed class AcceptHandshakeHandler(
         context.Session.SessionKey = handshake.CounterBase ^ hostIdentity.CounterBase;
         context.Session.PeerAddressData = FrameBuilderUtility.EndpointData(handshake.Pairs);
 
-        var dialBack = AdvertisedEndpointOf(handshake) ?? context.Remote;
+        var dialBack = AdvertisedEndpointOf(handshake, context.Remote) ?? context.Remote;
         context.Session.DialBack = dialBack;
 
         // The capability byte and the mode are what tell a joiner from a host on
@@ -87,7 +87,8 @@ public sealed class AcceptHandshakeHandler(
             hostIdentity.PeerIdentifier,
             hostIdentity.CounterBase,
             hostIdentity.AdvertisedAddress,
-            hostIdentity.AdvertisedPort);
+            hostIdentity.AdvertisedPort,
+            hostIdentity.PrivateAddress);
         await context.Send(UdpCommandConstants.Handshake, reply, 0);
         logger.LogDebug(
             "UDP {LocalPort}: sent pre-keyed handshake reply to {RemoteAddress}",
@@ -102,16 +103,49 @@ public sealed class AcceptHandshakeHandler(
             handshake.PeerIdentifier);
     }
 
-    private static IPEndPoint? AdvertisedEndpointOf(HandshakeBody handshake)
+    /// <summary>
+    /// Picks the endpoint to answer a peer at, from the pairs it advertised.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The recorded host answered the joiner's <em>second</em> advertised pair.
+    /// game1's joiner advertised <c>217.138.213.5:5730</c> and then
+    /// <c>10.2.0.2:5730</c>, and all 18 528 datagrams the host sent went to the
+    /// second -- which is also the endpoint the handshake arrived from.
+    /// </para>
+    /// <para>
+    /// So a pair equal to the address the datagram came from is preferred over an
+    /// earlier one. That address is known to reach us, which an earlier pair may
+    /// not be: a peer on our own network advertises its public address first and
+    /// its LAN address second, and answering the public one means sending out
+    /// through the router and back in, which a router without hairpinning
+    /// drops. When no pair matches, the first valid pair is used, which is what
+    /// a peer across the internet needs and what this did before.
+    /// </para>
+    /// </remarks>
+    /// <param name="handshake">The peer's handshake.</param>
+    /// <param name="observed">Endpoint the handshake actually arrived from.</param>
+    /// <returns>The endpoint to answer at, or <c>null</c> when none is usable.</returns>
+    private static IPEndPoint? AdvertisedEndpointOf(HandshakeBody handshake, IPEndPoint observed)
     {
+        IPEndPoint? first = null;
+
         foreach (var pair in handshake.Pairs)
         {
-            if (pair.Port != 0 && IPAddress.TryParse(pair.Address, out var address))
+            if (pair.Port == 0 || !IPAddress.TryParse(pair.Address, out var address))
             {
-                return new IPEndPoint(address, pair.Port);
+                continue;
             }
+
+            var endpoint = new IPEndPoint(address, pair.Port);
+            if (endpoint.Equals(observed))
+            {
+                return endpoint;
+            }
+
+            first ??= endpoint;
         }
 
-        return null;
+        return first;
     }
 }

@@ -88,10 +88,10 @@ whose only content is ack entries (acks of acks are consumed, never answered). I
 capture the joiner's 17-byte `05 00 | 01 10 | 01 01 00` frames are its acks of host seq 1.
 Implemented in `DedicatedHostService.ackInbound()`.
 
-### `0x1001` — player / room record [V]
+### `0x1001` — player entry [V]
 
-**Guess: the reliable room record — one player profile per record, re-sent until the room
-answers.** **[V]**
+**Guess: the reliable profile record — one player's entry per record, the host's own among
+them, re-sent until the room answers.** **[V]**
 
 The only other type the recorded stream ever carries: 77 of the 78 records in every replay.
 It is the *reliable-class id 1*. The host answers a joiner's profile with the whole room
@@ -201,7 +201,9 @@ Four shapes share the type. Counts are per replay; they are identical in all fiv
 
 **Guess: one player's room entry — name and clan.** **[V]**
 
-Body layout (§6.4), little-endian: byte `0x00 = 0x07`, record **sub-type** at `0x01`,
+Body layout (§6.4), little-endian: byte `0x00 = 0x07`, and at `0x01` the record's **own
+length less seven** — not a sub-type, as this line used to say; `UDP_GAME_CAPTURE.md`
+§8.11 has the measurement, and it is what makes the value move with the name —
 `0x04 = 0xe2 + roster index` (or a plain `0x00` for the host), and the same per-player
 value at `0x05` and `0x07`. Those values match the member bytes in the `0x0261`/`0x0a61`
 rules-roster-shaped records, making them likely opaque per-player handles **[I]**; their
@@ -247,6 +249,10 @@ player state". **Not implemented** — sending guessed structure would be worse 
 none.
 
 ### Loadout — 16 per replay, bodies 25–161 bytes [U]
+
+**Superseded.** The record is decoded in `UDP_SETTINGS_PAYLOAD.md`: it is the
+replay console's `TYPE_SETTINGS`, the host's rotation record and each player's
+appearance and skills. The reading below is kept for provenance.
 
 **Guess: a per-thing loadout record, not per-player.** **[U]**
 

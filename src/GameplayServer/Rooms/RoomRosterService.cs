@@ -8,35 +8,10 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
-/// Holds the roster of the room this host is playing and turns it into the
-/// player-profile records a joining client is answered with.
+/// Holds the room roster and turns it into the player-profile records a joining
+/// client is answered with. The recorded host wrote its own entry first then one
+/// per joining player in roster order (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4).
 /// </summary>
-/// <remarks>
-/// <para>
-/// A joining client sends its own profile and then re-sends it, byte for byte,
-/// until the host answers. The answer is not one record but the room: the
-/// recorded host wrote its own entry first and then one entry per joining
-/// player, in roster order, back to back in the same message stream
-/// (<c>docs/mgo2-game.pcapng</c>; see
-/// <c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4). Until the client has seen
-/// that sequence it
-/// has no slot of its own and no way to place the players around it, which is
-/// why it keeps retrying.
-/// </para>
-/// <para>
-/// The host's own entry sits at <see cref="PlayerProfileRecordUtility.HostRosterIndex"/>;
-/// the joining players fill 0, 1, 2 and so on, in the order they arrive. Slots
-/// are handed out per remote endpoint, so a client that re-sends its profile
-/// keeps the slot it was first given instead of taking a new one each retry.
-/// </para>
-/// <para>
-/// Each entry repeats the character id at offset 8 and the two public/private
-/// IPv4 endpoint pairs at <c>0x13</c>–<c>0x1e</c>. The capture shows those twelve
-/// bytes equal the corresponding pairs in that character's handshake; they are
-/// endpoint data, not appearance. The handshake bytes are retained so the
-/// roster echoes the addresses the joining client actually announced.
-/// </para>
-/// </remarks>
 /// <param name="hostIdentity">Identity this host presents to its peers.</param>
 public sealed class RoomRosterService(
     HostIdentityService hostIdentity,
@@ -44,6 +19,28 @@ public sealed class RoomRosterService(
 {
     /// <summary>Roster slot of the first joining player.</summary>
     public const sbyte FirstJoinerRosterIndex = 0;
+
+    /// <summary>
+    /// Slot the host's own entry carries in the room's player table. The client
+    /// binary numbers that table from <c>0</c>; the recorded host's own entry
+    /// carries zero in the one captured round it is legible in
+    /// (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §8.4). It is the one key a
+    /// joining player's entry must never carry, and 
+    /// <see cref="FirstJoinerSessionSlot"/> is why it does not.
+    /// </summary>
+    public const byte HostSessionSlot = PlayerProfileRecordUtility.HostSessionSlot;
+
+    /// <summary>First slot handed to a joining player; the host holds slot zero.</summary>
+    public const byte FirstJoinerSessionSlot = 1;
+
+    /// <summary>
+    /// Number of slots in the room's player table, so slots run <c>0</c> to
+    /// <c>23</c>. It is the table the client binary's lookup <c>0x26d5a8</c>
+    /// walks: 24 records of <c>0x74</c> bytes, key in the first byte and
+    /// <c>0xff</c> for an empty one. Every handle the captured rosters carry
+    /// lies in this range.
+    /// </summary>
+    public const int SessionSlotCount = 24;
 
     /// <summary>
     /// Type the host's own roster entry is sent under, which is not the type the
@@ -64,28 +61,47 @@ public sealed class RoomRosterService(
     private readonly List<RosterMember> members = [];
 
     /// <summary>
-    /// Adds a peer to the roster, or refreshes the one already there, and
-    /// returns the slot it ended up in.
+    /// The fourth byte the next record of the roster exchange takes.
+    /// </summary>
+    /// <remarks>
+    /// The run numbers its positions from zero: the head and the host's own entry
+    /// both read zero, the joining players read one upwards, and the close reads
+    /// <see cref="JoinerCount"/> + 1. What follows the run keeps counting rather
+    /// than restarting — the burst the recorded host sends 2.52 s later reads 3,
+    /// 4, 5 and 6 under a one-player roster, which is this value and the three
+    /// after it (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4) — so a sender that
+    /// restarts the count writes numbers the peer has already seen.
+    /// </remarks>
+    public byte NextRunOrdinal
+    {
+        get
+        {
+            lock (gate)
+            {
+                return (byte)(members.Count + 2);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Adds or refreshes a peer on the roster, returning the slot it ended up in.
+    /// A peer without a readable profile still takes a slot — the slot is what the
+    /// room is keyed on.
     /// </summary>
     /// <param name="remote">Endpoint the peer is reached at.</param>
-    /// <param name="profile">
-    /// Profile the peer announced, or <c>null</c> when its body could not be
-    /// read. A peer without a readable profile still takes a slot, because the
-    /// slot is what the room is keyed on.
+    /// <param name="profile">Profile the peer announced, or <c>null</c> when unreadable.</param>
+    /// <param name="characterId">
+    /// The peer's character id, taken from its handshake: the captured hosts
+    /// write that handshake value straight into offset <c>0x08</c> of the
+    /// peer's roster entry (game1: joiner handshake <c>0x0001232f</c> appears
+    /// as <c>74543</c> there, the host's own <c>0x0000a001</c> as <c>40961</c>).
     /// </param>
-    /// <param name="peerIdentifier">
-    /// Identifier the peer announced in its handshake, which is what the
-    /// character id of its roster entry is written from.
-    /// </param>
-    /// <param name="peerAddressData">
-    /// Public and private IPv4 endpoint pairs from the peer's handshake, packed
-    /// for the roster record. Invalid or incomplete data is retained as empty.
-    /// </param>
+    /// <param name="peerAddressData">Endpoint pairs from the handshake, packed for the roster record.</param>
     /// <returns>The roster entry the peer is now filed under.</returns>
     public RosterMember Register(
         IPEndPoint remote,
         PlayerProfileRecord? profile,
-        uint peerIdentifier,
+        uint characterId,
         byte[] peerAddressData)
     {
         var key = remote.ToString();
@@ -98,7 +114,7 @@ public sealed class RoomRosterService(
                 // A re-sent profile is the client still waiting for its answer,
                 // not a second player, so the slot is kept and only the details
                 // the client restated are refreshed.
-                existing.CharacterId = (int)peerIdentifier;
+                existing.CharacterId = (int)characterId;
                 existing.Name = profile is { Name.Length: > 0 } ? profile.Name : existing.Name;
                 existing.ClanName = profile?.ClanName ?? existing.ClanName;
 
@@ -120,7 +136,8 @@ public sealed class RoomRosterService(
 
             var member = new RosterMember(key, NextFreeIndex())
             {
-                CharacterId = (int)peerIdentifier,
+                SessionSlot = NextFreeSessionSlot(),
+                CharacterId = (int)characterId,
                 Name = profile?.Name ?? string.Empty,
                 ClanName = profile?.ClanName ?? string.Empty,
                 AddressData = peerAddressData.ToArray(),
@@ -150,44 +167,8 @@ public sealed class RoomRosterService(
         }
     }
 
-    /// <summary>
-    /// The fourth byte the next record of the roster exchange takes.
-    /// </summary>
-    /// <remarks>
-    /// The run numbers its positions from zero: the head and the host's own entry
-    /// both read zero, the joining players read one upwards, and the close reads
-    /// <see cref="JoinerCount"/> + 1. What follows the run keeps counting rather
-    /// than restarting — the burst the recorded host sends 2.5 s later reads 3, 4,
-    /// 5 and 6 under a one-player roster, which is this value and the three after
-    /// it — so a sender that restarts the count writes numbers the peer has
-    /// already seen.
-    /// </remarks>
-    public byte NextRunOrdinal
-    {
-        get
-        {
-            lock (gate)
-            {
-                return (byte)(members.Count + 2);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Removes a peer from the roster and frees its slot.
-    /// </summary>
-    /// <remarks>
-    /// A peer leaves by going quiet, and the session reaper is the only place
-    /// that is noticed, so this is called from there with the endpoint the
-    /// session is keyed on. Calling it back is what keeps a departed peer from
-    /// being answered to the next joiner: the roster is handed out whole on
-    /// every profile, and an entry that is never removed is a peer every later
-    /// joiner is told to dial, at the address it really held.
-    /// </remarks>
-    /// <param name="remoteAddress">
-    /// Endpoint the peer was filed under, formatted as "address:port", the same
-    /// form <see cref="Register"/> files it by.
-    /// </param>
+    /// <summary>Removes a peer from the roster. Called by the session reaper.</summary>
+    /// <param name="remoteAddress">Endpoint the peer was filed under.</param>
     /// <returns>True when the peer was on the roster.</returns>
     public bool Remove(string remoteAddress)
     {
@@ -204,10 +185,10 @@ public sealed class RoomRosterService(
     }
 
     /// <summary>
-    /// Builds the roster as the sequence of profile records the host sends to a
-    /// peer: its own entry first, then every joining player in slot order.
+    /// Builds the roster as profile records: the host's own entry first, then every
+    /// joining player in slot order.
     /// </summary>
-    /// <returns>One record body per roster entry, in the order they are sent.</returns>
+    /// <returns>One record body per entry, in send order.</returns>
     public List<byte[]> BuildRecords()
     {
         List<RosterMember> ordered;
@@ -220,28 +201,27 @@ public sealed class RoomRosterService(
         var records = new List<byte[]>
         {
             PlayerProfileRecordUtility.Build(
-                PlayerProfileRecordUtility.RoomRecordSubType,
+                isHostEntry: true,
                 PlayerProfileRecordUtility.HostRosterIndex,
                 (int)hostIdentity.PeerIdentifier,
                 hostIdentity.CharacterName,
                 hostIdentity.ClanName,
+                HostSessionSlot,
                 addressData: hostIdentity.AddressData,
-                PlayerProfileRecordUtility.RoomRecordUnresolvedByte),
+                unresolvedByte: PlayerProfileRecordUtility.HostEntryUnresolvedByte),
         };
         records.AddRange(ordered.Select(member => member.BuildRecord()));
         return records;
     }
 
+
+
     /// <summary>
-    /// Builds the whole roster run as it goes on the wire: the empty record the
-    /// recorded host opens with, its own entry under <see cref="HostEntryType"/>,
-    /// every joining player's entry under
-    /// <see cref="UdpCommandConstants.PlayerProfile"/>, and the record that closes
-    /// the run last.
+    /// Builds the roster run as it goes on the wire: empty head, the host's own
+    /// entry under <see cref="HostEntryType"/>, every joining player under
+    /// <see cref="UdpCommandConstants.PlayerProfile"/>, and the close record last.
     /// </summary>
-    /// <returns>
-    /// The records in the order they are sent, each with the type it travels as.
-    /// </returns>
+    /// <returns>The records in send order, each with the type it travels as.</returns>
     public List<RosterRecord> BuildRosterRun()
     {
         var entries = BuildRecords();
@@ -330,45 +310,60 @@ public sealed class RoomRosterService(
 
         throw new InvalidOperationException("The room roster is full; no slot is left for another player.");
     }
+
+    /// <summary>
+    /// Hands out the lowest free slot in the room's player table, host zero
+    /// excepted. Distinct per live player; released when they leave.
+    /// </summary>
+    private byte NextFreeSessionSlot()
+    {
+        var taken = members.Select(member => member.SessionSlot).ToHashSet();
+
+        for (var value = FirstJoinerSessionSlot; value < SessionSlotCount; value++)
+        {
+            if (!taken.Contains((byte)value))
+            {
+                return (byte)value;
+            }
+        }
+
+        throw new InvalidOperationException("The room's player table is full; no key is left for another player.");
+    }
 }
 
 /// <summary>One record of the roster run, with the type it travels as.</summary>
 /// <param name="Type">Message type the record is sent under.</param>
 /// <param name="Body">Record body.</param>
 /// <param name="Ordinal">
-/// Value for the record's fourth byte, which the recorded host fills with the
-/// record's position in the run rather than leaving at zero.
+/// Fourth byte: the record's position in the run. The recorded host fills it
+/// for every record (head and host = 0, first player = 1, close = player count);
+/// the repeat drops the head and keeps the rest. Later frames continue the count
+/// rather than restart it.
 /// </param>
-/// <remarks>
-/// Measured off the live capture's opening exchange, where the host sends the
-/// run twice and both frames carry the same numbers:
-/// <code>
-/// hdr 0x8002  0x5001 byte 0   0x9001 byte 0   0x1001 byte 1   0x1001 byte 2
-/// hdr 0x8003  0x9001 byte 0   0x1001 byte 1   0x1001 byte 2
-/// hdr 0x0004  0x5001 byte 0
-/// </code>
-/// The head and the host's own entry both read zero, the first player reads
-/// one, and the record that closes the run reads the number of players after
-/// the host. The repeat drops the head and keeps every other number, so the
-/// value belongs to the record's place in the run and not to its position in
-/// the frame. Later frames continue the same count rather than restarting it
-/// — three players at <c>hdr 0x8005</c> read 4, 5 and 6 — so this is a counter
-/// over the roster as it grows, not a per-frame index.
-/// <para>
-/// What the number <em>means</em> is still unresolved; it is written because the
-/// recorded host writes it and a peer may read it. Nothing here depends on it.
-/// </para>
-/// </remarks>
 public sealed record RosterRecord(ushort Type, byte[] Body, byte Ordinal = 0);
 
 /// <summary>One joining player on the room roster.</summary>
-/// <param name="RemoteAddress">Endpoint the player is reached at, formatted as "address:port".</param>
+/// <param name="RemoteAddress">Endpoint the player is reached at ("address:port").</param>
 /// <param name="RosterIndex">Slot the player fills, counted from zero.</param>
 public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
 {
     /// <summary>
-    /// Character identifier the player announced, read off offset 8 of its
-    /// profile.
+    /// The player's slot in the room's 24-entry network player table (offsets 0x05
+    /// and 0x07 of its roster entry), the byte the replay console's <c>rpdt.js</c>
+    /// calls <c>slot</c>. The host allocates it; the captured host does not echo
+    /// the value its client announced (game1's client sent <c>0x05</c> and the
+    /// host wrote <c>0x14</c>), and the values it hands out are distinct per live
+    /// player and released when they leave. How the host picks it is unresolved,
+    /// so this server takes the lowest free one.
+    /// </summary>
+    public byte SessionSlot { get; init; }
+
+    /// <summary>
+    /// Character identifier of the player, written at offset <c>0x08</c> of its
+    /// roster entry. It is the identifier from the player's handshake, which is
+    /// the character id; the captures confirm both sides (game1: the joiner's
+    /// handshake <c>0x0001232f</c> is written as <c>74543</c>, the host's own as
+    /// <c>40961</c>).
     /// </summary>
     public int CharacterId { get; set; }
 
@@ -388,11 +383,12 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
     /// <returns>The record body.</returns>
     public byte[] BuildRecord() =>
         PlayerProfileRecordUtility.Build(
-            PlayerProfileRecordUtility.PlayerEntrySubType,
+            isHostEntry: false,
             RosterIndex,
             CharacterId,
             Name,
             ClanName,
-            AddressData,
-            PlayerProfileRecordUtility.PlayerRecordUnresolvedByte);
+            SessionSlot,
+            addressData: AddressData,
+            unresolvedByte: PlayerProfileRecordUtility.PlayerRecordUnresolvedByte);
 }

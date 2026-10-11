@@ -238,10 +238,6 @@ public sealed partial class GameplayServerService
             $"compression={(frame.Compressed ? "compressed" : "uncompressed")} from {session.DialBack}",
             decoded);
 
-        var tickMessages = frame.Messages
-            .Where(message => message.Type < UdpCommandConstants.TickRecordThreshold)
-            .ToList();
-
         // Answer numbered records before handing them to a handler. Frame ACK
         // entries are excluded by the utility, and a valid profile is the
         // exception because its roster response starts with the same 0x5001
@@ -275,12 +271,10 @@ public sealed partial class GameplayServerService
                 answers.Count,
                 string.Join(", ", answers.Select(message => $"0x{message.Type:x4}")));
 
-            // Written a beat after this frame, not inside its dispatch: the
-            // recorded host answers on its next pass and never in the
-            // millisecond the record arrived, and an answer served instantly is
-            // outside the only envelope a peer has been shown.
-            // `PeerAnswerSchedulerService` carries the measurement.
-            answerScheduler.Schedule(session, answers, (peerSession, messages) => SendMessages(peerSession, messages));
+            // Written in this pass, not scheduled off it: the answers carry the
+            // same fourth byte as the records they answer, so a peer matches
+            // them against the bookkeeping of the frame it has just sent.
+            SendMessages(session, answers);
         }
 
         foreach (var message in frame.Messages)
@@ -302,31 +296,57 @@ public sealed partial class GameplayServerService
                 continue;
             }
 
+            // A record-level answer is the peer saying it has one of ours, and
+            // needs no reply. It used to reach the dispatcher as an unhandled
+            // record, so the one acknowledgement that says a roster was
+            // accepted was logged as a dropped message.
+            if (PeerAcknowledgementUtils.IsRecordAcknowledgement(message))
+            {
+                var recordType = (ushort)(message.Type & ~PeerAcknowledgementUtils.AcknowledgementBit);
+                if (session.NoteAcknowledgement(recordType, message.Flags))
+                {
+                    logger.LogDebug(
+                        "[{LogPrefix}] IN {RemoteAddress} acknowledged record 0x{RecordType:x4} ordinal {Ordinal}",
+                        LogPrefix,
+                        session.RemoteAddress,
+                        recordType,
+                        message.Flags);
+                }
+
+                continue;
+            }
+
             if (message.Type < UdpCommandConstants.TickRecordThreshold &&
                 registry.ResolveHandlerType(message.Type) is null)
             {
-                // Unknown tick identifiers are still forwarded below, but they
-                // are not session commands and should not flood warning logs.
+                // Records in the gameplay range are the live game's tick
+                // traffic — a player's position, vitals and the host's own
+                // stream. A dedicated host has no handler of its own for them
+                // and relays them to the room's other players unchanged, which
+                // is how one client sees another move; dropping them is what
+                // left two joined clients unable to see each other. The relay
+                // keeps the type, body and fourth byte, and forwards the
+                // identifiers no handler names as well, because the capture has
+                // more tick types than this server decodes. Nothing is answered
+                // in return, and a peer that has not finished its handshake is
+                // not a recipient yet.
+                if (session.Established)
+                {
+                    logger.LogDebug(
+                        "[{LogPrefix}] IN {RemoteAddress} relayed tick record 0x{MessageType:x4} " +
+                        "({BodyLength} bytes, ordinal={Ordinal}) to the other established peers",
+                        LogPrefix,
+                        session.RemoteAddress,
+                        message.Type,
+                        message.Body.Length,
+                        message.Flags);
+                    SendToOthers(session, message.Type, message.Body, message.Flags);
+                }
+
                 continue;
             }
 
             await DispatchMessageAsync(message, remote, session);
-        }
-
-        // Tick records are carried under the identifier range below 0x1000.
-        // The capture shows these flowing through the dedicated server in both
-        // directions; it does not show that this host simulates them. Forward
-        // these records to the other established peers as one frame, preserving
-        // their contents and the source frame's compression choice.
-        if (tickMessages.Count > 0)
-        {
-            logger.LogDebug(
-                "[{LogPrefix}] Relaying {TickCount} tick records from {RemoteAddress}; compression={Compression}",
-                LogPrefix,
-                tickMessages.Count,
-                session.DialBack,
-                frame.Compressed ? "compressed" : "uncompressed");
-            RelayTickMessages(session, tickMessages, frame.Compressed);
         }
 
         // The frame counter is tracked as well as the records being

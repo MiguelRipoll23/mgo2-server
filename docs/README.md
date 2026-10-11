@@ -65,6 +65,15 @@ if you would rather not: sign a leaf with `ext.cnf`'s SANs and install your CA i
 Swapping them in via `MGO2SERVER_TLS_CERT` makes the client report `070B` instead of `090B`, which is how
 the certificate branch was identified in the first place.
 
+## About the replay console scripts
+
+`analysis/replay-console/` holds verbatim copies of the JavaScript the SaveMGO replay console
+loads. `rpdt.js` is the authority for the `0b` settings payload's layout — the appearance field
+order, the skill alignment and the rotation triples — which no capture here fixes on its own, so
+`protocol/UDP_SETTINGS_PAYLOAD.md` cites the committed copy rather than a URL that can change
+under it. Nothing in this repository loads these files; `analysis/replay-console/README.md` has
+the hashes, the fetch commands and the write-ups that depend on them.
+
 ## About the other MGO2 servers
 
 echo, mgo2-server and the Nomad servers are cited by these documents for comparison, but are **not

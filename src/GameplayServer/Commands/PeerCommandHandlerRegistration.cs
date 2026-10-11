@@ -1,9 +1,8 @@
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Udp;
-using Mgo2Server.Shared.Utils;
 using Mgo2Server.GameplayServer.Commands.Peer.Connection;
-using Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 using Mgo2Server.GameplayServer.Commands.Peer.Room;
+using Mgo2Server.GameplayServer.MatchRecords;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Mgo2Server.GameplayServer.Commands;
@@ -24,19 +23,20 @@ public static class PeerCommandHandlerRegistration
         // as the roster type, so it is answered the same way; registering only
         // the roster type is what left a join with no handler and no roster.
         registry.Register<PlayerProfileHandler>(UdpCommandConstants.JoinRequest);
-        // The two record types a running game exchanges in volume and nobody
-        // has decoded. They are registered so they stop arriving as unknown
-        // commands; neither is answered, because neither is understood.
-        registry.Register<InGameControlHandler>(UdpCommandConstants.RosterHead);
-        registry.Register<InGameControlHandler>(UdpCommandConstants.InGameControl);
+        // Join-probe records the client sends on reconnection attempts after a
+        // stalled join. Recognised so they are not dropped as unknown commands;
+        // not answered because the server cannot read what they mean.
+        registry.Register<JoinProbeHandler>(UdpCommandConstants.JoinProbe);
 
-        // The gameplay channel's tick records. Each is observed for logs, then
-        // forwarded unchanged to the other established peers by the dispatch path.
-        registry.Register<PlayerVitalsHandler>(PlayerVitalsRecordUtility.FirstPlayerType);
-        registry.Register<PlayerVitalsHandler>(PlayerVitalsRecordUtility.SecondPlayerType);
-        foreach (var positionType in PlayerPositionRecordUtility.MeasuredTypes)
+        // The readiness report travels on the round's own payload record, which
+        // alternates between two values as rounds succeed each other (0x1ade,
+        // then 0x12de a 0x800 bit along). Both are registered so the report
+        // reaches the handler that opens the round on it; the handler still reads
+        // the body, because the same identifier carries the round's other
+        // payloads, which belong on the relay and not to a round.
+        foreach (var identifier in MatchRecordGenerationUtils.ReadinessReportIdentifiers)
         {
-            registry.Register<PlayerPositionHandler>(positionType);
+            registry.Register<PlayerReadyHandler>(identifier);
         }
     }
 
@@ -47,8 +47,7 @@ public static class PeerCommandHandlerRegistration
     /// The two lists belong together. The dispatcher resolves a handler from the
     /// container by the type the registry named, so a handler registered above and
     /// missing here is not a type with no behaviour but a message that throws on
-    /// arrival and takes the rest of its frame's messages with it — which is how
-    /// the in-game control records failed here while the peer sat connected.
+    /// arrival and takes the rest of its frame's messages with it.
     /// </remarks>
     /// <param name="services">Container to register with.</param>
     public static IServiceCollection AddCommandHandlers(this IServiceCollection services)
@@ -56,9 +55,9 @@ public static class PeerCommandHandlerRegistration
         services.AddSingleton<AcceptHandshakeHandler>();
         services.AddSingleton<PeerKeepAliveHandler>();
         services.AddSingleton<PlayerProfileHandler>();
-        services.AddSingleton<InGameControlHandler>();
-        services.AddSingleton<PlayerVitalsHandler>();
-        services.AddSingleton<PlayerPositionHandler>();
+        services.AddSingleton<JoinProbeHandler>();
+        services.AddSingleton<PlayerReadyService>();
+        services.AddSingleton<PlayerReadyHandler>();
         return services;
     }
 }

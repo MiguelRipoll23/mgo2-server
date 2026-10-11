@@ -69,13 +69,32 @@ public static class UdpCommandConstants
     public const ushort InGameControl = 0xd001;
 
     /// <summary>
-    /// Fixed-length state blob that closes the post-join burst.
+    /// Join-probe record the client sends on reconnection attempts after a
+    /// stalled join. Carried in both the keep-alive class (0x5000) and the
+    /// in-game control class (0xd000) with the same twelve-bit id, on the
+    /// second and third handshake attempts of a join that the server answered
+    /// but the client did not accept.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The type is recognised rather than dropped as an unknown command, because
+    /// dropping it leaves the rest of the frame's messages unprocessed and
+    /// because the recorded host answers every record the client sends. What the
+    /// body — when present — means is **[U]**, and the server does not answer:
+    /// answering a record this server cannot read is how <c>0x43CA</c>/<c>0x43CB</c>
+    /// and <c>0x4442</c> went wrong.
+    /// </para>
+    /// </remarks>
+    public const ushort JoinProbe = 0x0709;
+
+    /// <summary>
+    /// Fixed-length state blob carried in the gameplay stream.
     /// </summary>
     /// <remarks>
     /// Every one of the 141 blobs the round contains is 22 bytes and every one
     /// of them goes server to client. Eighteen are zero, then a marker, a zero,
     /// and a sixteen-bit big-endian value that is the only part that moves.
-    /// <see cref="GameplayServer.Rooms.PostJoinBurstService"/> builds it.
+    /// This host neither builds nor sends it.
     /// </remarks>
     public const ushort GameStateBlob = 0x0002;
 

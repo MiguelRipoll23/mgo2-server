@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
-/// Sends the post-join burst the recorded host writes once, a measured pause
+/// Sends the settings burst the recorded host writes once, a measured pause
 /// after it has answered a joiner with the roster.
 /// </summary>
 /// <remarks>
@@ -23,11 +23,11 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// else is written in between, which is what the capture shows.
 /// </para>
 /// </remarks>
-/// <param name="burst">Builder of the burst and the control record that follows it.</param>
+/// <param name="burst">Builder of the settings burst and the control record that follows it.</param>
 /// <param name="logger">Logger of this scheduler.</param>
-public sealed class PostJoinBurstSchedulerService(
-    PostJoinBurstService burst,
-    ILogger<PostJoinBurstSchedulerService> logger)
+public sealed class PlayerSettingsBurstSchedulerService(
+    PlayerSettingsBurstService burst,
+    ILogger<PlayerSettingsBurstSchedulerService> logger)
 {
     /// <summary>
     /// Pause the recorded host leaves between the roster answer and the burst,
@@ -48,14 +48,14 @@ public sealed class PostJoinBurstSchedulerService(
         if (Interlocked.Exchange(ref scheduled, 1) != 0)
         {
             logger.LogDebug(
-                "UDP {LocalPort}: post-join burst already scheduled; not scheduling another for {RemoteAddress}",
+                "UDP {LocalPort}: settings burst already scheduled; not scheduling another for {RemoteAddress}",
                 context.LocalPort,
                 context.Remote);
             return;
         }
 
         logger.LogDebug(
-            "UDP {LocalPort}: scheduled post-join burst for {RemoteAddress} after {Delay}",
+            "UDP {LocalPort}: scheduled settings burst for {RemoteAddress} after {Delay}",
             context.LocalPort,
             context.Remote,
             Delay);
@@ -67,22 +67,22 @@ public sealed class PostJoinBurstSchedulerService(
         await Task.Delay(Delay);
 
         logger.LogDebug(
-            "UDP {LocalPort}: sending the post-join burst to {RemoteAddress} after the roster pause",
+            "UDP {LocalPort}: sending the settings burst to {RemoteAddress} after the roster pause",
             context.LocalPort,
             context.Remote);
 
-        await RosterRunSendUtils.SendAsync(context, burst.BuildBurst(), compressed: true);
+        await RosterRunSendUtils.SendAsync(context, burst.BuildSettingsBurst(), compressed: true);
         logger.LogDebug(
-            "UDP {LocalPort}: post-join burst sent to {RemoteAddress}; sending its follow-up control",
+            "UDP {LocalPort}: settings burst sent to {RemoteAddress}; sending its closing control",
             context.LocalPort,
             context.Remote);
 
-        var followUp = PostJoinBurstService.BuildFollowUp();
-        await context.Send(followUp.Type, followUp.Body, 0);
+        var closing = PlayerSettingsBurstService.BuildClosingControl();
+        await context.Send(closing.Type, closing.Body, 0);
         logger.LogDebug(
-            "UDP {LocalPort}: post-join follow-up 0x{MessageType:x4} sent to {RemoteAddress}",
+            "UDP {LocalPort}: closing control 0x{MessageType:x4} sent to {RemoteAddress}",
             context.LocalPort,
-            followUp.Type,
+            closing.Type,
             context.Remote);
     }
 }

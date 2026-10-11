@@ -832,13 +832,17 @@ outbound counter, it simply never draws from it for an acknowledgement. **[V]**
   the reliable class. Each acknowledgement would also spend an outbound
   sequence, shifting every later sequence number away from the capture's.
 - **Unreliable tick records are relayed, not simulated.** The gameplay dispatcher
-  forwards inbound records below `0x1000` to the other established peers, keeping
-  their type, fourth header byte, body and source compression choice. It forwards
-  unknown tick identifiers too: the capture has 121 such identifiers and the
-  server only decodes a small subset. The capture shows tick traffic flowing in
-  both directions, but does not prove that this relay is sufficient to run a
-  round or that the host should synthesize gameplay state; see
-  `UDP_GAME_CAPTURE.md` §6.
+  forwards inbound records it has no handler for to the other established peers,
+  keeping their type, fourth header byte and body; the relay frame is written
+  plain. That covers both sides of the tick threshold, because the capture's
+  joiner sends its own gameplay records either way — `0x0a5c` below `0x1000`,
+  and `0x1a54`, `0x810d` and `0x890d` at or above it — and it forwards unknown
+  identifiers too, since the capture has 121 tick types and the server only
+  decodes a small subset. A peer that has not finished its handshake is not a
+  recipient yet and nothing is answered in return. The capture shows tick
+  traffic flowing in both directions, but does not prove that this relay is
+  sufficient to run a round or that the host should synthesize gameplay state;
+  see `UDP_GAME_CAPTURE.md` §6.
 - **Inbound acknowledgements are still recognised**, by a stricter test than the
   class bit alone: `(type & 0xf000) == 0x1000`, a one-byte body, and body `0x00`.
   They are logged and deduplicated, and never answered.
@@ -871,8 +875,8 @@ Body, little-endian:
 
 ```
 [0x00] u8        0x07 in every captured record
-[0x01] u8        record sub-type: 0x48 (or 0x47) on a player's entry, 0x4c on
-                 the room's own record
+[0x01] u8        the record's own length less seven -- not a sub-type; see
+                 UDP_GAME_CAPTURE.md §8.11 for the measurement
 [0x02] u16       zero
 [0x04] u8        0xe2 + roster index, or 0x00 for the host
 [0x05] u8        per-player value, repeated at 0x07
@@ -1055,11 +1059,12 @@ they start, how many there are and what they look like. **[V]**
   `07`, `85`, `86`, `83`, `00`, `0c`, `81`, `84`, `82` and `02`. The leading
   byte is what tells the shapes apart, not the record type. **[V]**
 
-  **Not implemented, for the same reason as above**: the *contents* are one
-  character's equipment, skills and settings, and sending those to any other
-  player would be wrong. The burst's shape is built — see
-  `PostJoinBurstService` — with each payload as its `0b` tag, its slot and
-  zeros, which is the most this server can say without inventing a loadout.
+  **Sent as recorded, not synthesized**: the *contents* are one character's
+  equipment, skills and settings — the replay console's `TYPE_SETTINGS` record,
+  laid out in `UDP_SETTINGS_PAYLOAD.md` — and this server does not have them for
+  the peers it announces. The one burst the capture contains is written once,
+  with the capture's own bodies (`PlayerSettingsBurstService`); building a body
+  out of another player's state would be inventing one.
 - **`0xe5e`..`0x113a`** — not walked.
 
 **A cross-sample constant.** The six bytes `45 2f 57 39 67 68` ("E/W9gh") sit
@@ -1189,16 +1194,29 @@ waiting for. The host sends the roster alone. **[U]**
   builder prefers the literal form, and was wrongly generalised to the profile.
   So the runtime path that sets the `0x200` gate flag is the data phase after
   all, and the question this section left **[U]** is answered.
-- **The stream ends by exhaustion, not by the EOF marker** (live capture).
-  The marker-offset rule above is what the decoder implements, but a captured
-  joiner frame runs out of input mid-token with no offset-0 ever written. A
-  decoder that treats exhaustion as an error returns nothing for the frame and
-  the whole join request is lost with no error anywhere: the digest still
-  verifies, the frame still arrives, and the host answers a session it has no
-  profile for. That is what this server did — it read the capture as an empty
-  content region, logged no profile and no unknown message type, and left the
-  joiner re-sending the same body forever (§6.5). Exhaustion must yield the
-  bytes decoded so far, not a discarded frame.
+- **Every stream ends at the EOF marker, and nothing ends by exhaustion**
+  (measured 2026-10-11 over `mgo2-game1..3.pcapng`). All **5 157** compressed
+  frames of the three captures, in both directions, and every live joiner frame
+  held in the tests close with the ten-bit zero-offset marker, inside the
+  region the frame declares: the marker ends 0 to 7 bits before the region's
+  last byte, with the remaining bits of that byte as padding.
+  *The earlier reading here — that a captured joiner frame runs out of input
+  mid-token — came from a token walk that read the four-bit length field before
+  testing the nine-bit offset. The decoder does the opposite* (`0xefd9c8`
+  narrows the nine bits and `0xefd9cc`/`0xefd9d0` test them, branching to the
+  return at `0xefdc38`; the four-bit read follows at `0xefd9d4`), *so a marker
+  with under four bits of padding behind it is the EOF marker and not a
+  truncated reference.*
+  What that misreading cost is worth keeping: the encoder was left writing
+  streams **without** the marker, and a stream that runs out of input is
+  exactly what the peer's reader fails on — it returns `-1` at `0xefdae0` and
+  its caller abandons the frame, with no error anywhere. The digest still
+  verifies, the frame still arrives, and the roster run it carried is dropped
+  before a single record in it is reached. That is what this server did: its
+  marked roster runs drew no answer from the client, while the same two runs
+  sent with the marker clear drew its answers — the experiment that separated
+  the stream from the records in it. Only the marker is a clean end, and a
+  decoder must refuse a stream that stops before it. See §6.5.
 - **The capture annotations in `UDP_PACKET_DUMP.txt` predate any working
   decompressor.** Its `tag=0xc480 msgLen=20523` lines are a misparse of
   compressed bytes read as if they were message headers, not a format finding;

@@ -2,8 +2,8 @@ using Mgo2Server.GameplayServer;
 using Mgo2Server.GameplayServer.Commands;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Match;
+using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
-using Mgo2Server.GameplayServer.Stream;
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Telemetry;
@@ -29,15 +29,14 @@ builder.Services.AddSingleton<HostIdentityService>();
 builder.Services.AddSingleton<AccountService>();
 builder.Services.AddSingleton<MatchService>();
 builder.Services.AddSingleton<RoomRosterService>();
-builder.Services.AddSingleton<PostJoinBurstService>();
-builder.Services.AddSingleton<PostJoinBurstSchedulerService>();
-builder.Services.AddSingleton<PeerAnswerSchedulerService>();
-builder.Services.AddSingleton<HostStreamService>();
+builder.Services.AddSingleton<PlayerSettingsBurstService>();
+builder.Services.AddSingleton<PlayerSettingsBurstSchedulerService>();
+builder.Services.AddSingleton<PlayerReadyService>();
+builder.Services.AddSingleton<MatchRecordService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 // The peer command handlers are registered beside the types their messages are
 // bound to, so a handler cannot be mapped without being resolvable.
 builder.Services.AddCommandHandlers();
-builder.Services.AddSingleton<PlayerStateService>();
 builder.Services.AddSingleton<GameplayServerService>();
 
 var host = builder.Build();

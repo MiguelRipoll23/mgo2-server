@@ -14,35 +14,53 @@ public static class PlayerProfileRecordUtility
     /// </summary>
     /// <remarks>
     /// Every record of the captured roster reads <c>0x01</c> or <c>0x02</c>
-    /// there. It does not follow the record type, since a player entry appears
-    /// under both <c>0x9001</c> and <c>0x1001</c> and reads the same in each,
-    /// so it is written per record rather than per type. What it counts is
-    /// **[U]**: nothing in the capture names it, and the two values are carried
-    /// here as the two values they are measured to be.
+    /// there: <c>0x01</c> on the host's own entry and <c>0x02</c> on a joining
+    /// player's. It does not follow the wire type, since a player's entry appears
+    /// under both <c>0x9001</c> and <c>0x1001</c> and reads the same in each, so
+    /// it is written per record rather than per type. What it counts is **[U]**:
+    /// nothing in the capture names it, and the two values are carried here as
+    /// the two values they are measured to be.
     /// </remarks>
-    public const byte RoomRecordUnresolvedByte = 0x01;
+    public const byte HostEntryUnresolvedByte = 0x01;
 
     /// <summary>
     /// Value a joining player's roster record carries at offset <c>0x10</c>.
     /// </summary>
-    /// <remarks>Unresolved for the same reason as <see cref="RoomRecordUnresolvedByte"/>.</remarks>
+    /// <remarks>Unresolved for the same reason as <see cref="HostEntryUnresolvedByte"/>.</remarks>
     public const byte PlayerRecordUnresolvedByte = 0x02;
-    /// <summary>Record version byte every recorded roster entry carries.</summary>
+    /// <summary>Record version byte every recorded roster record carries.</summary>
     public const byte RecordVersion = 0x07;
 
     /// <summary>
-    /// Sub-type byte on a player's roster entry. The captured entries carry
-    /// this byte and, for one character, <c>0x47</c> — one bit apart — so the
-    /// two are the same sub-type and what the bit selects is **[U]**.
+    /// Offset of the record's own length byte — which is not a sub-type. The byte
+    /// counts the record's bytes past <see cref="FixedPrefixLength"/>, so it moves
+    /// with the character name; <see cref="PlayerProfileRecordLayout"/> carries the
+    /// measurement.
     /// </summary>
-    public const byte PlayerEntrySubType = 0x48;
+    public const int RecordLengthOffset = 0x01;
 
     /// <summary>
-    /// Sub-type byte on the room's own record, which the host sends as the head
-    /// of the roster run. It is a different record from a player's entry: it
-    /// carries no roster index, no clan, and the room's own name.
+    /// The seven bytes the value at <see cref="RecordLengthOffset"/> counts past:
+    /// a record's length is that byte plus this.
     /// </summary>
-    public const byte RoomRecordSubType = 0x4c;
+    public const int FixedPrefixLength = 0x07;
+
+    /// <summary>
+    /// Whether a body opens the way a roster record does: the record version, and
+    /// a length byte that agrees with the body it is in.
+    /// </summary>
+    /// <remarks>
+    /// Those two bytes are what tell a record from a body that merely lines up
+    /// with the layout: the <c>0b</c> settings payload lines up and fails both, and
+    /// without the test it reads back as a record named with two control bytes and
+    /// is registered as a player. See <c>docs/protocol/UDP_SETTINGS_PAYLOAD.md</c>.
+    /// </remarks>
+    /// <param name="body">Body to test.</param>
+    /// <returns><c>true</c> when the body opens a roster record.</returns>
+    public static bool IsRosterRecord(ReadOnlySpan<byte> body) =>
+        body.Length > RecordLengthOffset &&
+        body[0] == RecordVersion &&
+        body[RecordLengthOffset] == body.Length - FixedPrefixLength;
 
     /// <summary>
     /// Leading byte a joining client puts on the record it opens the exchange
@@ -52,9 +70,16 @@ public static class PlayerProfileRecordUtility
     public const byte JoinRequestVersion = 0x02;
 
     /// <summary>
-    /// Roster slot the host itself takes. The host is not one of the joining
-    /// players, so its slot sits below the first one rather than at it.
+    /// Roster slot the host itself takes, as this server reads it.
     /// </summary>
+    /// <remarks>
+    /// Nothing on the wire is <c>-1</c>: the host's own entry writes <c>0x00</c>
+    /// at <c>0x04</c> where joining players write a base plus their index, and
+    /// reading that zero as "one below the first player" is this server's
+    /// inference. Whether it marks a dedicated host or the host's own slot is
+    /// **[U]** — game2's host writes <c>0x01</c>/<c>0x02</c> there on a scale of
+    /// its own, so even the base is per host.
+    /// </remarks>
     public const sbyte HostRosterIndex = -1;
 
     /// <summary>
@@ -78,12 +103,25 @@ public static class PlayerProfileRecordUtility
     internal const byte HostRosterField = 0x00;
 
     /// <summary>
-    /// Value written at offsets 5 and 7. Its captured values match the member
-    /// bytes in the <c>0x0261</c>/<c>0x0a61</c> rules-roster-shaped records, so
-    /// it is likely a per-player handle rather than a roster index. The
-    /// allocation rule is unresolved; the current builder still writes zero.
+    /// Value written at offsets 5 and 7: the player's slot in the host's
+    /// 24-entry network player table, which is the byte the replay console's
+    /// <c>rpdt.js</c> calls the record's <c>slot</c>. The values match the member
+    /// bytes in the <c>0x0261</c>/<c>0x0a61</c> rules-roster-shaped records, and
+    /// the client binary's lookup <c>0x26d5a8</c> walks exactly that table
+    /// (24 records of <c>0x74</c> bytes at <c>net + 0xd4</c>, slot in the first
+    /// byte, <c>0xff</c> empty). Every observed value lies in <c>0</c>…<c>0x17</c>:
+    /// the seven roster records in <c>tools/replays/</c> carry
+    /// <c>2, 5, 7, 9, 13, 17, 21</c> and the live capture
+    /// <c>4, 6, 11, 15, 20</c> (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §8.11).
+    /// <para>
+    /// Zero is the slot the client's table is built from, and it is the host's
+    /// own: the recorded host's own entry carries it and no joined player's does,
+    /// in any captured round. A joining player is therefore given a slot of its
+    /// own and never this one, which is why <see cref="Build"/> takes it as a
+    /// required argument rather than defaulting a record to this value.
+    /// </para>
     /// </summary>
-    private const byte PlayerValue = 0x00;
+    public const byte HostSessionSlot = 0x00;
 
     /// <summary>
     /// Byte preceding the character name: 0x03 when a clan name follows, 0x00
@@ -103,16 +141,16 @@ public static class PlayerProfileRecordUtility
     private const int BlockConstantOffset = 0x12;
 
     /// <summary>
-    /// Offset of the pair of bytes the room's own record carries and a player's
+    /// Offset of the pair of bytes the host's own entry carries and a player's
     /// does not.
     /// </summary>
-    private const int RoomBlockFlagOffset = 0x0c;
+    private const int HostEntryBlockFlagOffset = 0x0c;
 
-    /// <summary>First byte of that pair on the room record.</summary>
-    private const byte RoomBlockFlag = 0x01;
+    /// <summary>First byte of that pair on the host's own entry.</summary>
+    private const byte HostEntryBlockFlag = 0x01;
 
-    /// <summary>Second byte of that pair on the room record.</summary>
-    private const byte RoomBlockFlagSecond = 0x02;
+    /// <summary>Second byte of that pair on the host's own entry.</summary>
+    private const byte HostEntryBlockFlagSecond = 0x02;
 
     /// <summary>
     /// Value the pair carries on a player's record: zero in both bytes. Every
@@ -127,35 +165,31 @@ public static class PlayerProfileRecordUtility
     public const int UnresolvedByteOffset = 0x10;
 
     /// <summary>
-    /// Marker opening the two six-byte halves of the endpoint-data field. It
-    /// is 0x62 on every player entry and 0x63 on the room record, so it says
-    /// which kind of record this is and nothing more.
+    /// Length of one endpoint pair: four address octets and then a little-endian
+    /// port. The field's two pairs sit back to back, so the second opens where
+    /// the first ends.
     /// </summary>
-    private const byte PlayerBlockMarker = 0x62;
-
-    /// <summary>Value <see cref="PlayerBlockMarker"/> takes on the room record.</summary>
-    private const byte RoomBlockMarker = 0x63;
-
-    /// <summary>
-    /// Byte closing each half of the endpoint-data field. It is 0x16 in all six
-    /// captured records whatever the marker before it is.
-    /// </summary>
-    private const byte BlockTrailer = 0x16;
-
-    /// <summary>
-    /// Offsets of the three constants inside the endpoint-data field: the marker
-    /// and the trailer of each of its two halves.
-    /// </summary>
-    private static ReadOnlySpan<int> BlockMarkerOffsets => [0x17, 0x1d];
-
-    /// <summary>Offsets of the two block trailers.</summary>
-    private static ReadOnlySpan<int> BlockTrailerOffsets => [0x18, 0x1e];
+    /// <remarks>
+    /// <b>The four bytes at <c>0x17</c>/<c>0x18</c> and <c>0x1d</c>/<c>0x1e</c>
+    /// are these pairs' ports, not a constant of the layout.</b> They were read
+    /// as a per-peer marker (<c>0x63</c> on the host's own entry, <c>0x62</c> on
+    /// a player's) followed by a constant trailer (<c>0x16</c>), and they are
+    /// two ports: the capture round's host answers on 5731, which is
+    /// <c>0x1663</c>, and its joiner on 5730, which is <c>0x1662</c>, each
+    /// repeated in that peer's own two pairs. So the pair is written from the
+    /// endpoint the peer announced and never from a constant here.
+    /// <see cref="PlayerProfileRecordLayout"/> carries the measurement.
+    /// </remarks>
+    public const int EndpointPairLength = 0x06;
 
     /// <summary>First offset of the two endpoint pairs announced in the handshake.</summary>
     public const int AddressDataOffset = 0x13;
 
-    /// <summary>Length of the two endpoint pairs: two six-byte IPv4 endpoints.</summary>
-    public const int AddressDataLength = 0x1e - AddressDataOffset + 1;
+    /// <summary>
+    /// Length of the endpoint-data field: the two pairs, each an address and the
+    /// port it is reached on, written back to back.
+    /// </summary>
+    public const int AddressDataLength = 2 * EndpointPairLength;
 
     /// <summary>Offset of the character id.</summary>
     public const int CharacterIdOffset = 0x08;
@@ -165,6 +199,13 @@ public static class PlayerProfileRecordUtility
 
     /// <summary>Offset of the NUL-terminated character name.</summary>
     public const int NameOffset = 0x44;
+
+    /// <summary>
+    /// Offset of the character name in the short record layout, twelve bytes below
+    /// <see cref="NameOffset"/>. Which of the two a record uses is decided per
+    /// record; <see cref="PlayerProfileRecordLayout"/> says how.
+    /// </summary>
+    public const int ShortNameOffset = 0x38;
 
     /// <summary>
     /// Smallest body a profile record can have. A body must reach past the
@@ -186,9 +227,12 @@ public static class PlayerProfileRecordUtility
     /// <summary>
     /// Builds a profile record body.
     /// </summary>
-    /// <param name="recordSubType">
-    /// Byte written at offset 1: <see cref="PlayerEntrySubType"/> for a
-    /// player's entry, <see cref="RoomRecordSubType"/> for the room's own.
+    /// <param name="isHostEntry">
+    /// Whether this is the host's own entry rather than a joining player's: the
+    /// head of a roster run, carrying the host's own character id and name. It
+    /// selects the pair at <c>0x0c</c>/<c>0x0d</c> — not what <c>0x01</c>
+    /// carries, which is the length, and not the endpoint field, which is the
+    /// endpoints the peer announced rather than anything this flag chooses.
     /// </param>
     /// <param name="rosterIndex">
     /// Position of the player in the room roster, counted from
@@ -204,16 +248,25 @@ public static class PlayerProfileRecordUtility
     /// </param>
     /// <param name="unresolvedByte">
     /// Value written at offset <c>0x10</c>. The captured roster reads
-    /// <c>0x01</c> on its room record and <c>0x02</c> on a player's, and the
-    /// value does not follow the record type, so it is passed in rather than
+    /// <c>0x01</c> on the host's own entry and <c>0x02</c> on a player's, and the
+    /// value does not follow the wire type, so it is passed in rather than
     /// derived here. What it means is **[U]**.
     /// </param>
+    /// <param name="sessionSlot">
+    /// The player's slot in the host's 24-entry network player table, written at
+    /// offsets <c>0x05</c> and <c>0x07</c>. It is required, because the
+    /// captures leave no room for a default: zero is the host's own slot
+    /// (<see cref="HostSessionSlot"/>) and no joined player's entry carries it,
+    /// so a record built without one would put the player on the host's slot of
+    /// the client's table.
+    /// </param>
     public static byte[] Build(
-        byte recordSubType,
+        bool isHostEntry,
         sbyte rosterIndex,
         int characterId,
         string name,
         string clanName,
+        byte sessionSlot,
         byte[]? addressData = null,
         byte unresolvedByte = PlayerRecordUnresolvedByte)
     {
@@ -225,31 +278,21 @@ public static class PlayerProfileRecordUtility
         // records do.
         var body = new byte[NameOffset + 1 + nameBytes.Length + clanBytes.Length];
         body[0] = RecordVersion;
-        body[1] = recordSubType;
+        body[RecordLengthOffset] = (byte)(body.Length - FixedPrefixLength);
         body[4] = rosterIndex == HostRosterIndex
             ? HostRosterField
             : (byte)(RosterIndexBase + rosterIndex);
-        body[5] = PlayerValue;
-        body[7] = PlayerValue;
+        body[5] = sessionSlot;
+        body[7] = sessionSlot;
         BinaryUtility.WriteUInt32LittleEndian(body, CharacterIdOffset, (uint)characterId);
         body[BlockConstantOffset] = BlockConstant;
-        body[RoomBlockFlagOffset] = recordSubType == RoomRecordSubType ? RoomBlockFlag : PlayerBlockFlag;
-        body[RoomBlockFlagOffset + 1] = recordSubType == RoomRecordSubType ? RoomBlockFlagSecond : PlayerBlockFlag;
+        body[HostEntryBlockFlagOffset] = isHostEntry ? HostEntryBlockFlag : PlayerBlockFlag;
+        body[HostEntryBlockFlagOffset + 1] = isHostEntry ? HostEntryBlockFlagSecond : PlayerBlockFlag;
         body[UnresolvedByteOffset] = unresolvedByte;
 
-        var marker = recordSubType == RoomRecordSubType ? RoomBlockMarker : PlayerBlockMarker;
-        foreach (var offset in BlockMarkerOffsets)
-        {
-            body[offset] = marker;
-        }
-
-        foreach (var offset in BlockTrailerOffsets)
-        {
-            body[offset] = BlockTrailer;
-        }
-
-        // The caller's endpoint bytes replace the structural defaults with the
-        // exact pairs announced by the peer.
+        // The endpoint field is the peer's two announced endpoints and nothing
+        // else; a body built with none leaves it zero rather than inventing an
+        // address and port for the peer it belongs to.
         WriteAddressData(body, addressData);
 
         body[NameMarkerOffset] = clanBytes.Length > 0 ? ClanNameMarker : (byte)0x00;
@@ -273,9 +316,19 @@ public static class PlayerProfileRecordUtility
     public static byte[] BuildRosterClose() => [.. ClosingRecordBytes];
 
     /// <summary>
-    /// Copies endpoint data into a record body. The roster field is fixed at
-    /// twelve bytes, so a longer input is truncated and a shorter one is padded.
+    /// Copies endpoint data into a record body: the two pairs at
+    /// <see cref="AddressDataOffset"/>, each an address and its little-endian
+    /// port. The field is fixed at <see cref="AddressDataLength"/> bytes, so a
+    /// longer input is truncated and a shorter one is padded.
     /// </summary>
+    /// <remarks>
+    /// The four bytes at <c>0x17</c>/<c>0x18</c> and <c>0x1d</c>/<c>0x1e</c> are
+    /// the two ports and nothing else — see <see cref="EndpointPairLength"/>. They
+    /// travel with the pairs, which is why a record whose peer announced an
+    /// endpoint carries that peer's own port at them; nothing here writes a
+    /// constant over them, and a record built without endpoint data leaves them
+    /// at zero rather than at a port that belongs to no one.
+    /// </remarks>
     private static void WriteAddressData(Span<byte> body, byte[]? addressData)
     {
         if (addressData is null || addressData.Length == 0)
@@ -301,25 +354,28 @@ public static class PlayerProfileRecordUtility
 
 /// <summary>A parsed <c>0x1001</c> player-profile record.</summary>
 /// <param name="Version">Record version byte.</param>
-/// <param name="RecordSubType">
-/// Byte at offset 1, which says what kind of record this is rather than who it
-/// is about: <see cref="PlayerProfileRecordUtility.PlayerEntrySubType"/> on a
-/// player's entry, <see cref="PlayerProfileRecordUtility.RoomRecordSubType"/> on
-/// the room's own.
+/// <param name="RecordLength">
+/// Byte at offset 1 read back raw. It is the record's own length less seven, not
+/// a record kind; <see cref="PlayerProfileRecordUtility.IsRosterRecord"/> is the
+/// test over it.
 /// </param>
 /// <param name="RosterBaseField">Raw field at offset 4: 0xe2 plus the index, or zero for the host.</param>
 /// <param name="RosterIndex">
 /// Position of the player in the room roster, recovered from that field. It is
 /// signed because the host's own slot is <c>-1</c>, written as a plain zero
 /// rather than as one below the first player's.
-/// </param>
-/// <param name="PlayerValue">
-/// The value at offset 5, repeated at offset 7. It varies per player without
-/// following roster order and matches member bytes in the
-/// <c>0x0261</c>/<c>0x0a61</c> rules-roster-shaped records. This makes it a
-/// per-player handle candidate, not an index; its allocation rule is unresolved.
-/// </param>
-/// <param name="HasClanName">Whether a clan name follows the character name.</param>
+    /// </param>
+    /// <param name="sessionSlot">
+    /// The player's slot in the host's 24-entry network player table (offsets 0x05
+    /// and 0x07 of the roster entry), the byte the replay console's <c>rpdt.js</c>
+    /// calls <c>slot</c>. It varies per player without following roster order and
+    /// matches the member bytes in the <c>0x0261</c>/<c>0x0a61</c>
+    /// rules-roster-shaped records, so it is not an index. The client binary names
+    /// the field via the table at <c>0x26d5a8</c>; how the host selects it is
+    /// unresolved. The live capture calls these "member bytes" and confirms they
+    /// are slots in a 24-entry table.
+    /// </param>
+/// <param name="HasClanName">Whether a clan name was read alongside the name.</param>
 /// <param name="CharacterId">The character id at offset 8, little-endian.</param>
 /// <param name="AddressData">
 /// The public and private IPv4 endpoint pairs, copied from the character's
@@ -327,14 +383,14 @@ public static class PlayerProfileRecordUtility
 /// </param>
 /// <param name="Name">Character name.</param>
 /// <param name="ClanName">Clan name.</param>
-public sealed record PlayerProfileRecord(
-    byte Version,
-    byte RecordSubType,
-    byte RosterBaseField,
-    sbyte RosterIndex,
-    byte PlayerValue,
-    bool HasClanName,
-    int CharacterId,
-    byte[] AddressData,
-    string Name,
-    string ClanName);
+    public sealed record PlayerProfileRecord(
+        byte Version,
+        byte RecordLength,
+        byte RosterBaseField,
+        sbyte RosterIndex,
+        byte SessionSlot,
+        bool HasClanName,
+        int CharacterId,
+        byte[] AddressData,
+        string Name,
+        string ClanName);

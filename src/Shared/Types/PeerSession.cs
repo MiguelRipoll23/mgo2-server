@@ -1,4 +1,5 @@
 using System.Net;
+using Mgo2Server.Shared.Constants;
 
 namespace Mgo2Server.Shared.Types;
 
@@ -54,4 +55,41 @@ public sealed class PeerSession
     /// duplicates are expected and must not re-trigger an acknowledgement.
     /// </summary>
     public HashSet<ushort> SeenAcknowledgements { get; } = [];
+
+    private readonly HashSet<(ushort Type, byte Ordinal)> acknowledgedRecords = [];
+
+    /// <summary>Records of ours this peer has acknowledged, each with its fourth byte.</summary>
+    public IReadOnlyCollection<(ushort Type, byte Ordinal)> AcknowledgedRecords => acknowledgedRecords;
+
+    /// <summary>
+    /// Notes that the peer answered one of our records, and reports whether it
+    /// is the first time this record has been answered.
+    /// </summary>
+    /// <remarks>
+    /// A client answers a roster run once and then stops, so the count is the
+    /// evidence and the boolean only keeps a re-sent answer from being logged
+    /// twice. Nothing here changes what is sent: an inbound answer needs no
+    /// reply, and treating it as an unhandled record is what used to log a
+    /// roster acknowledgement as a dropped message.
+    /// </remarks>
+    /// <param name="recordType">Identifier of the record being answered, answer bit cleared.</param>
+    /// <param name="ordinal">Fourth byte of the answer, which names the record's place.</param>
+    /// <returns><c>true</c> when this record had not been acknowledged before.</returns>
+    public bool NoteAcknowledgement(ushort recordType, byte ordinal) =>
+        acknowledgedRecords.Add((recordType, ordinal));
+
+    /// <summary>
+    /// Whether the peer acknowledged a player-profile record, which is the only
+    /// acknowledgement a roster run can draw.
+    /// </summary>
+    /// <remarks>
+    /// The roster opens with the same <c>0x5001</c> that would otherwise be the
+    /// answer to the joiner's own profile, so an accepted roster and an accepted
+    /// profile are the same event on the wire and cannot be told apart here.
+    /// That is the point: this is the flag that says the client took the roster,
+    /// and its absence is the whole of the stalled join.
+    /// </remarks>
+    public bool RosterAcknowledged =>
+        acknowledgedRecords.Any(acknowledged => acknowledged.Type
+            is UdpCommandConstants.PlayerProfile or UdpCommandConstants.JoinRequest);
 }

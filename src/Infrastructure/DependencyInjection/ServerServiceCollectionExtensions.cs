@@ -50,11 +50,11 @@ public static class ServerServiceCollectionExtensions
             options.GameplayServerPort = configuration.ReadNumber(
                 "GAMEPLAY_SERVER_PORT",
                 configuration.ReadNumber("UDP_PORT", options.GameplayServerPort));
-            options.GameplayServerPostJoinTraffic = configuration.ReadFlag(
-                "GAMEPLAY_POST_JOIN_TRAFFIC",
-                options.GameplayServerPostJoinTraffic);
             options.PublicHostAddress =
                 configuration.ReadText("DEDICATED_ADVERTISED_ADDRESS") ?? options.PublicHostAddress;
+            options.GameplayServerPrivateAddress =
+                configuration.ReadText("GAMEPLAY_SERVER_PRIVATE_ADDRESS")
+                ?? options.GameplayServerPrivateAddress;
             options.GameplayLobbyName = configuration.ReadText("GAMEPLAY_SERVER_LOBBY_NAME")
                 ?? options.GameplayLobbyName;
             options.GameplayServerGameName = configuration.ReadText("GAMEPLAY_SERVER_GAME_NAME")

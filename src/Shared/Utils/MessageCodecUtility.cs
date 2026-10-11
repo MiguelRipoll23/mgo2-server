@@ -24,9 +24,9 @@ public static class MessageCodecUtility
 
         if (compressed && content.Length > 0)
         {
-            // No null check on purpose: a stream that ends by exhaustion is
-            // already handled inside the decompressor, and swallowing the
-            // result here is what used to lose the joiner's profile frame.
+            // A stream that runs out of input before its marker is refused and
+            // this region comes back empty: the peer's own reader fails there
+            // too, and abandons the frame rather than reading half of it.
             content = LzssUtility.Decompress(content);
         }
 

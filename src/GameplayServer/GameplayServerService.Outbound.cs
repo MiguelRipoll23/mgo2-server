@@ -45,35 +45,6 @@ public sealed partial class GameplayServerService
     }
 
     /// <summary>
-    /// Writes tick records together to every established peer except their
-    /// sender, preserving record order, flags bytes and source compression.
-    /// Each destination uses its own outbound counter and session key.
-    /// </summary>
-    /// <param name="origin">Session the tick records came from.</param>
-    /// <param name="messages">Tick records from one decoded frame, in wire order.</param>
-    /// <param name="compressed">Whether the source frame used LZSS compression.</param>
-    private void RelayTickMessages(
-        PeerSession origin,
-        IReadOnlyList<UdpMessage> messages,
-        bool compressed)
-    {
-        var recipients = sessions.Snapshot()
-            .Where(session => session.Established && !ReferenceEquals(session, origin))
-            .ToList();
-        logger.LogDebug(
-            "[{LogPrefix}] Relaying {MessageCount} records from {Origin} to {RecipientCount} established peers",
-            LogPrefix,
-            messages.Count,
-            origin.DialBack,
-            recipients.Count);
-
-        foreach (var session in recipients)
-        {
-            SendMessages(session, messages, compressed);
-        }
-    }
-
-    /// <summary>
     /// Writes a message to a peer through the session's shared counter, to the
     /// endpoint the session dials back rather than to the address a datagram
     /// happened to arrive from. The two differ whenever the host sits behind a

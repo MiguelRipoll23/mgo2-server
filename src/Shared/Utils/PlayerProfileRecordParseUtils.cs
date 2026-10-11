@@ -22,10 +22,10 @@ namespace Mgo2Server.Shared.Utils;
 /// bytes — is one of those, so it reads as no player at all.
 ///
 /// <para>
-/// The two layouts are told apart by a marker byte, and the fields only the
-/// roster layout has are read only when that layout is the one present. A join
-/// request is a different record that merely ends the same way, and its offsets
-/// are its own.
+/// The two layouts are told apart by the record version and the length byte that
+/// follows it, and the fields only the roster layout has are read only when that
+/// layout is the one present. A join request is a different record that merely
+/// ends the same way, and its offsets are its own.
 /// </para>
 /// </remarks>
 public static class PlayerProfileRecordParseUtils
@@ -49,6 +49,13 @@ public static class PlayerProfileRecordParseUtils
         var clan = string.Empty;
         var roster = RosterLayoutOf(body);
         var isRosterEntry = roster is not null;
+
+        // The short layout is the long one without its twelve-byte endpoint
+        // field, so the bytes at 0x13 are the tail of a different record there
+        // and are read only from the long layout. Both layouts put the character
+        // id and the slot before the difference, at 0x08 and 0x05.
+        var hasAddressData = isRosterEntry
+            && NameOffsetOf(body) == PlayerProfileRecordUtility.NameOffset;
         if (isRosterEntry)
         {
             (name, clan) = roster!.Value;
@@ -75,15 +82,15 @@ public static class PlayerProfileRecordParseUtils
         // RoomRosterService.Register.
         return new PlayerProfileRecord(
             body[0],
-            body[1],
+            body[PlayerProfileRecordUtility.RecordLengthOffset],
             isRosterEntry ? body[4] : (byte)0x00,
             isRosterEntry ? RosterIndexOf(body[4]) : PlayerProfileRecordUtility.HostRosterIndex,
             isRosterEntry ? body[5] : (byte)0x00,
-            isRosterEntry && body[PlayerProfileRecordUtility.NameMarkerOffset] != 0x00,
+            clan.Length > 0,
             isRosterEntry
                 ? (int)BinaryUtility.ReadUInt32LittleEndian(body, PlayerProfileRecordUtility.CharacterIdOffset)
                 : 0,
-            isRosterEntry ? AddressDataOf(body) : [],
+            hasAddressData ? AddressDataOf(body) : [],
             name,
             clan);
     }
@@ -116,29 +123,30 @@ public static class PlayerProfileRecordParseUtils
     /// when the body is not that shape.
     /// </summary>
     /// <remarks>
-    /// The name must be non-empty for the layout to be accepted, and that is the
-    /// whole of the discrimination between the two. The marker byte alone cannot
-    /// do it: a join request carries a zero in the same position often enough to
-    /// be the rule rather than the exception — the live capture's own join
-    /// request has one — and accepting it there reads the byte at
-    /// <see cref="PlayerProfileRecordUtility.NameOffset"/> as the head of the
-    /// name. On a join request that byte is the last structural zero of the
-    /// block in front of the names, so the name comes back empty, the record is
-    /// taken to be a roster entry with no name, and the handler's
-    /// <c>Name.Length > 0</c> gate drops the join request as a record that
-    /// carries no profile. A real roster entry always opens its name at that
-    /// offset, so requiring one costs the layout nothing and hands every
-    /// zero-length case to <see cref="TrailingLayoutOf"/>, which is the layout
-    /// those bodies actually have.
+    /// The record's version and its own length must both hold, and the name must
+    /// be non-empty; together those are the discrimination between the two
+    /// layouts. The record is then read at whichever of the two name offsets it
+    /// uses, which is what tells a long record from a short one.
     /// </remarks>
     private static (string Name, string Clan)? RosterLayoutOf(ReadOnlySpan<byte> body)
     {
-        if (body[PlayerProfileRecordUtility.NameMarkerOffset] is not (0x00 or 0x03))
+        // A record opens with its version and a length byte that describes it. A
+        // body that merely lines up with the layout is something else: the `0b`
+        // settings payload does, and would otherwise read back as a record named
+        // with two control bytes and be registered as a player. See
+        // docs/protocol/UDP_SETTINGS_PAYLOAD.md.
+        if (!PlayerProfileRecordUtility.IsRosterRecord(body))
         {
             return null;
         }
 
-        var nameEnd = body[PlayerProfileRecordUtility.NameOffset..].IndexOf((byte)0x00);
+        var nameOffset = NameOffsetOf(body);
+        if (body.Length < nameOffset + 2)
+        {
+            return null;
+        }
+
+        var nameEnd = body[nameOffset..].IndexOf((byte)0x00);
         if (nameEnd <= 0)
         {
             return null;
@@ -146,9 +154,50 @@ public static class PlayerProfileRecordParseUtils
 
         // Any printable run is a name here: the recorded characters carry
         // spaces and punctuation, so nothing narrower may be required.
+        var name = DecodeName(body.Slice(nameOffset, nameEnd));
+        var clanStart = nameOffset + nameEnd + 1;
+        if (clanStart >= body.Length)
+        {
+            return (name, string.Empty);
+        }
+
+        var clanEnd = body[clanStart..].IndexOf((byte)0x00);
         return (
-            DecodeName(body.Slice(PlayerProfileRecordUtility.NameOffset, nameEnd)),
-            DecodeName(body[(PlayerProfileRecordUtility.NameOffset + nameEnd + 1)..]));
+            name,
+            DecodeName(clanEnd < 0 ? body[clanStart..] : body.Slice(clanStart, clanEnd)));
+    }
+
+    /// <summary>
+    /// Which of the two name offsets a record uses.
+    /// </summary>
+    /// <remarks>
+    /// A record ends with the nick, a NUL and the clan, so the nick is the
+    /// printable run before the last NUL: if that run begins exactly
+    /// <see cref="PlayerProfileRecordUtility.ShortNameOffset"/> bytes in, the short
+    /// layout is the one present and otherwise the long. This is the replay
+    /// console's <c>rosterNameOff</c>, and the captures need both — game1's roster
+    /// is the long layout, game2's and game3's the short — which the header's
+    /// format version, the same in each, does not distinguish.
+    /// </remarks>
+    /// <param name="body">Record body to measure.</param>
+    /// <returns>The offset the character name begins at.</returns>
+    private static int NameOffsetOf(ReadOnlySpan<byte> body)
+    {
+        var end = body.Length - 1;
+        while (end > 0 && body[end] != 0x00)
+        {
+            end--;
+        }
+
+        var start = end;
+        while (start > 0 && body[start - 1] >= 0x20)
+        {
+            start--;
+        }
+
+        return start == PlayerProfileRecordUtility.ShortNameOffset && end > start
+            ? PlayerProfileRecordUtility.ShortNameOffset
+            : PlayerProfileRecordUtility.NameOffset;
     }
 
     /// <summary>

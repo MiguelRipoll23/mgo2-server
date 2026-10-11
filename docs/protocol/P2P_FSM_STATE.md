@@ -38,12 +38,15 @@ is 5, with the "over" marker `ctx+0x84` set, and `0B09` is the *verdict* that
 wait reports, not the cause of the failure (§6).
 
 In the server's own words: the join was **established and keyed, the roster was
-served, the recorded host stream ran, every client record was answered — and the
+served, the recorded match records ran, every client record was answered — and the
 transport still never reported the data phase, so the wait expired into the
-polite `0B09` failure**. The two halves of that answer have since been corrected
-against the captures — its body length (`PeerAcknowledgementUtils`) and its
-timing (`PeerAnswerSchedulerService`, `P2P_CONNECT_FSM.md` §7.1e) — so the next
-live join is the measurement that closes this run's reading.
+polite `0B09` failure**. The answer has since been corrected against the
+captures in two ways: its body length (`PeerAcknowledgementUtils`) and the
+profile copy the roster answers, which is now the re-sent one
+(`PlayerProfileHandler`). A 300 ms pause off the dispatch
+(`PeerAnswerSchedulerService`) was tried for the timing half and removed — it
+held the roster back past the copy the peer was waiting on — so the next live
+join is the measurement that closes this run's reading.
 
 The state fields, and what in the run says so:
 
@@ -71,15 +74,15 @@ datagram arrived at all is what says they completed.
 23:30:49  IN 100 B, passed the session tail-digest check at counter 32769 (0x8001)
           → keyed 0x5000 keep-alive + keyed 0x1001 profile (140 B), ordinal 0
 23:30:49  roster entry registered: character 2, slot 0; roster response, repeat, trailer 0x5001 sent
-23:30:49  post-join burst scheduled (+2.52 s); recorded host stream started (19 sparse steps)
-23:30:51  post-join burst + follow-up 0xd001
+23:30:49  settings burst scheduled (+2.52 s); match records started (19 sparse steps)
+23:30:51  settings burst + closing control 0xd001
 23:30:54  IN 17 B at counter 2 → 0x9001, 1 B body, ordinal 1  → answered 0xd001 (1 B, ordinal 1)
 23:30:59  counter 3 → ordinal 2  → answered
    …        one 17 B 0x9001 every ~5 s, ordinals 3 … 17, each answered on the same tick
 23:32:21  counter 19 → ordinal 18 → answered; last client datagram of the run
           ⤷ client side, same instant: state 2's countdown expires → destroy the
             session → TCP 0x4322 → state 5 → channel 0x2b completes → raise 0B09
-23:33:21  steady host stream stopped: the peer is idle
+23:33:21  steady match records stopped: the peer is idle
 23:33:29  peer disconnected: quiet for more than 60 seconds; session reaped, roster entry removed
 ```
 
@@ -105,6 +108,11 @@ counter `3474`.
   from the client**. The reference joiner answers the host's roster as
   `0xd001`/`0x5001` by byte 0/1/2 (§7.1c, `t+4.226`); this client answered
   nothing in 92 s while receiving the roster, the burst and the stream.
+  *This is now stated by the server rather than reconstructed:* an inbound
+  record-level answer is recognised and counted, and the reaper reports
+  `roster acknowledged: yes|no` per peer. Against the reference capture that
+  line reads `yes` — the check this run could not make. See
+  `UDP_GAME_CAPTURE.md` §8.7.
 * **The end was the failure branch, not a disconnect.** Exactly one pre-key
   handshake arrived, so no re-dial happened, and the client's datagrams stop at
   23:32:21 — the instant state 2's countdown expires and the session is
@@ -121,9 +129,12 @@ counter `3474`.
   nothing to move it while its `[0xb]` climbs to 18. 18 is still inside the 24
   the window allows, so the limit was not what stopped it. The answers this run
   was served arrived in the millisecond the record did; the reference never
-  answers faster than 13 ms (§7.1e). `PeerAnswerSchedulerService` now writes
-  them 300 ms after the frame, which is the half of this the captures could
-  settle.
+  answers faster than 13 ms (§7.1e). A 300 ms pause off the dispatch
+  (`PeerAnswerSchedulerService`) was tried against that and removed once the
+  copy the roster answers was settled: pacing held the roster back past the
+  copy the peer was waiting on, so the client had nothing to re-send. Answers
+  are written in the pass that receives them; what the captures settle is which
+  copy is answered, not the delay.
 * Whether the client answers the host's records at all once the window is
   moving. Nothing in this run did — no `0xd001` and no `0x5001` came back — and
   no promotion was reached, so the two cannot be told apart from here.

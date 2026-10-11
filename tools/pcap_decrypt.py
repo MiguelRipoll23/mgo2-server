@@ -9,6 +9,17 @@ Decrypts and displays:
 - UDP datagrams: header scramble + chain XOR + MD5 tail verified, LZSS-decompressed content
 
 Shows clear timestamp and IN/OUT directions for each packet.
+
+Direction is a role and not a port. The peer-to-peer flow is identified by the
+handshake that opens it, so `OUT` is a datagram the gameplay host sent and `IN`
+one the joiner sent, whatever address either of them holds and whichever of the
+two the capture was taken on. That is the host's side, the side this project
+implements and the side `pcap_gameplay_log.py` writes its `OUT` lines for, so
+the two read against each other. A flow that announces no handshake has no role
+to read, and its lines carry the p2p-port rule with a note saying so.
+
+TCP keeps the server-port rule -- `OUT` when the source port is one the server
+owns (5732/5733) -- because that channel has no handshake to read a role from.
 """
 
 from __future__ import annotations
@@ -31,6 +42,7 @@ from udp_frame import (  # noqa: E402
     PRE_KEY,
     LCG,
     decode as udp_decode,
+    handshake_of,
     lzss_decompress,
     parse_messages,
     hexdump as udp_hexdump,
@@ -63,6 +75,39 @@ def tcp_hmac_key() -> bytes:
 def blowfish_table(name: str) -> bytes:
     """Returns a pre-scheduled Blowfish table."""
     return (KEY_DIRECTORY / f"blowfish-{name}-key.bin").read_bytes()
+
+
+def session_roles(datagrams: list[tuple[str, str, bytes]]) -> dict[frozenset, str]:
+    """Which endpoint of each peer pair opened it with a handshake, i.e. is the joiner.
+
+    A joiner's first datagram of a flow is a pre-keyed 44-byte handshake and the
+    other endpoint answers it, so the side that sent the earliest verifying
+    handshake of a pair is the joiner and the other one is the host. Keyed by the
+    unordered pair, so a capture holding more than one session -- a matchmaker
+    address, a rejected dial, the session that was actually played -- is read per
+    flow rather than by whichever handshake came first in the file.
+    """
+    joiners: dict[frozenset, str] = {}
+    for source, destination, payload in datagrams:
+        if source == destination:
+            continue
+        pair = frozenset((source, destination))
+        if pair in joiners:
+            continue
+        if handshake_of(payload) is not None:
+            joiners[pair] = source
+    return joiners
+
+
+def direction_of(source: str, joiner: str | None) -> str | None:
+    """The host's-view direction of a datagram: `IN` from the joiner, `OUT` from the host.
+
+    Returns None when the flow announced no handshake, so the caller falls back
+    rather than has a role invented for it.
+    """
+    if joiner is None:
+        return None
+    return "IN " if source == joiner else "OUT"
 
 
 def read_word(table: bytes, offset: int) -> int:
@@ -278,6 +323,34 @@ def main() -> None:
     if args.type in ("udp", "both"):
         print("\n=== UDP Channel (port 5730) ===\n")
 
+        # Which side is which, by the handshake each joiner opens with.
+        roles = session_roles(
+            [
+                (f"{source}:{source_port}", f"{destination}:{destination_port}", payload)
+                for _, source, source_port, destination, destination_port, payload in udp_packets
+            ]
+        )
+        for pair, joiner in roles.items():
+            if len(pair) != 2:
+                continue
+            host = next(endpoint for endpoint in pair if endpoint != joiner)
+            print(
+                f"session {joiner} (joiner) <-> {host} (host): "
+                f"OUT = sent by {host}, IN = sent by {joiner}"
+            )
+        unannounced = {
+            frozenset((f"{source}:{source_port}", f"{destination}:{destination_port}"))
+            for _, source, source_port, destination, destination_port, _ in udp_packets
+        } - set(roles)
+        if unannounced:
+            print(
+                f"{len(unannounced)} other flow(s) announced no handshake -- DNS, STUN and the "
+                "host's own discovery share the p2p port -- so their direction is the "
+                "p2p-port rule rather than a role"
+            )
+        if roles:
+            print()
+
         # Find session keys per peer pair
         bases = defaultdict(dict)
         for ts, source, source_port, destination, destination_port, payload in udp_packets:
@@ -312,7 +385,9 @@ def main() -> None:
             else:
                 key = (own_base ^ peer_base) & 0xFFFFFFFF
 
-            direction = "OUT" if source_port == 5730 else "IN "
+            direction = direction_of(local, roles.get(frozenset((local, remote))))
+            if direction is None:
+                direction = "OUT" if source_port == 5730 else "IN "
             relative_ts = ts - (udp_packets[0][0] if udp_packets else ts)
 
             try:

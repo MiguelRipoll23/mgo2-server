@@ -182,12 +182,12 @@ Session records only (`id >= 0x1000`). Tick records are in §5.
 | `0x1256` | 33 | — | 2 / 7 / 9 | **[U]** |
 | `0x1258` | 5 | — | 2 | **[U]** |
 | `0x125a` | 310 | — | 6 | **[U]** |
-| `0x12de` | 23 | 2 | 2 / 6 / 14 | **[U]** |
+| `0x12de` | 23 | 2 | 2 / 6 / 14 | readiness report / match-start payload — §3.2 |
 | `0x1a50` | 467 | — | 6 / 9 / 10 | **[U]** |
 | `0x1a54` | 277 | 7 | 2 / 3 / 7 / 90 | **[U]** |
 | `0x1a58` | 8 | — | 2 | **[U]** |
 | `0x1a5a` | 374 | — | 6 | **[U]** |
-| `0x1ade` | 29 | 1 | 1 / 2 / 6 / 14 | **[U]** |
+| `0x1ade` | 29 | 1 | 1 / 2 / 6 / 14 | readiness report / match-start payload — §3.2 |
 | `0x5000` | — | 1 | 0 | keep-alive — §4 |
 | `0x5001` | 60 | **481** | 0 | **[U]** — see below |
 | `0x5250` | — | 336 | 0 | **[U]** |
@@ -217,6 +217,19 @@ Session records only (`id >= 0x1000`). Tick records are in §5.
 | `0x9a5a` | 2 | — | — | **[U]** |
 | `0xd001` | **176** | 5 | 1 | **[U]** — see below |
 | `0xda54` | 1 | — | — | **[U]** |
+
+**Five of the `[U]` rows above are named by the replay parser's own grammar**, which
+reads a session record's identifier low eleven bits as a stream and the payload's first
+byte as an operation in it. `0x1a54` / `0x9a54` (`0x1254` / `0x9254` with them) are the
+operations stream, low `vid = 0x254`: a three-byte `01 20 0d` is opcode `0x01`, the round
+clock — 3 360 units of 125 ms, 420 s, the same value in every one of them — and a
+ninety-byte body is opcode `0x00`, a state block whose two objective holders read
+`0xff`, nobody. `0x1a50` / `0x9a50` / `0x1a5a` / `0x9a5a` are its world objects, low
+`vid = 0x250` / `0x25a`, and the capture's head records are the parser's "a box appears"
+case — code `0x74`, boxes `n = 1` / `2`, items `0x8c` / `0x71` — with position records
+that read as world coordinates. The bodies fit that grammar byte for byte; the class bits
+and the rest of each stream stay **[U]**. See
+[the replay crosswalk](RPDT_REPLAY_RECORDS.md) for the rows.
 
 **`0x1001` is the only type both parties use in volume, and it is the one this project
 already implements.** The roster it carries is the whole of the join.
@@ -350,6 +363,69 @@ run *concurrently* for the whole round, first occurrences seconds apart and last
 occurrences minutes apart. Two independent streams that both emit on the game tick will
 produce matching totals whatever they mean; matching totals are not evidence of a pairing.
 Recorded as a negative so the pattern is not rediscovered as a discovery. **[V]**
+
+## 3.2 `0x1ade` / `0x12de` — the client reports itself ready, and the host opens the round [V] as a pairing, **[I]** as a meaning
+
+The one `0x1x..` / `0x5x..` pairing in §3.1 that **does** hold is the one §3.1 did not
+test, because it is not two families but one record read in two directions. The round's
+payload record is also how a client announces it has loaded and is ready to play.
+
+```
+IN  0x1ade  len=2  ord=0   e1 14        the client reports ready: opcode e1, then one byte
+OUT 0x5ade  len=0  ord=0                the record-level ack (0x1ade | 0x4000)
+OUT 0x1ade  len=6  ord=0   e0 14 00 00 00 00   the host's payload: opcode e0, the same byte back
+OUT … the 13-record match-start run, compressed
+```
+
+`e1` and `e0` differ only in that byte, and the byte after it is **echoed**: every
+report/payload pair in the captures agrees on it — `e1 14` is answered `e0 14 …` in game1,
+`e1 01` is answered `e0 01 …` in game2. The identifier follows the round, so the report
+arrives under `0x1ade` in one round and `0x12de` (`| 0x0800`) in the next; a live client
+additionally sets the payload-class bit and sends `0x9ade`.
+
+**What the client means by it is [I], not [V].** The pairing and the timing below are
+measured. That the client's intent is specifically *"my map has loaded and I am ready"* is
+the reading, and it is the one that makes the sequence coherent — a client that cannot
+play yet says so, and the host starts the round for it. Nothing on the wire names it, and
+the alternative reading (the client commanding the round) fits the same bytes. What the
+server must not do is either way: it opens the round on this record and not on a clock.
+
+### The report precedes every round, and no round opens without one [V]
+
+The gaps are 0.6–5.5 s, which is processing, not scheduling:
+
+| capture | report | round open | gap |
+| --- | --- | --- | --- |
+| game1 | `0x1ade e1 14` t+44.76 | t+46.42 | 1.66 s |
+| game1 | `0x12de e1 14` t+190.39 | t+194.04 | 3.65 s |
+| game2 | `0x12de e1 01` t+56.72 | t+62.18 | 5.46 s |
+| game2 | `0x1ade e1 01` t+107.98 | t+109.12 | 1.14 s |
+| game2 | `0x12de e1 01` t+223.63 | t+224.62 | 0.99 s |
+
+**The round's clock is not the trigger.** game1's first run is at roster+42.25 s and its
+first report at roster+40.59 s, close enough that a replay keyed to the roster could open
+a round unprompted and look right — which is what this server did, and why a live client
+sat in its ready state reporting twenty-three times over two minutes with every one logged
+`no handler` and relayed to a room of one. A server that opens on a timer and never reads
+the report gets the timing right and the behaviour wrong.
+
+A client re-reports until it is answered (game1 reports twice, 2.29 s apart, and gets one
+round), so the report is latched rather than counted.
+
+What the echoed byte *means* stays **[U]**. game1 sends `0x14` and game2 `0x01` on the same
+record, so it is not a constant, and nothing in the captures varies with it beyond the
+echo itself — which is why the payload carries the client's own byte back rather than a
+value this server would have to invent.
+
+**The payload's length is not settled, and is the one thing here that is a guess.** game1
+answers in **six** bytes (`e0 14 00 00 00 00`) and game2 in **five** (`e0 01 00 00 00`), on
+the same record and the same two-byte report; game1 later grows the same record to
+**fourteen** bytes mid-round (`e0 06 00 00 00 00 …`). Nothing measured separates them —
+both captures hold four roster entries and neither marks a slot occupied in the array that
+opens the run — so the rule is not a player count, a slot count or the round length.
+`MatchRecordBodiesUtils.MatchStartPayload` writes game1's six-byte form, the capture the
+rest of the replay is measured from. A round opened against a game2-shaped host carries one
+zero more than that host writes. **[U]**
 
 ---
 
@@ -486,11 +562,11 @@ Three things make it the character id rather than a coincidence of the roster or
   the TCP `0x4101` character record of the same session carries — the cross-check that names
   the field rather than merely numbering it.
 - **It explains `[0x0a]`.** Every captured character id is in the `0x0001xxxx` range, so its
-  high byte reads `0x01` on all five of them and `0x00` on the room record, whose id is
+  high byte reads `0x01` on all five of them and `0x00` on the host's own entry, whose id is
   `0x0000a001`. "Zero on the host, one on every joiner" is what the high byte of a u32 looks
   like; there is no field there at all. The code no longer writes one.
 
-The room record's own value is **not [U]** either, and it is the same field as every other
+The host's own entry's value is **not [U]** either, and it is the same field as every other
 one: `0x0000a001` is the **dedicated host's character id**. The TCP cross-check above
 generalises to the host as well as to the joiner — the gameplay-lobby flow at
 `15.204.239.231:5733` carries `00 00 a0 01` (big-endian `0xa001`) at offsets 176, 164 and 372
@@ -514,7 +590,9 @@ per-character tail. The local player's 140-byte join request carries the same ta
 (`1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 0b 16 00 0e 0e 07 0f 00 00`), which the
 server re-broadcasts. That record is **not implemented**: its slot byte is neither the
 roster handle (`0x14 0f 04 0b`) nor the character id, slots are reused across rejoins,
-and four of its columns remain **[U]**.
+and four of its columns remain **[U]**. The record itself is now **decoded** — the
+`0b` payload is the replay console's `TYPE_SETTINGS`, the host's rotation and each
+player's appearance and skills; see `UDP_SETTINGS_PAYLOAD.md`.
 
 **Implemented.** `PlayerProfileRecordUtility` writes `0xe2 + index` (or zero for the
 host), writes zero at `0x05`/`0x07`, writes the **character id** as a u32 at `0x08` —
@@ -601,7 +679,7 @@ join:
 | `0x006d` | t+218.5 s | | `0x0881` | t+764.1 s |
 | `0x00b3` | t+394.4 s | | `0x08b3` | t+764.1 s |
 
-Yet **only two datagrams in the whole round carry the `07 4c` room record**, both at
+Yet **only two datagrams in the whole round carry the host's own `07 4c` entry**, both at
 t+2.476 with a single `07 48` player entry — the join itself. Every later arrival
 reaches this peer as `0x9001` + one `0x1001` entry + trailing records, never as a
 second entry beside the first:
@@ -639,20 +717,13 @@ A seventh record follows 300µs later on counter 6: `0xd001` with body `02`. **[
 **The state blob is fully pinned.** All 141 `0x0002` records in the round are 22
 bytes and all go server to client. Eighteen are zero, then `40 00`, then a
 sixteen-bit big-endian value — the only part that moves: 100 for 56 of them, then
-0, 94, 98, 99, and the 50 this burst carries. `PostJoinBurstService.BuildStateBlob()`
-reproduces the join-time blob exactly. What the value counts is **[U]**. **[V]**
+0, 94, 98, 99, and the 50 this burst carries.
+`PlayerSettingsBurstService.BuildClosingStateBlob()` reproduces the join-time blob
+exactly. What the value counts is **[U]**. **[V]**
 
 **`0xd001` is mostly the host's, not the peer's.** The round holds 181 of them:
 **176 server to client, 5 the other way.** It was registered receive-only here on
-the strength of the 5. Two go out inside this burst, with bodies `24` and `02`. **[V]**
-
-**The payloads do not decode, and are not copied.** The `0b <slot>` bodies run 6 to
-161 bytes and hold one character's equipment, skills and settings. The first four
-here match the replay's opening burst byte for byte — `0b 00`/161, `0b 01`/50,
-`0b 15`/54 twice, including the `45 2f 57 39 67 68` template run at body offset
-`0x1b` of `0b 01` — so a replay is a source for live payloads, not only for
-framing (`UDP_P2P_PROTOCOL.md` §6.6). Their contents are still **[U]**, and the
-burst is built with each payload as its tag, its slot and zeros. **[I]**
+the strength of the 5. Two go out inside this burst, with bodies `24` and `02`. **[V]****The payloads decode, and they are copied rather than built.** The `0b <slot>` bodies run 6 to 161 bytes and hold one character's equipment, skills and settings, which is the replay console's `TYPE_SETTINGS` record: slot `0x00` with 71 bytes or more is the host's own rotation of fifteen map/mode entries, and a slot of `0x01` or more with a length in 50…58 is a player's loadout (`UDP_SETTINGS_PAYLOAD.md`). The first four here match the replay's opening burst byte for byte — `0b 00`/161, `0b 01`/50, `0b 15`/54 twice, including the `45 2f 57 39 67 68` template run at body offset `0x1b` of `0b 01` — so a replay is a source for live payloads, not only for framing (`UDP_P2P_PROTOCOL.md` §6.6). `PlayerSettingsBurstService` sends those recorded bodies, because the fields behind them are one character's own appearance and skills and this server does not have them; the tag-plus-slot-plus-zeros body it replaced was a shape no peer had been shown to read. **[V]** for the reading, **[I]** for sending another session's values.
 
 **Three things about this burst are worth not assuming.** **[V]**
 
@@ -704,7 +775,7 @@ These are the literal fourth-byte values from the tick framing, not inferred
 operation names. In particular, `0x0a61`'s one-byte `fe` records use classes 0
 and 1; its four- and five-byte bodies use class 0. The steady host stream's
 `0x090c fa fa` record uses class 3. These values match the records emitted by
-`HostStreamFramesUtils`; by themselves, the capture framing and generic P2P codec
+`MatchRecordFramesUtils`; by themselves, the capture framing and generic P2P codec
 do not explain their application meaning. The RPDT cross-check below supplies
 structure for the `0x0261`/`0x0a61` bodies and a candidate for `0x090c`.
 
@@ -811,8 +882,8 @@ assignments; `PlayerProfileRecordUtility` writes zero at offsets `0x05`/`0x07`.
 Roster slots must not be reused as handles, and deriving group membership from roster
 order would invent semantics absent from all three sources. The RPDT grammar is
 straightforward to encode, but valid live inputs for its members and groups are still
-missing. The current `HostStreamFramesUtils` emits only the two empty `0x0a61 fe`
-records in its steady frame; it does not emit `0x0261` or the member-bearing updates
+missing. The current `MatchRecordFramesUtils` emits only the two empty `0x0a61 fe`
+records in its beat frame; it does not emit `0x0261` or the member-bearing updates
 seen for either ID in the capture. The present fixed replay is therefore incomplete,
 not just semantically opaque.
 
@@ -941,33 +1012,88 @@ that says *no*.
 still **[U]**. Nothing was implemented on a resemblance, which is how `0x43CA`/`0x43CB` and
 `0x4442` went wrong in this project already.
 
-**Gameplay forwarding, now present but not established as sufficient.** The server relays inbound tick records below `0x1000` to its other established peers, preserving the type, body, fourth header byte and compression choice. Unknown tick identifiers are forwarded too, since the capture has 121 tick types and this server only decodes a subset. The capture shows tick traffic in both directions, but does not prove this relay alone is enough to run a game, that this is the cause of a freeze, or that the dedicated host should synthesize authoritative ticks. The Ghidra check confirms the client serializer and parser shape; it does not identify a host-side simulation requirement.
+**Gameplay forwarding, now present but not established as sufficient.** The server relays inbound tick records below `0x1000` to its other established peers, preserving the type, body and fourth header byte (the relay frame is written plain). Unknown tick identifiers are forwarded too, since the capture has 121 tick types and this server only decodes a subset. Nothing is answered in return, and a peer that has not finished its handshake is not a recipient yet. The relay lives in `GameplayServerService.FrameDispatch`'s record loop; before it, an unhandled tick record was dropped quietly, so two joined clients could not see each other move — the capture cannot refute that (each of the three recordings has exactly one joiner), but the client does send its own `0x810d` / `0x890d` movement records to the host, 4 131 and 578 of them in game1, and a dedicated host forwards what it does not answer. The capture shows tick traffic in both directions, but does not prove this relay alone is enough to run a game, that this is the cause of a freeze, or that the dedicated host should synthesize authoritative ticks. The Ghidra check confirms the client serializer and parser shape; it does not identify a host-side simulation requirement.
 
-**The host stream, now replayed.** What the relay above left out is that the recorded host
-never stops writing. In the solo window — the thirteen minutes before the second player
-arrives at t+154 s — it sends the joining client a stream of its own: 0x090c `fa fa`, two
-0x0a61 `fe` per frame at a measured 29 ms, 0x1a54 / 0x9a54 `01 20 0d` and 0x0002 blobs
-inserted among them, with a sparse 0xd001 / 0x0002 phase and a **match-start run** at
-t+46.4 s (hdr 0x8019, 160 B compressed) opening the round. A server that answers the join
-and then goes quiet hands the client an open, silent channel.
+**The host stream, now replayed — and re-derived.** What the relay above left out is that
+the recorded host never stops writing. In the solo window — the thirteen minutes before the
+second player arrives at t+154 s — it sends the joining client a stream of its own: 0x090c
+`fa fa` and two 0x0a61 `fe` in every beat frame at a measured **30.0 frames a second, 33
+ms**, a 0x1a54 / 0x9a54 operations record and a 0x0002 blob inserted among them, with a
+sparse 0xd001 / 0x0002 phase and a **match-start run** at t+46.4 s (hdr 0x8019, 160 B
+compressed) opening the round. A server that answers the join and then goes quiet hands the
+client an open, silent channel.
 
-`HostStreamFramesUtils` carries the measured bodies and order, and
-`HostStreamService` replays them per peer, started once after the roster answer. The sparse
-delays are measured from the capture; the steady insertions repeat on measured frame
-periods. The compression marker follows the frame's content rather than the phase, as the
-capture shows: a frame carrying a state blob goes out compressed (hdr 0x8648, 0x8019) and a
-periodic-tick-only or slot-only one uncompressed (hdr 0x0626, 0x062d, 0x0682),
-the 22-byte mostly-zero blob
-being the only body in the steady stream that pays for it. Every uncompressed frame the
-replay writes is **byte-identical in size** to the capture's (17 B control, 28 B base, 35 B
-slot, 33 B control-inserted), and every frame round-trips through `FrameCryptoUtility` and
-`MessageCodecUtility` with its types, bodies and fourth bytes intact.
+**The period is the one measured quantity that moved.** Re-measured against this capture,
+the beat is 33 ms and not 29: 2 478 vitals-carrying frames over 82.57 s, and 3 255 counter
+steps over 109.58 s, both read 30.0 a second, and the replay console's own parser reports
+**30.303 Hz** for three of the checked-in recordings. The 29 ms reading is the one thing
+the file's timestamps could not settle, because a burst's frames are written under a single
+timestamp — most host frames are 11–12 µs apart there and physically are not — so the
+period has to come from the count over a span.
 
-The compressed frame sizes now match the captured targets: 25 B for a lone state blob,
-160 B for the match-start run, 40 B for the steady zero-valued blob, and 41 B for the
-steady 100-valued blob, each with the beat and first tick pair. The encoder emits valid
-LZSS and the decoded records survive the normal frame codecs. The steady stream's
-**occasional `0x5001` and `0x1001` insertions** (five and one in 81 s) are not reproduced.
+`MatchRecordFramesUtils` carries the measured bodies and order, and `MatchRecordService`
+replays them per peer, started once after the roster answer. Every recorded body it writes
+was checked byte for byte against the capture: the ninety-byte operations state block, the
+two 26-byte entries, the close pair, the 0x1ade payload, both state-blob values, the
+operations clock body `01 20 0d` and the beat's `fa fa` pair all match, and the sparse
+phase's delay-and-body steps land on the capture's own frames (4.933 s, 9.729, 12.129,
+12.130, 14.500 … 42.246). The insertions repeat on the times measured in the beat: the two
+clock forms together every 1.48 s, a state blob every 5.98 s, a control every 4.3 s.
+
+The compression marker follows the frame's content rather than the phase, as the capture
+shows: a frame carrying a state blob goes out compressed (hdr 0x8648, 0x8019) and a
+clock-only or control-only one uncompressed (hdr 0x0626, 0x062d, 0x0682), the 22-byte
+mostly-zero blob being the only body in the stream that pays for it. Every uncompressed
+frame the replay writes is **byte-identical in size** to the capture's (17 B control, 28 B
+base, 35 B clock-inserted, 33 B control-inserted), and every frame round-trips through
+`FrameCryptoUtility` and `MessageCodecUtility` with its types, bodies and fourth bytes
+intact. The compressed frame sizes match the captured targets too: 25 B for a lone state
+blob, 160 B for the match-start run, 40 B for the steady zero-valued blob, and 41 B for the
+steady 100-valued blob, each with the beat and first rules-roster pair.
+
+**What the replay reproduces from the run on.** The match-start run is written **five
+times** in the 12.5 s after it — frames 25, 81, 137, 193 and 249, every 56 frames (1.85 s)
+— once whole and four times as the 11-record form with the two `0x5001` heads dropped and
+the operations pair moved behind the roster records. The item-box world objects of §3 ride
+in **one beat frame in every eight** (0.26 s) from 6 frames after the run, as the two boxes'
+state under `0x1a50` / `0x1a5a` (the box's index and five zero bytes). And the **vitals
+record joins the beat frame only from t+73.4 s** — 27.0 s, 818 beat frames, after the run —
+the rules-roster pair alone carrying the round's first 27 s, which is what the replay now
+writes.
+
+**A round ends and the next one opens.** The capture's first round runs from its run at
+t+46.42 s to the next round's run at t+194.04 s — **147.6 s** — and ended when a team
+reached the goal, not on the round's timer: the state block's own clock is 3 360 units of
+125 ms, **420 s**, and no clock record in the round ever moves off it. The second round then
+plays the same stream under the **sibling identifier set** — every identifier a 0x800 bit
+along: operations `0x1a54` → `0x1254`, payload `0x1ade` → `0x12de`, rules `0x0a61` →
+`0x0261`, vitals `0x090c` → `0x010c`, marker `0x5ade` → `0x52de`. `MatchRecordService`
+swaps to the sibling identifier set when the round is opened, and the round's own frame
+counters restart with it.
+
+**The round is opened by the client's readiness report, not by either clock.** §3.2
+measures the pairing: every round in every capture begins 0.6–5.5 s after an `e1 NN`
+report on the round's own payload record, and none begins without one. So the sparse phase
+now stops at its last state blob, `PlayerReadyHandler` latches the report, and the writer
+takes it and writes the marker, the match-start run and its four repeats — echoing the
+byte the client sent, as every captured payload does. The 147.6 s goal-ended length remains
+as the beat phase's round *boundary*: it still decides when the next round becomes due, and
+the round then waits for the client to say it is ready for it.
+
+**What the replay still leaves out**, measured now rather than assumed:
+
+- The item boxes' **spawn** bodies (head codes 0x74, 0x8c and 0xb4, under the same 0x1a50)
+  and the position records that move them: those are the live round's own item placement,
+  and they move irregularly around the eight-frame state group the replay does write.
+- The second round's extra state group (`0x00d9`–`0x00df`), its member-bearing rules body
+  (`ff 0f fe fe`) and its 25-byte roster entry, which the sibling identifier set alone does
+  not account for.
+- The occasional 0x5001 / 0x1001 insertions (five and one in the run's first 81 s), the
+  0x0a5c / 0x1a58 records seen once each, and the per-player position, objective and
+  0x1a50-spawn frames the host's own character produces.
+- The steady control's cadence is the capture's mean, not a period it holds: over the solo
+  window its gaps run from 1 to 337 frames between one insertion and the next.
+
 And **whether the stream resolves the reported freeze is untested** — it is sent because
 the recorded host sends it, on the same grounds as the roster and the burst.
 
@@ -988,6 +1114,9 @@ python3 tools/udp_framing_table.py  docs/mgo2-game.pcapng       # the 18728/1901
 python3 tools/udp_unresolved_probe.py docs/mgo2-game.pcapng     # 0x5001 and 0xd001, in order
 python3 tools/udp_pairing_probe.py   docs/mgo2-game.pcapng     # the 0x1x/0x5x negative
 python3 tools/udp_join_replay.py     docs/mgo2-game.pcapng     # the join, frame by frame
+python3 tools/pcap_gameplay_log.py   mgo2-game1.pcapng --limit 20  # as the server logs it
+python3 tools/pcap_roster_acks.py    mgo2-game1.pcapng        # §8.6, roster acknowledgements
+python3 tools/compare_roster_exchange.py   # §8.6, ours beside the reference's
 ```
 
 `tools/pcap_conversations.py` is a stdlib pcapng reader — there is no tshark on this
@@ -1015,13 +1144,13 @@ character it belongs to.
 | capture | party | `peer_id` | that character's roster entry |
 | --- | --- | --- | --- |
 | game1 | joiner `10.2.0.2:5730` | `0x0001232f` | `MyPlayerName`, `0x0001232f` |
-| game1 | host `99.66.131.177:5731` | `0x0000a001` | the room record, `0x0000a001` |
+| game1 | host `99.66.131.177:5731` | `0x0000a001` | the host's own entry, `0x0000a001` |
 | game2 | joiner `10.2.0.2:5730` | `0x0001232f` | (same character) |
 | game2 | host `143.47.227.126:5721` | `0x00012448` | — |
 | game3 | joiner `10.2.0.2:5730` | `0x0001232f` | — |
 
 The joiner's `peer_id` is byte-for-byte its own character id, and the host's is
-byte-for-byte the room record's character id — including in game2, where the host
+byte-for-byte the character id written in the host's own entry — including in game2, where the host
 is a different character from game1's. So `peer_id == character id` holds on both
 roles and across rounds, which is what `P2P_CONNECT_FSM.md` §7.2 requires of our
 reply. **[V]**
@@ -1066,7 +1195,7 @@ A client that presents itself with the host's mode is therefore sent down the
 branch that never reaches the data phase, which is the `0B09` stall. That reading
 was `[U]` when §7.1b was written; the two additional rounds make the value
 role-bearing rather than build-constant, and leave the open question narrower:
-*what in our server's `0x4321` reply, `0x4313` player list, or room record tells a
+*what in our server's `0x4321` reply, `0x4313` player list, or the host's own entry tells a
 joining client it is the host.* **[V]** for the measurement, **[I]** for the
 mechanism.
 
@@ -1078,8 +1207,8 @@ records are the same value. Across the readable rounds:
 
 | character | round | handle |
 | --- | --- | --- |
-| room record (`0x9001` head) | game1 | `0x00` |
-| room / host member | game2 | `0x02` |
+| host's own entry (`0x9001` head) | game1 | `0x00` |
+| host entry | game2 | `0x02` |
 | `MyPlayerName` | game1 | `0x14` |
 | `MyPlayerName` | game2 | `0x01` |
 | `SOLID KYO!` (first join) | game1 | `0x0f` |
@@ -1103,13 +1232,35 @@ Three things follow, and the third is why this server must not fill the field:
 - **It is allocated per session, on the host side.** No client record announces
   it — the 140-byte join request does not carry it — and the host's roster entry,
   its `0x0261`/`0x0a61` membership sets and its own handle all agree. The
-  allocation rule is therefore **not recoverable from these captures**, and
-  filling the field by derivation would be inventing the very semantics the
-  capture cannot supply. It stays zero, as `PlayerProfileRecordUtility` and
-  `UDP_GAME_CAPTURE.md` §5 record.
+  reference's particular numbers are therefore **not recoverable from these
+  captures**. What is recoverable is what the field *is*, and the server now
+  writes that: each live player is given its own key in the table's range
+  (`0`…`23`, the host taking `0`), fixed for as long as the player stays and
+  released when they leave, and the record carries it at `0x05` and `0x07`
+  (`RoomRosterService`). The client reads the key it is sent, so a host's own
+  allocation is what the field needs; it is not a copy of the reference's.
 
-The practical gap that leaves is unchanged and now precisely stated: our roster
-entries carry handle `0` for every player, and the steady stream emits only the
+**What the client binary adds.** The captures leave the *allocation rule*
+unrecoverable, but `MGO2.ELF` does name the table the value indexes. The lookup
+`0x26d5a8` walks a **24-entry table** of `0x74`-byte records at `net + 0xd4`: each
+record's first byte is its key, `0xff` marks an empty entry, and the indexed form
+returns the record whose key equals the argument (`lbz r8, 0(r3)` /
+`cmpw r8, r10`). The peer pass at `0x280b68` (hook site `0x28137c`) then scans the
+keys `0`…`0x17` in order, looks each one up with that call, and reads its options
+through `0x27e2b0(key + 1)` — a per-slot store whose `0x104`/`0x108` entries are
+the two occupancy masks it tests with `1 << key` and `0x114` a 4-byte id. Every
+handle the three captures carry — `0x00 0x14 0x0f 0x04 0x0b 0x06` in game1 and
+`0x02 0x01` in game2 — lies in `0`…`0x17`, the table's key range, and none reaches
+`0x18`. The byte is therefore the player's **key in the host's 24-entry network
+player table** — a per-session player number — which is why it repeats at `0x05`
+and `0x07` and matches the rules-roster member bytes. **[V]** for the
+disassembly, **[I]** for linking it to the roster byte: no instruction read so far
+copies the slot straight into the record. What the captures still do not give
+is the **selection rule** — `0x280b68` scans the keys, it does not allocate them,
+and `0, 20, 15, 4, 11, 6` in one round follow no order a client announces.
+
+The practical gap that leaves is narrower and now precisely stated: our roster
+entries carry each live player's key, but the steady stream still emits only the
 **empty** `0x0a61 fe` list, so nothing tells the client which handles are live.
 The records it would need are the member-bearing `0x0261`/`0x0a61` ones, which
 this server never emits (its steady frame carries only the empty `0x0a61 fe`
@@ -1153,3 +1304,297 @@ UPnP/NAT module and read back over an internal message, classified by
 `0x00d7d530` into "guest" (`0x30`, `0xd0`) or "host" (`0`, `2`, `0x10`, `0x90`).
 No field of this channel takes part in it, so the row above is a difference of
 content that stays open for another reason or none. **[V]**
+
+### 8.6 Which roster records the client actually acknowledged [V]
+
+§4 reads the roster as the shape the host answers with, and §8.4 reads the
+handle out of it. Neither says whether the client *accepted* any of it — which
+is the part `RoomRosterService` depends on, since a joining client re-sends its
+profile until the host answers and an unanswered roster is a join that stalls
+with nothing logged on either side.
+
+Pairing every roster record against the answers the joiner sent, using the rule
+`PeerAcknowledgementUtils` carries (same identifier with `0x4000` set, same
+fourth byte, body length following the `0x8000` class bit):
+
+```
+python3 tools/pcap_roster_acks.py mgo2-game1.pcapng
+```
+
+In **game1** the client's opening answers pair with the host's opening run
+exactly: `0x9001` ordinal 0 answered by `0xd001` ordinal 0, and `0x1001`
+ordinals 1 and 2 answered by `0x5001` ordinals 1 and 2, 56 ms after the run. The
+next exchange, 2.6 s later, is answered the same way — ordinals 3 to 6 in one
+frame. Across the round **8 of 18 named roster records were answered and 10 were
+not**. Every unanswered one is a `0x9001`; both `0x1001` entries that name a
+player were answered. The `0x5001` head and trailer are never answered by
+anything, which is consistent with §3's finding that this type names no
+sequence.
+
+So the reference client **does** acknowledge the roster it is sent, and does so
+selectively: the identifier it opened the exchange with is answered for the
+first exchange and not for later ones, while the roster identifier is answered
+throughout. That asymmetry is **[U]** — the captures show which records drew an
+answer, not what the client decides on.
+
+**Our own roster, measured the same way.** `tools/compare_roster_exchange.py`
+reads our run back out of `scripts/run-gameplay-local.sh`'s log and puts it
+beside the reference's:
+
+| | reference host | ours |
+| --- | --- | --- |
+| run | `0x5001` `0`, `0x9001` `0`, `0x1001` `1`, `0x1001` `2` | same four records, same ordinals |
+| repeat | `0x9001` `0`, `0x1001` `1`, `0x1001` `2` | same three records, same ordinals |
+| own entry | `0x9001`, **83 bytes** | `0x9001`, **80 bytes** |
+| answered by the client | **yes**, all three | **no**, none |
+
+The shapes match record for record and ordinal for ordinal. **The client
+acknowledged none of ours**, and it acknowledged the reference's on the same
+join. Our run's client answered exactly one thing in the whole log, and it was
+not a roster record.
+
+That makes our roster the **leading candidate for the `0B09` stall** recorded
+in `P2P_CONNECT_FSM.md` §7.1b — a join that completes the handshake and is then
+never confirmed. **[V]** for the measurement.
+
+### 8.7 What the server now reports about it
+
+The comparison above was re-measured against the wire rather than the log's
+record summaries, by decrypting our own outbound frames out of the run's log
+(`scripts/run-gameplay-local.sh`) and diffing them field by field against the
+reference's. The roster run, its repeat and its trailer are **structurally
+identical**: same records, same identifiers, same fourth bytes, same counters,
+same compression flags, and every byte of the host's own entry agreeing from
+`07 4c` through the name marker. The only content differences are the character
+ids, the names, the player handle and the endpoint pairs. **The roster is not
+what the client rejected**, and §8.6's "leading candidate" does not survive the
+measurement.
+
+What the endpoint pairs showed is a real defect. This host advertised
+
+```
+ours       192.168.1.15:3333, 192.168.1.15:3333
+reference  99.66.131.177:5731, 10.104.10.28:5731
+```
+
+— the same address in both slots, where both captured hosts carry two distinct
+endpoints. `LocalAddressUtils.TryGetPrivateAddress` was asked for the machine's
+private address and handed back the one already advertised as public, because on
+a single-address machine running with a LAN address configured as its advertised
+one those are the same value. Detection now excludes the advertised address and
+returns nothing rather than repeating it, and `HostIdentityService` says so at
+startup, naming `GameplayServerPrivateAddress` as the setting that fixes it. The
+wire still carries the advertised address in the second slot, because a zeroed
+pair would be no address at all — so this is a defect made visible, not one that
+changes what a client is sent.
+
+It is **not** the deployed run's cause: the host that raised `0B09` registered
+`89.129.16.203:5731`, a public address, so its two pairs already differed
+(`P2P_FSM_STATE.md` §1).
+
+What the server now reports is the fact this section turned on. An inbound
+record-level answer used to reach the dispatcher as an unhandled record and be
+logged as a dropped message, so the one acknowledgement that says a roster was
+accepted was invisible and a join whose roster drew none looked identical to one
+that did. Answers are now recognised (`PeerAcknowledgementUtils.IsRecordAcknowledgement`),
+recorded per session, and summarised when the peer is reaped:
+
+```
+[udp:5731] Peer 89.129.16.203:5730 acknowledged 625 record(s) before going quiet; roster acknowledged: yes
+```
+
+That count is the reference host's own view of `game1`, where the roster is
+acknowledged. The same line reading `roster acknowledged: no` is the stalled
+join, stated by the server rather than reconstructed afterwards — the
+measurement `P2P_FSM_STATE.md` §3 records as still missing.
+
+### 8.8 The first attempt with a distinct private address
+
+Re-run locally at 16:21 with the endpoint fix in place, the host advertised
+
+```
+public 192.168.1.15:3333, private 172.17.0.1:3333
+```
+
+and the roster entry carried that same pair, against the reference's
+`99.66.131.177:5731` / `10.104.10.28:5731`. The roster run, repeat and trailer
+were unchanged in every other respect, and **the client acknowledged none of
+it**: the same `0x9001` series with rising ordinals, each answered with a
+`0xd001`, and no roster answer for the length of the run.
+
+That is the second measurement of the same thing, from the other side of the one
+variable §8.7 identified, and it is what closes the roster as a candidate: with
+the endpoints now shaped like the reference's, the roster matches it in
+structure *and* in address shape, and is still not acknowledged. **[V]** for both
+runs.
+
+It also turned up a defect in the reporting itself, which is worth recording
+because it would have made the next run look better than it was. The first pass
+counted the client's opening **keep-alive** as an acknowledgement: `0x5000` is
+`0x1000 | 0x4000`, so it matched the answer test and the log read
+`acknowledged record 0x1000 ordinal 0` — an acknowledgement of the handshake,
+which nothing ever answers that way. The keep-alive is id 0 of the same `0x5x..`
+class as `0x5001`, the real answer to a `0x1001` record, so the two are told
+apart by identifier and not by class. Corrected, the local run reads **zero**
+acknowledgements and the reference still reads 624 and `yes`.
+
+### 8.9 Which advertised pair the host answers at
+
+One difference between the two hosts is on the wire and is not about the roster
+at all. game1's joiner advertised two pairs — `217.138.213.5:5730` and then
+`10.2.0.2:5730` — and the host sent **18 528 of 18 528 datagrams to the
+second**, which is also the endpoint the handshake arrived from. This host took
+the *first* pair, the public address, for every reply.
+
+That is a live hazard rather than a stylistic one. A peer on our own network
+advertises its public address first and its LAN address second, so answering the
+public one means sending out through the router and back in — and a router
+without hairpinning drops it, silently, with nothing logged on either side. The
+LAN address is one datagram away and is known to work.
+
+`AcceptHandshakeHandler.AdvertisedEndpointOf` now prefers an advertised pair
+equal to the endpoint the datagram actually arrived from, and falls back to the
+first valid pair when none matches. That reproduces the recorded host's choice on
+game1 exactly, keeps the across-the-internet case correct (a peer behind NAT is
+observed at its public address, so the public pair still wins), and cannot
+regress what came before: a pair matching the source is reachable by
+construction, and where none matches the old rule applies unchanged. **[V]** for
+the measurement and the rule; **[I]** for whether it is among the reasons the
+local join stalls, which it does not obviously explain — that run's roster did
+arrive, since the client stopped re-sending its profile.
+
+### 8.10 The roster, compared byte for byte — and what the client does instead
+
+Both rosters were decoded onto the same axes and diffed position by position.
+The run frame, the repeat frame and the trailer all match in structure, in
+record types, in lengths and in fourth bytes, and the bodies differ in **four
+regions only**:
+
+| offsets | reference | ours | what it is |
+|---|---|---|---|
+| `[0x08]` u32 | `0x0000a001` / `0x0001232f` | `0x00000020` / `0x00000002` | the character id |
+| `[0x05]`, `[0x07]` | `0`, `0x14` | `0`, `0x01` | the player's session slot |
+| `[0x13]`–`[0x1e]` | host's two pairs | ours | the endpoint pairs |
+| `[0x44]` on | `Low Level Host`, `fargraven2` | `server-3333`, `PhilDunphy23` | the names |
+
+Everything else — the version byte, the sub-type, the roster index, both
+unresolved bytes, both block constants, the thirty-seven zero bytes and the clan
+marker — is identical at every offset. **[V]**
+
+Two of the four are worth stating rather than leaving as "different". **The
+character id is the sender's own handshake id, echoed back**, which is what the
+recorded host does: the reference joiner's roster entry carries `0x0001232f` and
+its handshake's first u32 is `0x0001232f`. Ours carries the peer's `2` and
+echoes `2`. The values are small because this deployment's character ids are
+small, not because the field is being written wrongly — though it does break the
+observation in §4 that `[0x0a]` reads `0x01` on every captured record, which
+follows from those ids all being in the `0x0001xxxx` range. **The player-table
+key is free**: across game1 the host used `0`, `20`, `15`, `4`, `11` and `6` for
+six characters, so `1` is as valid as any of them.
+
+**What the client does is where the two runs part.** Read off the client side:
+
+| | reference | ours |
+|---|---|---|
+| frames before the roster | handshake, keep-alive + profile, **profile re-sent** | handshake, keep-alive + profile |
+| roster arrives | t+4.17 s | t+0 s |
+| client's next frame | **t+4.23 s — 56 ms later** | t+6 s |
+| what that frame carries | `0xd001` ×2, `0x5001` ×4 — **an answer to every roster record** | nothing |
+| then | `0x9001` body `0x0a` | `0x9001` body `0x00` |
+| after that | `0x9001` `0c 01 00 00 00`, then `0x00` | `0x9001` `0x00`, ordinals 1…15, ~5 s apart |
+| re-sends an unacknowledged record | yes, repeatedly | never |
+
+**[V]** on all of it. The reference client's first `0x9001` is `0x0a` and lands in
+the same frame as its answers to the roster; ours never sends `0x0a` at all and
+sits at `0x00` for the length of the run. Its fourth byte climbs a step per
+record and it never retransmits, because each one is answered — so this server is
+moving the client's window and the client is still not joining.
+
+**The answer body is not an echo of the request.** Measured across all three
+captures, pairing each length-1 client `0x9001` with the host's `0xd001` of the
+same fourth byte:
+
+- game1: request `0x00` answered `02, 03, 04, 05, 06, 08, 09, 10, 25, 26, 27,
+  28, 49`; the single request `0x0a` answered `0x24`.
+- game2: request `0x00` answered `01` through `13`; the single request `0x0a`
+  answered `0x0b`.
+
+So the body is the acker's own state code and it moves, not a function of what
+was asked — which is what §7.1c already concluded and what `PeerAcknowledgementUtils`
+says. This host writes one fixed value, `0x24`, for every request. **[V]** on the
+measurement; **[I]** on whether a moving value would advance the client, since
+there is no capture of a host that answered `0x00` with the same value twice to
+compare against.
+
+**Together with §7.1d of `P2P_CONNECT_FSM.md` this locates the divergence before
+the roster.** Our client announces `Mode 1` where the recorded client announces
+`Mode 2`, and it is the client's own FSM that picks the value. That is earlier in
+the exchange than anything this server controls, and it is the reason no roster
+change is indicated: the bytes here match the recorded host's.
+
+### 8.11 The same record read by a second parser — what the replay console names
+
+`rpdt.js`'s `rosterPlayer` reads this identical record type — `0x07`, the
+character id u32 at `+8`, the name at `+68` — from the replays SaveMGO's console
+plays back. The record is the same one there: cutting this repository's own five
+replays (`tools/replays/`) at chunk and record boundaries with `rpdt.js`'s own
+framing yields **seven** roster records, every one of them a `0x48` player entry
+or `0x4c` room entry of 79 or 83 bytes with the name at `+68` and the id u32 at
+`+8` — the same subtypes, lengths and offsets as this capture. **[V]**
+
+Beside §8.10's diff that adds three names and one variant:
+
+| offset | `rpdt.js` | this repository | note |
+|---|---|---|---|
+| `[0x05]`, `[0x07]` | `slot` | `SessionSlot` | **shape agrees.** One small byte per player, repeated at `[0x07]` in all seven replay records and all six captured ones, and always below `24`: the replays carry `2, 5, 7, 9, 13, 17, 21` and this capture `4, 6, 11, 15, 20`. `rpdt.js` names it the character's slot in the session's 24-entry table, which is the table §4 already identifies from `0x26d5a8`. **[V]** |
+| `[0x1f]` u16 | `clanId` | zero in every captured record | this capture's host leaves it zero, so no value is missing — a *name* where §4 had only a zero run. **[I]** |
+| `[0x44]` on | `nick`, then `clan` | character name, then clan name | identical. **[V]** |
+| `[0x04]` | `joinCounter` | `0xe2 + roster index` | **shape disagrees.** See below — neither name is adopted. **[U]** |
+
+**`[0x04]` is the one offset the two worlds write differently, so no rename is
+warranted from it.** In the five replays it reads `0x31`, `0x33`, `0x35`,
+`0x3d`, `0x41`, `0x44`, `0x4f` — *including on the host's own entry*, which this
+capture writes as `0x00`. This capture's players read `0xe2`…`0xe6`, one step
+per join. So the replay's byte is not `0xe2 + index`, and it is not a count that
+reads zero on a host's own entry either; this capture's byte is not a counter
+that reaches `0x4f`. The two hosts at `[0x04]` are not writing the same thing,
+and neither reading is entitled to the other's name.
+
+It also carries a **second roster layout, twelve bytes shorter**: the name at
+`+56` and the clan id at `+19` instead of `+31`, measured there on replays
+recorded from 2026-10-07, and told apart per record by walking back from the end
+to whatever precedes the nick's NUL. Nothing in these three captures is that
+shape — every record here is the 79/83-byte form — and
+`PlayerProfileRecordUtility.Build` writes only that form. The reader does not
+implement the short layout either, but a short record fails its marker test at
+`[0x43]` and is then read by the trailing fallback, which recovers the nick from
+the end exactly as `rosterNameOff` does. **[I]** on that fallback covering it:
+no short record has been through this reader.
+
+**`[0x01]` is not a sub-type. It is the record's own length, and the length is
+the name's.** Every roster record in all four captures reads `[0x01] = L - 7`:
+`0x4c` on the host's own 83-byte entry, `0x48` on a 79-byte player entry, `0x47` on
+the 78-byte one, and `0x32`/`0x38`/`0x39`/`0x3b`/`0x3c` on the 57/63/64/66/67-byte
+entries of §8's second and third captures — fourteen distinct (byte, length)
+pairs, no counterexample, and `0x00` on the 7-byte close record, which `0 - 0`
+also satisfies. The value follows the *name*: `fargraven2` (10 chars) makes a
+79-byte entry read `0x48`, `Libertine` (9) makes a 78-byte entry read `0x47`. That
+resolves what §4 recorded as an unexplained sub-type “`0x47`, one bit apart, what
+the bit selects being **[U]**”: the two entries differ by one character in the
+name, not by a flag. **[V]**
+
+**It also means §4's sub-type reading is superseded, and that this server writes
+the byte wrongly.** `our-server-test.pcapng` holds this server's own roster run:
+its host entry is 80 bytes carrying the reference's `0x4c` where 73 (`0x49`) is
+correct, and its player entry 81 bytes carrying `0x48` where 74 (`0x4a`) is. Both
+are self-inconsistent — the byte describes a longer record than the one it is in
+— because `PlayerProfileRecordUtility.Build` writes a constant where the
+reference writes `L - 7`. Whether the client reads that byte is untested and it
+is the one deviation this diff had missed, so it is the first thing to correct.
+**[V]** on the bytes; **[I]** on it being the reason the roster goes
+unacknowledged (§8.10's diff compared the records' contents, not their lengths).
+
+**Does any of this leave the roster incomplete? No.** The only new names are
+fields the reference host also writes as zero, and every offset `rpdt.js` reads
+for a player — the slot, the character id, the nick, the clan — is one both
+sides already exchange. What it adds is meaning, not bytes.

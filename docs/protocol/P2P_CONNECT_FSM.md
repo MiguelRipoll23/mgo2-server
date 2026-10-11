@@ -789,7 +789,7 @@ joining client back. **Measured 2026-10-10 across the three readable rounds
 (`UDP_GAME_CAPTURE.md` §8.3): the field is `2` on every joining client and `1` on
 every host, and the deployed gameplay server's own frame dump agrees — the live
 joiner sent `1` with capability `03`.** The source is traced below, and it is not
-in our `0x4321` reply, our `0x4313` player list or the room record — no field of
+in our `0x4321` reply, our `0x4313` player list or the host's own roster entry — no field of
 ours can name it. **[V]** for the value, **[U]** for the input that makes a client
 choose it.
 
@@ -964,7 +964,7 @@ against `0x90`) and between the two guest codes (`0x30` against `0xd0`).
 **What this means for the join.** The byte our joiner sent is not a value the
 server can name: it is the client's own P2P role, computed by the client's own
 UPnP/NAT module into its connection record and read back over an internal
-message. Our `0x4313` and `0x4321` payloads, and the room record behind them, are
+message. Our `0x4313` and `0x4321` payloads, and the host's own roster entry behind them, are
 never consulted. So the divergence between our live join and the reference is a
 client-side one — the reference's joining client resolved to a guest code and
 ours to a host code — and the check that closes it is on the client: a client
@@ -1178,13 +1178,19 @@ entry exists has nothing to match. Two live joins, one with the wrong body
 length and one with the right one, both climbed their sequence without the base
 moving, and both got their answers in under a millisecond.
 
-The correction is `PeerAnswerSchedulerService`: the answers a frame's numbered
-records are owed are queued and written **300 ms** later — the capture's tenth
-percentile rounded down, inside the measured envelope rather than at its edge —
-not awaited, so the dispatch loop keeps reading every other peer of the room.
-The counter is still the session's, so an answer goes out on the sequence after
-whatever the host wrote meanwhile, which is what the recorded host's own frames
-show.
+The first correction was `PeerAnswerSchedulerService`, which queued an answer and
+wrote it **300 ms** later — the capture's tenth percentile rounded down, inside
+the measured envelope rather than at its edge — not awaited, so the dispatch
+loop kept reading every other peer of the room. It has since been removed. The
+pause landed on the wrong copy: the room roster is itself an answer to the
+joiner's profile record, and a roster written a beat after the *first* copy
+satisfies the client before it re-sends, so the re-send the recorded host
+answers never reaches the wire. What the captures settle is which copy is
+answered — a re-sent one, 75 to 542 ms after it
+(`docs/protocol/UDP_JOIN_FLOW.md` §7) — and that copy is answered in the pass
+that received it. The counter is the session's, so an answer goes out on the
+sequence after whatever the host wrote meanwhile, which is what the recorded
+host's own frames show.
 
 Both halves of the answer are now the captures': the length (§7.1c) and the
 timing. What confirms it is still a live join — the promotion gate at `0x268f18`
@@ -1300,6 +1306,67 @@ the same host is the cheapest way to tell whether that role gates the join.
 Neither measurement exists in a log today. The server side of the first would
 be the reply's gate results as this host decodes them, which it does not print;
 the second is read on the client.
+
+#### The mode measurement, taken — and it is the first divergence in the exchange
+
+The second measurement now exists, because the handshake is logged. Decoded field
+by field from the 2026-10-10 run against game1's, the two handshakes agree in
+every field except the mode, and it is the **client's** that differs:
+
+| field | reference client | ours | reference host | ours |
+|---|---|---|---|---|
+| PeerIdentifier | `0x0001232f` | `0x00000002` | `0x0000a001` | `0x00000020` |
+| CounterBase | `0x736773a6` | `0x1a15e0f0` | `0x3c8a65d6` | `0x9a405786` |
+| Magic | `0x4d258ab7` | `0x4d258ab7` | `0x4d258ab7` | `0x4d258ab7` |
+| Capability | `0x02` | `0x02` | `0x02` | `0x02` |
+| **Mode** | **`0x0002`** | **`0x0001`** | `0x0001` | `0x0001` |
+| PairCount | 2 | 2 | 2 | 2 |
+
+**[V]** on every cell. Our host's mode is the recorded host's mode; our client's
+is not the recorded client's.
+
+This is the **earliest point at which the two exchanges differ**, and it is
+upstream of everything this file has been chasing. The client picks the value from
+its own FSM — state 1 yields mode 2, a joiner, anything else yields mode 1, host
+(§7.1b) — so our client resolved itself into the **host** role while joining.
+§7.1d already established that the *received* mode is stored and never tested, so
+this is not a byte the server sends wrong. It is the client's own picture of
+itself, and the first thing on the wire that says its session took a different
+path from the reference's.
+
+**The mode is a readout, not a switch, and the VPN is what moves it.** The decision
+at `0xd7d530` is eleven instructions and its argument is `this+0x30154` — the port
+halfword the client's *own* connection record publishes, over internal messages
+`0x2105`/`0x2106`/`0x2102`, each skipped when its source is `0`:
+
+```
+r4 = arg & 0xfcff          ; bits 0x100/0x200 are flags, not value
+r4 == 0x10 -> 0 ; r4 <= 0x02 -> 3 ; r4 == 0x90 -> 0 ; otherwise -> 1
+```
+
+So **mode 2 needs that port to be outside `{0, 1, 2, 16, 144}`**, and a port of `0`
+— nothing learned — gives mode 1. The captures put the NAT server on the wire
+(`15.204.66.207:3478`, 8 exchanges in game1 and 18 in game2 before the handshake),
+and its binding response carries the client's mapped public address, while the
+client advertises its **local** port in both handshake pairs. **[V]** on the rule
+and on the STUN traffic.
+
+What settles it is which port the connection record holds, and that is the
+client's NAT bring-up. The reference captures were taken behind ProtonVPN and the
+2026-10-10 attempt under Tailscale, and the mode moved with them — 2 against 1.
+That is the cheapest outstanding experiment and it needs no code: **join with
+Tailscale down**, which is the condition the captures were taken under, and read
+`mode=` off the `configured peer=…` line this server already logs.
+
+That reframes the roster question. See UDP_GAME_CAPTURE.md §8.10: the roster this
+server sends is byte-identical to the recorded host's outside four regions that
+are all host-specific, and the client side of the exchange shows the consequence —
+the reference client answers every roster record 56 ms later and then opens a
+join request, while ours answers nothing and emits a request whose body is `0x00`
+every five seconds for the length of the run. The remaining test is the one named
+above and still unrun: **a client that resolves to a guest for this host.** Until
+one does, no server-side change is indicated, because the bytes this server writes
+are not distinguishable from the recorded host's.
 
 ---
 

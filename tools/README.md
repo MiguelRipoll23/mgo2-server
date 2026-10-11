@@ -297,7 +297,20 @@ python3 pcap_conversations.py ../../docs/mgo2-game.pcapng          # every flow,
 python3 pcap_flow.py           ../../docs/mgo2-game.pcapng 5733      # one flow's wire bytes
 python3 udp_flow_summary.py    ../../docs/mgo2-game.pcapng --peer IP:PORT
 python3 udp_frame.py          ../../docs/mgo2-game.pcapng --peer IP:PORT --limit 40
+python3 pcap_gameplay_log.py  ../../docs/mgo2-game.pcapng --limit 20  # as the server logs it
+python3 pcap_roster_acks.py   ../../docs/mgo2-game.pcapng             # roster acknowledgements
 ```
+
+`pcap_gameplay_log.py` is the offline twin of the gameplay server's own log.
+Run `scripts/run-gameplay-local.sh` for a live session and this over a capture
+of the same protocol and the two are line-for-line comparable — same
+`[HH:MM:SS DBG] [udp:PORT] IN …` shapes, same hexdumps, same digest-gate
+wording. Two things it will not invent: the server dials back to the endpoint a
+handshake advertised, which a capture does not show, so `dial-back` reads as the
+observed source; and the `answering N reliable records` line is written only when
+the host's next outbound frame really carries those answers, so a host that
+should have answered and did not gets a warning naming what went unanswered.
+
 
 The session key is **derived from the two handshake counter bases**, not configured, so these work
 on any capture of this protocol. A frame whose tail digest does not verify is reported as unparsed
@@ -310,6 +323,11 @@ identifier is what tells them apart.
 | tool | what |
 | --- | --- |
 | `pcap_conversations.py` | Stdlib pcapng reader; per-flow packet and byte counts, ordered by volume. The entry point for any capture. |
+| `pcap_gameplay_log.py` | **Replays a capture's gameplay session in the server's own log wording** — the same `IN`/`OUT`, hexdump, digest-gate, dispatch and `answering N reliable records` lines `scripts/run-gameplay-local.sh` writes, so a capture and a live run read against each other line for line. The capture is read as the host's side, because the host is the side this project implements. `--limit/--skip/--until` narrow it. |
+| `pcap_roster_acks.py` | Which roster records a captured session acknowledged. Records are grouped by what they say, with the layout they parsed from and whether the peer answered; a capture whose session never keyed says so rather than reporting the unreadable frames as unanswered. |
+| `compare_roster_exchange.py` | Puts our own roster — read back out of the gameplay server's log — beside a captured host's, record for record, with the acknowledgement column on both sides. `--opening N` limits the captured side, since a whole round holds 236 frames carrying a roster identifier. |
+| `probe_roster_byte_diff.py` | Diffs a live roster against a captured one **offset by offset**, printing only the runs where they disagree. Our side comes out of the gameplay server's log, so it reads the frames that actually went out; records are matched by type and length, so a name or an address of a different length does not shift the alignment. It is what says whether a roster difference is ours to fix or is all our own name and address — `docs/protocol/UDP_GAME_CAPTURE.md` §8.10. |
+| `probe_client_nat.py` | Reports what the **client's** NAT module learned, from a capture taken on the client's own host. The client's handshake mode is decided by one value — the P2P port its connection record publishes — and `0xd7d530` resolves anything outside `{0,1,2,16,144}` to "guest"; a record with no port resolves to mode 1. Nothing the server sends takes part, so the client is the only place to look. Decodes the game's own NAT protocol, which is **not standard STUN**: cookie `6c02e061`, opaque transaction id, attributes renumbered. `--port` is the client's P2P port, so the verdict line can be checked against what the mode actually was. |
 | `pcap_flow.py` | One flow's packets as wire hex, for when the framing tools do not apply (the TCP lobby channel, STUN, DNS). |
 | `udp_frame.py` | Decodes the peer-to-peer channel: header scramble, XOR chain, tail digest, LZSS, records. Prints messages with bodies. |
 | `udp_flow_summary.py` | Session identity, the derived key, and a message-type inventory with direction split and body lengths. |

@@ -1,0 +1,447 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MGO2 Replay Console</title>
+<style>
+/* MGO2's own UI typeface, traced from the game's glyph atlas
+   (lobby/cache_nodld.dlz asset 0x942751). Inlined so both the hosted
+   build and the single-file build carry it without a build step. */
+@font-face{font-family:"MGO2 UI";font-style:normal;font-weight:400;
+  font-display:swap;src:url(data:font/woff2;base64,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) format("woff2");}
+/* MGO2 Replay Console.
+   Deliberately single-theme: this is an instrument display, not a document.
+   Every colour is painted explicitly so it holds on any host ground. */
+:root{
+  --ground:#0B0D0C;
+  --panel:#11150F;
+  --panel-2:#171C15;
+  --hair:#2A332A;
+  --hair-hot:#3C4A3A;
+  --ink:#C9D0C2;
+  --ink-dim:#7C8878;
+  --ink-faint:#4E574B;
+  --amber:#FF7A18;
+  --amber-dim:#8A4410;
+  --sop:#4EA8DE;
+  --hostile:#E2574C;
+  --warn:#E8B33C;
+  --f-disp:"MGO2 UI","Saira Condensed","Arial Narrow",system-ui,sans-serif;
+  /* One typeface for the whole console. Safe for numbers only because the
+     build gives MGO2 UI tabular figures -- see Desktop\MGO2-Font. */
+  --f-mono:"MGO2 UI","IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --rail:268px;
+  --feed:252px;
+  --dock:118px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:var(--f-mono);font-size:13px;line-height:1.45;
+  overflow:hidden;-webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:1px solid var(--amber);outline-offset:2px}
+
+#stage{position:fixed;inset:0}
+#gl,#hud{position:absolute;inset:0;width:100%;height:100%;display:block}
+#hud{pointer-events:none}
+#vignette{position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 45%,rgba(0,0,0,0) 42%,rgba(0,0,0,.62) 100%)}
+#scan{position:absolute;inset:0;pointer-events:none;opacity:.15;
+  background:repeating-linear-gradient(to bottom,rgba(200,255,200,.05) 0 1px,transparent 1px 3px)}
+
+.pane{
+  position:absolute;background:linear-gradient(180deg,rgba(17,21,15,.93),rgba(11,13,12,.95));
+  border:1px solid var(--hair);backdrop-filter:blur(3px);
+  display:flex;flex-direction:column;min-height:0;
+}
+.pane-hd{
+  display:flex;align-items:baseline;gap:8px;flex:0 0 auto;
+  padding:7px 10px 6px;border-bottom:1px solid var(--hair);
+  font-family:var(--f-disp);font-weight:600;font-size:11.5px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);
+}
+.pane-hd .n{margin-left:auto;font-family:var(--f-mono);font-size:11px;
+  letter-spacing:.04em;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+.scroll{overflow-y:auto;overflow-x:hidden;min-height:0;scrollbar-width:thin;
+  scrollbar-color:var(--hair-hot) transparent}
+.scroll::-webkit-scrollbar{width:7px}
+.scroll::-webkit-scrollbar-thumb{background:var(--hair-hot)}
+
+#brand{position:absolute;top:14px;left:14px;pointer-events:none}
+#brand h1{
+  margin:0;font-family:var(--f-disp);font-weight:700;font-size:20px;
+  letter-spacing:.30em;text-transform:uppercase;color:var(--ink);
+  text-shadow:0 0 18px rgba(255,122,24,.28)}
+#brand .sub{display:flex;gap:9px;align-items:center;margin-top:3px;
+  font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint)}
+#brand .sub b{color:var(--amber);font-weight:500}
+#brand .sub #b-ver{color:var(--ink-faint);opacity:.75}
+#brand .rule{width:52px;height:1px;background:var(--amber-dim)}
+
+#roster{top:80px;left:14px;width:var(--rail);bottom:calc(var(--dock) + 22px)}
+.team-hd{
+  display:flex;align-items:center;gap:7px;padding:7px 10px 4px;
+  font-family:var(--f-disp);font-size:11px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--ink-faint)}
+.team-hd .sw{width:8px;height:8px;flex:0 0 auto}
+.team-hd .sc{margin-left:auto;font-family:var(--f-mono);font-size:13px;
+  color:var(--ink);font-variant-numeric:tabular-nums}
+.prow{
+  display:grid;grid-template-columns:3px 1fr auto;gap:0 8px;align-items:center;
+  width:100%;padding:4px 0 4px 0;text-align:left;
+  border-top:1px solid rgba(42,51,42,.5);transition:background .12s}
+.prow:hover{background:rgba(255,122,24,.07)}
+.prow[data-sel="1"]{background:rgba(255,122,24,.13)}
+.prow .bar{grid-column:1;grid-row:1/3;align-self:stretch;background:var(--hair)}
+.prow[data-team="0"] .bar{background:var(--hostile)}
+.prow[data-team="1"] .bar{background:var(--sop)}
+.prow[data-dead="1"]{opacity:.36}
+.prow .nm{grid-column:2;grid-row:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:12.5px;color:var(--ink)}
+.prow .cl{grid-column:2;grid-row:2;font-size:10px;letter-spacing:.06em;color:var(--ink-faint);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prow .kd{grid-column:3;grid-row:1/3;font-size:11.5px;color:var(--ink-dim);
+  font-variant-numeric:tabular-nums;padding-right:10px;letter-spacing:.02em}
+.prow .kd b{color:var(--ink);font-weight:600}
+.prow .hp{grid-column:2;grid-row:3;height:2px;background:var(--hair);margin:3px 0 1px}
+.prow .hp i{display:block;height:100%;background:#9BD17A;width:100%;
+  transition:width .12s linear}
+.prow .hp[data-lvl="mid"] i{background:var(--warn)}
+.prow .hp[data-lvl="low"] i{background:var(--hostile)}
+.prow .hp[data-lvl="none"]{visibility:hidden}
+
+#feedpane{top:80px;right:14px;width:var(--feed);bottom:calc(var(--dock) + 22px)}
+#feed{padding:2px 0}
+.kill{display:grid;grid-template-columns:1fr auto;gap:1px 8px;
+  padding:5px 10px;border-top:1px solid rgba(42,51,42,.5);font-size:11.5px}
+.kill:first-child{border-top:0}
+.kill .who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kill .t0{color:var(--hostile)}
+.kill .t1{color:var(--sop)}
+.kill .arr{color:var(--ink-faint);padding:0 5px}
+.kill .ts{color:var(--ink-faint);font-size:10.5px;font-variant-numeric:tabular-nums}
+.kill .wp{grid-column:1/-1;font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-faint)}
+.kill.wake .arr{color:#9BD17A}
+.kill.obj .arr{color:#E8C547}
+.kill.obj{opacity:.9}
+.kill.wake{opacity:.8}
+.kill.stun{opacity:.82}
+.kill.stun .arr{color:var(--warn)}
+.kill.stun .wp{color:var(--warn)}
+.kill.fresh{animation:flash .9s ease-out}
+@keyframes flash{from{background:rgba(255,122,24,.32)}to{background:transparent}}
+.empty{padding:13px 11px;font-size:11px;color:var(--ink-faint);line-height:1.65}
+.empty b{color:var(--warn);font-weight:500}
+
+#dock{left:14px;right:14px;bottom:14px;height:auto}
+.moreonly{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.grp{flex-wrap:wrap}
+#tl{width:100%;height:68px;display:block;cursor:crosshair;flex:0 0 auto;touch-action:none}
+#bar{display:flex;align-items:center;gap:6px;padding:0 10px 8px;flex:0 0 auto;flex-wrap:wrap}
+.grp{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.tbtn{
+  display:flex;align-items:center;justify-content:center;
+  width:34px;height:28px;border:1px solid var(--hair);color:var(--ink-dim);
+  transition:border-color .12s,color .12s,background .12s}
+.tbtn:hover{border-color:var(--hair-hot);color:var(--ink);background:rgba(255,122,24,.06)}
+.tbtn[data-on="1"]{border-color:var(--amber);color:var(--amber);background:rgba(255,122,24,.08)}
+.tbtn.wide{width:auto;padding:0 7px;font-family:var(--f-disp);font-size:11px;
+  letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
+.tbtn svg{width:13px;height:13px;fill:currentColor}
+#clock{font-size:19px;letter-spacing:.05em;font-variant-numeric:tabular-nums;
+  color:var(--amber);padding:0 8px 0 4px;min-width:118px}
+#clock small{font-size:12px;color:var(--ink-faint);letter-spacing:.04em}
+.sep{width:1px;align-self:stretch;background:var(--hair);margin:2px 5px}
+.lbl{font-family:var(--f-disp);font-size:10.5px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-faint);padding-right:2px}
+#right{margin-left:auto;display:flex;align-items:center;gap:6px}
+select{
+  font:inherit;font-size:11.5px;color:var(--ink);background:var(--panel-2);
+  border:1px solid var(--hair);padding:5px 7px;max-width:200px}
+
+
+/* between-round flash: the round that just ended, shown for a few seconds */
+#roundflash{display:none;position:absolute;left:50%;top:78px;
+  transform:translateX(-50%);z-index:26;width:min(560px,90vw);
+  background:var(--panel);border:1px solid var(--hair);
+  box-shadow:0 10px 34px rgba(0,0,0,.55);pointer-events:none;
+  animation:rfIn .28s ease-out}
+#roundflash[data-open="1"]{display:block}
+@keyframes rfIn{from{opacity:0;transform:translateX(-50%) translateY(-8px)}
+                to{opacity:1;transform:translateX(-50%) translateY(0)}}
+#roundflash .rf-hd{padding:8px 12px;border-bottom:1px solid var(--hair);
+  font-family:var(--f-disp);font-size:11px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--accent);display:flex;
+  justify-content:space-between}
+#roundflash table{width:100%;border-collapse:collapse;font-size:12px}
+#roundflash th{text-align:left;font-family:var(--f-disp);font-size:10px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);
+  font-weight:600;padding:5px 10px;border-bottom:1px solid var(--hair)}
+#roundflash td{padding:4px 10px;border-bottom:1px solid rgba(42,51,42,.4);
+  font-variant-numeric:tabular-nums;color:var(--ink-dim)}
+#roundflash td.nm{color:var(--ink)}
+#roundflash tr[data-team="0"] td.bar{border-left:3px solid var(--hostile)}
+#roundflash tr[data-team="1"] td.bar{border-left:3px solid var(--sop)}
+#roundflash td.bar{width:3px;padding:0}
+@media (prefers-reduced-motion:reduce){#roundflash{animation:none}}
+#scorepane{display:none;left:50%;top:52px;transform:translateX(-50%);
+  width:max-content;min-width:min(1100px,96vw);max-width:96vw;
+  max-height:calc(100vh - 64px);z-index:32}
+#s-body{overflow-x:auto}
+#s-body th,#s-body td{white-space:nowrap}
+#scorepane[data-open="1"]{display:flex}
+#s-body table{width:100%;border-collapse:collapse;font-size:12.5px}
+#s-body th{position:sticky;top:0;background:var(--panel);text-align:left;
+  font-family:var(--f-disp);font-size:10.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-faint);font-weight:600;
+  padding:6px 8px;border-bottom:1px solid var(--hair)}
+#s-body td{padding:3px 8px;border-bottom:1px solid rgba(42,51,42,.45);
+  font-variant-numeric:tabular-nums}
+#s-body td.nm{color:var(--ink)}
+#s-body td.cl{color:var(--ink-faint);font-size:10.5px}
+#s-body tr[data-team="0"] td.bar{border-left:3px solid var(--hostile)}
+#s-body tr[data-team="1"] td.bar{border-left:3px solid var(--sop)}
+#s-body td.bar{width:3px;padding:0}
+#s-body tr.hdr td{background:rgba(255,122,24,.07);color:var(--ink-dim);
+  font-family:var(--f-disp);letter-spacing:.14em;text-transform:uppercase;font-size:11px}
+.s-foot{flex:0 0 auto;width:0;min-width:100%;box-sizing:border-box;padding:7px 10px;border-top:1px solid var(--hair);
+  font-size:10.5px;color:var(--ink-faint);line-height:1.6}
+#drop{position:fixed;inset:0;z-index:35;display:none;align-items:center;
+  justify-content:center;background:rgba(11,13,12,.86);backdrop-filter:blur(2px)}
+#drop.on{display:flex}
+#drop .dz{display:flex;flex-direction:column;gap:8px;align-items:center;
+  padding:34px 54px;border:1px dashed var(--amber);background:rgba(255,122,24,.06)}
+#drop strong{font-family:var(--f-disp);font-weight:600;font-size:17px;
+  letter-spacing:.22em;text-transform:uppercase;color:var(--amber)}
+#drop span{font-size:11.5px;color:var(--ink-dim);letter-spacing:.06em}
+#drop code{color:var(--ink);background:rgba(0,0,0,.35);padding:1px 4px}
+
+#boot{position:fixed;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:13px;background:var(--ground);z-index:40}
+#boot .t{font-family:var(--f-disp);font-size:15px;letter-spacing:.32em;
+  text-transform:uppercase;color:var(--ink-dim)}
+#boot .m{font-size:11.5px;color:var(--ink-faint);max-width:46ch;text-align:center;
+  line-height:1.7}
+#boot .track{width:220px;height:2px;background:var(--hair)}
+#boot .fill{height:100%;width:8%;background:var(--amber);transition:width .3s}
+#warn{position:absolute;top:16px;left:50%;transform:translateX(-50%);
+  display:none;gap:9px;align-items:center;padding:6px 13px;
+  border:1px solid var(--amber-dim);background:rgba(138,68,16,.18);
+  font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--warn);
+  z-index:20;max-width:52vw;text-align:center}
+#warn.on{display:flex}
+
+
+/* -- follow strip ------------------------------------------------------- */
+/* A chip per player above the transport. On a phone the roster is a pane you
+   have to open, tap and close again, which made following anybody a three-tap
+   job; this is one tap and it never covers the view. */
+#fstrip{display:none;align-items:center;gap:5px;padding:6px 8px 0;
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+  -webkit-overflow-scrolling:touch;scroll-behavior:smooth}
+#fstrip::-webkit-scrollbar{display:none}
+.fchip{flex:0 0 auto;display:flex;align-items:center;gap:6px;height:32px;
+  padding:0 10px;border:1px solid var(--hair);background:var(--panel-2);
+  font-size:12px;letter-spacing:.02em;color:var(--ink-dim);
+  white-space:nowrap;max-width:38vw;overflow:hidden}
+.fchip .d{width:7px;height:7px;flex:0 0 auto;border-radius:50%}
+.fchip[data-sel="1"]{border-color:var(--amber);color:var(--amber);
+  background:rgba(255,122,24,.13)}
+.fchip[data-dead="1"]{opacity:.38}
+.fchip.auto{font-family:var(--f-disp);letter-spacing:.14em;font-size:11px}
+.fchip.auto[data-on="1"]{border-color:var(--amber);color:var(--amber);
+  background:rgba(255,122,24,.13)}
+body[data-mobile="1"] #fstrip{display:flex}
+
+/* mobile tab bar — only rendered on narrow screens */
+#mtabs{display:none;gap:6px;flex:1 1 100%;justify-content:center}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
+@media (max-width:1100px){
+  :root{--rail:214px;--feed:198px}
+  #brand h1{font-size:18px;letter-spacing:.22em}
+}
+
+/* ── phone ───────────────────────────────────────────────────────────── */
+@media (max-width:760px){
+  :root{--dock:150px}
+  body{font-size:13px}
+  #brand{top:10px;left:12px}
+  #brand h1{font-size:15px;letter-spacing:.20em}
+  #brand .sub{font-size:10px;letter-spacing:.09em;gap:6px;flex-wrap:wrap}
+  #brand .rule{width:26px}
+  #warn{top:44px;bottom:auto;font-size:10px;max-width:88vw;padding:5px 10px}
+  #mtabs{display:flex;order:-1}
+  #roster,#feedpane{
+    left:12px;right:12px;width:auto;top:60px;
+    bottom:auto;max-height:46vh;display:none}
+  .pane[data-open="1"]{display:flex}
+  #dock{left:8px;right:8px;bottom:8px;height:auto}
+  #tl{height:56px}
+  #bar{flex-wrap:wrap;gap:4px;padding:0 6px 6px;row-gap:4px;justify-content:center}
+  /* Let the groups FLOW instead of each taking a full row. Six stacked rows is
+     what pushed the controls over half the viewport on a phone. */
+  .grp{flex:0 1 auto;justify-content:center;min-width:0;flex-wrap:wrap;gap:4px}
+  /* Secondary view toggles are collapsed behind "More" until asked for. */
+  .moreonly{display:none;gap:4px}
+  body[data-more="1"] .moreonly{display:inline-flex;flex-wrap:wrap;gap:4px}
+  /* The skinning read-out is a developer overlay; on a phone it just covers
+     the title. */
+  #animdiag{display:none!important}
+  /* the beta banner is injected with inline styles, so these need !important */
+  #betabar{font-size:10px!important;padding:4px 8px!important;line-height:1.3!important;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tbtn.wide{white-space:nowrap}
+  #right{width:100%;margin-left:0;gap:6px}
+  #b-open,#b-link{flex:0 0 auto;border-color:var(--amber);color:var(--amber);
+    background:rgba(255,122,24,.10)}
+  #pick{flex:1 1 auto;min-width:0}
+  .tbtn{width:34px;height:30px}
+  .tbtn.wide{padding:0 7px;height:30px;font-size:10.5px;letter-spacing:.06em}
+  #clock{font-size:15px;min-width:0;padding:0 3px;flex:0 0 auto}
+  #clock small{font-size:11px}
+  .sep{display:none}
+  .lbl{display:none}
+  #right{width:100%;margin-left:0}
+  select{max-width:100%;width:100%;padding:8px 7px}
+  .prow{padding:7px 0}
+  .prow .nm{font-size:13.5px}
+  .kill{padding:7px 10px;font-size:12.5px}
+}
+@media (max-width:760px) and (orientation:landscape){
+  :root{--dock:150px}
+  #roster,#feedpane{max-height:36vh}
+  #brand{display:none}
+}
+/* NAMES STAY PUT (user, 2026-10-09: "the names in the scoreboard should stick so when you scroll right ... you know who is
+   where"): the team colour bar and the player name are pinned to the left edge of the scrolling tables. They need a solid
+   background, or the numbers sliding underneath show through. */
+#s-body tr > :nth-child(1){position:sticky;left:0;z-index:2;background:var(--panel)}
+#s-body tr > :nth-child(2){position:sticky;left:3px;z-index:2;background:var(--panel);box-shadow:8px 0 8px -6px rgba(0,0,0,.75)}
+#s-body thead th:nth-child(-n+2){z-index:4}
+#s-body tr.hdr > :nth-child(-n+2){background:linear-gradient(rgba(255,122,24,.07),rgba(255,122,24,.07)),var(--panel)}
+/* TEAM TOTALS AND THE BLOCKS BETWEEN THE TABLES STAY TOO (user, same day: "the team total points doesnt need to move",
+   "the detail weapon head2head can stick", "the 3 stars should stick"). A team row is [name across three columns][points]...:
+   the name pins at the edge and the points pin just after it (it used to slide under the name). Everything in the scroller
+   that is not a table - the Detail / Head to head / Weapons buttons, the three stars, the graph - is only as wide as the
+   window anyway, so pinning it left keeps it in view while a wide table scrolls. */
+#s-body table:first-of-type tr.hdr > :nth-child(1){z-index:3}
+#s-body table:first-of-type tr.hdr > :nth-child(2){left:15.5em;z-index:4;box-shadow:none;background:transparent}
+#s-body table:not(:first-of-type) tr.hdr > :nth-child(2){position:static;box-shadow:none}
+#s-body > :not(table){position:sticky;left:0}
+/* the open scoreboard wins over the round card that pops up over the middle of the screen */
+#scorepane[data-open="1"] ~ #roundflash,body:has(#scorepane[data-open="1"]) #roundflash,body:has(#scorepane[data-open="1"]) #introcard{display:none !important}
+/* SCOREBOARD ON A PHONE (user, 2026-10-09: "Cant close scoreboard on mobile"): the header's four pieces did not fit 390 px, so
+   Close was pushed past the right edge, and the open board covers the dock that holds the Score button. Close is pinned to the
+   corner and the rest of the header wraps under it. dvh: the browser's own bars are not part of the height. */
+@media (max-width:760px){
+  #scorepane{max-height:calc(100dvh - 64px)}
+  #scorepane .pane-hd{position:relative;flex-wrap:wrap;row-gap:6px;padding-right:92px}
+  #scorepane #s-close{position:absolute;top:6px;right:6px;margin:0 !important;min-height:36px;min-width:76px}
+  #scorepane #s-mode{margin-left:0 !important}
+  #scorepane .pane-hd .n{margin-left:0;flex-basis:100%}
+}
+</style>
+
+<div id="stage">
+  <canvas id="gl"></canvas>
+  <canvas id="hud"></canvas>
+  <div id="vignette"></div>
+  <div id="scan"></div>
+
+  <div id="brand">
+    <h1>Replay Console</h1>
+    <div class="sub"><span class="rule"></span><b id="b-stage">&mdash;</b><span id="b-file">no file</span><span id="b-ver">build &mdash;</span></div>
+  </div>
+
+  <div id="warn"></div>
+
+  <section class="pane" id="roster">
+    <div class="pane-hd">Roster <span class="n" id="r-n"></span></div>
+    <div class="scroll" id="r-body"></div>
+  </section>
+
+  <section class="pane" id="feedpane">
+    <div class="pane-hd">Kill Feed <span class="n" id="f-n"></span></div>
+    <div class="scroll" id="feed"></div>
+  </section>
+
+  <section class="pane" id="dock">
+    <canvas id="tl"></canvas>
+    <div id="bar">
+      <div class="grp">
+        <button class="tbtn" id="b-back" title="Back 10s" aria-label="Back ten seconds"><svg viewBox="0 0 16 16"><path d="M7 3v10L1 8zM14 3v10L8 8z"/></svg></button>
+        <button class="tbtn" id="b-play" title="Play / pause (Space)" aria-label="Play or pause"><svg viewBox="0 0 16 16"><path d="M3 2l11 6-11 6z"/></svg></button>
+        <button class="tbtn" id="b-fwd" title="Forward 10s" aria-label="Forward ten seconds"><svg viewBox="0 0 16 16"><path d="M9 3v10l6-5zM2 3v10l6-5z"/></svg></button>
+        <div id="clock">0:00<small> / 0:00</small></div>
+      </div>
+      <div class="sep"></div>
+      <div class="grp">
+        <span class="lbl">Speed</span>
+        <button class="tbtn wide" data-spd="0.25">.25</button>
+        <button class="tbtn wide" data-spd="1" data-on="1">1&times;</button>
+        <button class="tbtn wide" data-spd="4">4&times;</button>
+      </div>
+      <div class="sep"></div>
+      <div class="grp">
+        <span class="lbl">View</span>
+        <button class="tbtn wide" data-cam="orbit" data-on="1">Orbit</button>
+        <button class="tbtn wide" data-cam="top">Top</button>
+        <button class="tbtn wide" data-cam="follow">Follow</button>
+        <button class="tbtn wide" data-cam="free" title="Free camera (V): drag to look, WASD to fly, Q/E down/up, Shift fast, wheel forward/back. Touch: pinch to fly, two-finger drag to slide. Controller: Y toggles, sticks move/look, RT/LT up/down, RB fast, LB slow">Free</button>
+        <button class="tbtn wide" id="b-trail" data-on="1">Trails</button>
+        <button class="tbtn wide" id="b-more" data-on="0" title="More view options">More</button>
+        <span class="moreonly">
+        <button hidden style="display:none" class="tbtn wide" id="b-roof" data-on="0" title="Show the out-of-bounds roof slab (R)">Roofs</button>
+        <button hidden style="display:none" class="tbtn wide" id="b-level" data-on="0" title="Cycle level: all / basement / ground / upper (L)">All</button>
+        <button class="tbtn wide" id="b-xray" data-on="0" title="See players through walls (X)">X-Ray</button>
+        <button class="tbtn wide" id="b-cut" data-on="1" title="Open a hole in walls between the camera and the selected player">Cutaway</button>
+        <button class="tbtn wide" id="b-score" data-on="0" title="Scoreboard (S)">Score</button>
+        <button hidden style="display:none" class="tbtn wide" id="b-clip" data-on="0" title="Show invisible collision walls in red (C)">Clip</button>
+        <button class="tbtn wide" id="b-names" data-on="1" title="Name tags, rings and read-outs on / off, for screenshots (N)">Names</button>
+        <button class="tbtn wide" id="b-snd" data-on="1" style="display:none" title="Sound on / off (M)">Sound</button>
+        <button class="tbtn wide" id="b-alt" data-on="0" style="display:none" title="Alternate small layout found in this map's files: extra fences and closed gates that shrink the map. HD only">Alt map</button>
+        <button class="tbtn wide" id="b-hd" title="Real scenery models instead of the collision map, where available (H)">HD</button>
+        <button class="tbtn wide" id="b-skins" data-on="1" title="Player textures on / off: off shows team-coloured outfits (K)">Skins</button>
+        <button class="tbtn wide" id="b-obj" data-on="1" title="Show mode objectives: targets and goals from the stage geometry (O)">Obj</button>
+        <button class="tbtn wide" id="b-aim" data-on="1" title="Lines from a player to whoever their weapon is locked on. With a player selected, only theirs (G)">Aim</button>
+        <button class="tbtn wide" id="b-heat" data-on="0" title="Dots where players moved, died or got kills over the whole match. With a player selected, only theirs (J)">Heat</button>
+        </span>
+      </div>
+      <div id="right">
+        <button class="tbtn wide" id="b-open" title="Open a replay .dat from your PS3 / RPCS3">Open .dat</button>
+        <button class="tbtn wide" id="b-link" title="Load a SaveMGO survival match from its link (mgo2pc.com/v2/survival/…)">Link</button>
+        <input type="file" id="file" accept=".dat,.zip,application/octet-stream" hidden>
+        <select id="pick" aria-label="Replay file"></select>
+      </div>
+    </div>
+  </section>
+
+  <div id="roundflash" data-open="0" aria-live="polite"></div>
+  <section class="pane" id="scorepane">
+    <div class="pane-hd">Scoreboard <span class="n" id="s-n"></span> <button class="tbtn wide" id="s-mode" style="margin-left:10px" title="Flip between the final scorecard and the scorecard at the current moment of the replay">Whole game</button> <button class="tbtn wide" id="s-close" style="margin-left:auto" title="Close the scoreboard (S)">Close</button></div>
+    <div class="scroll" id="s-body"></div>
+    <div class="s-foot" id="s-foot"></div>
+  </section>
+
+  <div id="drop"><div class="dz">
+    <strong>Drop a replay</strong>
+    <span>any <code>.dat</code> from <code>USRDIR/o/replay</code></span>
+  </div></div>
+
+  <div id="boot">
+    <div class="t">MGO2 Replay Console</div>
+    <div class="track"><div class="fill" id="boot-fill"></div></div>
+    <div class="m" id="boot-msg">Loading telemetry&hellip;</div>
+  </div>
+</div>
+<script src="three.min.js"></script>
+
+<script src="rpdt.js?v=ins236"></script>
+<script>window.__MGO2_MANIFEST__="data/index.json?v=ins237";window.__MGO2_SEX__="male";window.__MGO2_ASSETV__="1009h";</script>
+<script src="app.js?v=ins253"></script>
+<div id="betabar" style="position:fixed;left:0;right:0;bottom:0;z-index:99;background:#3a2a12;color:#f0d9a8;font:12px/1.5 system-ui,sans-serif;padding:8px 12px;border-top:1px solid #6b5220"><b style="color:#ffcc66">BETA</b> &nbsp;skeletal animation, now with clips decoded from the game's own animation files (add ?sex=female for the female body) <span style="opacity:.6">&mdash; tap to dismiss</span></div><script>document.getElementById("betabar").onclick=function(){this.remove()};</script>

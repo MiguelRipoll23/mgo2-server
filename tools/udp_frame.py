@@ -12,6 +12,12 @@ seen, so the tool derives it per peer and re-decodes earlier frames when it does
 
 Nothing here is guessed structure. A frame whose tail digest does not verify is
 reported as such rather than parsed.
+
+Directions are roles read off the wire, not addresses: a flow is identified by
+the handshake a joiner opens it with, so `OUT` is a datagram the gameplay host
+sent and `IN` one the joiner sent, on a capture taken on either of them. A flow
+that announced no handshake gets `--`, because nothing there says which side is
+which.
 """
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ import sys
 from collections import defaultdict
 
 from pcap_conversations import TCP, UDP, Pcapng
+from udp_record_semantics import COMPRESSION_MARKER, HANDSHAKE
 
 LZSS_RING_SIZE = 0x200
 LZSS_MAXIMUM_OUTPUT = 0x800
@@ -133,6 +140,23 @@ def decode(frame_bytes: bytes, key: int) -> tuple[int, bytes, bool]:
     plain = bytearray(frame)
     dechain(plain, counter, key)
     return counter, bytes(plain), verified
+
+
+def handshake_of(wire: bytes) -> tuple[int, int] | None:
+    """The peer id and counter base a pre-keyed handshake announces, or None.
+
+    A handshake is the first datagram of a flow and is pre-keyed, so it is read
+    with the bare constant and without a session key. Both sides send one; the
+    side whose handshake comes first in the flow is the joiner.
+    """
+    if len(wire) < 20:
+        return None
+    counter, plain, verified = decode(wire, PRE_KEY)
+    if not verified or counter & COMPRESSION_MARKER:
+        return None
+    if struct.unpack_from("<H", plain, 2)[0] != HANDSHAKE:
+        return None
+    return struct.unpack_from("<II", plain, 6)
 
 
 def lzss_decompress(source: bytes) -> bytes:
@@ -247,9 +271,6 @@ def main() -> None:
     if "--peer" in sys.argv:
         peer_filter = sys.argv[sys.argv.index("--peer") + 1]
 
-    # The captured host is whichever side owns the p2p port the game dials from.
-    self_endpoint = "10.2.0.2:5730"
-
     capture = Pcapng(sys.argv[1])
     capture.read()
 
@@ -265,15 +286,30 @@ def main() -> None:
     # The handshake body is read from the dechained datagram; the chain key for
     # handshakes is the documented pre-key constant, so this needs no session key.
     bases: dict[tuple[str, str], dict[str, int]] = defaultdict(dict)
+
+    # Which side of each flow is which, by the handshake a joiner opens it with.
+    # Roles are read off the wire rather than assumed from an address: a capture
+    # is as likely to be taken on the host as on the joiner, and the joiner's p2p
+    # port is the game's own choice, not a fixed one.
+    joiners: dict[frozenset, str] = {}
     for _, local, remote, payload in datagrams:
-        if len(payload) != 44:
+        handshake = handshake_of(payload)
+        if handshake is None:
             continue
-        counter, plain, _ = decode(payload, PRE_KEY)
-        if struct.unpack_from("<H", plain, 2)[0] != 0x1000:
-            continue
-        _, counter_base = struct.unpack_from("<II", plain, 6)
+        _, counter_base = handshake
+        if local != remote and frozenset((local, remote)) not in joiners:
+            joiners[frozenset((local, remote))] = local
         bases[(local, remote)][remote] = counter_base
         bases[(remote, local)][remote] = counter_base
+
+    for pair, joiner in joiners.items():
+        if len(pair) != 2:
+            continue
+        host = next(endpoint for endpoint in pair if endpoint != joiner)
+        print(
+            f"session {joiner} (joiner) <-> {host} (host): "
+            f"OUT = sent by {host}, IN = sent by {joiner}"
+        )
 
     shown = 0
     for ts, local, remote, payload in datagrams:
@@ -291,7 +327,11 @@ def main() -> None:
             key = (own_base ^ peer_base) & 0xFFFFFFFF
 
         counter, plain, verified = decode(payload, key)
-        direction = "OUT" if local == self_endpoint else "IN "
+        joiner = joiners.get(frozenset((local, remote)))
+        if joiner is None:
+            direction = "-- "
+        else:
+            direction = "IN " if local == joiner else "OUT"
         state = "ok " if verified else "BAD"
         print(f"[{ts:10.3f}] {direction} {local} -> {remote} ({len(payload)} B) "
               f"hdr=0x{counter:04x} key=0x{key:08x} tail={state}")

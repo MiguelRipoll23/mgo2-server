@@ -11,7 +11,7 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// The recorded host sends a whole roster run in one frame, and the run's
 /// records only mean anything together: writing them one per datagram spends an
 /// outbound sequence on each and hands the peer a roster it never saw assembled.
-/// The roster answer and the post-join burst both go out this way.
+/// The roster answer and its repeat both go out this way.
 /// </remarks>
 public static class RosterRunSendUtils
 {
@@ -23,11 +23,10 @@ public static class RosterRunSendUtils
     /// <param name="run">Records to write, in order.</param>
     /// <param name="compressed">
     /// Whether the run goes out LZSS-compressed with the header's compression
-    /// marker set. The recorded host sends the roster run, the roster repeat
-    /// and the post-join burst compressed and the two one-byte records that
-    /// close the exchange plain; where the context cannot batch, the fallback
-    /// is the uncompressed path because a plain record cannot be made
-    /// compressed without changing what it means.
+    /// marker set. The recorded host sends the roster run and its repeat
+    /// compressed and the one-byte record that closes the exchange plain; where
+    /// the context cannot batch, the fallback is the uncompressed path because a
+    /// plain record cannot be made compressed without changing what it means.
     /// </param>
     public static async Task SendAsync(
         PeerContext context,

@@ -59,6 +59,27 @@ public sealed partial class GameplayServerService
         var handlerType = registry.ResolveHandlerType(message.Type);
         if (handlerType is null)
         {
+            // A record above the tick threshold with no handler is still the live
+            // game's own traffic: the capture's joiner sends its operations record
+            // as 0x1a54 and its position and vitals records as 0x810d and 0x890d,
+            // all at or above 0x1000, and the recorded host forwards what it has no
+            // handler of its own for to the room's other players. Relaying here as
+            // well as in the tick loop is what keeps a record on either side of the
+            // threshold from being dropped on a room of two.
+            if (session.Established)
+            {
+                logger.LogDebug(
+                    "[{LogPrefix}] IN {RemoteAddress} relayed record 0x{MessageType:x4} " +
+                    "({BodyLength} bytes, ordinal={Ordinal}) to the other established peers, no handler",
+                    LogPrefix,
+                    remoteAddress,
+                    message.Type,
+                    message.Body.Length,
+                    message.Flags);
+                SendToOthers(session, message.Type, message.Body, message.Flags);
+                return;
+            }
+
             logger.LogWarning(
                 "[{LogPrefix}] IN {RemoteAddress} message type {MessageType:x4}: {BodyLength} bytes dropped, no handler",
                 LogPrefix,

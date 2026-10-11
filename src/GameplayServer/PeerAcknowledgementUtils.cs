@@ -40,10 +40,7 @@ namespace Mgo2Server.GameplayServer;
 /// different byte, they do not track the record being answered (the joiner's
 /// <c>0x9001</c> byte 1 with body <c>0x0a</c> is answered by <c>0x24</c> in one
 /// round and <c>0x0b</c> in another), and the shape is the acker's own control
-/// byte — the same family <see cref="Stream.HostStreamFramesUtils"/> replays for
-/// the host's sparse phase and that
-/// <see cref="Rooms.PostJoinBurstService.OpeningControlByte"/> measures at the
-/// join. The measured join-time value is used here and nothing is claimed to
+/// byte. The measured join-time value is used here and nothing is claimed to
 /// read it.
 /// </para>
 /// </remarks>
@@ -75,11 +72,9 @@ public static class PeerAcknowledgementUtils
     /// </summary>
     /// <remarks>
     /// The value the reference round's host wrote when it answered the joiner's
-    /// first <c>0x9001</c>, which is the same byte
-    /// <see cref="Rooms.PostJoinBurstService.OpeningControlByte"/> measures on
-    /// the burst that follows it. One round's value rather than a rule.
+    /// first <c>0x9001</c>. One round's value rather than a rule.
     /// </remarks>
-    public const byte HostControlByte = Rooms.PostJoinBurstService.OpeningControlByte;
+    public const byte HostControlByte = 0x24;
 
     /// <summary>
     /// Whether a message is a frame acknowledgement rather than a record that
@@ -92,6 +87,37 @@ public static class PeerAcknowledgementUtils
         message.Length == 1 &&
         message.Body.Length == 1 &&
         message.Body[0] == 0;
+
+    /// <summary>
+    /// Whether a message is a record-level answer to one this host sent.
+    /// </summary>
+    /// <remarks>
+    /// The other direction from <see cref="WaitsForAcknowledgement"/>: this is
+    /// the peer saying it has one of ours, which is the only evidence there is
+    /// that a roster was accepted. The captured client answers the opening run
+    /// 56 ms after receiving it (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §8.6),
+    /// so a join whose roster draws no answer is a join the client rejected --
+    /// and nothing else on the wire distinguishes the two.
+    /// </remarks>
+    /// <remarks>
+    /// The keep-alive is excluded by identifier, not by class. It is id 0 of
+    /// the <c>0x5x..</c> class, so it and the answer to a <c>0x1001</c> record
+    /// — <c>0x5001</c> — are the same four bits apart, and masking the answer
+    /// bit off <c>0x5000</c> leaves the handshake, which is not a numbered
+    /// record and is never answered this way. Reading the keep-alive as an
+    /// answer makes every join look acknowledged the moment the client says
+    /// hello, which is the opposite of what this is for.
+    /// </remarks>
+    /// <param name="message">Decoded message to test.</param>
+    /// <returns>
+    /// <c>true</c> for an answer naming a record, and <c>false</c> for a frame
+    /// acknowledgement or a keep-alive.
+    /// </returns>
+    public static bool IsRecordAcknowledgement(UdpMessage message) =>
+        message.Type >= UdpCommandConstants.TickRecordThreshold &&
+        (message.Type & AcknowledgementBit) != 0 &&
+        message.Type != UdpCommandConstants.KeepAlive &&
+        !IsFrameAcknowledgement(message);
 
     /// <summary>
     /// Whether a record waits for this host to answer it.

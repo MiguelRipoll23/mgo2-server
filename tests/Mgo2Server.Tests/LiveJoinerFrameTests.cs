@@ -66,13 +66,22 @@ public sealed class LiveJoinerFrameTests(ITestOutputHelper output)
         Assert.NotEmpty(content);
     }
 
+    /// <summary>
+    /// The stream closes at the zero-offset marker, three bits short of the end
+    /// of its last byte, and the join request is inside it.
+    /// </summary>
+    /// <remarks>
+    /// This test used to be named for a stream that ends mid-token, because the
+    /// token walk behind that reading read the four-bit length field before it
+    /// tested the nine-bit offset. The marker is those nine offset bits plus the
+    /// flag, so a stream with under four bits of padding behind it looked
+    /// truncated by exactly that much — and a truncated stream is one the peer's
+    /// reader fails on, which is what made the missing marker in the encoder look
+    /// like a property of the captures.
+    /// </remarks>
     [Fact]
-    public void The_join_request_survives_a_stream_that_ends_mid_token()
+    public void The_join_request_survives_a_stream_that_ends_at_the_marker()
     {
-        // The frame ends by exhaustion rather than by the offset-0 marker. A
-        // decompressor that treats that as an error returns nothing, the frame
-        // decodes to an empty content region, and the joiner re-sends the same
-        // body forever waiting for a roster this host never builds.
         var work = Convert.FromHexString(JoinerFrame);
         var counter = FrameCryptoUtility.UnscrambleHeaderOnly(work);
         FrameCryptoUtility.RemoveChainInPlace(work, counter, SessionKey);

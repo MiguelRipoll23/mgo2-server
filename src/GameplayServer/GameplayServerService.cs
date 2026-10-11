@@ -32,7 +32,6 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly RoomRosterService roster;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
-    private readonly PeerAnswerSchedulerService answerScheduler;
     private readonly ILogger<GameplayServerService> logger;
     private readonly ServerOptions options;
     private readonly PeerSessionService sessions;
@@ -73,7 +72,6 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
-        answerScheduler = serviceProvider.GetRequiredService<PeerAnswerSchedulerService>();
     }
 
     private string LogPrefix => $"udp:{port}";
@@ -171,6 +169,8 @@ public sealed partial class GameplayServerService : IAsyncDisposable
 
     private async Task RegisterConnectionAsync(CancellationToken cancellationToken)
     {
+        hostIdentity.LogAdvertisedEndpoints(logger);
+
         // The address published here is the same one the host puts in its own
         // handshake, read from the same property, so a joining client is never
         // handed one endpoint and given another to answer on.
@@ -216,6 +216,22 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     /// <param name="session">Session the reaper has dropped.</param>
     private void DropReapedPeer(PeerSession session)
     {
+        // What the peer did with what it was sent, read back at the one moment
+        // the session is known to be over. A roster that was never acknowledged
+        // is the stalled join: the client keeps asking for the room roster and
+        // never reaches its data phase (`P2P_CONNECT_FSM.md` §7.1b, and the
+        // measurement in `docs/protocol/UDP_GAME_CAPTURE.md` §8.6 that the
+        // recorded host's roster draws an answer 56 ms after it arrives and
+        // this one draws none). Nothing on the wire says so while the join is
+        // still in progress, which is why it is reported here.
+        logger.LogInformation(
+            "[{LogPrefix}] Peer {RemoteAddress} acknowledged {AcknowledgedCount} record(s) before going "
+            + "quiet; roster acknowledged: {RosterAcknowledged}",
+            LogPrefix,
+            session.RemoteAddress,
+            session.AcknowledgedRecords.Count,
+            session.RosterAcknowledged ? "yes" : "no");
+
         // Both lookups are made: '|' and not '||', because the second endpoint
         // has to be tried even when the first one found the entry.
         var removedObservedEndpoint = roster.Remove(session.RemoteAddress);
