@@ -64,6 +64,13 @@ public sealed class GameplayLobbyServer(IServiceProvider serviceProvider, int po
         // players remaining.
         _ = Services.GetRequiredService<EventSessionCleanupService>().CleanupAsync(session);
 
+        // The room is reclaimed for the same reason and in the same way: the
+        // quit command is the leaving path, and a socket that simply drops never
+        // sends one, so the roster row it took on joining is removed here. A
+        // departed player left in a dedicated host room is what stops that host
+        // being idle, and an idle host is what the assignment sweep leases.
+        _ = Services.GetRequiredService<RoomSessionCleanupService>().CleanupAsync(session);
+
         // An abrupt disconnect that never sends the lobby-leave command is the one
         // departure nobody writes the count for: the leave path republishes it and
         // so does every join, and the beat no longer does. So it is written a moment

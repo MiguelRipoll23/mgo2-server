@@ -56,6 +56,10 @@ builder.Services.AddSingleton<AutomatchTickerService>();
 builder.Services.AddSingleton<CharacterPresenceTickerService>();
 builder.Services.AddSingleton<EventOutcomeTickerService>();
 builder.Services.AddSingleton<EventSessionCleanupService>();
+// The room half of the same reclaim: a dropped socket leaves its team (above)
+// and its room roster row (here), and the second one is what makes a dedicated
+// host room eligible to be leased again.
+builder.Services.AddSingleton<RoomSessionCleanupService>();
 builder.Services.AddSingleton<EventAssignmentTickerService>();
 builder.Services.AddSingleton<CharacterPresenceCleanupService>();
 builder.Services.AddSingleton<GameLobbyServerRunner>();
