@@ -10,7 +10,9 @@ It exists because sending all of them on a clock gets the bytes right and the
 behaviour wrong. A match-start run written before the client reports itself ready
 is a round opened on nobody; the live client then sat in its ready state and
 reported twenty-three times over two minutes while the run it had already been
-sent went unrepeated. The fix is not a different body but a different gate.
+sent went unrepeated. The run is the one record the captures gate, so the rule
+this server holds is the narrowest one: it is never written here at all, and the
+beat is what it sends instead.
 
 ## Method
 
@@ -50,10 +52,14 @@ it puts two of them on the wire: the live run logged `answering 1 reliable
 records: 0x5ade` and sent `0x5ade` at counter 34, then wrote the run's own marker
 `0x5ade` at counter 36, ahead of the `0xd001` the capture writes first. game1's
 solo round carries one host `0x5ade` for its report, at t+46.4155 and with the
-run. So the dispatcher leaves the report unanswered in that pass
-(`GameplayServerService.IsReadinessReport`,
-`MatchRecordGenerationUtils.IsReadinessReportIdentifier`) and the writer's marker
-is the one answer. **[V]**
+run. **[V]**
+
+**Written it is three records, and the report's byte is what the third echoes.**
+`e1 14` is answered `e0 14 …` and `e1 01` is answered `e0 01 …`, so the run's
+payload cannot be built before the report arrives: there is no report to echo, and
+the byte the capture shows is the client's own. A run that goes out first carries
+the recorded host's `0x14` as a stand-in — the fallback this server used — under a
+client that reported `0x01`.
 
 The probe finds no other record our replay writes that is gated this way in both
 captures. `--session-only` on game1 — the quieter client, 492 frames against the
@@ -84,41 +90,32 @@ They tick on the measured 33 ms beat and the capture's insertion periods
 channel the recorded host keeps moving; writing the round start on that beat is
 the mistake this document exists to prevent. **[V]**
 
-## The round state this is built on
+## The round start is not written
 
-`MatchRoundService` owns the room's rounds; a peer's writer
-(`MatchRecordService`) follows them. The state is:
+The rule this server holds is the one the measurements above force: the marker,
+the run and its four repeats are never written, and nothing opens a round — not a
+clock, not the report, not anything else. There is no round opener
+(`MatchRoundService` is gone), no latched report and no run builder, and
+`PlayerReadyHandler` recognises the report, logs it and writes no answer. The
+sparse phase closes at its measured 42 240 ms and the beat is what follows.
 
-| field | what it is |
+The measurements behind that, from a live session against this server:
+
+| what | observed |
 | --- | --- |
-| current round | counted from one; zero before the first opens |
-| maximum rounds | the room's own rule: team deathmatch's round word in the host's saved settings (`MatchRoundSettingsUtils`), zero meaning the room plays on |
-| generation | the identifier set the round plays under — the first round's is the one its readiness report arrived on (`MatchRecordGenerationUtils.OfReadinessReport`), because the client carries the parity from the rounds it has already played, and each round after it is the same set a `0x800` bit along |
-| round boundary | `MatchRecordFramesUtils.RoundLengthMilliseconds`, 147.6 s, the measured gap between game1's first run (t+46.42 s) and its second (t+194.04 s) |
+| the beat alone keeps the channel moving | the client ACKed the beat's records and stayed in the session |
+| the phase can close before the report arrives | the phase ended on the measured 42.2 s; that client's first report came at 45.5 s |
+| a run written before the report is not the client's round | the run echoed the stand-in `0x14` while the report carried `0x01`; the client ACKed the run's records, never entered the round and reported 38 times |
 
-A round is **due** when it is the first or when the boundary has elapsed, and it
-opens only when **every peer in the room has reported itself ready** — the
-barrier that keeps a run off a loading screen. The reports are taken when it
-opens, so a client that reports again while the round goes out queues one for the
-round after it, which is the capture's own cadence (game1's client reports 1.66 s
-before each of its rounds, not continuously).
+So the run is not a thing to send earlier or later: it is the host's answer to a
+record, and this server does not open the round it answers for. An unsolicited one
+is worse than none, because it cannot echo a report it has not seen and the client
+will not enter a round it did not ask for.
 
-**A queued repeat is a report and not a generation.** The identifier the report
-arrived on is the set the round it is owed plays under, so it decides the first
-round — game1's first reports `0x1ade` and game2's first reports `0x12de` — and
-every round after that takes the sibling of the one before it. Taking the
-alternation from a repeat instead would invert the rest of the room's rounds:
-game1's client sends `0x12de` twice inside its second round (t+190.39 s and
-t+192.68 s) and the next round is the `0x1a54` set again. **[V]** on the
-identifiers; see `UDP_GAME_CAPTURE.md` §3.2 for the alternation across the two
-captures.
-
-**A peer that joins mid-round joins the round.** Its entry round is remembered;
-it beats the round in progress under that round's generation and takes the run
-when the room opens the next one. That is game1 exactly: the second player joins
-at t+154.3 s, its records keep the first generation until t+194.0 s, and the run
-it then receives is the second round's. Writing the run to a late arrival would
-reset the stream under a client already in it.
+The cost is explicit: a client that reports itself ready is never answered by a
+round, so it stays in its ready state and keeps asking. That is the state this
+server leaves a client in, deliberately, until the run is written for a report
+that has asked for it.
 
 ## Where this sits
 
@@ -126,4 +123,5 @@ reset the stream under a client already in it.
   and the round start; this file is the delivery rule built on it.
 - `RPDT_REPLAY_RECORDS.md` maps the bodies these records carry.
 - The replay itself: `src/GameplayServer/MatchRecords/MatchRecordService.cs` (the
-  per-peer writer) and `MatchRoundService.cs` (the room's rounds).
+  per-peer writer) and `PlayerReadyHandler.cs` (which recognises the report and
+  answers nothing).

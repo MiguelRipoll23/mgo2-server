@@ -47,8 +47,9 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="ItemBox">First identifier of the beat's item-box group.</param>
 /// <param name="ItemBoxState">Second identifier of the beat's item-box group.</param>
 /// <param name="ReportedByte">
-/// Byte the round was opened on — the one the client carried in its readiness
-/// report and the one the run's payload record hands back.
+/// Byte the capture's round start carried — the one the client carried in its
+/// readiness report and the one the run's payload record hands back. No round
+/// start is written, so it stays at the value the recorded host's own run held.
 /// </param>
 public sealed record MatchRecordGenerationUtils(
     ushort Vitals,
@@ -124,9 +125,11 @@ public sealed record MatchRecordGenerationUtils(
     /// game2's three are <c>0x1254</c>, <c>0x1a54</c>, <c>0x1254</c> — so the
     /// parity is carried from the rounds the client has already played rather
     /// than reset with the match. That is the reading **[I]**; the measurement
-    /// is that the set a round plays under is the one its own report arrived
-    /// under. A room therefore takes its first round's set from the report and
-    /// alternates from there (<see cref="MatchRoundService"/>).
+/// is that the set a round plays under is the one its own report arrived
+/// under. A room would therefore take its first round's set from the report and
+/// alternate from there; this server writes no round start at all, so it holds
+/// <see cref="First"/> for the whole stream and the reading stays here as the
+/// measurement it is rather than as behaviour.
     /// </para>
     /// </remarks>
     /// <param name="identifier">Identifier the report arrived on, class bit included.</param>
@@ -161,10 +164,10 @@ public sealed record MatchRecordGenerationUtils(
     /// under.
     /// </summary>
     /// <remarks>
-    /// Read by the dispatcher, which has to leave the report unanswered in the
-    /// pass that received it: its answer is the round's own opening marker
-    /// (<see cref="MatchStartMarker"/>), so answering it here as well puts two
-    /// of them on the wire — see <c>docs/protocol/DATA_PHASE_DELIVERY.md</c>.
+/// Read by the registration that binds the report to its handler, which
+/// recognises it and writes no answer: the answer a capture shows is the round's
+/// own opening marker (<see cref="MatchStartMarker"/>), and no round start is
+/// sent — see <c>docs/protocol/DATA_PHASE_DELIVERY.md</c>.
     /// </remarks>
     /// <param name="identifier">Record identifier to test.</param>
     /// <returns><c>true</c> when the identifier is one a report arrives under.</returns>

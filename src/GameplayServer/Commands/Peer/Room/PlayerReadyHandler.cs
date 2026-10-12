@@ -6,18 +6,22 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 
 /// <summary>
-/// Handles the record in which a client reports that it has loaded and is ready
-/// to play, and latches it for the round the room opens on its own clock.
+/// Recognises the record in which a client reports that it has loaded and is ready
+/// to play, and leaves it unanswered.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A client says it is ready, and the recorded host opens the round around
-/// it.</b> Measured over all three captures, every round begins within 0.6–5.5 s
-/// of one of these reports and no round begins without one — the round follows
-/// the report on the capture's clock. This server opens the round on its own
-/// clock instead (see <see cref="MatchRoundService"/>), so the report no longer
-/// gates it; what follows is still what the report is measured to be, and the
-/// two facts it carries are what the round takes from it:
+/// <b>The recorded host opens its round around this report; this server opens no
+/// round at all.</b> Measured over all three captures, every round begins within
+/// 0.6–5.5 s of one of these reports and no round begins without one. The report
+/// used to be latched for the identifier set its round played under and the byte
+/// the round's payload echoed; with the round start never written
+/// (<see cref="MatchRecordService"/>) neither fact has a reader, so the report is
+/// recognised, logged and dropped. A client that reports ready therefore stays in
+/// its ready state and re-reports — the live client asked thirty-eight times over
+/// one session — and that is the deliberate shape: the round start is the host's
+/// answer to this record, and an answer this server never sends cannot be sent
+/// early instead.
 /// </para>
 /// <list type="bullet">
 /// <item>game1 — <c>0x1ade</c> <c>e1 14</c> at t+44.76 s, round open at t+46.42 s.</item>
@@ -32,7 +36,8 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// after that opcode is echoed back unchanged — <c>e1 14</c> is answered
 /// <c>e0 14 …</c>, <c>e1 01</c> is answered <c>e0 01 …</c>. What the byte means
 /// is **[U]**; it is carried rather than interpreted, because nothing measured
-/// varies with it.
+/// varies with it. Nothing echoes it now, so it is read only to say in the log
+/// which report arrived.
 /// </para>
 /// <para>
 /// The identifier alternates with the round's own identifier set
@@ -45,32 +50,14 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// that keeps asking.
 /// </para>
 /// <para>
-/// <b>The identifier is also which set the round plays under.</b> It is the
-/// round's own payload record, and the client carries its generation from the
-/// rounds it has already played rather than resetting it with the match: game1's
-/// first round reports <c>0x1ade</c> and game2's first reports <c>0x12de</c>. So
-/// the handler passes the identifier on with the byte, and the room's first round
-/// plays under the generation the report names when one has arrived, instead of
-/// assuming <see cref="MatchRecordGenerationUtils.First"/> — see
-/// <see cref="MatchRecordGenerationUtils.OfReadinessReport"/>.
-/// </para>
-/// <para>
-/// The round itself is opened by <see cref="MatchRoundService"/> on the room's
-/// clock, and <see cref="MatchRecordService"/> writes its marker and run, and
-/// the run again four times inside the beat that follows. The report is read for
-/// the two things it carries that the room cannot derive — the identifier set
-/// the round plays under, and the byte the run's payload echoes
-/// (<see cref="PlayerReadyService"/>) — and does not gate the round: the marker
-/// is written whether or not one arrived. The dispatcher still leaves the report
-/// unanswered in the pass that received it, because the round's own marker is its
-/// answer and writing both puts two markers on the wire.
+/// That identifier also carries the round's other payloads, which belong on the
+/// relay and not to a round. A record on it that is not a report is still
+/// broadcast to the room's other peers, so the identifier keeps carrying the
+/// traffic the captures show it carrying.
 /// </para>
 /// </remarks>
-/// <param name="ready">Reports peers have sent that open their rounds.</param>
 /// <param name="logger">Logger of this handler.</param>
-public sealed class PlayerReadyHandler(
-    PlayerReadyService ready,
-    ILogger<PlayerReadyHandler> logger) : IPeerCommandHandler
+public sealed class PlayerReadyHandler(ILogger<PlayerReadyHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
     public Task HandleAsync(PeerContext context)
@@ -79,8 +66,8 @@ public sealed class PlayerReadyHandler(
         if (!MatchRecordBodiesUtils.IsReadinessReport(body))
         {
             // The same identifier carries the round's other payloads, which the
-            // dispatcher relays to the room's other peers. Recording one of those
-            // as a readiness report would open a round the client did not ask for.
+            // dispatcher relays to the room's other peers. A report is not one of
+            // them: it is the reporting client's own and goes no further.
             logger.LogDebug(
                 "UDP {LocalPort}: 0x{MessageType:x4} of {BodyLength} bytes from {RemoteAddress} is not a "
                 + "readiness report; left to the relay",
@@ -92,16 +79,14 @@ public sealed class PlayerReadyHandler(
         }
 
         var reported = body[MatchRecordBodiesUtils.ReadinessReportValueIndex];
-        var first = ready.Report(context.Session, reported, context.Message.Type);
 
         logger.LogInformation(
             "UDP {LocalPort}: {RemoteAddress} reported itself ready (0x{MessageType:x4} carrying "
-            + "0x{Reported:x2}); {Disposition}",
+            + "0x{Reported:x2}); no round is opened and the report is not answered, so the client will ask again",
             context.LocalPort,
             context.Remote,
             context.Message.Type,
-            reported,
-            first ? "recorded" : "already reported, the round is still owed");
+            reported);
 
         return Task.CompletedTask;
     }

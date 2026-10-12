@@ -31,8 +31,8 @@ public static class PeerCommandHandlerRegistration
         // A client's readiness report travels on the round's own payload record,
         // which alternates between two values as rounds succeed each other
         // (0x1ade, then 0x12de a 0x800 bit along). Both are registered so the
-        // report reaches the handler that latches it for the room; the handler
-        // still reads the body, because the same identifier carries the round's
+        // report is recognised rather than dropped as an unknown command; the
+        // handler reads the body, because the same identifier carries the round's
         // other payloads, which belong on the relay and not to a round.
         foreach (var identifier in MatchRecordGenerationUtils.ReadinessReportIdentifiers)
         {
@@ -56,7 +56,6 @@ public static class PeerCommandHandlerRegistration
         services.AddSingleton<PeerKeepAliveHandler>();
         services.AddSingleton<PlayerProfileHandler>();
         services.AddSingleton<JoinProbeHandler>();
-        services.AddSingleton<PlayerReadyService>();
         services.AddSingleton<PlayerReadyHandler>();
         return services;
     }

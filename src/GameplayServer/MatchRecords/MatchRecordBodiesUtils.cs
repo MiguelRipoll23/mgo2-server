@@ -141,9 +141,9 @@ public static class MatchRecordBodiesUtils
     /// <remarks>
     /// The report is the client saying it has loaded and is ready to play. That
     /// the client means *ready* specifically is **[I]**: the timing and the
-    /// pairing are measured, the intent behind them is not. The round is opened on
-    /// the room's own clock (see <see cref="MatchRoundService"/>), so the report
-    /// names the round's set and the byte its run echoes rather than gating it.
+    /// pairing are measured, the intent behind them is not. It is recognised and
+    /// logged, and nothing is written back: the round start that answered it is
+    /// never sent (see <see cref="MatchRecordService"/>).
     /// </remarks>
     public const byte ReadinessReportOpcode = 0xe1;
 
@@ -153,9 +153,8 @@ public static class MatchRecordBodiesUtils
     /// <summary>
     /// Byte a round's run echoes when the peer it is written to has not reported
     /// itself ready: the recorded host's own, <c>0x14</c>, from game1's first
-    /// round's <c>0xe0 0x14</c>. A round that opens on the room's clock without a
-    /// report carries a measured body rather than the zero a peer that never
-    /// reported would otherwise put there.
+    /// round's <c>0xe0 0x14</c>. Nothing echoes it now, because nothing writes a
+    /// round start; it is kept as the measured value a future run would echo.
     /// </summary>
     public const byte DefaultReadinessReportValue = 0x14;
 

@@ -394,8 +394,10 @@ parity from the rounds it has already played rather than resetting it with the m
 on the measurement; that the parity is a client-side counter is the reading **[I]** that
 fits it. A host that opened every first round as `0x1a54` would answer game2's client with a
 `0x5ade` marker where that client asked under `0x12de`, and would stream the round under a
-set the client is not on, so `MatchRoundService` takes its first round's set from the report
-(`MatchRecordGenerationUtils.OfReadinessReport`) and alternates from there.
+set the client is not on, so a host takes its first round's set from the report
+(`MatchRecordGenerationUtils.OfReadinessReport`) and alternates from there. The replay in
+`src/GameplayServer` opens no round and never writes the run — see
+`DATA_PHASE_DELIVERY.md`, "The round start is not written".
 
 **The answer is written once, with the round.** The `0x5ade` above is the report's own
 identifier with the answer bit set, so the record that opens the round and the answer to
@@ -1089,23 +1091,26 @@ reached the goal, not on the round's timer: the state block's own clock is 3 360
 125 ms, **420 s**, and no clock record in the round ever moves off it. The second round then
 plays the same stream under the **sibling identifier set** — every identifier a 0x800 bit
 along: operations `0x1a54` → `0x1254`, payload `0x1ade` → `0x12de`, rules `0x0a61` →
-`0x0261`, vitals `0x090c` → `0x010c`, marker `0x5ade` → `0x52de`. `MatchRecordService`
-swaps to the sibling identifier set when the round is opened, and the round's own frame
-counters restart with it.
+`0x0261`, vitals `0x090c` → `0x010c`, marker `0x5ade` → `0x52de`. A host swaps to the
+sibling set when it opens its next round; the replay opens none, so `MatchRecordService`
+holds the first set for the whole stream.
 
 **The round is opened by the client's readiness report, not by either clock.** §3.2
 measures the pairing: every round in every capture begins 0.6–5.5 s after an `e1 NN`
 report on the round's own payload record, and none begins without one. The set the round
 plays under is the one that report arrived on, which is why the first round's is read from
-the report rather than fixed (§3.2). So the sparse phase
-now stops at its last state blob, `PlayerReadyHandler` latches the report, and the writer
-takes it and writes the marker and the match-start run, then writes the run again four
-times *inside* the beat that follows (one every 56 frames, counters 32849/32905/32961/33017)
-— echoing the byte the client sent, as every captured payload does. The repeats are not
-sent ahead of the beat: the recorded host keeps the 33 ms frame moving after the run and
-writes the run-shaped frame in place of the beat at those four indices. The 147.6 s goal-ended length remains
-as the beat phase's round *boundary*: it still decides when the next round becomes due, and
-the round then waits for the client to say it is ready for it.
+the report rather than fixed (§3.2). So the sparse phase stops at its last state blob and
+the writer of the capture then writes the marker and the match-start run, and writes the run
+again four times *inside* the beat that follows (one every 56 frames, counters
+32849/32905/32961/33017) — echoing the byte the client sent, as every captured payload does.
+The repeats are never sent ahead of the beat: the recorded host keeps the 33 ms frame moving
+after the run and writes the run-shaped frame in place of the beat at those four indices.
+**None of it is written by the replay.** `PlayerReadyHandler` recognises the report and
+answers nothing, the marker and the run are not built, and the sparse phase runs straight
+into the beat, which holds the first identifier set for the whole stream. See
+`DATA_PHASE_DELIVERY.md`, "The round start is not written", for what a live client does with
+a run written before its report; the 147.6 s goal-ended length is kept as a measurement of
+the capture and decides nothing here.
 
 **What the replay still leaves out**, measured now rather than assumed:
 
@@ -1687,7 +1692,7 @@ settled. **[U]**
 
 **Fixed in the replay.** `ItemBoxFramesUtils.ItemBoxGroup` now takes the round's two
 item-box sequences and numbers its records from them, one counter per identifier,
-advancing by the records written (`MatchRoundCounters`), so a round's groups run `0`, `1`
+advancing by the records written (`BeatCounters`), so a stream's groups run `0`, `1`
 then `2`, `3` then `4`, `5` … per family — the capture's own run for `0x1a5a`, and for
 `0x1a50` the contiguous form of it, its two omitted spawn records being the difference.
 

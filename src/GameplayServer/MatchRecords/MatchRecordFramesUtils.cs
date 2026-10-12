@@ -29,13 +29,15 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <item>
 /// The <b>sparse phase</b> (t+4.9 s to t+42.2 s): a <c>0xd001</c> control byte
 /// and a <c>0x0002</c> state blob, several seconds apart. Its own length is
-/// <see cref="SparsePhaseMilliseconds"/>, and the run that follows is the last
-/// step of this clock (see <see cref="SparseSteps"/>).
+/// <see cref="SparsePhaseMilliseconds"/>, the sum of the delays
+/// <see cref="SparseSteps"/> itself carries, and what follows it is the beat.
 /// </item>
 /// <item>
 /// The <b>match-start run</b>, written when the sparse phase ends: the frame
 /// that opens the round, carrying the host's own short entry and the
-/// ninety-byte operations state block under it.
+/// ninety-byte operations state block under it. It is the one phase of this file
+/// the replay does not write — the round start is never sent, so the sparse
+/// phase runs straight into the beat below.
 /// </item>
 /// <item>
 /// The <b>steady phase</b> (t+42.2 s on): the two <c>0x0a61 fe</c> rules records
@@ -46,11 +48,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </list>
 /// <para>
 /// <b>What the replay reproduces from the run on</b>: the beat frame's
-/// <see cref="VitalsOnsetFrames"/>-frame delay before the vitals record joins it,
-/// the run's four 11-record repeats written inside that beat, one every
-/// <see cref="MatchStartRunFramesUtils.MatchStartRepeatPeriodFrames"/> frames (see
-/// <see cref="MatchStartRunFramesUtils.MatchStartRunRepeat"/>), and
-/// the item-box state group riding in every
+/// <see cref="VitalsOnsetFrames"/>-frame delay before the vitals record joins it
+/// and the item-box state group riding in every
 /// <see cref="ItemBoxFramesUtils.ItemBoxPeriodFrames"/>th frame (see
 /// <see cref="ItemBoxFramesUtils.ItemBoxGroup"/>).
 /// </para>
@@ -64,7 +63,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// per-player position and objective frames the host's own character produces;
 /// and the sibling-generation identifier set (<c>0x800</c> bit: <c>0x1254</c>,
 /// <c>0x12de</c>, <c>0x0261</c>, <c>0x010c</c>), which the capture uses only from
-/// its second round on, where this replay plays one round per peer. The steady
+/// its second round on; the replay opens no round, so it stays on the first set
+/// for the whole stream. The steady
 /// control's cadence is the capture's mean rather than a rule it holds: the solo
 /// window's gaps run from 1 to 337 frames between the sparse phase's close and
 /// the run, so no fixed period reproduces them.
