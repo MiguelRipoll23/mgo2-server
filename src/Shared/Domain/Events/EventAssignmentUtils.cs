@@ -26,32 +26,42 @@ public static class EventAssignmentUtils
     /// <param name="teamSerial">Serial of that same record, checked with it.</param>
     /// <param name="ownTeam">Recipient's team.</param>
     /// <param name="opponentTeam">Opposing team.</param>
+    /// <param name="teamState">
+    /// Participation state this record carries. It is the caller's, never the
+    /// team row's: echoing the row is the one thing `BUILD_1_36.md` forbids
+    /// here, because a row that holds the auto-formation byte strands the pair
+    /// on the formation screen with strings 716/717. See
+    /// <see cref="EventConstants.TeamAutoFormationState"/>.
+    /// </param>
     public static void WriteMatchFound(
         PacketWriter writer,
         int teamIdentifier,
         int teamSerial,
         EventSnapshot ownTeam,
-        EventSnapshot opponentTeam)
+        EventSnapshot opponentTeam,
+        int teamState)
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(ownTeam);
         ArgumentNullException.ThrowIfNull(opponentTeam);
 
         // The two identities inside the body are TEAM record ids, not character
-        // ids, and the client compares the first of them against the player's own
-        // team id to decide which block is the opponent. `0x8CDFA8` — the renderer
-        // of lobby string 761, "Your next opponent has been determined... Next
-        // match: vs. %s" — reads `rec+0x14`, compares it against team+0x00, and
-        // copies the OTHER block's name: `rec+0x50` when it is you, `rec+0x18`
-        // when it is not. A character id there is never equal to the player's own
-        // team id, so the client concludes neither block is theirs and prints the
-        // first block — the player's own team — as the opponent. Both sides then
-        // see themselves against themselves.
+        // ids. The client reads the first of them to decide which of the two
+        // cached names is the opponent: `0x8CDFA8`, the renderer of lobby string
+        // 761 ("Your next opponent has been determined... Next match: vs. %s"),
+        // reads rec+0x14, compares it against the player's own team id at
+        // team+0x00, and copies the OTHER block's name — rec+0x50 when it is you,
+        // rec+0x18 when it is not.
+        //
+        // A character id there is never equal to the player's own team id, so the
+        // client concludes neither block is its own and prints the first block —
+        // the player's own team — as the opponent: "X vs X", on both sides.
         //
         // `0x4A13`'s team_block names these slots `team_id`/`team_name` and says
-        // the comparison is "only meaningful if this is a team id", and
-        // `0x4E11`'s `entrant_id` is compared the same way against the same
-        // team+0x00. The header's own identity is already the team record id.
+        // the comparison is "only meaningful if this is a team id"; `0x4E11`'s
+        // `entrant_id` is compared against the same team+0x00 ("a team id being
+        // compared to a team id"). The header's own identity is already the team
+        // record id, so the first block quotes it verbatim.
         var ownTeamIdentity = teamIdentifier;
         var opponentTeamIdentity = opponentTeam.SnapshotIdentifier;
         if (ownTeamIdentity == 0 || opponentTeamIdentity == 0
@@ -66,16 +76,16 @@ public static class EventAssignmentUtils
         writer.WriteUInt16(teamSerial);
         writer.WriteInt32(ownTeam.EventIdentifier);
 
-        // The byte here is the team's own event-participation state, not the
-        // active-event phase, and the two must not be confused: the same
-        // position carries `team_state` on this command and the phase on
-        // `0x4A00`, and 5 is the value the client draws as "a game is already
-        // in progress" with a Join Game row. Writing it here told the client the
-        // match had started before anybody had entered the room, and answered
-        // with a manual join row for a game that had not begun. Neither the 9
-        // that must never be written (see `TeamAutoFormationState`) nor the
-        // assigned phase belongs in this slot.
-        writer.WriteUInt8(Clamped(ownTeam.State));
+        // The byte here is the team's participation state, and the value written
+        // is the caller's: the pairing announcement carries the entered phase and
+        // the assignment burst's last word carries the assigned one. Neither is
+        // the byte the team row happens to hold — a waiting team is stored in the
+        // entered state, but the row is data and `BUILD_1_36.md` is explicit that
+        // no packet may echo it into this slot, because a row holding the
+        // auto-formation byte strands the pair on the formation screen. See
+        // `EventConstants.TeamAutoFormationState` for the one value that must not
+        // be written.
+        writer.WriteUInt8(teamState);
         writer.WriteInt32(ownTeamIdentity);
         writer.WriteFixedString(ownTeam.Name, 16);
         writer.WriteUInt8(Clamped(ownTeam.ConsecutiveWins));
@@ -122,8 +132,8 @@ public static class EventAssignmentUtils
         }
 
         // The first identity is a TEAM record id, exactly as in the match-found
-        // notification, because both fill the same shared record and the client
-        // picks the block that is not its own to render.
+        // notification: both fill the same shared record and the client picks
+        // the block that is not its own to render.
         var ownTeamIdentity = ownTeam.SnapshotIdentifier;
         var opponentTeamIdentity = opponentTeam.SnapshotIdentifier;
         var bothIdentitiesAreKnown = ownTeamIdentity != 0 && opponentTeamIdentity != 0;

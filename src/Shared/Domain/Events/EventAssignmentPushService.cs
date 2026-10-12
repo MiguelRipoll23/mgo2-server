@@ -39,12 +39,6 @@ public sealed class EventAssignmentPushService(
     /// "game found" — the earlier design waited the interval out here instead,
     /// which left the pairing and the room arriving as one step.
     /// </para>
-    /// <para>
-    /// The burst announces the room, not the pairing. A Survival pair already
-    /// holds the match-found record from the sweep that paired it, and naming it
-    /// again announced the opponent twice; a Tournament pair does not, because a
-    /// bracket draw is not a sweep, so the record is still written for it here.
-    /// </para>
     /// </summary>
     /// <param name="assignment">Assignment to publish.</param>
     /// <param name="hostCharacterIdentifier">Character hosting the room.</param>
@@ -105,16 +99,14 @@ public sealed class EventAssignmentPushService(
     /// each is up against, and no room is mentioned because none has been chosen.
     /// <para>
     /// This is the record <c>0x4E20</c> is for — its ksy titles it the Survival
-    /// match pairing, and every field it carries is the pair, not the room. The
-    /// pairing sweep writes it, and so does the room burst that follows: the
-    /// burst's own <c>0x4A00</c> clears the ladder record the names live in, so
-    /// this record is what fills them again.
+    /// match pairing, and every field it carries is the pair, not the room. It is
+    /// written by the pairing sweep, which is what "opponent found" is on the
+    /// client: the room burst that follows, on its own slower sweep, re-writes the
+    /// same record with the assigned phase and the room.
     /// </para>
     /// <para>
-    /// Neither copy carries the assigned phase. It is the value the client reads
-    /// as a game already in progress, and this record is written twice, so
-    /// carrying it here put a Join Game row on screen for a game nobody had
-    /// entered.
+    /// The state carried is the entered phase rather than the assigned one, so the
+    /// client is not offered a Join Game row for a room that does not exist yet.
     /// </para>
     /// </summary>
     /// <param name="firstTeam">First team of the pairing.</param>
@@ -132,25 +124,30 @@ public sealed class EventAssignmentPushService(
         var delivered = await PushMatchFoundToTeamAsync(
             firstTeam,
             secondTeam,
+            EventConstants.TeamEnteredState,
             cancellationToken);
         delivered += await PushMatchFoundToTeamAsync(
             secondTeam,
             firstTeam,
+            EventConstants.TeamEnteredState,
             cancellationToken);
         return delivered;
     }
 
     /// <summary>
     /// Writes the match-found record to one team's sessions. It is the shared
-    /// half of the pairing announcement and the assignment burst.
+    /// half of the pairing announcement and the assignment burst, which differ
+    /// only in the participation state they carry.
     /// </summary>
     /// <param name="team">Recipient's team.</param>
     /// <param name="opponent">Opposing team.</param>
+    /// <param name="teamState">Participation state to carry.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>Number of sessions the record reached.</returns>
     private async Task<int> PushMatchFoundToTeamAsync(
         EventSnapshot team,
         EventSnapshot opponent,
+        int teamState,
         CancellationToken cancellationToken)
     {
         var delivered = 0;
@@ -169,7 +166,8 @@ public sealed class EventAssignmentPushService(
                 team.SnapshotIdentifier,
                 team.Sequence,
                 team,
-                opponent);
+                opponent,
+                teamState);
             await sessionHelper.SendPacketAsync(
                 session,
                 CommandConstants.EventMatchFound,
@@ -345,21 +343,17 @@ public sealed class EventAssignmentPushService(
             // The match-found notification is the record the client acts on, and
             // it is validated against the team record exactly as the active-event
             // record above is: it quotes the receiving team's own identity, so the
-            // two agree with the snapshot that opened the exchange.
-            //
-            // It cannot be left to the pairing sweep. That sweep's copy carried
-            // the same names, but this burst's own 0x4A00 clears the ladder record
-            // the names live in (0xD51280 clears all 356 bytes) and the 0x43F0
-            // above writes only the two character-id arrays, so this record is
-            // the only thing that fills them again. Dropping it left the assigned
-            // screen with two blank names.
+            // two agree with the snapshot that opened the exchange. It carries the
+            // assigned phase, because it is the last word the client is given
+            // about the state before it enters the room.
             var matchWriter = new PacketWriter();
             EventAssignmentUtils.WriteMatchFound(
                 matchWriter,
                 team.SnapshotIdentifier,
                 team.Sequence,
                 team,
-                opponent);
+                opponent,
+                EventConstants.ActiveEventAssignedState);
             await sessionHelper.SendPacketAsync(
                 session,
                 CommandConstants.EventMatchFound,
