@@ -38,6 +38,15 @@ namespace Mgo2Server.Shared.Types;
 /// handler falls back to <see cref="SendRecords"/> rather than sending the run
 /// in a format the recorded host never writes.
 /// </param>
+/// <param name="Relay">
+/// The same write as <paramref name="Broadcast"/>, for a record that is the
+/// <em>peer's</em> and is only passed on: a handler relaying one of the peer's
+/// records to the room. It differs from <paramref name="Broadcast"/> in one
+/// thing, and it is not on the wire — a relayed record is not this host's, so
+/// the replay console does not count it among the records this server builds.
+/// Null where the context was built without it, and a handler falls back to
+/// <paramref name="Broadcast"/>.
+/// </param>
 public sealed record PeerContext(
     PeerSession Session,
     UdpMessage Message,
@@ -46,4 +55,5 @@ public sealed record PeerContext(
     Func<ushort, byte[], byte, Task> Send,
     Func<ushort, byte[], byte, Task> Broadcast,
     Func<IReadOnlyList<UdpMessage>, Task>? SendRecords = null,
-    Func<IReadOnlyList<UdpMessage>, Task>? SendRecordsCompressed = null);
+    Func<IReadOnlyList<UdpMessage>, Task>? SendRecordsCompressed = null,
+    Func<ushort, byte[], byte, Task>? Relay = null);

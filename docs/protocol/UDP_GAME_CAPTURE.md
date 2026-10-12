@@ -395,9 +395,70 @@ on the measurement; that the parity is a client-side counter is the reading **[I
 fits it. A host that opened every first round as `0x1a54` would answer game2's client with a
 `0x5ade` marker where that client asked under `0x12de`, and would stream the round under a
 set the client is not on, so a host takes its first round's set from the report
-(`MatchRecordGenerationUtils.OfReadinessReport`) and alternates from there. The replay in
-`src/GameplayServer` opens no round and never writes the run — see
-`DATA_PHASE_DELIVERY.md`, "The round start is not written".
+(`MatchRecordGenerationUtils.OfReadinessReport`) and alternates from there.
+`MatchStartRunService` opens its round that way.
+
+**The report never arrives alone: it is paired with a one-byte record.** In all
+five reports of the two captures the client puts a second record in the same
+datagram, immediately before the report, on an identifier that splits the same way
+the report's does and carrying the report's own byte:
+
+| capture | report frame reads |
+| --- | --- |
+| game1 t+44.76 | `0x0a5c` len 1 class 4 `14` · `0x1ade` len 2 class 0 `e1 14` |
+| game1 t+190.40 | `0x025c` len 1 class 4 `14` · `0x12de` len 2 class 0 `e1 14` |
+| game2 t+56.72 | `0x025c` len 1 class 4 `01` · `0x12de` len 2 class 0 `e1 01` |
+| game2 t+107.98 | `0x0a5c` len 1 class 4 `01` · `0x1ade` len 2 class 0 `e1 01` |
+| game2 t+223.63 | `0x025c` len 1 class 4 `01` · `0x12de` len 2 class 0 `e1 01` |
+
+Five of five, both captures, one rule. The host answers the companion in four
+bytes under class 6 — game2 in every frame that carries it (`02 00 00 00`, its
+minimal run included), game1 only in the steady stream and with six different
+bodies (`00001000`, `00801000`, `00881000`, `40080000`, `40081000`, `10800000`),
+never inside its round start. **[V]** the length, the classes and the pairing;
+**[U]** the bodies and the meaning.
+
+**Both identifiers decompose to one stream.** The replay parser reads a record's
+low eleven bits as its stream (`low = vid & 0x7ff`) and names that family:
+`0x254` the operations stream — the round clock `0x1a54` and its sibling `0x1254`
+— `0x250`/`0x25a` the world objects, `0x256`/`0x257` targets, `0x258` notices,
+`0x261` the rules (which is why `0x0a61` and `0x0261` are one pair), `0x267`–`0x26b`
+gauges. The companion's two identifiers are `0x25c` under both, so the `0x0800`
+bit is the round's generation on it exactly as it is on the report. The parser
+has **no branch for `0x25c`** and names no operation on it. **[V]** the
+decomposition; **[U]** the meaning.
+
+**The lobby-slot array handshake, which the captures run in lock-step.** Four
+record kinds and one loop, identical in both files:
+
+| step | record | body | game1 | game2 |
+| --- | --- | --- | --- | --- |
+| 1 | host `0x9001`/`0x1001`, 26 B | `85 NN` / `86 NN` | seq `f3` | seq `00` |
+| 2 | client `0x9001`/`0x1001`, 2 B | `82 NN` / `84 NN` | t+45.69 | t+0, t+4.24 |
+| 3 | host `0x1001`, 2 B class 26 | `81 NN` | t+139.48 | t+47.29, t+49.52 |
+| 4 | host, the pair again | `85 NN+1` / `86 NN+1` | `f4` | `01` |
+
+**The confirmation is what advances it.** The client's answer to step 4 is
+`82 01`/`84 01` in game2 and `82 f4`/`84 f4` in game1 — the byte after the one the
+host confirmed, never the one it is already on. game1's host confirms `f3` 94 s
+after the client answered it, when the second player fills a slot; game2's
+confirms within 5 s. A host that writes the pair and never confirms gets one
+answer and then silence. **[V]** on the loop and the ordering in both captures;
+**[U]** why a slot filling is what makes game1's host confirm.
+
+The host also publishes the next sequence beside the confirmation, in a pair of
+records ending `0b 00 01 00 00 00 00 08 07 NN` — game1's carries `f4` and
+game2's `01`, each the sequence its next pair uses. **[V]**
+
+**A scan of `MGO2.ELF` does not name the sender.** No site constructs either
+identifier as a whole immediate (`0x1ade`, `0x12de`, `0x0a5c`, `0x025c`, `0x0a61`
+all score zero against `li`/`addi`/`ori`/`lis`), so the ids are read from a table
+and a value scan cannot reach them. The three `li … 0x25c` sites that exist —
+`0x000a3e44`, `0x000a412c`, `0x000a4e5c` — are byte-identical argument setups for
+one call (`r6 = 0`, `r7 = 0xff`, `r4 = 0x25c`, `r5 = 0`, `bl 0x2792f8`), and
+`0xff` beside `0x25c` is a render setup, not a record id. The record's *sender* is
+therefore still **[U]**; what the captures settle is its pairing, its identifiers
+and its direction.
 
 **The answer is written once, with the round.** The `0x5ade` above is the report's own
 identifier with the answer bit set, so the record that opens the round and the answer to
@@ -434,12 +495,24 @@ sat in its ready state reporting twenty-three times over two minutes with every 
 the report gets the timing right and the behaviour wrong.
 
 A client re-reports until it is answered (game1 reports twice, 2.29 s apart, and gets one
-round), so the report is latched rather than counted.
+round), so the report is latched rather than counted: `MatchStartRunService` holds the
+round open for as long as that round's own frames are going out and treats a report inside
+that window as the same round. game1's next report comes 145.6 s after the first, long
+after the first round's run had finished repeating, so it opens the next one.
 
 What the echoed byte *means* stays **[U]**. game1 sends `0x14` and game2 `0x01` on the same
-record, so it is not a constant, and nothing in the captures varies with it beyond the
-echo itself — which is why the payload carries the client's own byte back rather than a
-value this server would have to invent.
+record, so it is not a constant.
+
+**The fourth byte is the index the byte is read under, and the host rewrites it through
+the round.** Sweeping the record in all three files rather than only reading the report
+and its answer shows the host carrying values beyond the echo: game1 writes `e0 14` under
+fourth byte 0 and `e0 0f` under fourth byte 1, and later `e0 0b c3 cf 00 00` under fourth
+byte 7; game3 writes `e0 05` under 0 and `e0 0f` under 1 and `e0 0d 12 8a 00 00 00` under
+2; game2 writes `e0 01` under 0 and `e0 02` under 1. The slot is therefore a value the
+host owns per fourth byte, which the client's two-byte report names and the run's payload
+echoes — not a round number and not a constant. **[V]** that it varies this way; what any
+of the values counts is **[U]**. `MatchRecordBodiesUtils.MatchStartPayload` carries the
+client's own byte back rather than a value this server would have to invent.
 
 **The payload's length is not settled, and is the one thing here that is a guess.** game1
 answers in **six** bytes (`e0 14 00 00 00 00`) and game2 in **five** (`e0 01 00 00 00`), on

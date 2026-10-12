@@ -66,6 +66,15 @@ public sealed class HostIdentityService(IOptions<ServerOptions> options)
     public uint PeerIdentifier => peerIdentifier
         ?? throw new InvalidOperationException("The gameplay server character has not been resolved.");
 
+    /// <summary>
+    /// The character identifier, or <c>null</c> while it is still being
+    /// resolved. The packet-replay console comes up before the database step
+    /// that resolves it, and it reports what it does not yet have rather than
+    /// failing the request that asked.
+    /// </summary>
+    public uint? TryPeerIdentifier() => peerIdentifier;
+
+
     /// <summary>Sets the peer identifier to the configured character's database identifier.</summary>
     /// <param name="characterIdentifier">Identifier of the configured character.</param>
     public void SetCharacterIdentifier(int characterIdentifier)

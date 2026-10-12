@@ -362,7 +362,7 @@ public sealed partial class GameplayServerService
                         message.Type,
                         message.Body.Length,
                         message.Flags);
-                    SendToOthers(session, message.Type, message.Body, message.Flags);
+                    SendToOthers(session, message.Type, message.Body, message.Flags, ofThisHost: false);
                 }
 
                 continue;

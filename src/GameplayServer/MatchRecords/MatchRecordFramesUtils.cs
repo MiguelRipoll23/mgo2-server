@@ -33,11 +33,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <see cref="SparseSteps"/> itself carries, and what follows it is the beat.
 /// </item>
 /// <item>
-/// The <b>match-start run</b>, written when the sparse phase ends: the frame
-/// that opens the round, carrying the host's own short entry and the
-/// ninety-byte operations state block under it. It is the one phase of this file
-/// the replay does not write — the round start is never sent, so the sparse
-/// phase runs straight into the beat below.
+/// The <b>match-start run</b> is not one of this file's phases: it is written
+/// by <see cref="MatchStartRunService"/> when a client reports itself ready,
+/// and its frames are <see cref="MatchStartRunFramesUtils"/>'s. From here the
+/// sparse phase runs straight into the beat, which is what keeps the channel
+/// moving while the round is still closed.
 /// </item>
 /// <item>
 /// The <b>steady phase</b> (t+42.2 s on): the two <c>0x0a61 fe</c> rules records
@@ -267,12 +267,12 @@ public static class MatchRecordFramesUtils
     /// to back.
     /// </summary>
 /// <remarks>
-/// <b>The phase ends at the last state blob and the run follows it.</b> The
-/// run is not a step of this list: the room opens the round at
-/// <see cref="SparsePhaseMilliseconds"/> and <see cref="MatchRecordService"/>
-/// writes it there, which is the point on the capture's clock the run lands on
-/// (t+42.2 s against the run's t+46.4 s, the difference being the 1.66 s the
-/// captured client waited before reporting itself ready).
+/// <b>The phase ends at the last state blob and the run does not follow it.</b>
+/// The run is not a step of this list: it waits for the client's readiness
+/// report, and the captured client sent it 1.66 s after the phase closed — so
+/// the run lands at the capture's t+46.4 s rather than the phase's t+42.2 s,
+/// and only because the client asked. <see cref="MatchStartRunService"/> writes
+/// it on that report.
 /// </remarks>
 /// <returns>The steps in send order, ending at the last state blob.</returns>
     public static List<RecordStep> SparseSteps() =>

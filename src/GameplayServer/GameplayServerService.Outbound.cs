@@ -23,7 +23,14 @@ public sealed partial class GameplayServerService
     /// <param name="origin">Session the message came from, which is left out.</param>
     /// <param name="messageType">Type of the message.</param>
     /// <param name="body">Body of the message.</param>
-    private void SendToOthers(PeerSession origin, ushort messageType, byte[] body, byte ordinal)
+    /// <param name="ordinal">Fourth byte of the record.</param>
+    /// <param name="ofThisHost">Whether the record is this host's own rather than one relayed from a peer.</param>
+    private void SendToOthers(
+        PeerSession origin,
+        ushort messageType,
+        byte[] body,
+        byte ordinal,
+        bool ofThisHost = true)
     {
         var recipients = sessions.Snapshot()
             .Where(session => session.Established && !ReferenceEquals(session, origin))
@@ -40,7 +47,7 @@ public sealed partial class GameplayServerService
 
         foreach (var session in recipients)
         {
-            SendMessage(session, messageType, body, ordinal);
+            SendMessage(session, messageType, body, ordinal, ofThisHost);
         }
     }
 
@@ -60,9 +67,16 @@ public sealed partial class GameplayServerService
     /// <param name="session">Session to write through.</param>
     /// <param name="messageType">Type of the message.</param>
     /// <param name="body">Body of the message.</param>
-    private void SendMessage(PeerSession session, ushort messageType, byte[] body, byte ordinal = 0)
+    /// <param name="ordinal">Fourth byte of the record.</param>
+    /// <param name="ofThisHost">Whether the record is this host's own rather than one relayed from a peer.</param>
+    private void SendMessage(
+        PeerSession session,
+        ushort messageType,
+        byte[] body,
+        byte ordinal = 0,
+        bool ofThisHost = true)
     {
-        SendMessages(session, [FrameBuilderUtility.MessageOf(messageType, body, ordinal)]);
+        SendMessages(session, [FrameBuilderUtility.MessageOf(messageType, body, ordinal)], ofThisHost: ofThisHost);
     }
 
     /// <summary>
@@ -85,14 +99,26 @@ public sealed partial class GameplayServerService
     /// and the post-join burst, and sends the short records that close them
     /// plain, so the flag belongs to the run rather than to the peer.
     /// </param>
+    /// <param name="ofThisHost">
+    /// Whether this host built the records. Everything it writes is its own but
+    /// the two pass-throughs — a peer's record relayed to the room, and a
+    /// captured frame the replay console writes — which is what keeps the replay
+    /// console from marking its own sends as records this server implements.
+    /// </param>
     private void SendMessages(
         PeerSession session,
         IReadOnlyList<UdpMessage> messages,
-        bool compressed = false)
+        bool compressed = false,
+        bool ofThisHost = true)
     {
         if (messages.Count == 0)
         {
             return;
+        }
+
+        if (ofThisHost)
+        {
+            sentTypes.Note(messages);
         }
 
         lock (session.OutboundGate)

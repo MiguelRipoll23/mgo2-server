@@ -50,6 +50,9 @@ public static class ServerServiceCollectionExtensions
             options.GameplayServerPort = configuration.ReadNumber(
                 "GAMEPLAY_SERVER_PORT",
                 configuration.ReadNumber("UDP_PORT", options.GameplayServerPort));
+            options.GameplayWebPort = configuration.ReadNumber(
+                "GAMEPLAY_WEB_PORT",
+                options.GameplayWebPort);
             options.PublicHostAddress =
                 configuration.ReadText("DEDICATED_ADVERTISED_ADDRESS") ?? options.PublicHostAddress;
             options.GameplayServerPrivateAddress =

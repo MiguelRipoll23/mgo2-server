@@ -44,16 +44,29 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// <param name="roster">Roster of the room this host is playing.</param>
 /// <param name="burstScheduler">Scheduler of the one-shot settings burst after roster exchange.</param>
 /// <param name="matchRecords">Records the recorded host keeps writing after the burst.</param>
+/// <param name="teamArrays">The lobby-slot array handshake, which answers under two of these identifiers.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
     RoomRosterService roster,
     PlayerSettingsBurstSchedulerService burstScheduler,
     MatchRecordService matchRecords,
+    TeamArrayService teamArrays,
     ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(PeerContext context)
     {
+        // The lobby-slot array handshake answers the pair under these two
+        // identifiers and no other, and a two-byte body naming the pair's
+        // sequence byte is that answer and not a profile. It is read here
+        // because the registry binds one handler to an identifier and this is
+        // the one already bound to both.
+        if (TeamArrayFramesUtils.IsArrayEcho(context.Message.Body))
+        {
+            await teamArrays.ConfirmAsync(context, TeamArrayFramesUtils.SequenceOf(context.Message.Body));
+            return;
+        }
+
         var profile = PlayerProfileRecordParseUtils.Parse(context.Message.Body);
         if (profile is not { Name.Length: > 0 })
         {

@@ -40,6 +40,13 @@ public sealed class ServerOptions
     public int GameplayServerPort { get; set; } = 5731;
 
     /// <summary>
+    /// Port the packet-replay console listens on. Left at zero, a free port is
+    /// drawn at random from the range the console owns, so several gameplay
+    /// hosts on one machine never answer on the same one.
+    /// </summary>
+    public int GameplayWebPort { get; set; }
+
+    /// <summary>
     /// Address the dedicated host announces to peers. Defaults to the advertised
     /// address of this instance, and to loopback when no advertised address is
     /// configured.

@@ -46,10 +46,15 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="MatchStartPayload">Payload record inside the run.</param>
 /// <param name="ItemBox">First identifier of the beat's item-box group.</param>
 /// <param name="ItemBoxState">Second identifier of the beat's item-box group.</param>
+/// <param name="ReadyState">
+/// The readiness report's companion: a one-byte record the client sends in the
+/// same datagram, carrying the same byte as the report.
+/// </param>
 /// <param name="ReportedByte">
 /// Byte the capture's round start carried — the one the client carried in its
-/// readiness report and the one the run's payload record hands back. No round
-/// start is written, so it stays at the value the recorded host's own run held.
+/// readiness report and the one the run's payload record hands back. It is the
+/// recorded host's own round's value; a run written for a report carries that
+/// report's byte instead (see <see cref="Next(byte)"/>).
 /// </param>
 public sealed record MatchRecordGenerationUtils(
     ushort Vitals,
@@ -60,6 +65,7 @@ public sealed record MatchRecordGenerationUtils(
     ushort MatchStartPayload,
     ushort ItemBox,
     ushort ItemBoxState,
+    ushort ReadyState,
     byte ReportedByte)
 {
     /// <summary>The bit one round's identifiers differ from the next round's by.</summary>
@@ -70,7 +76,7 @@ public sealed record MatchRecordGenerationUtils(
     /// carry it.
     /// </summary>
     public static MatchRecordGenerationUtils First { get; } =
-        new(0x090c, 0x0a61, 0x1a54, 0x9a54, 0x5ade, 0x1ade, 0x1a50, 0x1a5a, 0x00);
+        new(0x090c, 0x0a61, 0x1a54, 0x9a54, 0x5ade, 0x1ade, 0x1a50, 0x1a5a, 0x0a5c, 0x00);
 
     /// <summary>
     /// The set the next round uses: every identifier of this one with
@@ -88,6 +94,7 @@ public sealed record MatchRecordGenerationUtils(
             (ushort)(MatchStartPayload ^ SiblingBit),
             (ushort)(ItemBox ^ SiblingBit),
             (ushort)(ItemBoxState ^ SiblingBit),
+            (ushort)(ReadyState ^ SiblingBit),
             ReportedByte);
 
     /// <summary>
@@ -126,10 +133,9 @@ public sealed record MatchRecordGenerationUtils(
     /// parity is carried from the rounds the client has already played rather
     /// than reset with the match. That is the reading **[I]**; the measurement
 /// is that the set a round plays under is the one its own report arrived
-/// under. A room would therefore take its first round's set from the report and
-/// alternate from there; this server writes no round start at all, so it holds
-/// <see cref="First"/> for the whole stream and the reading stays here as the
-/// measurement it is rather than as behaviour.
+/// under, which is what <see cref="OfReadinessReport"/> reads:
+/// <see cref="MatchStartRunService"/> takes each round's set from the report that
+/// asked for it.
     /// </para>
     /// </remarks>
     /// <param name="identifier">Identifier the report arrived on, class bit included.</param>
@@ -165,12 +171,53 @@ public sealed record MatchRecordGenerationUtils(
     /// </summary>
     /// <remarks>
 /// Read by the registration that binds the report to its handler, which
-/// recognises it and writes no answer: the answer a capture shows is the round's
-/// own opening marker (<see cref="MatchStartMarker"/>), and no round start is
-/// sent — see <c>docs/protocol/DATA_PHASE_DELIVERY.md</c>.
+/// recognises it and opens the round the captures show it opening
+/// (<see cref="MatchStartRunService"/>) — see
+/// <c>docs/protocol/DATA_PHASE_DELIVERY.md</c>.
     /// </remarks>
     /// <param name="identifier">Record identifier to test.</param>
     /// <returns><c>true</c> when the identifier is one a report arrives under.</returns>
     public static bool IsReadinessReportIdentifier(ushort identifier) =>
         ReadinessReportIdentifiers.Contains(identifier);
+
+    /// <summary>
+    /// The identifiers the readiness report's companion arrives under: the same
+    /// four shapes the report itself does, on its own identifier.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The companion is a one-byte record the client sends in the same datagram
+    /// as the report, carrying the same byte — <c>0x0a5c 14</c> beside
+    /// <c>0x1ade e1 14</c>, <c>0x025c 01</c> beside <c>0x12de e1 01</c> — and the
+    /// pairing holds in five of five reports across the two captures. **[V]**
+    /// </para>
+    /// <para>
+    /// <b>Both identifiers decompose to the same stream.</b> The replay parser
+    /// reads a record's low eleven bits as its stream and names that family:
+    /// <c>0x254</c> the operations stream (the round clock <c>0x1a54</c> and its
+    /// sibling <c>0x1254</c>), <c>0x250</c>/<c>0x25a</c> the world objects, and
+    /// <c>0x261</c> the rules (which is why <c>0x0a61</c> and <c>0x0261</c> are
+    /// one pair). The companion's two identifiers are <c>0x25c</c> under both —
+    /// the <c>0x0800</c> bit is the round's generation, exactly as it is on the
+    /// report. The parser has no branch for <c>0x25c</c>, so it names no
+    /// operation on it. **[U]** what it means.
+    /// </para>
+    /// <para>
+    /// A whole-value scan of <c>MGO2.ELF</c> finds no site constructing either
+    /// identifier: the record ids are read from a table rather than built as
+    /// immediates, so the sender cannot be found that way. The three
+    /// <c>li … 0x25c</c> sites that do exist (<c>0x000a3e44</c>,
+    /// <c>0x000a412c</c>, <c>0x000a4e5c</c>) are byte-identical argument
+    /// setups for one call — <c>r6 = 0</c>, <c>r7 = 0xff</c>, <c>r4 = 0x25c</c>,
+    /// <c>r5 = 0</c>, <c>bl 0x2792f8</c> — and 0xff beside 0x25c is a render
+    /// setup, not a record id.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<ushort> ReadyStateIdentifiers { get; } =
+    [
+        First.ReadyState,
+        (ushort)(First.ReadyState | PeerAcknowledgementUtils.PayloadClassBit),
+        First.Next(0).ReadyState,
+        (ushort)(First.Next(0).ReadyState | PeerAcknowledgementUtils.PayloadClassBit),
+    ];
 }

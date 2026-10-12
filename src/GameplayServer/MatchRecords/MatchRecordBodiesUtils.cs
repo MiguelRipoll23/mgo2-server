@@ -112,6 +112,18 @@ public static class MatchRecordBodiesUtils
     /// <summary>One-byte control body seen once in the steady phase.</summary>
     private static ReadOnlySpan<byte> ControlBodyRare => [0x25];
 
+    /// <summary>
+    /// Length of the answer to a client's readiness-state record: four bytes in
+    /// both captures, and the class byte with it.
+    /// </summary>
+    public const int ReadyStateAnswerLength = 4;
+
+    /// <summary>Attribute class the host's readiness-state answer carries.</summary>
+    public const byte ReadyStateAnswerClass = 0x06;
+
+    /// <summary>Attribute class a client's readiness-state record carries.</summary>
+    public const byte ReadyStateClass = 0x04;
+
     /// <summary>Length of either record of the match-start run's close pair.</summary>
     public const int CloseRecordLength = 20;
 
@@ -142,8 +154,8 @@ public static class MatchRecordBodiesUtils
     /// The report is the client saying it has loaded and is ready to play. That
     /// the client means *ready* specifically is **[I]**: the timing and the
     /// pairing are measured, the intent behind them is not. It is recognised and
-    /// logged, and nothing is written back: the round start that answered it is
-    /// never sent (see <see cref="MatchRecordService"/>).
+    /// handed to <see cref="MatchStartRunService"/>, which writes the round that
+    /// answers it on the same record read the other way.
     /// </remarks>
     public const byte ReadinessReportOpcode = 0xe1;
 
@@ -153,8 +165,8 @@ public static class MatchRecordBodiesUtils
     /// <summary>
     /// Byte a round's run echoes when the peer it is written to has not reported
     /// itself ready: the recorded host's own, <c>0x14</c>, from game1's first
-    /// round's <c>0xe0 0x14</c>. Nothing echoes it now, because nothing writes a
-    /// round start; it is kept as the measured value a future run would echo.
+    /// round's <c>0xe0 0x14</c>. No run is written without a report to echo, so
+    /// this is the measured value and never a substitute for the report's own.
     /// </summary>
     public const byte DefaultReadinessReportValue = 0x14;
 
@@ -314,4 +326,33 @@ public static class MatchRecordBodiesUtils
     /// <summary>Body of the control record seen once in the steady phase.</summary>
     /// <returns>The body bytes.</returns>
     public static byte[] RareControl() => [.. ControlBodyRare];
+
+    /// <summary>
+    /// The host's answer to a client's readiness-state record.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The client sends its readiness state as one byte under class
+    /// <see cref="ReadyStateClass"/>, in the same datagram as the readiness
+    /// report and carrying the same byte. The host answers under class
+    /// <see cref="ReadyStateAnswerClass"/> in four bytes.
+    /// </para>
+    /// <para>
+    /// <b>The body is the second capture's, and the dedicated host does not send
+    /// one at all.</b> game2 writes <c>02 00 00 00</c> in every frame that
+    /// carries it. game1 — the dedicated host this project implements — writes
+    /// none inside its round start; its answers appear only in the steady stream,
+    /// much later and with six different bodies (<c>00001000</c>,
+    /// <c>00801000</c>, <c>00881000</c>, <c>40080000</c>, <c>40081000</c>,
+    /// <c>10800000</c>). Nothing measured relates either set to the report's
+    /// byte, and game1's own run — the round this server is measured against —
+    /// carries no such record, so this body is a guess. It is written because the
+    /// report arrives with its companion and a host that answers only half of a
+    /// record the client pairs with its readiness report is the shape that left a
+    /// client stalled. **[U]** what the four bytes are; what is **[V]** is the
+    /// length, the class and the pairing.
+    /// </para>
+    /// </remarks>
+    /// <returns>The record body.</returns>
+    public static byte[] ReadyStateAnswer() => [0x02, 0x00, 0x00, 0x00];
 }

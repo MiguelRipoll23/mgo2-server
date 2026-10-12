@@ -32,6 +32,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly MatchService matchService;
     private readonly RoomRosterService roster;
     private readonly HostIdentityService hostIdentity;
+    private readonly SentMessageTypesService sentTypes;
     private readonly PeerCommandRegistry registry;
     private readonly ILogger<GameplayServerService> logger;
     private readonly ServerOptions options;
@@ -72,6 +73,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         matchService = serviceProvider.GetRequiredService<MatchService>();
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
+        sentTypes = serviceProvider.GetRequiredService<SentMessageTypesService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
     }
 

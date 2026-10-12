@@ -28,36 +28,37 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// reason to keep a departed peer alive.
 /// </para>
 /// <para>
-/// <b>The round start is never written.</b> The opening marker, the
-/// <c>0x1a54</c> run and its four repeats are the one part of the capture this
-/// writer leaves out, and nothing here opens a round on a clock, on a client's
-/// readiness report, or on anything else: the sparse phase closes and the beat
-/// begins, and the beat is all that follows. The run is a host's answer to a
-/// client that asked to play, and an unprompted one is worse than none — measured
-/// on a live client, a run that arrives before the report is acknowledged and
-/// ignored while the client re-reports, because the client will not enter a round
-/// it did not ask for and the run has no report to echo. The beat is what keeps
-/// the channel alive; the round start is withheld.
+/// <b>The round start belongs to another writer.</b> The opening marker, the
+/// <c>0x1a54</c> run and its four repeats are written by
+/// <see cref="MatchStartRunService"/>, because the captures gate them on a
+/// client's readiness report and nothing here opens a round. This writer goes
+/// from the sparse phase straight into the beat: the beat is what keeps the
+/// channel alive, and the round start arrives separately, on the client's own
+/// record, running alongside it on the same session's counter.
 /// </para>
 /// </remarks>
 /// <param name="logger">Logger of this service.</param>
-public sealed class MatchRecordService(ILogger<MatchRecordService> logger)
+public sealed class MatchRecordService(
+    MatchRoundStateService roundState,
+    ILogger<MatchRecordService> logger)
 {
     /// <summary>
-    /// How long a peer may stay quiet before its records stop. It matches the
-    /// idle timeout the gameplay server gives <c>PeerSessionService</c>, so the
-    /// records never outlive the session they are written to.
-    /// </summary>
-    private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(60);
-
-    /// <summary>
-    /// The frame the beat starts on. The run would be frame 0, so the frame that
-    /// followed it is 1, and the numbering is kept although the run is not
-    /// written: the insertions, the item-box group and the vitals onset are all
-    /// measured as offsets from the run's own index, and renumbering the beat
-    /// would move every one of them off the frame the capture shows it on.
+    /// The frame the beat starts on. The round start sits ahead of it and is
+    /// written by <see cref="MatchStartRunService"/> when a client reports itself
+    /// ready, so the beat's frame index starts after it: the insertions, the
+    /// item-box group and the vitals onset are all measured as offsets from the
+    /// run's own index, and renumbering the beat would move every one of them off
+    /// the frame the capture shows it on.
     /// </summary>
     private const int FirstBeatFrameIndex = 1;
+
+    /// <summary>
+    /// Whether the records should keep being written, on the rule
+    /// <see cref="MatchRecordPeerUtils"/> holds.
+    /// </summary>
+    /// <param name="session">Session the records are written to.</param>
+    /// <returns><c>true</c> while the peer is still there.</returns>
+    private static bool IsAlive(PeerSession session) => MatchRecordPeerUtils.IsAlive(session);
 
     private readonly Lock gate = new();
     private readonly HashSet<PeerSession> writing = [];
@@ -116,6 +117,10 @@ public sealed class MatchRecordService(ILogger<MatchRecordService> logger)
                 await SendAsync(context, step.Records, step.Compressed);
             }
 
+            // The beat is the round's, not the sparse phase's: everything it
+            // writes is measured as an offset from the run, so it starts when
+            // the round opens and not a beat earlier.
+            await roundState.WaitForOpenAsync(session);
             await BeatAsync(context);
         }
         catch (Exception exception)
@@ -147,10 +152,13 @@ public sealed class MatchRecordService(ILogger<MatchRecordService> logger)
     /// <remarks>
     /// <b>The set does not change while the stream runs.</b> The capture alternates
     /// it with the rounds it opens — <c>0x1a54</c>, then <c>0x1254</c> a
-    /// <c>0x800</c> bit along — but nothing here opens a round, so nothing here
-    /// has a round's parity to move to:
+    /// <c>0x800</c> bit along — but the beat is not a round and this writer does
+    /// not open one, so it has no parity to move to:
     /// <see cref="MatchRecordGenerationUtils.First"/> is the set the captured host
-    /// holds from its own first join until its first round closes.
+    /// holds from its own first join until its first round closes. The round
+    /// start written by <see cref="MatchStartRunService"/> takes its set from the
+    /// identifier the readiness report arrived on, which is where the capture's
+    /// parity lives.
     /// </remarks>
     /// <param name="context">Context the records are written through.</param>
     private async Task BeatAsync(PeerContext context)
@@ -225,13 +233,4 @@ public sealed class MatchRecordService(ILogger<MatchRecordService> logger)
         }
     }
 
-    /// <summary>
-    /// Whether the records should keep being written. A peer that has gone quiet
-    /// for the session timeout is one the reaper is about to drop, and records
-    /// sent to it would go to an endpoint nobody reads.
-    /// </summary>
-    /// <param name="session">Session the records are written to.</param>
-    private static bool IsAlive(PeerSession session) =>
-        session.Established &&
-        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - session.LastSeenAt <= IdleTimeout.TotalMilliseconds;
-}
+    }

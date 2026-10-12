@@ -76,7 +76,7 @@ public sealed partial class GameplayServerService
                     message.Type,
                     message.Body.Length,
                     message.Flags);
-                SendToOthers(session, message.Type, message.Body, message.Flags);
+                SendToOthers(session, message.Type, message.Body, message.Flags, ofThisHost: false);
                 return;
             }
 
@@ -122,6 +122,11 @@ public sealed partial class GameplayServerService
             records =>
             {
                 SendMessages(session, records, compressed: true);
+                return Task.CompletedTask;
+            },
+            (type, body, ordinal) =>
+            {
+                SendToOthers(session, type, body, ordinal, ofThisHost: false);
                 return Task.CompletedTask;
             });
 

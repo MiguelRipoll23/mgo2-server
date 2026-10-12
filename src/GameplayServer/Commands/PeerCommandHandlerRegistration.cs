@@ -31,12 +31,22 @@ public static class PeerCommandHandlerRegistration
         // A client's readiness report travels on the round's own payload record,
         // which alternates between two values as rounds succeed each other
         // (0x1ade, then 0x12de a 0x800 bit along). Both are registered so the
-        // report is recognised rather than dropped as an unknown command; the
-        // handler reads the body, because the same identifier carries the round's
-        // other payloads, which belong on the relay and not to a round.
+        // report reaches MatchStartRunService rather than being dropped as an
+        // unknown command; the handler reads the body, because the same identifier
+        // carries the round's other payloads, which belong on the relay and not
+        // to a round.
         foreach (var identifier in MatchRecordGenerationUtils.ReadinessReportIdentifiers)
         {
             registry.Register<PlayerReadyHandler>(identifier);
+        }
+
+        // The report's companion, sent in the same datagram and carrying the
+        // same byte. Below the tick threshold, so without a handler it would be
+        // relayed as an unnamed gameplay record; registering it makes the relay
+        // a decision rather than a default, and its answer rides the run.
+        foreach (var identifier in MatchRecordGenerationUtils.ReadyStateIdentifiers)
+        {
+            registry.Register<PlayerReadyStateHandler>(identifier);
         }
     }
 
@@ -57,6 +67,7 @@ public static class PeerCommandHandlerRegistration
         services.AddSingleton<PlayerProfileHandler>();
         services.AddSingleton<JoinProbeHandler>();
         services.AddSingleton<PlayerReadyHandler>();
+        services.AddSingleton<PlayerReadyStateHandler>();
         return services;
     }
 }

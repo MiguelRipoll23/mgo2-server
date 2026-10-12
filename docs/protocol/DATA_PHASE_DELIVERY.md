@@ -11,8 +11,9 @@ behaviour wrong. A match-start run written before the client reports itself read
 is a round opened on nobody; the live client then sat in its ready state and
 reported twenty-three times over two minutes while the run it had already been
 sent went unrepeated. The run is the one record the captures gate, so the rule
-this server holds is the narrowest one: it is never written here at all, and the
-beat is what it sends instead.
+this server holds is that it is written **for** a report and never before one:
+`MatchStartRunService`, driven by `PlayerReadyHandler`, opens the round the
+moment the report arrives.
 
 ## Method
 
@@ -90,38 +91,97 @@ They tick on the measured 33 ms beat and the capture's insertion periods
 channel the recorded host keeps moving; writing the round start on that beat is
 the mistake this document exists to prevent. **[V]**
 
-## The round start is not written
+## The round start is written for the report, and never before one
 
-The rule this server holds is the one the measurements above force: the marker,
-the run and its four repeats are never written, and nothing opens a round — not a
-clock, not the report, not anything else. There is no round opener
-(`MatchRoundService` is gone), no latched report and no run builder, and
-`PlayerReadyHandler` recognises the report, logs it and writes no answer. The
-sparse phase closes at its measured 42 240 ms and the beat is what follows.
+The marker, the run and its four repeats go out on the report — the run's
+payload echoing the byte that report carried — and on nothing else. There is no
+round on a clock: the sparse phase closes at its measured 42 240 ms and the beat
+follows it, and the round opens when the client asks. `PlayerReadyHandler`
+recognises the report and hands it to `MatchStartRunService`, which latches the
+round for as long as that round's own frames are going out.
 
-The measurements behind that, from a live session against this server:
+What the earlier measurements decided, and still decide:
 
 | what | observed |
 | --- | --- |
 | the beat alone keeps the channel moving | the client ACKed the beat's records and stayed in the session |
 | the phase can close before the report arrives | the phase ended on the measured 42.2 s; that client's first report came at 45.5 s |
-| a run written before the report is not the client's round | the run echoed the stand-in `0x14` while the report carried `0x01`; the client ACKed the run's records, never entered the round and reported 38 times |
+| a run written **before** the report is not the client's round | the run echoed the stand-in `0x14` while the report carried `0x01`; the client ACKed the run's records, never entered the round and reported 38 times |
 
-So the run is not a thing to send earlier or later: it is the host's answer to a
-record, and this server does not open the round it answers for. An unsolicited one
-is worse than none, because it cannot echo a report it has not seen and the client
-will not enter a round it did not ask for.
+The third row is the whole reason this rule is about *when* rather than *whether*.
+The run is the host's answer to a record, so it can only be written once the
+record has arrived — and that is a different thing from not writing it. The
+earlier state, where the report was recognised and dropped, left a live client
+sitting in its ready state with `CONNECTION NOT STABLE` and no round: the map
+loaded, the roster was acknowledged, the beat kept moving, and the round never
+opened because nothing opened it.
 
-The cost is explicit: a client that reports itself ready is never answered by a
-round, so it stays in its ready state and keeps asking. That is the state this
-server leaves a client in, deliberately, until the run is written for a report
-that has asked for it.
+## The report arrives with a companion, and the run answers both
+
+The readiness report is never sent alone: in five of five reports across the two
+captures the client puts a one-byte record in the same datagram, on an
+identifier that splits the same way and carrying the same byte
+(`UDP_GAME_CAPTURE.md` §3.2). So the round answers two records, not one, and
+`MatchStartRunService` writes the companion's answer inside the run where
+`MatchStartRunFramesUtils` places it — behind the two arrays, the one position a
+capture measures.
+
+That answer's **body is the one thing here that is not measured**. game2's host
+writes `02 00 00 00`; game1's writes none inside its round start and answers the
+companion only much later with six different bodies. The length and the class
+are **[V]**; the bytes are a guess, marked **[U]** on
+`MatchRecordBodiesUtils.ReadyStateAnswer`. If a run written with it is rejected,
+that body is the first thing to change — the report's own answer, which is what
+gated the round, does not depend on it.
+
+Inbound, the companion has a handler of its own
+(`PlayerReadyStateHandler`) so that the relay it needs is a decision rather than
+the default an unnamed gameplay record falls into.
+
+## The beat starts at the round open, not at the sparse phase's close
+
+Everything the beat writes is measured as an offset from the **run**, not from
+the sparse phase: the first item-box group 2.36 s after it, the vitals 27.0 s
+after it, and the two roster records that ride the vitals onset at exactly that
+instant. A beat that starts when the sparse phase closes spends its two opening
+item-box groups before the client has reported itself ready — measured on a live
+client, seven seconds early — so the client is told about boxes it is not yet in
+a round for and never hears about them again, and the vitals land four seconds
+early with those two records against the wrong window.
+
+`MatchRoundStateService` is the one thing both writers share: the beat waits on
+it, the round opener writes it. The wait is bounded at 30 s — every capture
+reports within 4.1 s of the sparse phase closing and the live client within
+6.8 s — so a client that never reports cannot leave the channel silent.
+
+## The lobby-slot array handshake, which only advances on a confirmation
+
+Four record kinds, one loop, measured in both captures:
+
+```
+host   0x9001 26B  85 NN      the team array
+host   0x1001 26B  86 NN      the occupancy array
+client 0x9001  2B  82 NN      the client answers
+client 0x1001  2B  84 NN
+host   0x1001  2B  81 NN      the host confirms   ← the only thing that advances
+host   0x9001 26B  85 NN+1    the pair again, under the next sequence
+```
+
+game1 runs it at the roster: the client answers `82 f3`/`84 f3` and the host
+confirms `81 f3` 94 s later, when a second player fills a slot and the sequence
+steps to `f4`. game2 runs it tighter — `81 00` twice, and the client's next answer
+is `82 01`/`84 01`. **The client only moves to the next sequence after the host
+confirms the one before it.** **[V]**
+
+`TeamArrayService` answers the confirmation and writes the pair again under the
+next sequence. Before it, the live client sent `82 f3`/`84 f3` once and never
+again, because the sequence had nowhere to go.
 
 ## Where this sits
 
 - `UDP_GAME_CAPTURE.md` §3.2 is the byte-level pairing of the readiness report
   and the round start; this file is the delivery rule built on it.
 - `RPDT_REPLAY_RECORDS.md` maps the bodies these records carry.
-- The replay itself: `src/GameplayServer/MatchRecords/MatchRecordService.cs` (the
-  per-peer writer) and `PlayerReadyHandler.cs` (which recognises the report and
-  answers nothing).
+- The replay itself: `src/GameplayServer/MatchRecords/MatchStartRunService.cs`
+  (the round opener), `MatchStartRunFramesUtils.cs` (its measured frames) and
+  `MatchRecordService.cs` (the per-peer beat).
