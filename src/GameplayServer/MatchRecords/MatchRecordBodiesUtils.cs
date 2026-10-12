@@ -139,16 +139,25 @@ public static class MatchRecordBodiesUtils
     /// two a report and its answer rather than two readings of one record.
     /// </summary>
     /// <remarks>
-    /// The report is the client saying it has loaded and is ready to play, and the
-    /// host answering it by opening the round is what this server does — the
-    /// captures show no round opening without one. That the client means *ready*
-    /// specifically is **[I]**: the timing and the pairing are measured, the
-    /// intent behind them is not.
+    /// The report is the client saying it has loaded and is ready to play. That
+    /// the client means *ready* specifically is **[I]**: the timing and the
+    /// pairing are measured, the intent behind them is not. The round is opened on
+    /// the room's own clock (see <see cref="MatchRoundService"/>), so the report
+    /// names the round's set and the byte its run echoes rather than gating it.
     /// </remarks>
     public const byte ReadinessReportOpcode = 0xe1;
 
     /// <summary>Opcode the host's match-start payload carries in its first byte.</summary>
     public const byte MatchStartPayloadOpcode = 0xe0;
+
+    /// <summary>
+    /// Byte a round's run echoes when the peer it is written to has not reported
+    /// itself ready: the recorded host's own, <c>0x14</c>, from game1's first
+    /// round's <c>0xe0 0x14</c>. A round that opens on the room's clock without a
+    /// report carries a measured body rather than the zero a peer that never
+    /// reported would otherwise put there.
+    /// </summary>
+    public const byte DefaultReadinessReportValue = 0x14;
 
     /// <summary>
     /// Length of the readiness report: the opcode and the one byte the host

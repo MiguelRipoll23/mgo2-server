@@ -84,8 +84,8 @@ public sealed record BeatFramePlan(
     }
 
     /// <summary>
-    /// Whether the item-box group rides at the head of this frame. It rides in
-    /// one frame in every eight, the same frame the capture compresses.
+    /// Whether the item-box group rides in this frame, behind the rules pair. It
+    /// rides in one frame in every eight, the same frame the capture compresses.
     /// </summary>
     public bool CarriesItemBoxes =>
         FrameIndex % ItemBoxFramesUtils.ItemBoxPeriodFrames == ItemBoxFramesUtils.ItemBoxPhaseFrames;
@@ -160,27 +160,32 @@ public sealed record BeatFramePlan(
     /// The records of this frame, in send order.
     /// </summary>
     /// <remarks>
-    /// The item-box group rides at the head of its frame, ahead of the
-    /// clock/blob/control insertion, the way the recorded order puts it.
+    /// <b>The item-box group rides behind the rules pair.</b> game1's round-1
+    /// item-box frames read <c>0a61 0a61 1a50 … 1a5a …</c> with the pair first,
+    /// and <c>090c 0a61 0a61 1a50 … 1a5a …</c> once the vitals record has joined,
+    /// so the group is the frame's last records and the clock/blob/control
+    /// insertion stays at the head. The capture's order is not uniform across the
+    /// match (a round-2 frame with a blob reads <c>1a50 … 1a5a … 0002 090c 0a61
+    /// 0a61</c>), so this follows the opening round, whose frames the client
+    /// answers first; see <see cref="MatchRecordFramesUtils.BeatFrame"/>.
     /// </remarks>
     /// <returns>The frame's records.</returns>
     public List<MatchRecordFramesUtils.RecordMessage> Records()
     {
         var insertions = new List<MatchRecordFramesUtils.RecordMessage>();
-        if (CarriesItemBoxes)
-        {
-            insertions.AddRange(ItemBoxFramesUtils.ItemBoxGroup(
-                Generation,
-                ItemBoxGroupIndex,
-                ItemBoxSequence,
-                ItemBoxStateSequence));
-        }
-
         if (Insertion is { } insertion)
         {
             insertions.Add(insertion);
         }
 
-        return MatchRecordFramesUtils.BeatFrame(Generation, insertions, IncludeVitals);
+        var itemBoxes = CarriesItemBoxes
+            ? ItemBoxFramesUtils.ItemBoxGroup(
+                Generation,
+                ItemBoxGroupIndex,
+                ItemBoxSequence,
+                ItemBoxStateSequence)
+            : null;
+
+        return MatchRecordFramesUtils.BeatFrame(Generation, insertions, IncludeVitals, itemBoxes);
     }
 }

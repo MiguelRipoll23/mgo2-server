@@ -28,12 +28,12 @@ public static class PeerCommandHandlerRegistration
         // not answered because the server cannot read what they mean.
         registry.Register<JoinProbeHandler>(UdpCommandConstants.JoinProbe);
 
-        // The readiness report travels on the round's own payload record, which
-        // alternates between two values as rounds succeed each other (0x1ade,
-        // then 0x12de a 0x800 bit along). Both are registered so the report
-        // reaches the handler that opens the round on it; the handler still reads
-        // the body, because the same identifier carries the round's other
-        // payloads, which belong on the relay and not to a round.
+        // A client's readiness report travels on the round's own payload record,
+        // which alternates between two values as rounds succeed each other
+        // (0x1ade, then 0x12de a 0x800 bit along). Both are registered so the
+        // report reaches the handler that latches it for the room; the handler
+        // still reads the body, because the same identifier carries the round's
+        // other payloads, which belong on the relay and not to a round.
         foreach (var identifier in MatchRecordGenerationUtils.ReadinessReportIdentifiers)
         {
             registry.Register<PlayerReadyHandler>(identifier);

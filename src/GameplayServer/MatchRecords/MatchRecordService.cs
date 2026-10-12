@@ -30,12 +30,15 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <para>
 /// <b>The room opens the round, and this writes it out.</b> The sparse phase
 /// ends at its last state blob and the writer waits for <see cref="MatchRoundService"/>
-/// to open a round — which it does only once every peer has reported itself
-/// ready, so no match-start run reaches a client on its loading screen. A peer
-/// that entered while a round was already open beats that round under its own
-/// generation and writes the run for the next one, which is the second player in
-/// game1: it joins at t+154.3 s, plays the round under the first identifier set,
-/// and takes the run at t+194.0 s when the room opens the second.
+/// to open a round — which it does on its own clock, the first
+/// <see cref="MatchRecordFramesUtils.SparsePhaseMilliseconds"/> after the room
+/// took its first peer and each later one a round's measured length after the
+/// last. The run therefore lands where the capture's sparse phase closes rather
+/// than on a packet. A peer that entered while a round was already open beats
+/// that round under its own generation and writes the run for the next one,
+/// which is the second player in game1: it joins at t+154.3 s, plays the round
+/// under the first identifier set, and takes the run at t+194.0 s when the room
+/// opens the second.
 /// </para>
 /// </remarks>
 /// <param name="rounds">Rounds the room opens and every peer plays.</param>
@@ -181,8 +184,10 @@ public sealed class MatchRecordService(
             var snapshot = rounds.Current;
             if (!snapshot.IsOpen)
             {
-                // No round has opened yet. The room is waiting on readiness
-                // reports, so the writer waits on the room.
+                // No round has opened yet: the room's first round is due when
+                // the sparse phase this writer is replaying ends. The writer
+                // waits on the room rather than writing a run of its own, so a
+                // room of several peers still plays one round.
                 await Task.Delay(RoundPollMilliseconds);
                 continue;
             }
@@ -197,7 +202,7 @@ public sealed class MatchRecordService(
                     await SendRoundStartAsync(
                         context,
                         snapshot.Generation,
-                        ready.ReportedByte(session));
+                        ready.EchoedByte(session, MatchRecordBodiesUtils.DefaultReadinessReportValue));
                     // The run is frame 0 of the round, so the beat that follows
                     // starts at 1. That is the counting the capture uses: its
                     // item-box group sits at offset 6, 14, … from the run and
@@ -233,7 +238,7 @@ public sealed class MatchRecordService(
                     context,
                     MatchStartRunFramesUtils.MatchStartRunRepeat(
                         snapshot.Generation,
-                        ready.ReportedByte(session)),
+                        ready.EchoedByte(session, MatchRecordBodiesUtils.DefaultReadinessReportValue)),
                     compressed: true);
                 round.FrameIndex++;
                 await Task.Delay(MatchRecordFramesUtils.FramePeriodMilliseconds);
@@ -285,13 +290,13 @@ public sealed class MatchRecordService(
     /// ride inside the beat that follows, in <see cref="RunRoundsAsync"/>.
     /// </summary>
     /// <remarks>
-    /// <b>The marker is the answer to the readiness report.</b> The marker's
-    /// identifier is the report's own with the answer bit set — <c>0x5ade</c>
-    /// for <c>0x1ade</c>, <c>0x52de</c> for <c>0x12de</c> — which is why the
-    /// dispatcher leaves the report unanswered in the pass that received it and
-    /// this writes the one answer that goes out. The capture agrees: game1's
-    /// solo round carries a single host <c>0x5ade</c>, at t+46.4155 with the run
-    /// and 1.66 s after the report.
+    /// <b>The marker answers the readiness report when there is one.</b> The
+    /// marker's identifier is the round's payload with the answer bit set —
+    /// <c>0x5ade</c> for <c>0x1ade</c>, <c>0x52de</c> for <c>0x12de</c> — which
+    /// is why the dispatcher leaves the report unnoticed in the pass that
+    /// received it and this writes the one answer that goes out, the report or
+    /// no report: game1's solo round carries a single host <c>0x5ade</c>, at
+    /// t+46.4155 with the run.
     /// </remarks>
     /// <param name="context">Context the records are written through.</param>
     /// <param name="generation">Identifier set of the round being opened.</param>

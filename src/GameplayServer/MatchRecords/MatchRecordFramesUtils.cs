@@ -28,20 +28,20 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <list type="number">
 /// <item>
 /// The <b>sparse phase</b> (t+4.9 s to t+42.2 s): a <c>0xd001</c> control byte
-/// and a <c>0x0002</c> state blob, several seconds apart. It ends there: the
-/// run that follows is the host's answer to the client's readiness report,
-/// not a step on this clock (see <see cref="SparseSteps"/>).
+/// and a <c>0x0002</c> state blob, several seconds apart. Its own length is
+/// <see cref="SparsePhaseMilliseconds"/>, and the run that follows is the last
+/// step of this clock (see <see cref="SparseSteps"/>).
 /// </item>
 /// <item>
-/// The <b>match-start run</b>, written once the client has asked for it: the
-/// frame that opens the round, carrying the host's own short entry and the
+/// The <b>match-start run</b>, written when the sparse phase ends: the frame
+/// that opens the round, carrying the host's own short entry and the
 /// ninety-byte operations state block under it.
 /// </item>
 /// <item>
 /// The <b>steady phase</b> (t+42.2 s on): the two <c>0x0a61 fe</c> rules records
 /// every frame, the vitals record joining them 27.0 s in, with a round-clock,
 /// state-blob or control record inserted in front of them from time to time and
-/// the item-box state group in front of one frame in every eight.
+/// the item-box state group behind them in one frame in every eight.
 /// </item>
 /// </list>
 /// <para>
@@ -163,6 +163,18 @@ public static class MatchRecordFramesUtils
     public const int RoundLengthMilliseconds = 147620;
 
     /// <summary>
+    /// How long the sparse phase lasts: the sum of the delays
+    /// <see cref="SparseSteps"/> itself carries, 42 240 ms — 42.2 s, the
+    /// capture's own close of the phase. It is the point on this clock at which
+    /// the match-start run follows, and it is derived from the steps rather than
+    /// restated so the two cannot drift apart.
+    /// </summary>
+    public static int SparsePhaseMilliseconds => SparsePhaseLengthMilliseconds;
+
+    private static readonly int SparsePhaseLengthMilliseconds =
+        SparseSteps().Sum(step => step.DelayMilliseconds);
+
+    /// <summary>
     /// Beat frame at which the vitals record starts riding in the beat frame:
     /// 818 frames, 27.0 s after the match-start run. The capture's run is at
     /// t+46.42 s and its first <see cref="VitalsRecordIdentifier"/> is at
@@ -254,16 +266,15 @@ public static class MatchRecordFramesUtils
     /// between consecutive captured frames, so a zero means the two went out back
     /// to back.
     /// </summary>
-    /// <remarks>
-    /// <b>The phase ends at the last state blob, not at the round.</b> The
-    /// recorded host's match-start run is the <em>answer</em> to the client's
-    /// readiness report — the <c>e1 NN</c> payload record that arrives at
-    /// roster+40.59 s in game1, 1.66 s before the run — so a server that writes
-    /// the run on this phase's own clock opens a round the client never asked
-    /// for and then ignores the twenty-three requests that follow it. The run
-    /// waits for <see cref="MatchRecordService"/> to be told the request arrived.
-    /// </remarks>
-    /// <returns>The steps in send order, ending at the last state blob.</returns>
+/// <remarks>
+/// <b>The phase ends at the last state blob and the run follows it.</b> The
+/// run is not a step of this list: the room opens the round at
+/// <see cref="SparsePhaseMilliseconds"/> and <see cref="MatchRecordService"/>
+/// writes it there, which is the point on the capture's clock the run lands on
+/// (t+42.2 s against the run's t+46.4 s, the difference being the 1.66 s the
+/// captured client waited before reporting itself ready).
+/// </remarks>
+/// <returns>The steps in send order, ending at the last state blob.</returns>
     public static List<RecordStep> SparseSteps() =>
     [
         new(4930, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x02)]),
@@ -287,25 +298,41 @@ public static class MatchRecordFramesUtils
 
     /// <summary>
     /// The beat frame: an optional head insertion, the vitals record once the
-    /// capture's round reaches it, and the rules-roster pair.
+    /// capture's round reaches it, the rules-roster pair, and — behind the pair —
+    /// the item-box group when the frame carries one.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The vitals record is not in every frame. The recorded host writes the
     /// rules-roster pair alone for the round's first 27.0 s and adds
     /// <see cref="VitalsRecordIdentifier"/> only from
     /// <see cref="VitalsOnsetFrames"/> on — 781 of the solo window's frames carry
     /// nothing else, against 2 385 that carry the vitals record.
+    /// </para>
+    /// <para>
+    /// <b>The item-box group follows the pair, not precedes it.</b> game1's
+    /// round-1 item-box frames read <c>0a61 0a61 1a50 … 1a5a …</c> — the pair
+    /// first, the group behind it — and once the vitals record has joined they
+    /// read <c>090c 0a61 0a61 1a50 … 1a5a …</c>, so the group is the frame's last
+    /// records. The recorded stream is not uniform across the match — a round-2
+    /// frame carrying a state blob reads
+    /// <c>1a50 … 1a5a … 0002 090c 0a61 0a61</c>, the group first — so this
+    /// follows the opening round, whose frames the client answers first.
+    /// </para>
     /// </remarks>
     /// <param name="generation">Identifier set of the round being played.</param>
     /// <param name="insertions">Records to place at the head of the frame, or null.</param>
     /// <param name="includeVitals">Whether the vitals record rides in this frame.</param>
+    /// <param name="itemBoxes">Item-box group to place behind the rules pair, or null.</param>
     /// <returns>The records of one beat frame.</returns>
     public static List<RecordMessage> BeatFrame(
         MatchRecordGenerationUtils generation,
         IReadOnlyList<RecordMessage>? insertions = null,
-        bool includeVitals = true)
+        bool includeVitals = true,
+        IReadOnlyList<RecordMessage>? itemBoxes = null)
     {
-        var frame = new List<RecordMessage>((insertions?.Count ?? 0) + (includeVitals ? 3 : 2));
+        var frame = new List<RecordMessage>(
+            (insertions?.Count ?? 0) + (itemBoxes?.Count ?? 0) + (includeVitals ? 3 : 2));
         if (insertions is not null)
         {
             frame.AddRange(insertions);
@@ -318,6 +345,12 @@ public static class MatchRecordFramesUtils
 
         frame.Add(new(generation.RulesRoster, MatchRecordBodiesUtils.RulesRoster(), RulesRosterMemberListClass));
         frame.Add(new(generation.RulesRoster, MatchRecordBodiesUtils.RulesRoster(), RulesRosterEmptyListClass));
+
+        if (itemBoxes is not null)
+        {
+            frame.AddRange(itemBoxes);
+        }
+
         return frame;
     }
 

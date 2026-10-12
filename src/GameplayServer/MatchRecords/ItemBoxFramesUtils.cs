@@ -1,7 +1,8 @@
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The item-box group the dedicated host prepends to its beat frame, as measured
+/// The item-box group the dedicated host appends to its beat frame, behind the
+/// rules pair, as measured
 /// from the solo window of <c>mgo2-game1.pcapng</c>. Split out of
 /// <see cref="MatchRecordFramesUtils"/> so neither file exceeds the repository's
 /// size limit; the bodies are <see cref="ItemBoxRecordBodiesUtils"/>'.

@@ -7,45 +7,42 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <summary>
 /// Owns the room's rounds: which round is being played, the identifier set it
 /// plays under, and when the next one opens. One peer no longer opens a round on
-/// its own — the room opens it, once every peer in it has reported itself ready,
-/// and every peer's writer then writes that round's run. This is what makes a
-/// solo round and a joined round the same round rather than two streams.
+/// its own — the room opens it on its own clock and every peer's writer then
+/// writes that round's run. This is what makes a solo round and a joined round
+/// the same round rather than two streams.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The room opens the round, not a clock and not one peer.</b> The capture is
-/// the shape: game1's first round opens at t+46.4 s on the solo player's report
-/// and its second at t+194.0 s — the measured 147.6 s boundary — once the player
-/// who joined at t+154.3 s has also reported. A round that opens on a timer
-/// writes a run the client never asked for; a round that opens per peer gives
-/// two players two different rounds and two different identifier sets.
-/// </para>
-/// <para>
-/// <b>A round is due, then it waits for readiness.</b> The first round is due as
-/// soon as the room holds a peer; each later round is due a
+/// <b>The room opens the round on its clock, not on a report.</b> The first
+/// round is due when the sparse phase ends —
+/// <see cref="MatchRecordFramesUtils.SparsePhaseMilliseconds"/> after the room
+/// took its first peer — and each later round a
 /// <see cref="MatchRecordFramesUtils.RoundLengthMilliseconds"/> after the last
-/// one opened. A due round opens only when every peer in the room has a pending
-/// readiness report, which is what keeps a match-start run off a client still on
-/// its loading screen. The reports are taken when the round opens, so a peer
-/// that reports again while the round is going out queues exactly one report for
-/// the round after it, the way the capture's client reports once per round.
+/// opened. That is the timing the recorded host shows (game1's first round at
+/// t+46.4 s, its second 147.6 s later, with the sparse phase closing at t+42.2 s)
+/// without a round that hangs on a packet. A round that opens per peer would
+/// give two players two different rounds and two different identifier sets.
 /// </para>
 /// <para>
-/// <b>The first round plays under the set its own report names.</b> The
-/// generation is the client's and not the room's: game1's first round opens on
-/// the report <c>0x1ade</c> under the <c>0x1a54</c> set and game2's first on
-/// <c>0x12de</c> under <c>0x1254</c>, because the client carries the parity from
-/// the rounds it has already played — the eight rounds the two captures open
-/// alternate without a break, game1's five <c>0x1a54</c>, <c>0x1254</c>,
+/// <b>A client's report is read, not waited on.</b> A peer that reports itself
+/// ready before its round is due names the identifier set the round plays under
+/// (<see cref="OpeningGeneration"/>), which is the one fact the report carries
+/// that the room cannot derive; a peer that never reports is opened a round under
+/// <see cref="MatchRecordGenerationUtils.First"/> rather than barred from one.
+/// </para>
+/// <para>
+/// <b>The first round plays under the set its own report names, when it has
+/// one.</b> The generation is the client's and not the room's: game1's first
+/// round opens on the report <c>0x1ade</c> under the <c>0x1a54</c> set and
+/// game2's first on <c>0x12de</c> under <c>0x1254</c>, because the client
+/// carries the parity from the rounds it has already played — the eight rounds
+/// the two captures open alternate without a break, game1's five
+/// <c>0x1a54</c>, <c>0x1254</c>,
 /// <c>0x1a54</c>, <c>0x1254</c>, <c>0x1a54</c> then game2's three
 /// <c>0x1254</c>, <c>0x1a54</c>, <c>0x1254</c>. A room that opened every first
-/// round as <see cref="MatchRecordGenerationUtils.First"/> would answer that
-/// client under the other set's marker and stream a round it is not on. Each
-/// round after the first takes the sibling of the one before it, which is what
-/// keeps a queued repeat in step: game1's client reports <c>0x12de</c> twice
-/// inside its second round (t+190.39 s and t+192.68 s) and the next round is
-/// <c>0x1a54</c> again — read as naming the next round's set, that repeat would
-/// open it under the round just played.
+/// round as <see cref="MatchRecordGenerationUtils.First"/> would answer a
+/// reporting client under the other set's marker and stream a round it is not
+/// on. Each round after the first takes the sibling of the one before it.
 /// </para>
 /// <para>
 /// <b>A peer that joins mid-round joins the round.</b> The round it entered on
@@ -78,6 +75,11 @@ public sealed class MatchRoundService(
     private int maximumRounds;
     private int currentRound;
     /// <summary>
+    /// When the room took its first peer, from which the first round's own
+    /// <see cref="MatchRecordFramesUtils.SparsePhaseMilliseconds"/> clock runs.
+    /// </summary>
+    private long roomStartedAtMilliseconds;
+    /// <summary>
     /// Identifier set of the round being played. Before the first round opens it
     /// is a placeholder: that round's set comes from the reports it opens on
     /// (<see cref="OpeningGeneration"/>).
@@ -103,13 +105,20 @@ public sealed class MatchRoundService(
 
     /// <summary>
     /// Adds a peer to the room and remembers the round it entered on, so a peer
-    /// that joins mid-round is not handed the run for the round in progress.
+    /// that joins mid-round is not handed the run for the round in progress. The
+    /// room's clock starts with the first peer, which is what puts the first
+    /// round's run where the sparse phase ends.
     /// </summary>
     /// <param name="session">Peer whose records are starting.</param>
     public void Enter(PeerSession session)
     {
         lock (gate)
         {
+            if (peers.Count == 0)
+            {
+                roomStartedAtMilliseconds = Environment.TickCount64;
+            }
+
             peers.Add(session);
             joinRounds[session] = currentRound;
         }
@@ -133,6 +142,7 @@ public sealed class MatchRoundService(
                 currentRound = 0;
                 generation = MatchRecordGenerationUtils.First;
                 roundOpenedAtMilliseconds = 0;
+                roomStartedAtMilliseconds = 0;
                 version++;
                 matchFinished = false;
             }
@@ -198,22 +208,16 @@ public sealed class MatchRoundService(
             }
             else
             {
+                // The first round is due when the sparse phase the room's peers
+                // are being played ends, and each later one a round's measured
+                // length after the last opened. Neither waits on a report: a
+                // client that never reports is opened a round like any other.
                 var due = currentRound == 0
-                    || now - roundOpenedAtMilliseconds >= MatchRecordFramesUtils.RoundLengthMilliseconds;
+                    ? now - roomStartedAtMilliseconds >= MatchRecordFramesUtils.SparsePhaseMilliseconds
+                    : now - roundOpenedAtMilliseconds >= MatchRecordFramesUtils.RoundLengthMilliseconds;
                 if (!due)
                 {
                     return Task.CompletedTask;
-                }
-
-                // The barrier: a due round waits for every peer in the room. A
-                // peer on its loading screen has not reported, and the round it
-                // would be dropped into is not opened on it.
-                foreach (var peer in peers)
-                {
-                    if (!ready.HasReport(peer))
-                    {
-                        return Task.CompletedTask;
-                    }
                 }
 
                 currentRound++;
@@ -222,14 +226,6 @@ public sealed class MatchRoundService(
                     : generation.Sibling;
                 roundOpenedAtMilliseconds = now;
                 version++;
-
-                // Taken, not just read: a peer that reports again while this
-                // round goes out queues one report for the round after it. The
-                // byte each report carried stays behind for the run to echo.
-                foreach (var peer in peers)
-                {
-                    ready.TryTake(peer, out _);
-                }
 
                 opened = Snapshot();
                 peersAtOpen = peers.Count;
@@ -249,7 +245,7 @@ public sealed class MatchRoundService(
             logger.LogInformation(
                 "Opening round {RoundNumber} of {MaximumRounds} for {PeerCount} peer(s) under "
                 + "(operations 0x{Operations:x4}, rules 0x{Rules:x4}, vitals 0x{Vitals:x4}, marker 0x{Marker:x4}) "
-                + "because every peer has reported itself ready",
+                + "on the room's clock",
                 open.Number,
                 maximumRounds > 0 ? maximumRounds : 0,
                 peersAtOpen,
@@ -263,8 +259,9 @@ public sealed class MatchRoundService(
     }
 
     /// <summary>
-    /// The identifier set the first round opens under: the generation the peers
-    /// reported themselves ready under. The caller holds <see cref="gate"/>.
+    /// The identifier set the first round opens under: the one the peers reported
+    /// themselves ready under, or <see cref="MatchRecordGenerationUtils.First"/> when
+    /// none has reported. The caller holds <see cref="gate"/>.
     /// </summary>
     /// <remarks>
     /// The peers are expected to name the same generation, because the room opens

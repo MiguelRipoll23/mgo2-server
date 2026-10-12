@@ -7,13 +7,17 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 
 /// <summary>
 /// Handles the record in which a client reports that it has loaded and is ready
-/// to play, which is what the host answers by opening the round.
+/// to play, and latches it for the round the room opens on its own clock.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A client says it is ready; the host opens the round.</b> Measured over all
-/// three captures, every round begins within 0.6–5.5 s of one of these reports and
-/// no round begins without one:
+/// <b>A client says it is ready, and the recorded host opens the round around
+/// it.</b> Measured over all three captures, every round begins within 0.6–5.5 s
+/// of one of these reports and no round begins without one — the round follows
+/// the report on the capture's clock. This server opens the round on its own
+/// clock instead (see <see cref="MatchRoundService"/>), so the report no longer
+/// gates it; what follows is still what the report is measured to be, and the
+/// two facts it carries are what the round takes from it:
 /// </para>
 /// <list type="bullet">
 /// <item>game1 — <c>0x1ade</c> <c>e1 14</c> at t+44.76 s, round open at t+46.42 s.</item>
@@ -45,19 +49,21 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// round's own payload record, and the client carries its generation from the
 /// rounds it has already played rather than resetting it with the match: game1's
 /// first round reports <c>0x1ade</c> and game2's first reports <c>0x12de</c>. So
-/// the handler passes the identifier on with the byte, and the room opens its
-/// first round under the generation the report names instead of assuming
-/// <see cref="MatchRecordGenerationUtils.First"/> — see
+/// the handler passes the identifier on with the byte, and the room's first round
+/// plays under the generation the report names when one has arrived, instead of
+/// assuming <see cref="MatchRecordGenerationUtils.First"/> — see
 /// <see cref="MatchRecordGenerationUtils.OfReadinessReport"/>.
 /// </para>
 /// <para>
-/// The round itself is opened by <see cref="MatchRecordService"/>, which takes
-/// the report from <see cref="PlayerReadyService"/>, writes the marker and the
-/// match-start run, and writes the run again four times inside the beat that
-/// follows. The marker <em>is</em> the answer
-/// to the report — the same identifier with the answer bit set — which is why
-/// the dispatcher leaves the report unanswered in the pass that received it: a
-/// report answered both ways puts two markers on the wire.
+/// The round itself is opened by <see cref="MatchRoundService"/> on the room's
+/// clock, and <see cref="MatchRecordService"/> writes its marker and run, and
+/// the run again four times inside the beat that follows. The report is read for
+/// the two things it carries that the room cannot derive — the identifier set
+/// the round plays under, and the byte the run's payload echoes
+/// (<see cref="PlayerReadyService"/>) — and does not gate the round: the marker
+/// is written whether or not one arrived. The dispatcher still leaves the report
+/// unanswered in the pass that received it, because the round's own marker is its
+/// answer and writing both puts two markers on the wire.
 /// </para>
 /// </remarks>
 /// <param name="ready">Reports peers have sent that open their rounds.</param>
