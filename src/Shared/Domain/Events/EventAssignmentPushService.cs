@@ -309,70 +309,56 @@ public sealed class EventAssignmentPushService(
                 gameWriter.Build(),
                 cancellationToken);
 
-            // The next-match card (0x4A13) refills the same shared record the
-            // pairing sweep filled, and it is what this burst uses to do so
-            // rather than a second match-found notification.
-            //
-            // The burst's own 0x4A00 above clears all 356 bytes of that record
-            // (0xD51280) and re-seeds only the lobby triple, so the two team
-            // names the client renders are gone and have to be written again.
-            // Both 0x4A13 and 0x4E20 write them — the same rec+0x14/+0x18 and
-            // rec+0x4C/+0x50 slots — but only 0x4E20 ends in the UI event 36 that
-            // raises the "your next opponent has been determined" modal, so
-            // refilling with it announced the opponent a second time, once per
-            // sweep. The card fires UI event 27 instead (0xD45174) and is
-            // silent on that screen.
-            //
-            // It routes to Survival correctly: no 0x4Axx parser branches on
-            // subtype — the split is consumer-side on rec+0x08, and this record
-            // writes the team's own match type there, so subtype 4 goes to the
-            // Survival screen family (0x8CB8FC-0x8CFF40) rather than the
-            // in-game round manager. The earlier comment here claimed the card
-            // would "hand a Survival client a Tournament pairing"; the routing
-            // evidence says otherwise.
-            //
-            // The card echoes the identity the active-event record above was
-            // opened with, because the client compares card_id against the
-            // record's rec+0x00 and drops a card naming anything else with
-            // -1106.
-            var cardWriter = new PacketWriter();
-            EventAssignmentUtils.WriteNextMatchCard(
-                cardWriter,
-                team.EventIdentifier,
-                team,
-                opponent,
-                ReferenceEquals(team, assignment.FirstTeam)
-                    ? assignment.FirstRoster
-                    : assignment.SecondRoster,
-                ReferenceEquals(team, assignment.FirstTeam)
-                    ? assignment.SecondRoster
-                    : assignment.FirstRoster);
-            await sessionHelper.SendPacketAsync(
-                session,
-                CommandConstants.EventNextMatchCard,
-                cardWriter.Build(),
-                cancellationToken);
-
-            // The match-found notification is what raises the opponent-found
-            // modal, and a Survival pair already had it from the sweep that
-            // paired it — so it is written only for a Tournament pair, which has
-            // no pairing sweep and no other record naming the pair.
-            if (assignment.LobbySubtype != EventConstants.SurvivalSelector)
+            // The next-match card (0x4A13) belongs to the Tournament draw: it
+            // names the bracket's frozen rosters and the client routes it to the
+            // Tournament screen family. A Survival pairing is announced by the
+            // match-found notification below, which writes the same shared record
+            // from the pair's own snapshot, so sending the card here would hand a
+            // Survival client a Tournament pairing instead.
+            if (assignment.LobbySubtype == EventConstants.TournamentSelector)
             {
-                var matchWriter = new PacketWriter();
-                EventAssignmentUtils.WriteMatchFound(
-                    matchWriter,
-                    team.SnapshotIdentifier,
-                    team.Sequence,
+                // The card echoes the identity the active-event record above was
+                // opened with, which is the event the team record now carries at
+                // its entry slot; the client compares the two and drops a card
+                // that names anything else.
+                var cardWriter = new PacketWriter();
+                EventAssignmentUtils.WriteNextMatchCard(
+                    cardWriter,
+                    team.EventIdentifier,
                     team,
                     opponent,
-                    EventConstants.ActiveEventAssignedState);
+                    ReferenceEquals(team, assignment.FirstTeam)
+                        ? assignment.FirstRoster
+                        : assignment.SecondRoster,
+                    ReferenceEquals(team, assignment.FirstTeam)
+                        ? assignment.SecondRoster
+                        : assignment.FirstRoster);
                 await sessionHelper.SendPacketAsync(
                     session,
-                    CommandConstants.EventMatchFound,
-                    matchWriter.Build(),
+                    CommandConstants.EventNextMatchCard,
+                    cardWriter.Build(),
                     cancellationToken);
             }
+
+            // The match-found notification is the record the client acts on, and
+            // it is validated against the team record exactly as the active-event
+            // record above is: it quotes the receiving team's own identity, so the
+            // two agree with the snapshot that opened the exchange. It carries the
+            // assigned phase, because it is the last word the client is given
+            // about the state before it enters the room.
+            var matchWriter = new PacketWriter();
+            EventAssignmentUtils.WriteMatchFound(
+                matchWriter,
+                team.SnapshotIdentifier,
+                team.Sequence,
+                team,
+                opponent,
+                EventConstants.ActiveEventAssignedState);
+            await sessionHelper.SendPacketAsync(
+                session,
+                CommandConstants.EventMatchFound,
+                matchWriter.Build(),
+                cancellationToken);
 
             delivered++;
         }
