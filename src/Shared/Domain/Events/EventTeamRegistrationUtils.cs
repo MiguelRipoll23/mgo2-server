@@ -14,19 +14,19 @@ namespace Mgo2Server.Shared.Domain.Events;
 public static class EventTeamRegistrationUtils
 {
     /// <summary>
-    /// The state a team holds while it waits for an opponent. A team that has
-    /// decided to play is no longer up for grabs, so it leaves the joinable list
-    /// the client offers to join from.
+    /// The state a team holds once it is entered and waiting for an opponent. A
+    /// team that has decided to play is no longer up for grabs, so it leaves the
+    /// joinable list the client offers to join from.
     /// </summary>
-    public static int QueuedState => EventConstants.TeamRegisteredState;
+    public static int EnteredState => EventConstants.TeamEnteredState;
 
     /// <summary>
-    /// The state a team returns to when it leaves the queue, or <c>null</c> when
-    /// it is not marked as waiting and so has nothing to be released from.
+    /// The state a team returns to when it leaves the field, or <c>null</c> when
+    /// it is not marked as entered and so has nothing to be released from.
     /// </summary>
     /// <param name="currentState">State the team is recorded in.</param>
     public static int? ReleasedState(int currentState) =>
-        currentState == EventConstants.TeamRegisteredState
+        currentState == EventConstants.TeamEnteredState
             ? EventConstants.TeamJoinableState
             : null;
 
@@ -61,18 +61,20 @@ public static class EventTeamRegistrationUtils
     /// The member state a team notification may carry for a team in the given
     /// state.
     /// <para>
-    /// The client's <c>0x4918</c> parser refuses a member whose state byte is not
-    /// the one the team's own state expects — <c>1</c> on a team that is open and
-    /// <c>2</c> on one that was formed automatically — so a roster addition that
-    /// arrives with any other value is dropped with no error and no visible
-    /// change. Deriving the byte here keeps every writer of a roster notification
-    /// in step with that rule.
+    /// The client refuses a member whose state byte is not the one the team's own
+    /// state expects — <c>1</c> on any team, and <c>2</c> only on one that was
+    /// formed automatically — so a roster addition that arrives with any other
+    /// value is dropped with no error and no visible change. Deriving the byte
+    /// here keeps every writer of a roster notification in step with that rule,
+    /// and it is why the auto-formation state is the only one that may turn a
+    /// row's byte into a decision: an entered team's members arrive pending and
+    /// become ready through <c>0x4932</c>, not through the row that adds them.
     /// </para>
     /// </summary>
     /// <param name="teamState">State the team is recorded in.</param>
     /// <returns>The member state the client accepts for that team state.</returns>
     public static int ParticipantStateFor(int teamState) =>
-        teamState == EventConstants.TeamRegisteredState
+        teamState == EventConstants.TeamAutoFormationState
             ? EventConstants.ParticipantReadyState
             : EventConstants.ParticipantPendingState;
 
@@ -91,7 +93,7 @@ public static class EventTeamRegistrationUtils
         bool isReady,
         int lobbyIdentifier,
         int expectedLobbyIdentifier) =>
-        currentState == EventConstants.TeamRegisteredState
+        currentState == EventConstants.TeamEnteredState
         && isReady
         && lobbyIdentifier == expectedLobbyIdentifier;
 }

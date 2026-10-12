@@ -88,7 +88,18 @@ carriers (no 0x4Axx parser branches on subtype — the split is all consumer-sid
    0x4960).
 5. **Drive `team_state`** (`team+0x04`) — entirely server-authoritative, no client writer:
    <= 2 shows "Team Standby", 5 is what makes the "Join Game" row exist, 9 flips the screen
-   to counted-roster mode and hardens the `0x4918` row gate (`mgo2_cmd_4e20_s2c.ksy`).
+   to counted-roster mode and hardens the `0x4918` row gate (`mgo2_cmd_4e20_s2c.ksy`). **A
+   pairing notification must carry the assigned phase (5), never the state byte the team row
+   happens to hold**: a team that entered and is waiting for its opponent used to be stored
+   as 9 — the client's own automatic-formation byte — and `0x4E20` echoing that stranded the
+   pair it was announcing on the formation screen (`717` "Team formation complete.") instead
+   of advancing them to the room — reported live 2026-10-12. The waited-for state is now 4
+   (`EventConstants.TeamEnteredState`), 9 has its own constant and is never written by this
+   server, and every packet that echoes the team row (the snapshot's state byte, the
+   team-info replies, the list rows) therefore shows the phase the team is really in. **On
+   1.36 the byte is a flag, not an enum — the image only ever compares it against 9**; the
+   `5` and `<= 2` readers above are disc-build behaviour and must not be used to diagnose a
+   1.36 session (`BUILD_1_36.md`, "`team_state` is one literal in 1.36").
 6. **Populate the roster before the status columns** — `team+0x17C` is 8 x 28-byte member
    records ({chara id, name[16], ..., member_state at +0x15}); `0x4918` refuses a row whose
    status byte isn't 1 (or 2 when team_state is 9).
@@ -104,7 +115,10 @@ carriers (no 0x4Axx parser branches on subtype — the split is all consumer-sid
    `game_id`** (`mgo2_cmd_4987_s2c.ksy`, team+0x268): the Join Game row the `team_state == 5`
    panel offers sends `0x4312` carrying that word, so a deployed team whose word is zero or a
    character id cannot ask for its own room — the lobby answers the details request with the
-   room-less reply and the join goes nowhere.
+   room-less reply and the join goes nowhere. **The pairing and the room are two steps, ten
+   seconds apart**: the run that names the opponent and the burst that opens the room are the
+   same sequence at two moments, and a settlement that fires them together overwrites the first
+   with the second before it has been read.
 
 ### Tournament (subtypes 3 and 5)
 

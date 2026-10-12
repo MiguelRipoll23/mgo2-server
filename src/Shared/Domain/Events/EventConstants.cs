@@ -43,12 +43,37 @@ public static class EventConstants
     public const int TeamJoinableState = 1;
 
     /// <summary>
-    /// State a team holds while it is queued waiting for an opponent. It is
-    /// deliberately not <see cref="TeamJoinableState"/>: a team that has decided
-    /// to play is not up for grabs, and the joinable list is what the client
-    /// offers to join.
+    /// State a team holds once its players have entered it and while it waits
+    /// for an opponent. It is deliberately not <see cref="TeamJoinableState"/>:
+    /// a team that has decided to play is not up for grabs, and the joinable
+    /// list is what the client offers to join.
+    /// <para>
+    /// The value is this server's choice of an entered team, not the client's:
+    /// the image branches on one literal only — see
+    /// <see cref="TeamAutoFormationState"/> — so the field is free as long as it
+    /// is neither the joinable one nor that one. It is above
+    /// <see cref="TeamJoinableState"/> so the team reads as entered rather than
+    /// as "Team Standby", which is the screen the client offers before entry.
+    /// </para>
     /// </summary>
-    public const int TeamRegisteredState = 9;
+    public const int TeamEnteredState = 4;
+
+    /// <summary>
+    /// The client's automatic-formation byte, and the one team state this server
+    /// must never write.
+    /// <para>
+    /// A team the client is told is in this state renders a counted roster
+    /// rather than its members, refuses two of its actions outright and makes
+    /// <c>0x4918</c> demand member status 2 rather than 1. In 1.36 the whole
+    /// image branches on this literal and no other: eleven wire writers reach
+    /// <c>team+0x04</c> and four readers compare it, every one of them against
+    /// 9. So a Survival team that is entered by its players and not formed
+    /// automatically must never carry it, and a packet that echoes the team row
+    /// back to the client must never carry it either — a pair announced on the
+    /// formation screen stays there.
+    /// </para>
+    /// </summary>
+    public const int TeamAutoFormationState = 9;
 
     /// <summary>Participant state of a member that has not decided yet.</summary>
     public const int ParticipantPendingState = 1;

@@ -767,6 +767,47 @@ it. Our `JoinGameHandler` refuses a mismatch now, with result code 3, rather tha
 client can name. A request that stops before the byte claims no mode, and a room created before the
 mode column existed cannot be asked for its own, so neither is refused on this rule.
 
+## `team_state` is one literal in 1.36 — `== 9` — and nothing else
+
+**Read 2026-10-12 from this image.** The team record's event-participation byte (`team+0x04`; the
+record is `ctx+0x22A08`, returned by the getter `0xF17308` whose `+0x294` is the lobby subtype the
+`0x4320` section above already reads) has **eleven writers, every one of them a wire writer, and
+four readers — and every reader compares one literal, 9.**
+
+| channel | site |
+| --- | --- |
+| the getter | `0xF17308` — `addis r3,r3,2` / `addi r0,r3,0x2a08`, zero when `ctx` is null |
+| writers, the `0x4A` block | `0xF20474` · `0xF206CC` · `0xF20CF8` · `0xF215F0` · `0xF21B80` · `0xF221A8` · `0xF22784` |
+| writers, the `0x4E` block | `0xF2C244` (`0x4e20`) · `0xF2B0BC` · `0xF2B2DC` · `0xF2B4EC` |
+| readers, all `== 9` | `0x9DE81C` · `0x9DE910` (roster walk: `li r0,8`, stride `0x20` from the record) · `0x9FAFF0` · `0xA01180` (both branch past the action) |
+
+**Method, so the negative is checkable rather than asserted.** The getter was found from the `0x4E20`
+parser (`0xF2C144`), which stores its payload's fourth field there — `addi r4,r25,4` then `bl 0xF2E134`
+at `0xF2C244`, after the six-byte key validator `0xF17340` and the `event_id` compare that aborts
+with `-1106`. Both directions were then swept: every one of the **80** `bl 0xF17308` sites was walked
+for an `lbz rN,4(team)` and a compare on the loaded register, and, independently, every
+`lbz rN,4(rM)` in the image whose value is compared against a literal ≤ 32 (**212** sites) was
+checked for a getter call or a cached context in the preceding `0x60` bytes. Both sweeps return the
+same four sites, and no site anywhere compares this byte against 1, 2, 4, 5 or a range.
+
+The eleven writers are the same eleven commands the disc build lists, one parser each; a twelfth
+site, `0x9DBF8C`, hands `team+4` to a screen through the cached-context channel (`lwz r3,0x60(ctx)`
+before the getter, which is what `ADDRESSES.md` calls "the pointer cached at screen+108").
+
+**What this costs us.** `team_state` is not an enum to walk in 1.36 — it is a flag: **9 or not-9**.
+A team must therefore never be told it is 9 unless it really is being formed automatically, and no
+packet that echoes the team row back (the snapshot's state byte, the team-info replies, the list
+rows) may carry it: a pair announced while the client holds 9 is stranded on the formation screen.
+That is exactly what our server did, because it had chosen 9 as its own "waiting for an opponent"
+marker. It is now 4 (`EventConstants.TeamEnteredState`) and the auto-formation byte has its own
+constant, `TeamAutoFormationState`.
+
+**A disc-build finding that does not transfer.** `dev/proto/outbound/mgo2_cmd_4e20_s2c.ksy` records
+that `5` is what makes the "Join Game" row exist and that `<= 2` / `> 2` selects the standby status
+line. **Neither reader exists on this byte in this image** — there is no `== 5` and no range compare
+on `team+0x04` anywhere in 1.36. Those two are disc-build behaviours, and a 1.36 session must not be
+diagnosed from them.
+
 ## Open
 
 - Whether 1.36 honours the `d/testhk` hostname override at all — the string is present, but presence

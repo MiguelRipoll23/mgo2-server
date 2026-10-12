@@ -29,22 +29,19 @@ public sealed class EventAssignmentPushService(
     SessionHelper sessionHelper)
 {
     /// <summary>
-    /// How long the burst waits before it is written. It is measured from the
-    /// result that answers the client's entry or decision request, which is
-    /// written by the same server call this runs in, so the wait covers the
-    /// client's own settling rather than any network delay.
+    /// Pushes an assignment to both teams and to the room's host.
     /// <para>
-    /// The wait is also the interval the client spends on its "entry complete /
-    /// searching for an opponent" state: the burst is what advances it to the
-    /// "opponent determined" state and then to the room, so a wait that is too
-    /// short makes the two states overlap the modal before them. Ten seconds is
-    /// the intended per-transition time for both the real field and the scripted
-    /// <c>/test</c> run, which both reach the room through this burst.
+    /// The burst is written as soon as the room is claimed, because the claim is
+    /// already the pause: a host cannot be chosen for a pairing until
+    /// <see cref="EventAssignmentService.TryAssignWaitingAsync"/>'s pairing
+    /// interval has passed, so the client that asked to enter has settled long
+    /// before this runs and the burst cannot be overwritten by the screen that
+    /// answered its own request. The interval used to be a wait here instead,
+    /// which covered that settling but left the pairing and the room arriving as
+    /// one step; it now separates the two steps and this writes the second one
+    /// when it happens.
     /// </para>
     /// </summary>
-    private const int AssignmentSettlingMilliseconds = 10_000;
-
-    /// <summary>Pushes an assignment to both teams and to the room's host.</summary>
     /// <param name="assignment">Assignment to publish.</param>
     /// <param name="hostCharacterIdentifier">Character hosting the room.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
@@ -56,16 +53,6 @@ public sealed class EventAssignmentPushService(
     {
         ArgumentNullException.ThrowIfNull(assignment);
 
-        // The client moves to its asynchronous state only once the answer to its
-        // own entry request has been consumed, and that answer is the result this
-        // burst immediately follows. An assignment published into that settling
-        // screen is overwritten by it — the client ends up holding no match at all
-        // and never joins the room it was given — so the burst waits the interval
-        // out before it is written. The wait belongs to the client that has just
-        // changed state rather than to either team, so it happens once, and the
-        // two teams' bursts then follow back-to-back the way the reference
-        // publishes them.
-        await Task.Delay(TimeSpan.FromMilliseconds(AssignmentSettlingMilliseconds), cancellationToken);
         var delivered = await PushToTeamAsync(
             assignment,
             assignment.FirstTeam,

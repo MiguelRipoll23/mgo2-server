@@ -35,13 +35,35 @@ public sealed partial class EventAssignmentService(
     : DomainService(contextFactory)
 {
     /// <summary>
+    /// How long a pairing is left alone before a host is chosen for it: ten
+    /// seconds, measured from the moment the two teams were paired.
+    /// <para>
+    /// The two teams are told which opponent they were paired with by the run of
+    /// the pairing, and a host chosen in the same breath puts the room's screen
+    /// on top of the sentence about the opponent before it has been read. The
+    /// pause is what makes the two steps two screens — the pairing first, the
+    /// room ten seconds later — which is the sequence the field's own screens are
+    /// built around, and it is the same interval the scripted self-test spends
+    /// between its steps.
+    /// </para>
+    /// <para>
+    /// It is a gate rather than a timer: a match younger than the interval is
+    /// skipped and found again by the next sweep, so no state has to be kept and
+    /// a lobby that is restarted mid-interval still honours it.
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan PairingToHostInterval = TimeSpan.FromSeconds(10);
+
+    /// <summary>
     /// Assigns a host to every waiting match in a lobby that has one spare.
     /// <para>
     /// A match waits for a room rather than for a person: the room is a player's
     /// dedicated host, it has to be idle, and it has to be dedicated to the mode
     /// the match is. A match that finds no such room keeps waiting, which is the
     /// correct outcome — inventing one would tell two teams they were playing a
-    /// game nobody is hosting.
+    /// game nobody is hosting. A match that was paired less than
+    /// <see cref="PairingToHostInterval"/> ago waits for that too, so the pairing
+    /// and its room are two steps rather than one.
     /// </para>
     /// </summary>
     /// <param name="lobbyIdentifier">Lobby whose waiting matches are assigned.</param>
@@ -51,6 +73,7 @@ public sealed partial class EventAssignmentService(
         int lobbyIdentifier,
         CancellationToken cancellationToken = default)
     {
+        var now = DateTimeOffset.UtcNow;
         var waiting = (await matchService.FindActiveByLobbyAsync(lobbyIdentifier, cancellationToken))
             .Where(match => match.State == EventConstants.MatchPairedState)
             .ToList();
@@ -79,6 +102,14 @@ public sealed partial class EventAssignmentService(
 
         foreach (var match in waiting)
         {
+            // The pairing is still being read by the two teams. Nothing is owed
+            // to it yet, so it is left for the sweep that finds it once the
+            // interval has passed.
+            if (now - match.CreatedAt < PairingToHostInterval)
+            {
+                continue;
+            }
+
             // The teams are read through the team service rather than straight
             // from the table, so a match whose second team exists only in memory
             // still finds its roster and can take a host when one is free.

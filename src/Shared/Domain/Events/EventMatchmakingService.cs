@@ -138,7 +138,7 @@ public sealed class EventMatchmakingService(
         // something to hold a queue lock across.
         var queued = await teamStateService.SetAsync(
             teamIdentifier,
-            EventTeamRegistrationUtils.QueuedState,
+            EventTeamRegistrationUtils.EnteredState,
             cancellationToken);
         // Do NOT push 0x4A00 here. The client enters async UI state 37 after
         // receiving 0x4931, and that transition is not complete by the time

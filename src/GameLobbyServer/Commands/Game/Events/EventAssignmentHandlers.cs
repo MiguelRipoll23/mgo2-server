@@ -129,7 +129,7 @@ public sealed class ConfirmEventAssignmentHandler(
         }
 
         var writer = new PacketWriter();
-        EventAssignmentUtils.WriteConfirmationResponse(writer, characterIdentifier, team);
+        EventAssignedGameUtils.WriteConfirmationResponse(writer, characterIdentifier, team);
         await sessionHelper.SendPacketAsync(
             session,
             CommandConstants.ConfirmActiveGameAssignmentResult,
@@ -298,7 +298,7 @@ public sealed class GetAssignedMemberInformationHandler(
         }
 
         var writer = new PacketWriter();
-        EventAssignmentUtils.WriteAssignedMemberInformation(writer, team);
+        EventAssignedGameUtils.WriteAssignedMemberInformation(writer, team);
         await sessionHelper.SendPacketAsync(
             session,
             CommandConstants.GetAssignedMemberInformationResult,

@@ -23,16 +23,17 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// </para>
 /// <para>
 /// The room the match is played in is not opened here: it is a dedicated host
-/// already published in the Survival Hosts lobby. Pairing immediately offers the
-/// match to an idle one of those; if none is available, the pairing waits.
+/// already published in the Survival Hosts lobby. The sweep offers a pairing to
+/// an idle one of those once the pairing has settled; if none is available, the
+/// pairing waits.
 /// </para>
 /// </summary>
 /// <param name="characterMemoryService">Store that owns the simulated characters.</param>
 /// <param name="teamService">Service that owns the teams, real and simulated.</param>
 /// <param name="matchmakingService">Service that pairs the teams.</param>
 /// <param name="assignmentService">
-/// Service that owns the host assignment, read back so the run reports whether a
-/// host was actually found rather than guessing.
+/// Service that owns the host assignment, read back so the run reports the room
+/// when a sweep has already chosen one.
 /// </param>
 /// <param name="sessionHelper">Helper used to write the chat lines.</param>
 /// <param name="logger">Logger of the service.</param>
@@ -97,7 +98,7 @@ public sealed class SurvivalTestOpponentService(
     /// <param name="team">Team to test.</param>
     /// <returns>Whether the team is waiting for an opponent.</returns>
     public static bool IsFrozen([NotNullWhen(true)] EventTeam? team) =>
-        team is not null && team.State == EventTeamRegistrationUtils.QueuedState;
+        team is not null && team.State == EventTeamRegistrationUtils.EnteredState;
 
     /// <summary>
     /// Forms the simulated opponent for a team the run expects one for, once
@@ -158,10 +159,11 @@ public sealed class SurvivalTestOpponentService(
             PairingMessage(team, opponent, pairing),
             cancellationToken);
 
-        // Pairing hands the match to an idle host inside the same call, so by the
-        // time it returns the assignment either exists or the match is genuinely
-        // waiting for a room. Reading it back is what tells the two apart: the
-        // pairing alone cannot say whether a host was found.
+        // Pairing is what names the pair; the room is chosen for it ten seconds
+        // later, so reading the assignment back here reports the room only when a
+        // previous sweep already gave it one. Whether a host was found is told by
+        // the sweep's own "assigned to room" line, which is the only place it can
+        // be known without waiting the interval out on this request.
         var assignment = pairing.Status == MatchmakingStatus.Paired
             ? await assignmentService.FindByTeamAsync(team.Identifier, cancellationToken)
             : null;
@@ -230,7 +232,8 @@ public sealed class SurvivalTestOpponentService(
         }
 
         return assignment is null
-            ? $"Match {pairing.MatchIdentifier} is paired; no host is free yet, so it is waiting for one."
+            ? $"Match {pairing.MatchIdentifier} is paired; its host room is chosen once the pairing has settled, "
+                + "and both teams are told the moment one is free."
             : $"Match {pairing.MatchIdentifier} was assigned to host room {assignment.GameIdentifier}.";
     }
 }

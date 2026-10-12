@@ -213,7 +213,7 @@ public sealed class GetAssignedGameDetailHandler(
         {
             var (start, _) = informationService.ScheduleFor(DateTimeOffset.UtcNow);
             var reservationWriter = new PacketWriter();
-            EventAssignmentUtils.WriteAssignedGameDetail(
+            EventAssignedGameUtils.WriteAssignedGameDetail(
                 reservationWriter,
                 requested,
                 session.LobbyIdentifier ?? EventConstants.TournamentRegistrationSelector,
@@ -259,7 +259,7 @@ public sealed class GetAssignedGameDetailHandler(
         }
 
         var writer = new PacketWriter();
-        EventAssignmentUtils.WriteAssignedGameDetail(
+        EventAssignedGameUtils.WriteAssignedGameDetail(
             writer,
             team.EventIdentifier,
             assignment.LobbyIdentifier,
