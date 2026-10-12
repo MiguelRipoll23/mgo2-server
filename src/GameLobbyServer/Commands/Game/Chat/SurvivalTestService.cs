@@ -44,10 +44,12 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// would with a real teammate.
 /// </para>
 /// <para>
-/// The steps are spaced ten seconds apart so the client's screens settle between
-/// them the way they do in a live field, and each run starts from a clean slate:
-/// the in-memory stores and the half-finished runs are reset first, so a second
-/// run does not build on the first one's rows.
+/// The steps are not spaced by this service: the roster changes are written
+/// back-to-back, because the client has no local echo and the pushes have to
+/// arrive in the order they were made, and the matchmaking that follows is paced
+/// by the two lobby sweeps rather than by anything waited out here. Each run
+/// starts from a clean slate: the in-memory stores and the half-finished runs are
+/// reset first, so a second run does not build on the first one's rows.
 /// </para>
 /// </summary>
 /// <param name="teamMemoryService">Store that owns the simulated teams and members.</param>
@@ -76,14 +78,6 @@ public sealed class SurvivalTestService(
 {
     /// <summary>Text that triggers the test.</summary>
     public const string CommandText = "/test";
-
-    /// <summary>
-    /// Seconds between one scripted step and the next. It is the same interval
-    /// the real field spends in each state — the assignment burst waits the same
-    /// ten seconds before it advances the team — so the scripted run shows the
-    /// states for as long as a live one does.
-    /// </summary>
-    private const int StepDelaySeconds = 10;
 
     /// <summary>Simulated players the real team is padded with.</summary>
     private const int AddedMemberCount = 2;
@@ -158,7 +152,6 @@ public sealed class SurvivalTestService(
             characterIdentifier,
             $"Added {added.Count} in-memory players to \"{team.Name}\" with state NG.",
             cancellationToken);
-        await DelayAsync(cancellationToken);
 
         // 2. Move the simulated players from NG to Ready, which leaves the
         // leader's own slot as the only one the field is still waiting on.
@@ -169,7 +162,6 @@ public sealed class SurvivalTestService(
             characterIdentifier,
             $"In-memory players are now Ready; {added.Count} slots moved from NG.",
             cancellationToken);
-        await DelayAsync(cancellationToken);
 
         // 3. Arm the second half and hand the player the move that starts it. The
         // opponent is not formed here: the team is still joinable, and it is the
@@ -297,7 +289,4 @@ public sealed class SurvivalTestService(
         [.. Enumerable
             .Range(1, EventConstants.TeamRosterSize - 1)
             .Where(candidate => !team.Members.Any(member => member.Slot == candidate))];
-
-    private static Task DelayAsync(CancellationToken cancellationToken) =>
-        Task.Delay(TimeSpan.FromSeconds(StepDelaySeconds), cancellationToken);
 }

@@ -60,6 +60,7 @@ builder.Services.AddSingleton<EventSessionCleanupService>();
 // and its room roster row (here), and the second one is what makes a dedicated
 // host room eligible to be leased again.
 builder.Services.AddSingleton<RoomSessionCleanupService>();
+builder.Services.AddSingleton<EventPairingTickerService>();
 builder.Services.AddSingleton<EventAssignmentTickerService>();
 builder.Services.AddSingleton<CharacterPresenceCleanupService>();
 builder.Services.AddSingleton<GameLobbyServerRunner>();

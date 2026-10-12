@@ -31,6 +31,13 @@ public readonly record struct MatchmakingResult(
 /// waiting for a real host: it is never promoted to a live match by inventing
 /// host state.
 /// <para>
+/// Registration and pairing are two moments. <see cref="ReconcileAsync"/> records
+/// a team as entered and tells it so; the pairing itself is
+/// <see cref="TryPairWaitingAsync"/>, which the lobby runs on its own scheduled
+/// interval. That is what gives an entry and its opponent separate moments rather
+/// than pairing a team in the request that entered it.
+/// </para>
+/// <para>
 /// The queue is instance state guarded by one lock. The pairing it produces is
 /// written to the database, so the ordering is the only thing that is
 /// per-process and the result is visible to every process.
@@ -41,7 +48,7 @@ public readonly record struct MatchmakingResult(
 /// <param name="teamStateService">Service that marks a team as queued or joinable.</param>
 /// <param name="assignmentService">Service that assigns a host to a new pairing.</param>
 /// <param name="pushService">Service that tells the team its lifecycle state changed.</param>
-public sealed class EventMatchmakingService(
+public sealed partial class EventMatchmakingService(
     EventMatchService matchService,
     EventTeamService teamService,
     EventTeamStateService teamStateService,
@@ -50,9 +57,19 @@ public sealed class EventMatchmakingService(
 {
     private readonly Lock gate = new();
     private readonly Dictionary<(int Lobby, int MatchType), Queue<int>> waiting = [];
+
+    // Teams a pairing sweep has taken out of the queue and is validating. They
+    // are still this process's to pair, so a reconcile that runs while they are
+    // reserved must not enqueue a second copy of them.
+    private readonly HashSet<int> pairing = [];
+
     private readonly Dictionary<int, (int MatchIdentifier, int Opponent)> pairedByTeam = [];
 
-    /// <summary>Reconciles a team after an entry decision or a roster change.</summary>
+    /// <summary>
+    /// Registers a team after an entry decision or a roster change, or removes it
+    /// when it is no longer eligible. A team that registers is told it is waiting;
+    /// the opponent itself is found by <see cref="TryPairWaitingAsync"/>, not here.
+    /// </summary>
     /// <param name="teamIdentifier">Team to reconcile.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task<MatchmakingResult> ReconcileAsync(
@@ -104,7 +121,6 @@ public sealed class EventMatchmakingService(
             return new MatchmakingResult(MatchmakingStatus.Paired, live.Identifier, liveOpponent);
         }
 
-        int opponentIdentifier;
         lock (gate)
         {
             if (pairedByTeam.TryGetValue(teamIdentifier, out var existing))
@@ -120,81 +136,31 @@ public sealed class EventMatchmakingService(
                 return new MatchmakingResult(MatchmakingStatus.Unchanged, 0, 0);
             }
 
-            var key = (team.LobbyIdentifier, team.MatchType);
-            if (!waiting.TryGetValue(key, out var queue))
-            {
-                queue = new Queue<int>();
-                waiting[key] = queue;
-            }
-
-            opponentIdentifier = queue.Count > 0 ? queue.Dequeue() : 0;
-            queue.Enqueue(teamIdentifier);
+            EnqueueLocked(team.LobbyIdentifier, team.MatchType, teamIdentifier);
         }
 
-        // The team is marked before the pairing is attempted, because a team that
-        // finds no opponent is still waiting rather than joinable, and the
-        // joinable list is served from another process. It is written outside the
-        // lock for the same reason the pairing is: a database round trip is not
-        // something to hold a queue lock across.
-        var queued = await teamStateService.SetAsync(
-            teamIdentifier,
-            EventTeamRegistrationUtils.EnteredState,
-            cancellationToken);
-        // Do NOT push 0x4A00 here. The client enters async UI state 37 after
-        // receiving 0x4931, and that transition is not complete by the time
-        // this call runs. An immediate 0x4A00 (callback 25) fires before state
-        // 37 is established and leaves the client stuck. The assignment burst
-        // (0x4915 → 0x4987 → 0x4A00 → …) delivers the correct state packet
-        // after a settling delay, so no push is needed from this path.
-        _ = queued;
-
-        if (opponentIdentifier == 0)
-        {
-            return new MatchmakingResult(MatchmakingStatus.Waiting, 0, 0);
-        }
-
-        // Pairing is persisted outside the lock, because a database round trip is
-        // not something to hold a queue lock across. If the candidate is no longer
-        // eligible the team simply stays queued.
-        var opponent = await teamService.FindAsync(opponentIdentifier, cancellationToken);
-        if (opponent is null
-            || !EventTeamRegistrationUtils.IsPairableCandidate(
-                opponent.State,
-                IsReady(opponent),
-                opponent.LobbyIdentifier,
-                team.LobbyIdentifier))
-        {
-            return new MatchmakingResult(MatchmakingStatus.Waiting, 0, 0);
-        }
-
-        EventMatch match;
-        try
-        {
-            match = await matchService.CreateAsync(
-                team.LobbyIdentifier,
-                team.MatchType,
-                opponentIdentifier,
+        // Entering is the whole of this call: the team is marked and told it is
+        // waiting, and the opponent is found by the pairing sweep rather than
+        // here. The push carries the entered state, which is the one state change
+        // the entry request makes — the client is moved off its formation screen
+        // and onto the field exactly once. The earlier attempt at this push
+        // carried the client's auto-formation byte (9) and stranded the team; the
+        // entered state is 4, which no client reader except the auto-formation
+        // case reads, so the push is safe. It is written and pushed outside the
+        // lock because a database round trip is not something to hold a queue
+        // lock across.
+        if (await teamStateService.SetAsync(
                 teamIdentifier,
+                EventTeamRegistrationUtils.EnteredState,
+                cancellationToken))
+        {
+            await pushService.PushActiveEventStateAsync(
+                EventTeamService.BuildSnapshot(team),
+                EventTeamRegistrationUtils.EnteredState,
                 cancellationToken);
         }
-        catch (DbUpdateException)
-        {
-            // The live-match guard refused the pairing, which means one of the two
-            // teams is already playing something. Nothing is owed to a second
-            // match, so this team stays queued.
-            return new MatchmakingResult(MatchmakingStatus.Waiting, 0, 0);
-        }
 
-        lock (gate)
-        {
-            RemoveWaitingLocked(teamIdentifier);
-            pairedByTeam[teamIdentifier] = (match.Identifier, opponentIdentifier);
-            pairedByTeam[opponentIdentifier] = (match.Identifier, teamIdentifier);
-        }
-
-        await assignmentService.TryAssignWaitingAsync(team.LobbyIdentifier, cancellationToken);
-
-        return new MatchmakingResult(MatchmakingStatus.Paired, match.Identifier, opponentIdentifier);
+        return new MatchmakingResult(MatchmakingStatus.Waiting, 0, 0);
     }
 
     /// <summary>Cancels a team's registration and safely returns it to the joinable state.</summary>
@@ -214,14 +180,14 @@ public sealed class EventMatchmakingService(
         {
             RemoveWaitingLocked(teamIdentifier);
 
-            if (pairedByTeam.Remove(teamIdentifier, out var pairing))
+            if (pairedByTeam.Remove(teamIdentifier, out var livePairing))
             {
-                matchIdentifier = pairing.MatchIdentifier;
+                matchIdentifier = livePairing.MatchIdentifier;
 
                 // The opponent is un-paired here but not silently re-queued: the
                 // caller reconciles it, so readiness is re-checked with the same
                 // rule that queued it the first time.
-                pairedByTeam.Remove(pairing.Opponent);
+                pairedByTeam.Remove(livePairing.Opponent);
             }
             else
             {
@@ -273,6 +239,7 @@ public sealed class EventMatchmakingService(
         lock (gate)
         {
             waiting.Clear();
+            pairing.Clear();
             pairedByTeam.Clear();
         }
     }
@@ -286,11 +253,12 @@ public sealed class EventMatchmakingService(
         EventTeamRegistrationUtils.IsReady(team.Members);
 
     private bool IsWaitingLocked(int teamIdentifier) =>
-        waiting.Values.Any(queue => queue.Contains(teamIdentifier));
+        pairing.Contains(teamIdentifier)
+        || waiting.Values.Any(queue => queue.Contains(teamIdentifier));
 
     private bool RemoveWaitingLocked(int teamIdentifier)
     {
-        var removed = false;
+        var removed = pairing.Remove(teamIdentifier);
         foreach (var key in waiting.Keys.ToList())
         {
             var queue = waiting[key];

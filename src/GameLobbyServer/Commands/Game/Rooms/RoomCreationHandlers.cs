@@ -34,24 +34,21 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 /// player's to use.
 /// </para>
 /// <para>
-/// A survival-host room is also offered to the event queue as soon as it exists, rather than
-/// at the next sweep: the room that was just created may be the host two paired
-/// teams are waiting on. The offer is made after the client has been answered,
-/// where the reference makes it just before, so that a client is never handed a
-/// match before it is told the room it is in exists — the reference buys the same
-/// ordering with the half-second delay before it publishes an assignment.
+/// A survival-host room is not offered to the event queue from here: a host is
+/// found for a waiting match by the lobby's game-search sweep, which sees the
+/// room as soon as it exists in the pool. The sweep is the only thing that pairs
+/// a match with a room, so a room created between two sweeps is offered on the
+/// next one rather than in this request.
 /// </para>
 /// </summary>/// <param name="gameService">Service that owns the rooms.</param>
     /// <param name="characterService">Service that owns the stored settings.</param>
     /// <param name="automatchService">Queue told about the new room.</param>
-    /// <param name="assignmentService">Service told the new room may host a match.</param>
     /// <param name="sessionHelper">Helper used to write the replies.</param>/// <param name="externalJoinHintService">Service that raises the tailnet host's joinability line.</param>
 /// <param name="coordination">Stream the new room is announced on.</param>
 public sealed class CreateGameHandler(
     GameService gameService,
     CharacterService characterService,
     AutomatchService automatchService,
-    EventAssignmentService assignmentService,
     SessionHelper sessionHelper,
     ExternalJoinHintService externalJoinHintService,
     LobbyCoordinationClientService coordination) : ICommandHandler
@@ -140,11 +137,6 @@ public sealed class CreateGameHandler(
         // Announced up the coordination stream, where the HTTP API turns it into
         // the channel message: a lobby knows nothing of Discord itself.
         coordination.GameCreated(characterIdentifier, game.Name);
-
-        // The room is offered to the waiting matches now rather than at the next
-        // sweep. A room that cannot host one is not asked about twice: the rule is
-        // applied there and the call returns as soon as no match is waiting.
-        await assignmentService.TryAssignWaitingAsync(lobbyIdentifier, cancellationToken);
     }
 
     /// <summary>

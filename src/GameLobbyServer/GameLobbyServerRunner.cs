@@ -39,6 +39,7 @@ public sealed class GameLobbyServerRunner(
     private AutomatchTickerService? automatch;
     private CharacterPresenceTickerService? presenceTicker;
     private EventOutcomeTickerService? outcomeTicker;
+    private EventPairingTickerService? pairingTicker;
     private EventAssignmentTickerService? assignmentTicker;
     private CharacterPresenceCleanupService? presenceCleanup;
 
@@ -153,6 +154,7 @@ public sealed class GameLobbyServerRunner(
         if (EventConstants.IsEventSelector(lobby.SubtypeIdentifier))
         {
             outcomeTicker = serviceProvider.GetRequiredService<EventOutcomeTickerService>();
+            pairingTicker = serviceProvider.GetRequiredService<EventPairingTickerService>();
             assignmentTicker = serviceProvider.GetRequiredService<EventAssignmentTickerService>();
 
             // The event sweep decides matches whose reports have settled. It is
@@ -162,9 +164,17 @@ public sealed class GameLobbyServerRunner(
             // every field, so any event lobby that is running keeps it advancing.
             outcomeTicker.StartFor(lobby.Identifier, lobby.SubtypeIdentifier);
 
-            // The assignment sweep looks for a room for every match that is
-            // waiting for one, and it is told this lobby's mode because a host is
-            // dedicated to one mode and may not host another.
+            // The pairing sweep is the first of the two matchmaking steps: it
+            // turns the teams waiting in this lobby's field into matches on its
+            // own interval, so an entry and its opponent are two moments rather
+            // than one. It is told this lobby's mode because only an event lobby
+            // has a field to pair.
+            pairingTicker.StartFor(lobby.Identifier, lobby.SubtypeIdentifier);
+
+            // The assignment sweep is the second step: it looks for a room for
+            // every match that is waiting for one, and it is told this lobby's
+            // mode because a host is dedicated to one mode and may not host
+            // another.
             assignmentTicker.StartFor(lobby.Identifier, lobby.SubtypeIdentifier);
         }
 
@@ -242,6 +252,12 @@ public sealed class GameLobbyServerRunner(
         {
             await outcomeTicker.StopAsync();
             outcomeTicker = null;
+        }
+
+        if (pairingTicker is not null)
+        {
+            await pairingTicker.StopAsync();
+            pairingTicker = null;
         }
 
         if (assignmentTicker is not null)

@@ -93,6 +93,23 @@ public sealed class EventOptions
     public int OutcomeSweepMilliseconds { get; set; } = 1000;
 
     /// <summary>
+    /// How often the lobby pairs the teams waiting in its field. Pairing is a
+    /// sweep rather than work done on the entry request, so a team that enters
+    /// is told it is waiting and nothing more; the two teams are made a match on
+    /// this cadence, which is what separates "entered" from "opponent found".
+    /// </summary>
+    public int PairingIntervalMilliseconds { get; set; } = 60_000;
+
+    /// <summary>
+    /// How often the lobby looks for a host for the matches its pairing has
+    /// made. It is a second, slower cadence than <see cref="PairingIntervalMilliseconds"/>,
+    /// so a pair is left on its own screen long enough to be read before the
+    /// room's screen arrives: "opponent found" and "game found" are two steps,
+    /// not one burst.
+    /// </summary>
+    public int GameSearchIntervalMilliseconds { get; set; } = 120_000;
+
+    /// <summary>
     /// Whether a room has to be running the event's own settings before it may
     /// host a match.
     /// <para>
@@ -190,6 +207,18 @@ public sealed class EventOptions
         {
             throw new InvalidOperationException(
                 $"EVENT_OUTCOME_SWEEP_MILLISECONDS must be 100..60000 (got {OutcomeSweepMilliseconds}).");
+        }
+
+        if (PairingIntervalMilliseconds < 100 || PairingIntervalMilliseconds > 600_000)
+        {
+            throw new InvalidOperationException(
+                $"EVENT_PAIRING_INTERVAL_MILLISECONDS must be 100..600000 (got {PairingIntervalMilliseconds}).");
+        }
+
+        if (GameSearchIntervalMilliseconds < 100 || GameSearchIntervalMilliseconds > 600_000)
+        {
+            throw new InvalidOperationException(
+                $"EVENT_GAME_SEARCH_INTERVAL_MILLISECONDS must be 100..600000 (got {GameSearchIntervalMilliseconds}).");
         }
 
         if (TournamentMaximumLevel != 0 && TournamentMaximumLevel < TournamentMinimumLevel)

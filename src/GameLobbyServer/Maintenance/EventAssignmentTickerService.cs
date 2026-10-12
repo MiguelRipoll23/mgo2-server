@@ -10,10 +10,16 @@ namespace Mgo2Server.GameLobbyServer.Maintenance;
 /// Looks for a host for the matches that are waiting for one, and tells the two
 /// teams when it finds one.
 /// <para>
-/// The sweep is what covers a match that pairs after its host is already sitting
-/// there, and a host that a finished match has just released: a room is announced
-/// the moment a client creates it, but neither of those two has anything left to
-/// announce it, and both are found the same way by looking again.
+/// This is the second of the two matchmaking sweeps: pairing named the two teams
+/// on its own, faster interval, and this one finds them a room. Running them at
+/// different intervals is what makes "opponent found" and "game found" two
+/// screens instead of one — a match sitting between the two sweeps is a pair the
+/// client has been told about but whose room has not been chosen.
+/// </para>
+/// <para>
+/// The sweep is also what covers a host that a finished match has just released:
+/// the pool is read fresh on each run, so a room becomes available to the next
+/// waiting match without anything having to announce it.
 /// </para>
 /// </summary>
 /// <param name="assignmentService">Service that assigns and publishes a match.</param>
@@ -74,5 +80,8 @@ public sealed class EventAssignmentTickerService(
     }
 
     private static TimeSpan Interval(IOptions<EventOptions> options) =>
-        TimeSpan.FromMilliseconds(Math.Clamp(options.Value.OutcomeSweepMilliseconds, 100, 60_000));
+        TimeSpan.FromMilliseconds(Math.Clamp(
+            options.Value.GameSearchIntervalMilliseconds,
+            100,
+            600_000));
 }

@@ -22,10 +22,10 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// cannot invent a second opponent for a team that already has one.
 /// </para>
 /// <para>
-/// The room the match is played in is not opened here: it is a dedicated host
-/// already published in the Survival Hosts lobby. The sweep offers a pairing to
-/// an idle one of those once the pairing has settled; if none is available, the
-/// pairing waits.
+/// Nothing is paired here. The opponent is put into the same field the real team
+/// is waiting in, and the lobby's pairing sweep — a scheduled task, not this
+/// request — matches the two on its next run. The room is the lobby's
+/// game-search sweep's business, on its own slower interval.
 /// </para>
 /// </summary>
 /// <param name="characterMemoryService">Store that owns the simulated characters.</param>
@@ -33,7 +33,7 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Chat;
 /// <param name="matchmakingService">Service that pairs the teams.</param>
 /// <param name="assignmentService">
 /// Service that owns the host assignment, read back so the run reports the room
-/// when a sweep has already chosen one.
+/// when a game-search sweep has already chosen one.
 /// </param>
 /// <param name="sessionHelper">Helper used to write the chat lines.</param>
 /// <param name="logger">Logger of the service.</param>
@@ -102,7 +102,8 @@ public sealed class SurvivalTestOpponentService(
 
     /// <summary>
     /// Forms the simulated opponent for a team the run expects one for, once
-    /// that team is waiting in the field.
+    /// that team is waiting in the field, and enters it into the same field. The
+    /// pairing itself is the lobby's pairing sweep's, not this call's.
     /// <para>
     /// It is inert for every other team and for every other moment: a team that
     /// is not expecting an opponent, a team that is still joinable, and a team
@@ -150,8 +151,10 @@ public sealed class SurvivalTestOpponentService(
             $"Formed the in-memory opponent \"{opponent.Name}\" with {opponent.Members.Count} players.",
             cancellationToken);
 
-        // The real team is already waiting, so queueing the opponent is what
-        // pairs the two: the pair logic finds both in the field it reads.
+        // The real team is already waiting, so entering the opponent puts the two
+        // in the same field. Neither is paired here: the lobby's pairing sweep
+        // reads the field on its own interval and matches the two then, and the
+        // game-search sweep finds their room on its own, slower one.
         var pairing = await matchmakingService.ReconcileAsync(opponent.Identifier, cancellationToken);
         await SayAsync(
             session,
@@ -159,11 +162,9 @@ public sealed class SurvivalTestOpponentService(
             PairingMessage(team, opponent, pairing),
             cancellationToken);
 
-        // Pairing is what names the pair; the room is chosen for it ten seconds
-        // later, so reading the assignment back here reports the room only when a
-        // previous sweep already gave it one. Whether a host was found is told by
-        // the sweep's own "assigned to room" line, which is the only place it can
-        // be known without waiting the interval out on this request.
+        // Reading the assignment back reports a room only when a game-search sweep
+        // already chose one, which a live run's own "assigned to room" line is the
+        // only place to learn otherwise.
         var assignment = pairing.Status == MatchmakingStatus.Paired
             ? await assignmentService.FindByTeamAsync(team.Identifier, cancellationToken)
             : null;
@@ -216,24 +217,24 @@ public sealed class SurvivalTestOpponentService(
         MatchmakingResult pairing) =>
         pairing.Status switch
         {
-            MatchmakingStatus.Paired =>
-                $"In-memory team \"{opponent.Name}\" paired with \"{team.Name}\" as match {pairing.MatchIdentifier}.",
             MatchmakingStatus.Waiting =>
-                $"In-memory team \"{opponent.Name}\" is queued and waiting; \"{team.Name}\" was not in the field to be paired with.",
+                $"In-memory team \"{opponent.Name}\" entered the field with \"{team.Name}\"; the pairing sweep will match the two on its next run.",
+            MatchmakingStatus.Paired =>
+                $"In-memory team \"{opponent.Name}\" is already paired with \"{team.Name}\" as match {pairing.MatchIdentifier}.",
             _ =>
-                $"In-memory team \"{opponent.Name}\" was registered, but \"{team.Name}\" was already paired or gone.",
+                $"In-memory team \"{opponent.Name}\" was entered, but \"{team.Name}\" was already paired or gone.",
         };
 
     private static string OutcomeMessage(MatchmakingResult pairing, EventAssignment? assignment)
     {
         if (pairing.Status != MatchmakingStatus.Paired)
         {
-            return "Nothing was published: both teams have to be paired before a room can be claimed.";
+            return "Nothing is paired yet: the pairing sweep matches the two teams on its interval, "
+                + "and the game-search sweep finds their room on its own.";
         }
 
         return assignment is null
-            ? $"Match {pairing.MatchIdentifier} is paired; its host room is chosen once the pairing has settled, "
-                + "and both teams are told the moment one is free."
+            ? $"Match {pairing.MatchIdentifier} is paired; its host room is found by the game-search sweep."
             : $"Match {pairing.MatchIdentifier} was assigned to host room {assignment.GameIdentifier}.";
     }
 }

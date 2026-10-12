@@ -115,10 +115,13 @@ carriers (no 0x4Axx parser branches on subtype — the split is all consumer-sid
    `game_id`** (`mgo2_cmd_4987_s2c.ksy`, team+0x268): the Join Game row the `team_state == 5`
    panel offers sends `0x4312` carrying that word, so a deployed team whose word is zero or a
    character id cannot ask for its own room — the lobby answers the details request with the
-   room-less reply and the join goes nowhere. **The pairing and the room are two steps, ten
-   seconds apart**: the run that names the opponent and the burst that opens the room are the
-   same sequence at two moments, and a settlement that fires them together overwrites the first
-   with the second before it has been read.
+   room-less reply and the join goes nowhere. **The pairing and the room are two steps, paced by
+   two sweeps**: pairing is a scheduled task on its own interval and the room's burst is another,
+   slower one, so the run that names the opponent and the burst that opens the room are the same
+   sequence at two moments. Firing them together overwrites the first with the second before it
+   has been read. The entry itself is the third moment and the fastest: the entered state (4) is
+   pushed to the team as it enters, so "looking for an opponent" is on screen before either
+   sweep runs rather than being announced by the room's own packet.
 
 ### Tournament (subtypes 3 and 5)
 

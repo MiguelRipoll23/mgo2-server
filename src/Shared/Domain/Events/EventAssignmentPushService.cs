@@ -31,15 +31,13 @@ public sealed class EventAssignmentPushService(
     /// <summary>
     /// Pushes an assignment to both teams and to the room's host.
     /// <para>
-    /// The burst is written as soon as the room is claimed, because the claim is
-    /// already the pause: a host cannot be chosen for a pairing until
-    /// <see cref="EventAssignmentService.TryAssignWaitingAsync"/>'s pairing
-    /// interval has passed, so the client that asked to enter has settled long
-    /// before this runs and the burst cannot be overwritten by the screen that
-    /// answered its own request. The interval used to be a wait here instead,
-    /// which covered that settling but left the pairing and the room arriving as
-    /// one step; it now separates the two steps and this writes the second one
-    /// when it happens.
+    /// The burst is written as soon as the room is claimed, and the claim is the
+    /// second matchmaking sweep: pairing named the two teams on its own interval
+    /// and this sweep found them a room, so the team that entered has long since
+    /// settled and the burst cannot be overwritten by the screen that answered
+    /// its own request. The two sweeps are what separate "opponent found" from
+    /// "game found" — the earlier design waited the interval out here instead,
+    /// which left the pairing and the room arriving as one step.
     /// </para>
     /// </summary>
     /// <param name="assignment">Assignment to publish.</param>

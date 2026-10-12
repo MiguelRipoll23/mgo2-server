@@ -143,6 +143,12 @@ public static class ServerServiceCollectionExtensions
             options.OutcomeSweepMilliseconds = configuration.ReadNumber(
                 "EVENT_OUTCOME_SWEEP_MILLISECONDS",
                 options.OutcomeSweepMilliseconds);
+            options.PairingIntervalMilliseconds = configuration.ReadNumber(
+                "EVENT_PAIRING_INTERVAL_MILLISECONDS",
+                options.PairingIntervalMilliseconds);
+            options.GameSearchIntervalMilliseconds = configuration.ReadNumber(
+                "EVENT_GAME_SEARCH_INTERVAL_MILLISECONDS",
+                options.GameSearchIntervalMilliseconds);
             options.RequireHostSettingsMatch = configuration.ReadFlag(
                 "EVENT_REQUIRE_HOST_SETTINGS_MATCH",
                 options.RequireHostSettingsMatch);
