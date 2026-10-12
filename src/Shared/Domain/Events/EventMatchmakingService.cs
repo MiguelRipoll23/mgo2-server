@@ -48,12 +48,14 @@ public readonly record struct MatchmakingResult(
 /// <param name="teamStateService">Service that marks a team as queued or joinable.</param>
 /// <param name="assignmentService">Service that assigns a host to a new pairing.</param>
 /// <param name="pushService">Service that tells the team its lifecycle state changed.</param>
+/// <param name="assignmentPushService">Service that announces a pairing to both teams.</param>
 public sealed partial class EventMatchmakingService(
     EventMatchService matchService,
     EventTeamService teamService,
     EventTeamStateService teamStateService,
     EventAssignmentService assignmentService,
-    EventTeamPushService pushService)
+    EventTeamPushService pushService,
+    EventAssignmentPushService assignmentPushService)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<(int Lobby, int MatchType), Queue<int>> waiting = [];

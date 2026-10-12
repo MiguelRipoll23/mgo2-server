@@ -115,13 +115,15 @@ carriers (no 0x4Axx parser branches on subtype — the split is all consumer-sid
    `game_id`** (`mgo2_cmd_4987_s2c.ksy`, team+0x268): the Join Game row the `team_state == 5`
    panel offers sends `0x4312` carrying that word, so a deployed team whose word is zero or a
    character id cannot ask for its own room — the lobby answers the details request with the
-   room-less reply and the join goes nowhere. **The pairing and the room are two steps, paced by
-   two sweeps**: pairing is a scheduled task on its own interval and the room's burst is another,
-   slower one, so the run that names the opponent and the burst that opens the room are the same
-   sequence at two moments. Firing them together overwrites the first with the second before it
-   has been read. The entry itself is the third moment and the fastest: the entered state (4) is
-   pushed to the team as it enters, so "looking for an opponent" is on screen before either
-   sweep runs rather than being announced by the room's own packet.
+   room-less reply and the join goes nowhere. **Pairing and the room are two sweeps, and each
+   announces itself.** `0x4E20` is the pairing record — its fields are the two participants and
+   their win counts, and it carries no room — so the pairing sweep writes it with the **entered
+   phase (4)** as soon as two teams are matched, and the slower game-search sweep re-writes the
+   same record with the **assigned phase (5)** alongside the room (`0x4987`'s `game_id`,
+   `0x43F0`). Firing them together overwrites the pairing before it has been read. The entry is
+   the third and fastest moment: the entered state (4) is pushed as the team enters, so "looking
+   for an opponent" is on screen before either sweep runs. The `event_id` on every one of these
+   must echo what `0x4E10` opened the Survival event with, and `team_state` must never be 9.
 
 ### Tournament (subtypes 3 and 5)
 

@@ -95,6 +95,92 @@ public sealed class EventAssignmentPushService(
     }
 
     /// <summary>
+    /// Announces the pairing itself: the two teams are named, with the opponent
+    /// each is up against, and no room is mentioned because none has been chosen.
+    /// <para>
+    /// This is the record <c>0x4E20</c> is for — its ksy titles it the Survival
+    /// match pairing, and every field it carries is the pair, not the room. It is
+    /// written by the pairing sweep, which is what "opponent found" is on the
+    /// client: the room burst that follows, on its own slower sweep, re-writes the
+    /// same record with the assigned phase and the room.
+    /// </para>
+    /// <para>
+    /// The state carried is the entered phase rather than the assigned one, so the
+    /// client is not offered a Join Game row for a room that does not exist yet.
+    /// </para>
+    /// </summary>
+    /// <param name="firstTeam">First team of the pairing.</param>
+    /// <param name="secondTeam">Second team of the pairing.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Number of sessions the announcement reached.</returns>
+    public async Task<int> PushPairingAsync(
+        EventSnapshot firstTeam,
+        EventSnapshot secondTeam,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(firstTeam);
+        ArgumentNullException.ThrowIfNull(secondTeam);
+
+        var delivered = await PushMatchFoundToTeamAsync(
+            firstTeam,
+            secondTeam,
+            EventConstants.TeamEnteredState,
+            cancellationToken);
+        delivered += await PushMatchFoundToTeamAsync(
+            secondTeam,
+            firstTeam,
+            EventConstants.TeamEnteredState,
+            cancellationToken);
+        return delivered;
+    }
+
+    /// <summary>
+    /// Writes the match-found record to one team's sessions. It is the shared
+    /// half of the pairing announcement and the assignment burst, which differ
+    /// only in the participation state they carry.
+    /// </summary>
+    /// <param name="team">Recipient's team.</param>
+    /// <param name="opponent">Opposing team.</param>
+    /// <param name="teamState">Participation state to carry.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>Number of sessions the record reached.</returns>
+    private async Task<int> PushMatchFoundToTeamAsync(
+        EventSnapshot team,
+        EventSnapshot opponent,
+        int teamState,
+        CancellationToken cancellationToken)
+    {
+        var delivered = 0;
+        foreach (TcpSession session in sessionDirectory.TeamSessions(
+            team.SnapshotIdentifier,
+            excludedSession: null))
+        {
+            if (session.CharacterIdentifier is null)
+            {
+                continue;
+            }
+
+            var writer = new PacketWriter();
+            EventAssignmentUtils.WriteMatchFound(
+                writer,
+                team.SnapshotIdentifier,
+                team.Sequence,
+                team,
+                opponent,
+                teamState,
+                session.CharacterIdentifier.Value);
+            await sessionHelper.SendPacketAsync(
+                session,
+                CommandConstants.EventMatchFound,
+                writer.Build(),
+                cancellationToken);
+            delivered++;
+        }
+
+        return delivered;
+    }
+
+    /// <summary>
     /// Tears a live assignment down on both teams. Each team is told with its own
     /// state-update record under the teardown command, which empties the Survival
     /// event record and sends the client back to the battle list.
@@ -261,7 +347,9 @@ public sealed class EventAssignmentPushService(
             // The match-found notification is the record the client acts on, and
             // it is validated against the team record exactly as the active-event
             // record above is: it quotes the receiving team's own identity, so the
-            // two agree with the snapshot that opened the exchange.
+            // two agree with the snapshot that opened the exchange. It carries the
+            // assigned phase, because it is the last word the client is given
+            // about the state before it enters the room.
             var matchWriter = new PacketWriter();
             EventAssignmentUtils.WriteMatchFound(
                 matchWriter,
@@ -269,6 +357,7 @@ public sealed class EventAssignmentPushService(
                 team.Sequence,
                 team,
                 opponent,
+                EventConstants.ActiveEventAssignedState,
                 characterIdentifier);
             await sessionHelper.SendPacketAsync(
                 session,

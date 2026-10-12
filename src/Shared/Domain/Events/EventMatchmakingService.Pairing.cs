@@ -11,7 +11,9 @@ namespace Mgo2Server.Shared.Domain.Events;
 /// and its opponent are two separate moments. The request records the team as
 /// entered and tells it so; nothing pairs until a sweep runs, which is what keeps
 /// "looking for an opponent" on screen for a real interval instead of being
-/// overwritten by the pairing in the same breath.
+/// overwritten by the pairing in the same breath. When the sweep does pair two
+/// teams it announces the pairing itself — the client's "opponent found" — and
+/// leaves the room to the game-search sweep.
 /// </para>
 /// <para>
 /// Candidates are taken out of the queue before they are validated, so a
@@ -54,6 +56,14 @@ public sealed partial class EventMatchmakingService
                     var match = await CreateMatchAsync(first, second, cancellationToken);
                     if (match is not null)
                     {
+                        // "Opponent found" is announced here, when the pairing
+                        // happens, and not with the room: the record names the two
+                        // teams and no room, so the client gets the pairing screen
+                        // on this sweep and the room on the game-search sweep.
+                        await assignmentPushService.PushPairingAsync(
+                            EventTeamService.BuildSnapshot(first),
+                            EventTeamService.BuildSnapshot(second),
+                            cancellationToken);
                         matches.Add(match);
                         continue;
                     }

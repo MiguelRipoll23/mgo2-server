@@ -26,6 +26,12 @@ public static class EventAssignmentUtils
     /// <param name="teamSerial">Serial of that same record, checked with it.</param>
     /// <param name="ownTeam">Recipient's team.</param>
     /// <param name="opponentTeam">Opposing team.</param>
+    /// <param name="teamState">
+    /// Participation state the record carries. It is the entered state when the
+    /// pairing is announced on its own — the two teams are named but no room has
+    /// been chosen — and the assigned state when the same record is rewritten as
+    /// the last word of the assignment burst.
+    /// </param>
     /// <param name="recipientCharacterIdentifier">Character the record is written for.</param>
     public static void WriteMatchFound(
         PacketWriter writer,
@@ -33,6 +39,7 @@ public static class EventAssignmentUtils
         int teamSerial,
         EventSnapshot ownTeam,
         EventSnapshot opponentTeam,
+        int teamState,
         int recipientCharacterIdentifier)
     {
         ArgumentNullException.ThrowIfNull(writer);
@@ -57,16 +64,15 @@ public static class EventAssignmentUtils
         writer.WriteUInt16(teamSerial);
         writer.WriteInt32(ownTeam.EventIdentifier);
 
-        // The byte here is the team's participation state, and this record is the
-        // last word the client is given about it inside the assignment burst, so
-        // it is the one the client ends up holding. It carries the assigned
-        // phase, as the active-event record above does — never the byte the team
-        // row happens to hold, because a team that was waiting is stored in the
-        // entered state and echoing a row's own value here is exactly how a pair
-        // ended up stranded on the formation screen. See
+        // The byte here is the team's participation state, and the value written
+        // is the caller's: the pairing announcement carries the entered phase and
+        // the assignment burst's last word carries the assigned one. Neither is
+        // the byte the team row happens to hold, because a team that is waiting is
+        // stored in the entered state and echoing a row's own value here is
+        // exactly how a pair ended up stranded on the formation screen. See
         // `EventConstants.TeamAutoFormationState` for the one value that must not
         // be written.
-        writer.WriteUInt8(EventConstants.ActiveEventAssignedState);
+        writer.WriteUInt8(teamState);
         writer.WriteInt32(ownTeamIdentity);
         writer.WriteFixedString(ownTeam.Name, 16);
         writer.WriteUInt8(Clamped(ownTeam.ConsecutiveWins));

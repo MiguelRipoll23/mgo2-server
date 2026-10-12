@@ -13,10 +13,12 @@ namespace Mgo2Server.GameLobbyServer.Maintenance;
 /// <para>
 /// Pairing is the first of the two matchmaking sweeps, and it is a sweep rather
 /// than work the entry request does: a team that enters is told it is waiting,
-/// and the two teams are made a match on this cadence. That is what keeps
-/// "looking for an opponent" a state with a duration instead of a screen the
-/// pairing overwrites in the same breath. The second sweep, the game search,
-/// finds the pair a room on its own, slower interval.
+/// and the two teams are made a match on this cadence. Matching the two also
+/// announces them to each other — the client's "opponent found" — in the pairing
+/// record, which names the pair and no room. The second sweep, the game search,
+/// finds the pair a room on its own, slower interval and re-writes that record
+/// with the room; keeping the announcement here is what puts "opponent found" on
+/// screen a sweep before "game found".
 /// </para>
 /// <para>
 /// The cadence is configuration rather than a literal, so a deployment can pace
