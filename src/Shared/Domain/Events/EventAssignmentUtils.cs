@@ -26,32 +26,34 @@ public static class EventAssignmentUtils
     /// <param name="teamSerial">Serial of that same record, checked with it.</param>
     /// <param name="ownTeam">Recipient's team.</param>
     /// <param name="opponentTeam">Opposing team.</param>
-    /// <param name="teamState">
-    /// Participation state the record carries. It is the entered state when the
-    /// pairing is announced on its own — the two teams are named but no room has
-    /// been chosen — and the assigned state when the same record is rewritten as
-    /// the last word of the assignment burst.
-    /// </param>
-    /// <param name="recipientCharacterIdentifier">Character the record is written for.</param>
     public static void WriteMatchFound(
         PacketWriter writer,
         int teamIdentifier,
         int teamSerial,
         EventSnapshot ownTeam,
-        EventSnapshot opponentTeam,
-        int teamState,
-        int recipientCharacterIdentifier)
+        EventSnapshot opponentTeam)
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(ownTeam);
         ArgumentNullException.ThrowIfNull(opponentTeam);
 
-        // The identity inside the body is recipient-relative: the client compares
-        // it with the local character to decide which of the two cached names is
-        // the opponent, so it must be the character even for a non-leader member.
-        // It is a different word from the record's leading identity.
-        var ownTeamIdentity = recipientCharacterIdentifier;
-        var opponentTeamIdentity = opponentTeam.Participants[0].CharacterIdentifier;
+        // The two identities inside the body are TEAM record ids, not character
+        // ids, and the client compares the first of them against the player's own
+        // team id to decide which block is the opponent. `0x8CDFA8` — the renderer
+        // of lobby string 761, "Your next opponent has been determined... Next
+        // match: vs. %s" — reads `rec+0x14`, compares it against team+0x00, and
+        // copies the OTHER block's name: `rec+0x50` when it is you, `rec+0x18`
+        // when it is not. A character id there is never equal to the player's own
+        // team id, so the client concludes neither block is theirs and prints the
+        // first block — the player's own team — as the opponent. Both sides then
+        // see themselves against themselves.
+        //
+        // `0x4A13`'s team_block names these slots `team_id`/`team_name` and says
+        // the comparison is "only meaningful if this is a team id", and
+        // `0x4E11`'s `entrant_id` is compared the same way against the same
+        // team+0x00. The header's own identity is already the team record id.
+        var ownTeamIdentity = teamIdentifier;
+        var opponentTeamIdentity = opponentTeam.SnapshotIdentifier;
         if (ownTeamIdentity == 0 || opponentTeamIdentity == 0
             || ownTeamIdentity == opponentTeamIdentity)
         {
@@ -64,15 +66,16 @@ public static class EventAssignmentUtils
         writer.WriteUInt16(teamSerial);
         writer.WriteInt32(ownTeam.EventIdentifier);
 
-        // The byte here is the team's participation state, and the value written
-        // is the caller's: the pairing announcement carries the entered phase and
-        // the assignment burst's last word carries the assigned one. Neither is
-        // the byte the team row happens to hold, because a team that is waiting is
-        // stored in the entered state and echoing a row's own value here is
-        // exactly how a pair ended up stranded on the formation screen. See
-        // `EventConstants.TeamAutoFormationState` for the one value that must not
-        // be written.
-        writer.WriteUInt8(teamState);
+        // The byte here is the team's own event-participation state, not the
+        // active-event phase, and the two must not be confused: the same
+        // position carries `team_state` on this command and the phase on
+        // `0x4A00`, and 5 is the value the client draws as "a game is already
+        // in progress" with a Join Game row. Writing it here told the client the
+        // match had started before anybody had entered the room, and answered
+        // with a manual join row for a game that had not begun. Neither the 9
+        // that must never be written (see `TeamAutoFormationState`) nor the
+        // assigned phase belongs in this slot.
+        writer.WriteUInt8(Clamped(ownTeam.State));
         writer.WriteInt32(ownTeamIdentity);
         writer.WriteFixedString(ownTeam.Name, 16);
         writer.WriteUInt8(Clamped(ownTeam.ConsecutiveWins));
@@ -98,7 +101,6 @@ public static class EventAssignmentUtils
     /// <param name="cardIdentifier">Entry word the active-event record was opened with; never zero.</param>
     /// <param name="ownTeam">Recipient's team.</param>
     /// <param name="opponentTeam">Opposing team.</param>
-    /// <param name="recipientCharacterIdentifier">Character the record is written for.</param>
     /// <param name="ownRoster">Frozen roster of the recipient's team, when the mode has one.</param>
     /// <param name="opponentRoster">Frozen roster of the opposing team, when the mode has one.</param>
     public static void WriteNextMatchCard(
@@ -106,7 +108,6 @@ public static class EventAssignmentUtils
         int cardIdentifier,
         EventSnapshot ownTeam,
         EventSnapshot opponentTeam,
-        int recipientCharacterIdentifier,
         EventRoster? ownRoster = null,
         EventRoster? opponentRoster = null)
     {
@@ -120,11 +121,11 @@ public static class EventAssignmentUtils
                 nameof(cardIdentifier));
         }
 
-        // The first identity is recipient-relative exactly as in the match-found
+        // The first identity is a TEAM record id, exactly as in the match-found
         // notification, because both fill the same shared record and the client
         // picks the block that is not its own to render.
-        var ownTeamIdentity = recipientCharacterIdentifier;
-        var opponentTeamIdentity = opponentTeam.Participants[0].CharacterIdentifier;
+        var ownTeamIdentity = ownTeam.SnapshotIdentifier;
+        var opponentTeamIdentity = opponentTeam.SnapshotIdentifier;
         var bothIdentitiesAreKnown = ownTeamIdentity != 0 && opponentTeamIdentity != 0;
         var identitiesAreDistinct = ownTeamIdentity != opponentTeamIdentity;
 

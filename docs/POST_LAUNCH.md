@@ -100,15 +100,26 @@ carriers (no 0x4Axx parser branches on subtype — the split is all consumer-sid
    1.36 the byte is a flag, not an enum — the image only ever compares it against 9**; the
    `5` and `<= 2` readers above are disc-build behaviour and must not be used to diagnose a
    1.36 session (`BUILD_1_36.md`, "`team_state` is one literal in 1.36").
-6. **Populate the roster before the status columns** — `team+0x17C` is 8 x 28-byte member
+6. **Write team ids into the shared record, never character ids** — the two blocks of
+   `0x4E20` (`rec+0x14`/`+0x4C`) and of `0x4A13` (`team_a.team_id`/`group_b.team_id`) are
+   **team record ids**. The renderer of lobby string 761, *"Your next opponent has been
+   determined... Next match: vs. %s"* (`0x8CDFA8`), reads `rec+0x14`, compares it against the
+   player's own team id at `team+0x00`, and copies the OTHER block's name — `rec+0x50` when
+   it is you, `rec+0x18` when it is not. A character id is never equal to the player's own
+   team id, so the client concludes neither block is theirs and prints the first block — the
+   player's own team — as the opponent: **"X vs X"** on both sides. `0x4A13`'s team_block
+   states the comparison is "only meaningful if this is a team id", and `0x4E11`'s
+   `entrant_id` is compared against the same `team+0x00` ("a team id being compared to a
+   team id"). Reported live 2026-10-12 as "I'm going to battle my own team".
+7. **Populate the roster before the status columns** — `team+0x17C` is 8 x 28-byte member
    records ({chara id, name[16], ..., member_state at +0x15}); `0x4918` refuses a row whose
    status byte isn't 1 (or 2 when team_state is 9).
-7. **In-game, set the ladder record's subtype** so `gameObj+0xBCC` gets bits 8/9/10 — the
+8. **In-game, set the ladder record's subtype** so `gameObj+0xBCC` gets bits 8/9/10 — the
    single setter `0x272728` fires for subtype 3..6-excluding-2 and sets all three in one
    `ori`; bit 10 is what lets the client send `0x43B0` (the Survival match report), which
    then needs a 4-byte `0x43B1` result. Subtype reaches that record via `0x43F0`/`0x43F1`
    or copied from the team record by six parsers (`mgo2_cmd_4e00_c2s.ksy`, `AUTOMATCH.md`
-   §11).8. **Serve the match-flow packets**: `0x4A00` opens the event AND seeds the next-match card's
+   §11).9. **Serve the match-flow packets**: `0x4A00` opens the event AND seeds the next-match card's
    identity (its `new_id` lands in ladder+0 — `0x4A13`'s `card_id` must echo it or the card is
    dropped, -1106); `0x4A13`/`0x4E20` carry the pairing; `0x4E21`..`0x4E23` update the roster
    column; `0x4E23` tears the event down. **The assigned team's record must name its room in
@@ -119,15 +130,21 @@ carriers (no 0x4Axx parser branches on subtype — the split is all consumer-sid
    announces itself.** `0x4E20` is the pairing record — its fields are the two participants and
    their win counts, and it carries no room — so the pairing sweep writes it with the **entered
    phase (4)** as soon as two teams are matched, and the slower game-search sweep re-writes the
-   same record with the **assigned phase (5)** alongside the room (`0x4987`'s `game_id`,
-   `0x43F0`). Firing them together overwrites the pairing before it has been read. The entry is
-   the third and fastest moment: the entered state (4) is pushed as the team enters, so "looking
-   for an opponent" is on screen before either sweep runs. The `event_id` on every one of these
-   must echo what `0x4E10` opened the Survival event with, and `team_state` must never be 9.
+   same record with the room (`0x4987`'s `game_id`, `0x4A00`, `0x43F0`). It has to: `0x4A00`
+   clears the whole 356-byte ladder record (`0xD51280`) and `0x43F0` writes only the two
+   character-id arrays (`R+44..R+75`, `R+100..R+131`), so the room burst's `0x4E20` is the only
+   thing that fills the two names again — drop it and the assigned screen shows two blank names.
+   Firing both sweeps together overwrites the pairing before it has been read. The entry is the
+   third and fastest moment: the entered state (4) is pushed as the team enters, so "looking for
+   an opponent" is on screen before either sweep runs. **`0x4E20`'s `team_state` is the team's
+   own participation state, never `ActiveEventAssignedState` (5)**: 5 is what `0x8CBCAC` reads as
+   "a game already in progress" and answers with a Join Game row, so carrying it announced a match
+   that had started before anybody entered the room. The `event_id` on every one of these must
+   echo what `0x4E10` opened the Survival event with, and `team_state` must never be 9.
 
 ### Tournament (subtypes 3 and 5)
 
-Items 1-2 and 5-8 apply identically with subtype 3; the differences are:
+Items 1-2 and 5-9 apply identically with subtype 3; the differences are:
 
 * **Subtype 5 (Official Tournament) has a server-decided row gate**: the hub-list entry's
   byte at `0x06` must equal 3 or the Lobby Select row is never emitted — that is `0x4902`'s
