@@ -26,11 +26,21 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="Generation">Identifier set of the round being played.</param>
 /// <param name="SessionFlags2">Session-record flags2 this frame's insertion carries.</param>
 /// <param name="BlobsWritten">State blobs the round has written so far.</param>
+/// <param name="ItemBoxSequence">
+/// Fourth byte the frame's first item-box record carries, when the frame carries
+/// the group.
+/// </param>
+/// <param name="ItemBoxStateSequence">
+/// Fourth byte the frame's first item-box state record carries, when the frame
+/// carries the group.
+/// </param>
 public sealed record BeatFramePlan(
     int FrameIndex,
     MatchRecordGenerationUtils Generation,
     byte SessionFlags2,
-    int BlobsWritten)
+    int BlobsWritten,
+    byte ItemBoxSequence,
+    byte ItemBoxStateSequence)
 {
     /// <summary>
     /// The head insertion for this frame, or <c>null</c> when the capture shows
@@ -79,6 +89,31 @@ public sealed record BeatFramePlan(
     /// </summary>
     public bool CarriesItemBoxes =>
         FrameIndex % ItemBoxFramesUtils.ItemBoxPeriodFrames == ItemBoxFramesUtils.ItemBoxPhaseFrames;
+
+    /// <summary>
+    /// Which group of the round this frame carries, from zero, when it carries
+    /// one at all.
+    /// </summary>
+    public int ItemBoxGroupIndex => ItemBoxFramesUtils.GroupIndex(FrameIndex);
+
+    /// <summary>
+    /// Fourth byte the next item-box record of this family will carry once this
+    /// frame has been written, so a round that carried the group keeps numbering
+    /// it by the records it wrote: four on a group that carries the round's own
+    /// box event, two on the filler groups after them. Unchanged on a frame that
+    /// carries none, which leaves the counter alone.
+    /// </summary>
+    public byte ItemBoxSequenceAfter => CarriesItemBoxes
+        ? (byte)(ItemBoxSequence + ItemBoxFramesUtils.ItemBoxRecordsFor(ItemBoxGroupIndex))
+        : ItemBoxSequence;
+
+    /// <summary>
+    /// Fourth byte the next item-box state record will carry once this frame has
+    /// been written. Unchanged on a frame that carries none.
+    /// </summary>
+    public byte ItemBoxStateSequenceAfter => CarriesItemBoxes
+        ? (byte)(ItemBoxStateSequence + ItemBoxFramesUtils.ItemBoxStateRecords)
+        : ItemBoxStateSequence;
 
     /// <summary>
     /// Whether this frame goes out compressed.
@@ -134,7 +169,11 @@ public sealed record BeatFramePlan(
         var insertions = new List<MatchRecordFramesUtils.RecordMessage>();
         if (CarriesItemBoxes)
         {
-            insertions.AddRange(ItemBoxFramesUtils.ItemBoxGroup(Generation));
+            insertions.AddRange(ItemBoxFramesUtils.ItemBoxGroup(
+                Generation,
+                ItemBoxGroupIndex,
+                ItemBoxSequence,
+                ItemBoxStateSequence));
         }
 
         if (Insertion is { } insertion)

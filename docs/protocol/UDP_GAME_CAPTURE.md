@@ -1109,9 +1109,21 @@ the round then waits for the client to say it is ready for it.
 
 **What the replay still leaves out**, measured now rather than assumed:
 
-- The item boxes' **spawn** bodies (head codes 0x74, 0x8c and 0xb4, under the same 0x1a50)
-  and the position records that move them: those are the live round's own item placement,
-  and they move irregularly around the eight-frame state group the replay does write.
+- The item boxes' **later** events: the round's opening pair is replayed (below), but the
+  events that re-place a box after it is taken arrive irregularly around the eight-frame state
+  group and are the live round's own play, so they are not.
+
+**The round's opening item-box events are replayed too [V].** The group's real content is not
+its six-byte pair: a box is *created* by an event of four records under `0x1a50` — sub-type
+`00` the head (`00 74 01 00 00 00` and `00 74 02 00 00 00` for the two boxes), `01` the item,
+`02` a ten-byte position, `03` a nine-byte tail — and the all-zero pair the replay console
+calls the filler is the statement that a box is still there. Measured from game1's first
+round, decoded with `tools/udp_frame.py`: the host writes its two boxes' events in the round's
+first two groups, 0.2 s and 0.46 s after the run, and the filler pair alone every group after
+them — `0x801f` carrying `0x1a50` ordinals `0`-`3` and `0x1a5a` `0`-`1`, `0x8027` carrying
+`4`-`7` and `2`-`3`, and `0x802f` onward the filler pairs at `8,9` / `4,5`, `10,11` / `6,7`, …,
+so one counter per identifier advances by the records each group wrote. Reproduced byte for
+byte by `ItemBoxFramesUtils.ItemBoxGroup` and its four-record opening groups.
 - The second round's extra state group (`0x00d9`–`0x00df`), its member-bearing rules body
   (`ff 0f fe fe`) and its 25-byte roster entry, which the sibling identifier set alone does
   not account for.
@@ -1625,3 +1637,65 @@ unacknowledged (§8.10's diff compared the records' contents, not their lengths)
 fields the reference host also writes as zero, and every offset `rpdt.js` reads
 for a player — the slot, the character id, the nick, the clan — is one both
 sides already exchange. What it adds is meaning, not bytes.
+
+### 8.12 The item-box group's fourth byte is the record's own index, and the client answers every one [V]
+
+`rpdt.js` reads the fourth byte as an index rather than a flag. Its `records()` walker
+takes the identifier's low eleven bits (`vid & 0x7ff`) for the stream and hands an
+*indexed* record's fourth byte on as `b[a - 1]` — *"The record INDEX is the 4th framing
+byte of an indexed record, at `a-1`"* — and `teamArray` pairs the two records of a team
+array by requiring the second's index to be the first's `+ 1`. §3 reached the same shape
+from the measurement (*"a monotonic counter"*). Read together, the byte is **the record's
+own position in its stream, and the stream is the identifier rather than the connection**:
+game1's first group carries `0x1a50` under `0`, `1`, `2`, `3` and `0x1a5a` under `0`, `1` in
+the same datagram, so the families index independently.
+
+**Both captures answer every index the host named.** Host to joiner, one pass per family
+per file:
+
+| capture | family | records | indexes | client's answers | indexes left unanswered |
+| --- | --- | --- | --- | --- | --- |
+| game1 | `0x1a50` | 467 | `0`–`0x37` | 428 × `0x5a50` | **0** |
+| game1 | `0x1a5a` | 374 | `0`–`0x2f` | 376 × `0x5a5a` | **0** |
+| game1 | `0x1250` | 354 | `0`–`0x53` | 336 × `0x5250` | **0** |
+| game1 | `0x125a` | 310 | `0`–`0x47` | 292 × `0x525a` | **0** |
+| game2 | `0x1a50` | 88 | `0`–`0x35` | 80 × `0x5a50` | **0** |
+| game2 | `0x1a5a` | 48 | `0`–`0x25` | 48 × `0x5a5a` | **0** |
+| game2 | `0x1250` | 178 | `0`–`0x37` | 170 × `0x5250` | **0** |
+| game2 | `0x125a` | 146 | `0`–`0x27` | 146 × `0x525a` | **0** |
+
+No family in either file has an index the client left unanswered, and the answer is the
+peer's own identifier with `0x4000` set and the same fourth byte — §8.6's rule, applied to
+this group. **[V]**
+
+**Our live run pinned the byte to `0`, and the client answered one record and stopped.** Its
+whole beat writes the group as `0x1a50/6 B` and `0x1a5a/6 B` under ordinal `0` — **221
+frames, 442 records of each, not one with a non-zero fourth byte** — and the client's only
+answers are `acknowledged record 0x1a50 ordinal 0` and `acknowledged record 0x1a5a ordinal
+0`, both at `00:22:25`, with nothing for either family afterwards. A stream whose index
+never moves names the same record over and over: the client answers it once and every copy
+behind it is that same record, so the family's window never drains. **[V]** on the
+divergence alone.
+
+**What the client's silence does not explain is the black screen.** The patched client
+reached the round — it loaded `stage/n001a` and printed `CheckRuleOpt_Branch = 00` at the
+round's own second — stayed alive and rendering, and closed its socket a second after the
+window was closed (`RPCS3.log`). It also opened a `cellOskDialog` text dialog two seconds
+into that round, which the otherwise identical stage load earlier in the same log does not:
+a join-time prompt and this index are two candidates for one symptom, and neither is
+settled. **[U]**
+
+**Fixed in the replay.** `ItemBoxFramesUtils.ItemBoxGroup` now takes the round's two
+item-box sequences and numbers its records from them, one counter per identifier,
+advancing by the records written (`MatchRoundCounters`), so a round's groups run `0`, `1`
+then `2`, `3` then `4`, `5` … per family — the capture's own run for `0x1a5a`, and for
+`0x1a50` the contiguous form of it, its two omitted spawn records being the difference.
+
+**Still not replayed: the item-box events themselves.** `rpdt.js` names them — *"One event
+= up to four records in one tick: type 00 LEN 6 HEAD, type 01 LEN 6 ITEM, type 02 LEN 10
+POSITION (s16 X, Y, Z …), type 03 LEN 9 tail. All-zero pairs are filler."* The group this
+server writes is that **all-zero filler pair** (`00 00 00 00 00 00`, `01 00 00 00 00 00`),
+which the console discards, and the head/item/position/tail records of a real spawn are the
+live round's own and are left out, as `MatchRecordFramesUtils` says. That reading also
+answers what our six-byte bodies are: filler, which the client answers regardless. **[V]**
+on the filler reading; **[U]** on whether a client needs a spawn event to draw a box.

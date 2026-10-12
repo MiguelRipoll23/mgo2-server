@@ -771,6 +771,7 @@ were measured in a later join and corrected.
 | the joiner's non-profile records | `0x1001` one-byte answers, then one `0x9001` per sequence, `1`, `2`, `3` … | 18 one-byte `0x9001`, fourth bytes `1`…`0x12`, one every ~5 s: its sequence climbing while its window's base stands still |
 | the host's answers to `0x9001` | `0xd001` with **one** body byte | `0xd001` with **none** (2026-10-09 run) — **fixed**: `PeerAcknowledgementUtils` builds answers with the body length the captures give, §7.1c |
 | the burst's fourth bytes | `3 4 5 6` over a one-player roster | `0 0 0 0` (2026-10-09 run) — **fixed**: `RoomRosterService.NextRunOrdinal` continues the run's numbering |
+| the item-box group's fourth byte | `0x1a50` and `0x1a5a` each carry their own index, climbing with every group, and the client answers every one (0 unanswered across both captures, all four families) | `0 0 0 0` over 442 records of each — **fixed**: `ItemBoxFramesUtils.ItemBoxGroup` numbers each family from the round's own counter, so the client answers every group (`UDP_GAME_CAPTURE.md` §8.12) |
 
 The joiner's own handshake is built from the session descriptor our TCP `0x4321`
 reply filled in, so its two differing bytes point at that reply rather than at the

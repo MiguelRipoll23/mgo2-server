@@ -174,7 +174,7 @@ public sealed class MatchRecordService(
         var session = context.Session;
         var enteredOn = rounds.EnteredOnRound(session);
         var writtenVersion = -1L;
-        var round = new RoundCounters();
+        var round = new MatchRoundCounters();
 
         while (IsAlive(session))
         {
@@ -244,14 +244,18 @@ public sealed class MatchRecordService(
                 round.FrameIndex,
                 snapshot.Generation,
                 round.SessionFlags2,
-                round.BlobsWritten);
+                round.BlobsWritten,
+                round.ItemBoxSequence,
+                round.ItemBoxStateSequence);
 
             await SendAsync(context, plan.Records(), plan.Compressed);
 
             // The counters advance on what the frame carried, not on the frame:
             // the flags2 byte moves once per clock or control insertion and the
             // blob alternation once per state blob, which is what the capture's
-            // cadence is.
+            // cadence is. The item-box counters advance once per record the
+            // group wrote, because that is the stream's own numbering and what
+            // the client answers against.
             if (plan.CarriesSessionFlags)
             {
                 round.SessionFlags2++;
@@ -261,6 +265,9 @@ public sealed class MatchRecordService(
             {
                 round.BlobsWritten++;
             }
+
+            round.ItemBoxSequence = plan.ItemBoxSequenceAfter;
+            round.ItemBoxStateSequence = plan.ItemBoxStateSequenceAfter;
 
             round.FrameIndex++;
             await Task.Delay(MatchRecordFramesUtils.FramePeriodMilliseconds);
@@ -319,35 +326,6 @@ public sealed class MatchRecordService(
             context,
             MatchStartRunFramesUtils.MatchStartRun(generation, reported),
             compressed: true);
-    }
-
-    /// <summary>
-    /// One round's mutable beat counters. Held in a class rather than in locals
-    /// because the round is crossed from an async method, which cannot take them
-    /// by reference. The identifier set is not here: it belongs to the room.
-    /// </summary>
-    private sealed class RoundCounters
-    {
-        /// <summary>Beat frames written in this round.</summary>
-        public int FrameIndex { get; set; }
-
-        /// <summary>Session-record flags2 the next beat insertion carries.</summary>
-        public byte SessionFlags2 { get; set; } = MatchRecordFramesUtils.SteadySessionFlagsStart;
-
-        /// <summary>State blobs written in this round.</summary>
-        public int BlobsWritten { get; set; }
-
-        /// <summary>Run-shaped repeats written inside this round's beat.</summary>
-        public int RepeatsWritten { get; set; }
-
-        /// <summary>Resets the counters for a newly opened round.</summary>
-        public void Reset()
-        {
-            FrameIndex = 0;
-            SessionFlags2 = MatchRecordFramesUtils.SteadySessionFlagsStart;
-            BlobsWritten = 0;
-            RepeatsWritten = 0;
-        }
     }
 
     private static async Task SendAsync(
