@@ -36,6 +36,7 @@ builder.Services.AddSingleton<LobbyLoadoutService>();
 builder.Services.AddSingleton<PlayerSettingsBurstService>();
 builder.Services.AddSingleton<PlayerSettingsBurstSchedulerService>();
 builder.Services.AddSingleton<MatchRecordService>();
+builder.Services.AddSingleton<BriefingCountdownService>();
 builder.Services.AddSingleton<MatchRoundStateService>();
 builder.Services.AddSingleton<MatchStartRunService>();
 builder.Services.AddSingleton<MatchScoreService>();

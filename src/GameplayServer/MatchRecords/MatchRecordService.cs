@@ -40,6 +40,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="logger">Logger of this service.</param>
 public sealed class MatchRecordService(
     MatchRoundStateService roundState,
+    BriefingCountdownService countdowns,
     ILogger<MatchRecordService> logger)
 {
     /// <summary>
@@ -117,6 +118,12 @@ public sealed class MatchRecordService(
                 await SendAsync(context, step.Records, step.Compressed);
             }
 
+            // The briefing countdown belongs to the briefing, so it runs beside
+            // the wait for the round rather than inside it: the round's opening
+            // run ends it, and a peer that arrives into a round already playing
+            // is served the round and is sent no countdown at all.
+            var countdown = countdowns.PublishAsync(context);
+
             // The beat is the round's, not the sparse phase's: everything it
             // writes is measured as an offset from the run, so it starts when
             // the round opens and not a beat earlier. It also waits for that
@@ -126,6 +133,7 @@ public sealed class MatchRecordService(
             // exist.
             await roundState.WaitForOpenAsync(session);
             await roundState.WaitForRunWrittenAsync(session);
+            await countdown;
             await BeatAsync(context);
         }
         catch (Exception exception)

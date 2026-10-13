@@ -43,6 +43,47 @@ public static class MatchStateBodiesUtils
     /// <summary>Result of the last round, in the same coding as <see cref="StateRoundResultIndex"/>.</summary>
     public const int StateLastRoundResultIndex = 3;
 
+    /// <summary>
+    /// The twenty-four a capture carries in the seven bytes at
+    /// <see cref="StateSecondCountdownIndex"/> and
+    /// <c>state[45..48]</c>. Two of the seven are constants of the layout; this
+    /// one is at an offset a capture moves, so it is written here.
+    /// </summary>
+    public const byte StateTwentyFour = 0x18;
+
+    /// <summary>
+    /// The 0xfe the four bytes at <c>state[53..56]</c> carry, and which the
+    /// destabilizer coding also reads as "lost". Nothing on this channel moves
+    /// them, so nothing on this channel names them either.
+    /// </summary>
+    public const byte StateSentinel = 0xfe;
+
+    /// <summary>
+    /// The sixty the countdown run at <c>state[57..60]</c> is seeded with.
+    /// </summary>
+    /// <remarks>
+    /// <b>The seed, not the value.</b> A working server writes 0x3c here in five
+    /// of six captures and 0x28 in the sixth, and in the one that runs a thirty-
+    /// minute round it writes it across <c>state[57..84]</c> rather than four
+    /// bytes — so the length is a property of the room and the seed is not.
+    /// Whether sixty is seconds, a count or a limit is <b>[U]</b>.
+    /// </remarks>
+    public const byte StateCountdownSeed = 0x3c;
+
+    /// <summary>First offset of the countdown run this host seeds with <see cref="StateCountdownSeed"/>.</summary>
+    public const int StateCountdownSeedIndex = 57;
+
+    /// <summary>Last offset of the four-byte countdown run, matching a capture of a seven-minute room.</summary>
+    public const int StateCountdownSeedLastIndex = 60;
+
+    /// <summary>
+    /// The twenty-four at <c>state[44]</c>, the offset just before the
+    /// twenty-four run. A capture moves it to 1 and seeds the countdown run with
+    /// forty in the same room, so the two are read together and neither is
+    /// written as a constant of the layout.
+    /// </summary>
+    public const int StateSecondCountdownIndex = 44;
+
     /// <summary>First of the two objective-holder bytes the parser reads.</summary>
     public const int StateObjectiveHolderFirstIndex = 40;
 
@@ -103,63 +144,89 @@ public static class MatchStateBodiesUtils
     public static byte[] SteadyZeroStateBlob() => StateBlobBody(0);
 
     /// <summary>
-    /// The state vector as the capture records it, with the fields the replay
-    /// parser names left to be written by name: those offsets are zero here and
-    /// <see cref="MatchStartStateBlock"/> fills them in.
+    /// The runs of <see cref="StateVectorLength"/> bytes that carry one value in
+    /// every capture of a working server and in every round of each.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The parser reads five things out of these eighty-nine bytes: the round
-    /// result at <c>state[2]</c>, the last round's result at <c>state[3]</c>, the
-    /// two objective holders at <c>state[40]</c> and <c>state[41]</c>, and — in
-    /// Capture only — the two capture clocks at <c>state[42]</c> and
-    /// <c>state[43]</c>. It also writes a Team Sneaking countdown and lobby slot
-    /// into <c>state[87]</c> and <c>state[88]</c> through an opcode-<c>0x02</c>
-    /// write, so those two bytes carry the same offsets as the clock below and a
-    /// later reader should know both readings.
+    /// <b>Forty-nine of the eighty-nine bytes are constants of the layout, not
+    /// facts about a match.</b> Measured over the six captures of a working
+    /// dedicated server — <c>mgo2-game1/2/3</c>,
+    /// <c>mgo2-game-started-on-briefing</c>,
+    /// <c>mgo2-game-started-team-selection-selected-blue-then-game</c> and
+    /// <c>mgo2-game-joined-when-red-team-then-briefing</c> — these runs hold one
+    /// value in all six, in each capture's opening vector and through every round
+    /// of it. They are written as runs rather than kept as one recorded blob,
+    /// because a byte that has never moved in six matches is not the recording of
+    /// one of them. The measurement is <c>tools/udp_state_vector.py</c> and the
+    /// reading is <c>docs/protocol/STATE_VECTOR.md</c>.
     /// </para>
     /// <para>
-    /// The rest is the recorded vector and no source names it: the two
-    /// twenty-four values at <c>state[38]</c>–<c>state[39]</c> and
-    /// <c>state[44]</c>–<c>state[48]</c>, the four <c>0xfe</c> at
-    /// <c>state[53]</c>–<c>state[56]</c>, the four <c>0x3c</c> at
-    /// <c>state[57]</c>–<c>state[60]</c> and the <c>0xff</c> at
-    /// <c>state[86]</c>. They stay as recorded rather than invented.
+    /// What the runs do <b>not</b> claim is what any of them means. The sevens
+    /// twenty-fours and the four sixties are the values every capture carries,
+    /// not a length or a duration read out of them; nothing on this channel names
+    /// them, and this host has no better source for them than the captures do.
     /// </para>
     /// </remarks>
-    private static ReadOnlySpan<byte> MatchStartStateVectorRecorded =>
+    private static (int Offset, int Length, byte Value)[] ConstantRuns =>
     [
-        // state[0..35], of which state[2] (the result) and state[3] (the last round) are named.
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        // state[36..47]: the pair at 38/39 and the 24 run from 44, around the named holders at 40/41.
-        0x00, 0x00, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x18, 0x18,
-        // state[48..59]: the last of that run, then the 0xfe and 0x3c runs.
-        0x18, 0x00, 0x00, 0x00, 0x00, 0xfe, 0xfe, 0xfe, 0xfe, 0x3c, 0x3c, 0x3c,
-        0x3c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        // state[84..88]: the 0xff at 86 is recorded and unnamed; 87/88 are the clock.
-        0x00, 0x00, 0xff, 0x00, 0x00,
+        // state[5..10], behind the three result bytes and before the pair the
+        // survival replays move at state[11..13].
+        (5, 6, 0x00),
+        // state[14..37], the long zero run up to the first twenty-four.
+        (14, 24, 0x00),
+        // state[38..39], twenty-four.
+        (38, 2, StateTwentyFour),
+        // state[45..48], the other five twenty-fours.
+        (45, 4, StateTwentyFour),
+        // state[49..52], zero again, between the twenty-fours and the sentinels.
+        (49, 4, 0x00),
+        // state[53..56], the sentinel run — the same byte the destabilizer coding
+        // reads as "lost", and never moved by any capture of a working server.
+        (53, 4, StateSentinel),
+        // state[61..85], the twenty-five zero bytes behind the sixty seed.
+        (61, 25, 0x00),
+        // state[86], the last unnamed byte before the clock.
+        (86, 1, StateUnwritten),
     ];
 
     /// <summary>
-    /// The operations state block the match-start run carries: the state opcode
-    /// <c>0x00</c>, then the state vector with the fields the replay parser names
-    /// written into it — the round result, the two objective holders, the two
-    /// capture clocks and the round clock.
+    /// The operations state block the match-start run carries: the state opcode,
+    /// then the state vector with the fields this host knows written into it — the
+    /// two results, the two objective holders, the two capture clocks, the
+    /// countdown seed and the round clock.
     /// </summary>
+    /// <remarks>
+    /// The round's result is opened as the sentinel, which is what a working
+    /// server writes at a round's open, and the match's is left at the zero a
+    /// fresh vector already holds — also what a working server writes. The two
+    /// are written together when a round decides the match, by
+    /// <see cref="MatchRecordBodiesUtils.StateMatchResultIndex"/>
+    /// (<c>docs/protocol/STATE_VECTOR.md</c> §3), and a match that is still
+    /// undecided is the zero.
+    /// </remarks>
     /// <param name="stateOpcode">Opcode the operations stream uses for its state block.</param>
     /// <param name="roundClockUnits">Round clock the vector carries, in 125 ms units.</param>
     /// <returns>The record body.</returns>
     public static byte[] MatchStartStateBlock(byte stateOpcode, int roundClockUnits)
     {
-        var vector = MatchStartStateVectorRecorded.ToArray();
+        var vector = new byte[StateVectorLength];
+        foreach (var (offset, length, value) in ConstantRuns)
+        {
+            Array.Fill(vector, value, offset, length);
+        }
+
         vector[StateRoundResultIndex] = StateUnwritten;
         vector[StateObjectiveHolderFirstIndex] = StateObjectiveHolderNone;
         vector[StateObjectiveHolderSecondIndex] = StateObjectiveHolderNone;
         vector[StateCaptureClockFirstIndex] = StateUnwritten;
         vector[StateCaptureClockSecondIndex] = StateUnwritten;
+        vector[StateSecondCountdownIndex] = StateTwentyFour;
+        for (var index = StateCountdownSeedIndex; index <= StateCountdownSeedLastIndex; index++)
+        {
+            vector[index] = StateCountdownSeed;
+        }
+
         vector[StateClockLowIndex] = (byte)(roundClockUnits & 0xff);
         vector[StateClockHighIndex] = (byte)((roundClockUnits >> 8) & 0xff);
         return [stateOpcode, .. vector];

@@ -93,6 +93,7 @@ public sealed partial class MatchStartRunService(
     Rooms.RoomRosterService roster,
     MatchScoreService score,
     MatchResultService results,
+    BriefingCountdownService countdown,
     ILogger<MatchStartRunService> logger)
 {
     private readonly Lock gate = new();

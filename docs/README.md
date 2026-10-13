@@ -13,6 +13,7 @@ depends on, some is documentation, and some is a tool you run once and forget.
 | `CRYPTO.md` | Every cipher, key and hash, where each is applied, and how to obtain them. |
 | `OBSERVED.md` | What was observed and verified against a real client, including the hypotheses that turned out wrong. Read before re-testing anything. |
 | `GAMEPLAY_SERVER.md` | The UDP gameplay host: the join, the briefing gate, the round and the beat — and how much of what a client receives is still a replay of a capture. |
+| `protocol/STATE_VECTOR.md` | The operations stream's opcode language and its 89-byte state vector: which of the eighty-nine bytes are constants of the layout, which are the room's own, and which are still unread. |
 | `BACKLOG.md` | Deliberately deferred work, with enough context to pick each item up cold. |
 
 ## Required by the running stack

@@ -45,6 +45,14 @@ public sealed partial class MatchStartRunService
             lastReportIdentifier = null;
         }
 
+        // The countdown goes to the peers the deadline is armed for, so it is
+        // armed with it: a client waiting out its own briefing timer is told how
+        // much of it is left, and one that never received the deadline is the
+        // client that never received this either. It is the operations clock
+        // opened on 128 units, counted down against this same briefing time
+        // (`BriefingCountdownBodiesUtils`, `docs/protocol/STATE_VECTOR.md` §4).
+        countdown.Begin(DateTimeOffset.UtcNow, settings.BriefingTimeMinutes);
+
         _ = OpenWhenBriefingEndsAsync(briefing, settings.BriefingTimeMinutes);
     }
 

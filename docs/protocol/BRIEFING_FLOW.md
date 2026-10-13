@@ -227,11 +227,17 @@ sends today.
 
 ## 7. Open
 
-* **Answered: the seven-byte `0x0b` countdown's unit** — one count per second, not
-the 118 s an earlier reading of resends suggested, and it ends on a written `0`
-when the round opens (§1). What the byte's low bits are keyed on is still open:
-briefing one writes `40`, `c0`, `c2`, `ca`, `ea` and briefing two `00`, `02`,
-`22`, over the same kind of growing mask.
+* **Answered: the `0x0b` countdown is not the briefing's.** It was read here as
+one — a six/seven-byte record counting down from sixty, which is a briefing
+timer's shape — and it is not. It continues past a round's opening run
+(`joined-when-red-team`: the round opens at t+799.165, `0b` records run to
+t+836.375) and a fresh countdown starts four tenths of a second *after* the open;
+eight distinct values arrive in one tick at t+78.261 in `started-on-briefing`,
+which one countdown would not; and 60 → 0 takes 98.2 s there and 41.2 s in
+`joined-when-red-team`, so 1.64 and 0.69 s per count — **not the one-per-second
+this entry used to claim.** It is a recurring per-entity timer and what it is
+for is **[U]**. `STATE_VECTOR.md` §4 has the measurement.
+
 * **[U]** the trailing bytes of the `e0` publication: 5, 6, 7 and 8 all appear.
 * **[I]** the report's byte as the lobby slot; measured is only that one byte
   identifies the player and is echoed unchanged.

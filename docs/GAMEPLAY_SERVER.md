@@ -256,7 +256,8 @@ candidate for §5. The file names are the ones that own it.
 | the beat's periods and phases (33 ms, 90/45/181/130 frames, blob alternation, item-box phase) | `MatchRecordFramesUtils`, `ItemBoxFramesUtils`, `BeatFramePlan` | the cadence is the recording, not a simulation; the vitals onset is the exception — it is the round's first vitals, with the recorded 818-frame offset as its floor |
 | the control bodies (`02`, `03`, `04`, `25`) | `MatchRecordBodiesUtils` | unnamed on the wire |
 | the host's vitals record: always full health and stamina (`fa fa`) | `MatchRecordBodiesUtils.Vitals` | the capture measures it constant while `0x0080` reports deaths, and says not to substitute a player's values into it; the players' own values are read and kept instead |
-| the operations state block: an 89-byte recorded vector, whose named offsets the run writes | `MatchStateBodiesUtils` | the two holders, the two capture clocks and the round clock; `state[2]` is opened as `0xff` and written by the round's end; the other bytes, and the last-round result at `state[3]`, are the recording |
+| the operations state block: an 89-byte vector, **49 bytes of which are constants of the layout** and are now written as named runs; the room's own seven offsets are written by name | `MatchStateBodiesUtils` | the two results, the two objective holders, the two capture clocks, the countdown seed and the round clock. The block is byte-identical to the round-open vector of three of six working-server captures, and the three it differs from differ only at offsets named as the room's own — `docs/protocol/STATE_VECTOR.md` |
+| the briefing countdown | `BriefingCountdownService`, `BriefingCountdownBodiesUtils` | **no longer a replay, and it was never the `0x0b` record.** It is the operations clock opened on 128 units and counting to zero across the briefing — measured at 58.5 s in a room whose briefing is a minute. Now written from the room's own briefing time. The six-byte `0x0b` record, read as the briefing timer, is a recurring per-entity timer that survives a round's open; it is not written — `docs/protocol/STATE_VECTOR.md` §4 |
 | the item-box group's bodies | `ItemBoxRecordBodiesUtils` | the round's opening event pair, then the filler; the later spawn events are not written at all, and §5 item 6 has what the capture settles about them |
 | the match-start payload's trailing zeros and length | `MatchStartBodiesUtils` | game1's six-byte form |
 | the presence answer (`02 00 00 00`) | `MatchStartBodiesUtils` | the room's players as a bit set, measured growing `02` → `06` → `0e` → `1e` as a room's players report; written here as the one-player body, trailing three bytes **[U]** |
@@ -270,6 +271,17 @@ the round* is still the recording: the beat's cadence and the bodies of
 everything the client sees during it. A client joining today is told its own
 room's rotation, its own room's slots, teams and loadouts, and then shown a round
 that is genuinely timed.
+
+**What this section overstates, and by how much.** The state block was the largest
+single block of recording here and it is now mostly **constants**: 49 of its 89
+bytes hold one value in every round of all six captures of a working server and
+are written as named runs rather than copied, and the block this host builds is
+byte-identical to that server's round-open vector in three of six captures. Its
+room's own offsets — the two results, the two holders, the two capture clocks, the
+countdown seed and the clock — are written by name. What is left unread there is
+`state[0..1]`, `state[4..6]` and what the seed's *length* tracks, all of which
+rests on one decided match. The briefing countdown has left this table too, and
+§5 item 3 with it. `docs/protocol/STATE_VECTOR.md` is the reading.
 
 ### 3.3 What a peer sees of another peer
 
@@ -363,25 +375,39 @@ implemented; everything the sections above describe is, so those are the account
 what this host does and this is the account of what it does not. An item blocked on
 a reading rather than on a decision says so, and the reading is in §7.
 
-1. **A match rather than a round.** The match's own result at `state[3]` is not
-   written, no round report is stored (`game_rounds` is written by a lobby's own
-   handlers, not by a dedicated host), and the end-of-match report the lobby reads
-   over TCP is not produced. What blocks all three is one question, and it is a
-   choice rather than a measurement: how many rounds a match is, and what the host
-   reports once the last of them ends. The round's own result is written and
-   measured (`state[2]`, `BRIEFING_FLOW.md` §4).
+1. **A match rather than a round.** The match's own result at `state[3]` is
+   **writable and measured**: a working server writes it in the *same* `0x02`
+   write as the round's result — `02 02 02 02 02` is "state[2] = 2, state[3] = 2"
+   — at the round end that decides the match, and never writes one without the
+   other. What is still open is the rest of the block: `state[0..1]` and
+   `state[4..6]` move at a match's end as well, and one decided match is the whole
+   of the evidence for them (`STATE_VECTOR.md` §3). No round report is stored
+   (`game_rounds` is written by a lobby's own handlers, not by a dedicated host),
+   and the end-of-match report the lobby reads over TCP is not produced. So the
+   blocking question is now narrower than it was: the host can write the match
+   result, but **how many rounds a match is, and what the host reports once the
+   last of them ends**, is a choice rather than a measurement.
 2. **A rotation rather than one round.** The room's rotation is this instance's
    configuration and states one round, so the round walk (`MatchSettings.Round`)
    plays the same entry every time. A configured list of rounds — and the room's own
    `games.current_game` column, which exists and is unused — would let a room play a
    rotation, which is the shape a player-hosted room's `0x4313` reply and the
    burst's fifteen-triple field already have room for.
-3. **The briefing countdown.** The room's briefing time is what its deadline is
-   measured with, and it is sent to no client. The two candidates on the wire are
-   the six-byte `0x0b` operations record that counts 60 down over a briefing and the
-   operations clock's 128-unit (16 s) countdown before a round; both are **[U]** in
-   their unit, so this one wants a capture with a visible briefing before it is
-   written.
+3. ~~**The briefing countdown.**~~ **Done, and the room's own.**
+   `BriefingCountdownService` writes it, armed where the briefing's deadline is
+   armed: the operations clock opened on **128 units** and counting down to zero
+   across the briefing — measured at 58.5 s in a room whose briefing is a minute,
+   ending 14 s before that round opens. It is the same record as the round clock,
+   opened on the briefing's length rather than the round's.
+
+   **The other candidate on the wire is cleared.** The six-byte `0x0b` record
+   counts down from sixty and was read here as a briefing timer; it is not — it
+   continues past a round's opening run, restarts four tenths of a second after
+   one, carries eight distinct values in a single tick, and runs 60 → 0 in 98.2 s
+   in one capture and 41.2 s in another, so not one count per second. It is a
+   recurring per-entity timer, **[U]**, and this host writes none of it
+   (`STATE_VECTOR.md` §4, which corrects the one-per-second claim
+   `BRIEFING_FLOW.md` §7 used to make).
 4. **A score the host computes.** The scoreboard's `score` bit moves only when a
    peer states a value (§7), and the kills behind it come from a kill feed or a
    peer's own delta: a room whose clients send neither has neither. Both are the
@@ -423,6 +449,7 @@ a reading rather than on a decision says so, and the reading is in §7.
 | `MatchRecords/MatchResultService.cs` | the round's winner, the kill-limit check, and the result write |
 | `Commands/Peer/Gameplay/KillFeedHandler.cs` | the operations stream's kill feed, and the score it feeds |
 | `MatchRecords/MatchStartRunService.cs`, `MatchStartRunService.Runs.cs` | the round opener, its briefing deadline and its clock, and the per-peer run watcher |
+| `MatchRecords/BriefingCountdownService.cs`, `BriefingCountdownBodiesUtils.cs` | the briefing's countdown to each peer, and the 128-unit clock body it writes |
 | `MatchRecords/MatchRoundStateService.cs`, `RoundClockUtils.cs` | the room's round, and how much of it is left |
 | `MatchRecords/MatchRecordService.cs` | the per-peer beat |
 | `MatchRecords/BeatFramePlan.cs`, `MatchRecordFramesUtils.cs`, `SparsePhaseFramesUtils.cs` | the frames the beat and the sparse phase write |
@@ -434,6 +461,30 @@ a reading rather than on a decision says so, and the reading is in §7.
   byte for byte identical, beside the host's own. The live burst writes each
   player of the room once; whether the second copy is a repeat the peer needs,
   as the roster run's second copy is, nothing measured says.
+
+* **[U]** `state[0]`, `state[1]` and `state[4..6]`: they move at a match's end
+  beside the two results, and the full vector and the incremental writes do not
+  agree about them. One decided match is the whole of the evidence.
+  `STATE_VECTOR.md` §3.
+
+* **[U]** what the countdown seed's *length* tracks. `state[57..60]` holds four
+  bytes in five captures and `state[57..84]` holds twenty-eight in the only
+  30-minute room, and it is not the player count. The seed's value (`0x3c`
+  against `0x28`) moves with `state[44]` (`0x18` against `1`) in the same capture,
+  so the two are read together and neither is written as a constant.
+  `STATE_VECTOR.md` §6.
+
+* **[U]** what twenty-four and sixty are. Seven bytes of `0x18` and a seed of
+  `0x3c` are in every room of every rule; they are the values, not a reading.
+  `STATE_VECTOR.md` §2.
+
+* **[U]** what `0x0b` is: a recurring per-entity countdown opening on sixty that
+  a round does not stop, and not the one-per-second timer it was read as.
+  `STATE_VECTOR.md` §4.
+
+* **[U]** the `0x0e` round-over record's reason byte: `0x00` at a round that ends
+  with no result, `0x07` at one a side takes. Two samples, and this host writes no
+  `0x0e` of its own. `STATE_VECTOR.md` §1.
 
 * **[U]** the state blob's only varying field (a 16-bit value that runs 100, 0,
   94, 98, 99, 50 through a round). `joined-when-red-team`'s 754 steady blobs are

@@ -90,6 +90,15 @@ public static class MatchRecordBodiesUtils
     /// Offset of the match's outcome within the operations state block, written
     /// in the same coding as <see cref="StateRoundResultIndex"/>.
     /// </summary>
+    /// <remarks>
+    /// <b>Measured as a field of its own, and written with the round's.</b> A
+    /// working server ends the round that decides a match with one state write
+    /// covering both — <c>02 02 02 02 02</c> is "state[2] = 2, state[3] = 2" — and
+    /// no capture ever writes one without the other. So a match result is
+    /// something this host can write rather than invent; what it reports over the
+    /// lobby's TCP channel once the match is decided is the open question, not
+    /// this byte (<c>docs/protocol/STATE_VECTOR.md</c> §3).
+    /// </remarks>
     public const int StateMatchResultIndex = 3;
 
     /// <summary>
