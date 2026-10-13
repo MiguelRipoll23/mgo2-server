@@ -124,13 +124,21 @@ container contexts:
 | Extended settings chunk (`kind=0x0a`) | `L >= 3`, type byte `0x0b` | Slot 0 with `L >= 71`: 15 rotation triples beginning at payload `+26` (three bytes each). Slot byte `+1 >= 1`: team byte `+2`; qualifying loadout forms additionally supply appearance and skills. |
 | Indexed ordinary record, low `vid=0x001` | `23 <= L <= 45`, slot marker `+1` from 1 through 23 | Scoreboard delta: slot marker minus one, 21-byte LSB-first bit mask at `+2`, then changed values. Bits 5/6/8/11 are named kills/deaths/score/headshots; bit 152 is a last-result code, bit 153 a streak. Bits 131–136 carry three skill ID/level pairs. Unnamed bits remain unnamed. |
 
-For recognized loadout lengths 50–58, the parser maps the final 23 payload
+For recognized loadout lengths 50–62, the parser maps the final 23 payload
 bytes to appearance fields: head/chest/hand/waist/foot, two accessories, their
 color bytes, gender, face, upper/lower items, face paint, voice/pitch, and
 accessory colors. Skill pairs are aligned from the variable region before the
 appearance block; the `0xff` end marker is checked, and a trailing `0x10`
 suffix is removed when present. Not every color-byte ordering or raw item
 attribute is claimed to be understood.
+
+The length set is the pair count's arithmetic rather than a list of shapes:
+`L = 50 + 2·pairs`, plus one when the region carries the `0x10` suffix, so the
+byte at `0x16` is the constant `2` and the list end always sits 26 bytes from
+the body's end. `52` — one pair — was missing from the set until 2026-10-11,
+which is why a one-skill player had no shape to be written in. The parser's own
+skill reader searches at most three pairs, so a four-pair body at `58` reads as
+three and drops the first pair. **[D]**
 
 The live gameplay server writes a loadout's own fields at these offsets — the
 slot byte, the side, the appearance block and the pairs, over a recorded body of

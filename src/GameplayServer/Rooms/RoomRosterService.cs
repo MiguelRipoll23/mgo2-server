@@ -15,6 +15,7 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// <param name="hostIdentity">Identity this host presents to its peers.</param>
 public sealed class RoomRosterService(
     HostIdentityService hostIdentity,
+    MatchRecords.MatchRecordSequenceService sequences,
     ILogger<RoomRosterService> logger)
 {
     /// <summary>Roster slot of the first joining player.</summary>
@@ -57,14 +58,17 @@ public sealed class RoomRosterService(
     /// </remarks>
     public const ushort HostEntryType = UdpCommandConstants.JoinRequest;
 
+    /// <summary>
+    /// Identifier the roster exchange is numbered on. Every record it writes — the
+    /// head, the host's own entry, the joining players' profiles — is this
+    /// identifier's low twelve bits, and the counter itself lives in
+    /// <see cref="MatchRecords.MatchRecordSequenceService"/> so that the controls
+    /// the match-record writers insert take the same sequence.
+    /// </summary>
+    public const ushort ExchangeIdentifier = UdpCommandConstants.PlayerProfile;
+
     private readonly Lock gate = new();
     private readonly List<RosterMember> members = [];
-
-    /// <summary>
-    /// Fourth byte the next record of the roster exchange takes; see
-    /// <see cref="NextRunOrdinal"/>.
-    /// </summary>
-    private byte nextRunOrdinal;
 
     /// <summary>
     /// Takes the fourth byte the next record of the roster exchange carries, and
@@ -75,7 +79,10 @@ public sealed class RoomRosterService(
     /// The counter is one per identifier and every record under it consumes a
     /// value, which is why there is a take and no way to read it without taking
     /// one: a caller that pinned a value would write one a record before it has
-    /// already taken it. Measured on
+    /// already taken it. The counter is the room's and not this file's — the same
+    /// sequence numbers the <c>0xd001</c> controls the sparse phase and the beat
+    /// insert, which the captures write between the exchange's own records
+    /// (<see cref="MatchRecords.MatchRecordSequenceService"/>). Measured on
     /// `mgo2-game-joined-when-red-team-then-briefing`, whose live rounds carry
     /// every record of the roster identifier (<c>0x1001</c>) in one ascending
     /// sequence — the lobby-slot arrays take two consecutive values (23 and 24,
@@ -99,15 +106,15 @@ public sealed class RoomRosterService(
     /// </para>
     /// </remarks>
     /// <returns>The fourth byte the record takes.</returns>
-    public byte TakeRunOrdinal()
-    {
-        lock (gate)
-        {
-            var value = nextRunOrdinal;
-            nextRunOrdinal = unchecked((byte)(nextRunOrdinal + 1));
-            return value;
-        }
-    }
+    public byte TakeRunOrdinal() => sequences.Take(ExchangeIdentifier);
+
+    /// <summary>
+    /// Opens the exchange's counter at a value, for a room whose join has just
+    /// taken the values it carries. A stream already counting is left alone
+    /// (<see cref="MatchRecords.MatchRecordSequenceService.Seed"/>).
+    /// </summary>
+    /// <param name="value">Value the exchange's next record should take.</param>
+    public void SeedRunOrdinal(byte value) => sequences.Seed(ExchangeIdentifier, value);
 
     /// <summary>
     /// Takes the next values of the roster exchange's counter, in order, for a
@@ -120,17 +127,7 @@ public sealed class RoomRosterService(
     /// </remarks>
     /// <param name="count">How many records the caller is about to write.</param>
     /// <returns>The values, in the order the records take them.</returns>
-    public byte[] TakeRunOrdinals(int count)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(count);
-        var values = new byte[count];
-        for (var index = 0; index < count; index++)
-        {
-            values[index] = TakeRunOrdinal();
-        }
-
-        return values;
-    }
+    public byte[] TakeRunOrdinals(int count) => sequences.Take(ExchangeIdentifier, count);
 
     /// <summary>
     /// Adds or refreshes a peer on the roster, returning the slot it ended up in.
@@ -197,8 +194,9 @@ public sealed class RoomRosterService(
             // from zero: the head and the host's own entry read zero, the joining
             // players one upwards, and the close members.Count + 1. What follows
             // the run — the burst, the round's lobby-slot pair, the scoreboard —
-            // therefore starts here.
-            nextRunOrdinal = (byte)(members.Count + 2);
+            // therefore starts here, and the seed is left alone where the room's
+            // exchange has already counted past it.
+            SeedRunOrdinal((byte)(members.Count + 2));
 
             logger.LogDebug(
                 "Added roster member {RemoteAddress}: character {CharacterId}, slot {RosterIndex}; {JoinerCount} joiners",
@@ -277,33 +275,14 @@ public sealed class RoomRosterService(
     /// Builds the roster as profile records: the host's own entry first, then every
     /// joining player in slot order.
     /// </summary>
+    /// <remarks>
+    /// The shapes are <see cref="RoomRosterFramesUtils"/>'; this reads the room's
+    /// own members and hands them over as a snapshot, so a peer that joins while a
+    /// run is being built is in the next run and not in the middle of this one.
+    /// </remarks>
     /// <returns>One record body per entry, in send order.</returns>
-    public List<byte[]> BuildRecords()
-    {
-        List<RosterMember> ordered;
-
-        lock (gate)
-        {
-            ordered = [.. members.OrderBy(member => member.RosterIndex)];
-        }
-
-        var records = new List<byte[]>
-        {
-            PlayerProfileRecordUtility.Build(
-                isHostEntry: true,
-                PlayerProfileRecordUtility.HostRosterIndex,
-                (int)hostIdentity.PeerIdentifier,
-                hostIdentity.CharacterName,
-                hostIdentity.ClanName,
-                HostSessionSlot,
-                addressData: hostIdentity.AddressData,
-                unresolvedByte: PlayerProfileRecordUtility.HostEntryUnresolvedByte),
-        };
-        records.AddRange(ordered.Select(member => member.BuildRecord()));
-        return records;
-    }
-
-
+    public List<byte[]> BuildRecords() =>
+        RoomRosterFramesUtils.BuildRecords(Snapshot(), hostIdentity);
 
     /// <summary>
     /// Builds the roster run as it goes on the wire: empty head, the host's own
@@ -311,60 +290,17 @@ public sealed class RoomRosterService(
     /// <see cref="UdpCommandConstants.PlayerProfile"/>, and the close record last.
     /// </summary>
     /// <returns>The records in send order, each with the type it travels as.</returns>
-    public List<RosterRecord> BuildRosterRun()
-    {
-        var entries = BuildRecords();
-        var run = new List<RosterRecord>(entries.Count + 2)
-        {
-            new(UdpCommandConstants.RosterHead, [], 0),
-            new(HostEntryType, entries[0], 0),
-        };
-
-        // Each joining player carries its slot: the first reads one, so the
-        // count runs from the host's own entry rather than from the head.
-        for (var index = 1; index < entries.Count; index++)
-        {
-            run.Add(new(UdpCommandConstants.PlayerProfile, entries[index], (byte)index));
-        }
-
-        run.Add(new(
-            UdpCommandConstants.PlayerProfile,
-            PlayerProfileRecordUtility.BuildRosterClose(),
-            (byte)entries.Count));
-        return run;
-    }
+    public List<RosterRecord> BuildRosterRun() =>
+        RoomRosterFramesUtils.BuildRun(Snapshot(), hostIdentity);
 
     /// <summary>
     /// Builds the copy of a roster run that the recorded host sends immediately
     /// after the run itself: the same records in the same order, with the empty
     /// head record left off.
     /// </summary>
-    /// <remarks>
-    /// The live host sends every roster run twice. The second copy opens on the
-    /// host's own entry rather than on <see cref="UdpCommandConstants.RosterHead"/>,
-    /// and reaches the peer 0.7 to 0.9 ms after the first — 117 µs after it at the
-    /// join itself.
-    ///
-    /// What the capture settles is the shape and the fact of the second copy, and
-    /// not what schedules it. It is not a retransmission of a lost frame: the two
-    /// go out on consecutive outbound sequences 56 to 68 frames apart, with the
-    /// tick stream filling the gap, so the second is a new datagram rather than
-    /// the same frame sent again. It is not acknowledgement-driven either — the
-    /// joiner acknowledged sequence 1 twenty-seven times over the round and
-    /// sequence 2, which is what the run travels as, never once — and the first
-    /// acknowledgement of any kind arrives some 66 ms after the run this method
-    /// repeats.
-    ///
-    /// So it is sent unconditionally, and nothing here waits for a peer to
-    /// confirm it. What ends the repetition is **[U]**: no inbound record marks
-    /// the end of a run's second copy in the capture, and the host's own
-    /// acknowledgements never cover these sequences.
-    /// </remarks>
     /// <returns>The records of the run without its head, ready to be sent.</returns>
     public List<RosterRecord> BuildRosterRunRepeat() =>
-    [
-        .. BuildRosterRun().Where(record => record.Type != UdpCommandConstants.RosterHead),
-    ];
+        RoomRosterFramesUtils.BuildRunRepeat(Snapshot(), hostIdentity);
 
     /// <summary>
     /// Builds the bare head record the recorded host sends after the run and its

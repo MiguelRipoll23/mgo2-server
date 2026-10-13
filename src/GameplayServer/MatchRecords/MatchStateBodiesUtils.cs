@@ -120,8 +120,23 @@ public static class MatchStateBodiesUtils
     /// 141 blobs, which is why the record is built rather than copied twice.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The capture's measurement, not a mapping: the replay parser does not
     /// dispatch the blob's identifier.
+    /// </para>
+    /// <para>
+    /// <b>The identifier carries more than this one shape, and the class byte
+    /// moves with the value.</b> Measured over the six captures, <c>0x0002</c>
+    /// appears under <b>nineteen</b> fourth-byte values — every value from
+    /// <c>0x01</c> to <c>0x12</c>, and <c>0x15</c> — and the trailing value is
+    /// not one number per phase: game1
+    /// carries <c>0x0032</c>, <c>0x0045</c>, <c>0x005d</c>, <c>0x0062</c> and
+    /// <c>0x0063</c> as well as the sparse 100. So "only the value moves across
+    /// the round's blobs", as an earlier reading here had it, is true of *this*
+    /// shape and not of the identifier. What the other shapes are is **[U]**;
+    /// this host writes the two it can name (the sparse 100 under <c>0x01</c> and
+    /// the steady zero under <c>0x15</c>) and no value it cannot.
+    /// </para>
     /// </remarks>
     /// <param name="value">Value the blob's trailing field carries.</param>
     /// <returns>The record body.</returns>

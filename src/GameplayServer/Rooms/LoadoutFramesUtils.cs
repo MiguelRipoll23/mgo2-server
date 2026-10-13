@@ -51,7 +51,11 @@ public static class LoadoutFramesUtils
     /// <summary>Offset of the record's side byte.</summary>
     public const int SideByteOffset = 0x02;
 
-    /// <summary>Offset of the byte that sizes the run of bytes before the appearance block.</summary>
+    /// <summary>
+    /// Offset of the byte the decoder reads as the region's size, which is the
+    /// constant <c>2</c> in every body the captures hold — see
+    /// <see cref="BodyLengthWithoutPairs"/> for why it is not a count.
+    /// </summary>
     public const int SkillCountOffset = 0x16;
 
     /// <summary>Offset of the skill region's first byte, which a skills-bearing body opens with <c>0xff</c>.</summary>
@@ -70,11 +74,60 @@ public static class LoadoutFramesUtils
     public const int AppearanceLength = 23;
 
     /// <summary>
-    /// Skill pairs a loadout record can carry: three. The game's own bodies carry
-    /// none, two or three, and the body's length follows from the count, so a
-    /// player with four equipped skills has no shape to be written in and is
-    /// announced with the recorded body instead.
+    /// Length of a loadout record carrying no skill pairs, in bytes.
     /// </summary>
+    /// <remarks>
+    /// <b>The record's length is the pair count, not a set of lengths to
+    /// choose from.</b> The region between the header and the appearance block is
+    /// a leading marker, two bytes per pair, and the list end; the run between the
+    /// list end and the appearance block is two bytes, so the list end always sits
+    /// <see cref="ListEndFromBodyEnd"/> bytes from the body's end and the body is
+    /// <see cref="BodyLengthFor"/> long. That is what the replay console's
+    /// length list encodes, and it is why a shape for a pair count the captures
+    /// never held can be written rather than looked for.
+    /// </remarks>
+    public const int BodyLengthWithoutPairs = 50;
+
+    /// <summary>
+    /// Bytes a loadout record grows by for each skill pair it carries: the pair
+    /// itself, behind the region's leading marker.
+    /// </summary>
+    public const int BytesPerPair = 2;
+
+    /// <summary>
+    /// Distance from the end of a loadout body to the list end that closes its
+    /// skill region: the region's own leading marker and closing byte, the two
+    /// bytes the run behind the list end occupies, and the appearance block.
+    /// </summary>
+    public const int ListEndFromBodyEnd = 26;
+
+    /// <summary>
+    /// The length a loadout record of a pair count is written at.
+    /// </summary>
+    /// <param name="skillCount">Skill pairs the player's own skills make.</param>
+    /// <returns>The body length.</returns>
+    public static int BodyLengthFor(int skillCount) =>
+        BodyLengthWithoutPairs + (BytesPerPair * skillCount);
+
+    /// <summary>
+    /// Skill pairs a loadout record is written with: three.
+    /// </summary>
+    /// <remarks>
+    /// <b>Four is the open one, and it is a real gap rather than a limit.</b>
+    /// <see cref="TrySkillsOf"/> reads the four slots a character's skills are
+    /// saved in, so a player with four equipped skills is reachable and
+    /// <c>L = 58</c> is the length the rule above gives that shape —
+    /// <see cref="LoadoutBodiesUtils.FourthLoadout"/> builds it. It is not written
+    /// yet, for two reasons stated where they belong: no capture and no replay file
+    /// holds a body of that length, so the shape is arithmetic and not an
+    /// observation; and the replay console's own skill reader
+    /// (<c>rpdt.js</c>, <c>skillRecord</c>) searches at most three pairs, so at
+    /// four it matches the trailing three, reads them, and **silently drops the
+    /// first pair** rather than refusing the record. Until a body of that length
+    /// is seen, a four-skill player is announced in his own slot behind the
+    /// no-pairs body, which loses his skills; the alternative risks a record the
+    /// peer cannot read at all.
+    /// </remarks>
     public const int MaximumSkills = 3;
 
     /// <summary>Highest skill identifier the replay parser's list names.</summary>

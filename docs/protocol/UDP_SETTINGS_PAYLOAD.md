@@ -37,10 +37,13 @@ entry on one datagram and a `0b` payload on the next (`UDP_GAME_CAPTURE.md` §4)
 The slot byte picks the shape:
 
 * `0x00` with `L >= 71` — the host's own settings/rotation record.
-* `>= 1` with `L` in `{50, 51, 53, 54, 55, 56, 57, 58}` — a player loadout,
-  whose slot is the byte minus one, so slot `0` is the same first joining player
-  the roster counts from zero. The host itself is the rotation record, never a
-  loadout (`rpdt.js` requires `b[a + 1] >= 1`). **[V]**
+* `>= 1` with `L` in `{50..62}` — a player loadout, whose slot is the byte minus
+  one, so slot `0` is the same first joining player the roster counts from zero.
+  The host itself is the rotation record, never a loadout (`rpdt.js` requires
+  `b[a + 1] >= 1`). The set is the pair count's own arithmetic, not a list of
+  shapes: `L = 50 + 2·pairs`, plus one when the region carries the `0x10` suffix,
+  so `52` is one pair and `59` is four pairs with the suffix. **[D]** for the
+  rule; **[V]** for the slot byte.
 
 ## When they arrive — and whose body the slot-0 loadout is
 
@@ -98,16 +101,27 @@ hold — and what the peer does with it is still **[U]**.
   9/7, 12/7, 3/7, 17/7, 4/7, 8/7, 1/7, 13/7` — one mode repeated, a single-rule
   rotation (`rpdt.js`'s `TSNE_RULE` is `7`). **[V]**
 
-## The loadout record — `0b <slot + 1>`, `L` in 50–58
+## The loadout record — `0b <slot + 1>`, `L` in 50–62
 
 | offset | size | field |
 | --- | --- | --- |
 | `0x00` | 1 | `0x0b` |
 | `0x01` | 1 | slot + 1 |
 | `0x02` | 1 | team byte |
-| `0x16` | 1 | skill-count byte that sizes the skill region |
+| `0x16` | 1 | the constant `2` — see below |
 | `L - 23` | 23 | appearance block |
-| `0x17 .. L - 24` | var | skill pairs |
+| `0x17 .. L - 26` | var | skill region: marker, pairs, list end |
+
+**The length is the pair count, and `0x16` is not a count.** The region between
+the header and the appearance block is a leading marker, two bytes per pair and
+the list end, and the run between the list end and the appearance block is two
+bytes, so the list end always sits `26` bytes from the body's end and the body is
+`50 + 2·pairs` long. `rpdt.js` reads the byte at `0x16` as a size and computes
+the list end from it, which is why it looks like a count; over every body the
+captures hold it is `2`, and `2` is what makes the list end land `26` bytes out.
+**[D]** — the rule, from the three recorded bodies, whose `0x16`, list end and
+pair counts are `2 / 24 / 0`, `2 / 28 / 2` and `2 / 30 / 3` at lengths `50`, `54`
+and `56`.
 
 ### Appearance — the trailing 23 bytes
 
@@ -140,14 +154,31 @@ rows put on no side keeps the recorded `02`, which is also what side `1` codes t
 **[V]** for the mapping over the 30 files; **[I]** for reading this byte as the
 player's side in the room the record is sent to.
 
-**Three shapes, and no fourth.** A body's length is 49 bytes plus its skill
-region, and the region is `0xff` and one pair per two bytes (an optional `0x10`
-suffix aside), so the lengths the decoder accepts leave exactly three shapes: no
-pair (`0b 01`, 50 B), two pairs (54 B) and three pairs (56 B). The accepted set
-contains no 52, which is the length a single pair would need, and a body with four
-pairs would decode as garbage because the decoder reads three pairs from the
-region's end; a character whose equipped skills are neither none, two nor three has
-no body to be written in. **[V]** for the shapes and the arithmetic.
+**Five shapes the captures hold, and two the captures do not.** The length rule
+above gives every pair count a body: no pair (`0b 01`, 50 B), one (52 B), two
+(54 B), three (56 B) and four (58 B). The captures hold the zero-, two- and
+three-pair bodies, so those are byte for byte what the game wrote
+(`LoadoutBodiesUtils`); the one- and four-pair shapes are built from them, by
+opening room for the extra pair behind the region's leading marker — every other
+byte is the recorded body's, and the opened slots are the pair bytes themselves,
+which the burst overwrites with the player's own.
+
+**The one-pair shape is the one that mattered.** `52` was missing from the
+decoder's length list, so a player with exactly one equipped skill had no shape
+to be written in and was announced with a different player's skill count. The
+working-tree `LOADOUT_LEN` adds it, and the length rule says why it is needed at
+all.
+
+**Four pairs is open, and it is a real gap.** A character's equipped skills are
+saved in four slots, so four is reachable and `58` is its length. No capture and
+no replay file holds a body of that length, so the shape is arithmetic and not an
+observation; and the decoder's own skill reader searches at most three pairs, so
+at four it matches the trailing three, reads them, and **silently drops the first
+pair** rather than refusing the record. `LoadoutFramesUtils.MaximumSkills`
+therefore stays `3` until a body of that length is seen, and a four-skill player
+is announced in his own slot behind the no-pairs body instead. **[D]** for the
+rule and the lengths; **[V]** for the captured shapes; **[U]** for the four-pair
+body.
 
 **This is not this repository's own appearance order.** `PROTOCOL.md`'s 27-byte
 appearance struct runs `gender, face, upper, lower, face paint, upper colour,
@@ -163,11 +194,17 @@ gear ids, the same field the join request carries at body offset `0x11`. **[V]**
 
 ### Skills
 
-`skillRecord`: the count byte at `0x16` sizes the region, the region ends on
-`0xff`, an optional `0x10` suffix is dropped, and the pairs are then read back
-from the region's end as **three, two or one** `(skill id, level)` pairs — the
-first count whose ids all lie in 1..25 and levels in 1..3 wins. A region that
-cannot be aligned is *not* reported as "no skills". Ids are base 1, measured.
+`skillRecord`: the byte at `0x16` sizes the region, the region ends on `0xff`,
+an optional `0x10` suffix is dropped, and the pairs are then read back from the
+region's end as **three, two or one** `(skill id, level)` pairs — the first count
+whose ids all lie in 1..25 and levels in 1..3 wins. A region that cannot be
+aligned is *not* reported as "no skills". Ids are base 1, measured.
+
+**The three-pair cap is the decoder's, not the record's.** It is a search order
+over candidate counts, and it stops at three because no replay file held a body
+with more. At four pairs the search matches the trailing three and returns them,
+so the first pair is dropped rather than the record refused — which is why the
+four-pair shape is built but not yet written. **[D]**
 **[V]** for the alignment; **[I]** for the name an id maps to.
 
 Sample `mgo2-game1.pcapng` loadouts — **[V]** for the bytes:

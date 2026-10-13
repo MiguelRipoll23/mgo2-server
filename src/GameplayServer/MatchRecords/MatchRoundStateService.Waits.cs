@@ -100,6 +100,36 @@ public sealed partial class MatchRoundStateService
     }
 
     /// <summary>
+    /// Waits out one briefing tick: the period the caller names, or until the
+    /// round opens, whichever comes first, and returns early when the peer has
+    /// gone.
+    /// </summary>
+    /// <remarks>
+    /// <b>The round's own opening cuts the tick short.</b> The briefing writers run
+    /// beside the waits for the round and are awaited before the beat, so a tick
+    /// that slept its whole period after the round had opened would hold the beat's
+    /// first frame — and the item-box group and the vitals onset counted from it —
+    /// behind a timer nothing is waiting on. The poll is this class's own, so the
+    /// beat follows the run by at most it.
+    /// </remarks>
+    /// <param name="session">Session the waiting writer writes to.</param>
+    /// <param name="milliseconds">Length of the tick.</param>
+    public async Task WaitBriefingTickAsync(PeerSession session, int milliseconds)
+    {
+        var waited = 0;
+        while (!IsOpen && waited < milliseconds)
+        {
+            if (!MatchRecordPeerUtils.IsAlive(session))
+            {
+                return;
+            }
+
+            await Task.Delay(PollMilliseconds);
+            waited += PollMilliseconds;
+        }
+    }
+
+    /// <summary>
     /// Waits for a round to end, and returns early when the peer has gone.
     /// </summary>
     /// <param name="roundNumber">Round to wait for the end of.</param>

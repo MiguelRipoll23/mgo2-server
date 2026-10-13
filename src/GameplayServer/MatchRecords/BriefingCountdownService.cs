@@ -9,16 +9,15 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What this closes.</b> The room's briefing time was the deadline its round
-/// opens on and the duration it waits for a report that never comes, and it was
-/// sent to no client: <c>docs/GAMEPLAY_SERVER.md</c> §5 item 3 listed the
-/// countdown as the one thing on the wire that carries it and marked it unread.
-/// It is read now — the operations clock, opened on <b>128 units</b> and counting
-/// down to zero across the briefing, measured at 58.5 s in a room whose briefing
-/// is a minute (<see cref="BriefingCountdownBodiesUtils"/>). A client in a
-/// briefing waits either for every player to be ready or for its own timer, so
-/// the countdown is how it learns which of the two it is about to be, and a host
-/// that never sends it leaves every client timing its own silence.
+/// <b>What this closes.</b> A client in a briefing waits either for every player
+/// to be ready or for its own timer, so the countdown is how it learns which of the
+/// two it is about to be, and a host that never sends it leaves every client timing
+/// its own silence. What it is: the operations clock, opened on <b>128 units</b>,
+/// dropping <b>32 units</b> every four seconds and holding at zero from sixteen
+/// seconds in, which is the one full countdown any capture holds
+/// (<see cref="BriefingCountdownBodiesUtils"/>). It is a fixed sixteen seconds and
+/// not the room's briefing time: the capture's clock reaches zero about 45 s before
+/// the round it precedes opens.
 /// </para>
 /// <para>
 /// <b>It stops when the round opens, and that is the whole of its lifetime.</b>
@@ -27,16 +26,19 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// replaces it. A peer that arrives mid-round is served the round, not a
 /// briefing, and is sent no countdown at all.
 /// </para>
-/// <para>
-/// The clock is the room's own briefing time, read per record rather than
-/// captured once, so a briefing that opens late or runs to its deadline counts
-/// down against the time it actually has.
-/// </para>
+/// <para>    /// The clock is read per record rather than captured once, so a briefing that
+    /// opens late still counts its sixteen seconds from where it opened.
+    /// </para>
 /// </remarks>
 /// <param name="roundState">The room's round, whose opening is the countdown's end.</param>
+/// <param name="sequences">
+/// The stream counters the clock's fourth byte comes from: the briefing writes on
+/// the operations stream, the same one the round's own clock uses.
+/// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class BriefingCountdownService(
     MatchRoundStateService roundState,
+    MatchRecordSequenceService sequences,
     ILogger<BriefingCountdownService> logger)
 {
     /// <summary>
@@ -128,7 +130,6 @@ public sealed class BriefingCountdownService(
     public async Task PublishAsync(PeerContext context)
     {
         var session = context.Session;
-        var ordinal = (byte)0;
 
         while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
         {
@@ -137,13 +138,13 @@ public sealed class BriefingCountdownService(
                 return;
             }
 
-            var units = BriefingCountdownBodiesUtils.CountdownUnits(length - remaining, length);
+            var units = BriefingCountdownBodiesUtils.CountdownUnits(Length - remaining);
             try
             {
                 await context.Send(
                     CountdownIdentifier,
                     BriefingCountdownBodiesUtils.CountdownBody(units),
-                    ordinal++);
+                    sequences.Take(CountdownIdentifier));
             }
             catch (Exception exception)
             {
@@ -155,7 +156,10 @@ public sealed class BriefingCountdownService(
                 return;
             }
 
-            await Task.Delay(PublishPeriodMilliseconds);
+            // The tick ends the moment the round opens: this task is awaited
+            // before the beat, and a period slept out after the run was written
+            // would hold the beat's first frame behind it.
+            await roundState.WaitBriefingTickAsync(session, PublishPeriodMilliseconds);
         }
 
         logger.LogDebug(

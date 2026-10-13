@@ -1180,7 +1180,8 @@ period has to come from the count over a span.
 `MatchRecordFramesUtils` carries the measured bodies and order, and `MatchRecordService`
 replays them per peer, started once after the roster answer. Every recorded body it writes
 was checked byte for byte against the capture: the ninety-byte operations state block, the
-two 26-byte entries, the close pair, the 0x1ade payload, both state-blob values, the
+two 26-byte entries, the close **triple** — the pair and the seven-byte roster close behind
+them (§3.2) — the 0x1ade payload, both state-blob values, the
 operations clock body `01 20 0d` and the beat's `fa fa` pair all match, and the sparse
 phase's delay-and-body steps land on the capture's own frames (4.933 s, 9.729, 12.129,
 12.130, 14.500 … 42.246). The insertions repeat on the times measured in the beat: the two

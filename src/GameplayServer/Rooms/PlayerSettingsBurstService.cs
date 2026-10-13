@@ -32,7 +32,7 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// record belongs to: slot <c>0x00</c> with a body of 71 bytes or more is the
 /// room's settings block, from which the parser reads fifteen rotation triples
 /// at body <c>+26</c> — map id, mode, and an unresolved byte; a slot of
-/// <c>0x01</c> or more with a length in 50…58 is a player's loadout, carrying
+/// <c>0x01</c> or more with a length in 50…62 is a player's loadout, carrying
 /// its team byte, its appearance and its skills (<c>docs/analysis/replay-console/rpdt.js</c>,
 /// laid out in <c>docs/protocol/UDP_SETTINGS_PAYLOAD.md</c> and mapped in
 /// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>). The recorded room's 161-byte body
@@ -228,14 +228,17 @@ public sealed class PlayerSettingsBurstService(
             return body;
         }
 
-        // A skill count no captured body carries — the game's own loadout has
-        // four slots, and its records hold none, two or three pairs — has no
-        // length to write, and a body written at the wrong length is one the peer
-        // reads as nothing. The player is still named, in its own slot, with the
-        // recorded body behind that one byte.
+        // A skill count no shape is written for. Every count from none to three
+        // has one — the captured bodies for none, two and three, and the built
+        // one for a single pair, which the captures never held — so this is a
+        // player with four equipped skills, whose length the rule gives and no
+        // capture confirms. A body written at the wrong length is one the peer
+        // reads as nothing, and the decoder's own skill reader stops at three
+        // pairs, so the player is still named, in its own slot, with the recorded
+        // no-pairs body behind that one byte.
         logger.LogWarning(
-            "Player in slot {Slot} has {SkillCount} equipped skill(s), which no recorded loadout body has a "
-            + "shape for; the recorded body is written behind its own slot byte instead",
+            "Player in slot {Slot} has {SkillCount} equipped skill(s), which no loadout body is written for; "
+            + "the recorded no-pairs body is written behind its own slot byte instead",
             loadout.Slot,
             loadout.Skills.Count);
 

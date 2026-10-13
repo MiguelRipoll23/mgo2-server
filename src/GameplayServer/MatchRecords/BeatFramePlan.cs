@@ -35,7 +35,6 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// vitals record's onset is gated on in place of the capture's frame count
 /// (<see cref="MatchRoundStateService.VitalsArrived"/>).
 /// </param>
-/// <param name="SessionFlags2">Session-record flags2 this frame's insertion carries.</param>
 /// <param name="BlobsWritten">State blobs the round has written so far.</param>
 /// <param name="ItemBoxSequence">
 /// Fourth byte the frame's first item-box record carries, when the frame carries
@@ -50,53 +49,100 @@ public sealed record BeatFramePlan(
     MatchRecordGenerationUtils Generation,
     int RoundClockUnits,
     bool VitalsOnset,
-    byte SessionFlags2,
     int BlobsWritten,
     byte ItemBoxSequence,
     byte ItemBoxStateSequence)
 {
     /// <summary>
-    /// The head insertion for this frame, or <c>null</c> when the capture shows
-    /// none at this index.
+    /// Which insertion this frame carries, decided from its index alone.
     /// </summary>
-    public MatchRecordFramesUtils.RecordMessage? Insertion
+    private BeatInsertion InsertionKind
     {
         get
         {
             if (FrameIndex % MatchRecordFramesUtils.OperationsPeriodFrames == 0)
             {
-                return MatchRecordFramesUtils.OperationsInsertion(
-                    Generation,
-                    alternate: false,
-                    SessionFlags2,
-                    RoundClockUnits);
+                return BeatInsertion.Operations;
             }
 
             if (FrameIndex % MatchRecordFramesUtils.OperationsClassBitPeriodFrames
                 == MatchRecordFramesUtils.OperationsClassBitPhaseFrames)
             {
-                return MatchRecordFramesUtils.OperationsInsertion(
-                    Generation,
-                    alternate: true,
-                    SessionFlags2,
-                    RoundClockUnits);
+                return BeatInsertion.OperationsClassBit;
             }
 
             if (FrameIndex % MatchRecordFramesUtils.StateBlobPeriodFrames == 0)
             {
-                // The first recorded insertion is the zero-valued 40-byte frame
-                // (hdr 0x8648), followed by the 100-valued 41-byte frame;
-                // preserve that measured alternation.
-                return MatchRecordFramesUtils.StateBlobInsertion(live: BlobsWritten % 2 != 0);
+                return BeatInsertion.StateBlob;
             }
 
             return FrameIndex % MatchRecordFramesUtils.ControlPeriodFrames == 0
-                ? MatchRecordFramesUtils.ControlInsertion(
-                    MatchRecordFramesUtils.SteadyControlBody(),
-                    SessionFlags2)
-                : null;
+                ? BeatInsertion.Control
+                : BeatInsertion.None;
         }
     }
+
+    /// <summary>The insertion kinds a beat frame can open on.</summary>
+    private enum BeatInsertion
+    {
+        /// <summary>The frame opens on the rules pair alone.</summary>
+        None,
+
+        /// <summary>The round's clock, under the operations identifier.</summary>
+        Operations,
+
+        /// <summary>The round's clock, under the class-bit form.</summary>
+        OperationsClassBit,
+
+        /// <summary>A state blob, under its own identifier and attribute class.</summary>
+        StateBlob,
+
+        /// <summary>A control byte, under the room's own control identifier.</summary>
+        Control,
+    }
+
+    /// <summary>
+    /// The head insertion for this frame, or <c>null</c> when the capture shows
+    /// none at this index.
+    /// </summary>
+    /// <remarks>
+    /// <b>The fourth byte is taken here and not passed in.</b> A clock record and a
+    /// control record are numbered on different streams — the round's operations
+    /// id and the room's exchange id — so the value is taken at the moment the
+    /// record is written, from the counter of the identifier it travels under
+    /// (<see cref="MatchRecordSequenceService"/>). Taking it for a frame that
+    /// carries no such insertion would spend a value the capture never writes.
+    /// </remarks>
+    /// <param name="sequences">The stream counters the record's fourth byte comes from.</param>
+    /// <returns>The insertion record, or <c>null</c>.</returns>
+    public MatchRecordFramesUtils.RecordMessage? Insertion(MatchRecordSequenceService sequences) =>
+        InsertionKind switch
+        {
+            BeatInsertion.Operations => MatchRecordFramesUtils.OperationsInsertion(
+                Generation,
+                alternate: false,
+                sequences.Take(Generation.Operations),
+                RoundClockUnits),
+            BeatInsertion.OperationsClassBit => MatchRecordFramesUtils.OperationsInsertion(
+                Generation,
+                alternate: true,
+                sequences.Take(Generation.OperationsClassBit),
+                RoundClockUnits),
+
+            // The first recorded insertion is the zero-valued 40-byte frame
+            // (hdr 0x8648), followed by the 100-valued 41-byte frame; preserve
+            // that measured alternation.
+            BeatInsertion.StateBlob => MatchRecordFramesUtils.StateBlobInsertion(live: BlobsWritten % 2 != 0),
+
+            // The control takes the room's exchange counter, not the clock's: the
+            // capture's controls sit inside the id-1 sequence, between the roster
+            // records that share it.
+            BeatInsertion.Control => MatchRecordFramesUtils.ControlInsertion(
+                MatchRecordFramesUtils.SteadyControlBody(),
+                sequences.Take(Shared.Constants.UdpCommandConstants.InGameControl)),
+
+            _ => null,
+        };
 
     /// <summary>
     /// Whether the item-box group rides in this frame, behind the rules pair. It
@@ -143,7 +189,7 @@ public sealed record BeatFramePlan(
     /// compressed would mark frames the peer saw unmarked.
     /// </remarks>
     public bool Compressed =>
-        Insertion is { Type: UdpCommandConstants.GameStateBlob } || CarriesItemBoxes;
+        InsertionKind == BeatInsertion.StateBlob || CarriesItemBoxes;
 
     /// <summary>
     /// Whether the vitals record rides in this frame.
@@ -163,24 +209,12 @@ public sealed record BeatFramePlan(
     /// Whether this frame's insertion is a state blob, which is what advances
     /// the round's blob count and so its zero/live alternation.
     /// </summary>
-    public bool CarriesStateBlob => Insertion is { Type: UdpCommandConstants.GameStateBlob };
-
-    /// <summary>
-    /// Whether this frame's insertion carries the session-flags2 byte, and so
-    /// advances the round's flags2 counter.
-    /// </summary>
-    /// <remarks>
-    /// The clock and control insertions do; the state blob does not. That is the
-    /// capture's own split — the blob rides under a fourth byte of its own — so
-    /// counting every insertion alike would advance the counter on frames the
-    /// recorded host never moved it on.
-    /// </remarks>
-    public bool CarriesSessionFlags => Insertion is { } insertion
-        && insertion.Type != UdpCommandConstants.GameStateBlob;
+    public bool CarriesStateBlob => InsertionKind == BeatInsertion.StateBlob;
 
     /// <summary>
     /// The records of this frame, in send order.
     /// </summary>
+    /// <param name="sequences">The stream counters the insertions' fourth bytes come from.</param>
     /// <remarks>
     /// <b>The item-box group rides behind the rules pair.</b> game1's round-1
     /// item-box frames read <c>0a61 0a61 1a50 … 1a5a …</c> with the pair first,
@@ -192,10 +226,10 @@ public sealed record BeatFramePlan(
     /// answers first; see <see cref="MatchRecordFramesUtils.BeatFrame"/>.
     /// </remarks>
     /// <returns>The frame's records.</returns>
-    public List<MatchRecordFramesUtils.RecordMessage> Records()
+    public List<MatchRecordFramesUtils.RecordMessage> Records(MatchRecordSequenceService sequences)
     {
         var insertions = new List<MatchRecordFramesUtils.RecordMessage>();
-        if (Insertion is { } insertion)
+        if (Insertion(sequences) is { } insertion)
         {
             insertions.Add(insertion);
         }

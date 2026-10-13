@@ -101,7 +101,7 @@ var TYPE_DAMAGE = 0x00, TYPE_STATE = 0x01, TYPE_POS = 0x02, TYPE_HEALTH = 0x03,
 var TEAM_ARRAY_TYPES = [0x85, 0x86], TEAM_ARRAY_LEN = 26, TEAM_ARRAY_SLOTS = 24,
     TEAM_ARRAY_OCCUPIED = 0x07;
 var TSNE_RULE = 7, WEAPON_SNEAK = 16;
-var LOADOUT_LEN = [50, 51, 53, 54, 55, 56, 57, 58];
+var LOADOUT_LEN = [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62];   // 52 and 59 seen 2026-10-11 (match 69641 Jotei; UU TSNE built-in, Lust For Life): the list used to stop short and those players had no look and no skills. 60-62 allowed ahead of need.
 var SKILL_APPEARANCE = 23, SKILL_LIST_END = 0xff, SKILL_REGION_SUFFIX = 0x10;
 var SKILL_NAMES = ['HAND_MAS', 'SBMC_MAS', 'ASSLT_MAS', 'SHOT_MAS',
   'SNIPPER_MAS', 'ZOOM', 'LOCKON', 'THROW', 'TRAP', 'CQC', 'KNIFE', 'FASTMOV',
@@ -878,7 +878,7 @@ function parse(buf, filename, opts) {
                        dv.getFloat32(a + ro, true)];
           }
           S.pvar.push([vid, t, L, px, py, pz, pyaw, b[a + 1], b[a + 2], kd,
-                       anchor, ragdoll]);
+                       anchor, ragdoll, L === 39 ? b[a + 3] : null]);
           // DESTABILIZED. The one-byte trailer of the LEN 15 (v2: 18) form. Over 158 SaveMGO files it is 0x00-0x16 or 0xff
           // everywhere EXCEPT match 52613, where from 0.2 s after the destabilizer goes off (161.5 s) until each is knocked
           // out, exactly the five living enemies carry 0x2a-0xf3 (one value each: b7, cd, f3, b8, ec) on every sample -
@@ -928,7 +928,10 @@ function parse(buf, filename, opts) {
                         dv.getInt16(a + 6, true)],
                        [dv.getInt16(a + 8, true), dv.getInt16(a + 10, true),
                         dv.getInt16(a + 12, true)]]);
-      } else if (ty === TYPE_DAMAGE && (L === 12 || L === 16)) {
+      // L 29 = an EXPLOSION hit (2026-10-10; layout from doos's notes, checked on replay_352519_7: 37 records, kind 0x13, weapon
+      // 52): the 12-byte head, then 01 01 00, then THREE FLOATS = the VICTIM's own position (stored z, y, x - NOT the blast centre: that is the head's own point, as in the short form), then 2 bytes. Newer-format files
+      // send every grenade hit this way; it used to be dropped, so those matches had no real blast point at all.
+      } else if (ty === TYPE_DAMAGE && (L === 12 || L === 16 || L === 29)) {
         if (b[a + 2]) nDmg2++;
         S.dmg.push({ vid: vid - VID_DAMAGE, t: t, a: a, L: L });
       }
@@ -1455,6 +1458,9 @@ function parse(buf, filename, opts) {
         stateFlags: r[7], motionState: r[8],
         motionName: mname === undefined ? null : mname,
         knockdownCount: r[9],
+        // ROLL DIRECTION (39-byte roll rows; the byte after the state byte). MEASURED 2026-10-11 on 70 files + live rolls:
+        // in state 3 (a roll while aiming) 1 = forward dive, 2 = left, 3 = back hop, 4 = right. No meaning in state 2.
+        rollDir: r[12] == null ? null : r[12],
         // WHAT HE HOLDS AND DOES while only this form is sent (2026-10-10, replay_352519_7: a player back on his feet after a
         // blast drew his M4, crouched and fired for 1.3 s, all inside 45-byte rows - the item and action records keep coming)
         item: (function (it) { return it === undefined ? null : it[0]; })(carryGet(S2.item, vid, r[1])),
@@ -1527,6 +1533,8 @@ function parse(buf, filename, opts) {
                  impact: [dv.getInt16(d.a + 6, true), dv.getInt16(d.a + 8, true),
                           dv.getInt16(d.a + 10, true)],
                  bearing: d.L === 16 ? dv.getUint16(d.a + 14, true) * 2 * Math.PI / 65536 : null,
+                 blast: d.L === 29 ? [dv.getFloat32(d.a + 15, true), dv.getFloat32(d.a + 19, true), dv.getFloat32(d.a + 23, true)] : null,
+                 attackerSlot: d.L === 29 ? (b[d.a + 3] & 31) : null,
                  attackerVid: null, bearingErr: null, runnerUpErr: null,
                  ambiguous: null, deadSkipped: 0 });
     });
@@ -2043,7 +2051,9 @@ function parse(buf, filename, opts) {
       dmg.forEach(function (e) {
         var pi = pidx(S2, e.vid);
         var ai = e.attackerVid === null ? null : pidx(S2, e.attackerVid);
+        if (ai === null && e.attackerSlot !== null && e.attackerSlot !== undefined) { var as_ = slotPlayer(e.attackerSlot, e.t); if (as_ !== null && as_ !== undefined) ai = as_; }
         events.push({ t: round((e.t - t0) / 1000, 3), type: 'damage',
+                      victimAt: e.blast ? [round(e.blast[2], 1), round(e.blast[1], 1), round(e.blast[0], 1)] : null,
                       killer: ai, victim: pi, weapon: e.weapon,
                       weaponName: itemName(e.weapon),
                       amount: round(e.damage, 2), subtype: e.subtype,

@@ -94,6 +94,7 @@ public sealed partial class MatchStartRunService(
     MatchScoreService score,
     MatchResultService results,
     BriefingCountdownService countdown,
+    MatchRecordSequenceService sequences,
     ILogger<MatchStartRunService> logger)
 {
     private readonly Lock gate = new();
@@ -111,6 +112,23 @@ public sealed partial class MatchStartRunService(
 
     private int briefingNumber;
     private ushort? lastReportIdentifier;
+
+    /// <summary>
+    /// Identifier the room's briefing last heard a report on, or <c>null</c> while
+    /// the briefing current has heard from nobody. It is the generation the round
+    /// will open under, and so the one the ready set is published under while the
+    /// room waits (<see cref="BriefingReadyPublishService"/>).
+    /// </summary>
+    public ushort? LastReportIdentifier
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastReportIdentifier;
+            }
+        }
+    }
 
     /// <summary>
     /// Opens the room's round, under the identifier set the report that asked
@@ -193,6 +211,15 @@ public sealed partial class MatchStartRunService(
             // round already playing is the same round and not another one.
             return false;
         }
+
+        // The round opens its own operations stream. The run's three records take
+        // the first values and the beat's clocks go on from there — the recorded
+        // run carries 00 01 02 and its beat 03 — and the briefing's clock, which
+        // wrote under the same identifier, is behind this point. A round whose
+        // generation is the other one opens a stream of its own, because the
+        // sibling bit is inside the keyed twelve
+        // (<see cref="MatchRecordSequenceService.StreamOf"/>).
+        sequences.Restart(generation.Operations);
 
         // The round's score starts empty: the previous round's kills and deaths
         // are not this one's, and the scoreboard is a per-round board.

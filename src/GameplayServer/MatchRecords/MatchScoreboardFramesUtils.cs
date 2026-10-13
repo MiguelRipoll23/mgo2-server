@@ -12,10 +12,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// stream the roster identifiers share</b>, and its body opens on the settings
 /// discriminator <c>0x0b</c> like the loadout and rotation payloads beside it.
 /// What tells it apart is its length: the replay parser reads a slot of one or
-/// more with a body in 23…45 as a scoreboard delta, a body in 50…58 as a loadout
+/// more with a body in 23…45 as a scoreboard delta, a body in 50…62 as a loadout
 /// and a slot of zero with 71 bytes or more as the room's rotation
 /// (<c>docs/analysis/replay-console/rpdt.js</c>, mapped in
-/// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>).
+/// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>). A loadout's length is its pair
+/// count's arithmetic — <c>L = 50 + 2·pairs</c> — so the two ranges never meet.
 /// </para>
 /// <para>
 /// The body is <c>[0x0b, lobby slot + 1, 21-byte bit mask (LSB first), one value

@@ -51,6 +51,12 @@ public sealed partial class MatchStartRunService
         // client that never received this either. It is the operations clock
         // opened on 128 units, counted down against this same briefing time
         // (`BriefingCountdownBodiesUtils`, `docs/protocol/STATE_VECTOR.md` §4).
+        //
+        // The briefing writes it on the operations stream, which it opens: the
+        // capture's briefing clock starts at 00 and its round's run opens the same
+        // stream again, so the stream is restarted here rather than continued from
+        // the round before it.
+        sequences.Restart(BriefingCountdownService.Identifier);
         countdown.Begin(DateTimeOffset.UtcNow, settings.BriefingTimeMinutes);
 
         _ = OpenWhenBriefingEndsAsync(briefing, settings.BriefingTimeMinutes);

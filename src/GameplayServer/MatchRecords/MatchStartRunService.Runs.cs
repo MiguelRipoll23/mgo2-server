@@ -151,19 +151,29 @@ public sealed partial class MatchStartRunService
         // 125 ms tick.
         var remainingUnits = roundState.RemainingUnits;
 
-        // The pair's two index bytes are the roster exchange's own counter's next
-        // two values: the join's records and the burst took the ones before them,
-        // and every record written under that identifier behind this one takes
-        // the next, which is what the captured stream does
-        // (docs/protocol/GAMEPLAY_SERVER.md §7).
-        var pairOrdinals = roster.TakeRunOrdinals(2);
+        // The run's own 0x1001 identifiers take the roster exchange's counter's
+        // next five values: the join's records and the burst took the ones before
+        // them, and every record written under those identifiers behind this one
+        // takes the next, which is what the captured stream does — its run
+        // carries 7 and 8 for the two arrays and 9, 10 and 11 for the close
+        // triple behind them (docs/protocol/GAMEPLAY_SERVER.md §7).
+        var runOrdinals = roster.TakeRunOrdinals(5);
+
+        // The run's operations records take the round's own stream's first values.
+        // The stream was restarted where the round opened (OpenRound), so the block
+        // reads 00, the record behind it 01 and the clock 02, and the beat's own
+        // clocks go on from 03 — the numbering the capture's run and its beat show.
+        var operationsOrdinals =
+            sequences.Take(generation.Operations, MatchStartRunFramesUtils.OperationsRecordCount);
 
         var run = MatchStartRunFramesUtils.BuildRun(
             generation,
             reported,
             Rooms.TeamArrayFramesUtils.OpeningSequence,
-            (pairOrdinals[0], pairOrdinals[1]),
+            runOrdinals,
+            operationsOrdinals,
             slots,
+            ready.PresenceMask,
             remainingUnits);
 
         logger.LogInformation(

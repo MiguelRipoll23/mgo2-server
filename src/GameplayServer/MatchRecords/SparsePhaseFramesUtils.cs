@@ -6,8 +6,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// The sparse phase: the records a peer is written before any round exists, one
 /// step per set of them and the measured wait between two steps.
 /// </summary>
-    /// <remarks>
-    /// <para>
+/// <remarks>
+/// <para>
     /// <b>It is split from the beat because it is replayed and the beat is not.</b>
     /// The steps below are the recorded host's own draw of its channel while it waits
     /// for the room to report ready — the timings and bodies are read off
@@ -57,12 +57,24 @@ public static class SparsePhaseFramesUtils
     /// to back.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <b>The phase ends at the last state blob and the run does not follow it.</b>
     /// The run is not a step of this list: it waits for the client's readiness
     /// report, and the captured client sent it 1.66 s after the phase closed — so
     /// the run lands at the capture's t+46.4 s rather than the phase's t+42.2 s,
     /// and only because the client asked. <see cref="MatchStartRunService"/> writes
     /// it on that report.
+    /// </para>
+    /// <para>
+    /// <b>The controls' fourth bytes are the capture's own values and not the
+    /// exchange's counter.</b> They read <c>02</c>…<c>09</c> across the phase, and
+    /// those values overlap the ones the join's run and its burst take from the
+    /// room's exchange (<c>00</c>–<c>02</c> and <c>03</c>–<c>06</c> under a
+    /// one-player roster), so a stream that took them from
+    /// <see cref="MatchRecordSequenceService"/> would number them differently from
+    /// the capture. They are pinned for that reason, not by oversight; what the
+    /// values mean is **[U]**.
+    /// </para>
     /// </remarks>
     /// <returns>The steps in send order, ending at the last state blob.</returns>
     public static List<RecordStep> SparseSteps() =>

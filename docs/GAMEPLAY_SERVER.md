@@ -106,7 +106,13 @@ the four payload identifiers
 the report can arrive on, records the byte against the peer, and **publishes the
 room's ready set back** as one `e0 <byte>` record per reporting player, each
 under its own fourth byte. The publication goes out on every report, not only the
-first: a client whose report changed nothing is still waiting to be answered.
+first: a client whose report changed nothing is still waiting to be answered. It
+also **repeats while the briefing waits** (`BriefingReadyPublishService`), which
+is what the captures show the host doing — `started-on-briefing` answers at
+t+56.123 and repeats at t+60.383, answers at t+112.619 and repeats at t+114.978,
+and so on for the other two reports, 2.4–4.3 s apart, with its round still 40 s
+out. Without the repeat, a client whose report was heard and whose room is still
+waiting on another player has nothing on the wire that says so.
 
 The round opens when the room is ready, and "ready" is a measure of the room's
 membership rather than of a chosen interval:
@@ -148,11 +154,13 @@ round as a late joiner is (§4.1).
 ### 2.5 The round
 
 **The opening run** is written per peer, five times (once and four repeats), in
-one compressed frame: the marker, the payload echoing that peer's own reported
-byte, the two lobby-slot arrays — which name the room's own players, each in the
-slot it holds and on the side the room's rows put it — the presence answer, the
-operations state block and clock, the two-byte operations record, the
-rules pair and the close pair (`MatchStartRunFramesUtils`). Everything in it that is measured as an offset
+one compressed frame: the marker, the two empty roster heads, the operations
+state block and the two-byte record behind it, the two lobby-slot arrays — which
+name the room's own players, each in the slot it holds and on the side the room's
+rows put it — the presence answer, the close **triple** (the two twenty-byte
+records and the seven-byte roster close), the round's clock, the payload echoing
+that peer's own reported byte, and the rules pair
+(`MatchStartRunFramesUtils`). Everything in it that is measured as an offset
 is an offset **from this run**, which is why the beat waits for it. **The clock it
 carries is what is left of the round**, not its whole length
 (`MatchStartRunService.WriteRunAsync` → `MatchRoundStateService.RemainingUnits`),
@@ -227,7 +235,10 @@ steps to the next entry of the room's rotation. It also clears the round's score
 | **the vitals each player last reported: health and stamina, kept per player and cleared when it leaves** | `PlayerVitalsHandler` → `PlayerVitalsService`, cleared by the session reaper |
 | **the round's score: a death when a player's health reaches zero, a kill and a death when a kill feed names one, and a side's total over the slots the room puts it on** | `PlayerVitalsHandler`/`KillFeedHandler` → `MatchScoreService`, reset when the round opens |
 | **the scoreboard each player's own numbers changed for** (`0b <slot+1> <21-byte mask> <values>` on the roster identifier) | `MatchScoreService` → `MatchScoreboardFramesUtils` → `ScoreboardPublishService` |
-| **the index byte every roster-identifier record carries: one counter per identifier, consumed in the order the records are written** | `Rooms/RoomRosterService.TakeRunOrdinal`, read by `PlayerSettingsBurstService`, `MatchStartRunFramesUtils.BuildRun`, `TeamArrayService` and `ScoreboardPublishService` |
+| **the fourth byte of every session record: one counter per twelve-bit identifier, the class bits included, consumed in the order the records are written** | `MatchRecordSequenceService`, behind `RoomRosterService.TakeRunOrdinal` and read by `PlayerSettingsBurstService`, `MatchStartRunFramesUtils.BuildRun`, `TeamArrayService`, `ScoreboardPublishService`, the sparse phase's and the beat's controls, the round clock and the item-box group |
+| **the briefing countdown** | `BriefingCountdownService`, `BriefingCountdownBodiesUtils`: the operations clock opened on 128 units, dropping 32 every four seconds and holding at zero from sixteen seconds in |
+| **the ready set while a briefing waits** | `PlayerReadyHandler` on every report, and `BriefingReadyPublishService` repeating the room's set every 2.5 s until the round opens |
+| **how long each briefing writer sleeps** | `MatchRoundStateService.WaitBriefingTickAsync`: the tick ends when the round opens, so neither writer holds the beat behind a timer |
 | **the round's result: `state[2]` written as the operations state write when the round ends** | `MatchStartRunService` (score → `MatchRecordBodiesUtils.StateWrite`) |
 | **the vitals record's onset: the round's first player vitals rather than a frame count** | `MatchRoundStateService.VitalsArrived` |
 
@@ -257,11 +268,10 @@ candidate for §5. The file names are the ones that own it.
 | the control bodies (`02`, `03`, `04`, `25`) | `MatchRecordBodiesUtils` | unnamed on the wire |
 | the host's vitals record: always full health and stamina (`fa fa`) | `MatchRecordBodiesUtils.Vitals` | the capture measures it constant while `0x0080` reports deaths, and says not to substitute a player's values into it; the players' own values are read and kept instead |
 | the operations state block: an 89-byte vector, **49 bytes of which are constants of the layout** and are now written as named runs; the room's own seven offsets are written by name | `MatchStateBodiesUtils` | the two results, the two objective holders, the two capture clocks, the countdown seed and the round clock. The block is byte-identical to the round-open vector of three of six working-server captures, and the three it differs from differ only at offsets named as the room's own — `docs/protocol/STATE_VECTOR.md` |
-| the briefing countdown | `BriefingCountdownService`, `BriefingCountdownBodiesUtils` | **no longer a replay, and it was never the `0x0b` record.** It is the operations clock opened on 128 units and counting to zero across the briefing — measured at 58.5 s in a room whose briefing is a minute. Now written from the room's own briefing time. The six-byte `0x0b` record, read as the briefing timer, is a recurring per-entity timer that survives a round's open; it is not written — `docs/protocol/STATE_VECTOR.md` §4 |
 | the item-box group's bodies | `ItemBoxRecordBodiesUtils` | the round's opening event pair, then the filler; the later spawn events are not written at all, and §5 item 6 has what the capture settles about them |
 | the match-start payload's trailing zeros and length | `MatchStartBodiesUtils` | game1's six-byte form |
-| the presence answer (`02 00 00 00`) | `MatchStartBodiesUtils` | the room's players as a bit set, measured growing `02` → `06` → `0e` → `1e` as a room's players report; written here as the one-player body, trailing three bytes **[U]** |
-| the close pair's 18 unnamed bytes | `MatchRecordBodiesUtils` | nothing names them |
+| the presence answer's first byte | `MatchStartBodiesUtils`, `PlayerReadyService.PresenceMask` | **no longer a replay.** The set is the room's reporting players, one bit each in publication order: `02`, `06`, `0e`, `1e` as four players report and `16` when the third of them leaves are bits 1, 1–2, 1–3, 1–4 and 1,2,4. Read as lobby slots the bits do not fit — the same capture's arrays name slots `0x0b`, `0x0f` and `0x14`. The trailing three bytes are **[U]** |
+| the close triple's two 18-byte remainders | `MatchRecordBodiesUtils` | the third record of the triple is the roster close, `07 00 00 00 00 00 03` (`PlayerProfileRecordUtility.BuildRosterClose`), which is read; nothing names the two remainders |
 | the loadout bodies' unnamed bytes — the four at `0x12`, the two before the appearance block, the byte a no-pair region opens with — and the burst's closing blob's value 50 | `LoadoutBodiesUtils`, `PlayerSettingsBurstService` | the named fields are the room's; these are per-player values nothing names, so a recorded body of the player's own shape supplies them |
 
 **How much, in one sentence.** The *channel* is live — who is here, what they
@@ -272,16 +282,59 @@ everything the client sees during it. A client joining today is told its own
 room's rotation, its own room's slots, teams and loadouts, and then shown a round
 that is genuinely timed.
 
+**How much, in bytes.** Measured with `tools/udp_session_records.py` over one
+peer's 100 s of a playing round (game1, t+50…150: 2 979 datagrams, 21 177 record
+**body** bytes — the frame headers, the cipher and the tails are not counted, and
+the record's own fourth byte is a header byte, so the counters §3.1 lists are a
+byte per record and two orders of magnitude below the bodies):
+
+| bucket | bytes | share | what is in it |
+| --- | --- | --- | --- |
+| **recorded bodies** | 20 266 | **95.7 %** | the rules pair `0x0a61` 56.3 %, the host's constant vitals record `0x090c` 32.5 %, the item-box group `0x1a50`/`0x9a50`/`0x1a5a` 5.1 %, the state blobs `0x0002` 1.7 %, the control byte `0xd001` 0.1 % |
+| **the room's own** | 428 | **2.0 %** | the roster and array bytes `0x1001` 1.5 % and `0x9001` 0.4 %, the readiness payload `0x1ade` 0.1 %, the presence companion `0x0a5c` |
+| **mixed** | 483 | **2.3 %** | the operations insertions `0x1a54` 1.8 % and `0x9a54` 0.5 %: the clock value is the round's own, and the 90-byte state block beside it is 49 of 89 bytes constants |
+
+So **95.7 % of what a peer receives in a playing round is still a recorded body,
+and 4.3 % is the room's own or the round's own value**. Two caveats keep that
+figure from being the whole story, and both matter:
+
+* **The share is weighted by bytes, and the two largest entries are deliberately
+  constant.** The rules pair is a two-byte *empty list* per record and rides twice
+  in every frame, and the vitals record is the one the capture measures constant
+  (`fa fa`) while `0x0080` reports deaths — the file says not to substitute a
+  player's values into it, and the live values are read into `PlayerVitalsService`
+  instead. Delete those two from the numerator and the recorded share is **7 %**;
+  that is what the unresolved bodies amount to — the item-box filler, the state
+  blobs, the control bytes, the close triple's two remainders, the match-start
+  payload's trailing zeros and the loadout burst's unnamed bytes, each of which is
+  an item in §5 or an **[U]** in §7.
+* **The bytes are the round's, and a join is a different mix.** The sparse phase
+  and the burst are 42 s and a hundred-odd records of recorded bodies before a
+  round exists, so a peer's first minute is recorded almost end to end.
+
+**The direction of travel.** The bytes that were the recording and are now the
+room's — the rotation, the slots, the sides, the loadouts, the health each player
+reports, the clock, the score, the readiness set, the round's identifiers and the
+fourth bytes of its records — are the ones a client can tell apart; the 95.7 % is
+mostly the *shape* of the round, which is what a replay can carry until the
+bodies behind it are read (§7).
+
 **What this section overstates, and by how much.** The state block was the largest
-single block of recording here and it is now mostly **constants**: 49 of its 89
+block of recording here and it is now mostly **constants**: 49 of its 89
 bytes hold one value in every round of all six captures of a working server and
 are written as named runs rather than copied, and the block this host builds is
 byte-identical to that server's round-open vector in three of six captures. Its
 room's own offsets — the two results, the two holders, the two capture clocks, the
 countdown seed and the clock — are written by name. What is left unread there is
 `state[0..1]`, `state[4..6]` and what the seed's *length* tracks, all of which
-rests on one decided match. The briefing countdown has left this table too, and
-§5 item 3 with it. `docs/protocol/STATE_VECTOR.md` is the reading.
+rests on one decided match. The briefing countdown, the ready set's repeat and the
+fourth byte of a session record have left this table since it was written, and the
+§5 item that carried the countdown has gone with them: the clock is the capture's
+own sixteen seconds and is written from its measurement, and the counters are one
+per twelve-bit identifier rather than one per record type. The six-byte `0x0b`
+record, read here as the briefing timer, is a recurring per-entity timer that
+survives a round's open; it is not written — `docs/protocol/STATE_VECTOR.md` §4.
+`docs/protocol/STATE_VECTOR.md` is the reading.
 
 ### 3.3 What a peer sees of another peer
 
@@ -375,6 +428,17 @@ implemented; everything the sections above describe is, so those are the account
 what this host does and this is the account of what it does not. An item blocked on
 a reading rather than on a decision says so, and the reading is in §7.
 
+**Three items have left this list, and are in §3.1 where they belong.** The fourth
+byte of every session record is now one counter per twelve-bit identifier
+(`MatchRecordSequenceService`, §5.7 of `docs/analysis/replay-findings.md`); the
+ready set is published on every report *and repeated* while a briefing waits
+(`BriefingReadyPublishService`); and the briefing countdown is the capture's own
+fixed sixteen seconds, `128 → 96 → 64 → 32 → 0` (`BriefingCountdownBodiesUtils`).
+The countdown's item is gone from here rather than kept as a struck-through entry:
+its measurement, and the clearing of the `0x0b` candidate, live in
+`docs/protocol/STATE_VECTOR.md` §4, which is where a reader looking for that
+record should be sent.
+
 1. **A match rather than a round.** The match's own result at `state[3]` is
    **writable and measured**: a working server writes it in the *same* `0x02`
    write as the round's result — `02 02 02 02 02` is "state[2] = 2, state[3] = 2"
@@ -393,39 +457,37 @@ a reading rather than on a decision says so, and the reading is in §7.
    `games.current_game` column, which exists and is unused — would let a room play a
    rotation, which is the shape a player-hosted room's `0x4313` reply and the
    burst's fifteen-triple field already have room for.
-3. ~~**The briefing countdown.**~~ **Done, and the room's own.**
-   `BriefingCountdownService` writes it, armed where the briefing's deadline is
-   armed: the operations clock opened on **128 units** and counting down to zero
-   across the briefing — measured at 58.5 s in a room whose briefing is a minute,
-   ending 14 s before that round opens. It is the same record as the round clock,
-   opened on the briefing's length rather than the round's.
-
-   **The other candidate on the wire is cleared.** The six-byte `0x0b` record
-   counts down from sixty and was read here as a briefing timer; it is not — it
-   continues past a round's opening run, restarts four tenths of a second after
-   one, carries eight distinct values in a single tick, and runs 60 → 0 in 98.2 s
-   in one capture and 41.2 s in another, so not one count per second. It is a
-   recurring per-entity timer, **[U]**, and this host writes none of it
-   (`STATE_VECTOR.md` §4, which corrects the one-per-second claim
-   `BRIEFING_FLOW.md` §7 used to make).
-4. **A score the host computes.** The scoreboard's `score` bit moves only when a
+3. **A score the host computes.** The scoreboard's `score` bit moves only when a
    peer states a value (§7), and the kills behind it come from a kill feed or a
    peer's own delta: a room whose clients send neither has neither. Both are the
    host's own counting to derive, from the deaths it already reads, and the formula
    is **[U]**.
-5. **A shorter sparse phase.** The 17-step, 42.2 s close is the only thing that
+4. **A shorter sparse phase.** The 17-step, 42.2 s close is the only thing that
    makes a join take that long, and nothing about the client gates on it — the phase
    is a keep-alive, and the ready report is what opens the round. Ending it when the
    peer reports, or when the round opens, would cut a join's wait without touching
    the round.
-6. **The item-box group's later spawns.** The round's opening event pair and the
+5. **A counter per session rather than per room.** The room's exchange, its
+   round's operations stream and its item-box streams are one sequence each, shared
+   by every peer's beat, because every counter in the captures is read out of one
+   flow and each captured flow holds one peer. A room of two is unmeasured here, and
+   if the recorded host numbers each peer's stream independently then the key
+   belongs on the session: it is one line in `MatchRecordSequenceService.StreamOf`
+   and one in each caller, and it should not be done before a capture says so.
+6. **The sparse phase's control ordinals.** They are pinned to the capture's
+   `02`…`09` rather than taken from the room's exchange, because those values
+   *overlap* the ones the join's run and burst take from it (`00`–`06` under a
+   one-player roster) — so a stream that took them from the counter would number a
+   phase differently from the capture, and what they mean instead is **[U]**. The
+   reading that would settle it is a second capture's sparse phase beside its own
+   join numbering.
+7. **The item-box group's later spawns.** The round's opening event pair and the
    filler are written; the later spawn events are not. The capture that holds them
    is `joined-when-red-team`, and it settles the *trigger* and not the body: 71
    later events, each a `02 <nine bytes>` position record and a `03 00 00 00 21 00
    21 00 21` tail, written under the round's own item-box identifier (the counter's
    next two values) within 0.0–4.3 s of a death. The tail is byte-identical in all
-   71 and the positions are only 57 bodies, so the record names one of the map's
-   own box points and not the death; a host would need that point from somewhere
+   71 and the positions are only 57 bodies, so the record names one of   the map's own box points and not the death; a host would need that point from somewhere
    this channel does not carry, so the group stays the opening pair and the filler.
 
 ## 6. Where the code is
@@ -438,7 +500,7 @@ a reading rather than on a decision says so, and the reading is in §7.
 | `Match/MatchService.cs` | the room row (written from this instance's settings) and its heartbeat |
 | `Match/MatchSettings{Service,Utils}.cs` | what the room runs, from this instance's settings |
 | `Match/MatchRuleUtils.cs`, `MatchMapUtils.cs` | the rule and map names and the ids they map to, ported from `rpdt.js` |
-| `Rooms/RoomRosterService.cs` | who is in the room, and the roster run |
+| `Rooms/RoomRosterService.cs`, `RoomRosterFramesUtils.cs` | who is in the room, and the run and copies a join is answered with — the records split out so neither file passes the size limit |
 | `Rooms/PlayerReadyService.cs` | who has reported, and the publication |
 | `Rooms/PlayerSettingsBurstService.cs` | the post-join burst |
 | `Rooms/TeamArrayService.cs` | the lobby-slot handshake |
@@ -448,14 +510,33 @@ a reading rather than on a decision says so, and the reading is in §7.
 | `MatchRecords/MatchScoreService.cs`, `MatchScoreboardFramesUtils.cs`, `ScoreboardPublishService.cs` | the round's score, the scoreboard body, and its publication |
 | `MatchRecords/MatchResultService.cs` | the round's winner, the kill-limit check, and the result write |
 | `Commands/Peer/Gameplay/KillFeedHandler.cs` | the operations stream's kill feed, and the score it feeds |
+| `MatchRecords/MatchRecordSequenceService.cs` | the fourth byte of every session record: one counter per twelve-bit identifier, restarted where a round or a briefing opens a stream of its own |
 | `MatchRecords/MatchStartRunService.cs`, `MatchStartRunService.Runs.cs` | the round opener, its briefing deadline and its clock, and the per-peer run watcher |
 | `MatchRecords/BriefingCountdownService.cs`, `BriefingCountdownBodiesUtils.cs` | the briefing's countdown to each peer, and the 128-unit clock body it writes |
-| `MatchRecords/MatchRoundStateService.cs`, `RoundClockUtils.cs` | the room's round, and how much of it is left |
+| `MatchRecords/BriefingReadyPublishService.cs` | the room's ready set repeated to a peer for as long as its briefing waits |
+| `MatchRecords/MatchRoundStateService.cs`, `MatchRoundStateService.Waits.cs`, `RoundClockUtils.cs` | the room's round, how much of it is left, and the waits a writer takes — including the briefing tick that ends when the round opens |
 | `MatchRecords/MatchRecordService.cs` | the per-peer beat |
 | `MatchRecords/BeatFramePlan.cs`, `MatchRecordFramesUtils.cs`, `SparsePhaseFramesUtils.cs` | the frames the beat and the sparse phase write |
 | `MatchRecords/ItemBoxFramesUtils.cs`, `MatchStateBodiesUtils.cs` | the item boxes and the state vector |
 
 ## 7. Open
+
+* **[U]** which of two records the 16.2 s clock in `joined-when-red-team` is: the
+  briefing's countdown, or the round-result screen's countdown for the round that
+  had just ended. The capture's own note places the join in the moment the red team
+  won and the briefing after it, and both readings would be this one record on this
+  one operations stream. This host writes it as the briefing's, which is the only
+  clock the capture holds for the wait before a round. `BRIEFING_FLOW.md` §3.
+
+* **[U]** whether the recorded host numbers each peer's stream independently. Every
+  counter in this file is read out of one flow and each captured flow holds one
+  peer, so `MatchRecordSequenceService` keys a stream by its identifier alone and
+  the room's peers share it (§5 item 5).
+
+* **[U]** whether a client acts on the ready set at all: a report is answered and
+  the set is now repeated every 2.5 s while the briefing waits, and no capture
+  shows what a client does with a set that has not changed. What it does when its
+  own timer runs out in a room that has opened no round is the older **[I]** below.
 
 * **[U]** why the captured burst writes the first joiner's loadout body **twice**,
   byte for byte identical, beside the host's own. The live burst writes each
@@ -496,8 +577,9 @@ a reading rather than on a decision says so, and the reading is in §7.
   unread as well, and no longer anything this host needs: a dedicated host's round
   length is its own setting for every rule (`GAME_SETTINGS_WIRE.md`).
 * **[U]** the `0x0b` briefing countdown's unit and its `0x40`/`0xc0` flag.
-* **[U]** the 18 unnamed bytes of the close pair, and the trailing zeros of the
-  match-start payload.
+* **[U]** the two 18-byte remainders of the close **triple** (its third record,
+  the seven-byte roster close, is read — `PlayerProfileRecordUtility.BuildRosterClose`),
+  and the trailing zeros of the match-start payload.
 * **Measured: one counter per roster identifier, and every record under it takes
   a value.** `joined-when-red-team`'s live rounds carry every `0x1001` record in
   one ascending sequence — the lobby-slot arrays take the pair 23 and 24, then

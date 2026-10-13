@@ -18,18 +18,25 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// length follows from that count.
 /// </para>
 /// <para>
-/// <b>Three shapes, and the game's own bodies have no fourth.</b> A body is 49
-/// bytes plus its skill region of <c>0xff</c> and one pair per two bytes, and the
-/// lengths the replay decoder accepts contain no 52 — the length a single pair
-/// would need — so a player with one or four equipped skills has no recorded body
-/// of that shape to be written in, and the burst falls back to
-/// <see cref="PlayerLoadout"/> behind the player's own slot byte.
+/// <b>Every pair count now has a shape, and only three of them are
+/// captured.</b> A body's length is the pair count's own arithmetic
+/// (<see cref="LoadoutFramesUtils.BodyLengthFor"/>): a leading marker, two bytes
+/// a pair, the list end, two unnamed bytes and the appearance block. The
+/// captures hold the zero-, two- and three-pair shapes, so those three bodies are
+/// byte for byte what the game wrote. A one- or four-pair player is the shape the
+/// capture never held, and the burst used to fall back on a body carrying a
+/// different player's skills — the one length this record cannot absorb, because
+/// the peer reads the skills off the length. Those two shapes are built below
+/// rather than looked for: a recorded body with the pair bytes spliced in behind
+/// the region's leading marker. Every other byte is the recorded body's, and the
+/// spliced bytes are always overwritten by the player's own pair, so nothing is
+/// invented.
 /// </para>
 /// <para>
-/// The four bodies below are byte for byte what the captures wrote: the fifty-byte
-/// and fifty-four-byte ones from the burst at t+6.687 of <c>mgo2-game1.pcapng</c>
-/// (the second written twice), and the fifty-six-byte one that capture writes for
-/// the single player of its roster carrying three pairs.
+/// The four bodies that are captured are: the fifty-byte and fifty-four-byte ones
+/// from the burst at t+6.687 of <c>mgo2-game1.pcapng</c> (the second written
+/// twice), and the fifty-six-byte one that capture writes for the single player of
+/// its roster carrying three pairs.
 /// </para>
 /// </remarks>
 public static class LoadoutBodiesUtils
@@ -70,6 +77,25 @@ public static class LoadoutBodiesUtils
     public const int ThirdLoadoutSkillCount = 3;
 
     /// <summary>
+    /// Body length of the four-pair shape: the rule's own arithmetic on the four
+    /// slots a character's skills are saved in.
+    /// </summary>
+    /// <remarks>
+    /// **[U]** — arithmetic, not an observation. Nothing captured or in a replay
+    /// file holds a body of this length; see
+    /// <see cref="LoadoutFramesUtils.MaximumSkills"/> for why it is built and not
+    /// yet written.
+    /// </remarks>
+    public static int FourthLoadoutPayloadLength =>
+        LoadoutFramesUtils.BodyLengthFor(FourthLoadoutSkillCount);
+
+    /// <summary>Skill pairs the one-pair shape carries.</summary>
+    public const int SingleLoadoutSkillCount = 1;
+
+    /// <summary>Skill pairs the four-pair shape carries.</summary>
+    public const int FourthLoadoutSkillCount = 4;
+
+    /// <summary>
     /// The fifty-byte loadout record of game1's burst, in slot <c>0x01</c>: the
     /// host's own entry, with no skill pairs.
     /// </summary>
@@ -104,15 +130,74 @@ public static class LoadoutBodiesUtils
     public static byte[] ThirdLoadout() => Convert.FromHexString(ThirdLoadoutPayloadHex);
 
     /// <summary>
-    /// The recorded loadout body of a shape, named by the skill pairs it carries.
+    /// The one-pair shape, built rather than captured: the fifty-byte body with
+    /// two bytes spliced in behind its region's leading marker, which grows the
+    /// record to the length one pair is.
+    /// </summary>
+    /// <returns>The body, with the pair slot left zero for the player's own pair.</returns>
+    public static byte[] SingleLoadout() =>
+        GrownForPairs(PlayerLoadout(), PlayerLoadoutSkillCount);
+
+    /// <summary>
+    /// The four-pair shape, built rather than captured, and **[U]**: the length is
+    /// the rule's arithmetic and no capture holds a body of it. See
+    /// <see cref="LoadoutFramesUtils.MaximumSkills"/>.
+    /// </summary>
+    /// <returns>The body, with the pair slots left zero for the player's own pairs.</returns>
+    public static byte[] FourthLoadout() =>
+        GrownForPairs(ThirdLoadout(), ThirdLoadoutSkillCount);
+
+    /// <summary>
+    /// Grows a recorded body to the shape one pair more has, by leaving room for
+    /// the extra pair inside its skill region behind the leading marker.
+    /// </summary>
+    /// <remarks>
+    /// The room is what the length rule says the region holds, not a value read
+    /// anywhere: the header and the leading marker stay put, the pair slots open up
+    /// between them and the closing list end, the list end moves to the body's new
+    /// end, and the unnamed run behind it and the appearance block move with it
+    /// unchanged. The opened slots are the pair bytes themselves, which
+    /// <see cref="LoadoutFramesUtils.TryWrite"/> overwrites with the player's own
+    /// pairs, so nothing is invented.
+    /// </remarks>
+    /// <param name="recorded">A recorded body carrying <paramref name="recordedPairs"/> pairs.</param>
+    /// <param name="recordedPairs">Pairs that body carries.</param>
+    /// <returns>The grown body, one pair longer.</returns>
+    private static byte[] GrownForPairs(byte[] recorded, int recordedPairs)
+    {
+        var pairs = recordedPairs + 1;
+        var grown = new byte[LoadoutFramesUtils.BodyLengthFor(pairs)];
+        var marker = LoadoutFramesUtils.SkillRegionOffset;
+
+        // The header and the region's leading marker.
+        Array.Copy(recorded, 0, grown, 0, marker + 1);
+
+        // The pair slots are the body's own zero bytes; only the list end is set.
+        var listEnd = marker + 1 + (LoadoutFramesUtils.BytesPerPair * pairs);
+        grown[listEnd] = LoadoutFramesUtils.SkillListEnd;
+
+        // The run behind the recorded list end, and the appearance block with it.
+        var source = recorded.Length - LoadoutFramesUtils.ListEndFromBodyEnd + 1;
+        Array.Copy(recorded, source, grown, listEnd + 1, recorded.Length - source);
+
+        return grown;
+    }
+
+    /// <summary>
+    /// The loadout body of a shape, named by the skill pairs it carries.
     /// </summary>
     /// <param name="skillCount">Pairs the player's own skills make.</param>
-    /// <returns>The body, or <c>null</c> when no recorded body has that shape.</returns>
+    /// <returns>
+    /// The body, or <c>null</c> when no shape has that many pairs. Every pair count
+    /// from none to <see cref="LoadoutFramesUtils.MaximumSkills"/> has one.
+    /// </returns>
     public static byte[]? RecordedLoadoutFor(int skillCount) => skillCount switch
     {
         PlayerLoadoutSkillCount => PlayerLoadout(),
+        SingleLoadoutSkillCount => SingleLoadout(),
         SecondLoadoutSkillCount => SecondLoadout(),
         ThirdLoadoutSkillCount => ThirdLoadout(),
+        FourthLoadoutSkillCount => FourthLoadout(),
         _ => null,
     };
 }

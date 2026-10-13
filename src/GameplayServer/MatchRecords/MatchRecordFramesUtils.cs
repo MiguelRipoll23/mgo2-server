@@ -60,11 +60,13 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// round's own item placement and move irregularly around the group this file
 /// does replay; the member-bearing rules-roster records, since
 /// <see cref="MatchRecordBodiesUtils.RulesRoster"/> is the empty list; the
-/// per-player position and objective frames the host's own character produces;
-/// and the sibling-generation identifier set (<c>0x800</c> bit: <c>0x1254</c>,
-/// <c>0x12de</c>, <c>0x0261</c>, <c>0x010c</c>), which the capture uses only from
-/// its second round on; the replay opens no round, so it stays on the first set
-/// for the whole stream. The steady
+/// per-player position and objective frames the host's own character produces.
+/// The sibling-generation identifier set (<c>0x800</c> bit: <c>0x1254</c>,
+/// <c>0x12de</c>, <c>0x0261</c>, <c>0x010c</c>) was on this list and is not any
+/// more: the set follows the round (<see cref="MatchRecordGenerationUtils"/>),
+/// and the beat reads <see cref="MatchRoundStateService.Generation"/> on every
+/// frame and restarts at each round's own run, so a round after the first is
+/// written under its own set rather than the first's. The steady
 /// control's cadence is the capture's mean rather than a rule it holds: the solo
 /// window's gaps run from 1 to 337 frames between the sparse phase's close and
 /// the run, so no fixed period reproduces them.

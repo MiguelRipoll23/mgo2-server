@@ -41,6 +41,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed class MatchRecordService(
     MatchRoundStateService roundState,
     BriefingCountdownService countdowns,
+    BriefingReadyPublishService readyPublications,
+    MatchRecordSequenceService sequences,
     ILogger<MatchRecordService> logger)
 {
     /// <summary>
@@ -118,11 +120,15 @@ public sealed class MatchRecordService(
                 await SendAsync(context, step.Records, step.Compressed);
             }
 
-            // The briefing countdown belongs to the briefing, so it runs beside
-            // the wait for the round rather than inside it: the round's opening
-            // run ends it, and a peer that arrives into a round already playing
-            // is served the round and is sent no countdown at all.
+            // The briefing countdown and the ready set belong to the briefing, so
+            // both run beside the wait for the round rather than inside it: the
+            // round's opening run ends them, and a peer that arrives into a round
+            // already playing is served the round and neither of the two. The ready
+            // set repeats here rather than only on a report, which is what the
+            // captures show the host doing between the reports of a briefing that
+            // waited (docs/protocol/BRIEFING_FLOW.md §2).
             var countdown = countdowns.PublishAsync(context);
+            var readyPublication = readyPublications.PublishAsync(context);
 
             // The beat is the round's, not the sparse phase's: everything it
             // writes is measured as an offset from the run, so it starts when
@@ -134,6 +140,7 @@ public sealed class MatchRecordService(
             await roundState.WaitForOpenAsync(session);
             await roundState.WaitForRunWrittenAsync(session);
             await countdown;
+            await readyPublication;
             await BeatAsync(context);
         }
         catch (Exception exception)
@@ -210,23 +217,15 @@ public sealed class MatchRecordService(
                 roundState.Generation,
                 roundState.RemainingUnits,
                 roundState.VitalsArrived,
-                beat.SessionFlags2,
                 beat.BlobsWritten,
                 beat.ItemBoxSequence,
                 beat.ItemBoxStateSequence);
 
-            await SendAsync(context, plan.Records(), plan.Compressed);
-
-            // The counters advance on what the frame carried, not on the frame:
-            // the flags2 byte moves once per clock or control insertion and the
-            // blob alternation once per state blob, which is what the capture's
-            // cadence is. The item-box counters advance once per record the
-            // group wrote, because that is the stream's own numbering and what
-            // the client answers against.
-            if (plan.CarriesSessionFlags)
-            {
-                beat.SessionFlags2++;
-            }
+            // The insertions' fourth bytes are taken inside the plan, from the
+            // stream of the identifier each record travels under; what advances
+            // here is the blob alternation, once per state blob, and the item-box
+            // counters, once per record the group wrote.
+            await SendAsync(context, plan.Records(sequences), plan.Compressed);
 
             if (plan.CarriesStateBlob)
             {

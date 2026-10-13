@@ -137,17 +137,35 @@ public static class MatchStartBodiesUtils
     /// what a room of one writes.
     /// </para>
     /// <para>
-    /// <b>What is written here is the one-player body, and nothing more.</b>
-    /// game1 — the dedicated host this project implements — writes no such
-    /// record inside its round start at all, and game2 writes <c>02 00 00 00</c>
-    /// in every frame that carries it, which is the set of a room whose first
-    /// player has reported. A room of more than one needs the set recomputed as
-    /// players report and leave, which this host does not do yet; the run's own
-    /// copy is the measured shape and the right value for the room this host is
-    /// measured against. **[V]** the length, the class and the growth; **[U]**
-    /// the trailing three bytes and the timing of a rewrite.
+    /// <b>The first byte is derived, and the trailing three are not.</b>
+    /// The set is the room's own reporting players, one bit each in publication
+    /// order (<see cref="Rooms.PlayerReadyService.PresenceMask"/>), so a room of
+    /// one writes <c>02</c> — the bit of its only reporter, which is first — and
+    /// a room of four writes the run of bits the capture writes. **[V]** the
+    /// length, the class and the growth; **[D]** the set, from the growth.
+    /// </para>
+    /// <para>
+    /// <b>The trailing three bytes are the recorded zeros, and the shape is
+    /// host-dependent.</b> Measured over the six captures of a working server,
+    /// only the two briefings write this record as <c>[set, 0, 0, 0]</c> —
+    /// <c>mgo2-game2</c> answers <c>02 00 00 00</c> and the briefings
+    /// <c>02</c>/<c>06</c>/<c>0e</c>/<c>1e</c> then <c>16</c>. The other hosts do
+    /// not: <c>mgo2-game1</c> answers <c>00 80 10 00</c>, <c>00 88 10 00</c>,
+    /// <c>10 80 00 00</c> and <c>40 08 10 00</c>, and
+    /// <c>started-team-selection</c> answers <c>01 00 02 00</c>. So the second
+    /// and third bytes *do* move in three of the six — an earlier reading here
+    /// said the trailing three had never moved in any capture, and that is
+    /// withdrawn. This host writes the briefing form, the one whose first byte is
+    /// a set it can derive, and the rest of the record stays the recorded zeros
+    /// rather than a value nothing measured. **[U]** what the other hosts' flags
+    /// mean and when the record is rewritten.
     /// </para>
     /// </remarks>
+    /// <param name="reportingSet">
+    /// The room's reporting players, one bit per player in the order they
+    /// reported — the first reporter is bit 1.
+    /// </param>
     /// <returns>The record body.</returns>
-    public static byte[] PlayerPresenceAnswer() => [0x02, 0x00, 0x00, 0x00];
+    public static byte[] PlayerPresenceAnswer(byte reportingSet) =>
+        [reportingSet, 0x00, 0x00, 0x00];
 }

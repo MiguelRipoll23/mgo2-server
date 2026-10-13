@@ -38,8 +38,13 @@ a response; one that did went out on its own.
 ## The one record that waits for a client packet
 
 **The match-start run.** It is the marker (`0x5ade` / `0x52de`) and the payload
-record (`0x1ade` / `0x12de`, body `e0 NN …`), written together with the twelve
-records behind them. Both captures show it only after the client's readiness
+record (`0x1ade` / `0x12de`, body `e0 NN …`), written together with the thirteen
+records behind them: the two empty `0x5001` roster heads, the operations state
+block and its two-byte companion, the two lobby-slot arrays, the close triple
+(two twenty-byte records and the seven-byte roster close), the round's clock, the
+payload and the rules pair. Decompressed, `mgo2-game1.pcapng`'s run is that
+thirteen, in that order, and `mgo2-game-started-on-briefing.pcapng`'s is the
+same thirteen with a live item-box group in front of them. Both captures show it only after the client's readiness
 report — the same payload record read the other way, body `e1 NN` — and
 `UDP_GAME_CAPTURE.md` §3.2 measures every round in every capture beginning
 0.6–5.5 s after one and none beginning without one. **[V]** on the pairing, **[I]**
@@ -129,19 +134,24 @@ player has decided, and it is named for that now (`PlayerPresenceHandler`,
 `MatchStartRunFramesUtils` places it — behind the two arrays, the one position a
 capture measures.
 
-**The answer's first byte is measured, and it is the room's players.** It is a
-bit set that grows as the room's players report: `mgo2-game-started-on-briefing`
+**The answer's first byte is derived now, and it is the room's reporters in the
+order they reported.** The measured values settle it: `mgo2-game-started-on-briefing`
 answers `02` for its first reporter, then `06`, `0e` and `1e` as the other three
 report — each answer written within half a second of the report it follows and
-carried through the briefing, long before the round opens at t+198.4 — and
-`mgo2-game-joined-when-red-team-then-briefing` answers `2a`, bits 1, 3 and 5 for
-the slots its reporting players hold. What is not measured is the trailing three
-bytes, and what this host writes is game2's one-player body, `02 00 00 00`,
-marked **[U]** on `MatchStartBodiesUtils.PlayerPresenceAnswer`: a room of more
-than one needs the set recomputed as its players report and leave, which this
-host does not do yet. If a run written with it is rejected, that body is the
-first thing to change — the report's own answer, which is what gated the round,
-does not depend on it.
+carried through the briefing, long before the round opens at t+198.4 — and then
+`16` once the **third** of the four has left. Under one bit per reporter that is
+bit 1, then bits 1–2, 1–3 and 1–4, then bits 1, 2 and 4: the set grows by a bit
+per report and loses the bit of the reporter that left.
+`mgo2-game-joined-when-red-team-then-briefing`'s `2a` is bits 1, 3 and 5 — the
+first, third and fifth reporters of a room whose second and fourth never did.
+Read as the players' *lobby slots* the bits do not fit: the slots that same
+capture's own arrays name are `0x0b`, `0x0f` and `0x14`, and none of the three is
+a bit of a byte.
+
+So it is not the hard-coded one-player body any more: `PlayerReadyService.PresenceMask`
+writes the room's own set, and a room of one writes `02` because its only
+reporter is first. What is still **[U]** are the trailing three bytes, which have
+never moved in any capture and stay the recorded zeros.
 
 Inbound, the presence record has a handler of its own
 (`PlayerPresenceHandler`) so that the relay it needs is a decision rather than

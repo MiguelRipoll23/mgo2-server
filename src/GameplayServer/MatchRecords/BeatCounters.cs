@@ -12,18 +12,26 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// reference.
 /// </para>
 /// <para>
-/// The identifier set is not here. Nothing in the beat moves it: no round is
-/// opened, so the writer holds <see cref="MatchRecordGenerationUtils.First"/> for
-/// the whole stream.
+/// The identifier set is not here either: the beat reads the round's own off
+/// <see cref="MatchRoundStateService.Generation"/> frame by frame, and a round
+/// change restarts these counters along with the frame index, so none of them
+/// outlives the round it was counting
+/// (<c>MatchRecordService.BeatAsync</c>).
+/// </para>
+/// <para>
+/// <b>The fourth byte of a clock or a control record is not one of these.</b> It
+/// is the record stream's own counter, one per twelve-bit identifier, held by
+/// <see cref="MatchRecordSequenceService"/>: the clock insertions take the
+/// operations stream's next value and the control insertions the room's exchange's,
+/// which is what stops a beat from numbering an <c>0x1a54</c> clock and an
+/// <c>0xd001</c> control from one run of values the capture does not write
+/// (<c>docs/analysis/replay-findings.md</c> §5.7).
 /// </para>
 /// </remarks>
 internal sealed class BeatCounters
 {
     /// <summary>Beat frames written so far.</summary>
     public int FrameIndex { get; set; }
-
-    /// <summary>Session-record flags2 the next beat insertion carries.</summary>
-    public byte SessionFlags2 { get; set; } = MatchRecordFramesUtils.SteadySessionFlagsStart;
 
     /// <summary>State blobs written so far.</summary>
     public int BlobsWritten { get; set; }

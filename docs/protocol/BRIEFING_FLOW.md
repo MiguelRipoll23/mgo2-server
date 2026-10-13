@@ -12,7 +12,7 @@ briefing and a third that holds the room's own settings:
 
 | capture | session | what it holds |
 | --- | --- | --- |
-| `mgo2-game-joined-when-red-team-then-briefing.pcapng` | `10.2.0.2:5730` ↔ `129.153.74.111:5720`, 930 s | three rounds, two of them to the clock, and the match result between them |
+| `mgo2-game-joined-when-red-team-then-briefing.pcapng` | `10.2.0.2:5730` ↔ `129.153.74.111:5720`, 930 s | three rounds, two of them to the clock, and the match result between them. The capture's own note (`.txt`, beside it) names the rule — team deathmatch, 40 kills, 4:55 — and the order of events: the join landed as the red team won, then a briefing with every player readying and this client last, then round 01/02, then a second briefing and another game |
 | `mgo2-game-started-on-briefing.pcapng` | `10.2.0.2:5730` ↔ `143.47.227.126:5720` | a solo arrival into a briefing, six players reporting, then the round |
 | `mgo2-game-started-team-selection-selected-blue-then-game.pcapng` | `10.2.0.2:5730` ↔ `69.213.233.238:5731` | a room list, a join, and a round already playing |
 
@@ -112,8 +112,13 @@ the span between the last report and the round is 1.5 s to 38 s — a gate on th
 reports, never a fixed wait.
 
 **The opening run.** The round's records arrive in one compressed frame — the
-marker first and the eleven behind it — under the identifier set the report
-arrived on. The second round of `joined-when-red-team` opens under
+marker first and **thirteen** behind it — under the identifier set the report
+arrived on. The thirteen are listed in `DATA_PHASE_DELIVERY.md` and in
+`docs/analysis/replay-findings.md` §1.4: two empty `0x5001` roster heads, the
+operations state block and its two-byte companion, the lobby-slot pair, the close
+**triple** (two twenty-byte records and the seven-byte roster close), the round
+clock, the payload and the rules pair. `tools/udp_start_run.py` reads the frame
+out of a capture and prints it. The second round of `joined-when-red-team` opens under
 `0x1a54`/`0x5ade` and the third under `0x1254`/`0x52de`, and in
 `started-on-briefing` the set flips from `0x12de` to `0x1ade` between the report
 at t+55.838 and the report at t+196.828 — the run answers the report's own set.
@@ -154,6 +159,19 @@ the freeze is the host's and not a gap in the capture.
 16.2 s while the client sits in a briefing, before any round opens. A host writes
 the round's time limit when it opens the round and carries the remaining time in
 the records behind it.
+
+**That capture's own note, and what it leaves open.** It ships one
+(`mgo2-game-joined-when-red-team-then-briefing.txt`): team deathmatch, 40 kills,
+4:55, the join landing as the red team won, the briefing that followed with every
+player readying and this client last, red taking the second round for 2–0, then a
+second briefing and another game. So the 16.2 s clock falls in the gap between the
+round that had just ended and the briefing after it, and it could be the **result
+screen's** countdown rather than the briefing's: nothing in the capture separates
+the two, because both would be this one record on this one stream and the host
+writes no other clock between them. Either way the measurement holds — the values,
+and the 45 s of zeros before the round — and the countdown this server writes is
+that record (`BriefingCountdownService`). **[U]** which of the two it is, and
+whether the client's own timer is the briefing time at all.
 
 ## 4. The round ends, and the host writes the result
 

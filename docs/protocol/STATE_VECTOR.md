@@ -122,17 +122,20 @@ offered two candidates: a six-byte `0x0b` record, and the operations clock's
 128-unit countdown before a round. **The second is right, and the first is
 cleared.**
 
-**The countdown: the operations clock at 128 units.** In
+**The countdown: the operations clock at 128 units, in four-second steps.** In
 `mgo2-game-joined-when-red-team-then-briefing` the clock reads `0x0080` — 128
 units, sixteen seconds of the stream's own tick — at the start of the briefing
-and counts to **zero** over **58.5 s** while the client sits in it. That room's
-round opens at t+72.560, so the countdown ends 14 s before the round does, and no
-round-length value appears anywhere in it. It is the same opcode, the same
-little-endian 125 ms unit and the same stream as the round clock that follows: a
-briefing is a round's clock opened on 128 units rather than on the round's own
-length. `BRIEFING_FLOW.md` §3 had already measured the span; what is new here is
-that the mapping is the room's own, and that this host now writes it
-(`BriefingCountdownService`).
+and counts `128 → 96 → 64 → 32 → 0` over **16.2 s**, holding at zero afterwards
+while the client sits in the briefing. That room's round opens at t+72.560 —
+**~45 s after the clock reached zero** — and no round-length value appears
+anywhere in it, so the countdown is a fixed sixteen seconds and **not** the
+briefing's length. An earlier reading here had it counting to zero over 58.5 s, so
+that the round followed 14 s later; the capture's own readings are 32 units and
+four seconds apart, and no reading of it supports that span. It is the same opcode, the same little-endian 125 ms unit
+and the same stream as the round clock that follows: a briefing is a round's clock
+opened on 128 units rather than on the round's own length.
+`BRIEFING_FLOW.md` §3 had already measured the span; this host now writes it
+(`BriefingCountdownService`, `BriefingCountdownBodiesUtils.CountdownUnits`).
 
 **`0x0b` is not the briefing countdown — it is a recurring per-entity timer.**
 This corrects an earlier reading of this file. `0x0b` does count down from
