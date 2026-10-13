@@ -9,7 +9,9 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// <summary>
 /// Takes a client's briefing ready report, records it against the player that
 /// sent it, publishes the room's ready set, and opens the round once every
-/// player in the room has reported.
+/// player in the room has reported — never for the room's only one, who is
+/// briefed until the room's own briefing time ends the wait
+/// (<see cref="MatchStartRunService.Open"/>).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -89,12 +91,13 @@ public sealed class PlayerReadyHandler(
         if (!matchStart.Open(context.Message.Type))
         {
             logger.LogDebug(
-                "UDP {LocalPort}: {RemoteAddress} is ready with {Value}; {PendingCount} player(s) in the "
-                + "room have not reported, so the round stays closed",
+                "UDP {LocalPort}: {RemoteAddress} is ready with {Value}; {ReadyCount} of {PlayerCount} "
+                + "player(s) in the room are ready, so the round stays closed",
                 context.LocalPort,
                 context.Remote,
                 reported,
-                ready.PendingCount);
+                ready.ReadyCount,
+                ready.PlayerCount);
         }
     }
 

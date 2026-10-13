@@ -50,9 +50,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="MatchStartPayload">Payload record inside the run.</param>
 /// <param name="ItemBox">First identifier of the beat's item-box group.</param>
 /// <param name="ItemBoxState">Second identifier of the beat's item-box group.</param>
-/// <param name="ReadyState">
-/// The readiness report's companion: a one-byte record the client sends in the
-/// same datagram, carrying the same byte as the report.
+/// <param name="PlayerPresence">
+/// The presence record: a one-byte record the client sends in the same
+/// datagram as its readiness report, carrying its own lobby slot — and answered
+/// by the host with the room's players in a bit mask.
 /// </param>
 /// <param name="ReportedByte">
 /// Byte the capture's round start carried — the one the client carried in its
@@ -69,7 +70,7 @@ public sealed record MatchRecordGenerationUtils(
     ushort MatchStartPayload,
     ushort ItemBox,
     ushort ItemBoxState,
-    ushort ReadyState,
+    ushort PlayerPresence,
     byte ReportedByte)
 {
     /// <summary>The bit one round's identifiers differ from the next round's by.</summary>
@@ -98,7 +99,7 @@ public sealed record MatchRecordGenerationUtils(
             (ushort)(MatchStartPayload ^ SiblingBit),
             (ushort)(ItemBox ^ SiblingBit),
             (ushort)(ItemBoxState ^ SiblingBit),
-            (ushort)(ReadyState ^ SiblingBit),
+            (ushort)(PlayerPresence ^ SiblingBit),
             ReportedByte);
 
     /// <summary>
@@ -203,15 +204,27 @@ public sealed record MatchRecordGenerationUtils(
         ReadinessReportIdentifiers.Contains(identifier);
 
     /// <summary>
-    /// The identifiers the readiness report's companion arrives under: the same
-    /// four shapes the report itself does, on its own identifier.
+    /// The identifiers the presence record arrives under: the same four shapes
+    /// the readiness report itself does, on its own identifier.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The companion is a one-byte record the client sends in the same datagram
-    /// as the report, carrying the same byte — <c>0x0a5c 14</c> beside
-    /// <c>0x1ade e1 14</c>, <c>0x025c 01</c> beside <c>0x12de e1 01</c> — and the
-    /// pairing holds in five of five reports across the two captures. **[V]**
+    /// The record is a one byte the client sends in the same datagram as its
+    /// report — <c>0x0a5c 14</c> beside <c>0x1ade e1 14</c>, <c>0x025c 01</c>
+    /// beside <c>0x12de e1 01</c> — and the byte is the reporting player's own
+    /// lobby slot, which the slot the run's payload echoes agrees with in every
+    /// report of both captures. **[V]** the pairing; **[I]** the slot reading.
+    /// </para>
+    /// <para>
+    /// <b>The host answers it with the room's players.</b> Four bytes under
+    /// class 6, whose first is a bit set that grows as the room's players
+    /// report: <c>mgo2-game-started-on-briefing</c> answers <c>02</c>, then
+    /// <c>06</c>, <c>0e</c> and <c>1e</c> as its four players report, and
+    /// <c>mgo2-game-joined-when-red-team-then-briefing</c> answers <c>2a</c>
+    /// — bits 1, 3 and 5, the slots its three reporting players hold. The answer
+    /// is therefore the room's own set rather than an echo of the record's byte,
+    /// and it is rewritten whenever the set changes. **[V]** the growth; **[I]**
+    /// the bits as slots.
     /// </para>
     /// <para>
     /// <b>Both identifiers decompose to the same stream.</b> The replay parser
@@ -235,11 +248,11 @@ public sealed record MatchRecordGenerationUtils(
     /// setup, not a record id.
     /// </para>
     /// </remarks>
-    public static IReadOnlyList<ushort> ReadyStateIdentifiers { get; } =
+    public static IReadOnlyList<ushort> PlayerPresenceIdentifiers { get; } =
     [
-        First.ReadyState,
-        (ushort)(First.ReadyState | PeerAcknowledgementUtils.PayloadClassBit),
-        First.Next(0).ReadyState,
-        (ushort)(First.Next(0).ReadyState | PeerAcknowledgementUtils.PayloadClassBit),
+        First.PlayerPresence,
+        (ushort)(First.PlayerPresence | PeerAcknowledgementUtils.PayloadClassBit),
+        First.Next(0).PlayerPresence,
+        (ushort)(First.Next(0).PlayerPresence | PeerAcknowledgementUtils.PayloadClassBit),
     ];
 }

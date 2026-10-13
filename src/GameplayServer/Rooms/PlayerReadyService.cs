@@ -96,6 +96,9 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
         }
     }
 
+    /// <summary>Players in the room, counted over the roster that owns who is in it.</summary>
+    public int PlayerCount => roster.JoinerCount;
+
     /// <summary>Players in the room who have not reported themselves ready yet.</summary>
     public int PendingCount => Math.Max(0, roster.JoinerCount - ReadyCount);
 

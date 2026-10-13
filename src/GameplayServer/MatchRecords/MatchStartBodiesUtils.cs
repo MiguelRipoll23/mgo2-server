@@ -25,16 +25,16 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public static class MatchStartBodiesUtils
 {
     /// <summary>
-    /// Length of the answer to a client's readiness-state record: four bytes in
+    /// Length of the answer to a client's presence record: four bytes in
     /// both captures, and the class byte with it.
     /// </summary>
-    public const int ReadyStateAnswerLength = 4;
+    public const int PlayerPresenceAnswerLength = 4;
 
-    /// <summary>Attribute class the host's readiness-state answer carries.</summary>
-    public const byte ReadyStateAnswerClass = 0x06;
+    /// <summary>Attribute class the host's presence answer carries.</summary>
+    public const byte PlayerPresenceAnswerClass = 0x06;
 
-    /// <summary>Attribute class a client's readiness-state record carries.</summary>
-    public const byte ReadyStateClass = 0x04;
+    /// <summary>Attribute class a client's presence record carries.</summary>
+    public const byte PlayerPresenceClass = 0x04;
 
     /// <summary>
     /// Opcode a client's readiness report carries, in the record's first byte.
@@ -116,31 +116,38 @@ public static class MatchStartBodiesUtils
         [MatchStartPayloadOpcode, reported, 0x00, 0x00, 0x00, 0x00];
 
     /// <summary>
-    /// The host's answer to a client's readiness-state record.
+    /// The host's answer to a client's presence record.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The client sends its readiness state as one byte under class
-    /// <see cref="ReadyStateClass"/>, in the same datagram as the readiness
-    /// report and carrying the same byte. The host answers under class
-    /// <see cref="ReadyStateAnswerClass"/> in four bytes.
+    /// The client sends its presence as one byte under class
+    /// <see cref="PlayerPresenceClass"/>, in the same datagram as the readiness
+    /// report, carrying its own lobby slot. The host answers under class
+    /// <see cref="PlayerPresenceAnswerClass"/> in four bytes.
     /// </para>
     /// <para>
-    /// <b>The body is the second capture's, and the dedicated host does not send
-    /// one at all.</b> game2 writes <c>02 00 00 00</c> in every frame that
-    /// carries it. game1 — the dedicated host this project implements — writes
-    /// none inside its round start; its answers appear only in the steady stream,
-    /// much later and with six different bodies (<c>00001000</c>,
-    /// <c>00801000</c>, <c>00881000</c>, <c>40080000</c>, <c>40081000</c>,
-    /// <c>10800000</c>). Nothing measured relates either set to the report's
-    /// byte, and game1's own run — the round this server is measured against —
-    /// carries no such record, so this body is a guess. It is written because the
-    /// report arrives with its companion and a host that answers only half of a
-    /// record the client pairs with its readiness report is the shape that left a
-    /// client stalled. **[U]** what the four bytes are; what is **[V]** is the
-    /// length, the class and the pairing.
+    /// <b>The first byte is the room's players, as a bit set that grows as they
+    /// report</b> — measured on the two captures that hold a briefing:
+    /// <c>mgo2-game-started-on-briefing</c> answers <c>02</c> for its first
+    /// reporting player, then <c>06</c>, <c>0e</c> and <c>1e</c> as the other
+    /// three report (and <c>16</c> later, once a player has left), and
+    /// <c>mgo2-game-joined-when-red-team-then-briefing</c> answers <c>2a</c> —
+    /// bits 1, 3 and 5, the slots its reporting players hold. So this is the
+    /// room's own set and not an echo of the record's byte, and <c>02</c> is
+    /// what a room of one writes.
+    /// </para>
+    /// <para>
+    /// <b>What is written here is the one-player body, and nothing more.</b>
+    /// game1 — the dedicated host this project implements — writes no such
+    /// record inside its round start at all, and game2 writes <c>02 00 00 00</c>
+    /// in every frame that carries it, which is the set of a room whose first
+    /// player has reported. A room of more than one needs the set recomputed as
+    /// players report and leave, which this host does not do yet; the run's own
+    /// copy is the measured shape and the right value for the room this host is
+    /// measured against. **[V]** the length, the class and the growth; **[U]**
+    /// the trailing three bytes and the timing of a rewrite.
     /// </para>
     /// </remarks>
     /// <returns>The record body.</returns>
-    public static byte[] ReadyStateAnswer() => [0x02, 0x00, 0x00, 0x00];
+    public static byte[] PlayerPresenceAnswer() => [0x02, 0x00, 0x00, 0x00];
 }

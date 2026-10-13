@@ -100,8 +100,9 @@ answers in the pass the profile arrived in:
 ### 2.4 The briefing
 
 A client in a briefing repeatedly sends a two-record datagram: a one-byte
-readiness state and, on the round's payload identifier, `e1 <byte>` — the
-readiness report. `PlayerReadyHandler` is bound to the four payload identifiers
+presence record carrying the player's own lobby slot and, on the round's payload
+identifier, `e1 <byte>` — the readiness report. `PlayerReadyHandler` is bound to
+the four payload identifiers
 the report can arrive on, records the byte against the peer, and **publishes the
 room's ready set back** as one `e0 <byte>` record per reporting player, each
 under its own fourth byte. The publication goes out on every report, not only the
@@ -114,6 +115,17 @@ membership rather than of a chosen interval:
 AllReady  =  every peer on the roster has reported at least once
              (PlayerReadyService.AllReady, counted over RoomRosterService.Snapshot)
 ```
+
+**A room's first player is briefed, not started.** A report from the room's only
+member opens nothing (`MatchStartRunService.PlayersAReportOpensFor`): below two
+members a room is one player waiting for a game, and that player sits on the
+briefing screen until the room's own briefing time ends the wait. No capture
+holds a room whose sole player reported — the solo arrival of
+`mgo2-game-started-on-briefing` is one of six reporters and its round opens
+1.5 s after the last of them ([`BRIEFING_FLOW.md`](protocol/BRIEFING_FLOW.md)
+§2) — so this is a decision rather than a measurement, and it is the client's
+own contract on both ends of it: a client in a briefing waits either until every
+player is ready or until its own briefing timer runs out.
 
 With that gate met, `MatchStartRunService.Open` resolves what the room is running
 (`MatchSettingsService`, from this instance's settings), latches the round
@@ -128,8 +140,9 @@ join and every round's end arm one for the briefing that follows
 (`MatchStartRunService.BeginBriefing`), and a briefing that runs out opens the
 round for the players that did report — under the identifier set the last of their
 reports arrived on (`OpenWhenBriefingEndsAsync`). A briefing no player has answered
-opens nothing: a round is still something a report asks for, and a room nothing has
-answered has no set to open one under. The player still to report is served the
+opens nothing, and neither does one whose reporters have all since left: a round
+is still something a report asks for, and a room nothing has answered has no set
+to open one under. The player still to report is served the
 round as a late joiner is (§4.1).
 
 ### 2.5 The round
@@ -137,8 +150,8 @@ round as a late joiner is (§4.1).
 **The opening run** is written per peer, five times (once and four repeats), in
 one compressed frame: the marker, the payload echoing that peer's own reported
 byte, the two lobby-slot arrays — which name the room's own players, each in the
-slot it holds and on the side the room's rows put it — the readiness-state
-answer, the operations state block and clock, the two-byte operations record, the
+slot it holds and on the side the room's rows put it — the presence answer, the
+operations state block and clock, the two-byte operations record, the
 rules pair and the close pair (`MatchStartRunFramesUtils`). Everything in it that is measured as an offset
 is an offset **from this run**, which is why the beat waits for it. **The clock it
 carries is what is left of the round**, not its whole length
@@ -246,7 +259,7 @@ candidate for §5. The file names are the ones that own it.
 | the operations state block: an 89-byte recorded vector, whose named offsets the run writes | `MatchStateBodiesUtils` | the two holders, the two capture clocks and the round clock; `state[2]` is opened as `0xff` and written by the round's end; the other bytes, and the last-round result at `state[3]`, are the recording |
 | the item-box group's bodies | `ItemBoxRecordBodiesUtils` | the round's opening event pair, then the filler; the later spawn events are not written at all, and §5 item 6 has what the capture settles about them |
 | the match-start payload's trailing zeros and length | `MatchStartBodiesUtils` | game1's six-byte form |
-| the readiness-state answer (`02 00 00 00`) | `MatchStartBodiesUtils` | the one guessed body in the run, marked **[U]** |
+| the presence answer (`02 00 00 00`) | `MatchStartBodiesUtils` | the room's players as a bit set, measured growing `02` → `06` → `0e` → `1e` as a room's players report; written here as the one-player body, trailing three bytes **[U]** |
 | the close pair's 18 unnamed bytes | `MatchRecordBodiesUtils` | nothing names them |
 | the loadout bodies' unnamed bytes — the four at `0x12`, the two before the appearance block, the byte a no-pair region opens with — and the burst's closing blob's value 50 | `LoadoutBodiesUtils`, `PlayerSettingsBurstService` | the named fields are the room's; these are per-player values nothing names, so a recorded body of the player's own shape supplies them |
 
@@ -317,11 +330,20 @@ the silent peer is served it as a late joiner is. That is the client's own
 contract, and the reason it is a deadline rather than patience: a client in a
 briefing waits either for every player to be ready or for its own briefing timer
 to end, so a room that waited longer would leave the players it did hear from past
-the end of their timer with nothing to play. No capture shows the deadline
-firing, because every captured client does report; what the live experiments *did*
-produce is a client that sat in its ready state for two minutes while a round it
-had been sent went unrepeated (`DATA_PHASE_DELIVERY.md`), which is the shape a gate
-with no deadline holds in place.
+the end of their timer with nothing to play.
+
+**A room of one is the same shape at the other end.** Its single player has
+reported, so the count is met — and the round still waits, because a report from
+the room's only member does not open one (§2.4). The deadline is what ends that
+wait too, so a room's first player is on the briefing screen for the room's own
+briefing time and then in the round, while a second player's arrival turns the
+room into one whose reports can open it.
+
+No capture shows the deadline firing, because every captured client does report;
+what the live experiments *did* produce is a client that sat in its ready state for
+two minutes while a round it had been sent went unrepeated
+(`DATA_PHASE_DELIVERY.md`), which is the shape a gate with no deadline holds in
+place.
 
 ### 4.3 What ends a round
 

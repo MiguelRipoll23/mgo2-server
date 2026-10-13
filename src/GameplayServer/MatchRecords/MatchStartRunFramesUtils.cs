@@ -103,11 +103,12 @@ public static class MatchStartRunFramesUtils
         new(Rooms.RoomRosterService.HostEntryType, teams, pairIndexes.Teams),
         new(UdpCommandConstants.PlayerProfile, occupancy, pairIndexes.Occupancy),
 
-        // The companion's answer, in the one position a capture measures.
+        // The presence record's answer, in the one position a capture measures:
+        // the room's players as a bit set, of which a room of one writes 02.
         new(
-            generation.ReadyState,
-            MatchStartBodiesUtils.ReadyStateAnswer(),
-            MatchStartBodiesUtils.ReadyStateAnswerClass),
+            generation.PlayerPresence,
+            MatchStartBodiesUtils.PlayerPresenceAnswer(),
+            MatchStartBodiesUtils.PlayerPresenceAnswerClass),
 
         // The operations stream: the state block, the short record and the clock.
         // Both records that carry a round's length carry this round's own.

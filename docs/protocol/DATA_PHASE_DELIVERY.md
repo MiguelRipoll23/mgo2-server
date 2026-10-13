@@ -116,26 +116,35 @@ sitting in its ready state with `CONNECTION NOT STABLE` and no round: the map
 loaded, the roster was acknowledged, the beat kept moving, and the round never
 opened because nothing opened it.
 
-## The report arrives with a companion, and the run answers both
+## The report arrives with a presence record, and the run answers both
 
 The readiness report is never sent alone: in five of five reports across the two
 captures the client puts a one-byte record in the same datagram, on an
-identifier that splits the same way and carrying the same byte
-(`UDP_GAME_CAPTURE.md` §3.2). So the round answers two records, not one, and
-`MatchStartRunService` writes the companion's answer inside the run where
+identifier that splits the same way (`UDP_GAME_CAPTURE.md` §3.2). The byte it
+carries is the reporting player's own lobby slot — the same byte the run's
+payload echoes back — so it says which player has arrived rather than what that
+player has decided, and it is named for that now (`PlayerPresenceHandler`,
+`BRIEFING_FLOW.md` §1). So the round answers two records, not one, and
+`MatchStartRunService` writes the presence record's answer inside the run where
 `MatchStartRunFramesUtils` places it — behind the two arrays, the one position a
 capture measures.
 
-That answer's **body is the one thing here that is not measured**. game2's host
-writes `02 00 00 00`; game1's writes none inside its round start and answers the
-companion only much later with six different bodies. The length and the class
-are **[V]**; the bytes are a guess, marked **[U]** on
-`MatchStartBodiesUtils.ReadyStateAnswer`. If a run written with it is rejected,
-that body is the first thing to change — the report's own answer, which is what
-gated the round, does not depend on it.
+**The answer's first byte is measured, and it is the room's players.** It is a
+bit set that grows as the room's players report: `mgo2-game-started-on-briefing`
+answers `02` for its first reporter, then `06`, `0e` and `1e` as the other three
+report — each answer written within half a second of the report it follows and
+carried through the briefing, long before the round opens at t+198.4 — and
+`mgo2-game-joined-when-red-team-then-briefing` answers `2a`, bits 1, 3 and 5 for
+the slots its reporting players hold. What is not measured is the trailing three
+bytes, and what this host writes is game2's one-player body, `02 00 00 00`,
+marked **[U]** on `MatchStartBodiesUtils.PlayerPresenceAnswer`: a room of more
+than one needs the set recomputed as its players report and leave, which this
+host does not do yet. If a run written with it is rejected, that body is the
+first thing to change — the report's own answer, which is what gated the round,
+does not depend on it.
 
-Inbound, the companion has a handler of its own
-(`PlayerReadyStateHandler`) so that the relay it needs is a decision rather than
+Inbound, the presence record has a handler of its own
+(`PlayerPresenceHandler`) so that the relay it needs is a decision rather than
 the default an unnamed gameplay record falls into.
 
 ## The beat starts at the round open, not at the sparse phase's close

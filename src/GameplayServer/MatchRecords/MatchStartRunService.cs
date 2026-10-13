@@ -21,6 +21,16 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// first, which is the next paragraph.
 /// </para>
 /// <para>
+/// <b>A room's first player is briefed, not started.</b> A report from the
+/// room's only player opens nothing: no capture holds a room whose sole player
+/// reported — the solo arrival of <c>mgo2-game-started-on-briefing</c> is one of
+/// six reporters and its round opens 1.5 s after the last of them
+/// (<c>docs/protocol/BRIEFING_FLOW.md</c> §2) — and what a room of one asks for
+/// with its own report is a game nobody else is in. The client stays on the
+/// briefing screen until the room's own briefing time ends the wait, which is
+/// the same contract the next paragraph gives a player who never reports at all.
+/// </para>
+/// <para>
 /// <b>How many reports are needed is a deadline, not a rule.</b> A client waits
 /// in its briefing for the host's round either until every player is ready or
 /// until its own briefing time is up, so a room that waited for a player who never
@@ -86,12 +96,25 @@ public sealed partial class MatchStartRunService(
     ILogger<MatchStartRunService> logger)
 {
     private readonly Lock gate = new();
+
+    /// <summary>
+    /// Players a room must hold before one of their reports can open a round on
+    /// its own.
+    /// </summary>
+    /// <remarks>
+    /// Below it a room is one player waiting for a game, and that player is
+    /// briefed until the room's own briefing time ends the wait; at it a room is
+    /// a room, and every player's report is one the round was asked for.
+    /// </remarks>
+    private const int PlayersAReportOpensFor = 2;
+
     private int briefingNumber;
     private ushort? lastReportIdentifier;
 
     /// <summary>
     /// Opens the room's round, under the identifier set the report that asked
-    /// for it arrived on, once every player in the room has reported.
+    /// for it arrived on, once every player in the room has reported — and the
+    /// room holds more than the one player its first joiner is
     /// </summary>
     /// <remarks>
     /// <b>The gate is here and not only in the handler.</b> A round opens for a
@@ -126,6 +149,20 @@ public sealed partial class MatchStartRunService(
         lock (gate)
         {
             lastReportIdentifier = reportIdentifier;
+        }
+
+        // A room's first player is briefed rather than started, so the report of
+        // the room's only member opens nothing and its own briefing time is what
+        // ends the wait (OpenWhenBriefingEndsAsync). A second player changes the
+        // room from a player waiting for a game into a room of players, and from
+        // there the gate is every one of them having reported.
+        if (waitForEveryone && roster.Snapshot().Count < PlayersAReportOpensFor)
+        {
+            logger.LogDebug(
+                "A report arrived on 0x{Identifier:x4} from the room's only player; a first player is "
+                + "briefed rather than started, so the round waits for the room's own briefing time",
+                reportIdentifier);
+            return false;
         }
 
         if (waitForEveryone && !ready.AllReady)
@@ -168,97 +205,6 @@ public sealed partial class MatchStartRunService(
 
         _ = EndWhenTimeRunsOutAsync(round.Value, RoundClockUtils.TimeLimitMilliseconds(nextRound));
         return true;
-    }
-
-    /// <summary>
-    /// Begins the room's briefing: the wait for every player to report, under a
-    /// deadline of the room's own briefing time.
-    /// </summary>
-    /// <remarks>
-    /// A briefing begins where the room's rounds do, which is the first peer's join
-    /// and every round's end, and each one gets a number so a deadline that was
-    /// armed for it acts on it and not on whatever briefing is current when it
-    /// lands.
-    /// </remarks>
-    private void BeginBriefing()
-    {
-        var settings = matchSettings.FindPublished();
-        if (settings is null)
-        {
-            // No published room is no round to open and no briefing time to time
-            // it against; the reports that arrive will open nothing until it exists.
-            logger.LogDebug(
-                "A briefing began before this host's room was published; no deadline is armed for it");
-            return;
-        }
-
-        int briefing;
-        lock (gate)
-        {
-            briefing = ++briefingNumber;
-            lastReportIdentifier = null;
-        }
-
-        _ = OpenWhenBriefingEndsAsync(briefing, settings.BriefingTimeMinutes);
-    }
-
-    /// <summary>
-    /// Opens the room's round when its briefing time runs out without every player
-    /// having reported.
-    /// </summary>
-    /// <remarks>
-    /// <b>It is the client's own wait that makes this a deadline.</b> A client in a
-    /// briefing waits for the host's round and stops waiting when its own briefing
-    /// time is up, so a room that waited on a player who never reports leaves the
-    /// players it did hear from past the end of their timer with nothing to play
-    /// (<c>docs/GAMEPLAY_SERVER.md</c> §4.2). The round it opens is the round those
-    /// reports asked for — same rule, same map, same clock — and the player still to
-    /// report is served it as a late joiner is, which is what §4.1 measures a room
-    /// doing with a peer that arrives mid-round.
-    /// </remarks>
-    /// <param name="briefing">Briefing this deadline belongs to.</param>
-    /// <param name="briefingMinutes">Minutes the briefing runs for.</param>
-    private async Task OpenWhenBriefingEndsAsync(int briefing, int briefingMinutes)
-    {
-        try
-        {
-            await Task.Delay(TimeSpan.FromMinutes(briefingMinutes));
-
-            if (roundState.IsOpen)
-            {
-                // A report opened the round inside the briefing, which is what the
-                // deadline is there to save the room from waiting out.
-                return;
-            }
-
-            ushort reportIdentifier;
-            lock (gate)
-            {
-                if (briefingNumber != briefing || lastReportIdentifier is not { } reported)
-                {
-                    // Another briefing has begun — its own deadline acts for it — or
-                    // nothing in this one has answered the room.
-                    return;
-                }
-
-                reportIdentifier = reported;
-            }
-
-            logger.LogInformation(
-                "The room's {BriefingTime}-minute briefing ran out with {PendingCount} player(s) still to "
-                + "report; the round opens for the players that reported, on 0x{Identifier:x4}",
-                briefingMinutes,
-                ready.PendingCount,
-                reportIdentifier);
-            OpenRound(reportIdentifier, waitForEveryone: false);
-        }
-        catch (Exception exception)
-        {
-            logger.LogWarning(
-                exception,
-                "The briefing deadline for briefing {Briefing} ended without opening a round",
-                briefing);
-        }
     }
 
     /// <summary>
@@ -329,7 +275,8 @@ public sealed partial class MatchStartRunService(
         BeginBriefing();
         logger.LogInformation(
             "Round {RoundNumber} ended because {Reason}; the room is back in its briefing and the next "
-            + "round opens when every player has reported again or the briefing runs out",
+            + "round opens when the briefing runs out or, in a room of more than one, when every player "
+            + "has reported again",
             ended,
             reason);
         return true;

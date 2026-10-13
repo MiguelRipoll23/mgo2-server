@@ -43,13 +43,14 @@ public static class PeerCommandHandlerRegistration
             registry.Register<PlayerReadyHandler>(identifier);
         }
 
-        // The report's companion, sent in the same datagram and carrying the
-        // same byte. Below the tick threshold, so without a handler it would be
-        // relayed as an unnamed gameplay record; registering it makes the relay
-        // a decision rather than a default, and its answer rides the run.
-        foreach (var identifier in MatchRecordGenerationUtils.ReadyStateIdentifiers)
+        // The presence record, sent in the same datagram as the report and
+        // carrying the player's own lobby slot. Below the tick threshold, so
+        // without a handler it would be relayed as an unnamed gameplay record;
+        // registering it makes the relay a decision rather than a default, and
+        // its answer rides the run.
+        foreach (var identifier in MatchRecordGenerationUtils.PlayerPresenceIdentifiers)
         {
-            registry.Register<PlayerReadyStateHandler>(identifier);
+            registry.Register<PlayerPresenceHandler>(identifier);
         }
 
         // The players' vitals, the two identifiers that carry one player's health
@@ -87,7 +88,7 @@ public static class PeerCommandHandlerRegistration
         services.AddSingleton<PlayerProfileHandler>();
         services.AddSingleton<JoinProbeHandler>();
         services.AddSingleton<PlayerReadyHandler>();
-        services.AddSingleton<PlayerReadyStateHandler>();
+        services.AddSingleton<PlayerPresenceHandler>();
         services.AddSingleton<PlayerVitalsHandler>();
         services.AddSingleton<KillFeedHandler>();
         return services;
