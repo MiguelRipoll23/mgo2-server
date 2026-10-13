@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
 
@@ -22,11 +23,26 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// the burst goes out on the sequence after the roster trailer because nothing
 /// else is written in between, which is what the capture shows.
 /// </para>
+/// <para>
+/// <b>The room's rotation and loadouts are resolved here, not replayed.</b> The
+/// burst's rotation record is the only place a joiner is told which rounds the
+/// room plays, and each loadout record is the only place it is told what the
+/// room's players look like, so both are taken from this host and handed to the
+/// builder: the rotation from this instance's own settings
+/// (<see cref="MatchSettingsService"/>) and the loadouts from the room's rows
+/// (<see cref="LobbyLoadoutService"/>). What is resolved here is resolved 2.52 s
+/// before the burst goes out, which is where the capture's pause is, so the one
+/// read costs the join nothing.
+/// </para>
 /// </remarks>
 /// <param name="burst">Builder of the settings burst and the control record that follows it.</param>
+/// <param name="matchSettings">Resolver of the room's own rotation.</param>
+/// <param name="loadoutReader">Reader of the room's own players and their loadouts.</param>
 /// <param name="logger">Logger of this scheduler.</param>
 public sealed class PlayerSettingsBurstSchedulerService(
     PlayerSettingsBurstService burst,
+    MatchSettingsService matchSettings,
+    LobbyLoadoutService loadoutReader,
     ILogger<PlayerSettingsBurstSchedulerService> logger)
 {
     /// <summary>
@@ -66,12 +82,25 @@ public sealed class PlayerSettingsBurstSchedulerService(
     {
         await Task.Delay(Delay);
 
-        logger.LogDebug(
-            "UDP {LocalPort}: sending the settings burst to {RemoteAddress} after the roster pause",
-            context.LocalPort,
-            context.Remote);
+        var rotation = ReadRotation(context);
 
-        await RosterRunSendUtils.SendAsync(context, burst.BuildSettingsBurst(), compressed: true);
+        // The room's own players are read beside its rotation, in the same pause:
+        // each loadout record names one of them, and the read is what makes the
+        // burst answer a joiner with the room it joined rather than with the
+        // capture's characters.
+        var loadouts = await loadoutReader.ReadAsync();
+
+        logger.LogDebug(
+            "UDP {LocalPort}: sending the settings burst to {RemoteAddress} after the roster pause: "
+            + "{LoadoutCount} player loadout(s) from the room's own rows",
+            context.LocalPort,
+            context.Remote,
+            loadouts.Count);
+
+        await RosterRunSendUtils.SendAsync(
+            context,
+            burst.BuildSettingsBurst(rotation, loadouts),
+            compressed: true);
         logger.LogDebug(
             "UDP {LocalPort}: settings burst sent to {RemoteAddress}; sending its closing control",
             context.LocalPort,
@@ -84,5 +113,41 @@ public sealed class PlayerSettingsBurstSchedulerService(
             context.LocalPort,
             closing.Type,
             context.Remote);
+    }
+
+    /// <summary>
+    /// The rotation the burst carries: this host's own, or <c>null</c> when its
+    /// room is not published yet, which leaves the recorded room's body in the
+    /// record.
+    /// </summary>
+    /// <remarks>
+    /// The fallback is loud on purpose. A joiner that cannot be told its room's
+    /// rounds is a joiner that will read another room's, so the log line names the
+    /// two cases rather than letting the burst look the same either way.
+    /// </remarks>
+    /// <param name="context">Context the burst will be sent through.</param>
+    /// <returns>The room's rotation, or <c>null</c>.</returns>
+    private IReadOnlyList<MatchRotationEntry>? ReadRotation(PeerContext context)
+    {
+        var settings = matchSettings.FindPublished();
+        if (settings is null)
+        {
+            logger.LogWarning(
+                "UDP {LocalPort}: this host's room is not published, so the settings burst to {RemoteAddress} "
+                + "carries the recorded host's rotation rather than this room's",
+                context.LocalPort,
+                context.Remote);
+            return null;
+        }
+
+        logger.LogInformation(
+            "UDP {LocalPort}: writing match {GameIdentifier} ({GameName})'s own rotation of {RoundCount} "
+            + "round(s) into the settings burst to {RemoteAddress}",
+            context.LocalPort,
+            settings.GameIdentifier,
+            settings.Name,
+            settings.Rotation.Count,
+            context.Remote);
+        return settings.Rotation;
     }
 }

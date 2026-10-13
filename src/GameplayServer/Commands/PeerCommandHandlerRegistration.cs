@@ -1,8 +1,11 @@
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Udp;
 using Mgo2Server.GameplayServer.Commands.Peer.Connection;
+using Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 using Mgo2Server.GameplayServer.Commands.Peer.Room;
+using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.MatchRecords;
+using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Mgo2Server.GameplayServer.Commands;
@@ -48,6 +51,23 @@ public static class PeerCommandHandlerRegistration
         {
             registry.Register<PlayerReadyStateHandler>(identifier);
         }
+
+        // The players' vitals, the two identifiers that carry one player's health
+        // and stamina each. They are tick records the relay would otherwise pass
+        // on unread, and reading them is what gives the host a value to know: the
+        // handler keeps the last one and still relays the record.
+        registry.Register<PlayerVitalsHandler>(PlayerVitalsRecordUtility.FirstPlayerType);
+        registry.Register<PlayerVitalsHandler>(PlayerVitalsRecordUtility.SecondPlayerType);
+
+        // The operations stream, which carries the round's clock and state block
+        // and, under opcode 0x09, the kill feed. Both rounds' sets are registered
+        // and both class-bit forms, because a round plays under the set its own
+        // report arrived on. The handler reads the body: the identifier cannot
+        // tell a kill feed from the clock beside it.
+        foreach (var identifier in MatchRecordGenerationUtils.OperationsIdentifiers)
+        {
+            registry.Register<KillFeedHandler>(identifier);
+        }
     }
 
     /// <summary>
@@ -68,6 +88,8 @@ public static class PeerCommandHandlerRegistration
         services.AddSingleton<JoinProbeHandler>();
         services.AddSingleton<PlayerReadyHandler>();
         services.AddSingleton<PlayerReadyStateHandler>();
+        services.AddSingleton<PlayerVitalsHandler>();
+        services.AddSingleton<KillFeedHandler>();
         return services;
     }
 }

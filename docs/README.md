@@ -12,6 +12,7 @@ depends on, some is documentation, and some is a tool you run once and forget.
 | `STUN.md` | The UDP port check. Separate transport, separate thread, shares nothing with the lobby servers. |
 | `CRYPTO.md` | Every cipher, key and hash, where each is applied, and how to obtain them. |
 | `OBSERVED.md` | What was observed and verified against a real client, including the hypotheses that turned out wrong. Read before re-testing anything. |
+| `GAMEPLAY_SERVER.md` | The UDP gameplay host: the join, the briefing gate, the round and the beat — and how much of what a client receives is still a replay of a capture. |
 | `BACKLOG.md` | Deliberately deferred work, with enough context to pick each item up cold. |
 
 ## Required by the running stack

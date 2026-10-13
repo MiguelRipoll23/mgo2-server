@@ -132,6 +132,13 @@ appearance block; the `0xff` end marker is checked, and a trailing `0x10`
 suffix is removed when present. Not every color-byte ordering or raw item
 attribute is claimed to be understood.
 
+The live gameplay server writes a loadout's own fields at these offsets — the
+slot byte, the side, the appearance block and the pairs, over a recorded body of
+the shape the player's skills have (`LoadoutFramesUtils.TryWrite`,
+`UDP_SETTINGS_PAYLOAD.md`). The parser's mapping is what makes that possible and
+is the check on it: a body the writer builds decodes under this grammar to the
+values it was built from.
+
 ## Indexed system and object streams
 
 These are selected by `vid` in addition to the payload type. They are replay
@@ -184,6 +191,12 @@ above — so it stays **[U]** in `MatchRecordBodiesUtils` rather than being gues
 | `0x1a54`, `0x9a54`, `0x1254`, `0x9254` | The operations record the replay writes as the round clock and the match state block, replayed by `MatchRecordFramesUtils` | **Mapped, and written by name.** The parser keeps the operations stream under low `vid = 0x254`, and both bodies the capture carries are its opcodes: a three-byte body `01 20 0d` is opcode `0x01` — the round clock, a `u16` LE at `+1` in 125 ms units, so 3 360 units = 420 s, the same value in every one of the round's clock records — and the ninety-byte body is opcode `0x00`, a state block whose vector `MatchRecordBodiesUtils` now builds field by field at the parser's own offsets: the round result at `state[2]`, the objective holders at `state[40]` and `state[41]` (`0xff`, its `HOLDER_NONE`, nobody) and `state[87..88]`, the round clock's 3 360 units. Everything outside those offsets stays the recorded vector, because the parser names nothing there. The state block it builds was checked against the capture byte for byte. |
 | `0x1a50`, `0x9a50`, `0x1a5a`, `0x9a5a` | The item-box state group, replayed by `MatchRecordFramesUtils` | **Mapped, and now partly in the replay.** The parser's world-object streams are low `vid = 0x250` / `0x25a`, and its grammar is type 0 length 6 head, type 1 length 6 item, type 2 length 10 position, type 3 length 9 tail. The capture's head is code `0x74` with `n = 1` / `2` and items `0x8c` / `0x71` — the parser's "a box appears (n = box 1 / 2, item 0x8c / 0x71), each round" case — its position records read as world coordinates, and its all-zero pairs are the parser's filler. The replay writes that six-byte filler pair — the box's index and five zero bytes — under `0x1a50` and `0x1a5a`, in one beat frame in every eight from 6 frames after the match-start run; the spawn bodies and the moving position records stay the live round's own and are not replayed. |
 | `0x5ade`, `0x1ade` | Match-start marker and payload replayed by `MatchRecordFramesUtils` | Low `vid = 0x2de` under the `0x1000` / `0x4000` class bits (`0x12de` and `0x52de` are the same low vid); the parser's table names no such stream, so both stay **[U]**. |
+
+The two records above that this server now both reads *and* writes are the
+scoreboard delta and the kill feed: `MatchScoreboardFramesUtils` builds and parses
+`0x0b <slot+1> <21-byte mask> <values>`, `KillFeedHandler` reads the operations
+stream's opcode `0x09`, and `ScoreboardPublishService` writes each delta behind
+the change that caused it (`GAMEPLAY_SERVER.md` §3.1).
 
 The P2P decoder in this repository reads a two-byte message type and the
 network message framing defined in `UDP_P2P_PROTOCOL.md`. `rpdt.js` reads an

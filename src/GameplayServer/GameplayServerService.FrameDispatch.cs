@@ -208,7 +208,7 @@ public sealed partial class GameplayServerService
     /// <returns><c>true</c> when the record is a readiness report.</returns>
     private static bool IsReadinessReport(UdpMessage message) =>
         MatchRecordGenerationUtils.IsReadinessReportIdentifier(message.Type) &&
-        MatchRecordBodiesUtils.IsReadinessReport(message.Body);
+        MatchStartBodiesUtils.IsReadinessReport(message.Body);
 
     /// <summary>
     /// Records how far the peer's frame counter has got, without transmitting.

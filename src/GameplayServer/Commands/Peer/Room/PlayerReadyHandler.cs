@@ -1,4 +1,5 @@
 using Mgo2Server.GameplayServer.MatchRecords;
+using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
@@ -6,68 +7,56 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 
 /// <summary>
-/// Recognises the record in which a client reports that it has loaded and is ready
-/// to play, and opens the round the recorded host opens on it.
+/// Takes a client's briefing ready report, records it against the player that
+/// sent it, publishes the room's ready set, and opens the round once every
+/// player in the room has reported.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The round opens on this report and not on a clock.</b> Measured over all
-/// three captures, every round begins within 0.6–5.5 s of one of these reports and
-/// no round begins without one. The report is handed to
-/// <see cref="MatchStartRunService"/>, which writes the round's opening marker,
-/// the match-start run and the run's four repeats — and the run's payload echoes
-/// the byte this report carried, which is why nothing here can be written before
-/// the report arrives.
-/// </para>
-/// <list type="bullet">
-/// <item>game1 — <c>0x1ade</c> <c>e1 14</c> at t+44.76 s, round open at t+46.42 s.</item>
-/// <item>game1 — <c>0x12de</c> <c>e1 14</c> at t+190.39 s, round open at t+194.04 s.</item>
-/// <item>game2 — <c>0x12de</c> <c>e1 01</c> at t+56.72 s, round open at t+57.36 s.</item>
-/// <item>game2 — <c>0x1ade</c> <c>e1 01</c> at t+107.98 s, round open at t+109.12 s.</item>
-/// <item>game2 — <c>0x12de</c> <c>e1 01</c> at t+223.63 s, round open at t+224.62 s.</item>
-/// </list>
-/// <para>
-/// The report and the host's reply are one record read in two directions: the
-/// body begins <c>e1</c> from the client and <c>e0</c> from the host, and the byte
-/// after that opcode is echoed back unchanged — <c>e1 14</c> is answered
-/// <c>e0 14 …</c>, <c>e1 01</c> is answered <c>e0 01 …</c>. That echo is the whole
-/// of what the reply is read for. What the byte <em>means</em> is **[U]**, and the
-/// measurement says more about it than "an identifier": the record keeps carrying
-/// values the host rewrites through the round, under other fourth bytes — game1
-/// writes <c>e0 14</c> under fourth byte 0 and <c>e0 0f</c> under fourth byte 1,
-/// then <c>e0 0b c3 cf 00 00</c> under fourth byte 7, and game3 writes
-/// <c>e0 05</c> and <c>e0 0f</c> the same way. It is a per-fourth-byte value the
-/// client reports and the host confirms, not a round number, and this server
-/// carries it rather than deriving it.
+/// <b>The report and the host's reply are one record read in two directions.</b>
+/// The body begins <c>e1</c> from the client and <c>e0</c> from the host, and
+/// the byte after that opcode is the client's own — <c>e1 14</c> is answered
+/// <c>e0 14 …</c>, <c>e1 01</c> is answered <c>e0 01 …</c>. That echo is the
+/// whole of what the reply is read for. What the byte <em>means</em> is
+/// **[U]**, and the measurement says more about it than "an identifier": the
+/// record keeps carrying values the host rewrites through the round, under other
+/// fourth bytes. It is a per-player value the client reports and the host
+/// confirms, not a round number, and this server carries it rather than deriving
+/// it.
 /// </para>
 /// <para>
-/// The identifier alternates with the round's own identifier set
-/// (<c>0x1ade</c>, then <c>0x12de</c> a <c>0x800</c> bit along), so it is
-/// recognised from the body rather than bound to one value: the readiness opcode
-/// in the first byte, at the length every capture sends. The live client asked
-/// twenty-three times over two minutes, alternating <c>0x9ade</c> and
-/// <c>0x1ade</c>; all of them are answered, and the ones that arrive while the
-/// round they asked for is still going out are recognised as that same round
-/// rather than opening another.
+/// <b>The publication is the answer, and it is why the round does not have to
+/// open yet.</b> A client that readied first in a room of six is answered by the
+/// host's publication of the set — its own state in it — and not by the round,
+/// which is still minutes away
+/// (<c>docs/protocol/BRIEFING_FLOW.md</c>: the report at t+55.8 s, a second
+/// player's at t+112.6 s, the round at t+193.6 s). A host that answered only by
+/// opening the round would leave five of its six clients re-reporting for two
+/// minutes, which is the shape of the failure this project already made once on
+/// a clock.
 /// </para>
 /// <para>
-/// That identifier also carries the round's other payloads, which belong on the
-/// relay and not to a round. A record on it that is not a report is still
-/// broadcast to the room's other peers, so the identifier keeps carrying the
-/// traffic the captures show it carrying.
+/// The identifier alternates with the round's own set (<c>0x1ade</c>, then
+/// <c>0x12de</c> a <c>0x800</c> bit along), so it is recognised from the body
+/// rather than bound to one value: the readiness opcode in the first byte, at
+/// the length every capture sends. The identifier also carries the round's other
+/// payloads, which belong on the relay and not to a round; a record on it that
+/// is not a report is still broadcast to the room's other peers.
 /// </para>
 /// </remarks>
-/// <param name="matchStart">Writer of the round a report opens.</param>
+/// <param name="ready">The room's briefing states, which this report is recorded in.</param>
+/// <param name="matchStart">Writer of the round a room's last report opens.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerReadyHandler(
+    PlayerReadyService ready,
     MatchStartRunService matchStart,
     ILogger<PlayerReadyHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
-    public Task HandleAsync(PeerContext context)
+    public async Task HandleAsync(PeerContext context)
     {
         var body = context.Message.Body;
-        if (!MatchRecordBodiesUtils.IsReadinessReport(body))
+        if (!MatchStartBodiesUtils.IsReadinessReport(body))
         {
             // The same identifier carries the round's other payloads, which the
             // dispatcher relays to the room's other peers. A report is not one of
@@ -84,11 +73,60 @@ public sealed class PlayerReadyHandler(
             // host only passes it on, which is what keeps the replay console from
             // reading it as a record this server builds.
             var relay = context.Relay ?? context.Broadcast;
-            return relay(context.Message.Type, body, context.Message.Flags);
+            await relay(context.Message.Type, body, context.Message.Flags);
+            return;
         }
 
-        var reported = body[MatchRecordBodiesUtils.ReadinessReportValueIndex];
-        matchStart.Open(context, reported);
-        return Task.CompletedTask;
+        var player = context.Remote.ToString();
+        var reported = body[MatchStartBodiesUtils.ReadinessReportValueIndex];
+        ready.Note(player, reported);
+
+        // The publication goes out on every report and not only on the first: it
+        // is the host's answer to the report, and a client whose report changed
+        // nothing is still waiting to be answered.
+        await PublishAsync(context);
+
+        if (!matchStart.Open(context.Message.Type))
+        {
+            logger.LogDebug(
+                "UDP {LocalPort}: {RemoteAddress} is ready with {Value}; {PendingCount} player(s) in the "
+                + "room have not reported, so the round stays closed",
+                context.LocalPort,
+                context.Remote,
+                reported,
+                ready.PendingCount);
+        }
+    }
+
+    /// <summary>
+    /// Writes the room's ready set: the reporting peer gets it as one frame, and
+    /// the rest of the room gets the same records so that every client can see
+    /// which of the others is ready.
+    /// </summary>
+    /// <param name="context">Context the report arrived through.</param>
+    private async Task PublishAsync(PeerContext context)
+    {
+        // The set is published under the identifier the report arrived on, which
+        // is the generation that client is on: a round's payload record is the
+        // same record in both directions.
+        var generation = MatchRecordGenerationUtils.OfReadinessReport(context.Message.Type);
+        var publication = ready.BuildPublication(generation);
+        if (publication.Count == 0)
+        {
+            return;
+        }
+
+        logger.LogDebug(
+            "UDP {LocalPort}: publishing {RecordCount} ready state(s) to {RemoteAddress} and the room",
+            context.LocalPort,
+            publication.Count,
+            context.Remote);
+
+        await RosterRunSendUtils.SendAsync(context, publication);
+
+        foreach (var record in publication)
+        {
+            await context.Broadcast(record.Type, record.Body, record.Ordinal);
+        }
     }
 }

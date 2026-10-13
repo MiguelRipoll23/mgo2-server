@@ -42,7 +42,7 @@ The slot byte picks the shape:
   the roster counts from zero. The host itself is the rotation record, never a
   loadout (`rpdt.js` requires `b[a + 1] >= 1`). **[V]**
 
-## When they arrive — and the host has no loadout
+## When they arrive — and whose body the slot-0 loadout is
 
 A `0b` payload is **not** part of the roster run. The run carries roster entries
 only; the host's own record is a later frame, in the post-join burst. Measured,
@@ -53,17 +53,27 @@ both captures **[V]**:
 | `mgo2-game1.pcapng` | t+4.170, `0x9001`/`0x1001` roster entries only | t+6.687, 161 B — 2.5 s later | slots 0 and 20 at t+6.687; each later joiner with its own join |
 | `mgo2-game2.pcapng` | t+6.112, roster entries only | t+10.236, 161 B — 4.1 s later, then re-sent | slot 1 at t+6.112, and again beside the rotation |
 
-**The host never sends a loadout for itself.** Every loadout-shaped record in
-both captures has `slot byte >= 1`, so every one belongs to a joining player
-(slots 0, 4, 6, 11, 15, 20 in `game1`; slot 1 in `game2`). It is not an
-omission in the capture: `appearanceRecord` and `skillRecord` refuse
-`b[a + 1] < 1` outright, so a slot-0 loadout is not a shape the format has, and
-the roster gives the host its own entry with a slot the record does not use.
-What the host sends for itself is the rotation record — and its 90 bytes after
-the 15 triples (`0x47..0xa0`) are **[U]**, not an appearance block: read as one,
-they give gear ids `02 02 02 04 00 02 04` where the observed characters' gear is
-items like `1e 45 2f 57 39 67 68`. **Where the host's own appearance reaches the
-other peers is not established by either capture.**
+**The slot is the room's own player-table key, and one of the bodies is the
+host's.** Every loadout-shaped record in both captures has `slot byte >= 1`, so
+`appearanceRecord` and `skillRecord` — which refuse `b[a + 1] < 1` outright —
+read all of them; the keys they name are the same ones §8.4 of
+`UDP_GAME_CAPTURE.md` reads out of the same capture's roster records. In `game1`
+the five joining players hold keys `14`, `0f`, `04`, `0b` and `06`, and the six
+loadout bodies name those five **and slot `0`**, which no joining player holds —
+slot `0` is the host's own entry in its player table
+(`RoomRosterService.HostSessionSlot`). The burst's pairing says the same thing:
+the two bodies it writes while the room holds the host and its first joiner are
+slot `0` and slot `14`, the two players who are there. So a slot-0 loadout is
+sent, and it is the host's own; an earlier reading of this file called it a
+sixth joining player. **[V]** for the keys and the pairing; that the slot-0 body's
+appearance is the host character's own **[I]** — in the capture it is identical to
+the joiner's, both being default appearances.
+The host also sends a rotation record, and its 90 bytes after the 15 triples
+(`0x47..0xa0`) are **[U]**, not an appearance block: read as one, they give gear
+ids `02 02 02 04 00 02 04` where the observed characters' gear is items like
+`1e 45 2f 57 39 67 68`. The host's own appearance is therefore the slot-0 loadout
+body above and not a section of the rotation — which is what the live host writes,
+from its own character's row.
 
 ## The rotation record — `0b 00`, `L >= 71`
 
@@ -78,7 +88,9 @@ Fifteen three-byte entries beginning at offset `0x1a`:
 `rpdt.js` picks the entry whose map equals the file header's map and reads that
 entry's `[1]` as the round's mode, which names the first two. **[V]** for the
 offsets and the count; the third byte is `0x00` in `game1` and `0x00` for all
-but one entry in `game2`, and is **[U]**.
+but one entry in `game2`, and is **[U]**. The live server writes it from the
+room's own flags byte — the only non-zero value this position was ever seen to
+hold — and what the peer does with it is still **[U]**.
 
 * `mgo2-game1.pcapng` (`0b 00`, 161 B, t+6.687) — map/mode
   `5/1, 7/5, 10/3, 6/7, 14/1, 15/4, 3/1, 17/2, 2/16, 9/1, 12/5, 4/4, 1/1, 8/6, 13/5`.
@@ -117,6 +129,26 @@ Field order, `rpdt.js`'s `APPEARANCE_FIELDS`, byte `L-23+i`:
 the replay decoder and is marked so there. **[V]** for the offsets; **[I]** for
 the colour order.
 
+**The side byte is the lobby array's team group, doubled.** `rpdt.js` aligns the
+lobby-array team groups it reads from the indexed `0x85`/`0x86` pair against this
+byte over 30 recordings and reports group `0` as byte `0` and group `1` as byte
+`2` for **323 of 323** players carrying both, which is the mapping the live server
+writes from (`LoadoutFramesUtils.SideByteOf`). The same decoder warns that a body
+whose byte is uniform across every slot is the *unassigned default* rather than a
+real assignment — every loadout of `game1` carries `02` — so a player the room's
+rows put on no side keeps the recorded `02`, which is also what side `1` codes to.
+**[V]** for the mapping over the 30 files; **[I]** for reading this byte as the
+player's side in the room the record is sent to.
+
+**Three shapes, and no fourth.** A body's length is 49 bytes plus its skill
+region, and the region is `0xff` and one pair per two bytes (an optional `0x10`
+suffix aside), so the lengths the decoder accepts leave exactly three shapes: no
+pair (`0b 01`, 50 B), two pairs (54 B) and three pairs (56 B). The accepted set
+contains no 52, which is the length a single pair would need, and a body with four
+pairs would decode as garbage because the decoder reads three pairs from the
+region's end; a character whose equipped skills are neither none, two nor three has
+no body to be written in. **[V]** for the shapes and the arithmetic.
+
 **This is not this repository's own appearance order.** `PROTOCOL.md`'s 27-byte
 appearance struct runs `gender, face, upper, lower, face paint, upper colour,
 lower colour, voice, pitch, [4 zero], head … accessory-2 colour`; this network
@@ -154,13 +186,43 @@ Sample `mgo2-game1.pcapng` loadouts — **[V]** for the bytes:
 ## What this changes
 
 The host's payload `0b 00` and each player's loadout now decode; the rectangle
-`UDP_COMMANDS.md` filed as "[U]" is named. **The server does not synthesize
-them.** The one burst the capture contains goes out with the capture's own
-bodies (`PlayerSettingsBurstService`), as the recorded host wrote them: they are
-one character's equipment and skills, and the fields behind them are the
-player's, which this server does not have. What this settles for the sender is
-which bytes the burst is made of — the tag-plus-slot-plus-zeros body it replaced
-was a shape no peer had been shown to read.
+`UDP_COMMANDS.md` filed as "[U]" is named. **The server writes the rotation and
+writes the loadouts.** The room's rotation is this instance's own setting
+(`MatchSettings.Rotation`, `GAME_SETTINGS_WIRE.md` — the same rotation the host
+plays and the same one it writes into the room row), so the burst's fifteen
+triples are written from it — entry *i* is the rotation's entry *i* modulo its
+count, so a room naming fewer rounds than the field holds repeats its own rounds
+rather than naming map `0` — and the third byte is zero, which is what fifteen of
+the sixteen recorded triples carry and what a room that states no flags byte is
+published with. The writer is `PlayerSettingsBurstService.RoomRotationBody`.
+
+The loadouts are written from the room's own players. A player's own fields are
+rows this server holds — the appearance block from `characters_appearance`
+(`CharacterService.GetAppearanceAsync`), the skill pairs from the character's
+equipped skills (`GetEquippedSkillsAsync`), the slot byte from the key the
+roster handed out, and the side byte from the team rows the lobby stored — so
+the burst names the room's own faces, gear and skills instead of the recorded
+host's. The readers and writers are `LobbyLoadoutService` and
+`LoadoutFramesUtils.TryWrite`, and the body of a shape the player's skills do not
+have falls back to the recorded one, logged.
+
+**What is left as recorded, and why.** Three regions of a loadout body are named
+by nothing: the nineteen bytes at `0x03`, the four bytes at `0x12`, and the two
+bytes between the skill list's end and the appearance block. The last are the
+player's and not the appearance's — `game1`'s slot 20 and `game2`'s slot 1 carry
+the same appearance, the same pairs and the same four leading bytes and differ in
+that tail alone, `05 78` against `05 7b`, and within one capture the tail differs
+between players — so they are written from the template, and so is the byte a
+no-pair region opens with (`fe` in `game1`'s body, `01` in the briefing capture's).
+Checked against all twenty distinct loadout bodies the five captures hold, a
+written body differs from the captured one **only** in those unnamed bytes: seven
+reproduce byte for byte, twelve differ in the tail and (for the no-pair bodies)
+the region byte, and one — the 55-byte record of the capture where the player had
+chosen red and whose skill region does not align — is refused by the shape rule
+and keeps the recorded body. What this settles for the sender is
+which bytes of the burst are the room's and which are one character's; the
+tag-plus-slot-plus-zeros body the loadouts replaced was a shape no peer had been
+shown to read.
 
 ## See also
 

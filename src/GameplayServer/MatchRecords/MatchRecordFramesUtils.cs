@@ -89,16 +89,28 @@ public static class MatchRecordFramesUtils
     public const ushort RulesRosterIdentifier = 0x0a61;
 
     /// <summary>
-    /// Measured identifier of the operations record that carries the round
-    /// clock. **[I]**
+    /// Measured identifier of the operations stream: the record family that
+    /// carries the round's clock, its state block and its outcome, the kill feed
+    /// and this host's own periodic insertions.
     /// </summary>
-    public const ushort RoundClockIdentifier = 0x1a54;
+    /// <remarks>
+    /// <b>It is a stream and not a record.</b> Every operations record shares this
+    /// identifier and is told apart by the first byte of its body
+    /// (<see cref="MatchRecordBodiesUtils.OperationsClockOpcode"/>, 
+    /// <see cref="MatchRecordBodiesUtils.OperationsStateOpcode"/>, and the
+    /// unframed blocks that follow): a live capture writes <c>0x00</c>, <c>0x01</c>,
+    /// <c>0x02</c>, <c>0x09</c>, <c>0x0b</c> and <c>0x0f</c> under this one
+    /// identifier within a single round. Reading it as "the round clock record"
+    /// is what an earlier name did.
+    /// </remarks>
+    public const ushort OperationsIdentifier = 0x1a54;
 
     /// <summary>
-    /// Measured identifier of the same operations record with the <c>0x800</c>
-    /// bit set, which the recorded host also inserts. **[I]**
+    /// Measured identifier of the same operations stream with the payload class
+    /// bit (<c>0x8000</c>) set, which the recorded host also inserts.
     /// </summary>
-    public const ushort RoundClockAlternateIdentifier = 0x9a54;
+    public const ushort OperationsClassBitIdentifier =
+        OperationsIdentifier | PeerAcknowledgementUtils.PayloadClassBit;
 
     /// <summary>Measured identifier of the marker that opens the match-start run. **[U]**</summary>
     public const ushort MatchStartMarker = 0x5ade;
@@ -122,57 +134,28 @@ public static class MatchRecordFramesUtils
     public const byte SteadySessionFlagsStart = TeamArrayIndex;
 
     /// <summary>
-    /// Beat frames between one <see cref="RoundClockIdentifier"/> insertion and
+    /// Beat frames between one <see cref="OperationsIdentifier"/> insertion and
     /// the next: 90, so 2.96 s. Measured over the capture's solo window, where
     /// each form recurs every ~91 frames (3.0 s) — 26 of one form and 18 of the
     /// other over 1 812 frames — and the two together every 45.9 (1.5 s).
     /// </summary>
-    public const int RoundClockPeriodFrames = 90;
+    public const int OperationsPeriodFrames = 90;
 
     /// <summary>
-    /// Beat frames between one <see cref="RoundClockAlternateIdentifier"/>
+    /// Beat frames between one <see cref="OperationsClassBitIdentifier"/>
     /// insertion and the next, measured the same way.
     /// </summary>
-    public const int RoundClockAlternatePeriodFrames = 90;
+    public const int OperationsClassBitPeriodFrames = 90;
 
     /// <summary>
-    /// Offset of the first alternate clock insertion within its period: half of
-    /// it, so a clock of one form or the other follows every
-    /// <see cref="RoundClockPeriodFrames"/> / 2 frames — the measured 1.48 s.
+    /// Offset of the first class-bit insertion within its period: half of it, so
+    /// an operations insertion of one form or the other follows every
+    /// <see cref="OperationsPeriodFrames"/> / 2 frames — the measured 1.48 s.
     /// </summary>
-    public const int RoundClockAlternatePhaseFrames = 45;
+    public const int OperationsClassBitPhaseFrames = 45;
 
     /// <summary>Beat frames between one state-blob insertion and the next: 5.98 s measured.</summary>
     public const int StateBlobPeriodFrames = 181;
-
-    /// <summary>
-    /// How long one round lasts before the next is opened: 147.6 s, measured
-    /// between the capture's first round's run (t+46.42 s) and its second
-    /// round's (t+194.04 s).
-    /// </summary>
-    /// <remarks>
-    /// A round ends when a team reaches the goal or the round's timer runs out,
-    /// whichever comes first. The capture's first round ended by the goal — it
-    /// is 147.6 s against the 420 s the round's own clock carries
-    /// (<c>MatchRecordBodiesUtils.RoundClockUnits</c> is 3 360 units of 125 ms) —
-    /// and this replay, which does not simulate a match and so cannot see a
-    /// team reach one, opens the next round at the measured length and lets the
-    /// second round's identifiers carry the difference. A round that reached
-    /// the timer instead would be the longer of the two.
-    /// </remarks>
-    public const int RoundLengthMilliseconds = 147620;
-
-    /// <summary>
-    /// How long the sparse phase lasts: the sum of the delays
-    /// <see cref="SparseSteps"/> itself carries, 42 240 ms — 42.2 s, the
-    /// capture's own close of the phase. It is the point on this clock at which
-    /// the match-start run follows, and it is derived from the steps rather than
-    /// restated so the two cannot drift apart.
-    /// </summary>
-    public static int SparsePhaseMilliseconds => SparsePhaseLengthMilliseconds;
-
-    private static readonly int SparsePhaseLengthMilliseconds =
-        SparseSteps().Sum(step => step.DelayMilliseconds);
 
     /// <summary>
     /// Beat frame at which the vitals record starts riding in the beat frame:
@@ -224,7 +207,7 @@ public static class MatchRecordFramesUtils
     public const byte TeamArrayIndex = 0x07;
 
     /// <summary>Attribute class of the sparse state-blob tick record.</summary>
-    private const byte StateBlobAttributeClass = 0x01;
+    public const byte StateBlobSparseAttributeClass = 0x01;
 
     /// <summary>Attribute class paired with a zero-valued steady blob.</summary>
     private const byte StateBlobSteadyZeroAttributeClass = 0x15;
@@ -246,56 +229,6 @@ public static class MatchRecordFramesUtils
     /// <param name="Body">Message body.</param>
     /// <param name="FourthByte">Value of the record's fourth byte.</param>
     public sealed record RecordMessage(ushort Type, byte[] Body, byte FourthByte = 0);
-
-    /// <summary>One step of the stream: records to write together, then the wait before the next.</summary>
-    /// <param name="DelayMilliseconds">Delay before this step, in milliseconds.</param>
-    /// <param name="Records">Records written together as one datagram.</param>
-    /// <param name="Compressed">
-    /// Whether the datagram goes out LZSS-compressed. The recorded host marks the
-    /// state blobs and the match-start run and leaves the one-byte control records
-    /// and the beat frames plain, so the marker follows the frame rather than the
-    /// peer — the same rule the roster run follows.
-    /// </param>
-    public sealed record RecordStep(
-        int DelayMilliseconds,
-        IReadOnlyList<RecordMessage> Records,
-        bool Compressed = false);
-
-    /// <summary>
-    /// The sparse phase, counted from the roster answer. Each delay is measured
-    /// between consecutive captured frames, so a zero means the two went out back
-    /// to back.
-    /// </summary>
-/// <remarks>
-/// <b>The phase ends at the last state blob and the run does not follow it.</b>
-/// The run is not a step of this list: it waits for the client's readiness
-/// report, and the captured client sent it 1.66 s after the phase closed — so
-/// the run lands at the capture's t+46.4 s rather than the phase's t+42.2 s,
-/// and only because the client asked. <see cref="MatchStartRunService"/> writes
-/// it on that report.
-/// </remarks>
-/// <returns>The steps in send order, ending at the last state blob.</returns>
-    public static List<RecordStep> SparseSteps() =>
-    [
-        new(4930, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x02)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), StateBlobAttributeClass)], Compressed: true),
-        new(0, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x02)]),
-        new(4800, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x03)]),
-        new(2400, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x03)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), StateBlobAttributeClass)], Compressed: true),
-        new(2370, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x04)]),
-        new(2750, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), StateBlobAttributeClass)], Compressed: true),
-        new(2370, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x05)]),
-        new(4750, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), StateBlobAttributeClass)], Compressed: true),
-        new(0, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x06)]),
-        new(4770, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x07)]),
-        new(110, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), StateBlobAttributeClass)], Compressed: true),
-        new(4250, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x08)]),
-        new(2490, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), StateBlobAttributeClass)], Compressed: true),
-        new(6250, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x09)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), StateBlobAttributeClass)], Compressed: true),
-    ];
-
     /// <summary>
     /// The beat frame: an optional head insertion, the vitals record once the
     /// capture's round reaches it, the rules-roster pair, and — behind the pair —
@@ -354,16 +287,29 @@ public static class MatchRecordFramesUtils
         return frame;
     }
 
-    /// <summary>The clock insertion, in either of the two identifiers the capture uses.</summary>
+    /// <summary>
+    /// An operations insertion, in either of the two identifiers the capture
+    /// uses: the round's clock, as far as it has run.
+    /// </summary>
     /// <param name="generation">Identifier set of the round being played.</param>
-    /// <param name="alternate">True for the sibling form of the identifier.</param>
+    /// <param name="alternate">True for the class-bit form of the identifier.</param>
     /// <param name="fourthByte">Value of the record's fourth byte.</param>
+    /// <param name="clockUnits">
+    /// Units of the round clock still to run, in the stream's own 125 ms ticks.
+    /// It is the caller's countdown and not the round's opening value: the
+    /// recorded host moves this record every 1.5 s, from its rule's time towards
+    /// zero (<c>docs/protocol/BRIEFING_FLOW.md</c> §3).
+    /// </param>
     /// <returns>The insertion record.</returns>
-    public static RecordMessage RoundClockInsertion(
+    public static RecordMessage OperationsInsertion(
         MatchRecordGenerationUtils generation,
         bool alternate,
-        byte fourthByte) =>
-        new(alternate ? generation.RoundClockAlternate : generation.RoundClock, MatchRecordBodiesUtils.RoundClock(), fourthByte);
+        byte fourthByte,
+        int clockUnits) =>
+        new(
+            alternate ? generation.OperationsClassBit : generation.Operations,
+            MatchRecordBodiesUtils.RoundTimeLimitUnits(clockUnits),
+            fourthByte);
 
     /// <summary>A state-blob insertion from the recorded steady stream.</summary>
     /// <param name="live">True for the captured 100-valued variant.</param>

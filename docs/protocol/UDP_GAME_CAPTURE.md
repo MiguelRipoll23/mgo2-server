@@ -450,6 +450,50 @@ The host also publishes the next sequence beside the confirmation, in a pair of
 records ending `0b 00 01 00 00 00 00 08 07 NN` — game1's carries `f4` and
 game2's `01`, each the sequence its next pair uses. **[V]**
 
+**The pair names the room's own players, and the host fills it in as they
+join.** The bodies are 26 bytes: the type, the sequence, slot 0, and the
+twenty-three slots behind it. A slot is marked taken in the occupancy array with
+`07`, and the team array's byte at the same slot is then the side — `0` or `1`,
+which is the only pair the replay parser's `teamArray()` accepts — while a free
+slot is `7f`/`ff` and slot 0 is the host's own sentinel `fe`, held out of both.
+Read out of game1, whose round is the long one. The times are §4's — counted
+from the handshake of the peer the pair is written to, which is `10.2.0.2:5730`
+for all of these:
+
+| t | occupied slots, as (slot, side) |
+| --- | --- |
+| +46.4 | none — the run, and the three repeats behind it |
+| +73.4 | `(14, 0)` |
+| +185.2 | `(14, 0)`, `(15, 1)` |
+| +220.2 | `(04, 1)`, `(14, 0)`, `(15, 1)` |
+| +396.1 | `(04, 1)`, `(0b, 0)`, `(14, 0)`, `(15, 1)` |
+| +442.7 | none again |
+| +449.0 | `(0b, e0)` |
+| +506.0 | `(06, e0)`, `(0b, e0)` |
+| +517.5 | `(06, 0)`, `(0b, 1)`, `(14, 1)` |
+
+The slots are the five joining players' keys in the 24-entry player table — `14`,
+`0f`, `04`, `0b`, `06`, which are the ones §8.4 reads out of the same capture's
+roster records, the host's own slot 0 excepted — and the sides are the raw `0`
+and `1` a two-team room has. The pair is therefore a **live statement about the
+room** and not a per-round constant: it gains a slot as a player joins, it goes
+back to no slot taken at +442.7, it writes `e0` at +449.0 and +506.0 for slots it
+will not name a side for yet, and at +517.5 it gives slot `14` the *other* side.
+The `e0` pair follows the empty one **6.3 s** later, and the sides are named
+**68.5 s** after that: a host un-marks every slot and re-marks the room with no
+side before it settles the teams it will name. Nothing here says *why* those
+three are 396 s into the round, so the sequence is recorded and not explained.
+**[V]** for the marking, the sides and the `e0` placeholder; what the client does
+with a slot that is not its own peer is **[U]**.
+
+**A pair is told by its two index bytes, and they must differ by one.** The
+fourth byte of each array's record is its index; in all three captured runs the
+team array carries `07` and the occupancy array `08`, and the later pairs carry
+the next values of the same counter — `0c`/`0d`, `15`/`16`, `1e`/`1f` for game1.
+The replay parser pairs two arrays only when their times agree, their index bytes
+are consecutive and their sequence bytes are equal, so a host that wrote the same
+index on both records would publish a pair nothing can pair. **[V]**
+
 **A scan of `MGO2.ELF` does not name the sender.** No site constructs either
 identifier as a whole immediate (`0x1ade`, `0x12de`, `0x0a5c`, `0x025c`, `0x0a61`
 all score zero against `li`/`addi`/`ori`/`lis`), so the ids are read from a table
@@ -511,7 +555,7 @@ byte 7; game3 writes `e0 05` under 0 and `e0 0f` under 1 and `e0 0d 12 8a 00 00 
 2; game2 writes `e0 01` under 0 and `e0 02` under 1. The slot is therefore a value the
 host owns per fourth byte, which the client's two-byte report names and the run's payload
 echoes — not a round number and not a constant. **[V]** that it varies this way; what any
-of the values counts is **[U]**. `MatchRecordBodiesUtils.MatchStartPayload` carries the
+of the values counts is **[U]**. `MatchStartBodiesUtils.MatchStartPayload` carries the
 client's own byte back rather than a value this server would have to invent.
 
 **The payload's length is not settled, and is the one thing here that is a guess.** game1
@@ -520,7 +564,7 @@ the same record and the same two-byte report; game1 later grows the same record 
 **fourteen** bytes mid-round (`e0 06 00 00 00 00 …`). Nothing measured separates them —
 both captures hold four roster entries and neither marks a slot occupied in the array that
 opens the run — so the rule is not a player count, a slot count or the round length.
-`MatchRecordBodiesUtils.MatchStartPayload` writes game1's six-byte form, the capture the
+`MatchStartBodiesUtils.MatchStartPayload` writes game1's six-byte form, the capture the
 rest of the replay is measured from. A round opened against a game2-shaped host carries one
 zero more than that host writes. **[U]**
 
@@ -820,7 +864,7 @@ exactly. What the value counts is **[U]**. **[V]**
 
 **`0xd001` is mostly the host's, not the peer's.** The round holds 181 of them:
 **176 server to client, 5 the other way.** It was registered receive-only here on
-the strength of the 5. Two go out inside this burst, with bodies `24` and `02`. **[V]****The payloads decode, and they are copied rather than built.** The `0b <slot>` bodies run 6 to 161 bytes and hold one character's equipment, skills and settings, which is the replay console's `TYPE_SETTINGS` record: slot `0x00` with 71 bytes or more is the host's own rotation of fifteen map/mode entries, and a slot of `0x01` or more with a length in 50…58 is a player's loadout (`UDP_SETTINGS_PAYLOAD.md`). The first four here match the replay's opening burst byte for byte — `0b 00`/161, `0b 01`/50, `0b 15`/54 twice, including the `45 2f 57 39 67 68` template run at body offset `0x1b` of `0b 01` — so a replay is a source for live payloads, not only for framing (`UDP_P2P_PROTOCOL.md` §6.6). `PlayerSettingsBurstService` sends those recorded bodies, because the fields behind them are one character's own appearance and skills and this server does not have them; the tag-plus-slot-plus-zeros body it replaced was a shape no peer had been shown to read. **[V]** for the reading, **[I]** for sending another session's values.
+the strength of the 5. Two go out inside this burst, with bodies `24` and `02`. **[V]****The payloads decode, and they are copied rather than built.** The `0b <slot>` bodies run 6 to 161 bytes and hold one character's equipment, skills and settings, which is the replay console's `TYPE_SETTINGS` record: slot `0x00` with 71 bytes or more is the host's own rotation of fifteen map/mode entries, and a slot of `0x01` or more with a length in 50…58 is a player's loadout (`UDP_SETTINGS_PAYLOAD.md`). The first four here match the replay's opening burst byte for byte — `0b 00`/161, `0b 01`/50, `0b 15`/54 twice, including the `45 2f 57 39 67 68` template run at body offset `0x1b` of `0b 01` — so a replay is a source for live payloads, not only for framing (`UDP_P2P_PROTOCOL.md` §6.6). `PlayerSettingsBurstService` no longer sends those recorded bodies as they stand. The rotation record's fifteen triples are written from the room's own rotation (`MatchSettings.Rotation`, `GAME_SETTINGS_WIRE.md`), because that is a row this host holds and the joiner has to be told which rounds the room plays; and each loadout's own fields — the slot byte, the side, the trailing appearance block and the skill pairs — are written from that player's character rows (`characters_appearance` and the equipped skills), because those are rows this host holds too. What nothing names in a loadout body stays the recorded body's, which is why the burst carries a recorded body of the player's own shape behind the fields it writes; `UDP_SETTINGS_PAYLOAD.md` carries the field-by-field account. The tag-plus-slot-plus-zeros body these replaced was a shape no peer had been shown to read. **[V]** for the reading and for the fields written; **[I]** for the two unnamed bytes a body keeps from the template.
 
 **Three things about this burst are worth not assuming.** **[V]**
 
@@ -923,8 +967,11 @@ claimed as vitals.
 
 **Implemented** as `PlayerVitals` (the values, the 250 ceiling and `IsDead`) and
 `PlayerVitalsRecordUtility` (the record), written against the bodies above.
-`PlayerVitalsHandler` dispatches `0x0080` and `0x0880` and logs each record at
-debug, with a death or a revive logged again at information; nothing is answered.
+`PlayerVitalsHandler` dispatches `0x0080` and `0x0880`, keeps the last value of
+each player (`PlayerVitalsService`, whose entry the session reaper clears with
+the player) and relays the record to the room's other peers as the unbound tick
+path did before it, so a client still sees every other player's health. A change
+in the value is logged at information; nothing is answered.
 
 ### `0x090c` is a health/stamina-shaped host record [I]
 
@@ -941,7 +988,9 @@ damage and death. It could be a second actor's full vitals or a heartbeat/state 
 whose bytes happen to match full vitals. Neither the record's actor nor its purpose is
 identified by the capture, replay parser, or the currently traced ELF path. Keep the
 record as `0x090c [fa fa]` until one of those sources resolves the identity and
-semantics; do not substitute a joining player's live vitals.
+semantics; do not substitute a joining player's live vitals. This server reads
+the players' own `0x0080` values into `PlayerVitalsService` for its own use and
+leaves this record as the capture writes it.
 
 ### `0x0261` and `0x0a61` carry rules-roster-shaped records [I]
 

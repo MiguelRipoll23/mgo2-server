@@ -26,6 +26,14 @@ internal static class ConfigurationReader
     public static int ReadNumber(this IConfiguration configuration, string name, int fallback) =>
         int.TryParse(configuration.ReadText(name), out var value) ? value : fallback;
 
+    /// <summary>Reads a whole-number setting that a server can also leave unset.</summary>
+    /// <param name="configuration">Configuration to read from.</param>
+    /// <param name="name">Name of the setting.</param>
+    /// <param name="fallback">Value used when the setting is absent or malformed.</param>
+    /// <returns>The value, or the fallback.</returns>
+    public static int? ReadOptionalNumber(this IConfiguration configuration, string name, int? fallback = null) =>
+        int.TryParse(configuration.ReadText(name), out var value) ? value : fallback;
+
     /// <summary>Reads a boolean setting.</summary>
     /// <param name="configuration">Configuration to read from.</param>
     /// <param name="name">Name of the setting.</param>

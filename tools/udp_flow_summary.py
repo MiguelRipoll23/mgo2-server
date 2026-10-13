@@ -17,7 +17,7 @@ import sys
 from collections import Counter, defaultdict
 
 from pcap_conversations import Pcapng, UDP
-from udp_frame import PRE_KEY, decode, lzss_decompress, parse_messages
+from udp_frame import decode_frame, handshake_identity_of, lzss_decompress, parse_messages
 
 # The captured host is 10.2.0.2:5730 - the joiner. The far side is the
 # dedicated server it joined. Both addresses are private to the capture this
@@ -56,16 +56,17 @@ def main() -> None:
         datagrams.append((local, remote, payload))
 
     # Handshake identity per direction. Both sides use the pre-key chain key.
+    # The handshake is located by walking each datagram's records, because a host
+    # may send its keep-alive and its handshake together and may announce no
+    # endpoint pair, neither of which the 44-byte shape allows for.
     identity: dict[str, tuple[int, int, int]] = {}
     bases: dict[str, int] = {}
     for local, remote, payload in datagrams:
-        if len(payload) != 44:
+        found = handshake_identity_of(payload)
+        if found is None:
             continue
-        _, plain, _ = decode(payload, PRE_KEY)
-        if len(plain) < 34 or struct.unpack_from("<H", plain, 2)[0] != 0x1000:
-            continue
-        peer_id, counter_base = struct.unpack_from("<II", plain, 6)
-        identity[local] = (peer_id, counter_base, plain[18])
+        peer_id, counter_base, capability = found
+        identity[local] = (peer_id, counter_base, capability)
         bases[local] = counter_base
 
     print(f"session {peer_filter}")
@@ -85,6 +86,7 @@ def main() -> None:
     lengths: dict[tuple[str, int], set] = defaultdict(set)
     unreadable = Counter()
     compressed = 0
+    pre_keyed = 0
     frames = 0
 
     for local, remote, payload in datagrams:
@@ -94,11 +96,13 @@ def main() -> None:
             unreadable["no session key"] += 1
             continue
         direction = "server->joiner" if sender != JOINER else "joiner->server"
-        counter, plain, verified = decode(payload, bases[sender] ^ bases[receiver])
+        counter, plain, verified, fell_back = decode_frame(payload, bases[sender] ^ bases[receiver])
         frames += 1
         if not verified:
             unreadable[direction] += 1
             continue
+        if fell_back:
+            pre_keyed += 1
         content = plain[2 : len(plain) - 0xA]
         if counter & 0x8000:
             compressed += 1
@@ -112,6 +116,8 @@ def main() -> None:
             lengths[(direction, message_type)].add(length)
 
     print(f"\n{frames} frames, {compressed} LZSS-compressed")
+    if pre_keyed:
+        print(f"{pre_keyed} frame(s) read with the pre-handshake key, not the session key")
     print(f"records parsed to the last byte: {landing}/{total}")
     if unreadable:
         print(f"not parsed: {dict(unreadable)}")

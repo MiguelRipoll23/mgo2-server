@@ -1,0 +1,10 @@
+
+
+game rule was team deathmath
+40 kills to win
+04.55 (4 minutes, 55 seconds) game time
+team with more kills wins
+
+joined when red team won, went to briefing screen, all players changed their state to ready, me last, game started, red team won again round 01/02, final round started, red team won again. red team wons 2, blue 0
+
+when to briefing again ather the final round, all players changed their state to ready, me last, another game started, after some time i stopped capturing

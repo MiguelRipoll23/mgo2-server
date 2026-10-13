@@ -1,9 +1,9 @@
 using Mgo2Server.GameplayServer;
 using Mgo2Server.GameplayServer.Commands;
+using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.MatchRecords;
-using Mgo2Server.GameplayServer.PacketReplay;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.Shared.Options;
@@ -27,18 +27,22 @@ builder.Services.AddServerServices(builder.Configuration);
 builder.Services.AddServerTelemetry(builder.Configuration, "mgo2-gameplay");
 
 builder.Services.AddSingleton<HostIdentityService>();
-// What the host has written itself, which the replay console badges a captured
-// frame with. It is fed by the outbound path, so it is only as large as the
-// traffic this instance has actually carried.
-builder.Services.AddSingleton<SentMessageTypesService>();
 builder.Services.AddSingleton<AccountService>();
 builder.Services.AddSingleton<MatchService>();
+builder.Services.AddSingleton<MatchSettingsService>();
 builder.Services.AddSingleton<RoomRosterService>();
+builder.Services.AddSingleton<LobbySlotService>();
+builder.Services.AddSingleton<LobbyLoadoutService>();
 builder.Services.AddSingleton<PlayerSettingsBurstService>();
 builder.Services.AddSingleton<PlayerSettingsBurstSchedulerService>();
 builder.Services.AddSingleton<MatchRecordService>();
 builder.Services.AddSingleton<MatchRoundStateService>();
 builder.Services.AddSingleton<MatchStartRunService>();
+builder.Services.AddSingleton<MatchScoreService>();
+builder.Services.AddSingleton<ScoreboardPublishService>();
+builder.Services.AddSingleton<MatchResultService>();
+builder.Services.AddSingleton<PlayerReadyService>();
+builder.Services.AddSingleton<PlayerVitalsService>();
 builder.Services.AddSingleton<TeamArrayService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 // The peer command handlers are registered beside the types their messages are
@@ -46,21 +50,32 @@ builder.Services.AddSingleton<PeerCommandRegistry>();
 builder.Services.AddCommandHandlers();
 builder.Services.AddSingleton<GameplayServerService>();
 
-// The console that resends a captured frame needs the live peer sessions, so it
-// lives inside this process rather than beside it.
-builder.Services.AddSingleton<PacketReplayDataService>();
-builder.Services.AddSingleton<PacketReplaySenderService>();
-builder.Services.AddSingleton<PacketReplayWebService>();
-
 var host = builder.Build();
+
+var options = host.Services.GetRequiredService<IOptions<ServerOptions>>().Value;
+var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("GameplayServer");
+
+// The room's rule and map are named in this instance's configuration and nowhere
+// else, so a name that is no rule or no map is a round the client cannot play,
+// and a zero-length briefing or round is one that ends as it opens. Both are
+// refused here, before a peer is answered, rather than by a round that never
+// opens: a named fault, in a process that has served nothing yet.
+MatchSettingsUtils.Validate(options);
+
+var round = MatchSettingsUtils.Round(options);
+logger.LogInformation(
+    "The room runs {Rule} on {Map} for {RoundMinutes}-minute round(s) with a {BriefingMinutes}-minute "
+    + "briefing{VerboseKillLimit}",
+    MatchRuleUtils.Name(round.Rule),
+    MatchMapUtils.Name(round.Map),
+    round.TimeLimitMinutes,
+    options.GameplayServerBriefingMinutes,
+    round.Tickets is { } limit ? $", ending a round at {limit} kills" : ", ending a round on its clock alone");
 
 var registry = host.Services.GetRequiredService<PeerCommandRegistry>();
 PeerCommandHandlerRegistration.RegisterCommandHandlers(registry);
 
 var GameplayServer = host.Services.GetRequiredService<GameplayServerService>();
-var packetReplayWeb = host.Services.GetRequiredService<PacketReplayWebService>();
-var options = host.Services.GetRequiredService<IOptions<ServerOptions>>().Value;
-var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("GameplayServer");
 
 logger.LogInformation(
     "Starting Gameplay server on port {Port} (lobby {LobbyName})",
@@ -76,7 +91,6 @@ using var stopSignals = ShutdownSignalUtils.OnStopRequested(cancellation.Cancel,
 
 try
 {
-    await packetReplayWeb.StartAsync(cancellation.Token);
     await GameplayServer.RunAsync(cancellation.Token);
 }
 catch (OperationCanceledException)
@@ -85,6 +99,5 @@ catch (OperationCanceledException)
 }
 finally
 {
-    await packetReplayWeb.DisposeAsync();
     await GameplayServer.DisposeAsync();
 }

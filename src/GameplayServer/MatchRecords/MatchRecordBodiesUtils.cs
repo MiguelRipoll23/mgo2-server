@@ -30,23 +30,103 @@ public static class MatchRecordBodiesUtils
     public const byte RulesListEnd = 0xfe;
 
     /// <summary>
-    /// Opcode the operations stream uses for its round clock, in the payload's
-    /// first byte.
+    /// Opcode of the operations stream's clock, in the payload's first byte.
     /// </summary>
+    /// <remarks>
+    /// <b>The clock is the round's time limit.</b> Measured in three rooms: a
+    /// round opens with this record set to the rule's own time, and the value
+    /// counts down in <see cref="ClockUnitMilliseconds"/> steps until the round
+    /// is over. 3 840 units (8:00) in a room whose TDM time is 8, 2 400 (5:00) in
+    /// one whose time is 5. The same record carries a briefing's countdown
+    /// before a round, which is why it is read by phase and not only by round
+    /// (<c>docs/protocol/BRIEFING_FLOW.md</c> §3).
+    /// </remarks>
     public const byte OperationsClockOpcode = 0x01;
 
     /// <summary>
-    /// Opcode the operations stream uses for its state block, in the payload's
-    /// first byte.
+    /// Opcode of the operations stream's state block, in the payload's first
+    /// byte: eighty-nine state bytes behind it.
     /// </summary>
+    /// <remarks>
+    /// Two of its bytes are the round's and the match's outcome, and both are
+    /// measured in a live capture (<c>docs/protocol/BRIEFING_FLOW.md</c> §4):
+    /// <c>state[2]</c> is the round's winner — 2 for raw team 0, 3 for raw team 2,
+    /// 1 for a draw, 255 while the round is undecided — and <c>state[3]</c> the
+    /// match's, in the same coding. A host writes the block whole and writes
+    /// later changes as slices of it, under opcode <c>0x02</c>: an offset, a
+    /// count, then the values, so <c>02 02 01 02</c> is "state[2] = 2".
+    /// </remarks>
     public const byte OperationsStateOpcode = 0x00;
 
     /// <summary>
-    /// The clock the recorded operations record carries, in the stream's own
-    /// 125 ms units: 3 360, so 420 s. Every one of the round's clock records
-    /// carries this same value.
+    /// Opcode of the operations stream's state write, in the payload's first
+    /// byte: <c>[opcode, startOffset, byteCount, values…]</c> writes the values
+    /// into the state block at the offset for the count. A round's result arrives
+    /// this way — <c>02 02 01 02</c> is "state[2] = 2" — and the state block
+    /// itself was written whole before it.
     /// </summary>
-    public const int RoundClockUnits = 3360;
+    public const byte OperationsStateWriteOpcode = 0x02;
+
+    /// <summary>
+    /// Result code of a round raw team <c>0</c> took. The coding is the replay
+    /// decoder's, measured over 28 round ends in 16 replays, and it uses the
+    /// game's own team ids: <c>2</c> team 0, <c>3</c> team 2, <c>1</c> drawn and
+    /// <c>6</c> no result.
+    /// </summary>
+    public const byte StateResultTeamZero = 2;
+
+    /// <summary>Result code of a round raw team <c>1</c> took; see <see cref="StateResultTeamZero"/>.</summary>
+    public const byte StateResultTeamOne = 3;
+
+    /// <summary>Result code of a round nobody won.</summary>
+    public const byte StateResultDrawn = 1;
+
+    /// <summary>
+    /// Offset of the round's outcome within the operations state block.
+    /// </summary>
+    public const int StateRoundResultIndex = 2;
+
+    /// <summary>
+    /// Offset of the match's outcome within the operations state block, written
+    /// in the same coding as <see cref="StateRoundResultIndex"/>.
+    /// </summary>
+    public const int StateMatchResultIndex = 3;
+
+    /// <summary>
+    /// The result code a raw team's win is written as: team <c>0</c> is the
+    /// decoder's code <c>2</c> and team <c>1</c> its code <c>3</c>, since the
+    /// coding names the game's own team ids and the room's rows hold sides.
+    /// </summary>
+    /// <param name="team">Raw team value the room's rows hold, 0 or 1.</param>
+    /// <returns>The result code.</returns>
+    public static byte ResultCode(short team) =>
+        team == 0 ? StateResultTeamZero : StateResultTeamOne;
+
+    /// <summary>
+    /// A state write: the opcode, the offset it starts at, the count of values
+    /// behind it and the values themselves.
+    /// </summary>
+    /// <param name="offset">Offset within the state vector the write starts at.</param>
+    /// <param name="values">Values to write, in order.</param>
+    /// <returns>The record body.</returns>
+    public static byte[] StateWrite(int offset, params byte[] values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        return [OperationsStateWriteOpcode, (byte)offset, (byte)values.Length, .. values];
+    }
+
+    /// <summary>
+    /// The unit the operations clock counts in, in milliseconds: the stream's own
+    /// tick, measured as exactly 125 ms on a live capture over the 300 s between
+    /// two clock writes.
+    /// </summary>
+    public const int ClockUnitMilliseconds = 125;
+
+    /// <summary>
+    /// Units of the operations clock in one minute: 480, and so the factor
+    /// between a room's rule time in minutes and the clock its round opens on.
+    /// </summary>
+    public const int ClockUnitsPerMinute = 60_000 / ClockUnitMilliseconds;
 
     /// <summary>
     /// Opcode of the two-byte operations record the match-start run carries. It
@@ -57,48 +137,6 @@ public static class MatchRecordBodiesUtils
     /// for this one, so the byte stays the recorded one.
     /// </summary>
     private const byte OperationsShortOpcode = 0x0f;
-
-    /// <summary>
-    /// Payload type of the team array, the first record of the pair the
-    /// match-start run carries at index bytes 7 and 8.
-    /// </summary>
-    public const byte TeamArrayType = 0x85;
-
-    /// <summary>Payload type of the occupancy array, the second record of the pair.</summary>
-    public const byte OccupancyArrayType = 0x86;
-
-    /// <summary>Body length of either record of the pair: the type, a sequence byte, 24 slot bytes.</summary>
-    public const int TeamArrayLength = 26;
-
-    /// <summary>
-    /// Slots the array carries, counting slot 0 — the byte the replay parser
-    /// never reads.
-    /// </summary>
-    public const int TeamArraySlots = 24;
-
-    /// <summary>
-    /// Occupancy value that marks a slot as taken, in the occupancy array. It is
-    /// the only value the parser accepts there, and the team array's byte at the
-    /// same offset is then the slot's team, 0 or 1.
-    /// </summary>
-    public const byte OccupancyArrayOccupied = 0x07;
-
-    /// <summary>Occupancy value of a free slot, which all three captures write.</summary>
-    public const byte OccupancyArrayVacant = 0x7f;
-
-    /// <summary>Team array's byte for a slot nobody holds, as the captures write it.</summary>
-    public const byte TeamArrayVacant = 0xff;
-
-    /// <summary>Slot 0's byte in the team array — the sentinel the parser never reads.</summary>
-    public const byte TeamArraySlotZero = 0xfe;
-
-    /// <summary>
-    /// The sequence byte both records of a pair carry; the parser requires the
-    /// two to agree and their index bytes to be consecutive. It is per-array
-    /// rather than constant: the capture writes 0xf3 here and 0xf4 for its later
-    /// arrays, while `mgo2-game2` uses 0x00 and 0x01 and `mgo2-game3` 0x6b.
-    /// </summary>
-    public const byte MatchStartTeamArraySequence = 0xf3;
 
     /// <summary>Control byte of an early sparse-phase record.</summary>
     private static ReadOnlySpan<byte> ControlBodyEarly => [0x02];
@@ -111,18 +149,6 @@ public static class MatchRecordBodiesUtils
 
     /// <summary>One-byte control body seen once in the steady phase.</summary>
     private static ReadOnlySpan<byte> ControlBodyRare => [0x25];
-
-    /// <summary>
-    /// Length of the answer to a client's readiness-state record: four bytes in
-    /// both captures, and the class byte with it.
-    /// </summary>
-    public const int ReadyStateAnswerLength = 4;
-
-    /// <summary>Attribute class the host's readiness-state answer carries.</summary>
-    public const byte ReadyStateAnswerClass = 0x06;
-
-    /// <summary>Attribute class a client's readiness-state record carries.</summary>
-    public const byte ReadyStateClass = 0x04;
 
     /// <summary>Length of either record of the match-start run's close pair.</summary>
     public const int CloseRecordLength = 20;
@@ -145,43 +171,6 @@ public static class MatchRecordBodiesUtils
     ];
 
     /// <summary>
-    /// Opcode a client's readiness report carries, in the record's first byte.
-    /// The host's reply to the same record begins
-    /// <see cref="MatchStartPayloadOpcode"/> in that byte, which is what makes the
-    /// two a report and its answer rather than two readings of one record.
-    /// </summary>
-    /// <remarks>
-    /// The report is the client saying it has loaded and is ready to play. That
-    /// the client means *ready* specifically is **[I]**: the timing and the
-    /// pairing are measured, the intent behind them is not. It is recognised and
-    /// handed to <see cref="MatchStartRunService"/>, which writes the round that
-    /// answers it on the same record read the other way.
-    /// </remarks>
-    public const byte ReadinessReportOpcode = 0xe1;
-
-    /// <summary>Opcode the host's match-start payload carries in its first byte.</summary>
-    public const byte MatchStartPayloadOpcode = 0xe0;
-
-    /// <summary>
-    /// Byte a round's run echoes when the peer it is written to has not reported
-    /// itself ready: the recorded host's own, <c>0x14</c>, from game1's first
-    /// round's <c>0xe0 0x14</c>. No run is written without a report to echo, so
-    /// this is the measured value and never a substitute for the report's own.
-    /// </summary>
-    public const byte DefaultReadinessReportValue = 0x14;
-
-    /// <summary>
-    /// Length of the readiness report: the opcode and the one byte the host
-    /// echoes back. Every report in the captures is exactly this long.
-    /// </summary>
-    public const int ReadinessReportLength = 2;
-
-    /// <summary>
-    /// Offset of the byte the report carries and the reply echoes.
-    /// </summary>
-    public const int ReadinessReportValueIndex = 1;
-
-    /// <summary>
     /// The two-byte operations body the match-start run carries. The replay
     /// parser's opcode table does not name <see cref="OperationsShortOpcode"/>,
     /// so the bytes are the recorded ones.
@@ -189,13 +178,27 @@ public static class MatchRecordBodiesUtils
     /// <returns>The record body.</returns>
     public static byte[] OperationsShort() => [OperationsShortOpcode, 0x00];
 
-    /// <summary>The round clock's body, built from the two fields it carries.</summary>
-    /// <returns>The body: the clock opcode, then its units little-endian.</returns>
-    public static byte[] RoundClock() =>
+    /// <summary>
+    /// The operations stream's clock body — the opcode and a little-endian count
+    /// of 125 ms units — for however far the round's clock has run.
+    /// </summary>
+    /// <remarks>
+    /// <b>The count is the room's own and moves.</b> The record opened a recorded
+    /// room's round at 3 360 units, that room's 7-minute TDM time, while three
+    /// rooms since carry three opening values and count down from them as the
+    /// round plays (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §2 and
+    /// <c>BRIEFING_FLOW.md</c> §3). It is therefore the caller's: the round's own
+    /// rule time × <see cref="ClockUnitsPerMinute"/> when the round opens, and
+    /// <see cref="MatchRoundStateService.RemainingUnits"/> on every record
+    /// behind it.
+    /// </remarks>
+    /// <param name="units">Count of <see cref="ClockUnitMilliseconds"/> units.</param>
+    /// <returns>The body.</returns>
+    public static byte[] RoundTimeLimitUnits(int units) =>
     [
         OperationsClockOpcode,
-        (byte)(RoundClockUnits & 0xff),
-        (byte)((RoundClockUnits >> 8) & 0xff),
+        (byte)(units & 0xff),
+        (byte)((units >> 8) & 0xff),
     ];
 
     /// <summary>The vitals record's body: health and stamina, both full.</summary>
@@ -208,42 +211,6 @@ public static class MatchRecordBodiesUtils
     /// </summary>
     /// <returns>The record body.</returns>
     public static byte[] RulesRoster() => [RulesListEnd];
-
-    /// <summary>
-    /// The team array of the match-start run: its type, the pair's sequence
-    /// byte, slot 0's sentinel, and a team byte for each of the other
-    /// twenty-three slots. The capture's array has no slot taken, so each of
-    /// them is <see cref="TeamArrayVacant"/>. The parser takes a pair only when
-    /// the occupancy array beside it marks the same slot with
-    /// <see cref="OccupancyArrayOccupied"/> and the team byte is 0 or 1; all
-    /// three captures satisfy it, eighty-one pairs between them.
-    /// </summary>
-    /// <returns>The record body.</returns>
-    public static byte[] TeamArray() => TeamArrayOf(TeamArrayType, TeamArraySlotZero);
-
-    /// <summary>
-    /// The occupancy array of the match-start run: the same shape, with
-    /// <see cref="OccupancyArrayVacant"/> in every slot but slot 0.
-    /// </summary>
-    /// <returns>The record body.</returns>
-    public static byte[] OccupancyArray() => TeamArrayOf(OccupancyArrayType, OccupancyArrayVacant);
-
-    /// <summary>
-    /// Builds one record of the pair from its fields: the type, the sequence
-    /// byte, slot 0's byte, and the twenty-three slots behind it.
-    /// </summary>
-    /// <param name="type">One of <see cref="TeamArrayType"/> or <see cref="OccupancyArrayType"/>.</param>
-    /// <param name="slotZero">Slot 0's byte, which the parser never reads.</param>
-    /// <returns>The record body.</returns>
-    private static byte[] TeamArrayOf(byte type, byte slotZero)
-    {
-        var body = new byte[TeamArrayLength];
-        body[0] = type;
-        body[1] = MatchStartTeamArraySequence;
-        body[2] = slotZero;
-        body.AsSpan(3).Fill(type == OccupancyArrayType ? OccupancyArrayVacant : TeamArrayVacant);
-        return body;
-    }
 
     /// <summary>The first record of the match-start run's close pair.</summary>
     /// <returns>The record body.</returns>
@@ -269,48 +236,6 @@ public static class MatchRecordBodiesUtils
         .. remainder,
     ];
 
-    /// <summary>
-    /// The host's payload record, the answer to a client's readiness report: the
-    /// payload opcode and the byte the client reported, then the trailing zeros
-    /// the recorded bodies carry.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The echo is the whole of the answer this server can read. Across the
-    /// captures every report/answer pair agrees on that one byte — <c>e1 14</c>
-    /// is answered <c>e0 14 …</c> and <c>e1 01</c> is answered <c>e0 01 …</c> —
-    /// and answering with anything but the client's own byte would be a value
-    /// this server has no source for. What the byte means is **[U]**: game1
-    /// sends 0x14 and game2 0x01 on the same record, so it is neither a
-    /// constant nor a count this server can derive.
-    /// </para>
-    /// <para>
-    /// <b>The trailing length is not settled.</b> game1 answers in six bytes
-    /// (<c>e0 14 00 00 00 00</c>) and game2 in five (<c>e0 01 00 00 00</c>), on
-    /// the same record and the same report shape; game1 later grows the same
-    /// record to fourteen bytes mid-round. Nothing measured here separates the
-    /// two — both captures hold four roster entries and neither occupies a slot
-    /// in the array that opens the run — so this writes game1's six-byte form,
-    /// the capture the rest of the replay is measured from, rather than
-    /// inventing a rule. A round opened against a game2-shaped host would carry
-    /// one zero more than that host writes. Recorded as **[U]** in
-    /// <c>docs/protocol/UDP_GAME_CAPTURE.md</c> §3.2.
-    /// </para>
-    /// </remarks>
-    /// <param name="reported">Byte the client's readiness report carried.</param>
-    /// <returns>The record body.</returns>
-    public static byte[] MatchStartPayload(byte reported) =>
-        [MatchStartPayloadOpcode, reported, 0x00, 0x00, 0x00, 0x00];
-
-    /// <summary>
-    /// Whether a body is a client's readiness report: the report opcode followed
-    /// by the byte the host echoes back.
-    /// </summary>
-    /// <param name="body">Body of an inbound payload record.</param>
-    /// <returns><c>true</c> when the body says the client is ready to play.</returns>
-    public static bool IsReadinessReport(ReadOnlySpan<byte> body) =>
-        body.Length == ReadinessReportLength && body[0] == ReadinessReportOpcode;
-
     /// <summary>Body of the early sparse-phase control record.</summary>
     /// <returns>The body bytes.</returns>
     public static byte[] EarlyControl() => [.. ControlBodyEarly];
@@ -326,33 +251,4 @@ public static class MatchRecordBodiesUtils
     /// <summary>Body of the control record seen once in the steady phase.</summary>
     /// <returns>The body bytes.</returns>
     public static byte[] RareControl() => [.. ControlBodyRare];
-
-    /// <summary>
-    /// The host's answer to a client's readiness-state record.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The client sends its readiness state as one byte under class
-    /// <see cref="ReadyStateClass"/>, in the same datagram as the readiness
-    /// report and carrying the same byte. The host answers under class
-    /// <see cref="ReadyStateAnswerClass"/> in four bytes.
-    /// </para>
-    /// <para>
-    /// <b>The body is the second capture's, and the dedicated host does not send
-    /// one at all.</b> game2 writes <c>02 00 00 00</c> in every frame that
-    /// carries it. game1 — the dedicated host this project implements — writes
-    /// none inside its round start; its answers appear only in the steady stream,
-    /// much later and with six different bodies (<c>00001000</c>,
-    /// <c>00801000</c>, <c>00881000</c>, <c>40080000</c>, <c>40081000</c>,
-    /// <c>10800000</c>). Nothing measured relates either set to the report's
-    /// byte, and game1's own run — the round this server is measured against —
-    /// carries no such record, so this body is a guess. It is written because the
-    /// report arrives with its companion and a host that answers only half of a
-    /// record the client pairs with its readiness report is the shape that left a
-    /// client stalled. **[U]** what the four bytes are; what is **[V]** is the
-    /// length, the class and the pairing.
-    /// </para>
-    /// </remarks>
-    /// <returns>The record body.</returns>
-    public static byte[] ReadyStateAnswer() => [0x02, 0x00, 0x00, 0x00];
 }

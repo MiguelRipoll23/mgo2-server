@@ -24,6 +24,17 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </remarks>
 /// <param name="FrameIndex">Beat frames written in the round so far.</param>
 /// <param name="Generation">Identifier set of the round being played.</param>
+/// <param name="RoundClockUnits">
+/// Units of the round clock still to run, in the stream's own 125 ms ticks. It is
+/// read from the round on each frame rather than captured once, so the clock the
+/// beat writes counts down with the round (
+/// <see cref="MatchRoundStateService.RemainingUnits"/>).
+/// </param>
+/// <param name="VitalsOnset">
+/// Whether a player has reported vitals in this round, which is the record the
+/// vitals record's onset is gated on in place of the capture's frame count
+/// (<see cref="MatchRoundStateService.VitalsArrived"/>).
+/// </param>
 /// <param name="SessionFlags2">Session-record flags2 this frame's insertion carries.</param>
 /// <param name="BlobsWritten">State blobs the round has written so far.</param>
 /// <param name="ItemBoxSequence">
@@ -37,6 +48,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed record BeatFramePlan(
     int FrameIndex,
     MatchRecordGenerationUtils Generation,
+    int RoundClockUnits,
+    bool VitalsOnset,
     byte SessionFlags2,
     int BlobsWritten,
     byte ItemBoxSequence,
@@ -50,21 +63,23 @@ public sealed record BeatFramePlan(
     {
         get
         {
-            if (FrameIndex % MatchRecordFramesUtils.RoundClockPeriodFrames == 0)
+            if (FrameIndex % MatchRecordFramesUtils.OperationsPeriodFrames == 0)
             {
-                return MatchRecordFramesUtils.RoundClockInsertion(
+                return MatchRecordFramesUtils.OperationsInsertion(
                     Generation,
                     alternate: false,
-                    SessionFlags2);
+                    SessionFlags2,
+                    RoundClockUnits);
             }
 
-            if (FrameIndex % MatchRecordFramesUtils.RoundClockAlternatePeriodFrames
-                == MatchRecordFramesUtils.RoundClockAlternatePhaseFrames)
+            if (FrameIndex % MatchRecordFramesUtils.OperationsClassBitPeriodFrames
+                == MatchRecordFramesUtils.OperationsClassBitPhaseFrames)
             {
-                return MatchRecordFramesUtils.RoundClockInsertion(
+                return MatchRecordFramesUtils.OperationsInsertion(
                     Generation,
                     alternate: true,
-                    SessionFlags2);
+                    SessionFlags2,
+                    RoundClockUnits);
             }
 
             if (FrameIndex % MatchRecordFramesUtils.StateBlobPeriodFrames == 0)
@@ -131,11 +146,18 @@ public sealed record BeatFramePlan(
         Insertion is { Type: UdpCommandConstants.GameStateBlob } || CarriesItemBoxes;
 
     /// <summary>
-    /// Whether the vitals record rides in this frame. It does not: the recorded
-    /// host writes the rules-roster pair alone for the round's first 27.0 s and
-    /// adds the vitals record after it.
+    /// Whether the vitals record rides in this frame.
     /// </summary>
-    public bool IncludeVitals => FrameIndex >= MatchRecordFramesUtils.VitalsOnsetFrames;
+    /// <remarks>
+    /// <b>The onset is the round's first vitals, with the capture's own offset as
+    /// its floor.</b> The recorded host writes the rules-roster pair alone for the
+    /// round's first 27.0 s and adds the vitals record after it, because that is
+    /// when its round had health to report; a live host has the record the moment
+    /// a player reports any (<see cref="VitalsOnset"/>). The measured offset is
+    /// kept as a floor rather than dropped, so a room whose players never report
+    /// vitals still carries the record the client's beat was measured with.
+    /// </remarks>
+    public bool IncludeVitals => VitalsOnset || FrameIndex >= MatchRecordFramesUtils.VitalsOnsetFrames;
 
     /// <summary>
     /// Whether this frame's insertion is a state blob, which is what advances

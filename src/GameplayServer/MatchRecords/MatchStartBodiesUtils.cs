@@ -1,0 +1,146 @@
+namespace Mgo2Server.GameplayServer.MatchRecords;
+
+/// <summary>
+/// The bodies of the round's opening exchange: the client's readiness report,
+/// the host's answer to it, and the companion state record the client pairs with
+/// it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>It lives apart from <see cref="MatchRecordBodiesUtils"/> for one reason:
+/// that file is the beat's, and this is the round's.</b> The three records here
+/// are read in both directions and none of them is a byte the beat writes — the
+/// report arrives before a round exists, the payload echoes it, and the state
+/// answer is the client's own record answered under its own class. A reader
+/// looking for the beat's clock, blob or control bodies should not have to step
+/// over them.
+/// </para>
+/// <para>
+/// The pairing is measured and the bytes are named in
+/// <c>docs/protocol/UDP_GAME_CAPTURE.md</c> §3.2 and
+/// <c>docs/protocol/DATA_PHASE_DELIVERY.md</c>; what each byte <em>means</em> is
+/// marked **[U]** where it is not measured, one member at a time.
+/// </para>
+/// </remarks>
+public static class MatchStartBodiesUtils
+{
+    /// <summary>
+    /// Length of the answer to a client's readiness-state record: four bytes in
+    /// both captures, and the class byte with it.
+    /// </summary>
+    public const int ReadyStateAnswerLength = 4;
+
+    /// <summary>Attribute class the host's readiness-state answer carries.</summary>
+    public const byte ReadyStateAnswerClass = 0x06;
+
+    /// <summary>Attribute class a client's readiness-state record carries.</summary>
+    public const byte ReadyStateClass = 0x04;
+
+    /// <summary>
+    /// Opcode a client's readiness report carries, in the record's first byte.
+    /// The host's reply to the same record begins
+    /// <see cref="MatchStartPayloadOpcode"/> in that byte, which is what makes the
+    /// two a report and its answer rather than two readings of one record.
+    /// </summary>
+    /// <remarks>
+    /// The report is the client saying it has loaded and is ready to play. That
+    /// the client means *ready* specifically is **[I]**: the timing and the
+    /// pairing are measured, the intent behind them is not. It is recognised and
+    /// handed to <see cref="MatchStartRunService"/>, which writes the round that
+    /// answers it on the same record read the other way.
+    /// </remarks>
+    public const byte ReadinessReportOpcode = 0xe1;
+
+    /// <summary>Opcode the host's match-start payload carries in its first byte.</summary>
+    public const byte MatchStartPayloadOpcode = 0xe0;
+
+    /// <summary>
+    /// Byte a round's run echoes when the peer it is written to has not reported
+    /// itself ready: the recorded host's own, <c>0x14</c>, from game1's first
+    /// round's <c>0xe0 0x14</c>. No run is written without a report to echo, so
+    /// this is the measured value and never a substitute for the report's own.
+    /// </summary>
+    public const byte DefaultReadinessReportValue = 0x14;
+
+    /// <summary>
+    /// Length of the readiness report: the opcode and the one byte the host
+    /// echoes back. Every report in the captures is exactly this long.
+    /// </summary>
+    public const int ReadinessReportLength = 2;
+
+    /// <summary>
+    /// Offset of the byte the report carries and the reply echoes.
+    /// </summary>
+    public const int ReadinessReportValueIndex = 1;
+
+    /// <summary>
+    /// Whether a body is a client's readiness report: the report opcode followed
+    /// by the byte the host echoes back.
+    /// </summary>
+    /// <param name="body">Body of an inbound payload record.</param>
+    /// <returns><c>true</c> when the body says the client is ready to play.</returns>
+    public static bool IsReadinessReport(ReadOnlySpan<byte> body) =>
+        body.Length == ReadinessReportLength && body[0] == ReadinessReportOpcode;
+
+    /// <summary>
+    /// The host's payload record, the answer to a client's readiness report: the
+    /// payload opcode and the byte the client reported, then the trailing zeros
+    /// the recorded bodies carry.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The echo is the whole of the answer this server can read. Across the
+    /// captures every report/answer pair agrees on that one byte — <c>e1 14</c>
+    /// is answered <c>e0 14 …</c> and <c>e1 01</c> is answered <c>e0 01 …</c> —
+    /// and answering with anything but the client's own byte would be a value
+    /// this server has no source for. What the byte means is **[U]**: game1
+    /// sends 0x14 and game2 0x01 on the same record, so it is neither a
+    /// constant nor a count this server can derive.
+    /// </para>
+    /// <para>
+    /// <b>The trailing length is not settled.</b> game1 answers in six bytes
+    /// (<c>e0 14 00 00 00 00</c>) and game2 in five (<c>e0 01 00 00 00</c>), on
+    /// the same record and the same report shape; game1 later grows the same
+    /// record to fourteen bytes mid-round. Nothing measured here separates the
+    /// two — both captures hold four roster entries and neither occupies a slot
+    /// in the array that opens the run — so this writes game1's six-byte form,
+    /// the capture the rest of the replay is measured from, rather than
+    /// inventing a rule. A round opened against a game2-shaped host would carry
+    /// one zero more than that host writes. Recorded as **[U]** in
+    /// <c>docs/protocol/UDP_GAME_CAPTURE.md</c> §3.2.
+    /// </para>
+    /// </remarks>
+    /// <param name="reported">Byte the client's readiness report carried.</param>
+    /// <returns>The record body.</returns>
+    public static byte[] MatchStartPayload(byte reported) =>
+        [MatchStartPayloadOpcode, reported, 0x00, 0x00, 0x00, 0x00];
+
+    /// <summary>
+    /// The host's answer to a client's readiness-state record.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The client sends its readiness state as one byte under class
+    /// <see cref="ReadyStateClass"/>, in the same datagram as the readiness
+    /// report and carrying the same byte. The host answers under class
+    /// <see cref="ReadyStateAnswerClass"/> in four bytes.
+    /// </para>
+    /// <para>
+    /// <b>The body is the second capture's, and the dedicated host does not send
+    /// one at all.</b> game2 writes <c>02 00 00 00</c> in every frame that
+    /// carries it. game1 — the dedicated host this project implements — writes
+    /// none inside its round start; its answers appear only in the steady stream,
+    /// much later and with six different bodies (<c>00001000</c>,
+    /// <c>00801000</c>, <c>00881000</c>, <c>40080000</c>, <c>40081000</c>,
+    /// <c>10800000</c>). Nothing measured relates either set to the report's
+    /// byte, and game1's own run — the round this server is measured against —
+    /// carries no such record, so this body is a guess. It is written because the
+    /// report arrives with its companion and a host that answers only half of a
+    /// record the client pairs with its readiness report is the shape that left a
+    /// client stalled. **[U]** what the four bytes are; what is **[V]** is the
+    /// length, the class and the pairing.
+    /// </para>
+    /// </remarks>
+    /// <returns>The record body.</returns>
+    public static byte[] ReadyStateAnswer() => [0x02, 0x00, 0x00, 0x00];
+}

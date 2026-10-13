@@ -1,11 +1,13 @@
+using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Shared.Constants;
+using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
 /// Builds the settings records the recorded host sends once, about two and a
 /// half seconds after it has answered a joiner with the roster: the room's
-/// rotation, the joining player's loadout and a second copy of it.
+/// rotation, and one loadout per player of the room.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -33,20 +35,32 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// <c>0x01</c> or more with a length in 50…58 is a player's loadout, carrying
 /// its team byte, its appearance and its skills (<c>docs/analysis/replay-console/rpdt.js</c>,
 /// laid out in <c>docs/protocol/UDP_SETTINGS_PAYLOAD.md</c> and mapped in
-/// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>). The room's 161-byte body reads
-/// as maps 5, 7, 10, 6, 14, 15, 3, 17, 2, 9, 12, 4, 1, 8, 13 in modes 1, 5, 3,
-/// 7, 1, 4, 1, 2, 16, 1, 5, 4, 1, 6, 5 — a fifteen-round rotation — and the
-/// joiner's 50-byte body as its appearance. The bodies are kept as the bytes the
-/// recorded host wrote, because the fields behind them are the player's own and
-/// this server does not have them.
+/// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>). The recorded room's 161-byte body
+/// reads as maps 5, 7, 10, 6, 14, 15, 3, 17, 2, 9, 12, 4, 1, 8, 13 in modes 1, 5,
+/// 3, 7, 1, 4, 1, 2, 16, 1, 5, 4, 1, 6, 5 — a fifteen-round rotation — and the
+/// joiner's 50-byte body as its appearance.
 /// </para>
 /// <para>
-/// The captured burst holds <i>three</i> payloads under <c>0x1001</c> — a
+/// <b>The rotation and the loadouts are the room's.</b> The room row and the host
+/// character's saved settings say which rounds the room plays, so the triples are
+/// written from the room's own rotation (<see cref="RoomRotationBody"/>) and not
+/// from the recorded host's fifteen: a dedicated host whose room names one map was
+/// telling every joiner the maps the capture's room played. The loadouts are read
+/// the same way (<see cref="LobbyLoadoutService"/>): each player's record is
+/// written from its own character's appearance and equipped skills, so a joiner is
+/// shown the room's own faces and gear rather than the recorded host's. What
+/// nothing names in a loadout body — the four bytes at <c>0x12</c> and the two
+/// before the appearance block, both measured as per-player values — stays the
+/// recorded body's; <see cref="LoadoutFramesUtils.TryWrite"/> carries the detail.
+/// </para>
+/// <para>
+/// The captured burst holds <i>three</i> loadout payloads under <c>0x1001</c> — a
 /// fifty-byte one in slot <c>0x01</c> and two fifty-four-byte ones in slot
-/// <c>0x15</c>, byte for byte identical, for its single joiner: loadouts for the
-/// player slots their bytes name (0 and 20), written once rather than per joiner
-/// because the capture cannot say whether they belong to the joiner, to the
-/// host, or to the round.
+/// <c>0x15</c>, byte for byte identical. They are the two players the room holds
+/// at t+6.687: slot <c>0x01</c> is the host's own body — key zero is the host's
+/// own entry in its player table — and <c>0x15</c> is its first joiner's, whose
+/// key the same capture's roster records carry as <c>0x14</c>. So the burst names
+/// the room's players, one record each, which is what this builder writes.
 /// </para>
 /// <para>
 /// One thing is worth recording because it is easy to assume otherwise: these
@@ -57,7 +71,10 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </para>
 /// </remarks>
 /// <param name="roster">Roster of the room this host is playing.</param>
-public sealed class PlayerSettingsBurstService(RoomRosterService roster)
+/// <param name="logger">Logger of this builder.</param>
+public sealed class PlayerSettingsBurstService(
+    RoomRosterService roster,
+    ILogger<PlayerSettingsBurstService> logger)
 {
     /// <summary>
     /// Leading byte of every <c>0b</c> payload body, whatever record type
@@ -76,18 +93,6 @@ public sealed class PlayerSettingsBurstService(RoomRosterService roster)
     /// <summary>Body length of the room's rotation record, as measured.</summary>
     public const int RoomRotationPayloadLength = 161;
 
-    /// <summary>Slot byte on a joining player's loadout record.</summary>
-    public const byte PlayerLoadoutSlot = 0x01;
-
-    /// <summary>Body length of a joining player's loadout record, as measured.</summary>
-    public const int PlayerLoadoutPayloadLength = 50;
-
-    /// <summary>Slot byte on the two byte-identical loadout records.</summary>
-    public const byte SecondLoadoutSlot = 0x15;
-
-    /// <summary>Body length of each of the two second loadout records, as measured.</summary>
-    public const int SecondLoadoutPayloadLength = 54;
-
     /// <summary>Control byte the burst opens with.</summary>
     public const byte OpeningControlByte = 0x24;
 
@@ -95,10 +100,33 @@ public sealed class PlayerSettingsBurstService(RoomRosterService roster)
     public const byte ClosingControlByte = 0x02;
 
     /// <summary>
-    /// The room's own settings block, copied from the capture at t+4.9929: the
-    /// fifteen rotation triples the replay parser reads at body <c>+26</c> and
-    /// the fields around them.
+    /// Offset of the rotation's first triple in the room's settings body, which
+    /// is where the replay parser reads it (<c>0x1a</c>).
     /// </summary>
+    public const int RotationOffset = 0x1a;
+
+    /// <summary>Length of one rotation triple: the map, the rule and the flags byte.</summary>
+    public const int RotationEntryLength = 3;
+
+    /// <summary>
+    /// Triples the body carries. It is fifteen in both captures, and the field is
+    /// a fixed stride rather than a count the body states.
+    /// </summary>
+    public const int RotationEntryCount = 15;
+
+    /// <summary>
+    /// The room's settings block as the capture at t+4.9929 wrote it: the fields
+    /// around the rotation, and that room's own fifteen triples at body
+    /// <c>+26</c>.
+    /// </summary>
+    /// <remarks>
+    /// It is the base the built body starts from, because the 26 bytes a triple
+    /// sits behind and the 90 after them are **[U]**
+    /// (<c>docs/protocol/UDP_SETTINGS_PAYLOAD.md</c>): the recorded bytes are kept
+    /// and only the triples the parser names are written over. It is also the last
+    /// resort when the room cannot be read — a joiner still needs a body, and the
+    /// caller logs which of the two it sent.
+    /// </remarks>
     private const string RoomRotationPayloadHex =
         "0b00ff27feeeffff3f03000000000000000000000000000000000501000705000a0300060700"
         + "0e01000f04000301001102000210000901000c05000404000101000806000d05000000000fb4"
@@ -107,27 +135,27 @@ public sealed class PlayerSettingsBurstService(RoomRosterService roster)
         + "01017f7ffff3e50e01";
 
     /// <summary>
-    /// The fifty-byte loadout record a joining player is announced under.
-    /// </summary>
-    private const string PlayerLoadoutPayloadHex =
-        "0b01020000000000000000000000000000000000005002feffc2051e452f573967680e0e000e0e00000b16000e0e070f0000";
-
-    /// <summary>
-    /// The fifty-four-byte loadout record written twice, in slot <c>0x15</c>.
-    /// The parser reads the same appearance out of it as out of the joiner's
-    /// record; why the recorded host sends it again is not established, so it is
-    /// named for the slot it travels in.
-    /// </summary>
-    private const string SecondLoadoutPayloadHex =
-        "0b15020000000000000000000000000000007800005002ff01030201ff78051e452f573967680e0e000e0e00000b16000e0e070f0000";
-
-    /// <summary>
     /// Builds the burst in the order the recorded host sends it: the opening
     /// control byte, the room's rotation, one loadout per joining player, the
     /// two second loadouts, and the state blob that closes it.
     /// </summary>
+    /// <param name="rotation">
+    /// The room's own rotation, or <c>null</c> when the room could not be read, in
+    /// which case the recorded room's body is written instead. The choice is the
+    /// caller's because it is the caller that can say which it was, and a joiner
+    /// told the wrong rotation is worse than one told a rotation this host can
+    /// name in its log.
+    /// </param>
+    /// <param name="loadouts">
+    /// The room's own players, each with its own appearance and skills
+    /// (<see cref="LobbyLoadoutService"/>). Empty or <c>null</c> leaves the
+    /// recorded host's loadout bodies in the burst, which is what a room that
+    /// could not be read gets.
+    /// </param>
     /// <returns>The records in send order, each with the type it travels as.</returns>
-    public List<RosterRecord> BuildSettingsBurst()
+    public List<RosterRecord> BuildSettingsBurst(
+        IReadOnlyList<MatchRotationEntry>? rotation,
+        IReadOnlyList<LobbyLoadout>? loadouts)
     {
         // The fourth byte continues the roster run's numbering instead of
         // restarting it. At the join the run reads 0 for its head and the host's
@@ -139,24 +167,80 @@ public sealed class PlayerSettingsBurstService(RoomRosterService roster)
         var burst = new List<RosterRecord>
         {
             new(UdpCommandConstants.InGameControl, [OpeningControlByte]),
-            new(RoomRosterService.HostEntryType, RoomRotationPayload(), ordinal++),
+            new(
+                RoomRosterService.HostEntryType,
+                rotation is null ? RecordedRotationBody() : RoomRotationBody(rotation),
+                ordinal++),
         };
 
-        for (var joiner = 0; joiner < roster.JoinerCount; joiner++)
+        if (loadouts is { Count: > 0 })
         {
-            burst.Add(new(
-                UdpCommandConstants.PlayerProfile,
-                PlayerLoadoutPayload(),
-                ordinal++));
+            // The room's own players, the host first because its key is zero:
+            // the captured burst names the host's own entry and the players', and
+            // the slot a record carries is the key the roster handed out.
+            foreach (var loadout in loadouts.OrderBy(loadout => loadout.Slot))
+            {
+                burst.Add(new(
+                    UdpCommandConstants.PlayerProfile,
+                    LoadoutBody(loadout),
+                    ordinal++));
+            }
         }
+        else
+        {
+            // The recorded host's own loadout, for a room whose players could not
+            // be read: one body per joining player, and the two byte-identical
+            // records behind them that the capture writes once.
+            for (var joiner = 0; joiner < roster.JoinerCount; joiner++)
+            {
+                burst.Add(new(
+                    LoadoutBodiesUtils.LoadoutRecordType,
+                    LoadoutBodiesUtils.PlayerLoadout(),
+                    ordinal++));
+            }
 
-        // The capture writes these two once, byte for byte identical, and does
-        // not repeat them for the peers that join later in the round.
-        burst.Add(new(UdpCommandConstants.PlayerProfile, SecondLoadoutPayload(), ordinal++));
-        burst.Add(new(UdpCommandConstants.PlayerProfile, SecondLoadoutPayload(), ordinal));
+            burst.Add(new(
+                LoadoutBodiesUtils.LoadoutRecordType,
+                LoadoutBodiesUtils.SecondLoadout(),
+                ordinal++));
+            burst.Add(new(
+                LoadoutBodiesUtils.LoadoutRecordType,
+                LoadoutBodiesUtils.SecondLoadout(),
+                ordinal));
+        }
 
         burst.Add(new(UdpCommandConstants.GameStateBlob, BuildClosingStateBlob()));
         return burst;
+    }
+
+    /// <summary>
+    /// One player's loadout body: its own character's fields written into the
+    /// recorded body of the shape its skills have.
+    /// </summary>
+    /// <param name="loadout">The player as the room reads it.</param>
+    /// <returns>The record body.</returns>
+    private byte[] LoadoutBody(LobbyLoadout loadout)
+    {
+        var template = LoadoutBodiesUtils.RecordedLoadoutFor(loadout.Skills.Count);
+        if (template is not null && LoadoutFramesUtils.TryWrite(loadout, template, out var body))
+        {
+            return body;
+        }
+
+        // A skill count no captured body carries — the game's own loadout has
+        // four slots, and its records hold none, two or three pairs — has no
+        // length to write, and a body written at the wrong length is one the peer
+        // reads as nothing. The player is still named, in its own slot, with the
+        // recorded body behind that one byte.
+        logger.LogWarning(
+            "Player in slot {Slot} has {SkillCount} equipped skill(s), which no recorded loadout body has a "
+            + "shape for; the recorded body is written behind its own slot byte instead",
+            loadout.Slot,
+            loadout.Skills.Count);
+
+        var fallback = LoadoutBodiesUtils.PlayerLoadout();
+        fallback[LoadoutFramesUtils.SlotByteOffset] = (byte)(loadout.Slot + 1);
+        return fallback;
     }
 
     /// <summary>
@@ -167,19 +251,76 @@ public sealed class PlayerSettingsBurstService(RoomRosterService roster)
     public static RosterRecord BuildClosingControl() =>
         new(UdpCommandConstants.InGameControl, [ClosingControlByte]);
 
-    /// <summary>The room's rotation body, as the capture wrote it.</summary>
+    /// <summary>The recorded room's settings body, as the capture wrote it.</summary>
     /// <returns>The recorded bytes.</returns>
-    public static byte[] RoomRotationPayload() => Convert.FromHexString(RoomRotationPayloadHex);
-
-    /// <summary>A joining player's loadout body, as the capture wrote it.</summary>
-    /// <returns>The recorded bytes.</returns>
-    public static byte[] PlayerLoadoutPayload() => Convert.FromHexString(PlayerLoadoutPayloadHex);
+    public static byte[] RecordedRotationBody() => Convert.FromHexString(RoomRotationPayloadHex);
 
     /// <summary>
-    /// The fifty-four-byte loadout body the capture writes twice, as recorded.
+    /// The room's own settings body: the recorded body with its fifteen rotation
+    /// triples written from this room's rotation.
     /// </summary>
-    /// <returns>The recorded bytes.</returns>
-    public static byte[] SecondLoadoutPayload() => Convert.FromHexString(SecondLoadoutPayloadHex);
+    /// <remarks>
+    /// <para>
+    /// Each triple is the parser's layout — map, then rule, then one more byte
+    /// (<see cref="RotationOffset"/>) — and the room stores the same three values
+    /// the other way round, as <see cref="MatchRotationEntry"/>: a rule, a map and
+    /// the flags byte the client is handed in the room's details over TCP.
+    /// </para>
+    /// <para>
+    /// <b>The third byte is written from the room's own flags byte.</b> It is
+    /// **[U]** in the payload's layout, and the measurement is: zero in fifteen of
+    /// the sixteen triples the three captures hold, and <c>0x20</c> in the
+    /// sixteenth — the value the rotation family's flags byte takes, and the only
+    /// non-zero one this position was ever seen to hold. Writing the room's own
+    /// byte therefore reproduces the triple the room was published with, where
+    /// writing zero would put a value there that no row states.
+    /// </para>
+    /// <para>
+    /// <b>A rotation shorter than the field is walked round.</b> Entry <c>i</c> is
+    /// the room's entry <c>i</c> modulo its count, so all fifteen name a real map
+    /// and rule rather than the map <c>0</c> the client reads as None; a room whose
+    /// rotation is longer contributes its first fifteen, because that is all the
+    /// field holds.
+    /// </para>
+    /// </remarks>
+    /// <param name="rotation">The room's rotation, in play order.</param>
+    /// <returns>The body.</returns>
+    public static byte[] RoomRotationBody(IReadOnlyList<MatchRotationEntry> rotation)
+    {
+        ArgumentNullException.ThrowIfNull(rotation);
+        if (rotation.Count == 0)
+        {
+            throw new ArgumentException(
+                "A room's rotation states at least one round, so an empty one has no map or rule to write.",
+                nameof(rotation));
+        }
+
+        var body = RecordedRotationBody();
+        for (var slot = 0; slot < RotationEntryCount; slot++)
+        {
+            var entry = rotation[slot % rotation.Count];
+            var offset = RotationOffset + (slot * RotationEntryLength);
+            body[offset] = Component(nameof(entry.Map), entry.Map);
+            body[offset + 1] = Component(nameof(entry.Rule), entry.Rule);
+            body[offset + 2] = Component(nameof(entry.Flags), entry.Flags);
+        }
+
+        return body;
+    }
+
+    /// <summary>
+    /// One byte of a rotation triple, refused when the room's row does not state
+    /// one: a map, a rule and a flags byte are one byte each on the wire, so a
+    /// value outside that is a row this server cannot express rather than a value
+    /// to truncate onto the wrong map.
+    /// </summary>
+    /// <param name="field">Component being written, for the exception.</param>
+    /// <param name="value">The row's value.</param>
+    /// <returns>The value as a byte.</returns>
+    private static byte Component(string field, int value) =>
+        value is >= byte.MinValue and <= byte.MaxValue
+            ? (byte)value
+            : throw new ArgumentOutOfRangeException(field, value, "A rotation component is one byte.");
 
     /// <summary>
     /// Builds a settings-record body: the type byte, the slot, and zeros for the

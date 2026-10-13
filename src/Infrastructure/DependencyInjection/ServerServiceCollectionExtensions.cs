@@ -50,9 +50,6 @@ public static class ServerServiceCollectionExtensions
             options.GameplayServerPort = configuration.ReadNumber(
                 "GAMEPLAY_SERVER_PORT",
                 configuration.ReadNumber("UDP_PORT", options.GameplayServerPort));
-            options.GameplayWebPort = configuration.ReadNumber(
-                "GAMEPLAY_WEB_PORT",
-                options.GameplayWebPort);
             options.PublicHostAddress =
                 configuration.ReadText("DEDICATED_ADVERTISED_ADDRESS") ?? options.PublicHostAddress;
             options.GameplayServerPrivateAddress =
@@ -62,6 +59,23 @@ public static class ServerServiceCollectionExtensions
                 ?? options.GameplayLobbyName;
             options.GameplayServerGameName = configuration.ReadText("GAMEPLAY_SERVER_GAME_NAME")
                 ?? options.GameplayServerGameName;
+
+            // The room's own rule, map and round are this host's settings rather
+            // than a row's, so they are read here beside its name: a dedicated host
+            // receives no client push of host settings, so nothing else states them.
+            options.GameplayServerRule = configuration.ReadText("GAMEPLAY_SERVER_RULE")
+                ?? options.GameplayServerRule;
+            options.GameplayServerMap = configuration.ReadText("GAMEPLAY_SERVER_MAP")
+                ?? options.GameplayServerMap;
+            options.GameplayServerBriefingMinutes = configuration.ReadNumber(
+                "GAMEPLAY_SERVER_BRIEFING_MINUTES",
+                options.GameplayServerBriefingMinutes);
+            options.GameplayServerRoundMinutes = configuration.ReadNumber(
+                "GAMEPLAY_SERVER_ROUND_MINUTES",
+                options.GameplayServerRoundMinutes);
+            options.GameplayServerKillLimit = configuration.ReadOptionalNumber(
+                "GAMEPLAY_SERVER_KILL_LIMIT",
+                options.GameplayServerKillLimit);
             options.GameplayServerAccountName = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_NAME")
                 ?? options.GameplayServerAccountName;
             options.GameplayServerAccountPassword = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_PASSWORD")

@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.Rooms;
 
 namespace Mgo2Server.Tests;
@@ -13,33 +14,68 @@ namespace Mgo2Server.Tests;
 /// differences from the recorded host, and both are what these tests hold. The
 /// slot bytes are the replay parser's settings slots: <c>0x00</c> is the room's
 /// rotation, <c>0x01</c> a player's loadout.
+///
+/// The rotation record is the one body that is no longer the recorded host's:
+/// its fifteen triples are written from the room's own rotation, which is a row
+/// rather than a recording. Its own test below holds that, and the loadout and
+/// blob tests hold the bodies that still are.
 /// </remarks>
 public sealed class PlayerSettingsBurstServiceTests
 {
+    /// <summary>
+    /// The rotation record carries the room's own rounds — map, rule and the
+    /// room's flags byte, per triple — and a rotation shorter than the field's
+    /// fifteen entries is walked round rather than padded with the map the client
+    /// reads as None.
+    /// </summary>
     [Fact]
-    public void TheRoomRotationIsTheRecordedOne()
+    public void TheRotationRecordCarriesTheRoomsOwnRounds()
     {
-        var body = PlayerSettingsBurstService.RoomRotationPayload();
+        MatchRotationEntry[] rotation =
+        [
+            new(Rule: 1, Map: 5, Flags: 0, TimeLimitMinutes: 8),
+            new(Rule: 7, Map: 10, Flags: 0x20, TimeLimitMinutes: 4),
+        ];
+
+        var body = PlayerSettingsBurstService.RoomRotationBody(rotation);
 
         Assert.Equal(161, body.Length);
         Assert.Equal(PlayerSettingsBurstService.RoomRotationPayloadLength, body.Length);
         Assert.Equal(PlayerSettingsBurstService.SettingsPayloadType, body[0]);
         Assert.Equal(PlayerSettingsBurstService.RoomRotationSlot, body[1]);
-        // The capture's rotation is not a zero-filled body: it opens on
-        // 0b 00 ff 27, which a tag-plus-slot build could never produce.
+
+        for (var slot = 0; slot < PlayerSettingsBurstService.RotationEntryCount; slot++)
+        {
+            var entry = rotation[slot % rotation.Length];
+            var offset = PlayerSettingsBurstService.RotationOffset
+                + (slot * PlayerSettingsBurstService.RotationEntryLength);
+            Assert.Equal(entry.Map, body[offset]);
+            Assert.Equal(entry.Rule, body[offset + 1]);
+            Assert.Equal(entry.Flags, body[offset + 2]);
+        }
+
+        // The bytes around the triples are the recorded host's, because nothing
+        // names them: the body opens on 0b 00 ff 27, which a tag-plus-slot build
+        // could never produce.
         Assert.Equal(0xff, body[2]);
         Assert.Equal(0x27, body[3]);
+
+        // The recorded body is what a room that cannot be read falls back to.
+        var recorded = PlayerSettingsBurstService.RecordedRotationBody();
+        Assert.Equal(161, recorded.Length);
+        Assert.Equal(0x05, recorded[PlayerSettingsBurstService.RotationOffset]);
+        Assert.Equal(0x01, recorded[PlayerSettingsBurstService.RotationOffset + 1]);
     }
 
     [Fact]
     public void ThePlayerLoadoutIsTheRecordedOne()
     {
-        var body = PlayerSettingsBurstService.PlayerLoadoutPayload();
+        var body = LoadoutBodiesUtils.PlayerLoadout();
 
         Assert.Equal(50, body.Length);
-        Assert.Equal(PlayerSettingsBurstService.PlayerLoadoutPayloadLength, body.Length);
+        Assert.Equal(LoadoutBodiesUtils.PlayerLoadoutPayloadLength, body.Length);
         Assert.Equal(PlayerSettingsBurstService.SettingsPayloadType, body[0]);
-        Assert.Equal(PlayerSettingsBurstService.PlayerLoadoutSlot, body[1]);
+        Assert.Equal(LoadoutBodiesUtils.PlayerLoadoutSlot, body[1]);
         Assert.Equal(0x02, body[2]);
     }
 
@@ -51,13 +87,13 @@ public sealed class PlayerSettingsBurstServiceTests
     [Fact]
     public void TheSecondLoadoutIsTheRecordedOne()
     {
-        var first = PlayerSettingsBurstService.SecondLoadoutPayload();
-        var second = PlayerSettingsBurstService.SecondLoadoutPayload();
+        var first = LoadoutBodiesUtils.SecondLoadout();
+        var second = LoadoutBodiesUtils.SecondLoadout();
 
         Assert.Equal(54, first.Length);
-        Assert.Equal(PlayerSettingsBurstService.SecondLoadoutPayloadLength, first.Length);
+        Assert.Equal(LoadoutBodiesUtils.SecondLoadoutPayloadLength, first.Length);
         Assert.Equal(PlayerSettingsBurstService.SettingsPayloadType, first[0]);
-        Assert.Equal(PlayerSettingsBurstService.SecondLoadoutSlot, first[1]);
+        Assert.Equal(LoadoutBodiesUtils.SecondLoadoutSlot, first[1]);
         Assert.Equal(first, second);
     }
 
@@ -70,9 +106,9 @@ public sealed class PlayerSettingsBurstServiceTests
     {
         var payloads = new[]
         {
-            PlayerSettingsBurstService.PlayerLoadoutPayload(),
-            PlayerSettingsBurstService.SecondLoadoutPayload(),
-            PlayerSettingsBurstService.SecondLoadoutPayload(),
+            LoadoutBodiesUtils.PlayerLoadout(),
+            LoadoutBodiesUtils.SecondLoadout(),
+            LoadoutBodiesUtils.SecondLoadout(),
         };
 
         Assert.All(payloads, payload => Assert.Equal(PlayerSettingsBurstService.SettingsPayloadType, payload[0]));
@@ -104,7 +140,7 @@ public sealed class PlayerSettingsBurstServiceTests
     public void TheShapeBuilderStillWritesTheTypeByteAndSlot()
     {
         var body = PlayerSettingsBurstService.BuildPlaceholderPayload(
-            PlayerSettingsBurstService.SecondLoadoutSlot,
+            LoadoutBodiesUtils.SecondLoadoutSlot,
             54);
 
         Assert.Equal(54, body.Length);

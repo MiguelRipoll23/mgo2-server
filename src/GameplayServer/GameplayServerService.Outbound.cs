@@ -101,9 +101,8 @@ public sealed partial class GameplayServerService
     /// </param>
     /// <param name="ofThisHost">
     /// Whether this host built the records. Everything it writes is its own but
-    /// the two pass-throughs — a peer's record relayed to the room, and a
-    /// captured frame the replay console writes — which is what keeps the replay
-    /// console from marking its own sends as records this server implements.
+    /// the relay, which is a peer's record passed on — a distinction a caller
+    /// keeps when it wants the log to say which of the two it wrote.
     /// </param>
     private void SendMessages(
         PeerSession session,
@@ -114,11 +113,6 @@ public sealed partial class GameplayServerService
         if (messages.Count == 0)
         {
             return;
-        }
-
-        if (ofThisHost)
-        {
-            sentTypes.Note(messages);
         }
 
         lock (session.OutboundGate)

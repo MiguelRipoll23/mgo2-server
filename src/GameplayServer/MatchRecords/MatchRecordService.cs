@@ -96,9 +96,9 @@ public sealed class MatchRecordService(
             logger.LogDebug(
                 "UDP {LocalPort}: playing {StepCount} sparse match-record steps to {RemoteAddress}",
                 context.LocalPort,
-                MatchRecordFramesUtils.SparseSteps().Count,
+                SparsePhaseFramesUtils.SparseSteps().Count,
                 session.RemoteAddress);
-            foreach (var step in MatchRecordFramesUtils.SparseSteps())
+            foreach (var step in SparsePhaseFramesUtils.SparseSteps())
             {
                 if (!IsAlive(session))
                 {
@@ -119,8 +119,13 @@ public sealed class MatchRecordService(
 
             // The beat is the round's, not the sparse phase's: everything it
             // writes is measured as an offset from the run, so it starts when
-            // the round opens and not a beat earlier.
+            // the round opens and not a beat earlier. It also waits for that
+            // round's own run, because the run is what its frame indices are
+            // counted from — a beat that starts on the latch alone can put its
+            // first item-box group out ahead of the record that says the boxes
+            // exist.
             await roundState.WaitForOpenAsync(session);
+            await roundState.WaitForRunWrittenAsync(session);
             await BeatAsync(context);
         }
         catch (Exception exception)
@@ -147,30 +152,56 @@ public sealed class MatchRecordService(
 
     /// <summary>
     /// Beats for as long as the peer is there: the capture's steady phase, at its
-    /// 33 ms frame period, under the first identifier set of the capture.
+    /// 33 ms frame period, under the round's own identifier set.
     /// </summary>
     /// <remarks>
-    /// <b>The set does not change while the stream runs.</b> The capture alternates
-    /// it with the rounds it opens — <c>0x1a54</c>, then <c>0x1254</c> a
-    /// <c>0x800</c> bit along — but the beat is not a round and this writer does
-    /// not open one, so it has no parity to move to:
-    /// <see cref="MatchRecordGenerationUtils.First"/> is the set the captured host
-    /// holds from its own first join until its first round closes. The round
-    /// start written by <see cref="MatchStartRunService"/> takes its set from the
-    /// identifier the readiness report arrived on, which is where the capture's
-    /// parity lives.
+    /// <b>The set follows the round, and the counters start over with it.</b> The
+    /// capture alternates the set with the rounds it plays — <c>0x1a54</c>, then
+    /// <c>0x1254</c> a <c>0x800</c> bit along — and the set a round plays under is
+    /// the one its own readiness report arrived on, which
+    /// <see cref="MatchRoundStateService.Generation"/> holds. The set is read per
+    /// frame rather than captured once, so a beat that spans a round boundary
+    /// moves to the next round's identifiers on its next frame instead of
+    /// streaming a round its client is not on.
+    /// <para>
+    /// Each round is its own stream, so its frame index is its own too: every
+    /// offset in the beat is measured from that round's opening run, and a frame
+    /// index carried across a boundary would place the vitals onset and the
+    /// item-box groups at the wrong end of the new round.
+    /// </para>
     /// </remarks>
     /// <param name="context">Context the records are written through.</param>
     private async Task BeatAsync(PeerContext context)
     {
         var session = context.Session;
         var beat = new BeatCounters { FrameIndex = FirstBeatFrameIndex };
+        var round = roundState.RoundNumber;
 
         while (IsAlive(session))
         {
+            if (roundState.RoundNumber != round)
+            {
+                round = roundState.RoundNumber;
+                beat = new BeatCounters { FrameIndex = FirstBeatFrameIndex };
+                logger.LogDebug(
+                    "UDP {LocalPort}: round changed to {RoundNumber}; the beat restarts its frame index "
+                    + "and moves to identifier set operations 0x{Operations:x4}",
+                    context.LocalPort,
+                    round,
+                    roundState.Generation.Operations);
+            }
+
+            // The clock is read here, per frame, and not captured with the counters:
+            // it is the round's remaining time, so a beat that spans a round gets
+            // the new round's own clock rather than the one the old round opened
+            // on, which is what a replay of a fixed value would write. The vitals
+            // onset is read the same way, off the round's own record rather than
+            // the frame count the capture places it at.
             var plan = new BeatFramePlan(
                 beat.FrameIndex,
-                MatchRecordGenerationUtils.First,
+                roundState.Generation,
+                roundState.RemainingUnits,
+                roundState.VitalsArrived,
                 beat.SessionFlags2,
                 beat.BlobsWritten,
                 beat.ItemBoxSequence,

@@ -299,6 +299,9 @@ python3 udp_flow_summary.py    ../../docs/mgo2-game.pcapng --peer IP:PORT
 python3 udp_frame.py          ../../docs/mgo2-game.pcapng --peer IP:PORT --limit 40
 python3 pcap_gameplay_log.py  ../../docs/mgo2-game.pcapng --limit 20  # as the server logs it
 python3 pcap_roster_acks.py   ../../docs/mgo2-game.pcapng             # roster acknowledgements
+python3 udp_loadout_bodies.py ../../docs/mgo2-game.pcapng             # the loadout records we write
+python3 udp_briefing_flow.py  ../../docs/mgo2-game.pcapng             # briefing, reports, round open
+python3 pcap_decrypt.py       ../../docs/mgo2-game.pcapng --type tcp  # the lobby channel, including 0x4313
 ```
 
 `pcap_gameplay_log.py` is the offline twin of the gameplay server's own log.
@@ -323,6 +326,7 @@ identifier is what tells them apart.
 | tool | what |
 | --- | --- |
 | `pcap_conversations.py` | Stdlib pcapng reader; per-flow packet and byte counts, ordered by volume. The entry point for any capture. |
+| `pcap_decrypt.py` | **Decrypts both channels of a capture** — the TCP lobby/game-server frames (XOR, HMAC-verified, Blowfish-decrypted payloads) and the UDP gameplay datagrams — with `--type` to pick one and `--json` for mechanical reading. `--json` is what the `0x4313` field crosswalk in `docs/protocol/GAME_SETTINGS_WIRE.md` is read against. |
 | `pcap_gameplay_log.py` | **Replays a capture's gameplay session in the server's own log wording** — the same `IN`/`OUT`, hexdump, digest-gate, dispatch and `answering N reliable records` lines `scripts/run-gameplay-local.sh` writes, so a capture and a live run read against each other line for line. The capture is read as the host's side, because the host is the side this project implements. `--limit/--skip/--until` narrow it. |
 | `pcap_roster_acks.py` | Which roster records a captured session acknowledged. Records are grouped by what they say, with the layout they parsed from and whether the peer answered; a capture whose session never keyed says so rather than reporting the unreadable frames as unanswered. |
 | `export_acked_packets.py` | **Builds the packet-replay dataset the gameplay server's console lists.** Writes the host frames a captured client acknowledged — decoded, decompressed, deduplicated, wire bytes dropped — to `src/GameplayServer/PacketReplay/acked-packets.json`. A roster record is rewritten to name the fixed player `phildunphy23` with character id `2` (never the captured identity), and the live host's endpoints are written in at send time; the committed data therefore holds no real name or character id. Regenerating it needs no rebuild: the file is copied beside the executable. |
@@ -331,6 +335,7 @@ identifier is what tells them apart.
 | `probe_client_nat.py` | Reports what the **client's** NAT module learned, from a capture taken on the client's own host. The client's handshake mode is decided by one value — the P2P port its connection record publishes — and `0xd7d530` resolves anything outside `{0,1,2,16,144}` to "guest"; a record with no port resolves to mode 1. Nothing the server sends takes part, so the client is the only place to look. Decodes the game's own NAT protocol, which is **not standard STUN**: cookie `6c02e061`, opaque transaction id, attributes renumbered. `--port` is the client's P2P port, so the verdict line can be checked against what the mode actually was. |
 | `pcap_flow.py` | One flow's packets as wire hex, for when the framing tools do not apply (the TCP lobby channel, STUN, DNS). |
 | `udp_frame.py` | Decodes the peer-to-peer channel: header scramble, XOR chain, tail digest, LZSS, records. Prints messages with bodies. |
+| `udp_loadout_bodies.py` | **Checks the loadout record the gameplay server writes against the capture.** Decodes every loadout body a capture's host sent with `udp_settings_semantics`, re-encodes each with a port of `LoadoutFramesUtils.TryWrite` using the recorded templates read out of the source, and prints every byte that differs — which is how the claim "only the bytes nothing names differ" is checked rather than asserted. |
 | `udp_flow_summary.py` | Session identity, the derived key, and a message-type inventory with direction split and body lengths. |
 | `udp_framing_solver.py` | The per-type vote behind the two-conventions finding. |
 | `udp_framing_table.py` | Derives and validates the per-type length table; prints the frame counts each rule walks. |
@@ -338,6 +343,7 @@ identifier is what tells them apart.
 | `udp_pairing_probe.py` | Tests the `0x1x..`/`0x5x..` families as request/answer, both directions, with the latency distribution. |
 | `udp_response_probe.py` | Measures which outbound records a captured host sent **only** after a client record, with the inbound type that preceded each. It is what says the match-start run is the data phase's one gated record and the beat is not; `--session-only` drops the tick stream. See `docs/protocol/DATA_PHASE_DELIVERY.md`. |
 | `udp_join_replay.py` | Replays the opening exchange in time order with every record decoded, for diffing against the server's own answer. |
+| `udp_briefing_flow.py` | **The briefing and the round lifecycle in one timeline**: the client's readiness reports (`e1`/`1d`, with the lobby slot they carry), the host's publication, the briefing countdown, the operations clock counting down, and the moment the round opens as the operations identifier's generation flips. Measured and written up in `docs/protocol/BRIEFING_FLOW.md`. |
 | `handshake_layout.py` | **Verifies the 44-byte handshake field by field against the wire bytes** and exits non-zero when the structure stops holding — the `16 + 6*count` identity, the magic, the tail digest, and that each entry's four bytes really are an address in dotted form. Every offset is pinned to the `MGO2.ELF` instruction that writes it, so the binary and the capture are checked against each other rather than a prose copy of one of them. Run it after touching `FrameBuilderUtility`; `--elf MGO2.ELF` also re-derives the two crypto constants from the binary and catches a decoder pointed at the wrong build. The layout itself is walked step by step in `docs/protocol/UDP_JOIN_FLOW.md` §3. |
 
 | tool | what |

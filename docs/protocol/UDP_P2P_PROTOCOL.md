@@ -1059,12 +1059,15 @@ they start, how many there are and what they look like. **[V]**
   `07`, `85`, `86`, `83`, `00`, `0c`, `81`, `84`, `82` and `02`. The leading
   byte is what tells the shapes apart, not the record type. **[V]**
 
-  **Sent as recorded, not synthesized**: the *contents* are one character's
-  equipment, skills and settings — the replay console's `TYPE_SETTINGS` record,
-  laid out in `UDP_SETTINGS_PAYLOAD.md` — and this server does not have them for
-  the peers it announces. The one burst the capture contains is written once,
-  with the capture's own bodies (`PlayerSettingsBurstService`); building a body
-  out of another player's state would be inventing one.
+  **The names are the room's, and the bytes nothing names are the capture's**: the
+  *contents* are one character's equipment, skills and settings — the replay
+  console's `TYPE_SETTINGS` record, laid out in `UDP_SETTINGS_PAYLOAD.md` — and
+  this server holds them per character, so the rotation's fifteen triples, each
+  loadout's slot byte, side, appearance block and skill pairs are written from the
+  room's own rows and the recorded body supplies only what nothing names
+  (`UDP_SETTINGS_PAYLOAD.md`, "What this changes"). The one burst the capture
+  contains is written once, on the first roster answer
+  (`PlayerSettingsBurstService`, `PlayerSettingsBurstSchedulerService`).
 - **`0xe5e`..`0x113a`** — not walked.
 
 **A cross-sample constant.** The six bytes `45 2f 57 39 67 68` ("E/W9gh") sit

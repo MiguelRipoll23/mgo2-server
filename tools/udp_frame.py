@@ -28,7 +28,13 @@ import sys
 from collections import defaultdict
 
 from pcap_conversations import TCP, UDP, Pcapng
-from udp_record_semantics import COMPRESSION_MARKER, HANDSHAKE
+from udp_record_semantics import COMPRESSION_MARKER, HANDSHAKE, PAYLOAD_CLASS_BIT
+
+# The identifiers a handshake body arrives under. A host is observed announcing
+# its own handshake under `0x9000` -- the handshake identifier with the payload
+# class bit set -- where two other captures have it under `0x1000`, and a reader
+# that only knows `0x1000` cannot derive that session's key at all.
+HANDSHAKE_IDENTIFIERS = (HANDSHAKE, HANDSHAKE | PAYLOAD_CLASS_BIT)
 
 LZSS_RING_SIZE = 0x200
 LZSS_MAXIMUM_OUTPUT = 0x800
@@ -142,21 +148,62 @@ def decode(frame_bytes: bytes, key: int) -> tuple[int, bytes, bool]:
     return counter, bytes(plain), verified
 
 
-def handshake_of(wire: bytes) -> tuple[int, int] | None:
-    """The peer id and counter base a pre-keyed handshake announces, or None.
+def handshake_identity_of(wire: bytes) -> tuple[int, int, int] | None:
+    """The peer id, counter base and capability byte a handshake announces, or None.
 
-    A handshake is the first datagram of a flow and is pre-keyed, so it is read
-    with the bare constant and without a session key. Both sides send one; the
-    side whose handshake comes first in the flow is the joiner.
+    A handshake is pre-keyed, so it is read with the bare constant and without a
+    session key. Both sides send one; the side whose handshake comes first in the
+    flow is the joiner.
+
+    It is found by walking the datagram's records rather than by assuming the
+    handshake *is* the datagram. A host may put its keep-alive and its handshake
+    in one datagram, and its handshake may announce no endpoint pair at all; both
+    are observed on the wire, and neither fits a fixed 44-byte shape. What is
+    required is the handshake body's fixed prefix:
+    `peer_id u32 | counter_base u32 | magic u32 | capability u8 | ver u16 | count u8`,
+    so fourteen bytes tell the two numbers apart from any endpoint entries behind
+    them.
+
+    The identifier is not fixed either: a host announces its handshake under
+    `0x9000` in one capture and under `0x1000` in two others, so both are
+    accepted (`HANDSHAKE_IDENTIFIERS`).
     """
     if len(wire) < 20:
         return None
     counter, plain, verified = decode(wire, PRE_KEY)
     if not verified or counter & COMPRESSION_MARKER:
         return None
-    if struct.unpack_from("<H", plain, 2)[0] != HANDSHAKE:
-        return None
-    return struct.unpack_from("<II", plain, 6)
+    content = plain[2 : len(plain) - 0xA]
+    for message_type, length, _, body in parse_messages(content):
+        if message_type not in HANDSHAKE_IDENTIFIERS or length < 14:
+            continue
+        peer_id, counter_base = struct.unpack_from("<II", body, 0)
+        return peer_id, counter_base, body[12]
+    return None
+
+
+def handshake_of(wire: bytes) -> tuple[int, int] | None:
+    """The peer id and counter base a pre-keyed handshake announces, or None."""
+    identity = handshake_identity_of(wire)
+    return None if identity is None else identity[:2]
+
+
+def decode_frame(frame: bytes, session_key: int) -> tuple[int, bytes, bool, bool]:
+    """Decode one datagram, trying the session key and then the pre-handshake key.
+
+    Returns `(counter, plain, verified, pre_keyed)`. The fallback exists because a
+    host is observed that digests and chains *every* frame of a live session with
+    the pre-handshake constant, including the ones long past its handshake: a
+    server-to-client frame of such a session verifies with `PRE_KEY` and with the
+    session key at neither. Both are the same wire format, so the only way to read
+    such a capture is to try the key the frame was actually written with, and to
+    report which one it was rather than silently accepting either.
+    """
+    counter, plain, verified = decode(frame, session_key)
+    if verified:
+        return counter, plain, True, False
+    counter, plain, verified = decode(frame, PRE_KEY)
+    return counter, plain, verified, True
 
 
 def lzss_decompress(source: bytes) -> bytes:

@@ -130,7 +130,7 @@ That answer's **body is the one thing here that is not measured**. game2's host
 writes `02 00 00 00`; game1's writes none inside its round start and answers the
 companion only much later with six different bodies. The length and the class
 are **[V]**; the bytes are a guess, marked **[U]** on
-`MatchRecordBodiesUtils.ReadyStateAnswer`. If a run written with it is rejected,
+`MatchStartBodiesUtils.ReadyStateAnswer`. If a run written with it is rejected,
 that body is the first thing to change — the report's own answer, which is what
 gated the round, does not depend on it.
 
@@ -176,6 +176,17 @@ confirms the one before it.** **[V]**
 `TeamArrayService` answers the confirmation and writes the pair again under the
 next sequence. Before it, the live client sent `82 f3`/`84 f3` once and never
 again, because the sequence had nowhere to go.
+
+**What the pair carries is the room's, and it is read per publication.**
+`LobbySlotService` pairs the room's own roster — which holds each player's key in
+the 24-entry player table, because the host is what handed it out — with the side
+`game_players.team` holds, read through the games domain's service. Both writers
+name it: the run publishes the pair it was built with, and a confirmation reads
+the room again, so a briefing in which a player changed sides republishes the
+room as it now is rather than as the run first said it. `UDP_GAME_CAPTURE.md` §3.2
+has the measured shapes — slots marked `07` in the occupancy array, sides `0` and
+`1`, `e0` for a player the room puts on no side, and the pair's two consecutive
+index bytes, which is what the replay parser tells a pair by.
 
 ## Where this sits
 

@@ -40,8 +40,12 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </remarks>
 /// <param name="Vitals">Beat-frame vitals record identifier.</param>
 /// <param name="RulesRoster">Beat-frame rules-roster record identifier.</param>
-/// <param name="RoundClock">Operations record identifier.</param>
-/// <param name="RoundClockAlternate">The same record with the sibling bit set.</param>
+/// <param name="Operations">
+/// Operations stream identifier: the family that carries the round's clock, its
+/// state block, its outcome and the kill feed, each told apart by the first byte
+/// of its body rather than by its identifier.
+/// </param>
+/// <param name="OperationsClassBit">The same stream with the payload class bit set.</param>
 /// <param name="MatchStartMarker">Record that opens the round.</param>
 /// <param name="MatchStartPayload">Payload record inside the run.</param>
 /// <param name="ItemBox">First identifier of the beat's item-box group.</param>
@@ -59,8 +63,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed record MatchRecordGenerationUtils(
     ushort Vitals,
     ushort RulesRoster,
-    ushort RoundClock,
-    ushort RoundClockAlternate,
+    ushort Operations,
+    ushort OperationsClassBit,
     ushort MatchStartMarker,
     ushort MatchStartPayload,
     ushort ItemBox,
@@ -88,8 +92,8 @@ public sealed record MatchRecordGenerationUtils(
         new(
             (ushort)(Vitals ^ SiblingBit),
             (ushort)(RulesRoster ^ SiblingBit),
-            (ushort)(RoundClock ^ SiblingBit),
-            (ushort)(RoundClockAlternate ^ SiblingBit),
+            (ushort)(Operations ^ SiblingBit),
+            (ushort)(OperationsClassBit ^ SiblingBit),
             (ushort)(MatchStartMarker ^ SiblingBit),
             (ushort)(MatchStartPayload ^ SiblingBit),
             (ushort)(ItemBox ^ SiblingBit),
@@ -163,6 +167,24 @@ public sealed record MatchRecordGenerationUtils(
         (ushort)(First.MatchStartPayload | PeerAcknowledgementUtils.PayloadClassBit),
         First.Next(0).MatchStartPayload,
         (ushort)(First.Next(0).MatchStartPayload | PeerAcknowledgementUtils.PayloadClassBit),
+    ];
+
+    /// <summary>
+    /// The identifiers the operations stream arrives under: each round's own
+    /// record, and the same record with the payload class bit set.
+    /// </summary>
+    /// <remarks>
+    /// The stream carries the round clock, the state block, the kill feed and a
+    /// client's briefing report, and it switches between the two rounds' sets as
+    /// they succeed each other. Both forms of both sets are listed so a handler
+    /// bound to the stream reads whichever one a peer is writing on.
+    /// </remarks>
+    public static IReadOnlyList<ushort> OperationsIdentifiers { get; } =
+    [
+        First.Operations,
+        First.OperationsClassBit,
+        First.Sibling.Operations,
+        First.Sibling.OperationsClassBit,
     ];
 
     /// <summary>

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.MatchRecords;
@@ -31,8 +32,9 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly AccountService accountService;
     private readonly MatchService matchService;
     private readonly RoomRosterService roster;
+    private readonly PlayerReadyService ready;
+    private readonly PlayerVitalsService vitals;
     private readonly HostIdentityService hostIdentity;
-    private readonly SentMessageTypesService sentTypes;
     private readonly PeerCommandRegistry registry;
     private readonly ILogger<GameplayServerService> logger;
     private readonly ServerOptions options;
@@ -72,8 +74,9 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         accountService = serviceProvider.GetRequiredService<AccountService>();
         matchService = serviceProvider.GetRequiredService<MatchService>();
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
+        ready = serviceProvider.GetRequiredService<PlayerReadyService>();
+        vitals = serviceProvider.GetRequiredService<PlayerVitalsService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
-        sentTypes = serviceProvider.GetRequiredService<SentMessageTypesService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
     }
 
@@ -234,6 +237,28 @@ public sealed partial class GameplayServerService : IAsyncDisposable
             session.RemoteAddress,
             session.AcknowledgedRecords.Count,
             session.RosterAcknowledged ? "yes" : "no");
+
+        // The briefing state the peer reported goes with it. A ready state kept
+        // for a player who has left would hold a round shut on somebody who is
+        // never going to report, which is a room waiting for nothing.
+        if (ready.Forget(session.RemoteAddress) | ready.Forget(session.DialBack.ToString()))
+        {
+            logger.LogDebug(
+                "[{LogPrefix}] Cleared the briefing state of reaped peer {RemoteAddress}",
+                LogPrefix,
+                session.RemoteAddress);
+        }
+
+        // The vitals it last reported go with it, for the same reason: a health
+        // kept for a player who has left is a value about nobody, and a reader
+        // that took it for a live one would be reading the round before.
+        if (vitals.Forget(session.RemoteAddress) | vitals.Forget(session.DialBack.ToString()))
+        {
+            logger.LogDebug(
+                "[{LogPrefix}] Cleared the vitals of reaped peer {RemoteAddress}",
+                LogPrefix,
+                session.RemoteAddress);
+        }
 
         // Both lookups are made: '|' and not '||', because the second endpoint
         // has to be tried even when the first one found the entry.

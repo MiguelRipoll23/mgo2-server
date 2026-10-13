@@ -44,13 +44,21 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// <param name="roster">Roster of the room this host is playing.</param>
 /// <param name="burstScheduler">Scheduler of the one-shot settings burst after roster exchange.</param>
 /// <param name="matchRecords">Records the recorded host keeps writing after the burst.</param>
+/// <param name="matchStart">Writer of the run the room's next round opens with.</param>
 /// <param name="teamArrays">The lobby-slot array handshake, which answers under two of these identifiers.</param>
+/// <param name="score">
+/// The host's own score, which a scoreboard delta arriving on this identifier
+/// is merged into. The identifier carries the scoreboard as well as the roster,
+/// and the two are told apart by their length (<see cref="MatchScoreboardFramesUtils"/>).
+/// </param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
     RoomRosterService roster,
     PlayerSettingsBurstSchedulerService burstScheduler,
     MatchRecordService matchRecords,
+    MatchStartRunService matchStart,
     TeamArrayService teamArrays,
+    MatchScoreService score,
     ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
@@ -64,6 +72,19 @@ public sealed class PlayerProfileHandler(
         if (TeamArrayFramesUtils.IsArrayEcho(context.Message.Body))
         {
             await teamArrays.ConfirmAsync(context, TeamArrayFramesUtils.SequenceOf(context.Message.Body));
+            return;
+        }
+
+        // The same identifier carries the game's own scoreboard, and its body is
+        // the only other shape on it: the settings discriminator, a player's slot
+        // and the values that changed. A peer that writes one is telling the room
+        // a score this host has not counted itself, so it is merged and passed on
+        // rather than read as a profile the peer never sent.
+        if (MatchScoreboardFramesUtils.TryParse(context.Message.Body, out var delta))
+        {
+            MergeScoreboard(context, delta);
+            var relay = context.Relay ?? context.Broadcast;
+            await relay(context.Message.Type, context.Message.Body, context.Message.Flags);
             return;
         }
 
@@ -141,6 +162,41 @@ public sealed class PlayerProfileHandler(
     }
 
     /// <summary>
+    /// Merges a scoreboard delta a peer wrote into the host's own score: the bits
+    /// this file names, and nothing for the ones it does not.
+    /// </summary>
+    /// <param name="context">Context the delta arrived through.</param>
+    /// <param name="delta">Slot and values the delta carried.</param>
+    private void MergeScoreboard(PeerContext context, MatchScoreboardFramesUtils.ScoreboardDelta delta)
+    {
+        logger.LogDebug(
+            "UDP {LocalPort}: {RemoteAddress} reports a scoreboard delta for slot {Slot} with "
+            + "{ValueCount} value(s)",
+            context.LocalPort,
+            context.Remote,
+            delta.Slot,
+            delta.Values.Count);
+
+        foreach (var value in delta.Values)
+        {
+            switch (value.Bit)
+            {
+                case MatchScoreboardFramesUtils.KillsBit:
+                    score.NoteKills(delta.Slot, value.Value);
+                    break;
+                case MatchScoreboardFramesUtils.DeathsBit:
+                    score.NoteDeaths(delta.Slot, value.Value);
+                    break;
+                case MatchScoreboardFramesUtils.ScoreBit:
+                    score.NoteScore(delta.Slot, value.Value);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
     /// Writes the roster run, its repeat and its trailing record, and announces
     /// the run to the room's other peers.
     /// </summary>
@@ -191,6 +247,12 @@ public sealed class PlayerProfileHandler(
             context.Remote);
         burstScheduler.Schedule(context);
         matchRecords.Start(context);
+
+        // The peer that has just been answered the roster is in the room's
+        // briefing, and the room's next round will open for it too. Its watcher
+        // is armed here, in the pass that answered the roster, so the round's
+        // opening run reaches this peer whether it readies first or last.
+        matchStart.Start(context);
 
         logger.LogDebug(
             "UDP {LocalPort}: announcing {RecordCount} roster records from {RemoteAddress} to other peers",

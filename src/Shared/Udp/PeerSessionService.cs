@@ -29,6 +29,19 @@ public sealed class PeerSessionService(
     string logPrefix = "udp",
     Action<PeerSession>? onReaped = null)
 {
+    /// <summary>
+    /// How long a session may stay quiet before it is dropped, when the caller
+    /// has no reason to choose another window.
+    /// </summary>
+    /// <remarks>
+    /// It is a named value rather than a literal at the construction site
+    /// because a second rule has to agree with it: the recorded host's stream
+    /// stops for a peer once that peer has been quiet for this long, and it must
+    /// stop no later than the reaper lets the peer go, or it keeps writing to a
+    /// session that no longer exists.
+    /// </remarks>
+    public static readonly TimeSpan DefaultIdleTimeout = TimeSpan.FromSeconds(60);
+
     private readonly Lock gate = new();
     private readonly Dictionary<string, PeerSession> sessions = [];
     private Timer? reaper;

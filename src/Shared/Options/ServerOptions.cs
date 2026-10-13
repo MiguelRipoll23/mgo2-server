@@ -40,13 +40,6 @@ public sealed class ServerOptions
     public int GameplayServerPort { get; set; } = 5731;
 
     /// <summary>
-    /// Port the packet-replay console listens on. Left at zero, a free port is
-    /// drawn at random from the range the console owns, so several gameplay
-    /// hosts on one machine never answer on the same one.
-    /// </summary>
-    public int GameplayWebPort { get; set; }
-
-    /// <summary>
     /// Address the dedicated host announces to peers. Defaults to the advertised
     /// address of this instance, and to loopback when no advertised address is
     /// configured.
@@ -84,6 +77,80 @@ public sealed class ServerOptions
     /// the room name is derived from the gameplay server port.
     /// </summary>
     public string? GameplayServerGameName { get; set; }
+
+    /// <summary>
+    /// Rule the gameplay server's room runs, named the way the replay console and
+    /// <c>docs/protocol/GAME_SETTINGS_WIRE.md</c> name rules: <c>TDM</c>,
+    /// <c>TSNE</c>, <c>CAP</c>, <c>SCAP</c>. The name is what a person writes; the
+    /// id a rotation carries is the mapping's own
+    /// (<c>MatchRuleUtils.Parse</c>, from <c>rpdt.js</c>'s <c>MODE_NAMES</c>).
+    /// <para>
+    /// The dedicated host <i>is</i> its room's host, so its rule is its own
+    /// setting and not a row's to be read back: nothing else can state one, and
+    /// the room row is written from this. The name is matched without case, and a
+    /// name that is no rule stops the process at startup — a host that ran a rule
+    /// no client was told about would open a round the client is not in.
+    /// </para>
+    /// </summary>
+    public string GameplayServerRule { get; set; } = "TDM";
+
+    /// <summary>
+    /// Map the gameplay server's room runs, by the name a player knows it by
+    /// (<c>Blood Bath</c>) or by the stage the disc ships it as (<c>n007a</c>).
+    /// Both are the replay console's table, ported in <c>MatchMapUtils</c>.
+    /// <para>
+    /// Like the rule, this is the room's own setting rather than a draw or a row:
+    /// a host whose map was drawn at random would publish a room whose round no
+    /// operator chose. The default is the map of the recorded briefing this host
+    /// follows, and a name that is no map stops the process at startup.
+    /// </para>
+    /// </summary>
+    public string GameplayServerMap { get; set; } = "Blood Bath";
+
+    /// <summary>
+    /// Briefing time of the gameplay server's room, in minutes: how long the room
+    /// waits between two rounds.
+    /// <para>
+    /// The client pushes its own when a player hosts a room
+    /// (<c>characters_host_settings.briefing_time</c>, the lobby's
+    /// <c>0x4312</c> push), and a dedicated host has no such push: what its room
+    /// briefs for is this setting. Its form on the gameplay channel is not
+    /// settled, so no record carries it yet; it is resolved and reported, not
+    /// written.
+    /// </para>
+    /// </summary>
+    public int GameplayServerBriefingMinutes { get; set; } = 1;
+
+    /// <summary>
+    /// Minutes a round of the gameplay server's room lasts. The round's clock is
+    /// this times 480, the relation measured over three captures
+    /// (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §2).
+    /// <para>
+    /// A player-hosted room's time per rule is in the bank the client pushes
+    /// (<c>characters_host_settings.rule_timers</c>), and a dedicated host, again,
+    /// has never pushed one: the round's length is this setting, for every rule.
+    /// The default is seven minutes, which is the clock of the recorded room this
+    /// host replays. Minutes of zero or less stop the process at startup, because
+    /// zero is a round that ends the moment it opens.
+    /// </para>
+    /// </summary>
+    public int GameplayServerRoundMinutes { get; set; } = 7;
+
+    /// <summary>
+    /// Kill limit the gameplay server's room's round ends on, or <c>null</c> for a
+    /// round that ends on its clock alone.
+    /// <para>
+    /// The reply calls this word a rule's <c>tickets</c>
+    /// (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §2, §3) — the recorded rooms
+    /// play 50- and 55-ticket team deathmatches — and nothing on the gameplay
+    /// channel counts kills for a host, so a limit here is only ever reached by
+    /// the score this host keeps itself. Its default is unset, which is what a
+    /// room with no stored bank plays: a round that runs its full time. A limit of
+    /// zero or less stops the process at startup, because such a round ends before
+    /// it opens.
+    /// </para>
+    /// </summary>
+    public int? GameplayServerKillLimit { get; set; }
 
     /// <summary>Display name of the account the gameplay server logs in with.</summary>
     public string GameplayServerAccountName { get; set; } = "server";
@@ -133,6 +200,18 @@ public sealed class ServerOptions
     /// otherwise, which only a client on the same machine can reach.
     /// </summary>
     public string AnnouncedIpAddress => OverrideIpAddress ?? "0.0.0.0";
+
+    /// <summary>
+    /// Name of the room the gameplay server publishes. It is the configured game
+    /// name, and the host prefix and this instance's own port when none is
+    /// configured: the port is unique and stable, so two dedicated hosts never
+    /// publish a room under one name. A blank configured name reads as none, so a
+    /// room is never published under a name no client can show.
+    /// </summary>
+    public string GameplayServerRoomName =>
+        string.IsNullOrWhiteSpace(GameplayServerGameName)
+            ? $"server-{GameplayServerPort}"
+            : GameplayServerGameName;
 
     /// <summary>Interval in seconds between two heartbeats of an owned row.</summary>
     public int LobbyHeartbeatIntervalSeconds => LobbiesRefreshIntervalMinutes * 60;
