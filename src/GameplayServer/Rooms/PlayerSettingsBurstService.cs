@@ -158,19 +158,20 @@ public sealed class PlayerSettingsBurstService(
         IReadOnlyList<LobbyLoadout>? loadouts)
     {
         // The fourth byte continues the roster run's numbering instead of
-        // restarting it. At the join the run reads 0 for its head and the host's
-        // own entry, 1 for the player and 2 for the close, and the burst that
-        // follows reads 3, 4, 5 and 6 — the rotation, the player's loadout, and
-        // the two second loadouts, in that order. Writing zero on all four, as
-        // this did, tells the peer the same sequence four times over.
-        var ordinal = roster.NextRunOrdinal;
+        // restarting it, and it comes from the one counter every record of the
+        // roster identifier consumes: at the join the run reads 0 for its head
+        // and the host's own entry, 1 for the player and 2 for the close, and the
+        // burst that follows takes 3, 4, 5 and 6 — the rotation, the player's
+        // loadout, and the two second loadouts, in that order
+        // (<see cref="RoomRosterService.TakeRunOrdinal"/>). Writing zero on all
+        // four, as this did, tells the peer the same sequence four times over.
         var burst = new List<RosterRecord>
         {
             new(UdpCommandConstants.InGameControl, [OpeningControlByte]),
             new(
                 RoomRosterService.HostEntryType,
                 rotation is null ? RecordedRotationBody() : RoomRotationBody(rotation),
-                ordinal++),
+                roster.TakeRunOrdinal()),
         };
 
         if (loadouts is { Count: > 0 })
@@ -183,7 +184,7 @@ public sealed class PlayerSettingsBurstService(
                 burst.Add(new(
                     UdpCommandConstants.PlayerProfile,
                     LoadoutBody(loadout),
-                    ordinal++));
+                    roster.TakeRunOrdinal()));
             }
         }
         else
@@ -196,17 +197,17 @@ public sealed class PlayerSettingsBurstService(
                 burst.Add(new(
                     LoadoutBodiesUtils.LoadoutRecordType,
                     LoadoutBodiesUtils.PlayerLoadout(),
-                    ordinal++));
+                    roster.TakeRunOrdinal()));
             }
 
             burst.Add(new(
                 LoadoutBodiesUtils.LoadoutRecordType,
                 LoadoutBodiesUtils.SecondLoadout(),
-                ordinal++));
+                roster.TakeRunOrdinal()));
             burst.Add(new(
                 LoadoutBodiesUtils.LoadoutRecordType,
                 LoadoutBodiesUtils.SecondLoadout(),
-                ordinal));
+                roster.TakeRunOrdinal()));
         }
 
         burst.Add(new(UdpCommandConstants.GameStateBlob, BuildClosingStateBlob()));

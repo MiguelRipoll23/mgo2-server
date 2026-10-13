@@ -57,6 +57,14 @@ public static class MatchStartRunFramesUtils
     /// Sequence the lobby-slot array pair opens on. The client answers it and
     /// <see cref="Rooms.TeamArrayService"/> confirms it and moves the pair on.
     /// </param>
+    /// <param name="pairIndexes">
+    /// The pair's two index bytes, taken from the roster exchange's own counter
+    /// (<see cref="Rooms.RoomRosterService.TakeRunOrdinals"/>) rather than pinned:
+    /// the replay parser tells a pair by its two records being consecutive, and
+    /// they are consecutive because they are the two values the counter handed
+    /// out. The recorded runs carry 7 and 8, which is where a join's own records —
+    /// the roster run's entries and close, then the burst's four — leave it.
+    /// </param>
     /// <param name="lobbySlots">
     /// The room's own players, by the slot each one holds in its 24-entry player
     /// table, and the side each is on. The pair names them, so it is the room's
@@ -76,6 +84,7 @@ public static class MatchStartRunFramesUtils
         MatchRecordGenerationUtils generation,
         byte reported,
         byte teamArraySequence,
+        (byte Teams, byte Occupancy) pairIndexes,
         IReadOnlyList<Rooms.LobbyTeamSlot> lobbySlots,
         int timeLimitUnits)
     {
@@ -88,16 +97,11 @@ public static class MatchStartRunFramesUtils
         new(generation.MatchStartPayload, MatchStartBodiesUtils.MatchStartPayload(reported)),
 
         // The lobby-slot pair, written behind the payload record. Its two index
-        // bytes are the pair's own and consecutive, which is what the replay
-        // parser tells a pair by; both captures of a run write 7 and 8.
-        new(
-            Rooms.RoomRosterService.HostEntryType,
-            teams,
-            Rooms.TeamArrayFramesUtils.RunTeamArrayIndex),
-        new(
-            UdpCommandConstants.PlayerProfile,
-            occupancy,
-            Rooms.TeamArrayFramesUtils.RunOccupancyArrayIndex),
+        // bytes are the next two values of the roster exchange's counter, which
+        // is what the replay parser tells a pair by: consecutive, because one
+        // counter handed both out.
+        new(Rooms.RoomRosterService.HostEntryType, teams, pairIndexes.Teams),
+        new(UdpCommandConstants.PlayerProfile, occupancy, pairIndexes.Occupancy),
 
         // The companion's answer, in the one position a capture measures.
         new(

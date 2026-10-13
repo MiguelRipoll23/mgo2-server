@@ -94,14 +94,20 @@ public static class TeamArrayFramesUtils
     public const byte OccupancyVacant = 0x7f;
 
     /// <summary>
-    /// Index byte the team array of the round's run carries. It and
-    /// <see cref="RunOccupancyArrayIndex"/> are consecutive, which is what the
-    /// replay parser pairs two arrays by — the pair's two records must differ by
-    /// one — and 7 and 8 are the values all three captured runs write.
+    /// Index byte the team array of the round's run carries in all three captured
+    /// runs. It and <see cref="RunOccupancyArrayIndex"/> are consecutive, which is
+    /// what the replay parser pairs two arrays by — and they are consecutive
+    /// because they are the next two values of the roster exchange's own counter
+    /// (<see cref="RoomRosterService.TakeRunOrdinals"/>): 7 and 8 are where a
+    /// join's records leave it, not a value this host writes. A later pair takes
+    /// the values after it. See <c>docs/GAMEPLAY_SERVER.md</c> §7.
     /// </summary>
     public const byte RunTeamArrayIndex = 0x07;
 
-    /// <summary>Index byte the occupancy array of the round's run carries.</summary>
+    /// <summary>
+    /// Index byte the occupancy array of the round's run carries in all three
+    /// captured runs; see <see cref="RunTeamArrayIndex"/>.
+    /// </summary>
     public const byte RunOccupancyArrayIndex = 0x08;
 
     /// <summary>

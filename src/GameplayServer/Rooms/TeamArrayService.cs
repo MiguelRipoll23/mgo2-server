@@ -43,9 +43,16 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </para>
 /// </remarks>
 /// <param name="lobbySlots">Reader of the room's own players and their sides.</param>
+/// <param name="roster">
+/// The room's roster exchange, whose counter numbers the republished pair: the
+/// two values it takes are the next two the identifier's records take, so a pair
+/// republished a hundred times over a briefing carries a hundred values and
+/// never repeats one the peer has already seen.
+/// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class TeamArrayService(
     LobbySlotService lobbySlots,
+    RoomRosterService roster,
     ILogger<TeamArrayService> logger)
 {
     /// <summary>
@@ -70,10 +77,17 @@ public sealed class TeamArrayService(
 
         var next = TeamArrayFramesUtils.NextSequence(answered);
         var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(next, await lobbySlots.ReadAsync());
+
+        // The pair's two index bytes are the next two values of the roster
+        // exchange's counter, not a restarted 0 and 1: the counter is what tells
+        // the replay parser the two records are one pair, and a pair that
+        // restarted would carry numbers records before it have already taken
+        // (docs/GAMEPLAY_SERVER.md §7).
+        var ordinals = roster.TakeRunOrdinals(2);
         var pair = new List<RosterRecord>
         {
-            new(RoomRosterService.HostEntryType, teams, 0),
-            new(UdpCommandConstants.PlayerProfile, occupancy, 1),
+            new(RoomRosterService.HostEntryType, teams, ordinals[0]),
+            new(UdpCommandConstants.PlayerProfile, occupancy, ordinals[1]),
         };
 
         logger.LogDebug(

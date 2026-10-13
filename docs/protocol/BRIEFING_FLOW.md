@@ -75,8 +75,30 @@ t+76.665  OUT 0x1254  0b 3b 00 c0 00 00 00
 ```
 
 It runs in every briefing of the capture (`joined-when-red-team`, t+72.5 to
-t+191.4 and again t+754 to t+848) and never during a round. **[U]** what the 60
-counts and what the flag distinguishes.
+t+191.4 and again t+754 to t+848) and never during a round.
+
+**The unit is one second, and the count ends on a zero.** Read per distinct
+record — the same bytes are resent until the client answers, which is why the
+capture holds 267 of them for two briefings — the count falls one per second: 60
+at 211.533, 29 at 250.139, 15 at 982.610, and into every briefing's close a `0`
+(`0b 00 00 ea 01 00 00` at 252.731, `0b 00 00 22 7e 00 00` at 987.019). The span
+is the briefing's own: 60 → 20 over the 41.2 s of the first one and 60 → 15 over
+the 44.5 s of the second, so the count is what is *left* of the room's briefing
+time and not a fixed 60-second wait. Its zero is the briefing's end and not
+necessarily the round's: the first briefing writes it at 252.731 and the round's
+own clock appears at 262.748, ten seconds later, because the round stays gated on
+the reports (§2).
+
+**The tail is a bit set that grows as the reports arrive.** Behind the count sit
+four bytes, and the bits in them are *added*, never cleared, as the room fills:
+the first briefing runs `40`, `c0`, `c2`, `ca`, `ea` over its records and the
+second `08`, `18`, `38`, `78`, `7e` — a bit per player, in the order they
+reported. Two records written at one instant carry the same count under
+different sets (`3c … 40` and `3c … c0` at 211.533), which is the same reading:
+the set before a report and the set after it. Which bit is which player — the
+lobby slot, or the order the host learned them — is **[U]**; that the set is the
+room's reporting players is measured, and it is why the record is a briefing's
+whole state rather than a countdown alone.
 
 ## 2. The round opens on the reports, not on a clock
 
@@ -205,8 +227,11 @@ sends today.
 
 ## 7. Open
 
-* **[U]** the seven-byte `0x0b` countdown's unit (60 counts down over 118 s in
-  `joined-when-red-team`) and its flag byte `0x40`/`0xc0`/`0xc2`.
+* **Answered: the seven-byte `0x0b` countdown's unit** — one count per second, not
+the 118 s an earlier reading of resends suggested, and it ends on a written `0`
+when the round opens (§1). What the byte's low bits are keyed on is still open:
+briefing one writes `40`, `c0`, `c2`, `ca`, `ea` and briefing two `00`, `02`,
+`22`, over the same kind of growing mask.
 * **[U]** the trailing bytes of the `e0` publication: 5, 6, 7 and 8 all appear.
 * **[I]** the report's byte as the lobby slot; measured is only that one byte
   identifies the player and is echoed unchanged.

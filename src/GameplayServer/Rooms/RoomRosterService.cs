@@ -61,26 +61,75 @@ public sealed class RoomRosterService(
     private readonly List<RosterMember> members = [];
 
     /// <summary>
-    /// The fourth byte the next record of the roster exchange takes.
+    /// Fourth byte the next record of the roster exchange takes; see
+    /// <see cref="NextRunOrdinal"/>.
+    /// </summary>
+    private byte nextRunOrdinal;
+
+    /// <summary>
+    /// Takes the fourth byte the next record of the roster exchange carries, and
+    /// advances the exchange's counter past it.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// The counter is one per identifier and every record under it consumes a
+    /// value, which is why there is a take and no way to read it without taking
+    /// one: a caller that pinned a value would write one a record before it has
+    /// already taken it. Measured on
+    /// `mgo2-game-joined-when-red-team-then-briefing`, whose live rounds carry
+    /// every record of the roster identifier (<c>0x1001</c>) in one ascending
+    /// sequence — the lobby-slot arrays take two consecutive values (23 and 24,
+    /// then 28 and 29) and the scoreboard deltas take the values between them (25,
+    /// 26 and 27).
+    /// </para>
+    /// <para>
     /// The run numbers its positions from zero: the head and the host's own entry
     /// both read zero, the joining players read one upwards, and the close reads
     /// <see cref="JoinerCount"/> + 1. What follows the run keeps counting rather
     /// than restarting — the burst the recorded host sends 2.52 s later reads 3,
-    /// 4, 5 and 6 under a one-player roster, which is this value and the three
-    /// after it (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4) — so a sender that
-    /// restarts the count writes numbers the peer has already seen.
+    /// 4, 5 and 6 under a one-player roster, which is why the counter is seeded at
+    /// <see cref="JoinerCount"/> + 2 when a member registers
+    /// (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4) — so a sender that restarts
+    /// the count writes numbers the peer has already seen.
+    /// </para>
+    /// <para>
+    /// A record that carries an index byte takes one; a record that does not — an
+    /// opening control byte, the head — takes none, which is why this is called
+    /// per record rather than once per frame.
+    /// </para>
     /// </remarks>
-    public byte NextRunOrdinal
+    /// <returns>The fourth byte the record takes.</returns>
+    public byte TakeRunOrdinal()
     {
-        get
+        lock (gate)
         {
-            lock (gate)
-            {
-                return (byte)(members.Count + 2);
-            }
+            var value = nextRunOrdinal;
+            nextRunOrdinal = unchecked((byte)(nextRunOrdinal + 1));
+            return value;
         }
+    }
+
+    /// <summary>
+    /// Takes the next values of the roster exchange's counter, in order, for a
+    /// caller that writes several records under it.
+    /// </summary>
+    /// <remarks>
+    /// The lobby-slot pair is written this way: the replay parser tells a pair by
+    /// its two records being consecutive, and consecutive values are exactly what
+    /// the counter hands out (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §3.2).
+    /// </remarks>
+    /// <param name="count">How many records the caller is about to write.</param>
+    /// <returns>The values, in the order the records take them.</returns>
+    public byte[] TakeRunOrdinals(int count)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        var values = new byte[count];
+        for (var index = 0; index < count; index++)
+        {
+            values[index] = TakeRunOrdinal();
+        }
+
+        return values;
     }
 
     /// <summary>
@@ -143,6 +192,14 @@ public sealed class RoomRosterService(
                 AddressData = peerAddressData.ToArray(),
             };
             members.Add(member);
+
+            // The run this join is answered with consumes the counter's values
+            // from zero: the head and the host's own entry read zero, the joining
+            // players one upwards, and the close members.Count + 1. What follows
+            // the run — the burst, the round's lobby-slot pair, the scoreboard —
+            // therefore starts here.
+            nextRunOrdinal = (byte)(members.Count + 2);
+
             logger.LogDebug(
                 "Added roster member {RemoteAddress}: character {CharacterId}, slot {RosterIndex}; {JoinerCount} joiners",
                 key,

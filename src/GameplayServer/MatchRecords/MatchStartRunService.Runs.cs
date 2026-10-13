@@ -151,10 +151,18 @@ public sealed partial class MatchStartRunService
         // 125 ms tick.
         var remainingUnits = roundState.RemainingUnits;
 
+        // The pair's two index bytes are the roster exchange's own counter's next
+        // two values: the join's records and the burst took the ones before them,
+        // and every record written under that identifier behind this one takes
+        // the next, which is what the captured stream does
+        // (docs/protocol/GAMEPLAY_SERVER.md §7).
+        var pairOrdinals = roster.TakeRunOrdinals(2);
+
         var run = MatchStartRunFramesUtils.BuildRun(
             generation,
             reported,
             Rooms.TeamArrayFramesUtils.OpeningSequence,
+            (pairOrdinals[0], pairOrdinals[1]),
             slots,
             remainingUnits);
 

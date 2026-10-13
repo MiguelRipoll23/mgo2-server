@@ -214,6 +214,7 @@ steps to the next entry of the room's rotation. It also clears the round's score
 | **the vitals each player last reported: health and stamina, kept per player and cleared when it leaves** | `PlayerVitalsHandler` → `PlayerVitalsService`, cleared by the session reaper |
 | **the round's score: a death when a player's health reaches zero, a kill and a death when a kill feed names one, and a side's total over the slots the room puts it on** | `PlayerVitalsHandler`/`KillFeedHandler` → `MatchScoreService`, reset when the round opens |
 | **the scoreboard each player's own numbers changed for** (`0b <slot+1> <21-byte mask> <values>` on the roster identifier) | `MatchScoreService` → `MatchScoreboardFramesUtils` → `ScoreboardPublishService` |
+| **the index byte every roster-identifier record carries: one counter per identifier, consumed in the order the records are written** | `Rooms/RoomRosterService.TakeRunOrdinal`, read by `PlayerSettingsBurstService`, `MatchStartRunFramesUtils.BuildRun`, `TeamArrayService` and `ScoreboardPublishService` |
 | **the round's result: `state[2]` written as the operations state write when the round ends** | `MatchStartRunService` (score → `MatchRecordBodiesUtils.StateWrite`) |
 | **the vitals record's onset: the round's first player vitals rather than a frame count** | `MatchRoundStateService.VitalsArrived` |
 
@@ -243,7 +244,7 @@ candidate for §5. The file names are the ones that own it.
 | the control bodies (`02`, `03`, `04`, `25`) | `MatchRecordBodiesUtils` | unnamed on the wire |
 | the host's vitals record: always full health and stamina (`fa fa`) | `MatchRecordBodiesUtils.Vitals` | the capture measures it constant while `0x0080` reports deaths, and says not to substitute a player's values into it; the players' own values are read and kept instead |
 | the operations state block: an 89-byte recorded vector, whose named offsets the run writes | `MatchStateBodiesUtils` | the two holders, the two capture clocks and the round clock; `state[2]` is opened as `0xff` and written by the round's end; the other bytes, and the last-round result at `state[3]`, are the recording |
-| the item-box group's bodies | `ItemBoxRecordBodiesUtils` | the round's opening event pair, then the filler; the later spawns and the moving position records are not written at all |
+| the item-box group's bodies | `ItemBoxRecordBodiesUtils` | the round's opening event pair, then the filler; the later spawn events are not written at all, and §5 item 6 has what the capture settles about them |
 | the match-start payload's trailing zeros and length | `MatchStartBodiesUtils` | game1's six-byte form |
 | the readiness-state answer (`02 00 00 00`) | `MatchStartBodiesUtils` | the one guessed body in the run, marked **[U]** |
 | the close pair's 18 unnamed bytes | `MatchRecordBodiesUtils` | nothing names them |
@@ -370,9 +371,14 @@ a reading rather than on a decision says so, and the reading is in §7.
    peer reports, or when the round opens, would cut a join's wait without touching
    the round.
 6. **The item-box group's later spawns.** The round's opening event pair and the
-   filler are written; the later spawn events and the moving position records are not
-   written at all, because no capture puts them where the group expects (§3.2). This
-   one wants a capture.
+   filler are written; the later spawn events are not. The capture that holds them
+   is `joined-when-red-team`, and it settles the *trigger* and not the body: 71
+   later events, each a `02 <nine bytes>` position record and a `03 00 00 00 21 00
+   21 00 21` tail, written under the round's own item-box identifier (the counter's
+   next two values) within 0.0–4.3 s of a death. The tail is byte-identical in all
+   71 and the positions are only 57 bodies, so the record names one of the map's
+   own box points and not the death; a host would need that point from somewhere
+   this channel does not carry, so the group stays the opening pair and the filler.
 
 ## 6. Where the code is
 
@@ -408,7 +414,9 @@ a reading rather than on a decision says so, and the reading is in §7.
   as the roster run's second copy is, nothing measured says.
 
 * **[U]** the state blob's only varying field (a 16-bit value that runs 100, 0,
-  94, 98, 99, 50 through a round).
+  94, 98, 99, 50 through a round). `joined-when-red-team`'s 754 steady blobs are
+  all zero, so the live round's own reading of the field is the constant one —
+  what moves it in the other captures is still unestablished.
 * **[U]** the rotation triple's third byte, whose meaning is still unestablished;
   zero is what fifteen of the sixteen recorded triples hold and zero is what this
   host writes. The u8 timer bank at `0x166` — SDM, INTERVAL, DM, SCAP, RACE — is
@@ -417,10 +425,19 @@ a reading rather than on a decision says so, and the reading is in §7.
 * **[U]** the `0x0b` briefing countdown's unit and its `0x40`/`0xc0` flag.
 * **[U]** the 18 unnamed bytes of the close pair, and the trailing zeros of the
   match-start payload.
-* **[U]** the two index bytes a republished pair carries. The round's run writes
-  the measured 7 and 8, and the parser pairs two arrays only when they are
-  consecutive; the capture's later pairs carry the next values of a counter that
-  also numbers its other records, which this host does not keep.
+* **Measured: one counter per roster identifier, and every record under it takes
+  a value.** `joined-when-red-team`'s live rounds carry every `0x1001` record in
+  one ascending sequence — the lobby-slot arrays take the pair 23 and 24, then
+  the pair 28 and 29, and the scoreboard deltas take 25, 26 and 27 between them —
+  so the run's measured 7 and 8 are *where the counter is* after a join's own
+  records and its burst, not values to pin, and a republished pair takes the next
+  two. `RoomRosterService.TakeRunOrdinal` is the counter, seeded at a join and
+  consumed by the burst, the run's pair, each republished pair and each scoreboard
+  delta.
+* **Answered: the round's own records are not the only thing under that counter.**
+  The same capture carries 2 606 `0x1001` records against 57 and 38 under the two
+  payload identifiers, so a host that numbered the payloads and the roster apart
+  would repeat values inside the one stream the peer answers.
 * **[U]** the pair's publication at a round boundary, and why. game1 un-marks
   every slot at t+442.7 — 396 s into its round, with players still in the room —
   re-marks the room with `e0` sides at t+449.0, and names the sides at t+517.5.
@@ -430,11 +447,21 @@ a reading rather than on a decision says so, and the reading is in §7.
   one. This host ends it on the kill limit it is configured with, counted from the
   score it keeps; the write it produces (`state[2]`) is the measured shape, and the
   round it ends is not a measured one.
-* **[U]** the scoreboard record's index byte — its fourth byte. The parser reads a
-  scoreboard's slot from its body and never from the index, and no capture lines
-  one up against the record before it; the publisher continues the roster run's
-  numbering because that is the one property the payloads around it are measured
-  to keep.
+* **Measured: what a host writes when a round decides its match.**
+  `joined-when-red-team` ends its third round at t+754.040 with
+  `02 02 02 02 02` — a *count of two*, so `state[2]` and `state[3]` together, both
+  `2` — and follows it 22.75 s later with `02 04 03 00 02 02`, three values at
+  `state[4]` (a `0`, then the match's two `2`s). The first two rounds write
+  `02 02 01 02`, the count-one form this host already sends, so the count-two write
+  and the triple behind it are the *match's* and arrive once the match is decided.
+  What `state[4]`–`state[6]` name is **[U]**; the shape and the order are not.
+* **Measured: the scoreboard's index byte is the roster counter's next value.**
+  Its fourth byte is not its own numbering and not the roster run's: in
+  `joined-when-red-team` the 2 606 `0x1001` records carry one ascending sequence,
+  and the scoreboard's deltas take the values between the lobby-slot arrays' pairs
+  (25, 26 and 27 between 23–24 and 28–29). `ScoreboardPublishService` takes one
+  per delta; the parser still reads a scoreboard's slot from its body, never from
+  the index.
 * **[U]** the formula behind the scoreboard's `score` bit: measured, it climbs
   3, 7, 13, 20, 28 as a player's kills step 1…5, which is not a function of the
   kills alone, so the host writes a score only when a peer states one.
@@ -443,6 +470,14 @@ a reading rather than on a decision says so, and the reading is in §7.
   and health — the kill a feed names is the host's own count and not a client's
   report. This host counts a death from the vitals it reads and takes a side's
   kill total from the opponents' deaths until a feed names one.
+* **Measured: a kill is two records, and the second one is unread.**
+  `joined-when-red-team` carries 385 `0x09 <killer> <victim>` records and 188
+  `0x26 <slot> <value>` ones, the two travelling together (a `09 02 01` beside a
+  `26 02 06` in one datagram at t+160.298) and each resent until answered — which
+  is why the counts are roughly double the kills the capture holds. The second
+  record's `<slot>` is the killer's own and its `<value>` never leaves 3…7, so it
+  is a per-kill number the host keeps; nothing measured says which number, and this
+  host writes no `0x26` record rather than a value it cannot derive.
 * **[I]** how a client in a briefing decides its wait is over: it is waiting for
   the host's round, and it waits either until every player is ready or until its own
   briefing time is up. The second half is what the room's deadline is set to (§2.4),

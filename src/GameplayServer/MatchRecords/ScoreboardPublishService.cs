@@ -25,12 +25,14 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// the wire that did not change.
 /// </para>
 /// <para>
-/// Its fourth byte is the record's index within the roster exchange, and the
-/// value the captured scoreboard carries is **[U]**: the parser reads a
-/// scoreboard's slot from its body and never from the index, and no capture
-/// lines a scoreboard's index up against the record before it. It continues the
-/// roster run's numbering rather than restarting it, which is the one property
-/// the surrounding payloads are measured to keep.
+/// <b>Its fourth byte is the roster exchange's next counter value.</b> Measured
+/// on `mgo2-game-joined-when-red-team-then-briefing`, every record under the
+/// roster identifier carries one ascending sequence: the lobby-slot arrays take
+/// a pair of consecutive values (23 and 24, then 28 and 29) and the scoreboard
+/// deltas take the values between them (25, 26 and 27), so the index is the
+/// identifier's counter and not a restart. Each delta here takes the next value
+/// (<see cref="Rooms.RoomRosterService.TakeRunOrdinal"/>); the replay parser
+/// reads a scoreboard's slot from its body and never from the index.
 /// </para>
 /// </remarks>
 /// <param name="score">The host's own score, which this publishes.</param>
@@ -54,14 +56,13 @@ public sealed class ScoreboardPublishService(
             return;
         }
 
-        var ordinal = roster.NextRunOrdinal;
         var records = new List<RosterRecord>(deltas.Count);
         foreach (var delta in deltas)
         {
             records.Add(new RosterRecord(
                 MatchScoreboardFramesUtils.RecordType,
                 MatchScoreboardFramesUtils.BuildBody(delta),
-                ordinal++));
+                roster.TakeRunOrdinal()));
         }
 
         logger.LogDebug(

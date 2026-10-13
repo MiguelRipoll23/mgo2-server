@@ -68,12 +68,19 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// The round's result: the winner a clock's end is written with, and the state
 /// write that publishes it once the round has closed.
 /// </param>
+/// <param name="roster">
+/// The room's roster exchange, whose counter numbers the run's records: the
+/// lobby-slot pair takes the two values after the join's own records and the
+/// burst's, which is what keeps the pair consecutive and every record of that
+/// identifier in one ascending sequence.
+/// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class MatchStartRunService(
     MatchRoundStateService roundState,
     Rooms.PlayerReadyService ready,
     MatchSettingsService matchSettings,
     Rooms.LobbySlotService lobbySlots,
+    Rooms.RoomRosterService roster,
     MatchScoreService score,
     MatchResultService results,
     ILogger<MatchStartRunService> logger)
