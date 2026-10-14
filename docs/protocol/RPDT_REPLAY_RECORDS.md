@@ -88,6 +88,35 @@ payload lengths, including the discriminator byte.
 | Throwable launch | `0x08` | Length 14. `+1` item ID; signed `i16` LE launch X/Y/Z at `+2,+4,+6`; signed `i16` LE velocity X/Y/Z at `+8,+10,+12`. The parser associates the launch with the track inferred from `vid`. |
 | Settings / scoreboard | `0x0b` | Several record families; interpreted by chunk kind and `vid`, detailed below. |
 
+### The identifier block one player's records come in
+
+A player's records are **six `vid`s in one block**, and the parser's role table
+is that block: a position stream's `vid` is the track, and every other role sits
+at a fixed offset from it — `VID_DAMAGE` `-5`, `VID_STATE` `-2`, `VID_HEALTH`
+`-1`, `VID_WEAPON` `+2` and `VID_AIM` `+4` (`rpdt.js`, where the health payload
+is filed under track `vid - VID_HEALTH`, that is `vid + 1`):
+
+| role | offset from the position `vid` | payload type the parser expects |
+| --- | ---: | --- |
+| damage | `-5` | `0x00` |
+| state/action | `-2` | `0x01` |
+| health | `-1` | `0x03` |
+| position | `0` | `0x02` |
+| weapon / incapacitation | `+2` | `0x04` / `0x06` |
+| aim | `+4` | `0x05` |
+
+**The GameplayServer UDP tick stream is the same block**, which is what makes
+the crosswalk usable rather than merely suggestive: in
+`mgo2-started-briefing-then-solo-game` one client writes `0x0861` (class `0x01`),
+`0x0863` (class `0x02`), `0x0865` (classes `0x06` and `0x04`) and `0x0867`
+(class `0x05`) — the block's state, position, weapon pair and aim slots, each
+under this table's payload type — while the host writes `0x0862` (class `0x03`)
+for that same player. Five more captures, and game1's `0x090b`…`0x0911` with
+`0x090c`, repeat it; see
+[the capture's own section](UDP_GAME_CAPTURE.md#0x090c-is-the-addressed-players-vitals-slot-v).
+The block's low byte is per session; its `0x800` bit is the one a round's
+identifier set flips.
+
 ### Position layout details
 
 For `TYPE_POS`, the coordinates are not at one universal offset:
@@ -189,7 +218,7 @@ above — so it stays **[U]** in `MatchRecordBodiesUtils` rather than being gues
 | GameplayServer UDP message(s) | Current C# interpretation | RPDT relationship |
 |---|---|---|
 | `0x0080`, `0x0880` | Two-byte body `[health, stamina]` (`PlayerVitalsRecordUtility`) | Strong semantic match to RPDT `TYPE_HEALTH` `[0x03, health, stamina]`; RPDT has its discriminator in the body and a different record container. |
-| `0x090c` | Two-byte body `[0xfa, 0xfa]`, tick attribute class `3`, repeated in the steady host stream | A tick record's class byte **is** its payload type under the replay framing, so class `3` is `TYPE_HEALTH` itself — the discriminator RPDT writes inside its own health payload — and the two bytes behind it are that type's two values. The body size and class therefore agree with the confirmed vitals shape, and all captured samples are synchronized with `0x0a61`. Likely a second actor's full vitals or a heartbeat/state marker, but its meaning and actor are unresolved. |
+| `0x090c` | Two-byte body `[0xfa, 0xfa]`, tick attribute class `3`, repeated in the steady host stream | A tick record's class byte **is** its payload type under the replay framing, so class `3` is `TYPE_HEALTH` itself — the discriminator RPDT writes inside its own health payload — and the two bytes behind it are that type's two values. The body size and class therefore agree with the confirmed vitals shape, and all captured samples are synchronized with `0x0a61`. Its actor is the peer the stream is written to: `0x090c` is that player's block's health slot, one below its position record (`0x090d`) and one above its state record (`0x090b`), which the client writes itself — see [the block table](#the-identifier-block-one-players-records-come-in). |
 | `0x0081`, `0x0881`, `0x00b3`, `0x08b3`, `0x006d`, `0x00db` | Variable P2P position bodies (`PlayerPositionRecordUtility`) | Strong semantic match to RPDT `TYPE_POS` coordinates/state, but IDs, lengths, offsets, and surrounding framing differ. |
 | `0x0261`, `0x0a61` | Tick bodies with class `0x00` or `0x01`; capture bodies include `fe` and `ff <members> fe fe` | Strong structural match to replay `RULES_VIDS`. A tick record's class byte **is** its payload type under the replay framing, so prepending its discriminator to the UDP body makes every captured record parse under the replay parser's rules-roster grammar: class `0x00` is `TYPE_DAMAGE`, the compact group/member list, and class `0x01` is `TYPE_STATE`, the empty-list form that is the list-end byte alone. The replay separates the same two records by vid (`RULES_VIDS = 0x261` / `0xa61`, a `0x800` bit apart) where the capture writes both under `0x0a61` and distinguishes them by class; `MatchRecordFramesUtils` follows the capture. Member bytes match roster profile offsets `0x05`/`0x07`; group meaning and membership policy remain unresolved. See [the live-capture comparison](UDP_GAME_CAPTURE.md#0x0261-and-0x0a61-carry-rules-roster-shaped-records-i). |
 | `0x1001`, `0x9001` | Profile/join records parsed by `PlayerProfileRecordParseUtils` | Conceptual roster match to RPDT `TYPE_ROSTER`; do not apply RPDT offsets to the P2P profile. |

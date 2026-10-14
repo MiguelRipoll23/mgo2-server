@@ -121,6 +121,26 @@ public static class LoadoutBodiesUtils
     /// <returns>The recorded bytes.</returns>
     public static byte[] PlayerLoadout() => Convert.FromHexString(PlayerLoadoutPayloadHex);
 
+    /// <summary>
+    /// The appearance block the recorded host's own loadout body carries.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is the reference face a player with no readable appearance is
+    /// announced with.</b> The dedicated host character is created without an
+    /// appearance row, so the host's own loadout cannot be built from its rows;
+    /// a loadout whose face is the capture's rather than another character's is
+    /// still a loadout the client reads, which is what keeps the room's own
+    /// players named in the settings burst. The block is the recorded body's
+    /// trailing <see cref="LoadoutFramesUtils.AppearanceLength"/> bytes, in wire
+    /// order, exactly as that body carries them.
+    /// </remarks>
+    /// <returns>The 23-byte appearance block.</returns>
+    public static byte[] ReferenceAppearanceBlock()
+    {
+        var recorded = PlayerLoadout();
+        return recorded[^LoadoutFramesUtils.AppearanceLength..];
+    }
+
     /// <summary>The recorded body carrying two skill pairs, as the capture writes it twice.</summary>
     /// <returns>The recorded bytes.</returns>
     public static byte[] SecondLoadout() => Convert.FromHexString(SecondLoadoutPayloadHex);

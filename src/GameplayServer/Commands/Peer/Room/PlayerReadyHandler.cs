@@ -83,10 +83,23 @@ public sealed class PlayerReadyHandler(
         var reported = body[MatchStartBodiesUtils.ReadinessReportValueIndex];
         ready.Note(player, reported);
 
+        // The presence record the client sends in the same datagram as its report
+        // is answered here as well as inside the round's run. Both captures write
+        // the answer beside the report it follows — within half a second of it,
+        // and again as the set changes — and its first byte is the room's own
+        // reporters, so a client whose presence was heard is told so while the
+        // briefing still waits rather than only when the round opens
+        // (docs/protocol/BRIEFING_FLOW.md §1).
+        var generation = MatchRecordGenerationUtils.OfReadinessReport(context.Message.Type);
+        await context.Send(
+            generation.PlayerPresence,
+            MatchStartBodiesUtils.PlayerPresenceAnswer(ready.PresenceMask),
+            MatchStartBodiesUtils.PlayerPresenceAnswerClass);
+
         // The publication goes out on every report and not only on the first: it
         // is the host's answer to the report, and a client whose report changed
         // nothing is still waiting to be answered.
-        await PublishAsync(context);
+        await PublishAsync(context, generation);
 
         if (!matchStart.Open(context.Message.Type))
         {
@@ -107,12 +120,12 @@ public sealed class PlayerReadyHandler(
     /// which of the others is ready.
     /// </summary>
     /// <param name="context">Context the report arrived through.</param>
-    private async Task PublishAsync(PeerContext context)
+    /// <param name="generation">
+    /// Identifier set the report arrived on, which is the generation that client is
+    /// on: a round's payload record is the same record in both directions.
+    /// </param>
+    private async Task PublishAsync(PeerContext context, MatchRecordGenerationUtils generation)
     {
-        // The set is published under the identifier the report arrived on, which
-        // is the generation that client is on: a round's payload record is the
-        // same record in both directions.
-        var generation = MatchRecordGenerationUtils.OfReadinessReport(context.Message.Type);
         var publication = ready.BuildPublication(generation);
         if (publication.Count == 0)
         {

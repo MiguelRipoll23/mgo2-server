@@ -114,26 +114,37 @@ public sealed class LobbyLoadoutService(
         Dictionary<int, short> sides,
         CancellationToken cancellationToken)
     {
+        // The dedicated host character is created without an appearance row, and
+        // every capture of a working server announces the host's own slot in this
+        // burst. A player whose own appearance cannot be read is therefore named
+        // with the recorded host's reference block rather than left out: a slot
+        // the burst never names is a slot the client's own player list is missing,
+        // and a loadout whose face is the reference one is still a loadout it can
+        // read. The room's own players keep their own faces whenever those can be
+        // read (`LoadoutBodiesUtils.ReferenceAppearanceBlock`).
         var appearance = await characterService.GetAppearanceAsync(characterIdentifier, cancellationToken);
         if (appearance is null || !LoadoutFramesUtils.TryAppearanceBlock(appearance, out var block))
         {
             logger.LogWarning(
                 "Character {CharacterIdentifier}, in the room's slot {Slot}, has no appearance this record can "
-                + "carry; the burst leaves it out rather than announcing another character's",
+                + "carry; it is announced with the recorded host's own so the room still names it",
                 characterIdentifier,
                 slot);
-            return;
+            block = LoadoutBodiesUtils.ReferenceAppearanceBlock();
         }
 
+        // A skill set the record cannot express is dropped rather than guessed at:
+        // the player is announced in its own slot with no pairs, which is a shape
+        // the captures hold.
         var equipped = await characterService.GetEquippedSkillsAsync(characterIdentifier, cancellationToken);
         if (!LoadoutFramesUtils.TrySkillsOf(equipped, out var skills))
         {
             logger.LogWarning(
                 "Character {CharacterIdentifier}, in the room's slot {Slot}, has equipped skills the loadout "
-                + "record cannot carry; the burst leaves it out",
+                + "record cannot carry; it is announced with none",
                 characterIdentifier,
                 slot);
-            return;
+            skills = [];
         }
 
         var side = sides.TryGetValue(characterIdentifier, out var stored) ? stored : (short?)null;

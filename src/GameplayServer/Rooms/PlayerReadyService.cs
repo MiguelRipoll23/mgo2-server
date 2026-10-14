@@ -226,31 +226,37 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
 
     /// <summary>
     /// The room's reporting players as the presence answer's bit set: one bit
-    /// per player that has reported, at its place in the publication.
+    /// per player that has reported, at the slot the player's own report byte
+    /// names.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>The bits are the publication order, and the measured values say so.</b>
-    /// A host answers the presence record in four bytes under class 6, and the
-    /// captures' first bytes are <c>02</c> for the first reporter, then
-    /// <c>06</c>, <c>0e</c> and <c>1e</c> as the next three report, and
-    /// <c>16</c> once the <em>third</em> of the four has left
-    /// (<c>mgo2-game-started-on-briefing</c>). Under one bit per reporter that is
-    /// bit 1, then bits 1–2, 1–3 and 1–4, then bits 1, 2 and 4: a set that grows
-    /// by one bit per report and loses the bit of the reporter that left. The
-    /// same reading fits <c>mgo2-game-joined-when-red-team-then-briefing</c>'s
-    /// <c>2a</c> — bits 1, 3 and 5, the first, third and fifth reporters of a
-    /// room whose second and fourth never did. Read as the players' lobby slots
-    /// instead the bits do not fit: the slots that capture's own arrays name are
-    /// <c>0x0b</c>, <c>0x0f</c> and <c>0x14</c>, and none of the three is a bit
-    /// of a byte.
+    /// <b>The bit is the player's own reported byte, and the solo capture is what
+    /// settles it.</b> A host answers the presence record in four bytes under
+    /// class 6, and its first byte is the set of the room's reporters. Read as
+    /// the publication order it fits the rooms whose reporters arrived in slot
+    /// order — <c>mgo2-game-started-on-briefing</c> answers <c>02</c>, <c>06</c>,
+    /// <c>0e</c> and <c>1e</c> as its players report, then <c>16</c> once the
+    /// third has left — but it does not fit a room of one whose report carried
+    /// <c>03</c>: <c>mgo2-started-briefing-then-solo-game</c> is exactly that
+    /// room, and its host answers <c>08</c>, which is bit 3 and not bit 1.
+    /// </para>
+    /// <para>
+    /// Read as <c>1 &lt;&lt; reportedByte</c> every briefing fits:
+    /// <c>started-on-briefing</c>'s reports are slots 1, 2, 3 and 4
+    /// (<c>02</c>, <c>06</c>, <c>0e</c>, <c>1e</c>, then <c>16</c> with slot 3
+    /// gone), <c>joined-when-red-team</c>'s <c>2a</c> is slots 1, 3 and 5, and
+    /// the solo capture's single reporter is slot 3. The slots the arrays name
+    /// are the room's 24-entry table keys and are a different field; the byte
+    /// the report carries is the player's own slot, which is what the round's
+    /// run payload echoes back.
     /// </para>
     /// <para>
     /// So the value is derived from the room's own reports and is not a
     /// constant: <see cref="MatchStartBodiesUtils.PlayerPresenceAnswer"/> took a
     /// hard-coded two for a room of one, which is only the first reporter's
-    /// correct value by coincidence — a room of one is a room whose only
-    /// reporter is first.
+    /// correct value by coincidence. A report outside 1…7 has no bit in the
+    /// byte, and one that names no such slot contributes none.
     /// </para>
     /// </remarks>
     public byte PresenceMask
@@ -262,13 +268,12 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
                 var mask = 0;
                 foreach (var state in states.Values)
                 {
-                    // Bit 1 is the first reporter, so a player's bit is its
-                    // publication index one place along. Eight players fill the
-                    // byte; a ninth has no bit to set, which is the width the
-                    // record itself has.
-                    if (state.PublicationIndex < 7)
+                    // The report's own byte is the player's slot, and the set is
+                    // one bit per slot. Eight players fill the byte; a slot above
+                    // 7 has no bit to set, which is the width the record has.
+                    if (state.Value is >= 1 and <= 7)
                     {
-                        mask |= 1 << (state.PublicationIndex + 1);
+                        mask |= 1 << state.Value;
                     }
                 }
 

@@ -77,8 +77,22 @@ public static class MatchRecordFramesUtils
     /// <summary>
     /// Measured identifier of the two-byte health/stamina record that rides in
     /// the beat frame. Its body is the one the verified <c>0x0080</c> vitals
-    /// record carries, under the same attribute class; its actor is **[U]**.
+    /// record carries, under the same attribute class.
     /// </summary>
+    /// <remarks>
+    /// <b>Its actor is the peer the frame is written to.</b> A player's tick
+    /// records are one block of six identifiers, and this is that block's health
+    /// slot — one above the player's state record, one below its position
+    /// record, with the weapon pair at <c>+4</c>, the aim record at <c>+6</c> and
+    /// the damage record at <c>-3</c>: the replay parser's own role table, whose
+    /// <c>VID_HEALTH</c> is <c>-1</c> off a position stream (<c>rpdt.js</c>;
+    /// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>). Every block the corpus
+    /// carries agrees, and the client sets <c>0x8000</c> on its own where the
+    /// host does not (<c>0x0862</c> against the client's <c>0x8063</c>). The
+    /// block's low byte is a per-session allotment, so this host keeps the
+    /// recorded session's (<c>docs/analysis/briefing-start-comparison.md</c>
+    /// §4.1).
+    /// </remarks>
     public const ushort VitalsRecordIdentifier = 0x090c;
 
     /// <summary>

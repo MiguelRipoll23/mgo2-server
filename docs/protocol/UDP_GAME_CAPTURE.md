@@ -973,24 +973,46 @@ the player) and relays the record to the room's other peers as the unbound tick
 path did before it, so a client still sees every other player's health. A change
 in the value is logged at information; nothing is answered.
 
-### `0x090c` is a health/stamina-shaped host record [I]
+### `0x090c` is the addressed player's vitals slot [V]
 
-The steady stream's `0x090c` has the same two-byte body shape and class `3` as the
-verified `0x0080` vitals record. Its body is `fa fa` in all **4 298** observations.
-This is also the replay parser's `TYPE_HEALTH` shape after its leading `0x03`
-discriminator: `[0x03, health, stamina]`. All 4 298 `0x090c` observations are within
-1 ms of a server-to-joiner `0x0a61` transmission, tying it to the repeated live-game
-stream rather than to roster exchange.
+**It is not a fixed identifier but a player's own record block, one below that
+player's position record** — which is what resolves the actor an earlier reading
+of this record left open. A player's tick records are one block of six, and the
+replay parser's role table is that block: `role.set(vid, TYPE_POS)`,
+`vid + VID_STATE` (`-2`), `vid + VID_HEALTH` (`-1`), `vid + VID_WEAPON` (`+2`),
+`vid + VID_AIM` (`+4`) and `vid + VID_DAMAGE` (`-5`), so a health sample is filed
+under its position stream's track `+1` (`rpdt.js`;
+[RPDT_REPLAY_RECORDS.md](RPDT_REPLAY_RECORDS.md)). The captures agree record for
+record, class byte and all — a tick record's class byte *is* its payload type —
+and in the same `0x800` half the client's own block uses:
 
-That is a strong format and timing correlation, not proof that `0x090c` is a vitals
-update. Unlike `0x0080`, its values never change, including while `0x0080` reports
-damage and death. It could be a second actor's full vitals or a heartbeat/state marker
-whose bytes happen to match full vitals. Neither the record's actor nor its purpose is
-identified by the capture, replay parser, or the currently traced ELF path. Keep the
-record as `0x090c [fa fa]` until one of those sources resolves the identity and
-semantics; do not substitute a joining player's live vitals. This server reads
-the players' own `0x0080` values into `PlayerVitalsService` for its own use and
-leaves this record as the capture writes it.
+| capture | the player's own block (client → host) | host → client |
+| --- | --- | --- |
+| `mgo2-game1` | `0x090b` state, `0x090d` position, `0x090f` pair, `0x0911` aim | `0x090c fa fa` from t+73.4 s; and `0x010c fa fa` while the client's own block is `0x010b` |
+| `mgo2-started-briefing-then-solo-game` | `0x0861`, `0x0863`, `0x0865`, `0x0867` (classes `1`, `2`, `6`, `5`) | `0x0862 fa fa` (class `3`) |
+| `mgo2-started-on-solo-game` | `0x8063` position, the `0x8000` form of its own | `0x0062 fa fa` |
+| `mgo2-game3` | `0x08e3`, `0x08e5`, `0x08e7`, `0x08e9` | `0x08e4 fa fa` |
+| `mgo2-game2` | `0x004d`/`0x084d`, `0x004f`/`0x084f`, `0x0051`, `0x0053` | `0x004e`/`0x084e fa fa` |
+| `joined-final-round-solo-then-final-round-started-when-other-player-joined` | `0x0075`/`0x0875`, `0x0077`/`0x0877`, `0x0079`, `0x007b` | `0x0076`/`0x0876 fa fa` |
+
+Seven sessions and no counterexample: the identifier is the state record `+ 1`,
+which is the position record `− 1`, and its `0x800` bit is the same round bit
+the client's own block carries (`MatchRecordGenerationUtils`, which already flips
+`0x090c`/`0x010c` by round). The block's low byte is a **per-session allotment**
+(`0x0b`, `0x4d`, `0x61`, `0x75`, `0xe3` across five sessions) that nothing in the
+handshake carries — the client's peer id is `0x0001232f` in every capture — so
+which low byte a session uses stays **[U]**, and a host replaying a recorded
+session can only carry that session's.
+
+**What does not change.** The body is `fa fa` in all **4 298** observations of
+`0x090c`, and every one is within 1 ms of a server-to-joiner `0x0a61`
+transmission — the replay parser's `TYPE_HEALTH` shape after its leading `0x03`
+discriminator, `[0x03, health, stamina]`. Unlike `0x0080` the value never moves,
+including while `0x0080` reports damage and death, so what is established is the
+record's **slot**, not a live vitals input: do not substitute a joining player's
+live vitals into it. This server reads the players' own `0x0080` values into
+`PlayerVitalsService` for its own use and leaves this record as the capture
+writes it.
 
 ### `0x0261` and `0x0a61` carry rules-roster-shaped records [I]
 

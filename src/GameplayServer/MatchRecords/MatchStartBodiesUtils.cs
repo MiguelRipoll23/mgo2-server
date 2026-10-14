@@ -133,16 +133,18 @@ public static class MatchStartBodiesUtils
     /// three report (and <c>16</c> later, once a player has left), and
     /// <c>mgo2-game-joined-when-red-team-then-briefing</c> answers <c>2a</c> —
     /// bits 1, 3 and 5, the slots its reporting players hold. So this is the
-    /// room's own set and not an echo of the record's byte, and <c>02</c> is
-    /// what a room of one writes.
+    /// room's own set and not an echo of the record's byte, and the bit a player
+    /// owns is the slot its report carries — <c>08</c> for a room of one whose
+    /// only reporter is slot 3 (`docs/analysis/briefing-start-comparison.md` §3).
     /// </para>
     /// <para>
     /// <b>The first byte is derived, and the trailing three are not.</b>
-    /// The set is the room's own reporting players, one bit each in publication
-    /// order (<see cref="Rooms.PlayerReadyService.PresenceMask"/>), so a room of
-    /// one writes <c>02</c> — the bit of its only reporter, which is first — and
-    /// a room of four writes the run of bits the capture writes. **[V]** the
-    /// length, the class and the growth; **[D]** the set, from the growth.
+    /// The set is the room's own reporting players, one bit per player at the
+    /// slot its own report byte names (<see cref="Rooms.PlayerReadyService.PresenceMask"/>),
+    /// so a room whose only reporter carries <c>03</c> writes <c>08</c> and a
+    /// room whose reporters carry slots 1–4 writes the run of bits the capture
+    /// writes. **[V]** the length, the class and the growth; **[D]** the set,
+    /// from the growth.
     /// </para>
     /// <para>
     /// <b>The trailing three bytes are the recorded zeros, and the shape is

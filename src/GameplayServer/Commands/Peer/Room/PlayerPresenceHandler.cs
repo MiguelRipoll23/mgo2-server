@@ -29,12 +29,13 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// <c>mgo2-game-started-on-briefing</c> answers <c>02</c> and then <c>06</c>,
 /// <c>0e</c> and <c>1e</c> as its other players report, and
 /// <c>mgo2-game-joined-when-red-team-then-briefing</c> answers <c>2a</c> — the
-/// slots its reporting players hold. That answer rides inside the round's
-/// opening run here (<see cref="MatchStartRunFramesUtils"/>), which is the one
-/// position a capture measures the dedicated host writing it. So this handler
-/// has nothing of its own to write: it recognises the record so that the relay
-/// it needs is a decision rather than the default an unnamed gameplay record
-/// falls into, and passes it on.
+/// slots its reporting players hold. That answer is written by the report that
+/// arrives in the same datagram as this record (<see cref="PlayerReadyHandler"/>)
+/// — beside the report and not only inside the round's opening run
+/// (<see cref="MatchStartRunFramesUtils"/>), so a client whose presence was heard
+/// is told so while the briefing still waits. This handler recognises the record
+/// so that the relay it needs is a decision rather than the default an unnamed
+/// gameplay record falls into, and passes it on.
 /// </para>
 /// <para>
 /// Its identifiers are the same four the report uses on its own stream — the
