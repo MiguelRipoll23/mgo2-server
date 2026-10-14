@@ -39,6 +39,7 @@ builder.Services.AddSingleton<MatchRecordSequenceService>();
 builder.Services.AddSingleton<MatchRecordService>();
 builder.Services.AddSingleton<BriefingCountdownService>();
 builder.Services.AddSingleton<BriefingReadyPublishService>();
+builder.Services.AddSingleton<BriefingRoomPublishService>();
 builder.Services.AddSingleton<MatchRoundStateService>();
 builder.Services.AddSingleton<MatchStartRunService>();
 builder.Services.AddSingleton<MatchScoreService>();

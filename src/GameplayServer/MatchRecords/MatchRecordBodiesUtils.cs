@@ -221,6 +221,37 @@ public static class MatchRecordBodiesUtils
     /// <returns>The record body.</returns>
     public static byte[] RulesRoster() => [RulesListEnd];
 
+    /// <summary>
+    /// Leading byte of the room-count record. Every captured one is zero, in both
+    /// of the two-byte records and in the four-byte ones the same identifier
+    /// carries later in a round; what it states is **[U]**.
+    /// </summary>
+    public const byte RoomCountLeadingByte = 0x00;
+
+    /// <summary>
+    /// The room-count record's body: the leading zero and the room's population.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The second byte is how many players the room holds, and the lobby's own
+    /// details are what say so.</b> <c>mgo2-game-started-on-briefing</c> joins
+    /// <c>Best TDM [EU]</c> — its <c>0x4313</c> reply reads one player of a limit
+    /// of seventeen — and its host writes <c>00 01</c> when that peer is
+    /// answered and <c>00 02</c> once a second player is in the room
+    /// (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §1 for the reply's fields).
+    /// <c>mgo2-game-joined-when-red-team-then-briefing</c> writes <c>00 05</c> into
+    /// a room of five joiners. So the byte is the room's count and not its limit,
+    /// and not the host's own seat, which no captured room counts.
+    /// </para>
+    /// <para>
+    /// It is one byte on the wire, so a room of more than 255 is a count this
+    /// record cannot state; the rooms the captures hold are one to five.
+    /// </para>
+    /// </remarks>
+    /// <param name="count">Players the room holds.</param>
+    /// <returns>The record body.</returns>
+    public static byte[] RoomCount(byte count) => [RoomCountLeadingByte, count];
+
     /// <summary>The first record of the match-start run's close pair.</summary>
     /// <returns>The record body.</returns>
     public static byte[] MatchStartCloseFirst() => CloseRecord(CloseRecordFirstRemainder);

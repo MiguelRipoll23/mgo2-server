@@ -278,8 +278,7 @@ public static class MatchRecordFramesUtils
             frame.Add(new(generation.Vitals, MatchRecordBodiesUtils.Vitals(), VitalsAttributeClass));
         }
 
-        frame.Add(new(generation.RulesRoster, MatchRecordBodiesUtils.RulesRoster(), RulesRosterMemberListClass));
-        frame.Add(new(generation.RulesRoster, MatchRecordBodiesUtils.RulesRoster(), RulesRosterEmptyListClass));
+        frame.AddRange(RulesPair(generation));
 
         if (itemBoxes is not null)
         {
@@ -288,6 +287,29 @@ public static class MatchRecordFramesUtils
 
         return frame;
     }
+
+    /// <summary>
+    /// The rules-roster pair as the room's stream carries it, in either phase: the
+    /// empty list under each of the two classes.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is not the round's record and the beat is not its only writer.</b> The
+    /// recorded host writes the pair from the roster answer onward and on every
+    /// tick of a briefing, and the beat goes on writing it a frame at a time once
+    /// the round opens: <c>mgo2-game-started-on-briefing</c> writes
+    /// <c>0x0261 fe</c> under the two classes 12 to 26 times per ten seconds from
+    /// its roster answer to its round — the room's whole briefing, 198 s of it —
+    /// and 2 385 frames of its round after that. A host that wrote the pair only
+    /// inside its round would leave its peer in a briefing told nothing on the
+    /// stream the room's membership travels under.
+    /// </remarks>
+    /// <param name="generation">Identifier set of the room being briefed or played.</param>
+    /// <returns>The two records, in the order a frame carries them.</returns>
+    public static List<RecordMessage> RulesPair(MatchRecordGenerationUtils generation) =>
+    [
+        new(generation.RulesRoster, MatchRecordBodiesUtils.RulesRoster(), RulesRosterMemberListClass),
+        new(generation.RulesRoster, MatchRecordBodiesUtils.RulesRoster(), RulesRosterEmptyListClass),
+    ];
 
     /// <summary>
     /// An operations insertion, in either of the two identifiers the capture

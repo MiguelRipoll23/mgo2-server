@@ -246,13 +246,17 @@ public sealed class PlayerProfileHandler(
             context.LocalPort,
             context.Remote);
         burstScheduler.Schedule(context);
-        matchRecords.Start(context);
 
         // The peer that has just been answered the roster is in the room's
         // briefing, and the room's next round will open for it too. Its watcher
         // is armed here, in the pass that answered the roster, so the round's
-        // opening run reaches this peer whether it readies first or last.
+        // opening run reaches this peer whether it readies first or last — and
+        // armed before the match records, because that call begins the briefing's
+        // writers with it: the clock a peer is sent counts against the briefing
+        // this pass begins, and a writer that started first would find no briefing
+        // armed and write the peer nothing.
         matchStart.Start(context);
+        matchRecords.Start(context);
 
         logger.LogDebug(
             "UDP {LocalPort}: announcing {RecordCount} roster records from {RemoteAddress} to other peers",

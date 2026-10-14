@@ -65,6 +65,21 @@ settled**: five bytes (`e0 05 00 00 00`), six, seven and eight all appear on the
 same record, and one five-byte body in the same capture carries an unrelated
 tail (`e0 0a c0 00 03`) after the match ended [U] what the trailing bytes are.
 
+**The room is written too, and not only the players.** Two records carry the room
+itself while a briefing runs, and neither waits for a client packet. The
+**rules-roster pair** — the empty list `fe` twice, under its two classes — is
+written by `started-on-briefing` from its roster answer through its whole 198 s
+briefing, 12 to 26 times per ten seconds, and it rides inside the sparse
+controls and blobs; both captures that hold a join write it in the roster run
+itself, ahead of the roster entries, and the beat takes it over when a round
+opens. The **room's count** is a two-byte `0x1258`/`0x1a58` record whose second
+byte is how many players the room holds: `started-on-briefing` writes `00 01`
+beside its join and `00 02` once a second player is in the room, while the
+`0x4313` reply it joined on reads **one player of a limit of seventeen** — so
+the byte is the room's population and not its limit — and `joined-when-red-team`
+writes `00 05` into a room of five joiners. Written as
+`BriefingRoomPublishService`, which also writes the pair.
+
 **The countdown that precedes a round.** A seven-byte operations record counts
 down while the room is briefed, with a per-side flag byte:
 

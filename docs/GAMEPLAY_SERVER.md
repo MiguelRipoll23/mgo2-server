@@ -114,6 +114,18 @@ and so on for the other two reports, 2.4–4.3 s apart, with its round still 40 
 out. Without the repeat, a client whose report was heard and whose room is still
 waiting on another player has nothing on the wire that says so.
 
+**The room itself is written to a briefing too.** Two records carry it, and
+neither is an answer: the rules-roster pair, which the beat writes as well once a
+round is playing, and the room's own count — a two-byte record whose second byte
+is how many players the room holds, written when a peer is answered and again
+whenever that number moves. Both go out on the same tick as the ready set's
+repeat, from the join until the round opens (`BriefingRoomPublishService`,
+[`DATA_PHASE_DELIVERY.md`](protocol/DATA_PHASE_DELIVERY.md) and
+[`BRIEFING_FLOW.md`](protocol/BRIEFING_FLOW.md) §1). A briefing sent neither left
+the peer with nothing on the stream the room's own membership travels under, which
+is the half of a watching client's screen — who else is in the room — that nothing
+else on this channel states.
+
 The round opens when the room is ready, and "ready" is a measure of the room's
 membership rather than of a chosen interval:
 

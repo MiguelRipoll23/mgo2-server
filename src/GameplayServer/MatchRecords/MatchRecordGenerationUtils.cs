@@ -55,6 +55,16 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// datagram as its readiness report, carrying its own lobby slot — and answered
 /// by the host with the room's players in a bit mask.
 /// </param>
+/// <param name="RoomCount">
+/// The room's own count: a two-byte record carrying how many players the room
+/// holds, written when a peer is answered and again when that count moves
+/// (<c>docs/protocol/DATA_PHASE_DELIVERY.md</c> §"The two records a briefing is
+/// sent"). Its second byte is the room's
+/// population and not its limit, which the lobby's own details settle:
+/// <c>mgo2-game-started-on-briefing</c> joins a room whose <c>0x4313</c> says one
+/// player of a limit of seventeen, and the host writes <c>00 01</c> beside the
+/// join and <c>00 02</c> once a second player arrives.
+/// </param>
 /// <param name="ReportedByte">
 /// Byte the capture's round start carried — the one the client carried in its
 /// readiness report and the one the run's payload record hands back. It is the
@@ -71,6 +81,7 @@ public sealed record MatchRecordGenerationUtils(
     ushort ItemBox,
     ushort ItemBoxState,
     ushort PlayerPresence,
+    ushort RoomCount,
     byte ReportedByte)
 {
     /// <summary>The bit one round's identifiers differ from the next round's by.</summary>
@@ -81,7 +92,7 @@ public sealed record MatchRecordGenerationUtils(
     /// carry it.
     /// </summary>
     public static MatchRecordGenerationUtils First { get; } =
-        new(0x090c, 0x0a61, 0x1a54, 0x9a54, 0x5ade, 0x1ade, 0x1a50, 0x1a5a, 0x0a5c, 0x00);
+        new(0x090c, 0x0a61, 0x1a54, 0x9a54, 0x5ade, 0x1ade, 0x1a50, 0x1a5a, 0x0a5c, 0x1a58, 0x00);
 
     /// <summary>
     /// The set the next round uses: every identifier of this one with
@@ -100,6 +111,7 @@ public sealed record MatchRecordGenerationUtils(
             (ushort)(ItemBox ^ SiblingBit),
             (ushort)(ItemBoxState ^ SiblingBit),
             (ushort)(PlayerPresence ^ SiblingBit),
+            (ushort)(RoomCount ^ SiblingBit),
             ReportedByte);
 
     /// <summary>

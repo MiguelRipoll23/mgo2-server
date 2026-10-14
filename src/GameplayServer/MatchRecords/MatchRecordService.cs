@@ -42,6 +42,7 @@ public sealed class MatchRecordService(
     MatchRoundStateService roundState,
     BriefingCountdownService countdowns,
     BriefingReadyPublishService readyPublications,
+    BriefingRoomPublishService roomPublications,
     MatchRecordSequenceService sequences,
     ILogger<MatchRecordService> logger)
 {
@@ -96,6 +97,21 @@ public sealed class MatchRecordService(
 
         try
         {
+            // The briefing's writers belong to the briefing and not to the sparse
+            // phase, so all three run beside the sparse steps rather than behind
+            // them: the countdown, the ready set's repeat and the room's own rules
+            // pair and count. The captures write them inside the phase. The
+            // recorded host opens its briefing clock on 128 units 2.3 s after it
+            // has answered the roster and counts it to zero while the sparse
+            // controls and blobs go on arriving
+            // (`mgo2-game-joined-when-red-team-then-briefing`, t+11.7 to t+27.9,
+            // beside its 0xd001 and 0x0002 records), and its rules pair rides the
+            // same ticks. A host that started these after the phase would open the
+            // clock on the briefing's last seconds — which is a clock at zero.
+            var countdown = countdowns.PublishAsync(context);
+            var readyPublication = readyPublications.PublishAsync(context);
+            var roomPublication = roomPublications.PublishAsync(context);
+
             logger.LogDebug(
                 "UDP {LocalPort}: playing {StepCount} sparse match-record steps to {RemoteAddress}",
                 context.LocalPort,
@@ -120,16 +136,12 @@ public sealed class MatchRecordService(
                 await SendAsync(context, step.Records, step.Compressed);
             }
 
-            // The briefing countdown and the ready set belong to the briefing, so
-            // both run beside the wait for the round rather than inside it: the
-            // round's opening run ends them, and a peer that arrives into a round
-            // already playing is served the round and neither of the two. The ready
-            // set repeats here rather than only on a report, which is what the
-            // captures show the host doing between the reports of a briefing that
-            // waited (docs/protocol/BRIEFING_FLOW.md §2).
-            var countdown = countdowns.PublishAsync(context);
-            var readyPublication = readyPublications.PublishAsync(context);
-
+            // Each briefing writer ends on the round's opening run, and a peer that
+            // arrives into a round already playing is served the round and none of
+            // them. The ready set repeats on its tick rather than only on a report,
+            // which is what the captures show the host doing between the reports of
+            // a briefing that waited (docs/protocol/BRIEFING_FLOW.md §2).
+            //
             // The beat is the round's, not the sparse phase's: everything it
             // writes is measured as an offset from the run, so it starts when
             // the round opens and not a beat earlier. It also waits for that
@@ -141,6 +153,7 @@ public sealed class MatchRecordService(
             await roundState.WaitForRunWrittenAsync(session);
             await countdown;
             await readyPublication;
+            await roomPublication;
             await BeatAsync(context);
         }
         catch (Exception exception)

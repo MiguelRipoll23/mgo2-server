@@ -96,6 +96,31 @@ They tick on the measured 33 ms beat and the capture's insertion periods
 channel the recorded host keeps moving; writing the round start on that beat is
 the mistake this document exists to prevent. **[V]**
 
+### The two records a briefing is sent, and the beat is not their only writer
+
+The rules pair is above as the beat's, and it is not the beat's alone: a host
+writes it from the roster answer onward and on every tick of a briefing, and
+the beat takes it over when the round opens. `mgo2-game-started-on-briefing`
+writes `0x0261 fe` under both classes 12 to 26 times per ten seconds from its
+roster answer through its whole 198 s briefing — the pair rides inside its
+sparse controls and blobs and beside its state blobs — and both captures that
+hold a join write it in the roster run itself, ahead of the roster entries.
+`MatchRecordFramesUtils.RulesPair` is that record, and
+`BriefingRoomPublishService` writes it for as long as the room is briefed.
+
+The second is the room's own count: a two-byte `0x1258`/`0x1a58` record whose
+second byte is how many players the room holds. It is not an answer either —
+`udp_response_probe.py --session-only` lists it among the records that never
+followed a client silence longer than two seconds — and the Lobby's own details
+for the same room settle what the byte counts: `started-on-briefing` joins
+`Best TDM [EU]`, whose `0x4313` reply reads **one player of a limit of
+seventeen**, and that host writes `00 01` beside the join and `00 02` once a
+second player is in the room; `joined-when-red-team` writes `00 05` into a room
+of five joiners. So the byte is the room's count and not its limit, and the
+host's own seat is not in it (`MatchRecordBodiesUtils.RoomCount`,
+[`GAME_SETTINGS_WIRE.md`](GAME_SETTINGS_WIRE.md) §1). **[V]** on the byte; **[I]**
+on the room's count being the same population the roster holds.
+
 ## The round start is written for the report, and never before one
 
 The marker, the run and its four repeats go out on the report — the run's
