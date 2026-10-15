@@ -49,6 +49,17 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
     private const int PollMilliseconds = 250;
 
     /// <summary>
+    /// How often a peer's run worker looks for the briefing it should write,
+    /// before the round that briefing precedes has opened.
+    /// </summary>
+    /// <remarks>
+    /// It is the round's own poll cadence: the worker waits for a report to name
+    /// the briefing's set and for the room to be published, and both are cheap to
+    /// test, so the run follows a report within a quarter second of it arriving.
+    /// </remarks>
+    public const int BriefingRunPollMilliseconds = 250;
+
+    /// <summary>
     /// How long a peer's beat waits for the round's opening run before it starts
     /// anyway.
     /// </summary>

@@ -5,18 +5,21 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The run half of the round opener: the per-peer watcher that waits for a round
-/// to open and writes that peer's opening run.
+/// The run half of the round opener: the per-peer watcher that writes a peer's
+/// briefing run, waits for the round that briefing precedes to open, and writes
+/// that round's run.
 /// </summary>
 /// <remarks>
 /// <b>The run is written per peer because the channel is.</b> Every peer has its
 /// own session, key and counter, and the run's payload echoes the byte that peer
 /// reported, so a run is a peer's own record and not the room's: the room opens
 /// once (<see cref="MatchStartRunService.Open"/>) and each peer's worker writes
-/// the run for it. That is also why the clock the run carries is what is left of
-/// the round rather than its whole length — the workers reach their own run at
-/// their own moment, and a peer that joins inside a round is handed the round it
-/// joined and not the one it missed.
+/// the run for it. A peer is served two runs a round — the briefing's, under the
+/// set its first report named and carrying the round's whole clock, and the
+/// round's own, under the other set and carrying what is left of it once the
+/// briefing is done. The clock is not the round's whole length on the second
+/// because the workers reach their own run at their own moment, and a peer that
+/// joins inside a round is handed the round it joined and not the one it missed.
 /// </remarks>
 public sealed partial class MatchStartRunService
 {
@@ -40,8 +43,9 @@ public sealed partial class MatchStartRunService
         }
 
         // The room's first briefing begins with the first peer that reaches it:
-        // that peer's report is what opens the round, and the room's own briefing
-        // time is the deadline that ends the wait for one.
+        // that peer's report names the set the briefing is written under, and the
+        // room's own briefing time is the deadline that opens the round when no
+        // second report does.
         BeginBriefing();
 
         logger.LogDebug(
@@ -64,6 +68,14 @@ public sealed partial class MatchStartRunService
         {
             while (MatchRecordPeerUtils.IsAlive(session))
             {
+                // The briefing is answered before the round is: the first report
+                // names the set the briefing is written under, and what a client
+                // still being briefed is served is that briefing's run rather than
+                // the round it precedes (MatchStartRunService.Open). The wait here
+                // is while no briefing has heard a report; the run it writes takes
+                // the set that report named.
+                await WriteBriefingRunAsync(context);
+
                 // The run cannot be written before a round exists: its payload
                 // echoes the report, and there is no report behind a round that
                 // nobody asked for. The wait is the peer's own lifetime, because
@@ -113,6 +125,60 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
+    /// Writes the briefing's own run to a peer, once the briefing has heard a
+    /// report, and returns when the round it precedes opens.
+    /// </summary>
+    /// <remarks>
+    /// <b>The briefing's run is not its round's.</b> A client still being briefed
+    /// is served the run the first report named, under that report's own set, and
+    /// the round it is waiting for opens later and under the other set
+    /// (<see cref="MatchStartRunService.Open"/>, <c>docs/protocol/BRIEFING_FLOW.md</c>
+    /// §1–§2). The run's clock stays whole: nothing of the round has been played
+    /// while the client is still reading the briefing, and the clock the countdown
+    /// shows it is the briefing's own seven-byte record rather than this one.
+    /// </remarks>
+    /// <param name="context">Context the run is written through.</param>
+    private async Task WriteBriefingRunAsync(PeerContext context)
+    {
+        var session = context.Session;
+
+        while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
+        {
+            // No run is written before a briefing has heard a report: the run
+            // echoes that report's byte, so a briefing that has heard from nobody
+            // has nothing to write one from.
+            if (BriefingGeneration is not { } generation)
+            {
+                await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
+                continue;
+            }
+
+            if (ReadBriefingRound() is not { } round)
+            {
+                // The room is not published yet, so there is no round for the
+                // briefing to precede and no time to hold its clock at.
+                await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
+                continue;
+            }
+
+            await WriteRunCoreAsync(context, generation, round, round.TimeLimitUnits);
+            return;
+        }
+    }
+
+    /// <summary>
+    /// The round the briefing now running precedes: the next round the room's own
+    /// rotation names. It is <c>null</c> while the room is not published.
+    /// </summary>
+    /// <remarks>
+    /// It reads the rotation directly rather than going through
+    /// <see cref="ReadRound"/> because the briefing polls it and a warning per poll
+    /// is noise; the round's own open logs it once.
+    /// </remarks>
+    private MatchRotationEntry? ReadBriefingRound() =>
+        matchSettings.FindPublished()?.Round(roundState.RoundNumber + 1);
+
+    /// <summary>
     /// Writes one round's opening run to a peer and repeats it behind itself.
     /// </summary>
     /// <param name="context">Context the run is written through.</param>
@@ -132,6 +198,27 @@ public sealed partial class MatchStartRunService
             return;
         }
 
+        await WriteRunCoreAsync(context, generation, round, roundState.RemainingUnits);
+    }
+
+    /// <summary>
+    /// Writes one run — a round's, or the briefing's that precedes it — to a peer
+    /// and repeats it behind itself.
+    /// </summary>
+    /// <param name="context">Context the run is written through.</param>
+    /// <param name="generation">Identifier set the run is written under.</param>
+    /// <param name="round">The round whose rule, map and clock the run carries.</param>
+    /// <param name="clockUnits">
+    /// Units of the round clock the run carries: the round's whole time for a
+    /// briefing's run, which has played nothing, and what is left of it for a
+    /// round that is already playing.
+    /// </param>
+    private async Task WriteRunCoreAsync(
+        PeerContext context,
+        MatchRecordGenerationUtils generation,
+        MatchRotationEntry round,
+        int clockUnits)
+    {
         var reported = ready.TryGetReported(context.Session.RemoteAddress, out var value)
             ? value
             : MatchStartBodiesUtils.DefaultReadinessReportValue;
@@ -143,14 +230,6 @@ public sealed partial class MatchStartRunService
         // open with anyway.
         var slots = await lobbySlots.ReadAsync();
 
-        // The clock the run carries is what is left of the round rather than its
-        // whole length. The run is written per peer, so a peer that joins with two
-        // minutes of a seven-minute round left is handed the two and not the seven,
-        // which is the same value the beat behind it goes on counting down from. At
-        // a round's own open the two are one: nothing has been spent in the first
-        // 125 ms tick.
-        var remainingUnits = roundState.RemainingUnits;
-
         // The run's own 0x1001 identifiers take the roster exchange's counter's
         // next values — the arrays, the room's own stage and the close triple:
         // the join's records and the burst took the ones before them, and every
@@ -160,10 +239,12 @@ public sealed partial class MatchStartRunService
         // (docs/protocol/GAMEPLAY_SERVER.md §7).
         var runOrdinals = roster.TakeRunOrdinals(MatchStartRunFramesUtils.RosterOrdinalCount);
 
-        // The run's operations records take the round's own stream's first values.
-        // The stream was restarted where the round opened (OpenRound), so the block
-        // reads 00, the record behind it 01 and the clock 02, and the beat's own
-        // clocks go on from 03 — the numbering the capture's run and its beat show.
+        // The run's operations records take its stream's first values. The stream
+        // was restarted where the run's own stage began — the briefing restarted
+        // it for the countdown (BeginBriefing), the round restarted it for its run
+        // (OpenRound) — so the block reads 00, the record behind it 01 and the
+        // clock 02, and the beat's own clocks go on from 03: the numbering the
+        // capture's run and its beat show.
         var operationsOrdinals =
             sequences.Take(generation.Operations, MatchStartRunFramesUtils.OperationsRecordCount);
 
@@ -175,12 +256,12 @@ public sealed partial class MatchStartRunService
             operationsOrdinals,
             slots,
             ready.PresenceMask,
-            remainingUnits);
+            clockUnits);
 
         logger.LogInformation(
-            "UDP {LocalPort}: writing the round's opening run to {RemoteAddress}: {RecordCount} records, "
+            "UDP {LocalPort}: writing an opening run to {RemoteAddress}: {RecordCount} records, "
             + "payload echoing {Reported}, operations 0x{Operations:x4}, payload 0x{Payload:x4}, "
-            + "rule {Rule}, map {Map}, {RemainingUnits} of {ClockUnits} units left of its "
+            + "rule {Rule}, map {Map}, {ClockUnits} of {TimeLimitUnits} units carried of its "
             + "{TimeLimitMinutes}-minute clock",
             context.LocalPort,
             context.Remote,
@@ -190,7 +271,7 @@ public sealed partial class MatchStartRunService
             generation.MatchStartPayload,
             round.Rule,
             round.Map,
-            remainingUnits,
+            clockUnits,
             round.TimeLimitUnits,
             round.TimeLimitMinutes);
 

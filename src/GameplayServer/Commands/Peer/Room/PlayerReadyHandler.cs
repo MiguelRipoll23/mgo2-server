@@ -8,10 +8,11 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 
 /// <summary>
 /// Takes a client's briefing ready report, records it against the player that
-/// sent it, publishes the room's ready set, and opens the round once every
-/// player in the room has reported — never for the room's only one, who is
-/// briefed until the room's own briefing time ends the wait
-/// (<see cref="MatchStartRunService.Open"/>).
+/// sent it, publishes the room's ready set, and hands the report to the round
+/// opener, which answers the briefing before it opens a round: the first report
+/// names the set the briefing is written under and the next, on the other set,
+/// opens the round — or the room's own briefing time does, when no second report
+/// arrives (<see cref="MatchStartRunService.Open"/>).
 /// </summary>
 /// <remarks>
 /// <para>

@@ -1,11 +1,11 @@
 # The briefing and the round lifecycle
 
 **What this file is.** The measured shape of one match on the gameplay channel: a
-player arrives and its state is published, the round opens when every player in
-the room has reported, the round plays against its rule's own clock, it ends with
-a result the host writes, and the room returns to a briefing for the round after
-it. Every claim below is a measurement from a capture named beside it; the two
-places where a reader would otherwise infer are marked **[I]**.
+player arrives and its state is published, the briefing is answered with a run of
+its own before the round opens, the round plays against its rule's own clock, it
+ends with a result the host writes, and the room returns to a briefing for the
+round after it. Every claim below is a measurement from a capture named beside it;
+the two places where a reader would otherwise infer are marked **[I]**.
 
 The three captures this file is measured from are the two that hold a full
 briefing and a third that holds the room's own settings:
@@ -126,6 +126,20 @@ third round opens 37.8 s after its report. No round opens without a report, and
 the span between the last report and the round is 1.5 s to 38 s — a gate on the
 reports, never a fixed wait.
 
+**A briefing is answered before its round is.** A client reports twice a round and
+the host answers the two differently. The first report is met by the run under its
+own set while the room is still briefed: `started-on-briefing`'s first report
+arrives at t+55.838 on `0x12de` and the run under `0x1254` goes out at t+58.255,
+two and a half seconds later and 140 s before the round; `started-briefing-then-solo`
+reports at t+54.918 on `0x12de`, its run under `0x1254` follows at t+57.626, and
+the run under `0x1a54` — the round's — only at t+174.371. The round opens on the
+second report, which arrives on the *other* set once the briefing's time is done
+(`started-on-briefing` t+196.828 on `0x1ade`, `started-briefing-then-solo`
+t+173.438), so the set flips between the two reports and the run the round opens
+with answers the second. A client that never sends that second report is opened
+on its briefing's deadline instead, which is the wait the class summary gives
+`MatchStartRunService`.
+
 **The opening run.** The round's records arrive in one compressed frame — the
 marker first and **thirteen** behind it — under the identifier set the report
 arrived on. The thirteen are listed in `DATA_PHASE_DELIVERY.md` and in
@@ -239,8 +253,11 @@ The full cycle, as `MatchStartRunService`, `PlayerReadyService` and
 `MatchRoundStateService` implement it:
 
 ```
-briefing    players report 1d/e1 <slot>, host publishes e0 <slot> per player
-round open  the last report opens the round: the run under the report's set,
+briefing    players report 1d/e1 <slot>, host publishes e0 <slot> per player;
+            the first report is answered by the run under its own set, while the
+            room is still briefed
+round open  the report on the briefing's other set opens the round (or the
+            briefing's deadline does): the run under that report's set,
             the clock 0x01 = the round's rule time, read from the room's rows
 round play  the clock counts down; the beat's records ride behind it
 round end   the clock reaches 0 (or a goal ends it): state[2] = the winner

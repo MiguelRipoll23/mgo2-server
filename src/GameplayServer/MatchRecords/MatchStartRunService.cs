@@ -16,26 +16,23 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// on the measured interval from the roster got the timing right and the
 /// behaviour wrong: the client sat in its ready state and reported twenty-three
 /// times over two minutes while the run it had already been sent went
-/// unrepeated. The gate here is therefore the reports, and the round opens when
-/// the room has one from every player it holds — or when its briefing runs out
-/// first, which is the next paragraph.
+/// unrepeated. The gate here is therefore the reports, and the round opens on the
+/// report that follows a briefing — the one that arrives on the briefing's other
+/// set — or when its briefing runs out first, which is the next paragraph.
 /// </para>
 /// <para>
-/// <b>A report of the room's only client opens the round here, and the
-    /// earlier reading that held it back is withdrawn.</b> This file used to wait
-    /// for a second player on the reading that "a room's first player is briefed
-    /// rather than started" — a reading it supported by noting that no capture
-    /// holds a room whose sole player reported. That is true of the captures and
-    /// it is not a rule: in every one of them a report opens the round, and in
-    /// the two captures this host serves the room holds exactly one *client* (the
-    /// host is not a reporter), where the gate left the report unanswered for the
-    /// whole briefing time. What the client does with an unanswered report is
-    /// measured and it is not waiting: it re-sends the identical report every
-    /// 2.5 s (`myserver2.pcapng` t+49.5, 52.0, 54.9, 57.5, 60.2), where a report a
-    /// capture answers is sent once and answered within 0.6–5.5 s. So a room whose
-    /// clients have all reported opens its round then, however many of them there
-    /// are.
-    /// </para>
+/// <b>A room's clients are briefed before they are started, and the briefing is
+/// answered on its own set.</b> A client in a briefing reports itself ready and
+/// waits for the host; what the host writes while it waits is the briefing's own
+/// run, under the set that first report arrived on, and not a round. The round
+/// opens on the next report, which arrives on the other set once the briefing's
+/// time is out — the two reports per round the reference shows
+/// (<c>docs/protocol/BRIEFING_FLOW.md</c> §1–§2) — or on the briefing's deadline
+/// for a room whose client never sends that second report. The earlier reading
+/// that held a sole client's first report back was withdrawn for the wrong
+/// reason: the report *is* answered, but with the briefing's run, and a report a
+/// capture answers with a round is the second one.
+/// </para>
 /// <para>
 /// <b>How many reports are needed is a deadline, not a rule.</b> A client waits
 /// in its briefing for the host's round either until every player is ready or
@@ -107,12 +104,14 @@ public sealed partial class MatchStartRunService(
 
     private int briefingNumber;
     private ushort? lastReportIdentifier;
+    private MatchRecordGenerationUtils? briefingGeneration;
 
     /// <summary>
     /// Identifier the room's briefing last heard a report on, or <c>null</c> while
-    /// the briefing current has heard from nobody. It is the generation the round
-    /// will open under, and so the one the ready set is published under while the
-    /// room waits (<see cref="BriefingReadyPublishService"/>).
+    /// the briefing current has heard from nobody. It is the set the ready set is
+    /// repeated under while the room waits (<see cref="BriefingReadyPublishService"/>),
+    /// and, for a briefing that runs out before a second report arrives, the set
+    /// the deadline opens the round under.
     /// </summary>
     public ushort? LastReportIdentifier
     {
@@ -126,10 +125,45 @@ public sealed partial class MatchStartRunService(
     }
 
     /// <summary>
-    /// Opens the room's round, under the identifier set the report that asked
-    /// for it arrived on, once every player in the room has reported.
+    /// The set the room's briefing is being written under: the one its first
+    /// report named, or <c>null</c> while the briefing has heard from nobody.
     /// </summary>
     /// <remarks>
+    /// <b>The briefing has its own generation and the round has the next one.</b>
+    /// The reference writes the run the first report asks for under that report's
+    /// own set, and only opens the round — under the set the next report arrives
+    /// on — once the briefing's time is out
+    /// (<c>docs/protocol/BRIEFING_FLOW.md</c> §1–§2). The run worker reads this to
+    /// write the briefing's run (<see cref="MatchStartRunService.Runs"/>).
+    /// </remarks>
+    public MatchRecordGenerationUtils? BriefingGeneration
+    {
+        get
+        {
+            lock (gate)
+            {
+                return briefingGeneration;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Takes a readiness report and, when it is the one the room's round waits
+    /// for, opens the round under the set that report arrived on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The briefing is answered first and the round second.</b> A briefing
+    /// hears two reports a round. The first names the set the briefing itself is
+    /// written under — the client is still being briefed, so what it is served is
+    /// that briefing's run and not a round (<see cref="MatchStartRunService.Runs"/>)
+    /// — and the second, arriving on the other set once the briefing's time is
+    /// out, is the one that opens the round the captures show playing after it
+    /// (<c>docs/protocol/BRIEFING_FLOW.md</c> §1–§2). A report on the set the
+    /// briefing is already on is the first one repeated: a client re-reports until
+    /// it is answered, and that is the same report and not a round asked for.
+    /// </para>
+    /// <para>
     /// <b>The gate is here and not only in the handler.</b> A round opens for a
     /// room, so "is the room ready" is a condition of opening one rather than a
     /// step a caller is asked to remember: the handler that takes a report is one
@@ -137,33 +171,70 @@ public sealed partial class MatchStartRunService(
     /// round on a room that is still being briefed. It is also the invariant a
     /// second round depends on, because a round's end clears the states and the
     /// next report to arrive is a single player's.
+    /// </para>
     /// </remarks>
     /// <param name="reportIdentifier">Identifier the readiness report arrived on.</param>
     /// <returns><c>true</c> when this call opened the round.</returns>
-    public bool Open(ushort reportIdentifier) =>
-        OpenRound(reportIdentifier, waitForEveryone: true);
+    public bool Open(ushort reportIdentifier)
+    {
+        var generation = MatchRecordGenerationUtils.OfReadinessReport(reportIdentifier);
+
+        MatchRecordGenerationUtils? briefing;
+        lock (gate)
+        {
+            briefing = briefingGeneration;
+            lastReportIdentifier = reportIdentifier;
+            if (briefing is null)
+            {
+                // The briefing's own set: the first report names it, and the run
+                // the worker writes for the briefing is written under it.
+                briefingGeneration = generation;
+            }
+        }
+
+        if (briefing is null)
+        {
+            logger.LogInformation(
+                "The room's briefing heard its first report on 0x{Identifier:x4}; the briefing is written "
+                + "under that set and the round waits for a report on the other one, or for the briefing "
+                + "time, before it opens",
+                reportIdentifier);
+            return false;
+        }
+
+        if (generation == briefing)
+        {
+            logger.LogDebug(
+                "A report arrived on 0x{Identifier:x4}, the set the room's briefing is already on; the "
+                + "round waits for a report on the other one",
+                reportIdentifier);
+            return false;
+        }
+
+        // The other set: the report the captures show opening the round once the
+        // briefing is done.
+        return OpenRound(generation, reportIdentifier, waitForEveryone: true);
+    }
 
     /// <summary>
     /// Opens the room's round, under the identifier set a report arrived on.
     /// </summary>
-    /// <param name="reportIdentifier">Identifier the readiness report arrived on.</param>
+    /// <param name="generation">The set the round plays under.</param>
+    /// <param name="reportIdentifier">
+    /// Identifier the report that opens it arrived on, for the log: the set is
+    /// derived by the caller and this is the report it came from.
+    /// </param>
     /// <param name="waitForEveryone">
     /// Whether the round waits for every player in the room to have reported. It
     /// is <c>false</c> for the briefing's deadline alone, which is the one caller
     /// allowed to open a round with players still to report.
     /// </param>
     /// <returns><c>true</c> when this call opened the round.</returns>
-    private bool OpenRound(ushort reportIdentifier, bool waitForEveryone)
+    private bool OpenRound(
+        MatchRecordGenerationUtils generation,
+        ushort reportIdentifier,
+        bool waitForEveryone)
     {
-        // The identifier is kept for the briefing's deadline, which opens the round
-        // for the players that did report when not all of them did. It is the set
-        // those reports arrived under, and a round opens under the set its own
-        // client is on rather than under one this host picked.
-        lock (gate)
-        {
-            lastReportIdentifier = reportIdentifier;
-        }
-
         // The gate is every player in the room having reported, and it is the
         // room's own population rather than a floor: a room of one client opens
         // on that client's report, which is what every capture does. A player
@@ -188,8 +259,6 @@ public sealed partial class MatchStartRunService(
         {
             return false;
         }
-
-        var generation = MatchRecordGenerationUtils.OfReadinessReport(reportIdentifier);
 
         // The clock a round opens on is whole, and it stays whole for as much of
         // the room's briefing as is still to run. A report opens a round while its
@@ -224,7 +293,7 @@ public sealed partial class MatchStartRunService(
 
         logger.LogInformation(
             "Opening round {RoundNumber} for the room: the report arrived on 0x{Identifier:x4}, "
-            + "so the round plays under the sibling-form set if that is the other generation",
+            + "so the round plays under the set that report is on",
             round,
             reportIdentifier);
 

@@ -43,6 +43,7 @@ public sealed partial class MatchStartRunService
         {
             briefing = ++briefingNumber;
             lastReportIdentifier = null;
+            briefingGeneration = null;
         }
 
         // The countdown goes to the peers the deadline is armed for, so it is
@@ -127,7 +128,10 @@ public sealed partial class MatchStartRunService
                 briefingMinutes,
                 ready.PendingCount,
                 reportIdentifier);
-            OpenRound(reportIdentifier, waitForEveryone: false);
+            OpenRound(
+                MatchRecordGenerationUtils.OfReadinessReport(reportIdentifier),
+                reportIdentifier,
+                waitForEveryone: false);
         }
         catch (Exception exception)
         {
