@@ -145,11 +145,36 @@ public sealed record BeatFramePlan(
         };
 
     /// <summary>
+    /// Beat frames through which the round's item-box group rides: 303, the
+    /// round's first ten seconds at the beat's own 33 ms frame.
+    /// </summary>
+    /// <remarks>
+    /// <b>The group is the round's opening, not a cadence of the beat.</b> Every
+    /// capture writes it in bursts inside the round's first seconds and then
+    /// leaves the beat quiet until the round's next item-box event — the events
+    /// themselves being the live round's own, which this host does not simulate
+    /// (<see cref="ItemBoxFramesUtils.ItemBoxGroup"/>):
+    /// <c>mgo2-game-started-on-briefing</c> writes 90 of its 244 round-one
+    /// records inside ten seconds of the run (9 a second, in two bursts) and then
+    /// none at all in the forty-five seconds that follow;
+    /// <c>mgo2-started-briefing-then-solo-game</c> writes four bursts inside 8.4 s
+    /// and none until its round's end; <c>mgo2-game1</c> five bursts over 12.5 s.
+    /// A beat that carried the group for the whole round wrote 418 of them in a
+    /// minute against the 59 the same window of that capture holds, and 780 over
+    /// the live round's 112 s against this one's 90
+    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §8 and §9).
+    /// </remarks>
+    public const int ItemBoxOpeningFrames = 303;
+
+    /// <summary>
     /// Whether the item-box group rides in this frame, behind the rules pair. It
-    /// rides in one frame in every eight, the same frame the capture compresses.
+    /// rides in one frame in every eight, the same frame the capture compresses,
+    /// and only inside the round's own opening
+    /// (<see cref="ItemBoxOpeningFrames"/>).
     /// </summary>
     public bool CarriesItemBoxes =>
-        FrameIndex % ItemBoxFramesUtils.ItemBoxPeriodFrames == ItemBoxFramesUtils.ItemBoxPhaseFrames;
+        FrameIndex <= ItemBoxOpeningFrames
+        && FrameIndex % ItemBoxFramesUtils.ItemBoxPeriodFrames == ItemBoxFramesUtils.ItemBoxPhaseFrames;
 
     /// <summary>
     /// Which group of the round this frame carries, from zero, when it carries

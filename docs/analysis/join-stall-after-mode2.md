@@ -246,3 +246,109 @@ in; whether a client reading health for a slot it does not hold is what stops it
 is **[U]**, and what would close it is the next run: the same join, with the beat
 naming slot 1, and a capture that shows whether the client comes back from the
 fade.
+
+## 8. `myserver5.pcapng`: the vitals fix is live, and the silence is the quit
+
+The fourth live run served the image the pin named for it (`98cca55`), which is
+§7's change, and the same client with the same room: TDM on Blood Bath, one
+7-minute round, opened at t+53.2 on the client's own report. Every time below is
+seconds from the flow's first datagram.
+
+| t | the run |
+| --- | --- |
+| 53.223 | the host's run: arrays at sequence `f3`, the peer's own entry, the close, the clock at 3359 of 3360 units |
+| 53.4–54.4 | the client opens its own round (`5ade` ×6) and streams its beat |
+| 75.3 | the client's room request `9001 83 f3 00 07`, answered in the same pass, all four records acknowledged |
+| 83.0 | **the beat's first vitals record, `0x084e`** — slot 1's own value, the fix §7 asks for |
+| 105.444 | the client's last datagram |
+| 165.4 | the server reaps the peer after 60 s of quiet |
+
+**So the vitals fix is live and the client still ended in the black screen**, and
+what the capture times is not the client: the client's own log (`RPCS3.log`, the
+emulator's, whose clock runs `09:54:15` at its start) has the game asked to exit
+at `1:27:23.4`, which is `t+103.4` on this capture's clock — the last datagram
+lands 2 s later, inside the exit. **The client's silence in this capture is the
+user closing the emulator, and §7's reading of `myserver4`'s 91.093 s has the same
+shape**: nothing in the client's stream stops by itself, so a capture cannot time
+the fade. What the client's log does time is the round: the patch's prints and the
+stage's own data at its open, a text-input (`cellOskDialog`) dialog opened `1:26:34`
+— 2 s into the round — and dismissed at `1:26:39.7`, the map's music
+(`env_n007a_02.bgm`) at `1:26:40`, and then nothing logged until the exit.
+
+### The one field of the beat written an order of magnitude too often
+
+Measured per round, the item-box group's cadence is not the recording's:
+
+| capture | first 60 s of the round | shape |
+| --- | --- | --- |
+| `mgo2-game1` | 38 frames, 113 `0x1a50` | five bursts at 2.36, 4.84, 9.97, 12.50 and 14.88 s after the run, then **nothing** until the round's next event |
+| `mgo2-started-briefing-then-solo-game` | 40 frames, 59 `0x1a50` | the same shape: four bursts inside the first 8.4 s, then nothing until the round's end at 96.0 |
+| **`myserver5`** | **388 frames, 418 `0x1a50`** | **the beat's 8-frame period, for the whole round** — one group every 0.29 s, 346 groups in 100 s |
+
+The client answers every one of them (`0x5a50`/`0x5a5a`, 364 and 360 of the 418
+and 414 the host wrote before its last datagram: 1:1), so the channel carries
+roughly 7 records a second in each direction that no reference host writes — and
+the streams the client's own window is drained by are the ones the recording
+leaves quiet between its opening and its events. `ItemBoxFramesUtils`
+(`ItemBoxPeriodFrames = 8`, `ItemBoxPhaseFrames = 6`) is the writer, and the
+opening burst's own bodies are right: its two spawn pairs and the filler are the
+capture's. What the period does is repeat the filler for the rest of the round.
+**[V]** on the counts; **[U]** on whether a client dies of it.
+
+## 9. `myserver5.pcapng` against `started-on-briefing`: the round's one structural difference is the item-box group's window
+
+The briefing flow is the one this host is being built for — a client arrives into a
+briefing, waits there, reports itself ready, and the round opens — so the reference
+is `mgo2-game-started-on-briefing` (its roster run at t+8.1, its round at t+56.1,
+48 s of briefing) rather than the post-round briefings of game1 and game2.
+
+**The briefing itself is not the difference.** Over that capture's briefing window
+the host writes the rules pair 9.8 times per ten seconds under each class, a
+`0x0002` state blob every 8 s, a `0xd001` control every 5 s and the room's count
+`0x1258 00 01` beside the join — and this host's 51 s briefing writes the pair at
+0.8 records a second, eight blobs, twenty-three controls and `0x1a58 00 01`. The
+rates are the same order and no family is missing on either side.
+
+**The round's beat is the difference, and it is one family.** First 60 s of each
+round, host to client, by identifier:
+
+| identifier | reference | ms5 |
+| --- | --- | --- |
+| item boxes (`0x1250`/`0x125a`) | 164 | **418** (`0x1a50`/`0x1a5a`) |
+| rules pair (`0x0261`/`0x0a61`) | 124 | 3326 |
+| state block (`0x1254` 90 B) | 9 | 5×18 records at the run |
+| publication (`0x12de`/`0x1ade`) | 6 | 6 |
+| the client's own record | none in 60 s | none |
+
+The pair's rate differs because that capture's beat writes the pair alone twice a
+second per class where this host writes the same pair in every one of its 30
+frames a second — a second reading of the same divergence, since the reference's
+`0x1250` count is *records*, and 164 of them over 60 s is one group every 0.73 s,
+not the one frame in eight this host writes (418 over 60 s, one group every
+0.29 s).
+
+**And the reference's groups are bursts, not a cadence.** The 244 records
+`started-on-briefing` writes in its 230 s round fall in six buckets: 42 and 48 in
+the round's first ten seconds, **nothing at all between +10 s and +55 s**, 74 in
+the 55–60 s bucket, nothing from +60 s to +90 s, then 38, 4 and 38 in the 90–105 s
+buckets. `myserver5` writes 34–36 in *every* five-second bucket for the whole
+112 s round — the beat's 8-frame period, never quiet. **[V]** on the counts.
+
+So `BeatFramePlan.CarriesItemBoxes` is bounded now by the round's opening window
+(`ItemBoxOpeningFrames`, 303 frames, ten seconds at the beat's 33 ms frame), which
+is what all three captures agree on: the group is the round's own event and the
+beat behind it carries none until the round's next one. The events themselves
+remain the live round's and are still unwritten, as `ItemBoxFramesUtils` says.
+
+**Not this change, and worth recording.** The client's own tick block
+(`0x0861`…`0x0867`: state, position, weapon pair, aim) is what a reference client
+streams once it is in a match — `mgo2-game1`'s from 1.4 s *before* its round opens
+and `mgo2-started-briefing-then-solo-game`'s from 6.1 s *after* its host's first
+health record — and this host's client never sends it. The host is not what is
+missing: in the briefing-flow capture the host writes only the peer's health
+record (`0x0862`) and never the block, so the block's absence in a live capture is
+the client's own state and not a record a host owes it. The health record's onset
+is a recording's schedule and not a rule: measured against each round's own open
+it is +4.9 s (`joined-when-red-team`), +6.1 s (`started-briefing-then-solo`),
++27.0 s (game1) and +54.5 s (game2), so this host's 27 s is inside the measured
+range and is left as it is. **[V]** on the onsets.
