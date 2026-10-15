@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
 
@@ -44,6 +45,7 @@ public sealed class MatchRecordService(
     BriefingReadyPublishService readyPublications,
     BriefingRoomPublishService roomPublications,
     MatchRecordSequenceService sequences,
+    RoomRosterService roster,
     ILogger<MatchRecordService> logger)
 {
     /// <summary>
@@ -204,6 +206,7 @@ public sealed class MatchRecordService(
         var session = context.Session;
         var beat = new BeatCounters { FrameIndex = FirstBeatFrameIndex };
         var round = roundState.RoundNumber;
+        var generation = BeatGenerationFor(context);
 
         while (IsAlive(session))
         {
@@ -211,12 +214,13 @@ public sealed class MatchRecordService(
             {
                 round = roundState.RoundNumber;
                 beat = new BeatCounters { FrameIndex = FirstBeatFrameIndex };
+                generation = BeatGenerationFor(context);
                 logger.LogDebug(
                     "UDP {LocalPort}: round changed to {RoundNumber}; the beat restarts its frame index "
                     + "and moves to identifier set operations 0x{Operations:x4}",
                     context.LocalPort,
                     round,
-                    roundState.Generation.Operations);
+                    generation.Operations);
             }
 
             // The clock is read here, per frame, and not captured with the counters:
@@ -227,7 +231,7 @@ public sealed class MatchRecordService(
             // the frame count the capture places it at.
             var plan = new BeatFramePlan(
                 beat.FrameIndex,
-                roundState.Generation,
+                generation,
                 roundState.RemainingUnits,
                 roundState.VitalsArrived,
                 beat.BlobsWritten,
@@ -256,6 +260,71 @@ public sealed class MatchRecordService(
             "UDP {LocalPort}: steady match records stopped for {RemoteAddress} because the peer is idle",
             context.LocalPort,
             session.RemoteAddress);
+    }
+
+    /// <summary>
+    /// The identifier set this peer's beat writes under: the round's own, with the
+    /// vitals record's identifier read from the peer's slot in the room's
+    /// 24-entry player table.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The vitals identifier is the player's own slot and not a constant of the
+    /// beat.</b> <see cref="PlayerVitalsFramesUtils"/> holds the measurement: the
+    /// host writes the player's vitals under <c>0x0844 + 0x0a × slot</c>, so
+    /// `mgo2-game1`'s peer in slot <c>0x14</c> draws <c>0x090c</c> — the value the
+    /// recorded set carries — while a room whose players hold other slots draws
+    /// theirs, and the round's own sibling bit decides the form of that value.
+    /// A host that replayed the constant wrote every player as slot 20, which is
+    /// the one slot no live room here has ever put a player in.
+    /// </para>
+    /// <para>
+    /// It is read here and not inside the frame builder because the slot is the
+    /// peer's own: the beat is written per peer and the room is shared, so the one
+    /// piece of the set that differs from peer to peer is the vitals record. The
+    /// read is one lookup on the roster this host already holds, once per round,
+    /// and a peer whose member is not registrable yet keeps the round's own
+    /// value — the same fallback every other writer here uses for a peer without
+    /// a slot.
+    /// </para>
+    /// </remarks>
+    /// <param name="context">Context of the peer the beat is written to.</param>
+    /// <returns>The set to write this peer's beat under.</returns>
+    private MatchRecordGenerationUtils BeatGenerationFor(PeerContext context)
+    {
+        var generation = roundState.Generation;
+
+        // Both endpoints are looked up, for the reason the other writers give: a
+        // peer is filed under the endpoint its profile arrived from, while the
+        // session answers at the one the peer advertised.
+        var member = roster.Find(context.Remote.ToString())
+            ?? roster.Find(context.Session.DialBack.ToString());
+        if (member is null)
+        {
+            logger.LogDebug(
+                "UDP {LocalPort}: no roster entry names the peer at {RemoteAddress}, so its beat keeps the "
+                + "round's own vitals identifier 0x{Vitals:x4}",
+                context.LocalPort,
+                context.Remote,
+                generation.Vitals);
+            return generation;
+        }
+
+        var vitals = PlayerVitalsFramesUtils.IdentifierFor(generation, member.SessionSlot);
+        if (vitals == generation.Vitals)
+        {
+            return generation;
+        }
+
+        logger.LogDebug(
+            "UDP {LocalPort}: the peer at {RemoteAddress} holds slot {Slot}, so its beat writes the vitals "
+            + "record under 0x{Vitals:x4} rather than the recorded room's 0x{Recorded:x4}",
+            context.LocalPort,
+            context.Remote,
+            member.SessionSlot,
+            vitals,
+            generation.Vitals);
+        return generation with { Vitals = vitals };
     }
 
     private static async Task SendAsync(

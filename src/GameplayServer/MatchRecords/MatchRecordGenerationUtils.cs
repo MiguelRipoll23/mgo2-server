@@ -38,7 +38,14 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// and are not replayed.
 /// </para>
 /// </remarks>
-/// <param name="Vitals">Beat-frame vitals record identifier.</param>
+/// <param name="Vitals">
+/// Beat-frame vitals record identifier: the recorded peer's own, since the
+/// record is written under the player's key in the room's player table
+/// (<see cref="PlayerVitalsFramesUtils"/>). A beat written to a peer that holds a
+/// slot replaces it with that slot's value and leaves this one for a peer whose
+/// slot is not registrable yet, so this and the sibling are one room's values and
+/// not a rule (<see cref="MatchRecordService"/>).
+/// </param>
 /// <param name="RulesRoster">Beat-frame rules-roster record identifier.</param>
 /// <param name="Operations">
 /// Operations stream identifier: the family that carries the round's clock, its

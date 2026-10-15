@@ -182,3 +182,67 @@ later (`mgo2-started-briefing-then-solo-game`, t+180.491 → t+181.578).
 **Absence of acknowledged records is not absence of a client**: acking the answer
 is not the same as being placed by it, and the tail of the record is still a
 recording's. The two unwritten shapes of §4 remain the next candidates.
+
+## 7. `myserver4.pcapng`: the join finishes, and the round it opens ends in a black screen
+
+The third live run is the first one whose client **plays**. It ran the image the
+pin named (`3d148a9`, §5's answer), and this is what it measures — every time in
+it is seconds from the flow's first datagram, and the server's own log is the pod
+that served it (`kubectl logs -n mgo2 mgo2-gameplay-1-*`, whose clock is UTC).
+
+| t | the run |
+| --- | --- |
+| 0.122 | the client's profile, first copy |
+| 2.143 | its re-sent copy → the roster answer, 4 records |
+| 48.745 | its presence record `8a5c 01 de` |
+| 51.288 | its readiness report `1ade e1 01` |
+| 51.377 | the host's run: arrays, clock 90 B, two entries, close, `5ade`, payload `1ade e0 01 …` |
+| 51.650 | **the client opens its own round** (`5ade`) and streams its beat |
+| 64.4 | its room request `9001 83 f3 00 07`, answered in the same pass |
+| 80.9 | the beat's first vitals record |
+| **91.093** | **the client's last datagram**; the server keeps writing for 60 s and reaps it at 151.1 |
+
+So §5's change is confirmed live: the client is answered, claims the room, reports
+itself ready, opens the round and acknowledges `1a54`, `1a50`, `1a5a` and `0a61`
+for forty seconds. What the user saw at 91 s is the round **fading out with the
+screen black behind it, where the fade should have been into a briefing** — and
+the client never sent another datagram, which is a client that stopped rather than
+one that is waiting for a record: a client waiting on this channel re-sends (§2).
+
+### The slot the room put the client in, and the slot the beat named
+
+Three independent places in the capture and the log name the client **slot 1**,
+and none names it slot 0:
+
+* its presence record's byte is `01`, which is the player's own lobby slot
+  (`PlayerPresenceHandler`, `BRIEFING_FLOW.md` §1);
+* the occupancy array the run carries is `86 f3 7f 07 7f …` — index 0 is the
+  host's own sentinel `7f` and index 1 is `07`, taken;
+* the run's payload echoes `e0 01` — the report's own byte, `01`.
+
+`RoomRosterService` numbers that client `SessionSlot` 1 as well
+(`FirstJoinerSessionSlot`); the `slot 0` in its log line is the member's index in
+the roster list and not its key in the player table.
+
+**The beat wrote a different player.** Every vitals record of that round went out
+as `0x090c`, the recorded capture's constant — and `0x090c` is the key **20**'s
+value in the measured per-slot table (`0x0844 + 10 × slot`): the client was told
+30 times a second about the health of a player the room does not hold. The rule
+is measured over every capture that carries a pair: `mgo2-game1`'s five occupied
+slots `4`, `6`, `11`, `15` and `20` draw `0x86c`, `0x880`, `0x8b2`, `0x8da` and
+`0x090c`, `mgo2-game-started-on-briefing`'s slots 1–6 draw `0x84e`–`0x880`, and
+this client's slot 1 draws **`0x084e`** (`PlayerVitalsFramesUtils`).
+
+The beat adds the record 27.0 s after the run — 80.9 s here — and the client's
+last datagram is ten seconds later. That is the whole of the change below: the
+vitals record's identifier is now the peer's own slot, and the round's set still
+decides its two forms (`0x084e` / `0x04e`), because the recorded set's value is
+what moved between those rounds in the captures.
+
+**Nothing here is proven to be the black screen.** The record is the one field of
+the beat that is measured to be per-player and that this host still wrote as a
+recording's constant, and the client goes quiet inside the window it is written
+in; whether a client reading health for a slot it does not hold is what stops it
+is **[U]**, and what would close it is the next run: the same join, with the beat
+naming slot 1, and a capture that shows whether the client comes back from the
+fade.

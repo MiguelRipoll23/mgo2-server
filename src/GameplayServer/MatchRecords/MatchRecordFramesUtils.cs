@@ -80,18 +80,20 @@ public static class MatchRecordFramesUtils
     /// record carries, under the same attribute class.
     /// </summary>
     /// <remarks>
-    /// <b>Its actor is the peer the frame is written to.</b> A player's tick
-    /// records are one block of six identifiers, and this is that block's health
-    /// slot — one above the player's state record, one below its position
-    /// record, with the weapon pair at <c>+4</c>, the aim record at <c>+6</c> and
-    /// the damage record at <c>-3</c>: the replay parser's own role table, whose
-    /// <c>VID_HEALTH</c> is <c>-1</c> off a position stream (<c>rpdt.js</c>;
-    /// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>). Every block the corpus
-    /// carries agrees, and the client sets <c>0x8000</c> on its own where the
-    /// host does not (<c>0x0862</c> against the client's <c>0x8063</c>). The
-    /// block's low byte is a per-session allotment, so this host keeps the
-    /// recorded session's (<c>docs/analysis/briefing-start-comparison.md</c>
-    /// §4.1).
+    /// <b>Its actor is the peer the frame is written to, and its value is the
+    /// recorded peer's own.</b> A player's tick records are one block of six
+    /// identifiers, and this is that block's health slot — one above the player's
+    /// state record, one below its position record, with the weapon pair at
+    /// <c>+4</c>, the aim record at <c>+6</c> and the damage record at <c>-3</c>:
+    /// the replay parser's own role table, whose <c>VID_HEALTH</c> is <c>-1</c>
+    /// off a position stream (<c>rpdt.js</c>;
+    /// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>). The client sets <c>0x8000</c>
+    /// on its own where the host does not (<c>0x0862</c> against the client's
+    /// <c>0x8063</c>). The block's low byte is the player's own key in the room's
+    /// player table — one block per slot, ten apart — so this value belongs to
+    /// this capture's peer and not to the beat: it is the slot the room's own
+    /// players hold that a beat writes (<see cref="PlayerVitalsFramesUtils"/>),
+    /// and this constant is what a peer with no slot yet is written.
     /// </remarks>
     public const ushort VitalsRecordIdentifier = 0x090c;
 
