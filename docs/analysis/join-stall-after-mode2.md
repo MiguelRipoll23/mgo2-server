@@ -63,13 +63,17 @@ Three things are read off the table:
   (`f3`, `f4`, `f5` in game1; `00`, `01`, `02` in game2), which is the
   reliable-send retry the client uses. Both live captures hold **exactly one
   copy and no answer**, which is a client waiting on a host that writes none.
-* **The answer is the room's own state.** Across the captures its members are
-  the roster close (`07 00 00 00 00 00 03`, 7 B), the requesting peer's own
-  roster entry (25 B opening `07 12 00 SS`), the lobby-slot array pair under
-  the sequence the request named (`85 NN` / `86 NN`, 26 B each), and an empty
-  `0x5001` head behind them. In the round the answer also carries the player's
-  own entity block (`mgo2-game1` t+197.859: state, health, position, incapacity,
-  weapon, aim under `0xd9`–`0xdf`).
+* **The answer is the room's own state, and it has a shape.** Across the
+  captures its members are, in this order, the lobby-slot array pair under the
+  sequence the request named (`85 NN` / `86 NN`, 26 B each), the requesting
+  peer's own entry (25 B opening `07 12 00 04`), and the roster close
+  (`07 00 00 00 00 00 03`, 7 B) — one frame, written 0.9 to 3.2 s after the
+  request. The entry is measured in §4; the pair is the team array under the
+  host's own tag and the occupancy array under the roster's. In the round the
+  answer also carries the player's own entity block (`mgo2-game1` t+197.859:
+  state, health, position, incapacity, weapon, aim under `0xd9`–`0xdf`).
+  **None of the five captured answers carries a roster entry or an empty
+  `0x5001` head**, which the roster run does.
 * **It is answered in the pass that received it**, 0.3 to 2.9 s after the
   request, so nothing in the exchange waits on a clock.
 
@@ -91,16 +95,35 @@ whose clients have all reported opens its round then, however many of them there
 are — the briefing's own deadline still opens one for a player who never
 reports.
 
-## 4. What is not written, and why
+## 4. The 25-byte entry, and what is still not written
 
-The answers above carry three shapes this host cannot build, and they are
-recorded rather than implemented:
+**The entry is four measured fields and a recorded tail.** Read over the ten
+copies the captures hold, the record is `07 12 00 04` followed by
+`<index> <slot> 00 <slot> <slot> <team>`:
 
-* a **24-byte loadout header**, `0b SS 02` and nineteen zeros, where `SS` is
-  the player's own key (`0x02`, `0x04`, `0x06`, `0x15` across captures);
-* a **25-byte roster entry**, `07 12 00 SS …`, whose last eight bytes move per
-  capture (`01 14 00 14 14 00 01 c0` in game1, `01 03 00 03 03 00 fe 7f` in
-  started-on-solo) and no field of which is derivable from the room;
+| capture | index | slot | team | tail (14 B) |
+| --- | --- | --- | --- | --- |
+| `mgo2-game1` t+194.042, t+565.467 | `00` | `0f`, `06` | `0` | `ff 3f 84 6d …`, `01 c0 78 ec …` |
+| `mgo2-game1` t+73.425, t+396.046 | `01`, `03` | `14`, `0b` | `0`, `1` | `01 c0 f8 a7 …`, `01 c0 d4 ad …` |
+| `mgo2-started-on-solo-game` t+101.405 | `01` | `03` | `0` | `fe 7f b9 fd …` |
+| `mgo2-started-briefing-then-solo-game` t+180.491 | `00` | `03` | `0` | `ff 5f 0c fe …` |
+
+The **slot** is the raw key of the room's 24-entry player table — the same key
+the occupancy array of the same frame writes `07` at — and not the key plus one
+the join's loadout record carries. The **team** follows the room: the record for
+`mgo2-game1`'s slot `0b` is written `01` only after the arrays put that player on
+side one. The **index** is unresolved: it runs 0–3 down one room's copies,
+while a single-entry answer carries `00` in one capture and `01` in two, so
+neither the entry's place in a run nor the room's population explains it. It is
+written as `0` and no meaning is claimed. The **tail** moves per player and per
+rejoin — `mgo2-game1` writes slot `06` as `ff 5f 0c fe …` at one roster position
+and `01 c0 78 ec …` after re-joining under the same slot — so it is a per-player
+value this host has no source for and is carried from the recording.
+
+**Two shapes are still recorded rather than written:**
+
+* a **24-byte loadout header**, `0b SS 02` and zeros, where `SS` is the player's
+  own key (`0x02`, `0x04`, `0x06`, `0x15` across captures);
 * in a round, the requesting player's **own entity block** — state, position and
   aim, which only a host that simulates the player has.
 
@@ -127,13 +150,12 @@ One further difference was measured and is now written:
 
 * `TeamArrayFramesUtils` recognises the four-byte `83 …` request and reads the
   sequence it names.
-* `TeamArrayService.EnterRoomAsync` answers it with the room's own state — the
-  roster close, the requesting peer's entry, the lobby-slot array pair under the
-  named sequence and an empty head — in the pass that received it. **The entry it
-  writes is this host's profile record**, which is the 79-to-83-byte shape a
-  join's own roster run carries and not the 25-byte `07 12` record the captures
-  put in this group; that record is one of the three shapes §4 leaves unwritten,
-  and the difference is visible on the wire.
+* `TeamArrayService.EnterRoomAsync` answers it with the room's own state in the
+  pass that received it: the lobby-slot array pair under the named sequence, the
+  requesting peer's own 25-byte entry, and the roster close, in that order. The
+  entry is built by `RoomPlayerEntryBodiesUtils` — §4's four fields written into
+  a recorded body — and the profile echo and the empty `0x5001` head the answer
+  used to carry are gone, because no captured answer holds either.
 * `PlayerProfileHandler` routes that body there instead of dropping it as a
   profile with no name, which is what it used to do (its own log line:
   *"carries no profile; not answered"*).
@@ -151,7 +173,12 @@ One further difference was measured and is now written:
 **Nothing here is verified live.** The change is measured against the captures
 and the build and the codec tests pass, but no client has joined the built host:
 what a client does with the answer is what would close this, exactly as
-§7.1b said of the promotion gate. The three unwritten shapes of §4 remain the
-most plausible next candidates if the request's answer alone does not carry the
-client into the room,and both named differences on the join itself — the answer's copy and the room's
-stage records — are now written.
+§7.1b said of the promotion gate. The second live run (`myserver3.pcapng`)
+reached the answer — the client sent its `83 f3 00 07` at t+73.630, was answered
+in 176 ms and acknowledged all four records — and never sent its own player
+block, which is what §5's change to the answer is measured against: the reference
+writes the entry the answer lacked, and its client's own records follow 0.9 s
+later (`mgo2-started-briefing-then-solo-game`, t+180.491 → t+181.578).
+**Absence of acknowledged records is not absence of a client**: acking the answer
+is not the same as being placed by it, and the tail of the record is still a
+recording's. The two unwritten shapes of §4 remain the next candidates.

@@ -63,28 +63,41 @@ public sealed class TeamArrayService(
     /// <remarks>
     /// <para>
     /// <b>The request is answered with the room, not with one record.</b> Every
-    /// capture answers it with a group — the roster close, the requesting peer's
-    /// own entry, the lobby-slot array pair under the sequence the request
-    /// carried, and an empty head behind them (`mgo2-game1` t+73.4, `mgo2-game2`
-    /// t+79.0, `mgo2-game-started-on-briefing` t+93.1, `mgo2-started-on-solo-game`
+    /// capture answers it with four records in one frame — the lobby-slot array
+    /// pair under the sequence the request carried, the requesting peer's own
+    /// entry, and the roster's close (`mgo2-game1` t+201.0, `mgo2-game2` t+79.0,
+    /// `mgo2-game-started-on-briefing` t+93.1, `mgo2-started-on-solo-game`
     /// t+101.4, and `mgo2-started-briefing-then-solo-game` t+180.5, measured in
     /// `docs/analysis/join-stall-after-mode2.md`) — and the group is what this
-    /// writes: the peer's own slot, the room's sides and the roster's close are
-    /// the three things the client cannot read off a channel it is not in yet.
+    /// writes: the peer's own slot, the room's sides and the close are the three
+    /// things the client cannot read off a channel it is not in yet.
     /// </para>
     /// <para>
-    /// <b>What the captures carry beyond this group is not written.</b> Three
-    /// shapes ride in some answers and not others — a 24-byte loadout header
-    /// (<c>0b SS 02</c> and zeros), a 25-byte entry (<c>07 12 00 SS …</c> whose
-    /// last eight bytes move per capture) and, in the round, the requesting
-    /// player's own entity block — and none of their fields is derivable from
-    /// anything this host holds. They are recorded as the gap they are rather
-    /// than written on a resemblance; see the analysis file's "what is not
-    /// written" section.
+    /// <b>The order is the captures', and so is what the group does not
+    /// carry.</b> The pair opens the answer and the close ends it, which is the
+    /// reverse of the roster run's own order. Two records this host used to write
+    /// here are not written: the first copy of the peer's own roster entry
+    /// belongs to the join and is answered there
+    /// (<see cref="RosterAnswerService"/>), and the empty <c>0x5001</c> head is
+    /// the run's. No captured answer carries either.
+    /// </para>
+    /// <para>
+    /// <b>The entry is the room's own and not the roster's.</b>
+    /// <see cref="RoomPlayerEntryBodiesUtils"/> carries the 25-byte record's four
+    /// measured fields and the recorded tail behind them; its remarks hold the
+    /// measurement and the one field left unresolved.
+    /// </para>
+    /// <para>
+    /// <b>What the captures carry beyond this group is not written.</b> A 24-byte
+    /// loadout header (<c>0b SS 02</c> and zeros) rides in some answers and not
+    /// others, and in a round the answer carries the requesting player's own
+    /// entity block; neither is derivable from anything this host holds, so both
+    /// are recorded as the gap they are rather than written on a resemblance. See
+    /// the analysis file's "what is not written" section.
     /// </para>
     /// <para>
     /// <b>It is written in the pass that received the request</b>, which is
-    /// where the captures write it: the answers land 0.3 to 2.9 s after the
+    /// where the captures write it: the answers land 0.3 to 3.2 s after the
     /// request they answer and a re-sent request is answered the same way, so
     /// nothing here waits on a clock.
     /// </para>
@@ -93,24 +106,34 @@ public sealed class TeamArrayService(
     /// <param name="sequence">Sequence byte the client's request named.</param>
     public async Task EnterRoomAsync(PeerContext context, byte sequence)
     {
-        var run = new List<RosterRecord>();
-        var ordinals = roster.TakeRunOrdinals(4);
+        var slots = await lobbySlots.ReadAsync();
+        var bodies = new List<byte[]>();
 
-        run.Add(new(UdpCommandConstants.PlayerProfile, PlayerProfileRecordUtility.BuildRosterClose(), ordinals[0]));
+        // The pair opens the answer, under the sequence the request named, and
+        // the entry and the close follow it: the captures' own order, measured in
+        // the four answers named above.
+        var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(sequence, slots);
+        bodies.Add(teams);
+        bodies.Add(occupancy);
 
-        // The requesting peer's own entry, when the room has one. A request that
-        // arrives before the profile is answered with the room's other records:
-        // the entry is built from the profile, and there is none to build from.
-        // Both endpoints are looked up, for the reason the roster's own reaper
-        // does: a peer is filed under the endpoint its profile arrived from,
-        // which is the observed source, while the session answers at the one the
-        // peer advertised. The two are one for a peer out on the internet.
+        // The requesting peer's own entry, when the room has a player for it. A
+        // request that arrives before the profile is answered with the room's
+        // other records: the entry names a player of the room, and the room does
+        // not hold this one yet. Both endpoints are looked up, for the reason the
+        // roster's own reaper does: a peer is filed under the endpoint its
+        // profile arrived from, which is the observed source, while the session
+        // answers at the one the peer advertised. The two are one for a peer out
+        // on the internet.
         var member = roster.Find(context.Remote.ToString())
             ?? roster.Find(context.Session.DialBack.ToString());
         if (member is not null)
         {
-            run.Add(
-                new(UdpCommandConstants.PlayerProfile, member.BuildRecord(), ordinals[1]));
+            var side = slots.Find(slot => slot.Slot == member.SessionSlot);
+            bodies.Add(
+                RoomPlayerEntryBodiesUtils.Build(
+                    0,
+                    member.SessionSlot,
+                    RoomPlayerEntryBodiesUtils.TeamByteOf(side?.Team)));
         }
         else
         {
@@ -121,14 +144,19 @@ public sealed class TeamArrayService(
                 context.Remote);
         }
 
-        var slots = await lobbySlots.ReadAsync();
-        var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(sequence, slots);
-        run.Add(new(UdpCommandConstants.PlayerProfile, teams, ordinals[2]));
-        run.Add(new(UdpCommandConstants.PlayerProfile, occupancy, ordinals[3]));
+        bodies.Add(PlayerProfileRecordUtility.BuildRosterClose());
 
-        // The empty head the captures close the group with, written under the tag
-        // the joiner itself opened the exchange with.
-        run.Add(RoomRosterService.BuildRosterTrailer());
+        // The pair travels under the tag the joiner opened the exchange with and
+        // the rest under the roster's own, as both the run and the answer do.
+        var ordinals = roster.TakeRunOrdinals(bodies.Count);
+        var run = new List<RosterRecord>(bodies.Count)
+        {
+            new(RoomRosterService.HostEntryType, bodies[0], ordinals[0]),
+        };
+        for (var index = 1; index < bodies.Count; index++)
+        {
+            run.Add(new(UdpCommandConstants.PlayerProfile, bodies[index], ordinals[index]));
+        }
 
         logger.LogInformation(
             "UDP {LocalPort}: answering {RemoteAddress}'s request to be placed in the room: {RecordCount} "
