@@ -1,122 +1,81 @@
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The briefing countdown: what a peer is sent on the operations clock while
-/// its room is still briefing.
+/// The briefing countdown: the operations record a peer is sent while its room
+/// is still briefing, counting the briefing's remaining seconds down from the
+/// room's own briefing time.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>It is the clock record, not a record of its own.</b> The room's briefing
-/// time was the deadline its round opens on and the duration it waits for a
-/// report that never comes, and it reached no client at all. It does reach one
-/// through the operations clock: in
-/// <c>mgo2-game-joined-when-red-team-then-briefing</c> the clock reads
-/// <c>0x0080</c> — 128 units — at the start of the briefing and counts to zero
-/// over 58.5 s while the client sits in it, 14 s before that room's round opens
-/// at t+72.560. That is the countdown, and it is the same opcode, the same
-/// little-endian 125 ms unit and the same stream as the round clock that follows
-/// it — a briefing is a round's clock opened on 128 units rather than on the
-/// round's own length.
+/// <b>It is the seven-byte <c>0x0b</c> record, not the operations clock.</b> A
+/// briefing in <c>mgo2-game-started-on-briefing</c> is written as
+/// <c>0b 3c 00 00 00 00 00</c> and counted down — <c>0b 3b 00 02 …</c>,
+/// <c>0b 3a …</c> — the opening <c>0x3c</c> being the room's briefing time of
+/// sixty seconds. It is the record <c>docs/protocol/STATE_VECTOR.md</c> §4 read
+/// as a recurring per-entity timer; the operations clock (<c>01</c>, 128 units)
+/// this host wrote instead is a round clock near its end and not a briefing
+/// countdown.
 /// </para>
 /// <para>
-/// <b>It is built from the room's own briefing time.</b> A client waits in a
-/// briefing either for every player to be ready or for its own timer, so the
-/// countdown is how a client learns which of the two it is about to be. The
-/// value is the briefing's remaining share of its own time in the stream's own
-/// 125 ms units, read per record, so a briefing that opens late or is cut short
-/// by its deadline counts down against the time it actually has.
-/// </para>
-/// <para>
-/// <b>The clock is a fixed sixteen seconds, and the values are the steps it
-/// reaches them in.</b> Measured: it opens on 128 and reads <c>128 → 96 → 64 → 32 →
-/// 0</c> over <b>16.2 s</b> (<c>mgo2-game-joined-when-red-team-then-briefing</c>,
-/// t+11.671 to t+27.915, read with <c>tools/udp_briefing_flow.py</c>), and the round
-/// that briefing precedes opens at t+72.560 — so the clock reaches zero about 45 s
-/// before the round does and **stays at zero** while the room waits, and it is
-/// **not** the briefing's length. The five readings are exactly the quarter steps of
-/// sixteen seconds: four seconds apart, <c>128 − 32</c> each. An earlier reading
-/// here said it counted to zero over 58.5 s and spread 128 units across the room's
-/// briefing time; the same tool's output contradicts that, and this host no longer
-/// writes it.
-/// </para>
-/// <para>
-/// <b>What is derived and what is measured.</b> **[V]** the opening value, the four
-/// steps, the 16 s span and the zeros that follow. **[D]** that the step is the
-/// clock's own grid rather than the client's display: the four values are the ones
-/// the wire carries, and a host that wrote a value per 125 ms tick would write the
-/// same clock in a hundred and twenty-eight records instead of five.
-/// </para>
-/// <para>
-/// The other candidate on the wire is **not** the briefing countdown.
-/// <c>docs/protocol/STATE_VECTOR.md</c> §4 records the measurement that cleared
-/// it: the six-byte <c>0x0b</c> record counts down from sixty and was read as a
-/// briefing timer, but it continues past a round's opening run and restarts
-/// afterwards, so it is a recurring per-entity timer of its own and this host
-/// writes none of it.
+/// <b>The bytes.</b> The opcode is followed by the remaining seconds, a zero,
+/// the room's reporting players as the same bit set the presence answer carries
+/// (<see cref="Rooms.PlayerReadyService.PresenceMask"/>), and three recorded
+/// zeros. The set grows as the room reports — <c>00</c>, then <c>02</c>,
+/// <c>06</c> — so the countdown is rewritten and not a constant.
+/// **[V]** the opcode, the length, the opening sixty and the growth; **[U]** the
+/// zero between the count and the set.
 /// </para>
 /// </remarks>
 public static class BriefingCountdownBodiesUtils
 {
     /// <summary>
-    /// The units a briefing's clock opens on: 128, which is sixteen seconds of
-    /// the stream's own tick.
+    /// Opcode of the briefing countdown record, in its first body byte.
     /// </summary>
-    public const int BriefingClockUnits = 128;
+    public const byte CountdownOpcode = 0x0b;
+
+    /// <summary>Length of the countdown body: the opcode and six bytes.</summary>
+    public const int RecordLength = 7;
 
     /// <summary>
-    /// Spacing between countdown records. The capture writes the briefing clock
-    /// 2.4–4.6 s apart (its readings at t+11.671, 14.179, 18.808, 21.324, 23.790
-    /// and 27.915), which is the operations tick the round's own clock is written
-    /// on rather than a period the client is sent on.
+    /// Spacing between countdown records, the operations tick the rest of the
+    /// stream is written on.
     /// </summary>
     public const int PublishPeriodMilliseconds = 2500;
 
-    /// <summary>
-    /// The stream's own tick in a clock value: 125 ms per unit.
-    /// </summary>
-    public const int UnitMilliseconds = 125;
+    /// <summary>Seconds in one minute, the factor between a briefing's minutes and its count.</summary>
+    public const int SecondsPerMinute = 60;
+
+    /// <summary>The largest value the count byte can hold.</summary>
+    public const int MaxCountSeconds = 0xff;
 
     /// <summary>
-    /// Units one step of the countdown takes off: 32, which is four seconds of the
-    /// stream's own tick. The capture's five readings are the four steps of its
-    /// sixteen-second clock.
+    /// The countdown's value at a point in a briefing: the seconds of briefing
+    /// left, rounded up so the last second is still told, held to the byte the
+    /// record has room for.
     /// </summary>
-    public const int CountdownStepUnits = BriefingClockUnits / 4;
+    /// <param name="remaining">Time left in the briefing.</param>
+    /// <returns>A value in <c>0</c>…<see cref="MaxCountSeconds"/>.</returns>
+    public static int CountdownSeconds(TimeSpan remaining) =>
+        Math.Clamp((int)Math.Ceiling(remaining.TotalSeconds), 0, MaxCountSeconds);
 
     /// <summary>
-    /// How long the countdown takes off the whole clock: sixteen seconds of the
-    /// stream's own tick, which is the span the capture's readings cover.
+    /// The countdown record's body: the <c>0x0b</c> opcode, the seconds left, a
+    /// zero, the room's reporting players and three zeros.
     /// </summary>
-    public static readonly TimeSpan CountdownLength =
-        TimeSpan.FromMilliseconds((long)BriefingClockUnits * UnitMilliseconds);
-
-    /// <summary>
-    /// The countdown's own value at a point in a briefing: the whole 128 units in
-    /// its first four seconds, one step less every four seconds after that, and
-    /// zero from sixteen seconds in — where it stays for the rest of the briefing,
-    /// because the capture's clock reaches zero ~45 s before its round opens.
-    /// </summary>
-    /// <param name="elapsed">How long the briefing has run.</param>
-    /// <returns>A value in <c>0</c>…<see cref="BriefingClockUnits"/>.</returns>
-    public static int CountdownUnits(TimeSpan elapsed)
-    {
-        if (elapsed <= TimeSpan.Zero)
-        {
-            return BriefingClockUnits;
-        }
-
-        var stepLength = CountdownLength / (BriefingClockUnits / CountdownStepUnits);
-        var steps = (int)(elapsed.Ticks / stepLength.Ticks);
-        return Math.Clamp(BriefingClockUnits - (steps * CountdownStepUnits), 0, BriefingClockUnits);
-    }
-
-    /// <summary>
-    /// The countdown record's body: the operations clock opcode and the value,
-    /// little-endian. The same builder the round clock uses, because it is the
-    /// same record — a briefing is a clock opened on 128 units.
-    /// </summary>
-    /// <param name="units">Count of 125 ms units the countdown reads.</param>
+    /// <param name="seconds">Seconds of briefing the room has left.</param>
+    /// <param name="reportingSet">
+    /// The room's reporting players as a bit set, one bit per player
+    /// (<see cref="Rooms.PlayerReadyService.PresenceMask"/>).
+    /// </param>
     /// <returns>The record body.</returns>
-    public static byte[] CountdownBody(int units) =>
-        MatchRecordBodiesUtils.RoundTimeLimitUnits(units);
+    public static byte[] CountdownBody(int seconds, byte reportingSet) =>
+    [
+        CountdownOpcode,
+        (byte)Math.Clamp(seconds, 0, MaxCountSeconds),
+        0x00,
+        reportingSet,
+        0x00,
+        0x00,
+        0x00,
+    ];
 }

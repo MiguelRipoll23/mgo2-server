@@ -37,9 +37,8 @@ public static class MatchRecordBodiesUtils
     /// round opens with this record set to the rule's own time, and the value
     /// counts down in <see cref="ClockUnitMilliseconds"/> steps until the round
     /// is over. 3 840 units (8:00) in a room whose TDM time is 8, 2 400 (5:00) in
-    /// one whose time is 5. The same record carries a briefing's countdown
-    /// before a round, which is why it is read by phase and not only by round
-    /// (<c>docs/protocol/BRIEFING_FLOW.md</c> §3).
+    /// one whose time is 5. A briefing's countdown is a record of its own,
+    /// <c>0x0b</c> (<see cref="BriefingCountdownBodiesUtils"/>), and not this one.
     /// </remarks>
     public const byte OperationsClockOpcode = 0x01;
 

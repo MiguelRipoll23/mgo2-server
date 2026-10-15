@@ -48,12 +48,12 @@ public sealed partial class MatchStartRunService
         // The countdown goes to the peers the deadline is armed for, so it is
         // armed with it: a client waiting out its own briefing timer is told how
         // much of it is left, and one that never received the deadline is the
-        // client that never received this either. It is the operations clock
-        // opened on 128 units, counted down against this same briefing time
-        // (`BriefingCountdownBodiesUtils`, `docs/protocol/STATE_VECTOR.md` §4).
+        // client that never received this either. It is the seven-byte 0x0b
+        // operations record, counting this same briefing time down in seconds
+        // (`BriefingCountdownBodiesUtils`).
         //
         // The briefing writes it on the operations stream, which it opens: the
-        // capture's briefing clock starts at 00 and its round's run opens the same
+        // capture's countdown opens the stream and its round's run opens the same
         // stream again, so the stream is restarted here rather than continued from
         // the round before it.
         sequences.Restart(BriefingCountdownService.Identifier);

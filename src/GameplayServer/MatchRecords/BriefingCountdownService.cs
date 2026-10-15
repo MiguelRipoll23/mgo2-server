@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// Tells a peer how much of its briefing is left, on the operations clock,
+/// Tells a peer how much of its briefing is left, on the operations stream,
 /// while the room is still briefing.
 /// </summary>
 /// <remarks>
@@ -13,34 +13,33 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <b>What this closes.</b> A client in a briefing waits either for every player
 /// to be ready or for its own timer, so the countdown is how it learns which of the
 /// two it is about to be, and a host that never sends it leaves every client timing
-/// its own silence. What it is: the operations clock, opened on <b>128 units</b>,
-/// dropping <b>32 units</b> every four seconds and holding at zero from sixteen
-/// seconds in, which is the one full countdown any capture holds
-/// (<see cref="BriefingCountdownBodiesUtils"/>). It is a fixed sixteen seconds and
-/// not the room's briefing time: the capture's clock reaches zero about 45 s before
-/// the round it precedes opens.
+/// its own silence. What it is: the seven-byte <c>0x0b</c> operations record,
+/// carrying the seconds of the room's briefing that are left and the room's
+/// reporting players as a bit set (<see cref="BriefingCountdownBodiesUtils"/>).
 /// </para>
 /// <para>
 /// <b>It stops when the round opens, and that is the whole of its lifetime.</b>
-/// The capture places the briefing clock only before a round's opening run, and
-/// the round's own clock — the same record opened on the round's length —
-/// replaces it. A peer that arrives mid-round is served the round, not a
-/// briefing, and is sent no countdown at all.
+/// The capture places the briefing countdown only before a round's opening run.
+/// A peer that arrives mid-round is served the round, not a briefing, and is sent
+/// no countdown at all.
 /// </para>
-/// <para>    /// The clock is read per record rather than captured once, so a briefing that
-    /// opens late still counts its sixteen seconds from where it opened.
-    /// </para>
 /// </remarks>
 /// <param name="roundState">The room's round, whose opening is the countdown's end.</param>
 /// <param name="sequences">
-/// The stream counters the clock's fourth byte comes from: the briefing writes on
+/// The stream counters the countdown's ordinal comes from: the briefing writes on
 /// the operations stream, the same one the round's own clock uses.
+/// </param>
+/// <param name="roster">The room's roster, whose ordinals the room-state records take.</param>
+/// <param name="ready">
+/// The room's reporting players, whose bit set the countdown carries on every
+/// tick (<see cref="Rooms.PlayerReadyService.PresenceMask"/>).
 /// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class BriefingCountdownService(
     MatchRoundStateService roundState,
     MatchRecordSequenceService sequences,
     Rooms.RoomRosterService roster,
+    Rooms.PlayerReadyService ready,
     ILogger<BriefingCountdownService> logger)
 {
     /// <summary>
@@ -188,12 +187,12 @@ public sealed class BriefingCountdownService(
                 return;
             }
 
-            var units = BriefingCountdownBodiesUtils.CountdownUnits(Length - remaining);
+            var seconds = BriefingCountdownBodiesUtils.CountdownSeconds(remaining);
             try
             {
                 await context.Send(
                     CountdownIdentifier,
-                    BriefingCountdownBodiesUtils.CountdownBody(units),
+                    BriefingCountdownBodiesUtils.CountdownBody(seconds, ready.PresenceMask),
                     sequences.Take(CountdownIdentifier));
 
                 // The room's own stage rides with the countdown, which is the one
@@ -220,18 +219,6 @@ public sealed class BriefingCountdownService(
             "UDP {LocalPort}: the briefing countdown to {RemoteAddress} ended",
             context.LocalPort,
             session.RemoteAddress);
-    }
-
-    /// <summary>How long the current briefing runs for, or zero when none is armed.</summary>
-    public TimeSpan Length
-    {
-        get
-        {
-            lock (gate)
-            {
-                return length;
-            }
-        }
     }
 
     /// <summary>The stream this service writes under, named for the log and the docs.</summary>
