@@ -44,10 +44,12 @@ public sealed class BriefingCountdownService(
     ILogger<BriefingCountdownService> logger)
 {
     /// <summary>
-    /// The room's own state, written beside the countdown on every tick: the
-    /// stage records the reference host writes through a briefing.
+    /// The room's own state, written beside the countdown on every tick of a room
+    /// whose round has played: the stage records the reference host writes through
+    /// a briefing that follows a round.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <b>Measured, and carried by this tick because this is what a briefing
     /// sends.</b> The reference hosts write the 22-byte room-state record and the
     /// two 54-byte entries through a briefing in groups 2.2 to 2.6 s apart —
@@ -57,13 +59,27 @@ public sealed class BriefingCountdownService(
     /// The records themselves are the ones the run writes
     /// (<see cref="MatchRecordBodiesUtils.RoomStateRecord"/> and the two entries
     /// behind it), so a peer is told the room's stage both when a round opens and
-    /// for as long as a briefing runs. Whether the whole group belongs to the tick
-    /// or to an event this reader has not identified is **[U]**; what is measured
-    /// is the records and the cadence, and this host writes them where it already
-    /// writes.
+    /// for as long as a briefing runs.
+    /// </para>
+    /// <para>
+    /// <b>The group belongs to the room's state and not to the phase, so a room
+    /// with no round behind it writes none of it.</b> Every briefing named above
+    /// follows a round; a fresh room's first briefing is the case the captures
+    /// separate. The reference <c>mgo2-game-started-on-briefing</c> joins an
+    /// unplayed room and writes neither the 22-byte record nor the entries in its
+    /// 48 s briefing, while this host wrote them from the join onward — telling
+    /// the client a round exists while it is still being briefed
+    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §10). The condition is the
+    /// room's own round count, which is zero only before the first round opens.
+    /// </para>
     /// </remarks>
     private async Task PublishRoomStateAsync(PeerContext context)
     {
+        if (roundState.RoundNumber == 0)
+        {
+            return;
+        }
+
         var ordinals = roster.TakeRunOrdinals(3);
         var state = new List<Rooms.RosterRecord>
         {

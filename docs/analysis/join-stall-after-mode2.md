@@ -302,7 +302,9 @@ briefing, waits there, reports itself ready, and the round opens — so the refe
 is `mgo2-game-started-on-briefing` (its roster run at t+8.1, its round at t+56.1,
 48 s of briefing) rather than the post-round briefings of game1 and game2.
 
-**The briefing itself is not the difference.** Over that capture's briefing window
+**The briefing's own rates are close, but its record set is not — §10 corrects the
+first reading below, which compared rates and not records.** Over that capture's
+briefing window
 the host writes the rules pair 9.8 times per ten seconds under each class, a
 `0x0002` state blob every 8 s, a `0xd001` control every 5 s and the room's count
 `0x1258 00 01` beside the join — and this host's 51 s briefing writes the pair at
@@ -352,3 +354,50 @@ is a recording's schedule and not a rule: measured against each round's own open
 it is +4.9 s (`joined-when-red-team`), +6.1 s (`started-briefing-then-solo`),
 +27.0 s (game1) and +54.5 s (game2), so this host's 27 s is inside the measured
 range and is left as it is. **[V]** on the onsets.
+
+## 10. The briefing carries the round's own records, and the briefing reference carries none
+
+§9 compared the briefing by *rates* and concluded no family was missing on either
+side. Compared by *record*, the two briefings are not the same room state at all —
+and this is the shape of the symptom the user reports, "the briefing screen is
+never reached": the client is told a round exists before the briefing has even
+been shown.
+
+Both windows are a fresh room's first briefing — the roster run to the round open,
+48 s in the reference and 51 s here — and both are host → client:
+
+| records written during the briefing | `started-on-briefing` | `myserver5` |
+| --- | --- | --- |
+| `07 0f …` room-state record (22 B) | **0** | **21**, from +0.18 s, one every ~2.5 s |
+| `07 2f …` close pair (54 B × 2) | **0** | **42**, from +0.18 s |
+| roster close `07 00 00 00 00 00 03` | **0** | **2** |
+| settings payload `0b <slot> …` | 7 | 3 |
+
+The first three are the round's own close triple: the piece `BRIEFING_FLOW.md` §2
+lists inside a round's opening run, and the piece §5 of this file added to the run
+*and* to the briefing tick. Its evidence for the briefing tick was
+`mgo2-game-joined-when-red-team-then-briefing`, whose briefing is the briefing of a
+room that had **just played a round** — that room's briefing legitimately carries
+the round's leftovers (its 90-byte state block and its clock are in the same
+capture). A room that has **not** played a round has no round to carry, and
+`started-on-briefing`, the join into a fresh room, writes none of the three.
+
+So the record set belongs to the room's state and not to the phase: a briefing
+writes the pair, the blobs, the controls, the room's count and the readiness
+publications, and the round's close triple only once a round has played. Writing it
+from the join onward is what tells the client that the room is in a round while it
+is still being briefed. **[V]** on the counts above.
+
+**What was changed.** The writer is the briefing tick that publishes the room's
+state while it waits — `BriefingCountdownService.PublishRoomStateAsync`, which
+writes the twenty-two-byte record and the two entries beside the countdown — and it
+is narrowed to a room whose round has played: the group goes out only once the
+room's own round count is past zero, so a fresh room's first briefing writes the
+countdown and the room's other records and none of the round's. The round's opening
+run still carries the group, which is where a fresh room is first told its stage
+(`mgo2-started-briefing-then-solo-game`'s run at t+174.371 is the case).
+
+**Still open, and what closes it.** No client has joined this change. What would
+confirm it is the same join, one capture: the briefing window should then hold no
+`07 0f`, `07 2f` or close record, and the client should reach the briefing screen
+before the round opens.

@@ -62,8 +62,12 @@ Two things follow, and they are what the change is built on:
 * `MatchStartRunFramesUtils.BuildRun` writes them between the arrays and the
   close pair, so the run's `0x1001` family is the capture's eight records with
   the capture's ordinals (`RosterOrdinalCount`).
-* `BriefingCountdownService` writes them beside the countdown on every briefing
-  tick, which is the one thing this host writes through a briefing.
+* `BriefingCountdownService` writes them beside the countdown on every tick of a
+  room whose round has played, which is the one thing this host writes through a
+  briefing. A fresh room's first briefing writes none of them: the group is the
+  room's state rather than the phase's, and the reference that joins an unplayed
+  room carries neither record before its round
+  (`docs/analysis/join-stall-after-mode2.md` §10).
 
 ## 4. Limits
 
