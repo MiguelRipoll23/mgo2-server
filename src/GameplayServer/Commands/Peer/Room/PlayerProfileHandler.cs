@@ -20,28 +20,33 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// messages, which are not profiles and are not answered with a roster.
 /// </para>
 /// <para>
-/// <b>The roster is the answer to the profile, written in the pass it arrives
-/// in.</b> There is no copy to wait for. The client sends its profile once the
-/// session is keyed and re-sends the same body, byte for byte, 1.93 s later only
-/// when nothing has answered it, so answering in the pass that received it is
-/// what keeps the re-send off the wire. A copy that arrives anyway is answered
-/// the same way — a peer still waiting for its roster is not a peer whose retry
-/// is to be ignored — and the member is filed either way, so a re-send lands in
-/// the slot the client already has.
+/// <b>The copy answered is the one the client re-sends.</b> The client sends its
+/// profile once the session is keyed, and re-sends the same body byte for byte on
+/// its own 1.93 s timer; the recorded host's roster run follows the <em>second</em>
+/// copy — 1.934 s between the joiner's two copies and 0.542 s from the second to
+/// the run in `mgo2-game1`, and the same shape in `mgo2-started-on-solo-game` and
+/// `mgo2-game-started-on-briefing` (`UDP_JOIN_FLOW.md` §7,
+/// `docs/analysis/join-stall-after-mode2.md` §5). The first copy is therefore held
+/// and the re-send is answered in the pass that receives it, through
+/// <see cref="RosterAnswerService"/>; a copy that arrives anyway is answered the
+/// same way, and the member is filed either way, so a re-send lands in the slot
+/// the client already has.
 /// </para>
 /// <para>
-/// <b>What the captures show.</b> The recorded host sends one roster run per
-/// join, and in game1 that run follows the <em>re-sent</em> copy: the joiner's
-/// two copies are 1.934 s apart and the run is 2.476 s after the first, 0.542 s
-/// after the second. game2's round sends three copies and no roster run this
-/// reader can resolve, so game1's single round is the whole of the evidence.
-/// What the capture fixes is the records; it cannot say whether a client that
-/// receives them 2.4 s earlier — which is what answering in the first pass does
-/// — is any worse off, and the one run whose roster was acknowledged under the
-/// two did go quiet afterwards.
+/// <b>What the host did before.</b> It answered the first copy, in the pass that
+/// received it, on the reasoning that this keeps the re-send off the wire. It
+/// does — and that is the problem: both live captures hold <em>one</em> profile
+/// copy and no re-send at all, where every reference client re-sends and is
+/// answered on the second. What the earlier reading could not say is whether a
+/// client answered 2.4 s earlier is worse off; the two live captures say it does
+/// not join, which is why the recorded host's copy is the one answered now.
 /// </para>
 /// </remarks>
 /// <param name="roster">Roster of the room this host is playing.</param>
+/// <param name="rosterAnswers">
+/// Decider of which copy of a peer's profile is answered: the re-sent one in the
+/// pass it arrives in, or the first one when the client never re-sends.
+/// </param>
 /// <param name="burstScheduler">Scheduler of the one-shot settings burst after roster exchange.</param>
 /// <param name="matchRecords">Records the recorded host keeps writing after the burst.</param>
 /// <param name="matchStart">Writer of the run the room's next round opens with.</param>
@@ -54,6 +59,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
     RoomRosterService roster,
+    RosterAnswerService rosterAnswers,
     PlayerSettingsBurstSchedulerService burstScheduler,
     MatchRecordService matchRecords,
     MatchStartRunService matchStart,
@@ -72,6 +78,21 @@ public sealed class PlayerProfileHandler(
         if (TeamArrayFramesUtils.IsArrayEcho(context.Message.Body))
         {
             await teamArrays.ConfirmAsync(context, TeamArrayFramesUtils.SequenceOf(context.Message.Body));
+            return;
+        }
+
+        // The same identifier carries the client's own request to be placed in
+        // the room: four bytes opening 0x83, the array family's third type and
+        // the only one of it this host does not answer. Every capture answers
+        // it with the room's state, and both live captures hold one copy and no
+        // answer, which is why it is read here rather than falling through to
+        // the profile parse below - a four-byte body carries no name and that
+        // path drops it as "no profile".
+        if (TeamArrayFramesUtils.IsRoomEntryRequest(context.Message.Body))
+        {
+            await teamArrays.EnterRoomAsync(
+                context,
+                TeamArrayFramesUtils.RequestSequenceOf(context.Message.Body));
             return;
         }
 
@@ -131,34 +152,22 @@ public sealed class PlayerProfileHandler(
             profile.Name,
             member.RosterIndex);
 
-        var run = roster.BuildRosterRun();
-        logger.LogDebug(
-            "UDP {LocalPort}: built roster response for {RemoteAddress}: {RecordCount} records, "
-            + "{JoinerCount} joiners, {FrameCount} outbound roster frames including repeat and trailer",
-            context.LocalPort,
-            context.Remote,
-            run.Count,
-            roster.JoinerCount,
-            3);
-        foreach (var record in run.Where(record => record.Type == RoomRosterService.HostEntryType))
+        // The copy answered is the copy the client re-sends, in the pass it
+        // arrives in: a client answers its own 1.93 s retry timer by sending the
+        // profile again, and the recorded host's roster run follows that second
+        // copy (`RosterAnswerService`). The first copy is therefore held, and a
+        // client that does not re-send is answered when the hold's deadline
+        // passes rather than never.
+        var answer = () => SendRosterAsync(
+            context,
+            roster.BuildRosterRun(),
+            roster.BuildRosterRunRepeat(),
+            RoomRosterService.BuildRosterTrailer());
+
+        if (rosterAnswers.AnswerNowOrHold(context.Remote.ToString(), context, answer))
         {
-            logger.LogInformation(
-                "UDP {LocalPort}: sending this host's own roster entry to {RemoteAddress} under "
-                + "0x{MsgType:x4}, the tag a joiner opens the exchange with; the rest of the roster "
-                + "travels as 0x{RosterType:x4}",
-                context.LocalPort,
-                context.Remote,
-                record.Type,
-                UdpCommandConstants.PlayerProfile);
+            await answer();
         }
-
-        var repeat = roster.BuildRosterRunRepeat();
-        var trailer = RoomRosterService.BuildRosterTrailer();
-
-        // In this pass: nothing is paused off the dispatch, so the run, its repeat
-        // and its trailer go out inside the client's 1.93 s re-send timer rather
-        // than after it.
-        await SendRosterAsync(context, run, repeat, trailer);
     }
 
     /// <summary>
@@ -210,6 +219,26 @@ public sealed class PlayerProfileHandler(
         IReadOnlyList<RosterRecord> repeat,
         RosterRecord trailer)
     {
+        logger.LogDebug(
+            "UDP {LocalPort}: built roster response for {RemoteAddress}: {RecordCount} records, "
+            + "{JoinerCount} joiners, {FrameCount} outbound roster frames including repeat and trailer",
+            context.LocalPort,
+            context.Remote,
+            run.Count,
+            roster.JoinerCount,
+            3);
+        foreach (var record in run.Where(record => record.Type == RoomRosterService.HostEntryType))
+        {
+            logger.LogInformation(
+                "UDP {LocalPort}: sending this host's own roster entry to {RemoteAddress} under "
+                + "0x{MsgType:x4}, the tag a joiner opens the exchange with; the rest of the roster "
+                + "travels as 0x{RosterType:x4}",
+                context.LocalPort,
+                context.Remote,
+                record.Type,
+                UdpCommandConstants.PlayerProfile);
+        }
+
         // Both runs go out compressed, as the recorded host sends them. The same
         // two runs sent in the clear were the experiment that separated our LZSS
         // stream from the records in it - the peer answered those and answered

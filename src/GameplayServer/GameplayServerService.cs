@@ -32,6 +32,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly AccountService accountService;
     private readonly MatchService matchService;
     private readonly RoomRosterService roster;
+    private readonly MatchRecords.MatchStartRunService matchStart;
     private readonly PlayerReadyService ready;
     private readonly PlayerVitalsService vitals;
     private readonly HostIdentityService hostIdentity;
@@ -74,6 +75,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         accountService = serviceProvider.GetRequiredService<AccountService>();
         matchService = serviceProvider.GetRequiredService<MatchService>();
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
+        matchStart = serviceProvider.GetRequiredService<MatchRecords.MatchStartRunService>();
         ready = serviceProvider.GetRequiredService<PlayerReadyService>();
         vitals = serviceProvider.GetRequiredService<PlayerVitalsService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
@@ -275,6 +277,21 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         {
             logger.LogDebug(
                 "[{LogPrefix}] Reaped peer {RemoteAddress} had no roster entry to remove",
+                LogPrefix,
+                session.RemoteAddress);
+        }
+
+        // The room's round belongs to the clients in it, so the last client out is
+        // the one that ends the match: with the room empty the round count, its
+        // clock and its tickets start over, and the next client into the room
+        // arrives at a first round rather than at the one that emptied. A leaver
+        // among others changes nothing (`MatchStartRunService.ResetWhenEmpty`, and
+        // the room's own rule in `docs/analysis/empty-and-solo-room-clocks.md`).
+        if (matchStart.ResetWhenEmpty())
+        {
+            logger.LogInformation(
+                "[{LogPrefix}] {RemoteAddress} was the room's last client; the room's round, clock and tickets "
+                + "start over for the next player to join",
                 LogPrefix,
                 session.RemoteAddress);
         }

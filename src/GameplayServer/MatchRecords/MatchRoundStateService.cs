@@ -307,26 +307,6 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
     }
 
     /// <summary>
-    /// The result the round that just ended was closed with, or <c>null</c> when
-    /// this host had none for it.
-    /// </summary>
-    /// <remarks>
-    /// It is kept past the round's close because the result is written behind it:
-    /// a peer's round watcher sees the round close and writes the write it never
-    /// had while the round was playing.
-    /// </remarks>
-    public byte? LastRoundResult
-    {
-        get
-        {
-            lock (gate)
-            {
-                return lastRoundResult;
-            }
-        }
-    }
-
-    /// <summary>
     /// Notes that a player has reported vitals in the round now playing, which
     /// reaches the beat's vitals onset.
     /// </summary>

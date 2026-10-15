@@ -3,6 +3,7 @@ using Mgo2Server.Shared.Udp;
 using Mgo2Server.GameplayServer.Commands.Peer.Connection;
 using Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 using Mgo2Server.GameplayServer.Commands.Peer.Room;
+using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.Shared.Utils;
@@ -85,6 +86,7 @@ public static class PeerCommandHandlerRegistration
     {
         services.AddSingleton<AcceptHandshakeHandler>();
         services.AddSingleton<PeerKeepAliveHandler>();
+        services.AddSingleton<RosterAnswerService>();
         services.AddSingleton<PlayerProfileHandler>();
         services.AddSingleton<JoinProbeHandler>();
         services.AddSingleton<PlayerReadyHandler>();

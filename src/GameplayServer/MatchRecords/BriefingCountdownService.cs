@@ -1,3 +1,4 @@
+using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
 
@@ -39,8 +40,41 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed class BriefingCountdownService(
     MatchRoundStateService roundState,
     MatchRecordSequenceService sequences,
+    Rooms.RoomRosterService roster,
     ILogger<BriefingCountdownService> logger)
 {
+    /// <summary>
+    /// The room's own state, written beside the countdown on every tick: the
+    /// stage records the reference host writes through a briefing.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured, and carried by this tick because this is what a briefing
+    /// sends.</b> The reference hosts write the 22-byte room-state record and the
+    /// two 54-byte entries through a briefing in groups 2.2 to 2.6 s apart —
+    /// `mgo2-game1` t+466.0, 470.5, 472.6, `mgo2-game2` t+62.2, 64.4, 224.6 and
+    /// `mgo2-started-briefing-then-solo-game` t+57.6, 60.0 — which is the cadence
+    /// of this tick (<see cref="BriefingCountdownBodiesUtils.PublishPeriodMilliseconds"/>).
+    /// The records themselves are the ones the run writes
+    /// (<see cref="MatchRecordBodiesUtils.RoomStateRecord"/> and the two entries
+    /// behind it), so a peer is told the room's stage both when a round opens and
+    /// for as long as a briefing runs. Whether the whole group belongs to the tick
+    /// or to an event this reader has not identified is **[U]**; what is measured
+    /// is the records and the cadence, and this host writes them where it already
+    /// writes.
+    /// </remarks>
+    private async Task PublishRoomStateAsync(PeerContext context)
+    {
+        var ordinals = roster.TakeRunOrdinals(3);
+        var state = new List<Rooms.RosterRecord>
+        {
+            new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.RoomStateRecord(), ordinals[0]),
+            new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.RoomStateEntryFirst(), ordinals[1]),
+            new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.RoomStateEntrySecond(), ordinals[2]),
+        };
+
+        await Rooms.RosterRunSendUtils.SendAsync(context, state, compressed: true);
+    }
+
     /// <summary>
     /// Spacing between countdown records, measured on the same cadence as the
     /// round's own operations insertion.
@@ -145,6 +179,10 @@ public sealed class BriefingCountdownService(
                     CountdownIdentifier,
                     BriefingCountdownBodiesUtils.CountdownBody(units),
                     sequences.Take(CountdownIdentifier));
+
+                // The room's own stage rides with the countdown, which is the one
+                // thing this host writes through a briefing.
+                await PublishRoomStateAsync(context);
             }
             catch (Exception exception)
             {

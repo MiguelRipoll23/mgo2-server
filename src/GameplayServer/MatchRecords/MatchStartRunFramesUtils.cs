@@ -84,6 +84,23 @@ public static class MatchStartRunFramesUtils
     public const int OperationsRecordCount = 3;
 
     /// <summary>
+    /// Values the run's own <c>0x1001</c>-family records take from the roster
+    /// exchange's counter, in send order: the two lobby-slot arrays, the room's
+    /// own stage (the record and its two entries) and the close triple behind
+    /// them.
+    /// </summary>
+    /// <remarks>
+    /// Eight and not five, because the room's stage rides between the arrays and
+    /// the closes: `mgo2-started-briefing-then-solo-game`'s run numbers its family
+    /// <c>0x16</c>…<c>0x1d</c> — the arrays at <c>0x16</c> and <c>0x17</c>, the
+    /// twenty-two-byte record at <c>0x18</c>, the two fifty-four-byte ones at
+    /// <c>0x19</c> and <c>0x1a</c>, the close pair at <c>0x1b</c> and <c>0x1c</c>
+    /// and the roster close at <c>0x1d</c> — and the ordinal bytes are what put
+    /// the records in that order, not the order this file happens to send them in.
+    /// </remarks>
+    public const int RosterOrdinalCount = 8;
+
+    /// <summary>
     /// The run's records, in send order, built for the identifier set the round
     /// plays under.
     /// </summary>
@@ -94,15 +111,16 @@ public static class MatchStartRunFramesUtils
     /// <see cref="Rooms.TeamArrayService"/> confirms it and moves the pair on.
     /// </param>
     /// <param name="runOrdinals">
-    /// The five values the run's own <c>0x1001</c> identifiers take, from the
-    /// roster exchange's counter (<see cref="Rooms.RoomRosterService.TakeRunOrdinals"/>)
-    /// rather than pinned: the two lobby-slot arrays, the close pair's two
-    /// records and the roster close. The replay parser tells a pair by its two
-    /// records being consecutive, and they are consecutive because they are the
-    /// values one counter handed out — the recorded run carries 7 and 8 for the
-    /// arrays and 9, 10 and 11 for the closes, which is where a join's own
-    /// records leave the counter. Five values and not two, because the closes are
-    /// under the same identifiers and take the values behind the pair.
+    /// The values the run's own <c>0x1001</c> identifiers take, in send order and
+    /// <see cref="RosterOrdinalCount"/> of them, from the roster exchange's counter
+    /// (<see cref="Rooms.RoomRosterService.TakeRunOrdinals"/>) rather than pinned:
+    /// the two lobby-slot arrays, the room's own stage and the close triple. The
+    /// replay parser tells a pair by its two records being consecutive, and they
+    /// are consecutive because they are the values one counter handed out — the
+    /// recorded run carries 7 and 8 for the arrays and 9, 10 and 11 for the
+    /// closes, which is where a join's own records leave the counter. Eight values
+    /// and not two, because the closes and the room's stage are under the same
+    /// identifiers and take the values behind the pair.
     /// </param>
     /// <param name="operationsOrdinals">
     /// The three values the run's operations records take, in send order
@@ -184,12 +202,20 @@ public static class MatchStartRunFramesUtils
             MatchStartBodiesUtils.PlayerPresenceAnswer(reportingSet),
             MatchStartBodiesUtils.PlayerPresenceAnswerClass),
 
+        // The room's own stage, between the arrays and the closes: the 22-byte
+        // record and the two 54-byte entries every capture writes there. Their
+        // ordinal bytes are the run's own counter, which is what puts them
+        // between the arrays and the close pair on the wire.
+        new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.RoomStateRecord(), runOrdinals[2]),
+        new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.RoomStateEntryFirst(), runOrdinals[3]),
+        new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.RoomStateEntrySecond(), runOrdinals[4]),
+
         // The close triple: two twenty-byte records whose remaining bytes are the
         // recorded ones, because nothing names them, and the seven-byte roster
         // close that ends a 0x1001 tail.
-        new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.MatchStartCloseFirst(), runOrdinals[2]),
-        new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.MatchStartCloseSecond(), runOrdinals[3]),
-        new(UdpCommandConstants.PlayerProfile, PlayerProfileRecordUtility.BuildRosterClose(), runOrdinals[4]),
+        new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.MatchStartCloseFirst(), runOrdinals[5]),
+        new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.MatchStartCloseSecond(), runOrdinals[6]),
+        new(UdpCommandConstants.PlayerProfile, PlayerProfileRecordUtility.BuildRosterClose(), runOrdinals[7]),
 
         // The round's clock, behind the closes rather than in front of them. Both
         // records that carry a round's length carry this round's own.

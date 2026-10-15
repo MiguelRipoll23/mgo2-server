@@ -1369,6 +1369,24 @@ above and still unrun: **a client that resolves to a guest for this host.** Unti
 one does, no server-side change is indicated, because the bytes this server writes
 are not distinguishable from the recorded host's.
 
+**The test has since been run, and it refutes the conclusion.** The capture of
+2026-10-15 (`myserver2.pcapng`) holds a client whose handshake mode is **`2`** —
+the guest role, the reference's own — and the join still does not finish: the
+client never sends its entity records and never spawns. Two things the
+reference captures do that this host did not are measured there and in the six
+reference captures, and both are now written: the **four-byte `83 …` request**
+the client sends to be placed in the room, which every reference host answers
+with its room's state and which this host dropped as a nameless profile, and
+the **readiness report a round answers promptly**, which this host left open
+until the briefing's deadline. Both are measured in `docs/analysis/join-stall-after-mode2.md`, and both are also
+now written: the request is answered with the room's state, the round opens on
+the room's own reports, and §7.1e's own measurement — that the reference host
+answers the *re-sent* copy of the join request — is implemented, the first copy
+being held until the client's own retry interval passes (`RosterAnswerService`).
+The reference host's room-state records are written too, in the run and on the
+briefing tick (`docs/analysis/briefing-room-state.md`). §7.1e's live test is
+still the measurement that closes the join.
+
 ---
 
 ### 7.2 Where the gating id comes from — traced, and consistent

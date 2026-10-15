@@ -152,12 +152,13 @@ public sealed partial class MatchStartRunService
         var remainingUnits = roundState.RemainingUnits;
 
         // The run's own 0x1001 identifiers take the roster exchange's counter's
-        // next five values: the join's records and the burst took the ones before
-        // them, and every record written under those identifiers behind this one
-        // takes the next, which is what the captured stream does — its run
-        // carries 7 and 8 for the two arrays and 9, 10 and 11 for the close
-        // triple behind them (docs/protocol/GAMEPLAY_SERVER.md §7).
-        var runOrdinals = roster.TakeRunOrdinals(5);
+        // next values — the arrays, the room's own stage and the close triple:
+        // the join's records and the burst took the ones before them, and every
+        // record written under those identifiers behind this one takes the next,
+        // which is what the captured stream does — its run carries 7 and 8 for the
+        // two arrays and 9, 10 and 11 for the close triple behind them
+        // (docs/protocol/GAMEPLAY_SERVER.md §7).
+        var runOrdinals = roster.TakeRunOrdinals(MatchStartRunFramesUtils.RosterOrdinalCount);
 
         // The run's operations records take the round's own stream's first values.
         // The stream was restarted where the round opened (OpenRound), so the block

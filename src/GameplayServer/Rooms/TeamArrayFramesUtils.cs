@@ -221,6 +221,56 @@ public static class TeamArrayFramesUtils
     /// <summary>Length of either answer and of the confirmation.</summary>
     public const int AnswerLength = 2;
 
+    /// <summary>
+    /// Type byte a client's request to be placed in the room opens with.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is measured, and it is the one request of the exchange this host
+    /// used to drop.</b> Every capture holds it — `83 NN e0 7f` while the client
+    /// waits for a room, then `83 NN 00 07`/`83 NN 01 07` once it is in one —
+    /// and every host answers it within 0.3 to 2.9 s, which is what makes it a
+    /// request rather than a report: a copy that draws no answer is re-sent, and
+    /// the second byte climbs by one with every re-send (`mgo2-game1`
+    /// <c>f3</c>, <c>f4</c>, <c>f5</c>; `mgo2-game2` <c>00</c>, <c>01</c>, <c>02</c>).
+    /// The two live captures this host serves hold exactly one copy each and no
+    /// answer, because this host wrote none.
+    /// </remarks>
+    public const byte RoomEntryRequestIdentifier = 0x83;
+
+    /// <summary>
+    /// Length of a client's request to be placed in the room: its type byte, the
+    /// sequence it names, its own state and its flags. The state and the flags
+    /// are not read here — the captures move both without the answer's shape
+    /// moving — so the body's first two bytes are the whole of what is answered.
+    /// </summary>
+    public const int RoomEntryRequestLength = 4;
+
+    /// <summary>
+    /// Offset, in a request, of the sequence byte the answer names.
+    /// </summary>
+    public const int RequestSequenceIndex = 1;
+
+    /// <summary>
+    /// Whether a body is a client's request to be placed in the room rather than
+    /// something else on the same identifier.
+    /// </summary>
+    /// <remarks>
+    /// It is read beside <see cref="IsArrayEcho"/> because the two are the same
+    /// exchange: the arrays are <c>85</c>/<c>86</c>, the client answers them
+    /// under <c>82</c>/<c>84</c>, and this, the client's own request for them,
+    /// opens <c>83</c>. A body that is neither is a profile or a settings
+    /// payload, which is what the handler behind this falls through to.
+    /// </remarks>
+    /// <param name="body">Body of an inbound record.</param>
+    /// <returns><c>true</c> when the body asks for the room.</returns>
+    public static bool IsRoomEntryRequest(ReadOnlySpan<byte> body) =>
+        body.Length == RoomEntryRequestLength && body[0] == RoomEntryRequestIdentifier;
+
+    /// <summary>The sequence byte a client's request names.</summary>
+    /// <param name="body">Body of an inbound request.</param>
+    /// <returns>The sequence the client is asking under.</returns>
+    public static byte RequestSequenceOf(ReadOnlySpan<byte> body) => body[RequestSequenceIndex];
+
     /// <summary>Offset of the sequence byte in an answer or the confirmation.</summary>
     public const int SequenceIndex = 1;
 
