@@ -39,7 +39,7 @@ Every record on the operations identifiers (`0x1254`, `0x1a54`, `0x9254`,
 | `0x04` | 5–6 bytes | objective feed; **[U]** |
 | `0x05` | `[slot]` | names one player; **[U]** |
 | `0x09` | killer, victim | the kill feed |
-| `0x0b` | 6 bytes | a recurring per-entity countdown — **not** the briefing countdown (§4) |
+| `0x0b` | 7 bytes | the briefing countdown: seconds left and the room's reporting set (§4) |
 | `0x0e` | `[reason]` | **round over**, with the reason that ended it |
 | `0x0f` | 2 bytes | the short record the run carries |
 | `0x13` | array | per-player rating |
@@ -115,52 +115,39 @@ already known. What the corpus adds:
 **`state[0..1]` and `state[4..6]` are `[U]`.** One capture decides a match. That
 is the whole of the evidence and it is not enough to name them.
 
-## 4. The briefing countdown is the clock at 128 — and `0x0b` is not it
+## 4. The briefing countdown is the `0x0b` count — and the 128-unit clock is not it
 
 `docs/GAMEPLAY_SERVER.md` §5 item 3 listed the briefing countdown as unread and
 offered two candidates: a six-byte `0x0b` record, and the operations clock's
-128-unit countdown before a round. **The second is right, and the first is
-cleared.**
+128-unit countdown before a round. **The first is right; this file had it
+backwards, and the 128-unit clock is a separate, much shorter timer.**
 
-**The countdown: the operations clock at 128 units, in four-second steps.** In
-`mgo2-game-joined-when-red-team-then-briefing` the clock reads `0x0080` — 128
-units, sixteen seconds of the stream's own tick — at the start of the briefing
-and counts `128 → 96 → 64 → 32 → 0` over **16.2 s**, holding at zero afterwards
-while the client sits in the briefing. That room's round opens at t+72.560 —
-**~45 s after the clock reached zero** — and no round-length value appears
-anywhere in it, so the countdown is a fixed sixteen seconds and **not** the
-briefing's length. An earlier reading here had it counting to zero over 58.5 s, so
-that the round followed 14 s later; the capture's own readings are 32 units and
-four seconds apart, and no reading of it supports that span. It is the same opcode, the same little-endian 125 ms unit
-and the same stream as the round clock that follows: a briefing is a round's clock
-opened on 128 units rather than on the round's own length.
-`BRIEFING_FLOW.md` §3 had already measured the span; this host now writes it
-(`BriefingCountdownService`, `BriefingCountdownBodiesUtils.CountdownUnits`).
+**The countdown: the `0x0b` record, the briefing's own seconds.** It opens on
+`0x3c` (60) — `0x37` (55) in `mgo2-started-briefing-then-solo-game` — and falls
+by about one a second, so it is the room's briefing time and not a fixed sixteen
+seconds. Its zero is not what usually ends a briefing: when the room fills, the
+host writes `0b 00 00 <full set> …` the instant every player is ready, with the
+count still in the twenties, and the round opens on that
+(`joined-when-red-team` t+113.758). The record and its bytes are read in full in
+[`BRIEFING_FLOW.md`](BRIEFING_FLOW.md) §1; this host writes it
+(`BriefingCountdownService`, `BriefingCountdownBodiesUtils`).
 
-**`0x0b` is not the briefing countdown — it is a recurring per-entity timer.**
-This corrects an earlier reading of this file. `0x0b` does count down from
-`0x3c` (60), and it does so at roughly two-second spacing on the operations
-stream, which is what first made it look like a briefing timer. But:
+**The 128-unit clock is a separate short timer.** In
+`mgo2-game-joined-when-red-team-then-briefing` an operations clock reads `0x0080`
+— 128 units, sixteen seconds of the stream's own 125 ms tick — and counts
+`128 → 96 → 64 → 32 → 0` over **16.2 s**, holding at zero afterwards while the
+client sits in the briefing. Sixteen seconds is not the briefing's length, so it
+is not the briefing countdown; the record is the same opcode, unit and stream as
+the round clock that follows, and it falls in the gap between the round that had
+just ended and the briefing after it, which is why `BRIEFING_FLOW.md` §3 still
+leaves open whether it is the result screen's. Either way it is not the `0x0b`
+count and not the briefing's length.
 
-* it **continues past a round's opening run** — in
-  `joined-when-red-team` the round opens at t+799.165 and `0x0b` records run to
-  t+836.375;
-* a **fresh countdown starts after the round opens** (0x39 at t+799.369, four
-  tenths of a second after the open, counting down to 0x0b by t+836.374);
-* **several distinct values arrive in one tick** — eight at once at t+78.261 in
-  `started-on-briefing`, stepping 59, 57, 56, 54 — which one countdown would not;
-* its rate is **not one per second**: 60 → 0 takes 98.2 s in
-  `started-on-briefing` and 41.2 s in `joined-when-red-team`, so 1.64 and 0.69
-  s per count.
-
-A recurring, per-entity timer that a round does not stop is what it is. Its
-purpose is **[U]** and this host writes none of it.
-
-**Its other three bytes are `[U]` too**, and were read as a growing mask of the
-room's own objectives: the fourth byte differs per room and fills in during a
-briefing — `0x40`, `0xc0`, `0xc2`, `0xca`, `0xea` in one, and in a second
-briefing `0x08`, `0x18`, `0x38`, `0x78`, `0x7c`, `0x7e` — while the fifth is an
-index that is `0` or `1`.
+**The set behind the `0x0b` count is the room's reporting players.** It grows as
+each player reports — `40 00`, `c0 00`, `c2 00`, `ca 00`, `ea 01` in one briefing,
+`00 08`, `00 18`, `00 38` in the next — read little-endian, so it is wider than a
+byte. Which bit is which player is **[U]**; the earlier reading as a set of the
+room's own objectives is cleared.
 
 ## 5. The offsets that are the room's own
 
@@ -182,7 +169,7 @@ open carries.
 
 * **`state[0..1]` and `state[4..6]`** — one decided match. §3.
 * **`0x0e`'s reason byte** — two samples, `0x00` and `0x07`. §1.
-* **`0x0b`'s unit, flag word and index** — §4.
+* **Which player is which bit in `0x0b`'s reporting set** — §1.
 * **The length of the `state[57..84]` seed run, and what its length tracks.** It
   is 4 in five captures and 28 in the only 30-minute room, and it is not the
   player count: the five captures hold 2 to 12 players and the 28-byte one holds
@@ -191,8 +178,8 @@ open carries.
   as a constant.
 * **What `0x18` and `0x3c` mean.** Seven bytes of twenty-four and a seed of
   sixty, in every room, of every rule. §2.
-* **What `0x0b` is.** A recurring per-entity timer that opens on sixty, is not
-  one count per second, and survives a round's opening. §4.
+* **Whether the 128-unit clock is the result screen's or a briefing's.** §3,
+  §4.
 * **`0x04`, `0x1d`, `0x1f`, `0x22`, `0x26`** — present in the captures, not read.
 
 ## 7. Reproducing this

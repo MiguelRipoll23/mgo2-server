@@ -81,39 +81,46 @@ writes `00 05` into a room of five joiners. Written as
 `BriefingRoomPublishService`, which also writes the pair.
 
 **The countdown that precedes a round.** A seven-byte operations record counts
-down while the room is briefed, with a per-side flag byte:
+the briefing down, and its two halves move apart:
 
 ```
-t+72.560  OUT 0x1254  0b 3c 00 40 00 00 00   count 0x3c = 60, flag 0x40
-t+72.560  OUT 0x1254  0b 3c 00 c0 00 00 00   count 0x3c = 60, flag 0xc0
-t+76.665  OUT 0x1254  0b 3b 00 c0 00 00 00
+t+72.560  OUT 0x1a54  0b 3c 00 40 00 00 00   60 s, set 0x0040
+t+72.560  OUT 0x1a54  0b 3c 00 c0 00 00 00   60 s, set 0x00c0
+t+76.665  OUT 0x1a54  0b 3b 00 c0 00 00 00   59 s, set unchanged
+t+76.666  OUT 0x1a54  0b 3a 00 c2 00 00 00   58 s, a report moved the set
 ```
 
-It runs in every briefing of the capture (`joined-when-red-team`, t+72.5 to
-t+191.4 and again t+754 to t+848) and never during a round.
+(measured on the first briefing of `joined-when-red-team`, under `0x1a54`; the
+second runs under `0x1254`. It runs in every briefing of the capture and never
+during a round.)
 
-**The unit is one second, and the count ends on a zero.** Read per distinct
-record — the same bytes are resent until the client answers, which is why the
-capture holds 267 of them for two briefings — the count falls one per second: 60
-at 211.533, 29 at 250.139, 15 at 982.610, and into every briefing's close a `0`
-(`0b 00 00 ea 01 00 00` at 252.731, `0b 00 00 22 7e 00 00` at 987.019). The span
-is the briefing's own: 60 → 20 over the 41.2 s of the first one and 60 → 15 over
-the 44.5 s of the second, so the count is what is *left* of the room's briefing
-time and not a fixed 60-second wait. Its zero is the briefing's end and not
-necessarily the round's: the first briefing writes it at 252.731 and the round's
-own clock appears at 262.748, ten seconds later, because the round stays gated on
-the reports (§2).
+**The seconds are what is left of the room's briefing time.** It opens at `0x3c`
+(60) — `0x37` (55) in `started-briefing-then-solo` — and falls by about one a
+second. It is **held at the whole time until the room has a second player**: a
+room of one stays frozen for the whole briefing, which is `started-on-briefing`
+holding `0b 3c` from t+93.1 to t+132.2 with a single player in it and counting
+only after that; and it is why 60 → 0 spans 98 s there and 41 s in
+`joined-when-red-team` — the same 60 counts, a hold before them. Two records at
+one instant carry the same count under different sets (`3c … 40` and `3c … c0` at
+211.533), the set before a report and the set after it.
 
-**The tail is a bit set that grows as the reports arrive.** Behind the count sit
-four bytes, and the bits in them are *added*, never cleared, as the room fills:
-the first briefing runs `40`, `c0`, `c2`, `ca`, `ea` over its records and the
-second `08`, `18`, `38`, `78`, `7e` — a bit per player, in the order they
-reported. Two records written at one instant carry the same count under
-different sets (`3c … 40` and `3c … c0` at 211.533), which is the same reading:
-the set before a report and the set after it. Which bit is which player — the
-lobby slot, or the order the host learned them — is **[U]**; that the set is the
-room's reporting players is measured, and it is why the record is a briefing's
-whole state rather than a countdown alone.
+**The set behind the count grows as the players report, and it is wider than a
+byte.** The bits are *added*, never cleared: the first briefing runs `40 00`,
+`c0 00`, `c2 00`, `ca 00`, `ea 01` and the second `00 08`, `00 18`, `00 38`.
+Read little-endian the tail is one bit set (`0x01ea` has bits past its first
+byte), which is why a room of up to twenty-four slots fits it. Which bit is which
+player is **[U]**; that the set is the room's reporting players is measured, and
+that a report moves the set while the seconds keep ticking is what makes the
+record the briefing's whole state and not a count alone.
+
+**Its last word is a zero carrying the whole set, and that is the round
+opening.** The instant the room is fully ready the host writes
+`0b 00 00 ea 01 00 00` (t+113.758), and the ticking records at that same moment
+still carry the count they were on (`0b 17 00 ca 00 00 00`) beside the round's
+run, with twenty-odd seconds left. So a briefing that fills does not wait its
+count out; its zero is the ending written out, and the count is left unfinished.
+A briefing whose count *does* reach zero first — `started-on-briefing`, 60 at
+t+132.2 down to 0 at t+191.4 — is one the room never filled in time.
 
 ## 2. The round opens on the reports, not on a clock
 
@@ -198,9 +205,10 @@ round that had just ended and the briefing after it, and it could be the **resul
 screen's** countdown rather than the briefing's: nothing in the capture separates
 the two, because both would be this one record on this one stream and the host
 writes no other clock between them. Either way the measurement holds — the values,
-and the 45 s of zeros before the round — and the countdown this server writes is
-that record (`BriefingCountdownService`). **[U]** which of the two it is, and
-whether the client's own timer is the briefing time at all.
+and the 45 s of zeros before the round — and it is not the briefing countdown this
+server writes, which is the `0x0b` count of §1 and opens on the briefing's own
+sixty. **[U]** which of the two it is, and whether the client's own timer is the
+briefing time at all.
 
 ## 4. The round ends, and the host writes the result
 
@@ -277,16 +285,19 @@ sends today.
 
 ## 7. Open
 
-* **Answered: the `0x0b` countdown is not the briefing's.** It was read here as
-one — a six/seven-byte record counting down from sixty, which is a briefing
-timer's shape — and it is not. It continues past a round's opening run
-(`joined-when-red-team`: the round opens at t+799.165, `0b` records run to
-t+836.375) and a fresh countdown starts four tenths of a second *after* the open;
-eight distinct values arrive in one tick at t+78.261 in `started-on-briefing`,
-which one countdown would not; and 60 → 0 takes 98.2 s there and 41.2 s in
-`joined-when-red-team`, so 1.64 and 0.69 s per count — **not the one-per-second
-this entry used to claim.** It is a recurring per-entity timer and what it is
-for is **[U]**. `STATE_VECTOR.md` §4 has the measurement.
+* **Corrected: the `0x0b` countdown *is* the briefing's, and the reasons it was
+  thought not to be are three misreadings of one per-peer record.** It was called
+  a recurring per-entity timer because it "continues past a round's opening run",
+  "eight distinct values arrive in one tick", and "60 → 0 takes 98.2 s and 41.2 s,
+  so not one per second". Each is the record written per peer: the eight values are
+  one tick's write to each peer *plus* the closing `0b 00`; the count that runs
+  after a round opened is the *next* briefing's, because the captures hold two; and
+  the uneven 1.64/0.69 s per count is the frozen hold at the start plus the early
+  zero when the room fills. Read per peer the record is the briefing's own —
+  seconds down from the room's briefing time, set grown by each report, zero with
+  the full set at the round's open, and nothing during a round (§1).
+  `STATE_VECTOR.md` §4 still carries the old reading and should be corrected with
+  it.
 
 * **[U]** the trailing bytes of the `e0` publication: 5, 6, 7 and 8 all appear.
 * **[I]** the report's byte as the lobby slot; measured is only that one byte

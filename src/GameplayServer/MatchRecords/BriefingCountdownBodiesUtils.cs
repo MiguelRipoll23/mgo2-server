@@ -8,22 +8,35 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <remarks>
 /// <para>
 /// <b>It is the seven-byte <c>0x0b</c> record, not the operations clock.</b> A
-/// briefing in <c>mgo2-game-started-on-briefing</c> is written as
-/// <c>0b 3c 00 00 00 00 00</c> and counted down — <c>0b 3b 00 02 …</c>,
-/// <c>0b 3a …</c> — the opening <c>0x3c</c> being the room's briefing time of
-/// sixty seconds. It is the record <c>docs/protocol/STATE_VECTOR.md</c> §4 read
-/// as a recurring per-entity timer; the operations clock (<c>01</c>, 128 units)
-/// this host wrote instead is a round clock near its end and not a briefing
-/// countdown.
+/// briefing writes <c>0b 3c 00 …</c> — the opening <c>0x3c</c> being the room's
+/// briefing time in seconds, sixty, and fifty-five (<c>0b 37</c>) in
+/// <c>mgo2-started-briefing-then-solo-game</c>. The operations clock
+/// (<c>0x01</c>, 125 ms units) is the round's own and not a briefing countdown
+/// (<see cref="MatchRecordBodiesUtils"/>), which is where an earlier reading of
+/// this stream went wrong.
 /// </para>
 /// <para>
-/// <b>The bytes.</b> The opcode is followed by the remaining seconds, a zero,
-/// the room's reporting players as the same bit set the presence answer carries
-/// (<see cref="Rooms.PlayerReadyService.PresenceMask"/>), and three recorded
-/// zeros. The set grows as the room reports — <c>00</c>, then <c>02</c>,
-/// <c>06</c> — so the countdown is rewritten and not a constant.
-/// **[V]** the opcode, the length, the opening sixty and the growth; **[U]** the
-/// zero between the count and the set.
+/// <b>The bytes.</b> The opcode, the remaining seconds, a zero, the room's
+/// reporting players as a little-endian bit set, and two recorded zeros. Seconds
+/// and set move independently: measured over
+/// <c>mgo2-game-joined-when-red-team-then-briefing</c>, the seconds tick while the
+/// set grows as each player reports — <c>40 00</c>, <c>c0 00</c>, <c>c2 00</c>,
+/// <c>ca 00</c>, <c>ea 01</c> — so a report moves the set and not the count. The
+/// set is **at least two bytes** (the <c>ea 01</c> above is <c>0x01ea</c>, bits
+/// past the first byte), which is why a room of up to twenty-four slots fits it.
+/// </para>
+/// <para>
+/// <b>It is held at the whole briefing time until the room has a second player,
+/// and it ends on a zero when the room is ready.</b> A room of one has no briefing
+/// to run out, so the count does not move
+/// (<see cref="BriefingCountdownService.IsCounting"/>); once a second player has
+/// reported it counts, and the instant the room is fully ready the host writes
+/// <c>0b 00 00 &lt;full set&gt; …</c> — the set complete and the count at zero.
+/// That zero is the round's opening and not the count running out:
+/// <c>joined-when-red-team</c> opened with twenty-three still on the ticking
+/// records beside it. **[V]** the opcode, the length, the opening sixty/fifty-five,
+/// the freeze, the growing set and the closing zero; **[U]** the zero between the
+/// count and the set.
 /// </para>
 /// </remarks>
 public static class BriefingCountdownBodiesUtils

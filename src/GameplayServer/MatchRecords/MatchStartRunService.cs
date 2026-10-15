@@ -100,6 +100,12 @@ public sealed partial class MatchStartRunService(
     MatchRecordSequenceService sequences,
     ILogger<MatchStartRunService> logger)
 {
+    /// <summary>
+    /// How many players must have reported before the briefing countdown moves:
+    /// the second player is what ends a room of one's frozen briefing.
+    /// </summary>
+    private const int CountingReportCount = 2;
+
     private readonly Lock gate = new();
 
     private int briefingNumber;
@@ -190,6 +196,16 @@ public sealed partial class MatchStartRunService(
                 // the worker writes for the briefing is written under it.
                 briefingGeneration = generation;
             }
+        }
+
+        // A room with a second reporting player is a room whose briefing counts:
+        // the countdown is held at the room's whole briefing time while one
+        // player is in the room, and starts from the moment the second report
+        // arrives (BriefingCountdownService.StartCounting). The call is
+        // idempotent, so the reports after the second cost nothing.
+        if (ready.ReadyCount >= CountingReportCount)
+        {
+            countdown.StartCounting(DateTimeOffset.UtcNow);
         }
 
         if (briefing is null)

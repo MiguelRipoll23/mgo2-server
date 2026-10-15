@@ -23,6 +23,12 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// A peer that arrives mid-round is served the round, not a briefing, and is sent
 /// no countdown at all.
 /// </para>
+/// <para>
+/// <b>And it is frozen while the room has one player.</b> A room of one has no
+/// briefing to run out — the second player is what the wait is for — so the
+/// count is held at the room's whole briefing time until a second player reports
+/// and only then moves (<see cref="StartCounting"/>, <see cref="IsCounting"/>).
+/// </para>
 /// </remarks>
 /// <param name="roundState">The room's round, whose opening is the countdown's end.</param>
 /// <param name="sequences">
@@ -105,6 +111,7 @@ public sealed class BriefingCountdownService(
 
     private readonly Lock gate = new();
     private DateTimeOffset? startedAt;
+    private DateTimeOffset? countingFrom;
     private TimeSpan length;
 
     /// <summary>
@@ -128,12 +135,61 @@ public sealed class BriefingCountdownService(
         lock (gate)
         {
             startedAt = begun;
+            countingFrom = null;
             length = TimeSpan.FromMinutes(minutes);
         }
 
         logger.LogDebug(
-            "A briefing runs for {BriefingTime} minute(s) from now; its peers are sent the countdown",
+            "A briefing runs for {BriefingTime} minute(s) from now; its peers are sent the countdown, "
+            + "held at the whole briefing time until a second player reports",
             minutes);
+    }
+
+    /// <summary>
+    /// Starts the countdown moving, because the room now has a second player.
+    /// </summary>
+    /// <remarks>
+    /// <b>A room of one has no briefing to count down.</b> The reference holds
+    /// the count at the room's whole briefing time for as long as a single player
+    /// is in the room — <c>mgo2-game-started-on-briefing</c> writes
+    /// <c>0b 3c …</c> unchanged for tens of seconds — and moves it only once a
+    /// second player has reported
+    /// (<c>mgo2-game-joined-when-red-team-then-briefing</c> holds <c>0b 3c</c> at
+    /// the briefing's start and then counts it down). The count is the briefing's
+    /// own time and not the room's age, so it runs from the moment the second
+    /// report arrives and not from the briefing's start
+    /// (<see cref="BriefingCountdownBodiesUtils"/>).
+    /// </remarks>
+    /// <param name="now">The moment the second player reported.</param>
+    public void StartCounting(DateTimeOffset now)
+    {
+        lock (gate)
+        {
+            if (startedAt is null || length <= TimeSpan.Zero || countingFrom is not null)
+            {
+                return;
+            }
+
+            countingFrom = now;
+        }
+
+        logger.LogDebug(
+            "A second player has reported, so the room's briefing countdown starts moving from now");
+    }
+
+    /// <summary>
+    /// Whether the countdown is moving at all, or is still held at the whole
+    /// briefing time for a room of one.
+    /// </summary>
+    public bool IsCounting
+    {
+        get
+        {
+            lock (gate)
+            {
+                return countingFrom is not null;
+            }
+        }
     }
 
     /// <summary>
@@ -147,13 +203,23 @@ public sealed class BriefingCountdownService(
     {
         lock (gate)
         {
-            if (startedAt is not { } began || length <= TimeSpan.Zero)
+            if (startedAt is null || length <= TimeSpan.Zero)
             {
                 remaining = TimeSpan.Zero;
                 return false;
             }
 
-            remaining = (began + length) - now;
+            // A briefing that has not heard a second player has no end to count
+            // to, so it is held at the room's whole briefing time: the count the
+            // peer is sent does not move until the room has someone to count for
+            // (StartCounting).
+            if (countingFrom is not { } counting)
+            {
+                remaining = length;
+                return true;
+            }
+
+            remaining = (counting + length) - now;
             return remaining > TimeSpan.Zero;
         }
     }
@@ -179,6 +245,7 @@ public sealed class BriefingCountdownService(
     public async Task PublishAsync(PeerContext context)
     {
         var session = context.Session;
+        var ticked = false;
 
         while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
         {
@@ -209,16 +276,59 @@ public sealed class BriefingCountdownService(
                 return;
             }
 
+            ticked = true;
+
             // The tick ends the moment the round opens: this task is awaited
             // before the beat, and a period slept out after the run was written
             // would hold the beat's first frame behind it.
             await roundState.WaitBriefingTickAsync(session, PublishPeriodMilliseconds);
         }
 
+        // A briefing's last word to a peer is a zero, and it carries the room's
+        // whole ready set. The reference writes it at the instant its round opens
+        // — `mgo2-game-joined-when-red-team-then-briefing` t+113.758,
+        // `0b 00 00 ea 01 00 00` — beside the round's own run, and the ticking
+        // record never reaches the zero on its own in a room that fills (it opened
+        // there with twenty seconds still on the count). The zero is therefore the
+        // briefing being over, and it is written for a peer that the briefing ran
+        // for; a peer that arrives into a round already playing is served the round
+        // and no countdown at all, which is what `ticked` keeps true here.
+        if (ticked && MatchRecordPeerUtils.IsAlive(session))
+        {
+            await SendBriefingEndAsync(context, session);
+        }
+
         logger.LogDebug(
             "UDP {LocalPort}: the briefing countdown to {RemoteAddress} ended",
             context.LocalPort,
             session.RemoteAddress);
+    }
+
+    /// <summary>
+    /// Writes a peer the briefing's closing record: the count at zero, carrying
+    /// the room's whole reporting set.
+    /// </summary>
+    /// <param name="context">Context the record is written through.</param>
+    /// <param name="session">Session the record is written to.</param>
+    private async Task SendBriefingEndAsync(PeerContext context, PeerSession session)
+    {
+        try
+        {
+            await context.Send(
+                CountdownIdentifier,
+                BriefingCountdownBodiesUtils.CountdownBody(
+                    seconds: 0,
+                    ready.PresenceMask),
+                sequences.Take(CountdownIdentifier));
+        }
+        catch (Exception exception)
+        {
+            logger.LogDebug(
+                exception,
+                "UDP {LocalPort}: the briefing countdown's closing zero to {RemoteAddress} was not sent",
+                context.LocalPort,
+                session.RemoteAddress);
+        }
     }
 
     /// <summary>The stream this service writes under, named for the log and the docs.</summary>

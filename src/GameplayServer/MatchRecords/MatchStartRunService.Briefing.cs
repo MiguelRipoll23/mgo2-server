@@ -72,7 +72,11 @@ public sealed partial class MatchStartRunService
     /// briefing waits for the host's round and stops waiting when its own briefing
     /// time is up, so a room that waited on a player who never reports leaves the
     /// players it did hear from past the end of their timer with nothing to play
-    /// (<c>docs/GAMEPLAY_SERVER.md</c> §4.2). The round it opens is the round those
+    /// (<c>docs/GAMEPLAY_SERVER.md</c> §4.2). <b>The wait starts where the briefing
+    /// starts counting, and not before.</b> A briefing whose countdown is still
+    /// frozen is a room of one, which has no end to run out; the deadline is armed
+    /// once a second player reports and the countdown moves
+    /// (<see cref="BriefingCountdownService.IsCounting"/>). The round it opens is the round those
     /// reports asked for — same rule, same map, same clock — and the player still to
     /// report is served it as a late joiner is, which is what §4.1 measures a room
     /// doing with a peer that arrives mid-round. A briefing whose reporters have
@@ -85,6 +89,22 @@ public sealed partial class MatchStartRunService
     {
         try
         {
+            // A frozen countdown is a briefing with no end yet: the room has one
+            // player, and the second player is what the wait is for, so no
+            // deadline is served while it is frozen. A room of one therefore
+            // stays in its briefing rather than being opened onto a round by a
+            // timer, and the deadline is armed afresh from the moment the
+            // countdown starts moving.
+            while (!countdown.IsCounting)
+            {
+                if (roundState.IsOpen || !IsCurrentBriefing(briefing))
+                {
+                    return;
+                }
+
+                await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
+            }
+
             await Task.Delay(TimeSpan.FromMinutes(briefingMinutes));
 
             if (roundState.IsOpen)
@@ -139,6 +159,20 @@ public sealed partial class MatchStartRunService
                 exception,
                 "The briefing deadline for briefing {Briefing} ended without opening a round",
                 briefing);
+        }
+    }
+
+    /// <summary>
+    /// Whether a deadline still belongs to the briefing now current, so a wait
+    /// that outlived its own briefing acts on nothing.
+    /// </summary>
+    /// <param name="briefing">Briefing the deadline was armed for.</param>
+    /// <returns><c>true</c> while no later briefing has begun.</returns>
+    private bool IsCurrentBriefing(int briefing)
+    {
+        lock (gate)
+        {
+            return briefingNumber == briefing;
         }
     }
 }
