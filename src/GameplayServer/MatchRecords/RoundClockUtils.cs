@@ -39,17 +39,22 @@ public static class RoundClockUtils
     /// 125 ms units, never below zero.
     /// </summary>
     /// <param name="round">The round the room's rotation names.</param>
-    /// <param name="openedAtMilliseconds">When the round opened, in Unix milliseconds.</param>
+    /// <param name="clockStartsAtMilliseconds">
+    /// When the round's clock started counting, in Unix milliseconds. At a round
+    /// opened after its briefing this is the moment it opened; at one a report
+    /// opened inside a briefing it is that briefing's own end
+    /// (<see cref="MatchRoundStateService.RemainingUnits"/>).
+    /// </param>
     /// <param name="nowMilliseconds">The moment to read it at, in Unix milliseconds.</param>
     /// <returns>Units of the round clock still to run.</returns>
     public static int RemainingUnits(
         MatchRotationEntry round,
-        long openedAtMilliseconds,
+        long clockStartsAtMilliseconds,
         long nowMilliseconds)
     {
         ArgumentNullException.ThrowIfNull(round);
 
-        var spent = (int)((nowMilliseconds - openedAtMilliseconds)
+        var spent = (int)((nowMilliseconds - clockStartsAtMilliseconds)
             / MatchRecordBodiesUtils.ClockUnitMilliseconds);
 
         // A round's end is the opener's to write and not the clock's: a value that

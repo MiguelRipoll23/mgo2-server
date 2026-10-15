@@ -84,6 +84,7 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
     private MatchRotationEntry? roundSettings;
     private byte? lastRoundResult;
     private long? openedAt;
+    private long clockStartsAt;
     private readonly HashSet<PeerSession> writtenRuns = [];
 
     /// <summary>Whether a round is playing, and so whether the beat's records are a round's.</summary>
@@ -193,6 +194,17 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
     /// the life of the round would show its clients a timer that never moves — the
     /// shape of a replayed byte rather than a running round.
     /// <para>
+    /// <b>It is held at its whole length while the round's own briefing runs.</b>
+    /// A round the report opens inside a briefing is a round whose client is still
+    /// in that briefing: the captures write the run while the clock stays whole and
+    /// only move it once the briefing's time is out
+    /// (<c>mgo2-started-briefing-then-solo-game</c> t+57.6 s to the end of its
+    /// capture, <c>mgo2-game-started-on-briefing</c> t+198.4 s), so the clock counts
+    /// from <see cref="clockStartsAt"/> rather than from the open. A clock that
+    /// counted from the open would run the round out while the client was still
+    /// being briefed.
+    /// </para>
+    /// <para>
     /// It is zero while no round plays, because there is no clock to read rather
     /// than because the round has run out.
     /// </para>
@@ -203,12 +215,15 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
         {
             lock (gate)
             {
-                return roundSettings is { } settings && openedAt is { } opened
-                    ? RoundClockUtils.RemainingUnits(
-                        settings,
-                        opened,
-                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
-                    : 0;
+                if (roundSettings is not { } settings || !isOpen)
+                {
+                    return 0;
+                }
+
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                return now >= clockStartsAt
+                    ? RoundClockUtils.RemainingUnits(settings, clockStartsAt, now)
+                    : settings.TimeLimitUnits;
             }
         }
     }
@@ -232,11 +247,19 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
     /// </remarks>
     /// <param name="requested">The set the reporting client is on.</param>
     /// <param name="round">The round the room's rotation names.</param>
+    /// <param name="clockHoldMilliseconds">
+    /// How long the round's clock stays whole after it opens: the briefing time
+    /// still to run when the report opened it, or zero when the briefing had
+    /// already ended (<see cref="RemainingUnits"/>).
+    /// </param>
     /// <returns>
     /// The round that is now playing, or <c>null</c> when one already was and
     /// this call changed nothing.
     /// </returns>
-    public int? Open(MatchRecordGenerationUtils requested, MatchRotationEntry round)
+    public int? Open(
+        MatchRecordGenerationUtils requested,
+        MatchRotationEntry round,
+        int clockHoldMilliseconds = 0)
     {
         ArgumentNullException.ThrowIfNull(round);
 
@@ -255,12 +278,15 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
             roundNumber++;
             isOpen = true;
             vitalsArrived = false;
-            openedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            openedAt = now;
+            clockStartsAt = now + Math.Max(0, clockHoldMilliseconds);
             writtenRuns.Clear();
             logger.LogInformation(
                 "Round {RoundNumber} opened under identifier set 0x{Identifier:x4} "
                 + "(operations 0x{Operations:x4}, payload 0x{Payload:x4}, item boxes 0x{ItemBox:x4}) "
-                + "on rule {Rule}, map {Map}, {TimeLimitMinutes} minutes ({TimeLimitUnits} clock units)",
+                + "on rule {Rule}, map {Map}, {TimeLimitMinutes} minutes ({TimeLimitUnits} clock units), "
+                + "held whole for {HoldMilliseconds} ms of briefing",
                 roundNumber,
                 requested.MatchStartPayload,
                 requested.Operations,
@@ -269,7 +295,8 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
                 round.Rule,
                 round.Map,
                 round.TimeLimitMinutes,
-                round.TimeLimitUnits);
+                round.TimeLimitUnits,
+                clockHoldMilliseconds);
             return roundNumber;
         }
     }
@@ -298,6 +325,7 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
             lastRoundResult = roundResult;
             roundSettings = null;
             openedAt = null;
+            clockStartsAt = 0;
             logger.LogInformation(
                 "Round {RoundNumber} ended{Result}",
                 roundNumber,

@@ -190,7 +190,18 @@ public sealed partial class MatchStartRunService(
         }
 
         var generation = MatchRecordGenerationUtils.OfReadinessReport(reportIdentifier);
-        var round = roundState.Open(generation, nextRound);
+
+        // The clock a round opens on is whole, and it stays whole for as much of
+        // the room's briefing as is still to run. A report opens a round while its
+        // client is still being briefed — that is what the report is — so the
+        // round's clock counts from the briefing's own end and not from the open;
+        // a clock that counted from the open would run the round out under a
+        // client still reading the briefing (MatchRoundStateService.RemainingUnits).
+        var hold = countdown.Remaining(DateTimeOffset.UtcNow, out var remaining)
+            ? (int)remaining.TotalMilliseconds
+            : 0;
+
+        var round = roundState.Open(generation, nextRound, hold);
         if (round is null)
         {
             // A client reports until it is answered, so a second report for a
@@ -217,7 +228,9 @@ public sealed partial class MatchStartRunService(
             round,
             reportIdentifier);
 
-        _ = EndWhenTimeRunsOutAsync(round.Value, RoundClockUtils.TimeLimitMilliseconds(nextRound));
+        _ = EndWhenTimeRunsOutAsync(
+            round.Value,
+            hold + RoundClockUtils.TimeLimitMilliseconds(nextRound));
         return true;
     }
 

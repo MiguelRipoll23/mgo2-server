@@ -41,6 +41,7 @@ public sealed partial class MatchRoundStateService
             lastRoundResult = null;
             roundSettings = null;
             openedAt = null;
+            clockStartsAt = 0;
             roundNumber = 0;
             vitalsArrived = false;
             writtenRuns.Clear();
