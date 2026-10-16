@@ -148,7 +148,7 @@ relays the records cannot know a round's winner, which is the finding
 **What this server does with it.** It keeps its own count and publishes it
 (`MatchScoreService`, `docs/GAMEPLAY_SERVER.md` §3.1): a death when a player's
 own vitals report health `0`, a kill and its death when a kill feed record
-arrives (`KillFeedHandler`), and a side's total from the opposing side's deaths
+arrives (`OperationsStreamHandler`), and a side's total from the opposing side's deaths
 until a feed names one (`MatchScoreService.TeamLimits`). A round ends on a side reaching the kill limit
 this host is configured with, and a room that states none plays its clock out.
 

@@ -17,14 +17,28 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class MatchStartRunService
 {
     /// <summary>
-    /// Begins the room's briefing: the wait for every player to report, under a
-    /// deadline of the room's own briefing time.
+    /// Begins the room's briefing: the wait for every player to report, whose
+    /// deadline the report that reaches it arms.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// A briefing begins where the room's rounds do, which is the first peer's join
     /// and every round's end, and each one gets a number so a deadline that was
     /// armed for it acts on it and not on whatever briefing is current when it
     /// lands.
+    /// </para>
+    /// <para>
+    /// <b>Its time is armed by its first report and not here.</b> The two are far
+    /// apart on a live join: the join is answered when the client reaches the
+    /// room, and the client reports when it has loaded the map and is reading its
+    /// briefing, fifty seconds later in the capture this was measured on
+    /// (<c>myserver12.pcapng</c>). A briefing armed at the join is therefore spent
+    /// before the player it was armed for has arrived — that client's report at
+    /// t+54.050 was followed by its round 8 s later, where both reference
+    /// briefings give the reporting client 28 s and 118 s — and a briefing that no
+    /// player answers arms nothing at all, which is the contract
+    /// <see cref="OpenWhenBriefingEndsAsync"/> already owes it.
+    /// </para>
     /// </remarks>
     private void BeginBriefing()
     {
@@ -34,31 +48,22 @@ public sealed partial class MatchStartRunService
             // No published room is no round to open and no briefing time to time
             // it against; the reports that arrive will open nothing until it exists.
             logger.LogDebug(
-                "A briefing began before this host's room was published; no deadline is armed for it");
+                "A briefing began before this host's room was published; no briefing clock runs for it");
             return;
         }
 
-        int briefing;
         lock (gate)
         {
-            briefing = ++briefingNumber;
+            briefingNumber++;
             lastReportIdentifier = null;
             briefingGeneration = null;
         }
 
-        // The countdown goes to the peers the deadline is armed for, so it is
-        // armed with it: a client waiting out its own briefing timer is told how
-        // much of it is left, and one that never received the deadline is the
-        // client that never received this either. It is the seven-byte 0x0b
-        // operations record, counting this same briefing time down in seconds
-        // (`BriefingCountdownBodiesUtils`).
-        //
-        // The briefing writes it on the operations stream, which it opens: the
+        // The briefing writes on the operations stream, which it opens: the
         // capture's countdown opens the stream and its round's run opens the same
         // stream again, so the stream is restarted here rather than continued from
         // the round before it.
         sequences.Restart(BriefingCountdownService.Identifier);
-        countdown.Begin(DateTimeOffset.UtcNow, settings.BriefingTimeMinutes);
 
         // The clock a briefing is held on is the whole time of the round it
         // precedes, and it is noted where the briefing begins because every writer
@@ -72,7 +77,54 @@ public sealed partial class MatchStartRunService
         // its run, to t+170.366, four seconds before the round opens.
         roundState.NoteBriefingClock(settings.Round(roundState.RoundNumber + 1).TimeLimitUnits);
 
+        logger.LogDebug(
+            "A briefing runs for {BriefingTime} minute(s); its clock is armed by the report that reaches "
+            + "it, not by this join",
+            settings.BriefingTimeMinutes);
+    }
+
+    /// <summary>
+    /// Starts the room's briefing clock, at the report that reached the briefing
+    /// it belongs to: the countdown its peers are sent, the deadline that opens the
+    /// round when no second report does, and — through the countdown — the
+    /// remaining time a round opened inside the briefing holds its clock for.
+    /// </summary>
+    /// <remarks>
+    /// <b>The three are one briefing time, so they are armed at one moment.</b> A
+    /// countdown armed here and a deadline armed elsewhere are two answers to "how
+    /// long is left", and the capture this was measured on is what that looks
+    /// like: the deadline expired eight seconds into the client's own briefing and
+    /// the round it opened held its clock at the room's whole seven minutes for the
+    /// briefing's nominal minute, so the client was shown a frozen 7:00 from
+    /// t+62.371 to t+123.973 while its briefing had lasted eight seconds
+    /// (<see cref="BriefingCountdownService.TimeRemaining"/>).
+    /// </remarks>
+    /// <param name="briefing">The briefing the report reached.</param>
+    private void ArmBriefingClock(int briefing)
+    {
+        var settings = matchSettings.FindPublished();
+        if (settings is null)
+        {
+            logger.LogDebug(
+                "The room's briefing heard its first report but this host's room is not published, so "
+                + "no briefing time is armed for it");
+            return;
+        }
+
+        // The countdown goes to the peers the clock is armed for, so it is armed
+        // with it: a client waiting out its own briefing timer is told how much of
+        // it is left, and one that never received the deadline is the client that
+        // never received this either. It is the seven-byte 0x0b operations record,
+        // counting this same briefing time down in seconds
+        // (<see cref="BriefingCountdownBodiesUtils"/>).
+        countdown.Begin(DateTimeOffset.UtcNow, settings.BriefingTimeMinutes);
         _ = OpenWhenBriefingEndsAsync(briefing, settings.BriefingTimeMinutes);
+
+        logger.LogInformation(
+            "The room's briefing heard its first report, so its {BriefingTime}-minute clock runs from "
+            + "now: the countdown goes out from the peer's own run and the round opens when the "
+            + "briefing's time is out",
+            settings.BriefingTimeMinutes);
     }
 
     /// <summary>
@@ -84,8 +136,11 @@ public sealed partial class MatchStartRunService
     /// briefing waits for the host's round and stops waiting when its own briefing
     /// time is up, so a room that waited on a player who never reports leaves the
     /// players it did hear from past the end of their timer with nothing to play
-    /// (<c>docs/GAMEPLAY_SERVER.md</c> §4.2). <b>It is armed for every briefing, a
-    /// room of one included.</b> A frozen countdown is the count byte being held at
+    /// (<c>docs/GAMEPLAY_SERVER.md</c> §4.2). <b>It is armed by the briefing's first
+    /// report and for every such briefing, a room of one included</b>
+    /// (<see cref="ArmBriefingClock"/>), which is the client's own briefing time:
+    /// the join that prepared the briefing can be a minute ahead of the client that
+    /// has to read it. A frozen countdown is the count byte being held at
     /// the room's whole briefing time — that is the client's own frozen timer, which
     /// the reference records — and it is not the briefing having no end: a solo room
     /// is briefed and then started, which is what
@@ -147,13 +202,13 @@ public sealed partial class MatchStartRunService
 
             logger.LogInformation(
                 "The room's {BriefingTime}-minute briefing ran out with {PendingCount} player(s) still to "
-                + "report; the round opens for the players that reported, on 0x{Identifier:x4}",
+                + "ready; the round opens for the players that readied, on 0x{Identifier:x4}",
                 briefingMinutes,
-                ready.PendingCount,
+                ready.PendingBriefingReadyCount,
                 reportIdentifier);
             OpenRound(
                 MatchRecordGenerationUtils.OfReadinessReport(reportIdentifier),
-                reportIdentifier,
+                $"the briefing ran out with its last report on 0x{reportIdentifier:x4}",
                 waitForEveryone: false);
         }
         catch (Exception exception)

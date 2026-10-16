@@ -107,11 +107,14 @@ one instant carry the same count under different sets (`3c … 40` and `3c … c
 **The set behind the count grows as the players report, and it is wider than a
 byte.** The bits are *added*, never cleared: the first briefing runs `40 00`,
 `c0 00`, `c2 00`, `ca 00`, `ea 01` and the second `00 08`, `00 18`, `00 38`.
-Read little-endian the tail is one bit set (`0x01ea` has bits past its first
-byte), which is why a room of up to twenty-four slots fits it. Which bit is which
-player is **[U]**; that the set is the room's reporting players is measured, and
-that a report moves the set while the seconds keep ticking is what makes the
-record the briefing's whole state and not a count alone.
+Read little-endian the set is two bytes (`0x01ea` has bits past its first byte,
+and the room's second briefing carries `0x7c02`), so it names slots up to 15 — the
+reference's rooms hold fourteen. **Which bit is which player is measured, and the
+bit is the slot its own ready record named** (§2): the host sends the roster entry
+for that slot at the very instant the bit appears, and the two agree for every bit
+of both of this capture's briefings. A ready moves the set while the seconds keep
+ticking, which is what makes the record the briefing's whole state and not a count
+alone.
 
 **Its last word is a zero carrying the whole set, and that is the round
 opening.** The instant the room is fully ready the host writes
@@ -122,16 +125,61 @@ count out; its zero is the ending written out, and the count is left unfinished.
 A briefing whose count *does* reach zero first — `started-on-briefing`, 60 at
 t+132.2 down to 0 at t+191.4 — is one the room never filled in time.
 
-## 2. The round opens on the reports, not on a clock
+## 2. The round opens on the ready records, not on a clock
 
 **Measured.** In `started-on-briefing` the last player reports at t+196.828 and
 the round opens 1.543 s later, at t+198.371; the publications before it are four
 records wide and the run itself opens with the fourth. In `joined-when-red-team`
 the client reports at t+95.464 and the round opens at t+123.774, twenty-eight
 seconds later, because the room's other players were still arriving, and its
-third round opens 37.8 s after its report. No round opens without a report, and
-the span between the last report and the round is 1.5 s to 38 s — a gate on the
-reports, never a fixed wait.
+third round opens 37.8 s after its report. No round opens without a client's
+record behind it and no round opens on a fixed wait.
+
+**The record that ends the wait is the ready, and the report is what a run is
+written from.** The two are different bodies on different streams: `e1 <slot>`
+is a client saying it has loaded, and `1f <slot> 01` is the player changing its
+briefing state to ready. `joined-when-red-team` sends the ready at t+112.750 and
+its round is open at t+113.758, one second later; its second briefing sends the
+same record at t+844.858 and opens at t+848.046, 3.2 s later. The reports of those
+same two briefings are minutes away from the opens — t+57.656 and t+870.222, the
+same client reporting its load — so a gate on the reports would open the first of
+them thirty seconds before this client had readied at all.
+
+**The room's ready set, ready by ready.** The capture is one client's flow, so the
+other players' ready records are not in it; what is in it is their effect on the
+countdown's set, and every bit is named by the roster entry the host sends at the
+instant it appears. Read down the two briefings:
+
+| t+ | what moved the set | the room's ready set | the slot's player |
+| --- | --- | --- | --- |
+| 72.560 | `0b 3c 00 40 00 00 00` — the host adds its first bot and has it ready in the same instant | slot 6 | BOT-01 |
+| 72.560 | `0b 3c 00 c0 00 00 00` | slot 7 | BOT-02 |
+| 76.666 | `0b 3a 00 c2 00 00 00` | slot 1 | Aozori |
+| 81.168 | `0b 36 00 ca 00 00 00` | slot 3 | haw9 |
+| 111.166 | `0b 17 00 ca 01 00 00` — the host adds its third bot, already ready | slot 8 | BOT-03 |
+| 112.750 | `1f 05 01` **from this capture's client — the room's last ready** | — | fargraven2, slot 5 |
+| 113.758 | `0b 00 00 ea 01 00 00` — the closing zero, the whole set | slots 1, 3, 5, 6, 7, 8 | the six above |
+
+and then the round, and then the second briefing:
+
+| t+ | what moved the set | the room's ready set | the slot's player |
+| --- | --- | --- | --- |
+| 799.165 | `0b 3c 00 00 08 00 00`, `… 18`, `… 38` — three bots added and ready | slots 11, 12, 13 | BOT-01, BOT-02, BOT-03 |
+| 800.807 | `0b 3a 00 00 78 00 00` | slot 14 | BOT-04 |
+| 805.291 | `0b 39 00 02 78 00 00` | slot 1 | Aozori |
+| 811.040 | `0b 30 00 02 7c 00 00` | slot 10 | Tddan80T |
+| 828.562 | `0b 20 00 02 7e 00 00` | slot 9 | haw9 |
+| 844.858 | `1f 05 01` **from this capture's client — the room's last ready** | — | fargraven2, slot 5 |
+| 848.046 | `0b 00 00 22 7e 00 00` — the closing zero, the whole set | slots 1, 5, 9, 10, 11, 12, 13, 14 | the eight above |
+
+**What the two tables say.** The count is held at the room's whole briefing time
+(`3c 00`) until the room has a second player, and moves only then; the set grows by
+one bit per ready and never by a report; the bots are readied by the host in the
+record that adds them, so a room's *reported* players and its *readied* ones are
+different sets — this room reports as `2a` (slots 1, 3 and 5) and readies as
+`0x01ea` (slots 1, 3, 5, 6, 7 and 8). The client that readied last in both
+briefings is the one whose bit the closing zero adds last, which is the note this
+capture ships with: *every player changed their state to ready, me last*.
 
 **A briefing is answered before its round is.** A client reports twice a round and
 the host answers the two differently. The first report is met by the run under its
@@ -139,13 +187,14 @@ own set while the room is still briefed: `started-on-briefing`'s first report
 arrives at t+55.838 on `0x12de` and the run under `0x1254` goes out at t+58.255,
 two and a half seconds later and 140 s before the round; `started-briefing-then-solo`
 reports at t+54.918 on `0x12de`, its run under `0x1254` follows at t+57.626, and
-the run under `0x1a54` — the round's — only at t+174.371. The round opens on the
-second report, which arrives on the *other* set once the briefing's time is done
-(`started-on-briefing` t+196.828 on `0x1ade`, `started-briefing-then-solo`
-t+173.438), so the set flips between the two reports and the run the round opens
-with answers the second. A client that never sends that second report is opened
-on its briefing's deadline instead, which is the wait the class summary gives
-`MatchStartRunService`.
+the run under `0x1a54` — the round's — only at t+174.371. The round opens on the ready that
+completes the room's readied players, or on the briefing's own deadline when a
+player never readies, and it plays under the *other* set: `joined-when-red-team`'s
+briefing is written under the set its first report named and its round under the
+sibling, which is the set its run and beat are written on. `started-on-briefing`
+reports its second time at t+196.828 on `0x1ade` and `started-briefing-then-solo`
+asks for its round at t+173.438; the set flips between the briefing and the round,
+and the run the round opens with is on the round's own set.
 
 **The opening run.** The round's records arrive in one compressed frame — the
 marker first and **thirteen** behind it — under the identifier set the report

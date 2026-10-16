@@ -30,7 +30,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 /// this channel names a killer, but the victim is measured at both ends — health
 /// <c>0</c> is death and a return to <c>250</c> is the next life — so the host
 /// counts the death here and leaves the kill to the kill feed
-/// (<see cref="KillFeedHandler"/>). The transition and not the value is what is
+/// (<see cref="OperationsStreamHandler"/>). The transition and not the value is what is
 /// counted: a player lies at zero for many records while it is dead, and counting
 /// each one would make a single death read as dozens. The scoreboard the change
 /// queues is published behind it.

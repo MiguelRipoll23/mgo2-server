@@ -62,13 +62,14 @@ public static class PeerCommandHandlerRegistration
         registry.Register<PlayerVitalsHandler>(PlayerVitalsRecordUtility.SecondPlayerType);
 
         // The operations stream, which carries the round's clock and state block
-        // and, under opcode 0x09, the kill feed. Both rounds' sets are registered
-        // and both class-bit forms, because a round plays under the set its own
-        // report arrived on. The handler reads the body: the identifier cannot
-        // tell a kill feed from the clock beside it.
+        // and, under opcode 0x09 the kill feed and under 0x1f a client's briefing
+        // ready state. Both rounds' sets are registered and both class-bit forms,
+        // because a round plays under the set its own report arrived on. The
+        // handler reads the body: the identifier cannot tell a ready from the
+        // clock beside it.
         foreach (var identifier in MatchRecordGenerationUtils.OperationsIdentifiers)
         {
-            registry.Register<KillFeedHandler>(identifier);
+            registry.Register<OperationsStreamHandler>(identifier);
         }
     }
 
@@ -92,7 +93,7 @@ public static class PeerCommandHandlerRegistration
         services.AddSingleton<PlayerReadyHandler>();
         services.AddSingleton<PlayerPresenceHandler>();
         services.AddSingleton<PlayerVitalsHandler>();
-        services.AddSingleton<KillFeedHandler>();
+        services.AddSingleton<OperationsStreamHandler>();
         return services;
     }
 }

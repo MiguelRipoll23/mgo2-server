@@ -191,11 +191,15 @@ just ended and the briefing after it, which is why `BRIEFING_FLOW.md` §3 still
 leaves open whether it is the result screen's. Either way it is not the `0x0b`
 count and not the briefing's length.
 
-**The set behind the `0x0b` count is the room's reporting players.** It grows as
-each player reports — `40 00`, `c0 00`, `c2 00`, `ca 00`, `ea 01` in one briefing,
-`00 08`, `00 18`, `00 38` in the next — read little-endian, so it is wider than a
-byte. Which bit is which player is **[U]**; the earlier reading as a set of the
-room's own objectives is cleared.
+**The set behind the `0x0b` count is the room's readied players.** It grows as each
+player readies — `40 00`, `c0 00`, `c2 00`, `ca 00`, `ea 01` in one briefing,
+`00 08`, `00 18`, `00 38` in the next — read little-endian over two bytes, so it is
+wider than a byte. **The bit is the slot the player's own ready record named**
+(`1f <slot> 01`, `BRIEFING_FLOW.md` §2): the host sends the roster entry for that
+slot at the instant the bit appears, and the two agree for every bit of both
+briefings of `joined-when-red-team`. The reports are a narrower set — `2a` for the
+room whose count carries `01ea` — because a bot the host adds readies without ever
+reporting. The earlier reading as a set of the room's own objectives is cleared.
 
 ## 5. The offsets that are the room's own
 

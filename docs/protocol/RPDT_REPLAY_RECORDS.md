@@ -231,7 +231,7 @@ above — so it stays **[U]** in `MatchRecordBodiesUtils` rather than being gues
 
 The two records above that this server now both reads *and* writes are the
 scoreboard delta and the kill feed: `MatchScoreboardFramesUtils` builds and parses
-`0x0b <slot+1> <21-byte mask> <values>`, `KillFeedHandler` reads the operations
+`0x0b <slot+1> <21-byte mask> <values>`, `OperationsStreamHandler` reads the operations
 stream's opcode `0x09`, and `ScoreboardPublishService` writes each delta behind
 the change that caused it (`GAMEPLAY_SERVER.md` §3.1).
 

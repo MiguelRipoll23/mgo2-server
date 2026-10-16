@@ -701,3 +701,130 @@ tests pass, and the change is measured against the captures; no client has joine
 the built host. What would confirm it is the same join: the briefing window should
 then hold no `0x08xx` record at all, and the round's own beat should grow them a few
 seconds after it opens, as both references do.
+
+## 15. `myserver12.pcapng`: the briefing the client was given lasted eight seconds
+
+§14's clock is live and the briefing screen is still not reached. This is the next
+join into the same one-player room (`192.168.1.20:5730` ↔ host `89.129.16.203:5731`,
+158 s), and it is the first capture in which the **round opens while the client is
+still reading the briefing it was just sent** — which is what the client's own
+memory dump, taken beside it, shows it doing.
+
+| | `myserver12` |
+| --- | --- |
+| the handshake / the roster run / the settings burst | t+0.072 / t+2.335 / t+5.070 |
+| the client's report (`0x0a5c 01` + `0x1ade e1 01`, one datagram) | t+54.050 |
+| the answers (`0x0a5c 02 00 00 00`, `0x1ade e0 01 00 00 00 00`) | t+54.099 — **0.049 s** |
+| the briefing's run, three copies, clock `01 20 0d` (3 360, whole) | t+54.406 |
+| the countdown `0b 3c 00 02 00 00 00` (60 s, the reporter's own bit) | t+54.564, 57.004, 59.540, 62.052 |
+| **the round's run**, three copies, same set, clock whole | t+62.371 — **8.3 s after the report** |
+| the countdown's closing zero `0b 00 00 02 00 00 00` | t+62.564 |
+| the round's clock begins to move (3 360 → 3 348 → …) | t+123.973 — **61.6 s later** |
+
+**The room's briefing was armed at the join and spent by the report.** The
+handshake is answered at t+0.072 and the roster run at t+2.335; the room's
+one-minute briefing ran from there, and the client — which took fifty-two seconds to
+load its map — reported with eight seconds of it left. The deadline that opened the
+round at t+62.371 is that briefing's end (`MatchStartRunService`, armed at
+`BeginBriefing`), so the client was briefed for 8.3 s where both reference briefings
+give the reporting client its own time: `mgo2-started-briefing-then-solo-game`
+reports at t+54.918 and its round's run goes out at t+174.371 (**119.5 s**), and
+`mgo2-game-joined-when-red-team-then-briefing` reports at t+95.464 with its round at
+t+123.774 (**28.3 s**). **[V]** on the instants; that the client renders nothing
+until its briefing is a screenful is **[U]**.
+
+**And the round it opened held its clock for a minute it had already spent.** The
+timer a round's clock is held for is the briefing's remaining time
+(`MatchStartRunService.OpenRound`), read from `BriefingCountdownService.Remaining` —
+which for a **room of one** is the room's whole briefing time and never moves, because
+that is what the reference writes in the count byte (`started-on-briefing` holds
+`0b 3c` for tens of seconds). So a round opened at the end of a briefing was held
+whole for the briefing's *nominal* minute: the beat carries `01 20 0d` — 3 360 units,
+7:00 — unchanged from t+54.406 to t+123.973, sixty-one seconds of a client that is in
+the round being shown a frozen seven minutes. That is the report this session was
+opened on ("initially it shows 7m of game frozen"), and it is the same defect as the
+paragraph above: the host held a clock for briefing time the client had not spent.
+
+**The countdown is now the reference's shape.** §14's first bullet is closed: the
+record no longer runs before the room has heard anyone. The first is written at
+t+54.564, 0.14 s after the run, it carries the reporting player's own bit (`02` for
+the slot the report named, §13's fix), it is held at the room's whole 60 — the
+measured frozen count of a room of one — and it closes on `0b 00 00 02 00 00 00` at
+the round's open. §14's second bullet is closed too: the single report datagram is
+answered in **0.049 s** by all three records, where `myserver11` answered the retry
+3.2 s late. **[V]** on the instants.
+
+**The one thing the client does in a reference briefing and does not do here.** Both
+reference clients write their own operations 2.4 s after their readiness report —
+`mgo2-started-briefing-then-solo-game` at t+57.304 sends `1d 03 00 01 03 00 00` five
+times and a 22-byte `22 03 00 0b 16 …`, under `0x1254`, and `1f 03 01` 108 s later.
+`myserver12`'s client writes **none** of the three families in its whole session: its
+own records are the report and its presence, the lobby-slot handshake (`82 f3`,
+`84 f3`), its empty `0x5001` answers and its `0x5a50`/`0x5a5a`/`0x5a54`
+acknowledgements. What the three are is the client's own phase tick and its own run
+opener (`udp-handlers-and-senders.md` §5.2, §5.4), so a client that writes none is a
+client that never entered the phase they belong to. Whether it is the eight-second
+briefing that stopped it or something the host never sent is **[U]**, and it is the
+sharpest thing left to measure: the next capture of this join should hold the trio,
+and where in the briefing it lands says which of the two it is.
+
+### The dump beside the capture: the client holds a round, not a briefing
+
+`rpcs3.dmp` was taken beside this session and its guest memory answers the one
+question the capture cannot — which screen state the client ended up in.
+
+* **The live session is this server.** The P2P module's instance (`0x011A6308` →
+  `0x01856C10`, module state `2`) has its session array at `0x50000060`, and slot 0
+  carries the endpoint `59 81 10 cb` — `89.129.16.203`, the capture's host — with
+  port `63 16`. `docs/analysis/udp-record-dispatch.md` §2, §4 reads the same fields.
+* **The run reached it, record for record.** The run's lobby-slot pair is resident
+  at `0x500104b8` and again at `0x500e1688` and `0x500e1a58`: `85 f3 fe 00 ff ff …`
+  and `86 f3 7f 07 7f 7f …`, each behind a `10 01 00 00 00 26 00 05 13 00` record
+  header — the exact bytes `myserver12`'s run carried at t+54.406. So the briefing's
+  run was decrypted, read and kept.
+* **And the room's state vector is resident byte for byte**, at `0x54cc6a9e`: the
+  vector's own runs (`18 18 ff ff ff ff 18 18 18 18 18`, `fe fe fe fe`, `3c 3c 3c 3c`,
+  `state[2] = 0xff`, `state[86] = 0xff`) line up with the alignment the wire's
+  89 bytes have, and `0d 20` — 3 360 — sits immediately before it.
+* **Its clock reads 2 816 of those 3 360** — `state[87..88] = 00 0b`, little-endian as
+  the wire writes it, **68 s** into the round. A briefing's own run carries the whole
+  3 360 there, so what the client holds is a round's state with its clock moving, not
+  a briefing's. The same structure holds a second, `0x28`-seeded vector at
+  `0x54fc6a1a` whose clock is `0`, which is why the block is read as the current
+  room's own and not as the only one. Both are aliased 4 GB above, which is the
+  image's own aliasing and not a second copy.
+
+Read out with `_scratch/sessionstate.py` (the instance and its session slots),
+`_scratch/findbytes.py` (the patterns the run wrote) and `_scratch/findstate.py` (the
+state block a capture carried).
+
+**What the dump does not settle.** It cannot say at what instant the client left its
+briefing, and it does not hold a state block for the briefing itself: a client
+mid-briefing keeps the same block, with the clock still whole. It shows where the
+client *was* — in this room, in a round, 68 s into its clock — and the capture shows
+how it got there: a briefing of 8.3 s and a clock held for 61.6 s after it.
+
+### What was changed
+
+| file | change |
+| --- | --- |
+| `MatchRecords/MatchStartRunService.Briefing.cs` | `BeginBriefing` no longer arms the countdown or the deadline; new `ArmBriefingClock` does both where the briefing hears its first report, and logs it |
+| `MatchRecords/MatchStartRunService.cs` | `Open` arms the briefing's clock on the first report; `OpenRound` takes the clock's hold from `countdown.TimeRemaining` |
+| `MatchRecords/BriefingCountdownService.Clocks.cs` | new partial — the briefing's clock: `Begin`, `StartCounting`, `IsCounting`, `Remaining`, and the new `TimeRemaining`, the briefing's own end, which is not the held count `Remaining` answers with |
+| `MatchRecords/MatchStartRunService.Lifecycle.cs` | new partial — `ResetWhenEmpty`, `End` and `EndWhenTimeRunsOutAsync`, moved so no file passes the 400-line limit |
+
+So a briefing's time is the reporting client's own, as both references' are, and a
+round opened once that time is out counts from its own open instead of holding a
+clock for a briefing that has ended. A room of one still arms a deadline (a solo
+room is briefed and then started), and a briefing no player answers still arms
+nothing.
+
+**Not verified live.** The build is clean (0 warnings, 0 errors) and the 54 codec
+tests pass, and both changes are measured against the captures; no client has joined
+the built host. What would confirm them is this same join: the briefing's run should
+now go out a whole briefing time after the report rather than eight seconds after it,
+the countdown should tick its 60 down for that minute, and the clock records behind
+the round's run should move from the run onward instead of holding 3 360 for a
+minute. The other thing to look for in that capture is the one the section above
+leaves open: the client's own `1d`/`1f`/`22` trio, which neither of this host's two
+live sessions has produced yet (`myserver11`, `myserver12`).

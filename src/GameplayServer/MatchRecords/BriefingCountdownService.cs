@@ -15,7 +15,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// two it is about to be, and a host that never sends it leaves every client timing
 /// its own silence. What it is: the seven-byte <c>0x0b</c> operations record,
 /// carrying the seconds of the room's briefing that are left and the room's
-/// reporting players as a bit set (<see cref="BriefingCountdownBodiesUtils"/>).
+/// readied players as a bit set (<see cref="BriefingCountdownBodiesUtils"/>), which
+/// is how a client learns which of the room's players are waiting to play.
 /// </para>
 /// <para>
 /// <b>Its window is the briefing's own run, and not the join.</b> Both reference
@@ -53,11 +54,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </param>
 /// <param name="roster">The room's roster, whose ordinals the room-state records take.</param>
 /// <param name="ready">
-/// The room's reporting players, whose bit set the countdown carries on every
-/// tick (<see cref="Rooms.PlayerReadyService.PresenceMask"/>).
+/// The room's readied players, whose bit set the countdown carries on every tick
+/// (<see cref="Rooms.PlayerReadyService.ReadyMask"/>).
 /// </param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class BriefingCountdownService(
+public sealed partial class BriefingCountdownService(
     MatchRoundStateService roundState,
     MatchRecordSequenceService sequences,
     Rooms.RoomRosterService roster,
@@ -131,116 +132,6 @@ public sealed class BriefingCountdownService(
     private TimeSpan length;
 
     /// <summary>
-    /// Arms the countdown for a briefing that has just begun.
-    /// </summary>
-    /// <remarks>
-    /// Called where every briefing begins, so the countdown is armed by the same
-    /// event the deadline is. A briefing with no time recorded — the room is not
-    /// published yet — arms nothing and publishes nothing, which is the same
-    /// answer <see cref="MatchStartRunService"/> gives the round.
-    /// </remarks>
-    /// <param name="begun">When the briefing began.</param>
-    /// <param name="minutes">How long the briefing runs for, in minutes.</param>
-    public void Begin(DateTimeOffset begun, int minutes)
-    {
-        if (minutes <= 0)
-        {
-            return;
-        }
-
-        lock (gate)
-        {
-            startedAt = begun;
-            countingFrom = null;
-            length = TimeSpan.FromMinutes(minutes);
-        }
-
-        logger.LogDebug(
-            "A briefing runs for {BriefingTime} minute(s) from now; its peers are sent the countdown, "
-            + "held at the whole briefing time until a second player reports",
-            minutes);
-    }
-
-    /// <summary>
-    /// Starts the countdown moving, because the room now has a second player.
-    /// </summary>
-    /// <remarks>
-    /// <b>A room of one has no briefing to count down.</b> The reference holds
-    /// the count at the room's whole briefing time for as long as a single player
-    /// is in the room — <c>mgo2-game-started-on-briefing</c> writes
-    /// <c>0b 3c …</c> unchanged for tens of seconds — and moves it only once a
-    /// second player has reported
-    /// (<c>mgo2-game-joined-when-red-team-then-briefing</c> holds <c>0b 3c</c> at
-    /// the briefing's start and then counts it down). The count is the briefing's
-    /// own time and not the room's age, so it runs from the moment the second
-    /// report arrives and not from the briefing's start
-    /// (<see cref="BriefingCountdownBodiesUtils"/>).
-    /// </remarks>
-    /// <param name="now">The moment the second player reported.</param>
-    public void StartCounting(DateTimeOffset now)
-    {
-        lock (gate)
-        {
-            if (startedAt is null || length <= TimeSpan.Zero || countingFrom is not null)
-            {
-                return;
-            }
-
-            countingFrom = now;
-        }
-
-        logger.LogDebug(
-            "A second player has reported, so the room's briefing countdown starts moving from now");
-    }
-
-    /// <summary>
-    /// Whether the countdown is moving at all, or is still held at the whole
-    /// briefing time for a room of one.
-    /// </summary>
-    public bool IsCounting
-    {
-        get
-        {
-            lock (gate)
-            {
-                return countingFrom is not null;
-            }
-        }
-    }
-
-    /// <summary>
-    /// How much of the current briefing is left, and whether a briefing is
-    /// running at all.
-    /// </summary>
-    /// <param name="now">The moment to read the clock at.</param>
-    /// <param name="remaining">Time left in the briefing, when one is running.</param>
-    /// <returns><c>true</c> while a briefing is current and has time left.</returns>
-    public bool Remaining(DateTimeOffset now, out TimeSpan remaining)
-    {
-        lock (gate)
-        {
-            if (startedAt is null || length <= TimeSpan.Zero)
-            {
-                remaining = TimeSpan.Zero;
-                return false;
-            }
-
-            // A briefing that has not heard a second player has no end to count
-            // to, so it is held at the room's whole briefing time: the count the
-            // peer is sent does not move until the room has someone to count for
-            // (StartCounting).
-            if (countingFrom is not { } counting)
-            {
-                remaining = length;
-                return true;
-            }
-
-            remaining = (counting + length) - now;
-            return remaining > TimeSpan.Zero;
-        }
-    }
-
-    /// <summary>
     /// Sends the countdown to one peer from that peer's own run for as long as its
     /// room's briefing runs, and returns when the briefing's time is out, the round
     /// opens, or the peer goes.
@@ -288,7 +179,7 @@ public sealed class BriefingCountdownService(
             {
                 await context.Send(
                     CountdownIdentifier,
-                    BriefingCountdownBodiesUtils.CountdownBody(seconds, ready.PresenceMask),
+                    BriefingCountdownBodiesUtils.CountdownBody(seconds, ready.ReadyMask),
                     sequences.Take(CountdownIdentifier));
 
                 // The room's own stage rides with the countdown, which is the one
@@ -349,7 +240,7 @@ public sealed class BriefingCountdownService(
                 CountdownIdentifier,
                 BriefingCountdownBodiesUtils.CountdownBody(
                     seconds: 0,
-                    ready.PresenceMask),
+                    readySet: ready.ReadyMask),
                 sequences.Take(CountdownIdentifier));
         }
         catch (Exception exception)

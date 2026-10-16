@@ -130,20 +130,27 @@ The round opens when the room is ready, and "ready" is a measure of the room's
 membership rather than of a chosen interval:
 
 ```
-AllReady  =  every peer on the roster has reported at least once
+AllReady  =  every peer on the roster has readied, which is the record a client
+             sends when the player changes its briefing state (`1f <slot> 01`) and
+             not the report it sends when it has loaded
              (PlayerReadyService.AllReady, counted over RoomRosterService.Snapshot)
 ```
 
-**A room's first player is briefed, not started.** A report from the room's only
-member opens nothing (`MatchStartRunService.PlayersAReportOpensFor`): below two
-members a room is one player waiting for a game, and that player sits on the
-briefing screen until the room's own briefing time ends the wait. No capture
-holds a room whose sole player reported — the solo arrival of
-`mgo2-game-started-on-briefing` is one of six reporters and its round opens
-1.5 s after the last of them ([`BRIEFING_FLOW.md`](protocol/BRIEFING_FLOW.md)
-§2) — so this is a decision rather than a measurement, and it is the client's
-own contract on both ends of it: a client in a briefing waits either until every
-player is ready or until its own briefing timer runs out.
+The ready records are also the set the briefing countdown carries, one bit per
+player at the slot its own record named (`PlayerReadyService.ReadyMask`), so the
+room's readied players and its reported ones are different sets: a bot the host
+adds is ready in the record that adds it and never reports.
+
+**A room of one is briefed and then started.** Its sole player readies like any
+other and the round opens on that ready: `mgo2-started-briefing-then-solo-game` is
+exactly that room, its client readying at t+165.780, its countdown closing on the
+zero at t+167.992 and its round asked for at t+173.438
+([`BRIEFING_FLOW.md`](protocol/BRIEFING_FLOW.md) §2). What a room of one does not
+do is start counting: its countdown is held at the room's whole briefing time until
+a second player reports ([`BRIEFING_FLOW.md`](protocol/BRIEFING_FLOW.md) §1), and
+its briefing still ends on its own deadline when its player never readies — which
+is the client's own contract on the other end of it: a client in a briefing waits
+either until every player is ready or until its own briefing timer runs out.
 
 With that gate met, `MatchStartRunService.Open` resolves what the room is running
 (`MatchSettingsService`, from this instance's settings), latches the round
@@ -248,7 +255,7 @@ steps to the next entry of the room's rotation. It also clears the round's score
 | **the rotation the settings burst carries: this instance's configured rounds, the field walked round when the room names fewer than fifteen** | `MatchSettingsService` → `PlayerSettingsBurstService.RoomRotationBody` |
 | **the loadout each player is announced under: its own appearance, its equipped skills, the slot it holds and the side the room puts it on** | `CharacterService` (appearance + equipped skills) and `GameService` (sides) → `LobbyLoadoutService` → `LoadoutFramesUtils.TryWrite` |
 | **the vitals each player last reported: health and stamina, kept per player and cleared when it leaves** | `PlayerVitalsHandler` → `PlayerVitalsService`, cleared by the session reaper |
-| **the round's score: a death when a player's health reaches zero, a kill and a death when a kill feed names one, and a side's total over the slots the room puts it on** | `PlayerVitalsHandler`/`KillFeedHandler` → `MatchScoreService`, reset when the round opens |
+| **the round's score: a death when a player's health reaches zero, a kill and a death when a kill feed names one, and a side's total over the slots the room puts it on** | `PlayerVitalsHandler`/`OperationsStreamHandler` → `MatchScoreService`, reset when the round opens |
 | **the scoreboard each player's own numbers changed for** (`0b <slot+1> <21-byte mask> <values>` on the roster identifier) | `MatchScoreService` → `MatchScoreboardFramesUtils` → `ScoreboardPublishService` |
 | **the fourth byte of every session record: one counter per twelve-bit identifier, the class bits included, consumed in the order the records are written** | `MatchRecordSequenceService`, behind `RoomRosterService.TakeRunOrdinal` and read by `PlayerSettingsBurstService`, `MatchStartRunFramesUtils.BuildRun`, `TeamArrayService`, `ScoreboardPublishService`, the sparse phase's and the beat's controls, the round clock and the item-box group |
 | **the briefing countdown** | `BriefingCountdownService`, `BriefingCountdownBodiesUtils`: the operations clock opened on 128 units, dropping 32 every four seconds and holding at zero from sixteen seconds in |
@@ -375,9 +382,9 @@ rather than a replay of the capture's numbers.
 **It does not get a briefing for that round — it is served the round already in
 progress.** Concretely, with player A and player B:
 
-1. A joins. `AllReady` is true the moment A's report arrives, because the roster
-   holds exactly one member and it has reported, so `Open` opens round 1
-   for a one-player room.
+1. A joins. `AllReady` is true the moment A's ready arrives, because the roster
+   holds exactly one member and it has readied, so
+   `OpenWhenEveryPlayerIsReady` opens round 1 for a one-player room.
 2. B joins afterwards. `RoomRosterService.Register` adds B, `AllReady` becomes
    false, but the round is already open: `MatchRoundStateService.Open` returns
    `null` for a second open and no second round starts.
@@ -386,7 +393,7 @@ progress.** Concretely, with player A and player B:
    round that is already open and writes the run for it. B is in the round, not
    in a briefing.
 4. B's own briefing arrives at the **next** round boundary: the round ends, the
-   ready set is cleared, and the round after that waits for A *and* B to report.
+   ready set is cleared, and the round after that waits for A *and* B to ready.
 
 That matches the captures: `mgo2-game-started-team-selection-selected-blue-then-game.pcapng`
 is a join into a round already playing, and no capture shows a room holding a
@@ -401,11 +408,11 @@ from the records it is sent, and the run's own clock is the one that says so.
 
 ### 4.2 A player who never reports
 
-The gate is "every roster member has reported", and a member is removed only when
+The gate is "every roster member has readied", and a member is removed only when
 its session is reaped (60 s of silence). A peer that joins, stays alive and never
-reports would hold the next round shut for as long as it is there — so the gate is
+readies would hold the next round shut for as long as it is there — so the gate is
 a **deadline** as well as a count: the room's own briefing time, armed when the
-briefing begins, after which the round opens for the players that did report and
+briefing begins, after which the round opens for the players that did ready and
 the silent peer is served it as a late joiner is. That is the client's own
 contract, and the reason it is a deadline rather than patience: a client in a
 briefing waits either for every player to be ready or for its own briefing timer
@@ -516,7 +523,7 @@ record should be sent.
 | `Match/MatchSettings{Service,Utils}.cs` | what the room runs, from this instance's settings |
 | `Match/MatchRuleUtils.cs`, `MatchMapUtils.cs` | the rule and map names and the ids they map to, ported from `rpdt.js` |
 | `Rooms/RoomRosterService.cs`, `RoomRosterFramesUtils.cs` | who is in the room, and the run and copies a join is answered with — the records split out so neither file passes the size limit |
-| `Rooms/PlayerReadyService.cs` | who has reported, and the publication |
+| `Rooms/PlayerReadyService.cs` | who has reported and who has readied, the publication, and the ready set the countdown carries |
 | `Rooms/PlayerSettingsBurstService.cs` | the post-join burst |
 | `Rooms/TeamArrayService.cs` | the lobby-slot handshake |
 | `Rooms/LobbySlotService.cs` | the room's own players and sides, as that pair names them |
@@ -524,7 +531,7 @@ record should be sent.
 | `Gameplay/PlayerVitalsService.cs`, `Commands/Peer/Gameplay/PlayerVitalsHandler.cs` | the health and stamina each player last reported, and the death when health reaches zero |
 | `MatchRecords/MatchScoreService.cs`, `MatchScoreboardFramesUtils.cs`, `ScoreboardPublishService.cs` | the round's score, the scoreboard body, and its publication |
 | `MatchRecords/MatchResultService.cs` | the round's winner, the kill-limit check, and the result write |
-| `Commands/Peer/Gameplay/KillFeedHandler.cs` | the operations stream's kill feed, and the score it feeds |
+| `Commands/Peer/Gameplay/OperationsStreamHandler.cs` | the operations stream's two records: the kill feed, and the score it feeds, and a client's briefing ready state, which opens the round |
 | `MatchRecords/MatchRecordSequenceService.cs` | the fourth byte of every session record: one counter per twelve-bit identifier, restarted where a round or a briefing opens a stream of its own |
 | `MatchRecords/MatchStartRunService.cs`, `MatchStartRunService.Runs.cs` | the round opener, its briefing deadline and its clock, and the per-peer run watcher |
 | `MatchRecords/BriefingCountdownService.cs`, `BriefingCountdownBodiesUtils.cs` | the briefing's countdown to each peer, and the 128-unit clock body it writes |

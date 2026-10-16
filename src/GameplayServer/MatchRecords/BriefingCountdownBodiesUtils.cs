@@ -16,14 +16,23 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// this stream went wrong.
 /// </para>
 /// <para>
-/// <b>The bytes.</b> The opcode, the remaining seconds, a zero, the room's
-/// reporting players as a little-endian bit set, and two recorded zeros. Seconds
-/// and set move independently: measured over
+/// <b>The bytes.</b> The opcode, the remaining seconds as two little-endian bytes,
+/// the room's readied players as a two-byte little-endian bit set, and two
+/// recorded zeros. Seconds and set move independently: measured over
 /// <c>mgo2-game-joined-when-red-team-then-briefing</c>, the seconds tick while the
-/// set grows as each player reports — <c>40 00</c>, <c>c0 00</c>, <c>c2 00</c>,
-/// <c>ca 00</c>, <c>ea 01</c> — so a report moves the set and not the count. The
-/// set is **at least two bytes** (the <c>ea 01</c> above is <c>0x01ea</c>, bits
-/// past the first byte), which is why a room of up to twenty-four slots fits it.
+/// set grows as each player readies — <c>40 00</c>, <c>c0 00</c>, <c>c2 00</c>,
+/// <c>ca 00</c>, <c>ea 01</c> — so a ready moves the set and not the count. The
+/// set is two bytes (<c>ea 01</c> is <c>0x01ea</c>, bits past the first byte, and
+/// the second briefing's <c>02 7c</c> is <c>0x7c02</c>), so the record names slots
+/// up to 15.
+/// </para>
+/// <para>
+/// <b>The set is the ready set and not the reports.</b> Its bits are the slots the
+/// ready records name (<see cref="BriefingReadyBodiesUtils"/>), which is what makes
+/// the countdown the room's publication of who is waiting to play: the room above
+/// holds <c>2a</c> — slots 1, 3 and 5 — as its reported players and
+/// <c>0x01ea</c> — slots 1, 3, 5, 6, 7 and 8 — as its ready ones, the three extra
+/// bits being the host's own bots, which are ready in the record that adds them.
 /// </para>
 /// <para>
 /// <b>It is held at the whole briefing time until the room has a second player,
@@ -61,6 +70,36 @@ public static class BriefingCountdownBodiesUtils
     /// <summary>The largest value the count byte can hold.</summary>
     public const int MaxCountSeconds = 0xff;
 
+    /// <summary>Offset of the remaining seconds, little-endian over two bytes.</summary>
+    public const int SecondsIndex = 1;
+
+    /// <summary>Offset of the room's ready set, little-endian over two bytes.</summary>
+    public const int ReadySetIndex = 3;
+
+    /// <summary>
+    /// Whether a body is a briefing countdown record: the opcode at the length
+    /// every capture sends.
+    /// </summary>
+    /// <param name="body">Body of an inbound operations record.</param>
+    /// <returns><c>true</c> when the body is a room's briefing countdown.</returns>
+    public static bool IsCountdown(ReadOnlySpan<byte> body) =>
+        body.Length == RecordLength && body[0] == CountdownOpcode;
+
+    /// <summary>The seconds of briefing the record says the room has left.</summary>
+    /// <param name="body">Body of a briefing countdown record.</param>
+    /// <returns>The remaining seconds, as the record carries them.</returns>
+    public static int SecondsOf(ReadOnlySpan<byte> body) =>
+        body[SecondsIndex] | (body[SecondsIndex + 1] << 8);
+
+    /// <summary>
+    /// The room's readied players as the record carries them: one bit per player
+    /// that has readied, at the slot its own ready record named.
+    /// </summary>
+    /// <param name="body">Body of a briefing countdown record.</param>
+    /// <returns>The ready set, little-endian over two bytes.</returns>
+    public static ushort ReadySetOf(ReadOnlySpan<byte> body) =>
+        (ushort)((body[ReadySetIndex] | (body[ReadySetIndex + 1] << 8)) & 0xffff);
+
     /// <summary>
     /// The countdown's value at a point in a briefing: the seconds of briefing
     /// left, rounded up so the last second is still told, held to the byte the
@@ -72,22 +111,26 @@ public static class BriefingCountdownBodiesUtils
         Math.Clamp((int)Math.Ceiling(remaining.TotalSeconds), 0, MaxCountSeconds);
 
     /// <summary>
-    /// The countdown record's body: the <c>0x0b</c> opcode, the seconds left, a
-    /// zero, the room's reporting players and three zeros.
+    /// The countdown record's body: the <c>0x0b</c> opcode, the seconds left, the
+    /// room's readied players and two zeros.
     /// </summary>
+    /// <remarks>
+    /// The closing zero is this same body with no seconds on it and the room's whole
+    /// ready set, which is the record a client's briefing ends on.
+    /// </remarks>
     /// <param name="seconds">Seconds of briefing the room has left.</param>
-    /// <param name="reportingSet">
-    /// The room's reporting players as a bit set, one bit per player
-    /// (<see cref="Rooms.PlayerReadyService.PresenceMask"/>).
+    /// <param name="readySet">
+    /// The room's readied players as a bit set, one bit per player at the slot its
+    /// ready record named (<see cref="Rooms.PlayerReadyService.ReadyMask"/>).
     /// </param>
     /// <returns>The record body.</returns>
-    public static byte[] CountdownBody(int seconds, byte reportingSet) =>
+    public static byte[] CountdownBody(int seconds, ushort readySet) =>
     [
         CountdownOpcode,
         (byte)Math.Clamp(seconds, 0, MaxCountSeconds),
         0x00,
-        reportingSet,
-        0x00,
+        (byte)(readySet & 0xff),
+        (byte)(readySet >> 8),
         0x00,
         0x00,
     ];
