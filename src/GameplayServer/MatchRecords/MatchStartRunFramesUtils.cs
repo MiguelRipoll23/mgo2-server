@@ -68,11 +68,28 @@ public static class MatchStartRunFramesUtils
     /// Records the run writes and the host repeats behind it.
     /// </summary>
     /// <remarks>
-    /// The captures write the run once and repeat it; a client that missed the
-    /// first frame is answered by the ones behind it rather than waiting for the
-    /// next round.
+    /// <para>
+    /// The captures write the run once, and repeat it behind itself up to twice:
+    /// counted as whole record sets in the peer's own flow, `mgo2-game1`'s first
+    /// round carries one, its second two, `mgo2-game2` three, and both briefings
+    /// — <c>mgo2-game-started-on-briefing</c> t+58.255 and
+    /// <c>mgo2-started-briefing-then-solo-game</c> t+57.626 — one. Nothing
+    /// measured writes five, which is what this constant was read as until the
+    /// five *datagrams* a run goes out in were counted as five runs: those carry
+    /// the run's eighteen records once each (game1 t+46.42).
+    /// </para>
+    /// <para>
+    /// <b>What moves the count is not measured.</b> It is not the room's
+    /// population — <c>mgo2-game2</c> writes three runs into a room its own count
+    /// record holds at one player (<c>00 01</c>) — and not the reports either, where
+    /// they are counted: that client reports once before the three runs it is sent.
+    /// Two is therefore what is written — the most any capture shows — so a client
+    /// that missed the first frame is answered by the ones behind it without the
+    /// run going out more often than a recorded host ever wrote it. **[U]** what
+    /// the count follows.
+    /// </para>
     /// </remarks>
-    public const int RepeatCount = 4;
+    public const int RepeatCount = 2;
 
     /// <summary>
     /// Operations records the run writes — its state block, the short record behind

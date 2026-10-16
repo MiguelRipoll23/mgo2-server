@@ -60,20 +60,6 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
     public const int BriefingRunPollMilliseconds = 250;
 
     /// <summary>
-    /// How long a peer's beat waits for the round's opening run before it starts
-    /// anyway.
-    /// </summary>
-    /// <remarks>
-    /// Everything the beat writes is measured as an offset from the run, so the
-    /// run has to be on the wire first: the beat's frame indices are counted
-    /// from it and the item-box group rides in one frame in eight. The wait is
-    /// bounded all the same — a run that is never written must not leave the
-    /// channel silent — and the beat goes on to write its own frames, which are
-    /// the records that keep the channel moving.
-    /// </remarks>
-    public const int RunWaitMilliseconds = 5_000;
-
-    /// <summary>
     /// A wait that lasts while the peer is there, for the callers whose writes
     /// must not happen at all until the round does.
     /// </summary>
@@ -216,8 +202,15 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
     /// being briefed.
     /// </para>
     /// <para>
-    /// It is zero while no round plays, because there is no clock to read rather
-    /// than because the round has run out.
+    /// <b>While the room is briefed it is held whole, and not zero.</b> A room
+    /// being briefed has a round in front of it and no round playing: the
+    /// reference writes that round's whole clock from the briefing's own run
+    /// onward and leaves it there until the round opens —
+    /// <c>mgo2-started-briefing-then-solo-game</c> writes <c>01 60 09</c> (2 400
+    /// units, five minutes) from t+65 to t+170, and the round the report opens at
+    /// t+174.371 is the one that clock belongs to. Zero is therefore the reading
+    /// for a room with nothing in front of it rather than for a briefing
+    /// (<see cref="BriefingClockUnits"/>).
     /// </para>
     /// </remarks>
     public int RemainingUnits
@@ -228,7 +221,13 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
             {
                 if (roundSettings is not { } settings || !isOpen)
                 {
-                    return 0;
+                    // The room is briefed and no round plays yet. The clock is
+                    // still a clock: the reference holds it whole — the same
+                    // value the briefing's own run carries — so the beat's
+                    // insertions are the round's whole time until the round
+                    // opens and not a zero the client would read as a round
+                    // that is over (BriefingClockUnits).
+                    return BriefingClockUnits;
                 }
 
                 var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

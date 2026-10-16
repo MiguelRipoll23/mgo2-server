@@ -54,15 +54,25 @@ public sealed class BriefingReadyPublishService(
     public const int PublishPeriodMilliseconds = 2500;
 
     /// <summary>
-    /// Writes the room's ready set to one peer, repeatedly, until the round opens or
-    /// the peer goes.
+    /// Writes the room's ready set to one peer, repeatedly, until the peer's own
+    /// run is written, the round opens, or the peer goes.
     /// </summary>
+    /// <remarks>
+    /// <b>The run ends the repeat.</b> The reference stops its briefing records
+    /// where its run goes out — `mgo2-started-briefing-then-solo-game` writes its
+    /// last seven-byte countdown at t+57.626, the instant of its run, and nothing
+    /// of the briefing's from there to t+168 but the beat's own records — so a
+    /// repeat that ran on would be records the client is not owed
+    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §10).
+    /// </remarks>
     /// <param name="context">Context the records are written through.</param>
     public async Task PublishAsync(PeerContext context)
     {
         var session = context.Session;
 
-        while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
+        while (MatchRecordPeerUtils.IsAlive(session)
+            && !roundState.IsOpen
+            && !roundState.HasRunWritten(session))
         {
             // The tick ends the moment the round opens: this task is awaited
             // before the beat, and a period slept out after the run was written

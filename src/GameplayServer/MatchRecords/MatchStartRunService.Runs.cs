@@ -275,9 +275,11 @@ public sealed partial class MatchStartRunService
             round.TimeLimitUnits,
             round.TimeLimitMinutes);
 
-        // The recorded host writes the run compressed and the run's repeats
-        // behind it, so a client that lost the first frame is answered by the
-        // ones that follow rather than waiting for the next round.
+        // The recorded host writes the run and the runs behind it, so a client
+        // that lost the first frame is answered by the ones that follow rather
+        // than waiting for the next round. How many it writes moves between the
+        // captures and nothing measured says what moves it; the repetitions are
+        // counted in MatchStartRunFramesUtils.RepeatCount.
         await MatchRecordSendUtils.SendAsync(context, run);
         for (var repeat = 0; repeat < MatchStartRunFramesUtils.RepeatCount; repeat++)
         {

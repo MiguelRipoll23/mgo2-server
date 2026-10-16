@@ -18,6 +18,53 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class MatchRoundStateService
 {
     /// <summary>
+    /// The round clock a briefing is held on: the whole time of the round the
+    /// briefing precedes, or zero for a room with nothing in front of it.
+    /// </summary>
+    /// <remarks>
+    /// <b>A briefing's beat writes a whole clock and not a zero.</b> The reference
+    /// stops its briefing records where it starts the beat and goes on writing the
+    /// round's whole clock, unchanged, for as long as the room waits:
+    /// <c>mgo2-started-briefing-then-solo-game</c> writes <c>01 60 09</c> — 2 400
+    /// units of its five-minute round — from t+65.036, 7.4 s after its run, to
+    /// t+170.366, four seconds before the round the report opens at t+174.371
+    /// (<see cref="MatchRoundStateService.RemainingUnits"/>). It is the same value
+    /// the briefing's own run carries, which is what makes the two agree: the run
+    /// hands the client the whole clock and the beat behind it counts nothing
+    /// down until the briefing is over. A room that wrote zero here would tell
+    /// every client whose round has not opened yet that the round is over.
+    /// </remarks>
+    private int briefingClockUnits;
+
+    /// <summary>
+    /// The round clock a briefing is held on, or zero while no briefing is running
+    /// and no round plays.
+    /// </summary>
+    public int BriefingClockUnits
+    {
+        get
+        {
+            lock (gate)
+            {
+                return briefingClockUnits;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Notes the round clock a briefing is held on: the whole time of the round
+    /// that briefing precedes.
+    /// </summary>
+    /// <param name="units">The round's whole time, in the stream's 125 ms ticks.</param>
+    public void NoteBriefingClock(int units)
+    {
+        lock (gate)
+        {
+            briefingClockUnits = Math.Max(0, units);
+        }
+    }
+
+    /// <summary>
     /// Returns an emptied room to its first round: the round now playing is
     /// dropped without a result and the count, the clock and the settings start
     /// over.
@@ -44,6 +91,7 @@ public sealed partial class MatchRoundStateService
             clockStartsAt = 0;
             roundNumber = 0;
             vitalsArrived = false;
+            briefingClockUnits = 0;
             writtenRuns.Clear();
             logger.LogInformation(
                 ended

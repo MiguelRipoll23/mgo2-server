@@ -165,8 +165,11 @@ round as a late joiner is (§4.1).
 
 ### 2.5 The round
 
-**The opening run** is written per peer, five times (once and four repeats), in
-one compressed frame: the marker, the two empty roster heads, the operations
+**The opening run** is written per peer, one to three times — counted as whole
+record sets in the peer's own flow: `mgo2-game1`'s first round one, its second
+two, `mgo2-game2` three, both briefings one — in one frame (compressed in
+`mgo2-game1` and `mgo2-started-briefing-then-solo-game`, and plain in
+`mgo2-game-started-on-briefing`): the marker, the two empty roster heads, the operations
 state block and the two-byte record behind it, the two lobby-slot arrays — which
 name the room's own players, each in the slot it holds and on the side the room's
 rows put it — the presence answer, the close **triple** (the two twenty-byte

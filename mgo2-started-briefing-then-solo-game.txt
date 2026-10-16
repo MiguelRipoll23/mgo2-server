@@ -1,0 +1,9 @@
+rule bomb mission
+map tomb of tumbes
+round 2
+
+started on briefing (60s of briefing time, frozen because only one player)
+i changed my state to ready
+moved into the game but in solo session game time is frozen 5m (time is always frozen, for briefing and game times until someone joins appears)
+game is playable during solo session
+

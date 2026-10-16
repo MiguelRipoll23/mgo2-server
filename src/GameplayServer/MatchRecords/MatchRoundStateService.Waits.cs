@@ -8,31 +8,65 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </summary>
 /// <remarks>
 /// It lives apart from the state it waits on because the state is the shared
-/// thing and the waits are each caller's own timing — the beat's bounded wait is
-/// not the round opener's unbounded one — and together they outgrow the file
-/// limit the state alone does not.
+/// thing and the waits are each caller's own timing, and together they outgrow
+/// the file limit the state alone does not.
 /// </remarks>
 public sealed partial class MatchRoundStateService
 {
     /// <summary>
-    /// Waits for the round's opening run to have been written to a peer, so the
-    /// beat's offsets are counted from a frame that is already on the wire.
+    /// Whether this peer has been served a run for the phase now running: the
+    /// briefing's while the room is still briefed, or the round's once one plays.
     /// </summary>
+    /// <remarks>
+    /// <b>It is what a briefing's own writers end on.</b> The reference stops its
+    /// briefing records where it starts the beat — `mgo2-started-briefing-then-solo-game`
+    /// writes its last seven-byte countdown at t+57.626, the instant its run goes
+    /// out, and nothing but the beat's own records from t+62 to t+168 — so the
+    /// countdown, the ready set's repeat and the room's rules pair are the
+    /// briefing's and not the phase's (<c>docs/analysis/join-stall-after-mode2.md</c>
+    /// §10). A run written for the round opens the same latch, which is why the
+    /// writers end on it rather than on the round's own open.
+    /// </remarks>
+    /// <param name="session">Session the run would have been written to.</param>
+    /// <returns><c>true</c> once a run has been written to that peer.</returns>
+    public bool HasRunWritten(PeerSession session)
+    {
+        lock (gate)
+        {
+            return writtenRuns.Contains(session);
+        }
+    }
+
+    /// <summary>
+    /// Waits for the run the beat's offsets are counted from to have been written
+    /// to a peer.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is the peer's own run and not a round that is waited for.</b>
+    /// Everything the beat writes is measured as an offset from the run, and a
+    /// room being briefed is served one of its own — the run the briefing's first
+    /// report asks for, two to three seconds after it arrives
+    /// (`docs/protocol/BRIEFING_FLOW.md` §2). A wait for a round would hold the
+    /// beat behind a round that a room of one never opens, which is the shape of a
+    /// client that is answered its run and then hears nothing else at all; the
+    /// wait is bounded by the peer instead, because a peer that has not reported
+    /// yet has no run to wait for and one that has gone must not be waited on.
+    /// </remarks>
     /// <param name="session">Session the run is written to.</param>
-    /// <param name="timeoutMilliseconds">How long to wait for it.</param>
+    /// <param name="timeoutMilliseconds">
+    /// How long to wait for it. It defaults to <see cref="WaitWhilePeerIsThere"/>,
+    /// because the run is written on the client's own report.
+    /// </param>
     public async Task WaitForRunWrittenAsync(
         PeerSession session,
-        int timeoutMilliseconds = RunWaitMilliseconds)
+        int timeoutMilliseconds = WaitWhilePeerIsThere)
     {
         var waited = 0;
         while (waited < timeoutMilliseconds)
         {
-            lock (gate)
+            if (HasRunWritten(session))
             {
-                if (writtenRuns.Contains(session) || !isOpen)
-                {
-                    return;
-                }
+                return;
             }
 
             if (!MatchRecordPeerUtils.IsAlive(session))

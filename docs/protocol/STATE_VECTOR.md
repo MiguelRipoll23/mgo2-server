@@ -43,12 +43,48 @@ Every record on the operations identifiers (`0x1254`, `0x1a54`, `0x9254`,
 | `0x0e` | `[reason]` | **round over**, with the reason that ended it |
 | `0x0f` | 2 bytes | the short record the run carries |
 | `0x13` | array | per-player rating |
-| `0x1d`, `0x1f`, `0x22`, `0x26` | varies | **[U]** |
+| `0x1d`, `0x1f`, `0x22` | varies | the **joiner's own** operations; **[U]** |
+| `0x26` | 3 bytes | the host writes it; **[U]** |
+
+The two directions write **disjoint** operations, measured over
+`mgo2-game-joined-when-red-team-then-briefing` (both identifiers together, 1 192
+records):
+the host writes `0x00`, `0x01`, `0x02`, `0x09`, `0x0b`, `0x0f` and `0x26`, in bodies of
+24, 3, 4–6, 3, 7, 2 and 3 bytes; the joiner writes `0x1d` (7 bytes), `0x1f` (3) and
+`0x22` (22). The client's own table — a table of *states*, read out in
+`docs/analysis/udp-record-dispatch.md` §3.5–§3.6 — has no entry for any of the joiner's
+three: its indices stop at `0x19`, so the host's operations are the ones a client is
+built to read and the joiner's are the host's to read — and their decode is not in this
+client at all.
 
 This matters because it is what makes the vector *writable* rather than
 whole: a working server sends `0x00` when a round opens and afterwards only
 sends `0x02` slices of it. A host that cannot derive a field can still leave it
 alone instead of rewriting the capture's value over it.
+
+**The client's own table is a table of *states*, not of these opcodes — and that is a
+measured difference, not a coincidence of numbering to lean on.** `0x27E8B0` (the module
+object's vtable slot 0) indexes **26 state descriptors** at indices `0x00`–`0x19`: `0x00`
+is one 168-byte state, `0x19` another of 284 bytes, and `0x01`–`0x18` are **24 states of
+one shape whose blocks are consecutive 1248-byte allocations** — the session's slots. Each
+descriptor carries a field table of `(state offset, length)` pairs over that block, a
+`ceil(count/4)`-byte map of its own, and the flags that say how a field moves
+(`docs/analysis/udp-record-dispatch.md` §3.6). Read it out with
+`tools/mgo2_record_schema.py`.
+
+It does **not** parse the bodies above: its structure is
+`[state index][ceil(count/8)-byte presence map][the present fields]`, so a `0x00` state
+needs 8 bytes before its first field and a slot state 22, while the operations bodies are
+2–3 bytes — and the state record is the *opposite* case that closes the question: its
+opcode `0x00` with the next seven bytes read as a map wants 28 bytes where the record
+carries 90. Over 406 144 bodies from three captures (177 179 distinct), **none** of the
+operations identifier's 2 214 records fits, and the 1.41% of distinct bodies that do fit
+are unrelated tick bodies whose arithmetic coincides
+(`tools/mgo2_state_wire_check.py`). The two levels are separate: the wire's
+opcodes select per-record handlers (the module's registry, one per key), and those
+handlers *write* the state the descriptors describe. What the joiner's `0x1d`, `0x1f`
+and `0x22` say is therefore **[U]** on both counts, and a server body for them stays the
+recorded one.
 
 **`0x0e` is measured as the round's own verdict, and it is worth having.** In
 `mgo2-game1` the round that ends with no result sends `0e 00` at t+352.007, and
@@ -181,12 +217,16 @@ open carries.
 * **Whether the 128-unit clock is the result screen's or a briefing's.** §3,
   §4.
 * **`0x04`, `0x1d`, `0x1f`, `0x22`, `0x26`** — present in the captures, not read.
+  For the joiner's `0x1d`, `0x1f` and `0x22` §1 now says why they stay open:
+  they are past the end of the client's own state table, whose indices stop at `0x19`.
 
 ## 7. Reproducing this
 
 ```sh
 python3 tools/udp_state_vector.py mgo2-game1.pcapng              # the folded vector and a per-offset history
 python3 tools/udp_state_vector.py mgo2-game1.pcapng --writes     # every full vector and every 0x02 write, in order
+python3 tools/mgo2_record_schema.py                              # the client's 26 state descriptors, and their fields
+python3 tools/mgo2_state_wire_check.py                           # whether that schema consumes any captured body (it does not)
 ```
 
 The tool folds the stream exactly as the replay console folds it — a full vector

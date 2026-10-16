@@ -401,3 +401,74 @@ run still carries the group, which is where a fresh room is first told its stage
 confirm it is the same join, one capture: the briefing window should then hold no
 `07 0f`, `07 2f` or close record, and the client should reach the briefing screen
 before the round opens.
+
+## 11. `myserver9.pcapng` against the two briefings, record by record
+
+§9 compared a briefing by *rates* and §10 by *record*. This is the same comparison
+against the capture taken before the changes of §10 landed, with the two references
+the user named — the run's own shape is the one thing it still leaves open.
+
+The three windows, host → client, with the report each answers:
+
+| | `mgo2-game-started-on-briefing` | `mgo2-started-briefing-then-solo-game` | `myserver9` |
+| --- | --- | --- | --- |
+| span | 285 s | 294 s | 196 s |
+| room | one player at its run, six by its round | one player throughout | one player throughout |
+| report | `e1 01` t+55.838 and `e1 01` on `0x9ade` t+196.828 | `e1 03` t+54.918 and `e1 03` t+173.438 | `e1 01` t+53.844, and none after |
+| the run | t+58.255, plain | t+57.626, LZSS | t+54.186, plain |
+| the round | t+198.371, 1.5 s after the second report | t+174.371, 0.9 s after the second report | never |
+| rules pair | 0.86 records/s over the capture | 42–75 records/s | 0.8 records/s |
+
+**The round opens on a report, and the countdown's zero does not open it.** The
+count is held at the room's whole briefing time for as long as the room holds one
+player, and both references carry it that way: `started-on-briefing` writes
+`0b 3c 00 00 00 00 00` from t+93.127, moves the set to `0x0002` when its client
+reports and starts falling at t+132.249, reaching zero about t+191.4 — and the
+round does not open there. It opens 1.5 s after the report at t+196.828. The solo
+briefing is the same shape: `0b 37 00 08 00 00 00` at t+167.992 with the room still
+at one reporter (`0x08` = slot 3, its report's own byte), and the round 0.9 s after
+the second report. So a briefing that nobody re-reports in is opened by its
+deadline and not by the count, which is what `MatchStartRunService`
+(`OpenWhenBriefingEndsAsync`) and `BriefingCountdownService` do.
+
+**The live host's briefing was the shape §10 describes**, and the changes there
+close it: it wrote the ready set (`0x1ade e0 01 00 00 00 00`, 63 records), the
+countdown (`0x1a54 0b 3c 00 02 00 00 00`, held at 60, one per 2.5 s tick) and the
+rules pair (`0x0a61 fe` twice) from the report at t+53.8 to the capture's end at
+t+196.2, where the reference writes none of the three between its run at t+57.626
+and its round at t+174.371. The countdown's cadence is its own: the reference's
+record is one per 2.3 s per peer (t+132.249, t+134.244, t+136.515, t+138.369,
+…), so the 2.5 s tick is not the thing that was wrong.
+
+**The run's own shape.** The live run is the same eighteen records as game1's
+(t+46.42): the marker, the two empty roster heads, the state block and the
+`0f 00` behind it, the two lobby-slot arrays, the presence answer, the close
+triple, the clock, the payload and the rules pair. What differs is how often it
+goes out — five times in the live capture, and one, two and three times in the
+captures (`mgo2-game1`'s two rounds, `mgo2-game2`) — and nothing measured says what
+moves that count: not the room's population (`mgo2-game2` writes three into a room
+its count record holds at one player) and not the reports (that client reports once
+before the three runs). `RepeatCount` is two for that reason, the most any capture
+shows. Its frame is plain in this capture and in `started-on-briefing` and LZSS
+marked in `mgo2-game1` and `started-briefing-then-solo`, so the compression is the
+host's and not a rule.
+
+**Two records the comparison settles, and one it does not.** The presence answer
+grows a bit per reporting slot in both references and in the live capture —
+`e1 03` answered `08 00 00 00` and `e1 01` answered `02 00 00 00` — which is
+`PlayerReadyService.PresenceMask`'s reading of the report's own byte. The payload
+publication's **trailing zeros are not the room's population**: the live host writes
+four (`e0 01 00 00 00 00`), `started-on-briefing` six and `started-briefing-then-solo`
+twelve, and each keeps its own length as its room goes from one player to six
+to one — so the offset is the host's, as `MatchStartBodiesUtils.MatchStartPayload`
+already records. What is *not* settled is the rules pair's rate in
+`started-briefing-then-solo`, which writes it 42 to 75 times a second where the
+other two write it under one. **[U]**
+
+**The client's own ending, and why this capture cannot test the round.** Its
+records stop at t+137.13 — 83 s after its report — and the host goes on writing to
+t+196.24. Both references' clients report a second time 118.5 s and 141 s after
+their first, and that second report is what opens their rounds; this client's would
+have been due at about t+172, and it was already gone (`rpcs3.dmp` sits beside the
+capture). So the briefing this capture holds is not a round that failed to open: it
+is a room of one whose client left before its own timer came round.

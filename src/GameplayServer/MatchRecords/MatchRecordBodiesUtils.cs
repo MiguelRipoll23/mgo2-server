@@ -17,6 +17,17 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// comment says which part is mapped. The mapping is
 /// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>.
 /// </para>
+/// <para>
+/// <b>The client's own table of record shapes is not the parse of these bodies,</b>
+/// and no body here is rewritten from it. The 26 descriptors at
+/// <c>*(0x011A646C)</c> are a table of <i>states</i> — 24 slot states of 1248
+/// bytes, and two others — and the presence map it reads needs at least eight
+/// bytes before the first field: measured over three captures, none of the
+/// operations identifier's 2 214 records fits it, neither the two- and
+/// three-byte clock and kill feed nor the ninety-byte state record
+/// (<c>docs/analysis/udp-record-dispatch.md</c> §3.6,
+/// <c>tools/mgo2_state_wire_check.py</c>).
+/// </para>
 /// </remarks>
 public static class MatchRecordBodiesUtils
 {

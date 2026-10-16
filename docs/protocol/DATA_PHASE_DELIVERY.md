@@ -123,8 +123,10 @@ on the room's count being the same population the roster holds.
 
 ## The round start is written for the report, and never before one
 
-The marker, the run and its four repeats go out on the report — the run's
-payload echoing the byte that report carried — and on nothing else. There is no
+The marker and the run — and the run repeated behind it, one to three sets in the
+captures' own flows (`MatchStartRunFramesUtils.RepeatCount`) — go out on the
+report, the run's payload echoing the byte that report carried, and on nothing
+else. There is no
 round on a clock: the sparse phase closes at its measured 42 240 ms and the beat
 follows it, and the round opens when the client asks. `PlayerReadyHandler`
 recognises the report and hands it to `MatchStartRunService`, which latches the

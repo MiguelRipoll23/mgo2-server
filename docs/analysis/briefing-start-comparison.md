@@ -131,8 +131,9 @@ and the host's answers:
 [60.816] OUT 0x0a5c len 5 class 0x06 body 02 00 00 00   ×5, one per run repeat
 ```
 
-Five answers — the run and its four repeats — and **not one answer in the 40 s
-between the report and the round**. The working captures write it beside the
+Five answers in that capture — the run it wrote and the four repeats behind it,
+now two (`MatchStartRunFramesUtils.RepeatCount`) — and **not one answer in the
+40 s between the report and the round**. The working captures write it beside the
 report as well as (in one of them) inside the run:
 
 | capture | presence writes |

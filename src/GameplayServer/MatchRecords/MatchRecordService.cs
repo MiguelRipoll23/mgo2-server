@@ -30,7 +30,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </para>
 /// <para>
 /// <b>The round start belongs to another writer.</b> The opening marker, the
-/// <c>0x1a54</c> run and its four repeats are written by
+/// <c>0x1a54</c> run and the runs repeated behind it are written by
 /// <see cref="MatchStartRunService"/>, because the captures gate them on a
 /// client's readiness report and nothing here opens a round. This writer goes
 /// from the sparse phase straight into the beat: the beat is what keeps the
@@ -110,7 +110,11 @@ public sealed class MatchRecordService(
             // beside its 0xd001 and 0x0002 records), and its rules pair rides the
             // same ticks. A host that started these after the phase would open the
             // clock on the briefing's last seconds — which is a clock at zero.
-            var countdown = countdowns.PublishAsync(context);
+            // The countdown is the one of the three that outlives the peer's run:
+            // its records stop where the run goes out, and the zero it ends a
+            // briefing on is the room's round opening, so it is not awaited here.
+            // Awaiting it would put the beat back behind that round's open.
+            _ = countdowns.PublishAsync(context);
             var readyPublication = readyPublications.PublishAsync(context);
             var roomPublication = roomPublications.PublishAsync(context);
 
@@ -138,22 +142,20 @@ public sealed class MatchRecordService(
                 await SendAsync(context, step.Records, step.Compressed);
             }
 
-            // Each briefing writer ends on the round's opening run, and a peer that
-            // arrives into a round already playing is served the round and none of
-            // them. The ready set repeats on its tick rather than only on a report,
-            // which is what the captures show the host doing between the reports of
-            // a briefing that waited (docs/protocol/BRIEFING_FLOW.md §2).
+            // The beat is the round's, not the sparse phase's, and what it is
+            // counted from is the peer's own run: the briefing is answered a run of
+            // its own two to three seconds after the first report, and the round it
+            // precedes opens later on the briefing's deadline
+            // (docs/protocol/BRIEFING_FLOW.md §1–§2). Everything the beat writes is
+            // an offset from that run, so the run is what it waits for — a wait for
+            // the round's open held a room of one's client on the answer to its own
+            // report for the whole briefing and left it hearing nothing else, which
+            // is the shape the capture against this host shows
+            // (docs/analysis/join-stall-after-mode2.md §10).
             //
-            // The beat is the round's, not the sparse phase's: everything it
-            // writes is measured as an offset from the run, so it starts when
-            // the round opens and not a beat earlier. It also waits for that
-            // round's own run, because the run is what its frame indices are
-            // counted from — a beat that starts on the latch alone can put its
-            // first item-box group out ahead of the record that says the boxes
-            // exist.
-            await roundState.WaitForOpenAsync(session);
+            // The two publications end on that same run, so they are awaited after
+            // it and return on it rather than holding the beat behind the round.
             await roundState.WaitForRunWrittenAsync(session);
-            await countdown;
             await readyPublication;
             await roomPublication;
             await BeatAsync(context);

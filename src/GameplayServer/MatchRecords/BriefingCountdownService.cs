@@ -249,6 +249,20 @@ public sealed class BriefingCountdownService(
 
         while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
         {
+            // The briefing's own records end where the peer's run goes out: the
+            // beat takes the tick over from there (HasRunWritten), and the
+            // reference writes nothing of the briefing's between its run at
+            // t+57.626 and its round at t+174.371 (docs/analysis/join-stall-after-mode2.md
+            // §10). The countdown stays armed and silent instead of ending,
+            // because the zero it closes a briefing on is the room's round opening
+            // and not the run — the reference writes that pair of seven-byte
+            // records at t+167.992, six seconds before the round it belongs to.
+            if (roundState.HasRunWritten(session))
+            {
+                await roundState.WaitBriefingTickAsync(session, PublishPeriodMilliseconds);
+                continue;
+            }
+
             if (!Remaining(DateTimeOffset.UtcNow, out var remaining))
             {
                 return;

@@ -1,0 +1,3 @@
+map fade in after joining, game instructions appeared, accepted the game instructions, game appeared (no round), game time is 7m but is fozen during solo session.
+
+solo sessions have timer time frozen, and when someone joins it starts a round

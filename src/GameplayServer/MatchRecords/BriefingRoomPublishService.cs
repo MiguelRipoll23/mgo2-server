@@ -60,16 +60,25 @@ public sealed class BriefingRoomPublishService(
     private const int NoCountSent = -1;
 
     /// <summary>
-    /// Writes the room to one peer, on the briefing's tick, until the round opens
-    /// or the peer goes.
+    /// Writes the room to one peer, on the briefing's tick, until the peer's own
+    /// run is written, the round opens, or the peer goes.
     /// </summary>
+    /// <remarks>
+    /// <b>The run ends the pair.</b> The rules pair is the briefing's until the
+    /// peer is served its run and the beat's from there: the reference writes
+    /// nothing of the room's between its run at t+57.626 and its round at t+174.371
+    /// beyond the beat's own records (<c>docs/analysis/join-stall-after-mode2.md</c>
+    /// §10), and the beat writes the pair again under the round's own generation.
+    /// </remarks>
     /// <param name="context">Context the records are written through.</param>
     public async Task PublishAsync(PeerContext context)
     {
         var session = context.Session;
         var sentCount = NoCountSent;
 
-        while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
+        while (MatchRecordPeerUtils.IsAlive(session)
+            && !roundState.IsOpen
+            && !roundState.HasRunWritten(session))
         {
             try
             {

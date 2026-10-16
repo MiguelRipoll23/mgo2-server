@@ -252,7 +252,7 @@ the disc build. Findings, all re-derived with python capstone (`CS_ARCH_PPC`,
   `0x27A180` loads the object's vtable, then the vtable's first OPD entry, then
   `bctrl`. The frame-drain loop is at `0x26E790`.
 - The handler array is 0x10-byte descriptors at `module_instance + 0x34`
-  (instance at `0x011A6308`). Re-read with capstone, the lookup at `0x2614F8`
+  (instance at `0x011A6308` — **corrected below**). Re-read with capstone, the lookup at `0x2614F8`
   masks an entry's word 0 with **`0x7F000FFF`** (`lis 0x7f00` / `ori r7,r7,0xfff`
   at `0x261568`/`0x261578`) and compares it against
   `((0x18 + bank) << 24) | (argument & 0xFFFF)` — `slwi r0, r4, 0x18` /
@@ -268,6 +268,11 @@ the disc build. Findings, all re-derived with python capstone (`CS_ARCH_PPC`,
   `extsb`/`bge`), and the walk is bounded at 0x1000 entries. **The array is built
   at runtime** — the slot holds `0xE353F7CF` in the file — so the id→handler map
   cannot be read out of the image.
+  **Correction: `0x011A6308` is a static holding the instance pointer, not the
+  instance.** The instance is `0x01856C10` at run time, and the array's per-`vid`
+  entry is a key with a use count and not a handler — the handler is the record
+  class's vtable slot 0 (`0x27A180`). See
+  [the dispatch read-out](udp-record-dispatch.md) §2–§3.
 - The P2P object's own block from `TOC − 0x7ABC` is `0x011AE308`; `docs` cites
   `0x1856C10`, which **is not an address at all** — it is a constant stored in
   the module object's first 48 bytes, outside every mapped segment. **[V]**

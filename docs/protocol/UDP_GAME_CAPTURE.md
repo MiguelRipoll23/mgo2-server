@@ -171,6 +171,17 @@ defect rather than a gap.
 
 Session records only (`id >= 0x1000`). Tick records are in §5.
 
+**The client's own registry is now read, and it settles which of these ids are its.**
+A live client's inbound table holds **18 vids** — `0x001`, `0x002`, `0x250`, `0x252`,
+`0x254`, `0x255`, `0x256`, `0x258`, `0x25A`, `0x25C`, `0x25D`, `0x261`, `0x265`–`0x268`,
+`0x2DE`, `0x2DF` — each with the `0x800` bit set in the engine's own numbering
+(`docs/analysis/udp-record-dispatch.md` §4.1). Two consequences for the [U] rows below:
+`0x1100` and `0x1101` are the only ids here whose **vid** the client does not register
+(`0x100` / `0x101`), so they are not records these two clients' own tables answer for;
+and the registry lists `0x1252`, `0x1255`, `0x125c`, `0x125d` and `0x1265`–`0x1268`, which
+this capture inventory never shows — the inventory is what a capture carried, the
+registry is what the client accepts, and the second is the larger set.
+
 | id | server → joiner | joiner → server | body | what it is |
 | --- | --- | --- | --- | --- |
 | `0x1000` | — | — | 28 | handshake (§4), both directions, pre-keyed |
