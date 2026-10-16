@@ -465,6 +465,58 @@ already records. What is *not* settled is the rules pair's rate in
 `started-briefing-then-solo`, which writes it 42 to 75 times a second where the
 other two write it under one. **[U]**
 
+## 12. The run's copies: one to three per report, and a repeat on the tick
+
+§11 found the copies by counting whole record sets inside a 0.1 s window. Counted
+over every capture that holds a run — all eleven, `mgo2-started-on-solo-game`
+excepted, which has none — the copies are 1 to 3 per report, and what writes them
+is the host rather than anything the client sends (`tools/udp_run_repeats.py`,
+which reads an instant as one copy and prints the client's records in each gap).
+
+| capture | run instants | answering a report | without one | copies in one instant |
+| --- | --- | --- | --- | --- |
+| `mgo2-game1` | 11 | 6 | 5 | 1, and 2 at t+194.042 |
+| `mgo2-game2` | 5 | 3 | 2 | 3 at t+62.181 |
+| `mgo2-game3` | 2 | 1 | 1 | 1 |
+| `mgo2-started-briefing-then-solo-game` | 4 | 2 | 2 | 2 at t+271.100 |
+| `mgo2-game-started-on-briefing` | 3 | 2 | 1 | 2 at t+60.383 |
+| `mgo2-game-joined-when-red-team-then-briefing` | 3 | 3 | 0 | 1 |
+| `mgo2-joined-game-in-progress-last-round` | 4 | 4 | 0 | 1 |
+| `mgo2-game-failed-memoryviolation` | 5 | 3 | 2 | 2 at t+64.586 |
+| `joined-final-round-solo-then-final-round-...` | 2 | 2 | 0 | 1 |
+| `mgo2-game-started-team-selection-...` | 1 | 1 | 0 | 1 |
+| `mgo2-started-on-solo-game` | 0 | 0 | 0 | — |
+
+**Not the client's report.** `mgo2-game3`'s client reports once — `0x1ade e1 10`
+— and is answered twice, at t+59.596 with the marker and again at t+62.092 without
+it, 2.5 s later. **Not the client's answer either:** the client's answers to the
+run's own records arrive 0.4 to 0.8 s after every run (t+59.596's at +0.698,
+t+57.626's at +0.680, t+174.371's at +0.495), which is *before* each repeat, and
+one repeat goes out with the client silent over the whole gap — `mgo2-game1`
+t+472.590, two seconds after the copy before it and with nothing from the client
+in between. So a copy is not owed to a missing acknowledgement, and the client
+acknowledges the run it is sent: `0x5a54` to `0x1a54`, `0x5a50` to `0x1a50`,
+`0x5ade` to `0x1ade`.
+
+**The separate instant is the tick**, 2.0 to 2.5 s behind the report's answer and
+carrying the run's records again (the state block, the close triple, the clock,
+the payload and the rules pair) with no marker. That is the same cadence the
+briefing's own tick runs at, and it is why the copies are read as the host's
+writes rather than as retries.
+
+**What moves the within-instant count is still open.** Two sets go out at one
+instant in three rounds and three in `mgo2-game2`'s, with nothing from the client
+between them; the counts match neither the room's population (game2's run is
+written three times into a room its own count record holds at one player) nor the
+reports (that client reports once before the three). `RepeatCount` is two — three
+sets — for that reason, the most any capture shows, and the number is **[U]**.
+
+**One capture never gets a run at all.** `mgo2-started-on-solo-game` — the
+capture whose note reads "game appeared (no round)" — carries no marker, no state
+block with a close, and no payload that is not a publication: the client joined,
+entered the game and sat with a frozen clock, which is the shape the notes of
+both solo captures describe (times frozen until a second player joins).
+
 **The client's own ending, and why this capture cannot test the round.** Its
 records stop at t+137.13 — 83 s after its report — and the host goes on writing to
 t+196.24. Both references' clients report a second time 118.5 s and 141 s after
