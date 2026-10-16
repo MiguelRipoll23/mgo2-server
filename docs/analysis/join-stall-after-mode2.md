@@ -541,3 +541,65 @@ their first, and that second report is what opens their rounds; this client's wo
 have been due at about t+172, and it was already gone (`rpcs3.dmp` sits beside the
 capture). So the briefing this capture holds is not a round that failed to open: it
 is a room of one whose client left before its own timer came round.
+
+## 13. `myserver10.pcapng`: the briefing's clock is written as a zero
+
+§10 took the round's own close triple out of a fresh room's briefing, and the
+briefing screen is still not reached. This is the next record of the round's that
+a briefing writes, and the one a client reads as *the round is over*.
+
+`myserver10` is one join into the same one-player room (client
+`192.168.1.20:5730`, host `89.129.16.203:5731`, 181 s), and its briefing window
+is the same shape §10 records: the countdown `0b 3c 00 00 00 00 00` held at 60
+with the set empty, the room's count `0x1a58 00 01`, the rules pair, the blobs
+and the controls, and no `07 0f`, `07 2f` or close record. The client reports
+`e1 01` at t+53.694 and is answered with the briefing's run at t+54.023 — the
+thirteen roles, the payload `e0 01 00 00 00 00` and the rules pair, written three
+times — which is what §12 measures the copies to be.
+
+**The run's clock is right and the beat's is a zero.** The run carries
+`01 20 0d` — 3 360 units, the room's own seven-minute round. Every clock record
+behind it reads `01 00 00`, from t+57.280 and once every ~3.2 s for the rest of
+the briefing:
+
+| | the reference (`mgo2-started-briefing-then-solo-game`) | `myserver10` |
+| --- | --- | --- |
+| the run's clock | `01 60 09` (2 400 units) at t+57.626 | `01 20 0d` (3 360 units) at t+54.023 |
+| the beat's clock, briefing | `01 60 09` unchanged, t+57.626 → t+170.366 | **`01 00 00`**, t+57.280 → the capture's end |
+| the beat's clock, round | counts down from 2 400 at t+174.371 | — the round never opens |
+
+So a client that is still being briefed is told, once every three seconds, that
+the round in front of it has no time left on it. The reference holds the whole
+value there for the whole 113 s of its briefing.
+
+**The cause is a writer with no caller.** `MatchRoundStateService.RemainingUnits`
+answers with `BriefingClockUnits` for a room whose round has not opened, and
+`BriefingClockUnits` is the field `NoteBriefingClock` sets — a method that, before
+this change, had **no caller anywhere in the solution**, so the field never left
+its zero. The field's own documentation says what that costs: *"A room that wrote
+zero here would tell every client whose round has not opened yet that the round is
+over."* The beat is the writer that reads it: it starts on the briefing's run
+(`MatchRecordService`'s `WaitForRunWrittenAsync`) and takes `RemainingUnits` per
+frame, so the zero is what the whole briefing's beat carries.
+
+**What was changed.** `MatchStartRunService.BeginBriefing` now notes the clock
+where every briefing begins: the whole time of the round that briefing precedes,
+which is `settings.Round(roundState.RoundNumber + 1).TimeLimitUnits` — the same
+round the briefing's own run carries, so the run and every record behind it agree.
+Nothing else reads the value while a round is open (`Open` sets the round's own
+settings), so the change reaches only a room whose round has not opened.
+
+**Still open, and it is the same shape of defect.** The beat's other offsets are
+counted from the run it starts on, and a *briefing's* run is up to a minute before
+the round's: the item-box burst rides 1.8 s after it (t+55.828 here), which the
+reference does too (t+59.992, 2.4 s after its run), but the vitals floor of
+`MatchRecordFramesUtils.VitalsOnsetFrames` comes due 27 s in — `myserver10` writes
+`0x084e fa fa` from t+85.094, while the reference writes its player's health for
+the first time at t+180.491, 6.1 s after its round opened. A briefing is therefore
+still sent one record of a round it is not in. **[V]** on the instants; whether a
+client acts on either is **[U]**, as §7 leaves it.
+
+**Not verified live.** The build and the 54 codec tests pass and the change is
+measured against the captures, but no client has joined the built host. What would
+confirm it is one capture of this join: the briefing window's clock records should
+read the room's whole round time and not zero.

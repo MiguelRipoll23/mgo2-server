@@ -60,6 +60,18 @@ public sealed partial class MatchStartRunService
         sequences.Restart(BriefingCountdownService.Identifier);
         countdown.Begin(DateTimeOffset.UtcNow, settings.BriefingTimeMinutes);
 
+        // The clock a briefing is held on is the whole time of the round it
+        // precedes, and it is noted where the briefing begins because every writer
+        // of that clock reads it from the room's round: the beat behind the run the
+        // briefing's report asks for carries the round's clock on every one of its
+        // frames, and a room whose briefing noted none writes a zero there — the
+        // reading a client takes for a round that is over, which is a briefing that
+        // is never shown (`MatchRoundStateService.BriefingClockUnits`). The
+        // reference holds its own whole: `mgo2-started-briefing-then-solo-game`
+        // writes `01 60 09` — 2 400 units of its five-minute round — from t+57.626,
+        // its run, to t+170.366, four seconds before the round opens.
+        roundState.NoteBriefingClock(settings.Round(roundState.RoundNumber + 1).TimeLimitUnits);
+
         _ = OpenWhenBriefingEndsAsync(briefing, settings.BriefingTimeMinutes);
     }
 
