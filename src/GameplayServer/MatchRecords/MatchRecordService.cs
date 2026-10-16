@@ -102,18 +102,18 @@ public sealed class MatchRecordService(
             // The briefing's writers belong to the briefing and not to the sparse
             // phase, so all three run beside the sparse steps rather than behind
             // them: the countdown, the ready set's repeat and the room's own rules
-            // pair and count. The captures write them inside the phase. The
-            // recorded host opens its briefing clock on 128 units 2.3 s after it
-            // has answered the roster and counts it to zero while the sparse
-            // controls and blobs go on arriving
-            // (`mgo2-game-joined-when-red-team-then-briefing`, t+11.7 to t+27.9,
-            // beside its 0xd001 and 0x0002 records), and its rules pair rides the
-            // same ticks. A host that started these after the phase would open the
-            // clock on the briefing's last seconds — which is a clock at zero.
-            // The countdown is the one of the three that outlives the peer's run:
-            // its records stop where the run goes out, and the zero it ends a
-            // briefing on is the room's round opening, so it is not awaited here.
-            // Awaiting it would put the beat back behind that round's open.
+            // pair and count. The captures write them inside the phase, the rules
+            // pair and the controls and blobs arriving on the same ticks
+            // (`mgo2-game-joined-when-red-team-then-briefing` writes its
+            // `0xd001` and `0x0002` records through its briefing), and a host that
+            // started them after the phase would open the clock on the briefing's
+            // last seconds — which is a clock at zero.
+            // The countdown is the one of the three that runs past the peer's run
+            // rather than up to it: the reference hosts write their first countdown
+            // after the run a briefing's report asked for and none before it, and
+            // the zero it closes a briefing on is written when the briefing's own
+            // time is out or the round opens, so it is not awaited here. Awaiting
+            // it would put the beat back behind the end of the briefing.
             _ = countdowns.PublishAsync(context);
             var readyPublication = readyPublications.PublishAsync(context);
             var roomPublication = roomPublications.PublishAsync(context);
@@ -230,11 +230,16 @@ public sealed class MatchRecordService(
             // the new round's own clock rather than the one the old round opened
             // on, which is what a replay of a fixed value would write. The vitals
             // onset is read the same way, off the round's own record rather than
-            // the frame count the capture places it at.
+            // the frame count the capture places it at — and it is gated on the
+            // round being open, because this beat begins on the run a briefing's
+            // first report asks for, and no capture writes a player's health while
+            // its client is still being briefed
+            // (docs/analysis/join-stall-after-mode2.md §14).
             var plan = new BeatFramePlan(
                 beat.FrameIndex,
                 generation,
                 roundState.RemainingUnits,
+                roundState.IsOpen,
                 roundState.VitalsArrived,
                 beat.BlobsWritten,
                 beat.ItemBoxSequence,

@@ -55,15 +55,20 @@ public sealed class BriefingReadyPublishService(
 
     /// <summary>
     /// Writes the room's ready set to one peer, repeatedly, until the peer's own
-    /// run is written, the round opens, or the peer goes.
+    /// run is written, the round opens, or the peer goes — and once more on the
+    /// tick after that run.
     /// </summary>
     /// <remarks>
-    /// <b>The run ends the repeat.</b> The reference stops its briefing records
-    /// where its run goes out — `mgo2-started-briefing-then-solo-game` writes its
-    /// last seven-byte countdown at t+57.626, the instant of its run, and nothing
-    /// of the briefing's from there to t+168 but the beat's own records — so a
-    /// repeat that ran on would be records the client is not owed
-    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §10).
+    /// <b>The run is followed by one repeat and by nothing else.</b> Both reference
+    /// hosts write the set with the run the peer's report asked for and again on
+    /// their next operations tick, 2.1 to 2.4 s later, and not again while the
+    /// briefing runs: <c>mgo2-started-briefing-then-solo-game</c> writes
+    /// <c>e0 03 …</c> at t+57.626 and t+59.993 and nothing of the set until its
+    /// round, and <c>mgo2-game-started-on-briefing</c> answers its first report at
+    /// t+56.123 on <c>0x12de</c> and repeats the same set at t+60.383, its run
+    /// having gone out at t+58.255. The repeats after that are answers to other
+    /// players' reports, which the handler writes
+    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §15).
     /// </remarks>
     /// <param name="context">Context the records are written through.</param>
     public async Task PublishAsync(PeerContext context)
@@ -96,6 +101,34 @@ public sealed class BriefingReadyPublishService(
                     session.RemoteAddress);
                 return;
             }
+        }
+
+        // The one repeat the run is followed by. It is written on the same tick the
+        // loop above slept out, under the set the peer's own report named, and it
+        // is the last thing this service writes for the peer: a room whose set
+        // moves again says so through the handler that took the report.
+        if (!MatchRecordPeerUtils.IsAlive(session) || roundState.IsOpen)
+        {
+            return;
+        }
+
+        await roundState.WaitBriefingTickAsync(session, PublishPeriodMilliseconds);
+        if (!MatchRecordPeerUtils.IsAlive(session) || roundState.IsOpen)
+        {
+            return;
+        }
+
+        try
+        {
+            await PublishOnceAsync(context);
+        }
+        catch (Exception exception)
+        {
+            logger.LogDebug(
+                exception,
+                "UDP {LocalPort}: the ready-set publication to {RemoteAddress} stopped on a failed send",
+                context.LocalPort,
+                session.RemoteAddress);
         }
     }
 

@@ -41,7 +41,11 @@ A field entry is
                            is 0; every path then marks the field in the state's
                            map with the two-bit code 2 (`0x27ED68`)
               the low byte (`0x24`, `0x25`, `0x35`, `0x40`, `0x64`) is read by
-              none of those branches, and is [U]
+              none of those branches; the one-field setter `0x27E578` tests
+              `0x0001` and `0x0040` of it (`0x27E6A8`, `0x27E6BC`), which is a
+              per-field publication gate
+              (`docs/analysis/udp-handlers-and-senders.md` §2,
+              `docs/analysis/udp-record-dispatch.md` §3.6)
     +8  u16  spare
 
 `+0x14` is what makes the tables checkable: a state's fields end exactly at its

@@ -578,9 +578,16 @@ record should be sent.
   a round does not stop, and not the one-per-second timer it was read as.
   `STATE_VECTOR.md` §4.
 
-* **[U]** the `0x0e` round-over record's reason byte: `0x00` at a round that ends
-  with no result, `0x07` at one a side takes. Two samples, and this host writes no
-  `0x0e` of its own. `STATE_VECTOR.md` §1.
+* **The `0x0e` round-over record's byte is the client's own count of round-overs.
+  [V] the byte the record carries is `instance + 0xC06`: the per-phase tick
+  `0x2729D8` appends `0x0e` and then that byte (`0x273298`) and clears it as it
+  sends (`0x2732B0`), and the client's two writers of it are `0x26D7C0`, which
+  **increments** it when a round-over is recorded while one is already pending
+  (bits 9 and 10 of `instance + 0xBCC`), and `0x26E350`, which sets it to its
+  argument when the pending one is answered as zero. [I] that is why the two
+  recorded values are `0x00` (no verdict) and `0x07` (the seventh such record);
+  this host writes no `0x0e` of its own. `udp-handlers-and-senders.md` §5.2 and
+  §5.3. `STATE_VECTOR.md` §1.
 
 * **[U]** the state blob's only varying field (a 16-bit value that runs 100, 0,
   94, 98, 99, 50 through a round). `joined-when-red-team`'s 754 steady blobs are
@@ -591,7 +598,10 @@ record should be sent.
   host writes. The u8 timer bank at `0x166` — SDM, INTERVAL, DM, SCAP, RACE — is
   unread as well, and no longer anything this host needs: a dedicated host's round
   length is its own setting for every rule (`GAME_SETTINGS_WIRE.md`).
-* **[U]** the `0x0b` briefing countdown's unit and its `0x40`/`0xc0` flag.
+* **[U]** the `0x0b` briefing countdown's unit and its `0x40`/`0xc0` flag. What
+  the client itself registers under the key `0B` is not this: it is the state
+  dispatcher `0x27E8B0` (`udp-handlers-and-senders.md` §3), and no sender in the
+  client's per-phase tick writes an `0x0b` body (`§5.2`).
 * **[U]** the two 18-byte remainders of the close **triple** (its third record,
   the seven-byte roster close, is read — `PlayerProfileRecordUtility.BuildRosterClose`),
   and the trailing zeros of the match-start payload.

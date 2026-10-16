@@ -396,8 +396,15 @@ directions), and it does exactly this:
 | — | `0x27ED68` | **every** path ends here, and it sets a **two-bit code `2`** for this field index in the state's own map at `+0x0C`: `base + i/4`, `2 << (2 × (i & 3))` — the map is `count × 2` bits, i.e. `ceil(count / 4)` = **41 bytes** per 164-field state, which is the `0x29` stride the 24 maps are allocated on |
 
 The **low byte** of the flags (`0x24`, `0x25`, `0x35`, `0x40`, `0x64` recur) is read by
-none of `0x27EC48`'s branches — it is data for some other reader, and what it codes is
-**[U]**. The two tested bits are not rare: state `0x00` has five container fields
+none of `0x27EC48`'s branches — and it is not unread: `0x27E578`, the one-field *setter*,
+locates the same field entry, tests `0x0001` and `0x0040` of the flags
+(`0x27E6A8`, `0x27E6BC`) and writes the field's slot in the state's own map with a
+**two-bit code `3`** (`0x27E6E0`, `descriptor + 0x18 |= 1`). So the low byte is a
+per-field **publication** gate — `0x0040` publishes the field, `0x0001` publishes it only
+when the write changes it — and the map is a queue of pending transfers carrying a
+*direction*: the reader path leaves `2`, the setter leaves `3`
+(`docs/analysis/udp-handlers-and-senders.md` §2). The two tested bits are not rare: state
+`0x00` has five container fields
 (`0x0225` ×2, `0x0235` ×1) and two blocks (`0x0125` ×2), a slot state has three
 containers (`0x0200`, `0x0210`, `0x0220`) and one block (`0x0125`), and state `0x19` has
 neither — every one of its 44 fields is `0x0000` but one `0x0010`. `0x0010` itself is
@@ -497,7 +504,9 @@ So the two levels are separate, and each is now read out:
   `r1+0x74`).
 * **The wire level** — the per-record handlers of the registry (§3.3.1), one per key, each
   reading its own body shape, and each *updating* the state level rather than being run by
-  it. Live in the dump: key `0x08` → `0x26DE98`, which loops over `[u8 key][u16 value]`
+  it. What the registry's own tick settles is that a *queued* record is dispatched by its
+  first byte; whether the wire's records are the ones that queue carries is the one step
+  left **[U]** (`udp-handlers-and-senders.md` §4). Live in the dump: key `0x08` → `0x26DE98`, which loops over `[u8 key][u16 value]`
   triples and calls `0x280A38` per one — a *stepper* over three-byte groups, which is the
   shape of several of the bodies above (`09 02 01`, `26 02 06`); key `0x0d` → `0x26DB78`,
   which reads one byte, calls `0x27E2B0` — one of the **14** functions that read
@@ -531,6 +540,7 @@ should not be written into a server body until a host-side capture shows it.
 | the **channel** registry (§3.1's keys) | **empty** | `base + 0x180000` and `base + 0x190000` are 64 KB of zeros each, and no 16-byte-aligned word anywhere in `0x50000000`–`0x50100000` carries a `0x18`/`0x19` key with bit 7 of `+0xA` set |
 | the **state** table | `0x0187E990`, 26 state descriptors, one handler `0x27EC48` | §3.5, §3.6 |
 | the **registry** the entries that call it live in | **1** live container, `0x501030D4`, 16 slots, **10 used** | word 0 = `0x01191B30` |
+| the live container's keys and the code each reaches | ten keys, **seven** codes: `01`/`09`/`81` → `0x77FA20`, `06` → `0x77E320`, `85`/`86` → `0x7A43E0`, `07` → `0x282D80`, `08` → `0x26DE98`, `0B` → `0x27E8B0`, `0D` → `0x26DB78` | `udp-handlers-and-senders.md` §3 |
 | the entry of that registry whose handler is the module's own slot 0 | entry 5, OPD `0x011F17E0` → `0x27E8B0` | §3.3.1 |
 | the four stream classes' vtables | read out of the module's static block by their constructors | §3.4 |
 | the record *class factory* an earlier reading looked for | **does not exist as such**: the vtables are installed by the classes' own constructors, and what a stream's records run is the registry entry's address | §3.3, §3.4 |
@@ -612,3 +622,5 @@ stay as they are — a rewrite on this evidence would be a change against the ca
 settle is the other direction's boundary: the fields of what a client *sends* (`0x1d`'s
 7 bytes, `0x1f`'s 3, `0x22`'s 22) are **not** in it, and until a host-side capture shows
 their descriptors, a server body for them stays the recorded one.
+`docs/analysis/udp-handlers-and-senders.md` reads what the client's own handlers and its
+senders do with a body; it does not close this one either.

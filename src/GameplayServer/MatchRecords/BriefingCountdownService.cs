@@ -18,10 +18,26 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// reporting players as a bit set (<see cref="BriefingCountdownBodiesUtils"/>).
 /// </para>
 /// <para>
-/// <b>It stops when the round opens, and that is the whole of its lifetime.</b>
-/// The capture places the briefing countdown only before a round's opening run.
-/// A peer that arrives mid-round is served the round, not a briefing, and is sent
-/// no countdown at all.
+/// <b>Its window is the briefing's own run, and not the join.</b> Both reference
+/// hosts write their first countdown <em>after</em> the run the peer's first
+/// report asks for and none before it: <c>mgo2-game-started-on-briefing</c> runs
+/// at t+58.255 and counts from t+93.127 to its round, and
+/// <c>mgo2-started-briefing-then-solo-game</c> runs at t+57.626 and writes its
+/// countdown only at t+167.992, two seconds before its round is asked for. A peer
+/// that has not reported has no run and is owed no countdown either, which is what
+/// the wait for the run below is (<c>docs/analysis/join-stall-after-mode2.md</c>
+/// §15).
+/// </para>
+/// <para>
+/// <b>It ends on the round's open and on the briefing's own time running out.</b>
+/// Either end is the same record: the count at zero carrying the room's whole
+/// reporting set, written once. The captures place that zero 3 to 6 s before the
+/// round it belongs to — <c>started-briefing-then-solo</c> writes
+/// <c>0b 37 00 08 …</c> and <c>0b 00 00 08 …</c> at t+167.992 and again at
+/// t+170.366, and its round follows at t+174.371 — because a briefing that runs
+/// out is over whether or not the round that asks for it has opened yet. A peer
+/// that arrives mid-round is served the round, not a briefing, and is sent no
+/// countdown at all.
 /// </para>
 /// <para>
 /// <b>And it is frozen while the room has one player.</b> A room of one has no
@@ -225,8 +241,9 @@ public sealed class BriefingCountdownService(
     }
 
     /// <summary>
-    /// Sends the countdown to one peer for as long as its room's briefing runs,
-    /// and returns when the round opens or the peer goes.
+    /// Sends the countdown to one peer from that peer's own run for as long as its
+    /// room's briefing runs, and returns when the briefing's time is out, the round
+    /// opens, or the peer goes.
     /// </summary>
     /// <remarks>
     /// The record is written per peer rather than per room because the channel is
@@ -245,27 +262,25 @@ public sealed class BriefingCountdownService(
     public async Task PublishAsync(PeerContext context)
     {
         var session = context.Session;
+
+        // A briefing's clock is heard from the peer's own run, which is what its
+        // first report asks for: the run is written two to three seconds after
+        // that report and the briefing's records follow it, so a peer that has not
+        // reported — and so has no run — is owed no countdown. The wait is bounded
+        // by the peer (WaitForRunWrittenAsync) rather than by a timer, because a
+        // report may arrive at any point in the room's briefing.
+        await roundState.WaitForRunWrittenAsync(session);
+
         var ticked = false;
 
         while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
         {
-            // The briefing's own records end where the peer's run goes out: the
-            // beat takes the tick over from there (HasRunWritten), and the
-            // reference writes nothing of the briefing's between its run at
-            // t+57.626 and its round at t+174.371 (docs/analysis/join-stall-after-mode2.md
-            // §10). The countdown stays armed and silent instead of ending,
-            // because the zero it closes a briefing on is the room's round opening
-            // and not the run — the reference writes that pair of seven-byte
-            // records at t+167.992, six seconds before the round it belongs to.
-            if (roundState.HasRunWritten(session))
-            {
-                await roundState.WaitBriefingTickAsync(session, PublishPeriodMilliseconds);
-                continue;
-            }
-
             if (!Remaining(DateTimeOffset.UtcNow, out var remaining))
             {
-                return;
+                // The briefing's own time is out, so the briefing is over whether
+                // or not the round has opened: it closes on the zero below, which
+                // is the record a client waiting in its briefing acts on.
+                break;
             }
 
             var seconds = BriefingCountdownBodiesUtils.CountdownSeconds(remaining);
@@ -303,10 +318,12 @@ public sealed class BriefingCountdownService(
         // — `mgo2-game-joined-when-red-team-then-briefing` t+113.758,
         // `0b 00 00 ea 01 00 00` — beside the round's own run, and the ticking
         // record never reaches the zero on its own in a room that fills (it opened
-        // there with twenty seconds still on the count). The zero is therefore the
-        // briefing being over, and it is written for a peer that the briefing ran
-        // for; a peer that arrives into a round already playing is served the round
-        // and no countdown at all, which is what `ticked` keeps true here.
+        // there with twenty seconds still on the count). A briefing that runs its
+        // own time out instead closes on the same zero: `started-briefing-then-solo`
+        // writes the pair at t+167.992 and t+170.366 and is asked for its round at
+        // t+173.438. Either end writes it for a peer the briefing ran for; a peer
+        // that arrives into a round already playing is served the round and no
+        // countdown at all, which is what `ticked` keeps true here.
         if (ticked && MatchRecordPeerUtils.IsAlive(session))
         {
             await SendBriefingEndAsync(context, session);

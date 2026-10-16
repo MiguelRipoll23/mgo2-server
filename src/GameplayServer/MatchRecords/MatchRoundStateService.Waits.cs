@@ -18,14 +18,18 @@ public sealed partial class MatchRoundStateService
     /// briefing's while the room is still briefed, or the round's once one plays.
     /// </summary>
     /// <remarks>
-    /// <b>It is what a briefing's own writers end on.</b> The reference stops its
-    /// briefing records where it starts the beat — `mgo2-started-briefing-then-solo-game`
-    /// writes its last seven-byte countdown at t+57.626, the instant its run goes
-    /// out, and nothing but the beat's own records from t+62 to t+168 — so the
-    /// countdown, the ready set's repeat and the room's rules pair are the
-    /// briefing's and not the phase's (<c>docs/analysis/join-stall-after-mode2.md</c>
-    /// §10). A run written for the round opens the same latch, which is why the
-    /// writers end on it rather than on the round's own open.
+    /// <b>It is the seam the briefing's own writers change hands on.</b> The run is
+    /// the peer's own briefing answer, and every briefing record is dated from it:
+    /// the countdown is written from it and not before it
+    /// (<see cref="BriefingCountdownService.PublishAsync"/>), the ready set is
+    /// repeated once on the tick after it
+    /// (<see cref="BriefingReadyPublishService.PublishAsync"/>), and the room's
+    /// rules pair and count are the beat's from there, the beat starting on the run
+    /// itself (<see cref="MatchRecordService"/>). A run written for the round opens
+    /// the same latch, which is why the writers turn on it rather than on the
+    /// round's own open. The measurement is
+    /// <c>docs/analysis/join-stall-after-mode2.md</c> §15; §10 of that file read the
+    /// countdown as ending on the run, and the captures place it after it.
     /// </remarks>
     /// <param name="session">Session the run would have been written to.</param>
     /// <returns><c>true</c> once a run has been written to that peer.</returns>

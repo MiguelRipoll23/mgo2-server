@@ -603,3 +603,101 @@ client acts on either is **[U]**, as §7 leaves it.
 measured against the captures, but no client has joined the built host. What would
 confirm it is one capture of this join: the briefing window's clock records should
 read the room's whole round time and not zero.
+
+## 14. `myserver11.pcapng`: the initial data against two briefings, record for record
+
+§13's clock is live, and the briefing screen is still not reached. This is the
+same join into the same one-player room (`192.168.1.20:5730` ↔ host
+`89.129.16.203:5731`, 181 s), read the way the user asked for it: the whole of the
+host → client data, window against window, rather than a rate or one family.
+
+**The clock §13 wrote is the room's whole round and it holds.** Every clock record
+of this capture reads `01 20 0d` — 3 360 units, the room's own seven-minute round —
+from the run at t+58.221 to the capture's end at t+180.8, 77 of them, none of them
+a zero. The reference's briefing does the same in its own room's units
+(`started-briefing-then-solo`, `01 60 09` held, 66 records). **[V]**, and it closes
+§13's open question.
+
+**The three briefing windows, by the records they write.** Each window is host →
+client, from that host's briefing run to the round it precedes (or to the capture's
+end where no round came):
+
+| | `started-on-briefing` | `started-briefing-then-solo` | `myserver11` |
+| --- | --- | --- | --- |
+| span | 58.255 → 191.0 | 57.626 → 174.371 | 58.221 → 180.8 |
+| records / kinds | 1 081 / 116 | 6 951 / 37 | 9 514 / 30 |
+| rules pair `0x0261`/`0x0a61` `fe` | 266 | 6 644 | 6 670 |
+| the clock, held whole | — | 66 (`01 60 09`) | 77 (`01 20 0d`) |
+| item-box records (`0x1250`/`0x1a50` …) | 488 | 133 | 156 |
+| room's count `0x0002` / 23 B | 34 | 19 | 17 |
+| the close triple in the run | none | 2 + 4 | 3 + 6 |
+| **`0x08xx` records** | **0** | **0** | **2 516** |
+
+So the live briefing is `started-briefing-then-solo`'s shape and not
+`started-on-briefing`'s — the rules pair at ~55 a second, the item-box group's own
+shape and its fillers' bodies (`00 74 01`, `01 8c 00`, `00 00 00`, `01 00 00`), the
+count, the arrays, the payload `e0 01 …`, the run's close triple — and
+§12's three copies are the three the run frame carries at t+58.221. The two
+references differ from each other on the close triple (§10 measured that), so the
+live host's three are inside the measured range and are left as they are. **[V]**
+
+### The one family a briefing writes and no reference briefing writes
+
+**The vitals record.** `myserver11` writes `0x084e fa fa` 2 516 times inside its
+briefing, the first at t+89.889 — 31.7 s after the run, which is
+`MatchRecordFramesUtils.VitalsOnsetFrames` (818 frames) counted from the run the
+beat starts on. Neither reference host writes a single `0x08xx` record in its
+briefing window: **0** in both. They write them in the round that follows, and each
+family's first record is a few seconds after the round's own open —
+`started-on-briefing` t+203.498 (its round opened at t+198.371, **+5.1 s**),
+`started-briefing-then-solo` t+180.491 (its round at t+174.371, **+6.1 s**). **[V]**
+
+That is §13's "one record of a round it is not in", now measured on the wire: the
+beat's own offsets are counted from the run it starts on, and a *briefing's* run is
+written up to a minute before the round it precedes, so an onset that is right for a
+round comes due in the middle of a briefing. A client four seconds into its
+briefing is told, 28 times a second for the rest of it, about the health of a round
+that has not begun.
+
+**What was changed.** The beat's vitals record is gated on the round being open:
+`BeatFramePlan` takes the round's own state beside its clock and `IncludeVitals`
+requires it, so the measured floor still decides *when in the round* the record
+joins and the round's open decides *whether*. A briefing's beat, which starts on the
+briefing's run, therefore writes none, and every round keeps the onset the captures
+place it at.
+
+### The join burst, and two differences left in it
+
+Recorded because they are what the same comparison shows and neither is changed
+here:
+
+* **The countdown runs before the room has heard anyone.** The live host writes
+  `0b 3c 00 00 00 00 00` from t+2.505, one every 2.5 s, 22 of them before the
+  client's first report — with an **empty** reporting set on every one of them,
+  including the two ticks that follow the report (t+55.413, t+57.927). Each
+  reference writes its first countdown at or after the room's second reporting
+  player (`started-on-briefing` t+93.127), and each carries the reporters' bits —
+  `0b 3c 00 02 …` once one player is on the set, `0b 37 00 08 00 00 00` for the solo
+  room's slot 3 (a byte, not the room's population). **[V]** on the instants.
+* **The report that arrived beside the client's presence record was answered 3.2 s
+  late, by the retry.** The client sends both in one datagram at t+55.010
+  (`0x0a5c` slot `01`, then `0x1ade e1 01`) and sends the report alone at t+58.018;
+  the presence answer (`0x0a5c 02 00 00 00`), the publication (`0x1ade e0 01 …`) and
+  the briefing's run all follow the **second**, at t+58.065 and t+58.221. The
+  reference host answers the same two-record datagram in **0.3 s** (`0x025c 02 00 00 00`
+  at t+56.123 for a report at t+55.838) and writes its run 2.4 s later. What the
+  first datagram reached in the live host is **[U]** — the capture holds what was
+  sent and not what was dispatched — and it is why the room's mask still read `00`
+  at t+57.927 while the run four seconds later carries `02` in the same answer.
+* **A ten-byte record the references write at the join and this host writes
+  nowhere**: `0x1001 len=10 body=0b 00 00 04 00 00 00 00 00 0N`, twice in
+  `started-on-briefing`'s join answer (t+5.996, N=2), once in `joined-when-red-team`
+  (t+9.398, N=6) and once in the solo capture's second briefing (t+262.746, N=3).
+  Its last byte climbs with the room's own progress and ours never writes the
+  record at all. What it tells a client is **[U]**.
+
+**Not verified live.** The build is clean (0 warnings, 0 errors) and the 54 codec
+tests pass, and the change is measured against the captures; no client has joined
+the built host. What would confirm it is the same join: the briefing window should
+then hold no `0x08xx` record at all, and the round's own beat should grow them a few
+seconds after it opens, as both references do.

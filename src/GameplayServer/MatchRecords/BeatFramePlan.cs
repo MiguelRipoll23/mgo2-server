@@ -30,6 +30,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// beat writes counts down with the round (
 /// <see cref="MatchRoundStateService.RemainingUnits"/>).
 /// </param>
+/// <param name="RoundOpen">
+/// Whether the round this beat serves has opened. A briefing's beat serves a
+/// round that has not, and no capture writes a player's health before the round
+/// it plays is open (<see cref="IncludeVitals"/>).
+/// </param>
 /// <param name="VitalsOnset">
 /// Whether a player has reported vitals in this round, which is the record the
 /// vitals record's onset is gated on in place of the capture's frame count
@@ -48,6 +53,7 @@ public sealed record BeatFramePlan(
     int FrameIndex,
     MatchRecordGenerationUtils Generation,
     int RoundClockUnits,
+    bool RoundOpen,
     bool VitalsOnset,
     int BlobsWritten,
     byte ItemBoxSequence,
@@ -220,15 +226,30 @@ public sealed record BeatFramePlan(
     /// Whether the vitals record rides in this frame.
     /// </summary>
     /// <remarks>
-    /// <b>The onset is the round's first vitals, with the capture's own offset as
-    /// its floor.</b> The recorded host writes the rules-roster pair alone for the
-    /// round's first 27.0 s and adds the vitals record after it, because that is
-    /// when its round had health to report; a live host has the record the moment
-    /// a player reports any (<see cref="VitalsOnset"/>). The measured offset is
-    /// kept as a floor rather than dropped, so a room whose players never report
-    /// vitals still carries the record the client's beat was measured with.
+    /// <para>
+    /// <b>The onset is the round's, and a briefing is served none.</b> A
+    /// briefing's beat starts on that briefing's own run, which is written up to a
+    /// minute before the round it precedes, so an onset counted from the run alone
+    /// comes due while the client is still being briefed: `myserver11` wrote
+    /// `0x084e fa fa` 2 516 times through one briefing where neither reference
+    /// host writes a single `0x08xx` record before its round opens
+    /// (`docs/analysis/join-stall-after-mode2.md` §14). Measured against each
+    /// round's own open, the onset is +4.9 s (`joined-when-red-team`), +6.1 s
+    /// (`started-briefing-then-solo`) and +27.0 s (`game1`), which is inside a
+    /// range no briefing has: the record belongs to a round that is playing.
+    /// </para>
+    /// <para>
+    /// <b>The floor behind the report is the capture's own offset, kept rather
+    /// than dropped.</b> The recorded host writes the rules-roster pair alone for
+    /// the round's first 27.0 s and adds the vitals record after it, because that
+    /// is when its round had health to report; a live host has the record the
+    /// moment a player reports any (<see cref="VitalsOnset"/>). A room whose
+    /// players never report vitals still carries the record the client's beat was
+    /// measured with, once its round is open.
+    /// </para>
     /// </remarks>
-    public bool IncludeVitals => VitalsOnset || FrameIndex >= MatchRecordFramesUtils.VitalsOnsetFrames;
+    public bool IncludeVitals =>
+        RoundOpen && (VitalsOnset || FrameIndex >= MatchRecordFramesUtils.VitalsOnsetFrames);
 
     /// <summary>
     /// Whether this frame's insertion is a state blob, which is what advances

@@ -46,6 +46,12 @@ Every record on the operations identifiers (`0x1254`, `0x1a54`, `0x9254`,
 | `0x1d`, `0x1f`, `0x22` | varies | the **joiner's own** operations; **[U]** |
 | `0x26` | 3 bytes | the host writes it; **[U]** |
 
+The other half of the same table — which function *parses* an incoming body and which
+one *writes* a body a client sends — is read out of the image itself in
+`docs/analysis/udp-handlers-and-senders.md`: the state access layer every body moves
+through (§2), the keys the live handler container holds and the seven codes they reach
+(§3, §4), and the bodies the client's own per-phase tick and run opener send (§5).
+
 The two directions write **disjoint** operations, measured over
 `mgo2-game-joined-when-red-team-then-briefing` (both identifiers together, 1 192
 records):
@@ -80,18 +86,24 @@ opcode `0x00` with the next seven bytes read as a map wants 28 bytes where the r
 carries 90. Over 406 144 bodies from three captures (177 179 distinct), **none** of the
 operations identifier's 2 214 records fits, and the 1.41% of distinct bodies that do fit
 are unrelated tick bodies whose arithmetic coincides
-(`tools/mgo2_state_wire_check.py`). The two levels are separate: the wire's
-opcodes select per-record handlers (the module's registry, one per key), and those
-handlers *write* the state the descriptors describe. What the joiner's `0x1d`, `0x1f`
+(`tools/mgo2_state_wire_check.py`). The two levels are separate: the registry
+dispatches a *queued* record by its first byte, one handler per key, and those handlers
+*write* the state the descriptors describe — and the one step that stays **[U]** is
+whether the wire's records are the ones that queue carries
+(`udp-handlers-and-senders.md` §4, §6). What the joiner's `0x1d`, `0x1f`
 and `0x22` say is therefore **[U]** on both counts, and a server body for them stays the
 recorded one.
 
 **`0x0e` is measured as the round's own verdict, and it is worth having.** In
 `mgo2-game1` the round that ends with no result sends `0e 00` at t+352.007, and
 `state[2..3] = 06 01` lands at the same instant; the round a side takes sends
-`0e 07` at t+688.753 and `state[2] = 03` 2.1 s later. The reason byte is
-`[U]` — two samples — but the record itself is the host announcing that the round
-is over, and this host writes no equivalent.
+`0e 07` at t+688.753 and `state[2] = 03` 2.1 s later. The record is the host
+announcing that the round is over, and its byte is the **client's own round-over
+count**: the per-phase tick appends `0x0e` and `instance + 0xC06`, clears that byte as
+it sends, and the client's writers of it increment it per recorded round-over while one
+is pending — or set it to zero when the pending one is answered as zero
+(`docs/analysis/udp-handlers-and-senders.md` §5.2, §5.3). [I] that is what the two
+samples are, `0x00` and `0x07`; this host writes no equivalent.
 
 ## 2. Forty-nine of the eighty-nine bytes are constants
 
