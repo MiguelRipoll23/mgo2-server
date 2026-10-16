@@ -511,6 +511,23 @@ written three times into a room its own count record holds at one player) nor th
 reports (that client reports once before the three). `RepeatCount` is two — three
 sets — for that reason, the most any capture shows, and the number is **[U]**.
 
+**The client's post-join records, and the one that returns.** The joiner's first
+seconds are the handshake (`0x1000` ×2), the keep-alive (`0x5000` ×3), its profile
+(`0x1001` 140 B ×2), the empty `0x5001` answers to the host's roster run, and two
+one-byte `0x9001` records that carry no profile. Beside them it sends a **five-byte
+`0x1001`-family record, `0c 01 00 00 00`** — an opcode `0x0c` and a `u32` of one —
+first plain and then under the payload-class bit, 2 s apart, 7 s and 9 s after the
+handshake (`mgo2-game-started-on-briefing` t+7.238 and t+9.209). The host answers
+it: `0xd001` — `0x9001` with the answer bit — carrying a one-byte body `0c`, the
+same opcode back, 0.9 s after the second copy. That is the rule `answer_body_length_of`
+records, one body byte for a record of the `0x8000` class, and it is what makes the
+record a request rather than a report. Across the captures it is sent 1 to 6 times
+a session (game1 6, started-on-briefing 6, started-briefing-then-solo 4, game2 2,
+game3 1, this project's own `myserver9` 1). What opcode `0x0c` *is* stays **[U]**:
+the replay decoder's opcode table covers the operations family (low vid `0x254`)
+and not the `0x001` one, so the name needs the client's sender, not another read of
+the wire (`tools/mgo2_elf.py`, `tools/mgo2_static_use.py`).
+
 **One capture never gets a run at all.** `mgo2-started-on-solo-game` — the
 capture whose note reads "game appeared (no round)" — carries no marker, no state
 block with a close, and no payload that is not a publication: the client joined,
