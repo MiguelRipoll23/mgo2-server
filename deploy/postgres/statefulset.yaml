@@ -3,10 +3,8 @@
 # The image is the project's own mgo2-postgres: PostgreSQL 18 with the EF Core
 # migration bundle in it. Its entrypoint runs the bundle against a temporary
 # instance before it starts the real one, so the pod is never serving a schema
-# the bundle has not applied — which is the same guarantee the PreSync hook Job
-# in deploy/migrate gives, applied from inside the database container instead.
-# Both run; the bundle is idempotent, so a fresh install simply applies the
-# schema twice. See deploy/README.md, "Migrations".
+# the bundle has not applied — and it is the only thing in this deployment that
+# applies one. See deploy/README.md, "Migrations".
 #
 # A StatefulSet rather than a Deployment, for one reason that matters: its
 # volume is a volumeClaimTemplate, so the PersistentVolumeClaim is owned by the

@@ -39,7 +39,7 @@ anything about another service's pipeline.
 | `http.yml`                    | `src/Http`                 | `mgo2-http`                 | `deploy/http`           | Http + Shared             |
 | `dns.yml`                     | `src/Dns`                  | `mgo2-dns`                  | `deploy/dns`            | Dns + Shared              |
 | `stun.yml`                    | `src/Stun`                 | `mgo2-stun`                 | `deploy/stun`           | Stun + Shared             |
-| `postgres.yml`                | the EF Core bundle and the database | `mgo2-postgres`      | `deploy/postgres`, `deploy/migrate` | Shared          |
+| `postgres.yml`                | the EF Core bundle and the database | `mgo2-postgres`      | `deploy/postgres`       | Shared                    |
 | `release.yml`                 | all of the above, forced    | —                           | every folder            | —                         |
 
 Every service workflow calls the same reusable workflow,
@@ -74,7 +74,7 @@ lets it go:
 | Kept                                                                             | Because                                                                   |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | a version carrying `latest` or the default branch's name                          | those two names follow the newest build, and the compose install pulls `latest` |
-| a version carrying a SHA any `deploy/*/kustomization.yaml` or `bundle.yaml` pins  | whatever Argo is reconciling has to be pullable                             |
+| a version carrying a SHA any `deploy/*/kustomization.yaml` pins                   | whatever Argo is reconciling has to be pullable                             |
 | a version carrying a SHA one of the last `keep` release tags points at             | that is the rollback window, and a rollback is a one-line commit           |
 | the newest `keep` versions of each image                                           | this is what bounds the growth *between* releases                          |
 
@@ -304,9 +304,10 @@ The five checks that matter, and how to run each:
   publish and pin. Break a `Shared`-tagged test instead and every pipeline
   fails, correctly — nothing can be deployed against code that is broken.
 - **A migration runs end-to-end.** Push a change under `src/Shared/Persistence`
-  (which rebuilds the bundle and re-pins `deploy/postgres` and `deploy/migrate`
-  in one commit) and watch Argo: the `mgo2-migrate` Application's PreSync hook
-  Job must reach `Completed` before any wave-3 Application begins to sync.
+  (which rebuilds the bundle and re-pins `deploy/postgres`) and watch Argo: the
+  `mgo2-postgres` Application must reach Healthy — its readiness probe passes
+  only once the migration history table exists — before any wave-2 Application
+  begins to sync.
 - **The purge keeps what it should.** Dispatch `purge-images.yml` with
   `dry_run: true`, and read the log: every `newTag` in `deploy/` and the last
   `keep` release tags must appear on a `keep` line, and nothing carrying
@@ -321,9 +322,9 @@ The spec this implements left four questions open. They are settled:
 
 - **CI system**: GitHub Actions.
 - **GitOps controller**: ArgoCD, chosen over Flux because the manifests are
-  plain kustomizations rather than Kustomization objects, and because the
-  migration needs a hook that runs before a sync — which Argo has and Flux
-  models as a dependency between Kustomizations.
+  plain kustomizations rather than Kustomization objects, and because an
+  ordered sync — a wave that must be healthy before the next one starts — is
+  what a schema change needs to stay ahead of the workloads.
 - **Database**: PostgreSQL 18, in the cluster, as the `mgo2-postgres`
   StatefulSet in `deploy/postgres` — the same image the migration hook runs, so
   the database a release starts and the schema that release applies are one

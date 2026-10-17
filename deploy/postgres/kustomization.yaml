@@ -1,10 +1,9 @@
 # The in-cluster database.
 #
-# The image carries the EF Core migration bundle, so this folder pins the same
-# `mgo2-postgres` tag as deploy/migrate. The postgres pipeline rewrites both in
-# one commit — see the `gitops` step in .github/workflows/service.yml — because
-# a schema change that pins the hook but not the database, or the other way
-# round, is a release whose image and schema disagree.
+# The image carries the EF Core migration bundle and the pod applies it on
+# startup, so this `newTag` is both the database's version and its schema's.
+# The postgres pipeline rewrites it; see the `gitops` step in
+# .github/workflows/service.yml.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 

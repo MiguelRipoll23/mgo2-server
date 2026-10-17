@@ -44,11 +44,7 @@ on:
         type: string
         required: true
       manifests:
-        description: >-
-          Folder(s) under deploy/ holding this service's image tag, space
-          separated. One folder for every service; postgres names both of its
-          own, because the same image is the database workload and the
-          migration hook.
+        description: Folder under deploy/ holding this service's image tag.
         type: string
         required: true
       target:
@@ -386,63 +382,29 @@ jobs:
           MANIFESTS: ${{ inputs.manifests }}
         run: |
           set -euo pipefail
+          file="deploy/${MANIFESTS}/kustomization.yaml"
 
-          # MANIFESTS is one folder for every service but postgres, which names
-          # deploy/postgres and deploy/migrate: the database workload and the
-          # PreSync hook Job run the same image, so their pins have to move in
-          # one commit or a release ships a schema it never applied.
-          files=""
-          for folder in ${MANIFESTS}; do
-            files="$files deploy/${folder}/kustomization.yaml"
+          pinned="$(sed -n 's/^ *newTag: *//p' "$file")"
 
-            # A folder may also carry the bundle marker ConfigMap, the tracked
-            # resource that makes the mgo2-migrate Application sync and run its
-            # PreSync hook — the hook Job itself is not a tracked resource, so
-            # without the marker a new bundle would never mark it OutOfSync. It
-            # has to move with the pin. Only the migrate folder holds one; the
-            # guard skips the rest.
-            if [ -f "deploy/${folder}/bundle.yaml" ]; then
-              files="$files deploy/${folder}/bundle.yaml"
-            fi
-          done
+          # A run that finished late must not overwrite a newer pin. If the
+          # commit already recorded there is a descendant of this one, a later
+          # run has already been here, and the right move is to leave it alone.
+          if git cat-file -e "${pinned}^{commit}" 2>/dev/null \
+            && git merge-base --is-ancestor "$SHA" "$pinned"; then
+            echo "Already pinned to $pinned; leaving it."
+            exit 0
+          fi
 
-          for file in $files; do
-            case "$file" in
-              */bundle.yaml)
-                pinned="$(sed -n 's|^ *image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:||p' "$file")"
-                ;;
-              *)
-                pinned="$(sed -n 's/^ *newTag: *//p' "$file")"
-                ;;
-            esac
+          sed -i "s|^\( *newTag: \).*$|\1${SHA}|" "$file"
 
-            # A run that finished late must not overwrite a newer pin. If the
-            # commit already recorded there is a descendant of this one, a later
-            # run has already been here, and the right move is to leave it alone.
-            if [ -n "$pinned" ] && git cat-file -e "${pinned}^{commit}" 2>/dev/null \
-              && git merge-base --is-ancestor "$SHA" "$pinned"; then
-              echo "Already pinned to $pinned; leaving it."
-              continue
-            fi
-
-            case "$file" in
-              */bundle.yaml)
-                sed -i "s|^\( *image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:\).*$|\1${SHA}|" "$file"
-                ;;
-              *)
-                sed -i "s|^\( *newTag: \).*$|\1${SHA}|" "$file"
-                ;;
-            esac
-          done
-
-          if git diff --quiet -- $files; then
+          if git diff --quiet -- $file; then
             echo "Already pinned to $SHA."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add $files
+          git add "$file"
           git commit -m "deploy: pin ${SERVICE} to ${SHA:0:7}"
 
           # Another service's pipeline may have pushed while this one ran. Each

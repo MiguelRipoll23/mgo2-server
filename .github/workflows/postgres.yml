@@ -1,9 +1,7 @@
-# The database image's pipeline. mgo2-postgres carries the EF Core bundle, and
-# it reaches the cluster two ways: it is the database workload itself
-# (deploy/postgres, whose entrypoint migrates before it accepts connections),
-# and it is the bundle deploy/migrate/ runs as a PreSync hook. This pipeline
-# publishes the image and pins both folders in one commit, so the database a
-# release runs and the schema that release applies are always the same bundle.
+# The database image's pipeline. mgo2-postgres carries the EF Core bundle and
+# is the database workload itself: its entrypoint applies the schema before it
+# accepts a connection, so publishing a new bundle and pinning it is the whole
+# of a schema change. There is no separate migration job to keep in step.
 #
 # `dotnet-ef` is what builds the bundle, so a change to the tool manifest has to
 # wake this pipeline; the bundle stage is the only consumer of it.
@@ -52,8 +50,7 @@ jobs:
       # The bundle is built from the model in Shared, so that is the project
       # whose changes decide whether there is a new bundle to publish.
       context: src/Shared/Mgo2Server.Shared.csproj
-      # Both folders that pin mgo2-postgres, so neither can lag the other.
-      manifests: postgres migrate
+      manifests: postgres
       target: postgres
       # No PROJECT or ASSEMBLY: the postgres stage is built from the bundle
       # stage alone.

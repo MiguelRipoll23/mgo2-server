@@ -1,4 +1,4 @@
-# Wave 3: a workload, and so only ever synced after the migration hook has
+# Wave 2: a workload, and so only ever synced once the database is ready
 # succeeded.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -6,7 +6,7 @@ metadata:
   name: mgo2-gameplay
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-wave: "2"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:

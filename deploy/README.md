@@ -10,7 +10,6 @@ an image tag here, and Argo does the rest. No workflow runs `kubectl apply`.
 | ------------------ | ------------------------------------------------------ | ------------------------- |
 | `cluster/`         | the namespace, GatewayClass, Gateway and HTTPRoute      | —                         |
 | `postgres/`        | the in-cluster database                                 | `mgo2-postgres`           |
-| `migrate/`         | the one-shot schema migration, as a PreSync hook Job    | `mgo2-postgres`           |
 | `gate/`            | the gate lobby                                          | `mgo2-gate-lobby-server`  |
 | `account/`         | the account lobby                                       | `mgo2-account-lobby-server` |
 | `game-lobby/`      | the ten lobby roles                                     | `mgo2-game-lobby-server`  |
@@ -33,15 +32,10 @@ deployments share one image, so they share one tag and move together.
    image tagged with the commit SHA.
 3. The pipeline's last step rewrites `newTag` in that service's
    `kustomization.yaml` and commits it. That is the whole deploy: one line in
-   one folder, on `main`. Two folders are the exception, and they are the pair
-   `postgres.yml` pins: `deploy/postgres` and `deploy/migrate`, which run the
-   same image as a database and as a hook, so a pin that moved in one without
-   the other is a database and a schema that disagree. `deploy/migrate` also
-   carries `bundle.yaml`, the marker ConfigMap the `mgo2-migrate` Application
-   compares, and the pipeline rewrites its digest in the same commit. The
-   marker is what makes the Application sync and run the PreSync hook — the
-   pin alone does not — so a marker that lags the pin is a migration that
-   never runs, and a release serving a schema its code was never migrated to.
+   one folder, on `main`. A schema change has that same shape — the moving
+   pin is `postgres`'s, and the database it names applies the bundle on
+   startup — so there is no second folder to keep in step and no marker
+   resource to compare.
 4. ArgoCD notices the commit and syncs the Application for that folder. Sync is
    automated and self-healing, so the folder and the cluster cannot drift.
 
@@ -66,9 +60,8 @@ are ordered by sync wave:
 | Wave | Application  | Why                                                          |
 | ---- | ------------ | ------------------------------------------------------------ |
 | 0    | `mgo2-cluster`  | the namespace and Gateway API resources everything needs    |
-| 1    | `mgo2-postgres` | the database, which has to accept connections before anything can migrate it |
-| 2    | `mgo2-migrate`  | the migration hook, which has to finish before anything rolls out |
-| 3    | the services    | the workloads, none of which may roll out before the schema is ready |
+| 1    | `mgo2-postgres` | the database, which applies the schema and must be ready before anything rolls out |
+| 2    | the services    | the workloads, none of which may roll out before the schema is ready |
 
 Three things are prerequisites and are deliberately **not** in this folder,
 because they carry environment-specific values that do not belong in git:
@@ -126,23 +119,28 @@ pipelines pin every folder, and only then apply `root.yaml`.
 
 ## Migrations
 
-The migration Job in `migrate/job.yaml` is an Argo **PreSync** hook. Argo runs
-every hook before it applies the rest of an Application's resources, and it does
-not start the rollout until the hook has succeeded, so a failed migration leaves
-the previous revision serving.
+The database applies its own schema. `mgo2-postgres` is PostgreSQL 18 with the
+EF Core bundle in it, and its entrypoint runs the bundle against a temporary
+instance before it starts the server; the readiness probe passes only once the
+migration history table exists. A pod that is Ready is therefore a pod whose
+schema is current, and publishing a new bundle and pinning it in `deploy/postgres`
+is the whole of a schema change. What orders it against the workloads is the
+wave: nothing at wave 2 begins until this Application is Healthy.
+
+One consequence is worth stating plainly. **A schema change is a database
+restart.** The pod holds the only copy of the data directory, so its
+replacement cannot start until the old one has stopped, and the servers see a
+database that is away while the bundle runs. Expand-then-contract is what keeps
+that window from also being a breaking one.
 
 The schema rules the migration has to obey:
 
 1. **The servers never migrate, and cannot.** No server image carries the
-   bundle. It lives in `mgo2-postgres`, and that image reaches the schema from
-   two places: the database pod runs it on startup, before it accepts a single
-   connection, and `migrate/` runs it as a PreSync hook before the rollout.
-   The pod is what migrates a fresh install — its readiness probe passes only
-   once the migration history table exists — and the hook is what keeps a
-   model change ordered against the workloads that need it. Both run the same
-   bundle, so the second to arrive is a no-op.
+   bundle. It lives in `mgo2-postgres`, the database pod runs it on startup,
+   and nothing else applies a schema — which is why the database is a wave of
+   its own rather than one more workload.
 2. **The bundle is versioned with the commit that built it.** `mgo2-postgres`
-   carries the EF Core bundle built from that revision, and `deploy/migrate/`
+   carries the EF Core bundle built from that revision, and `deploy/postgres/`
    pins the image tag, so the schema a release applies is the schema its code
    was built against.
 3. **Expand, then contract.** During a rollout the old and new pod versions run

@@ -1,6 +1,10 @@
 # Wave 1: the database itself, which has to be accepting connections with its
-# schema applied before wave 2's PreSync hook can migrate it and before any
-# wave-3 workload rolls out.
+# schema applied before any wave-2 workload rolls out.
+#
+# It is the only thing that applies the schema. The image's entrypoint runs the
+# bundle against a temporary instance before it starts the server, and the
+# readiness probe passes only once the migration history table exists, so this
+# wave is what orders a schema change against the workloads that need it.
 #
 # It is a workload rather than a prerequisite like `mgo2-secrets`, because
 # nothing in it is environment-specific: the credentials it reads come from that

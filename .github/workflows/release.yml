@@ -90,9 +90,7 @@ jobs:
           - service: postgres
             image: mgo2-postgres
             context: src/Shared/Mgo2Server.Shared.csproj
-            # Both folders that pin mgo2-postgres: the database workload and
-            # the PreSync migration hook.
-            manifests: postgres migrate
+            manifests: postgres
             target: postgres
             project: ""
             assembly: ""

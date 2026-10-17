@@ -155,9 +155,9 @@ These run once per process start and are easy to mistake for timers:
   and doubling to a 20 s ceiling. It is a retry ladder, not a poll — the point
   is to ride out a database that is briefly away rather than crash-loop the
   whole deployment.
-- **The EF Core migration bundle**, which is an Argo `PreSync` hook Job
-  (`deploy/migrate/`) and runs once per sync, not on a schedule. See
-  `deploy/README.md`.
+- **The EF Core migration bundle**, which the database pod runs on startup
+  (`deploy/postgres/`) before it accepts a connection — so once per database
+  roll, not on a schedule. See `deploy/README.md`.
 
 ## Reading the volumes
 

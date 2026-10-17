@@ -160,11 +160,11 @@ jobs:
 
           # The SHAs nothing may delete. Neither set is a date: one is what
           # deploy/ names, the other is what the last few releases were cut
-          # from. A manifest's pin is a bare SHA under `newTag`; the migrate
-          # folder's bundle marker carries the same SHA as an image URL, which
-          # is why both shapes are read here. The URL form is taken only with
-          # the SHA ending the line, so a digest-pinned image (`@sha256:...`)
-          # contributes nothing rather than a fragment of its digest.
+          # from. A manifest's pin is a bare SHA under `newTag`, and a ConfigMap
+          # naming an image carries the same SHA as a URL, so both shapes are
+          # read here. The URL form is taken only with the SHA ending the line,
+          # so a digest-pinned image (`@sha256:...`) contributes nothing rather
+          # than a fragment of its digest.
           pinned="$(
             for manifest in deploy/*/kustomization.yaml deploy/*/bundle.yaml; do
               [ -e "$manifest" ] || continue
