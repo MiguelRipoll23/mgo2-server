@@ -235,6 +235,19 @@ the pair without the group gets one answer and then silence — which is what th
 live captures hold. **[V]** on the shape and the order in all four;
 **[U]** on what the two companions' names are.
 
+**The confirmation, the group and the pair are one run and take one consecutive
+range of the roster counter.** The confirmation is its head, so the fourth bytes
+read in order on the wire — `mgo2-game2` writes `81 00` at `10`, the group at
+`11`–`13` and the pair at `14`–`15`; `mgo2-game1` runs `17`–`1d` across the same
+records; `mgo2-game-started-on-briefing` runs `2e`–`3a` — and the confirmation is
+not a class of its own. A host that pins it to one value walks the run out of
+order, which is what the live freeze did (`81 f3` at `1a` while its own counter
+stood at `0e`). A second answer of the **same** sequence repeats the confirmation
+and the group unchanged, the pair taking fresh values: `mgo2-game1` at t+187.3 and
+`mgo2-started-briefing-then-solo-game` at t+170.4 both re-send the same ordinals,
+and neither ever writes the group under a second set. **[V]** on the
+consecutiveness and the repeat in every capture that holds the handshake.
+
 `TeamArrayService` answers the confirmation, writes the group and republishes the
 pair under the next sequence. Before it, the live client sent `82 f3`/`84 f3`
 once and never again, because the sequence had nowhere to go.

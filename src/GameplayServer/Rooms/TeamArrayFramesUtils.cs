@@ -211,13 +211,6 @@ public static class TeamArrayFramesUtils
     /// <summary>Type byte a client answers the occupancy array under.</summary>
     public const byte OccupancyArrayAnswerIdentifier = 0x84;
 
-    /// <summary>
-    /// Attribute class the confirmation travels under. The captures give it
-    /// <c>26</c>, where the arrays behind it carry a positional ordinal — so
-    /// the confirmation's fourth byte is a class and not a place in a run.
-    /// </summary>
-    public const byte ConfirmationClass = 26;
-
     /// <summary>Length of either answer and of the confirmation.</summary>
     public const int AnswerLength = 2;
 
@@ -378,6 +371,17 @@ public static class TeamArrayFramesUtils
     public static byte NextSequence(byte sequence) => unchecked((byte)(sequence + 1));
 
     /// <summary>The confirmation record's body: its type byte and the sequence.</summary>
+    /// <remarks>
+    /// <b>The confirmation's fourth byte is the head of the roster run, not a
+    /// constant.</b> Every reference capture numbers the confirmation, the
+    /// announcement group and the republished pair from the one counter, in
+    /// order: `mgo2-game2` writes <c>81 00</c> at <c>0x10</c>, the group at
+    /// <c>0x11</c>-<c>0x13</c> and the pair at <c>0x14</c>-<c>0x15</c>, and
+    /// `mgo2-game1` runs <c>0x17</c>-<c>0x1d</c> across the same records. The
+    /// value is therefore taken from <see cref="RoomRosterService.TakeRunOrdinals"/>
+    /// with the group's, and a host that pins it walks the run out of order - the
+    /// live freeze wrote <c>0x1a</c> where its own counter stood at <c>0x0e</c>.
+    /// </remarks>
     /// <param name="sequence">Sequence being confirmed.</param>
     /// <returns>The record body.</returns>
     public static byte[] BuildConfirmation(byte sequence) => [ConfirmationIdentifier, sequence];

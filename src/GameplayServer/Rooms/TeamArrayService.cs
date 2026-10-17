@@ -47,10 +47,11 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </remarks>
 /// <param name="lobbySlots">Reader of the room's own players and their sides.</param>
 /// <param name="roster">
-/// The room's roster exchange, whose counter numbers the republished pair: the
-/// two values it takes are the next two the identifier's records take, so a pair
-/// republished a hundred times over a briefing carries a hundred values and
-/// never repeats one the peer has already seen.
+/// The room's roster exchange, whose counter numbers the whole exchange: the
+/// confirmation, the group and the pair take one consecutive range of it, so the
+/// run reads in order on the wire and a pair republished a hundred times over a
+/// briefing carries a hundred values and never repeats one the peer has already
+/// seen.
 /// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class TeamArrayService(
@@ -58,6 +59,20 @@ public sealed class TeamArrayService(
     RoomRosterService roster,
     ILogger<TeamArrayService> logger)
 {
+    /// <summary>
+    /// Confirmation runs already written, by the peer that answered. A client
+    /// sends its two answers for one sequence together, so this handler runs twice
+    /// for the same sequence and the second pass must repeat the first's records
+    /// rather than number them again: every capture repeats them with the same
+    /// ordinals (`mgo2-game1` and `mgo2-started-briefing-then-solo-game` both
+    /// re-send the confirmation and group unchanged), and the live freeze that
+    /// numbered the group twice is what this holds back.
+    /// </summary>
+    private readonly Dictionary<string, ConfirmationRun> confirmationRuns = [];
+
+    /// <summary>Guards <see cref="confirmationRuns"/>, this service being a singleton.</summary>
+    private readonly object confirmationGate = new();
+
     /// <summary>
     /// Answers a client that has asked to be placed in the room: the room's own
     /// state, under the sequence the request names.
@@ -180,7 +195,9 @@ public sealed class TeamArrayService(
     /// <param name="answered">Sequence the client answered.</param>
     public async Task ConfirmAsync(PeerContext context, byte answered)
     {
-        var confirmation = TeamArrayFramesUtils.BuildConfirmation(answered);
+        var next = TeamArrayFramesUtils.NextSequence(answered);
+        var run = TakeConfirmationRun(context, answered, next);
+
         logger.LogDebug(
             "UDP {LocalPort}: confirming the lobby-slot arrays at sequence {Sequence:x2} to {RemoteAddress}",
             context.LocalPort,
@@ -189,28 +206,10 @@ public sealed class TeamArrayService(
 
         await context.Send(
             UdpCommandConstants.PlayerProfile,
-            confirmation,
-            TeamArrayFramesUtils.ConfirmationClass);
+            run.Confirmation.Body,
+            run.Confirmation.Ordinal);
 
-        var next = TeamArrayFramesUtils.NextSequence(answered);
-
-        // The sequence the pair is republished under is announced beside the
-        // confirmation rather than left to be inferred from the pair: every
-        // reference capture writes this group the moment it confirms, and the
-        // client only answers NN+1 once it has seen it
-        // (TeamArrayFramesUtils.BuildNextSequenceRecords).
-        var (announcement, firstCompanion, secondCompanion) =
-            TeamArrayFramesUtils.BuildNextSequenceRecords(next);
-
-        var announcementOrdinals = roster.TakeRunOrdinals(3);
-        var announcementRun = new List<RosterRecord>(3)
-        {
-            new(RoomRosterService.HostEntryType, announcement, announcementOrdinals[0]),
-            new(UdpCommandConstants.PlayerProfile, firstCompanion, announcementOrdinals[1]),
-            new(UdpCommandConstants.PlayerProfile, secondCompanion, announcementOrdinals[2]),
-        };
-
-        await RosterRunSendUtils.SendAsync(context, announcementRun, compressed: true);
+        await RosterRunSendUtils.SendAsync(context, run.Group, compressed: true);
 
         var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(next, await lobbySlots.ReadAsync());
 
@@ -234,4 +233,67 @@ public sealed class TeamArrayService(
 
         await RosterRunSendUtils.SendAsync(context, pair, compressed: true);
     }
+
+    /// <summary>
+    /// Returns the confirmation and the next-sequence group for a sequence,
+    /// writing them once and repeating the same records for a second answer of
+    /// the same sequence.
+    /// </summary>
+    /// <remarks>
+    /// <b>The two records are one run and are written once.</b> The confirmation,
+    /// the announcement and the two companions take one consecutive range of the
+    /// roster counter and the confirmation takes its head, so the run reads in
+    /// order on the wire and the client can advance it
+    /// (<see cref="TeamArrayFramesUtils.BuildConfirmation"/>). A client sends its
+    /// two answers for a sequence in one datagram, so this runs twice for the same
+    /// sequence; the second pass repeats the first's records and ordinals, the way
+    /// every capture repeats them, rather than number a second group the client
+    /// has no place for.
+    /// </remarks>
+    /// <param name="context">Context of the answer being confirmed.</param>
+    /// <param name="answered">Sequence the client answered.</param>
+    /// <param name="next">Sequence the pair is republished under.</param>
+    /// <returns>The confirmation and the group, in the order they are written.</returns>
+    private ConfirmationRun TakeConfirmationRun(PeerContext context, byte answered, byte next)
+    {
+        var key = context.Remote.ToString();
+        lock (confirmationGate)
+        {
+            if (confirmationRuns.TryGetValue(key, out var cached) && cached.Sequence == answered)
+            {
+                return cached;
+            }
+
+            var (announcement, firstCompanion, secondCompanion) =
+                TeamArrayFramesUtils.BuildNextSequenceRecords(next);
+
+            var ordinals = roster.TakeRunOrdinals(4);
+            var run = new ConfirmationRun(
+                answered,
+                new RosterRecord(
+                    UdpCommandConstants.PlayerProfile,
+                    TeamArrayFramesUtils.BuildConfirmation(answered),
+                    ordinals[0]),
+                [
+                    new(RoomRosterService.HostEntryType, announcement, ordinals[1]),
+                    new(UdpCommandConstants.PlayerProfile, firstCompanion, ordinals[2]),
+                    new(UdpCommandConstants.PlayerProfile, secondCompanion, ordinals[3]),
+                ]);
+
+            confirmationRuns[key] = run;
+            return run;
+        }
+    }
+
+    /// <summary>
+    /// A confirmation and the next-sequence group written for one answered
+    /// sequence, held so a second answer of the same sequence repeats them.
+    /// </summary>
+    /// <param name="Sequence">Sequence the records confirm.</param>
+    /// <param name="Confirmation">The confirmation record.</param>
+    /// <param name="Group">The announcement and its two companions, in order.</param>
+    private sealed record ConfirmationRun(
+        byte Sequence,
+        RosterRecord Confirmation,
+        RosterRecord[] Group);
 }

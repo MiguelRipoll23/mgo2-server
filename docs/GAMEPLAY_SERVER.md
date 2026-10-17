@@ -206,7 +206,11 @@ pair goes out with the run, the client answers `82 NN`/`84 NN`, the host confirm
 `81 NN`, names the next sequence in the `0b 00 01 … 08 07 NN+1` group beside the
 confirmation, and republishes the pair under the next sequence. Both the
 confirmation and the group move the client on, so a host that writes the pair
-without them gets one answer and then silence.
+without them gets one answer and then silence. **The confirmation, the group and
+the pair are one run on the roster counter**: the confirmation takes its head and
+the group the values behind it, so the fourth bytes read in order on the wire, and
+a second answer of the same sequence repeats the confirmation and the group
+unchanged rather than numbering a second group.
 
 ### 2.6 The end of a round, and the next briefing
 
