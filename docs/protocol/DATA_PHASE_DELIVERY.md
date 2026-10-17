@@ -202,7 +202,7 @@ reports within 4.1 s of the sparse phase closing and the live client within
 
 ## The lobby-slot array handshake, which only advances on a confirmation
 
-Four record kinds, one loop, measured in both captures:
+Six record kinds, one loop, measured in both captures:
 
 ```
 host   0x9001 26B  85 NN      the team array
@@ -210,6 +210,9 @@ host   0x1001 26B  86 NN      the occupancy array
 client 0x9001  2B  82 NN      the client answers
 client 0x1001  2B  84 NN
 host   0x1001  2B  81 NN      the host confirms   ← the only thing that advances
+host   0x9001 11B  0b 00 01 00 00 00 00 00 08 07 NN+1   the next sequence, named beside it
+host   0x1001 10B  0b 00 01 00 00 00 00 00 00 00        its two companions, per side
+host   0x1001 10B  0b 00 01 00 00 00 00 00 00 01
 host   0x9001 26B  85 NN+1    the pair again, under the next sequence
 ```
 
@@ -219,9 +222,22 @@ steps to `f4`. game2 runs it tighter — `81 00` twice, and the client's next an
 is `82 01`/`84 01`. **The client only moves to the next sequence after the host
 confirms the one before it.** **[V]**
 
-`TeamArrayService` answers the confirmation and writes the pair again under the
-next sequence. Before it, the live client sent `82 f3`/`84 f3` once and never
-again, because the sequence had nowhere to go.
+**The next sequence is named beside the confirmation, and it is the confirmation's
+other half.** A `0b 00 01 00 00 00 00 00 08 07 NN+1` record carries the sequence
+the pair is about to be republished under — its last byte is that sequence, and
+the two before it are the pair's own index bytes — with two ten-byte companions
+that differ only in their last byte, `00` and `01`. Every reference capture writes
+the group the moment it confirms and the client answers `NN+1` only after it:
+`mgo2-game1` at t+185.2, `mgo2-game2` at t+104.6,
+`mgo2-started-briefing-then-solo-game` at t+170.4 and
+`mgo2-game-started-on-briefing` at t+193.6. A host that confirms and republishes
+the pair without the group gets one answer and then silence — which is what the
+live captures hold. **[V]** on the shape and the order in all four;
+**[U]** on what the two companions' names are.
+
+`TeamArrayService` answers the confirmation, writes the group and republishes the
+pair under the next sequence. Before it, the live client sent `82 f3`/`84 f3`
+once and never again, because the sequence had nowhere to go.
 
 **What the pair carries is the room's, and it is read per publication.**
 `LobbySlotService` pairs the room's own roster — which holds each player's key in

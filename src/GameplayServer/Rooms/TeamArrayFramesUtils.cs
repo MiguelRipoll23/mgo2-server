@@ -222,6 +222,79 @@ public static class TeamArrayFramesUtils
     public const int AnswerLength = 2;
 
     /// <summary>
+    /// Type byte the next-sequence group opens its bodies with. It is the
+    /// settings family's own byte, which the group shares rather than a lobby-slot
+    /// type of its own.
+    /// </summary>
+    public const byte NextSequenceIdentifier = 0x0b;
+
+    /// <summary>
+    /// Length of the record that names the sequence the next pair uses: the type
+    /// byte, a subtype, five zero bytes, the pair's two index bytes and the
+    /// sequence itself.
+    /// </summary>
+    public const int NextSequenceAnnouncementLength = 11;
+
+    /// <summary>
+    /// Length of the two records that ride with the announcement: the same head
+    /// and the same five zero bytes, then two more that name a side.
+    /// </summary>
+    public const int NextSequenceCompanionLength = 10;
+
+    /// <summary>Subtype byte the group carries in its body at <c>[2]</c>.</summary>
+    public const byte NextSequenceSubtype = 0x01;
+
+    /// <summary>
+    /// Builds the group a host publishes beside the confirmation: the record that
+    /// names the sequence the next pair uses, and the two records that ride with
+    /// it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Measured, and the client waits on it.</b> Every reference capture
+    /// publishes this group the moment it confirms an answer, and the client only
+    /// answers the next sequence after it: `mgo2-game1` confirms `81 f3` and
+    /// writes `0b 00 01 00 00 00 00 00 08 07 f4` at t+185.2 before its `82 f4`;
+    /// `mgo2-game2` confirms `81 00` and writes the same shape carrying `01` at
+    /// t+104.6 before its `82 01`; `mgo2-started-briefing-then-solo-game` and
+    /// `mgo2-game-started-on-briefing` show it at t+170.4 and t+193.6. A host that
+    /// confirms and republishes the pair without it gets one answer and then
+    /// silence.
+    /// </para>
+    /// <para>
+    /// The first record's last byte is the sequence the next pair carries, and the
+    /// two index bytes before it are the pair's own
+    /// (<see cref="RunOccupancyArrayIndex"/> and <see cref="RunTeamArrayIndex"/>).
+    /// The two companions are the same head and the same five zero bytes with
+    /// their last byte naming a side — `00` and `01` in every capture.
+    /// `docs/protocol/UDP_GAME_CAPTURE.md` §3.2 carries the measurement.
+    /// </para>
+    /// </remarks>
+    /// <param name="next">Sequence the next pair is published under.</param>
+    /// <returns>The three bodies, in the order the captures publish them.</returns>
+    public static (byte[] Announcement, byte[] FirstCompanion, byte[] SecondCompanion)
+        BuildNextSequenceRecords(byte next)
+    {
+        var announcement = new byte[NextSequenceAnnouncementLength];
+        announcement[0] = NextSequenceIdentifier;
+        announcement[2] = NextSequenceSubtype;
+        announcement[8] = RunOccupancyArrayIndex;
+        announcement[9] = RunTeamArrayIndex;
+        announcement[10] = next;
+
+        // The companions are one byte shorter than the announcement: the same
+        // head and zero run, a side in the byte before the last, and no sequence.
+        var first = new byte[NextSequenceCompanionLength];
+        first[0] = NextSequenceIdentifier;
+        first[2] = NextSequenceSubtype;
+
+        var second = (byte[])first.Clone();
+        second[9] = 0x01;
+
+        return (announcement, first, second);
+    }
+
+    /// <summary>
     /// Type byte a client's request to be placed in the room opens with.
     /// </summary>
     /// <remarks>

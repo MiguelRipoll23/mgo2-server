@@ -16,8 +16,10 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// it. A host that writes the pair and never confirms gets one answer and then
 /// silence — the client only advances once the sequence it answered has been
 /// confirmed — and a host that confirms and does not republish leaves the client
-/// with nothing to answer next. Both halves are written here, in one pass, as
-/// the captures show them.
+/// with nothing to answer next. The next sequence is named beside the
+/// confirmation in the announcement group (<see cref="TeamArrayFramesUtils"/>),
+/// and without it the client answers nothing after the confirmation. All three
+/// are written here, in one pass, as the captures show them.
 /// </para>
 /// <para>
 /// <b>The pair is per peer.</b> Each client answers under its own sequence and
@@ -191,6 +193,25 @@ public sealed class TeamArrayService(
             TeamArrayFramesUtils.ConfirmationClass);
 
         var next = TeamArrayFramesUtils.NextSequence(answered);
+
+        // The sequence the pair is republished under is announced beside the
+        // confirmation rather than left to be inferred from the pair: every
+        // reference capture writes this group the moment it confirms, and the
+        // client only answers NN+1 once it has seen it
+        // (TeamArrayFramesUtils.BuildNextSequenceRecords).
+        var (announcement, firstCompanion, secondCompanion) =
+            TeamArrayFramesUtils.BuildNextSequenceRecords(next);
+
+        var announcementOrdinals = roster.TakeRunOrdinals(3);
+        var announcementRun = new List<RosterRecord>(3)
+        {
+            new(RoomRosterService.HostEntryType, announcement, announcementOrdinals[0]),
+            new(UdpCommandConstants.PlayerProfile, firstCompanion, announcementOrdinals[1]),
+            new(UdpCommandConstants.PlayerProfile, secondCompanion, announcementOrdinals[2]),
+        };
+
+        await RosterRunSendUtils.SendAsync(context, announcementRun, compressed: true);
+
         var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(next, await lobbySlots.ReadAsync());
 
         // The pair's two index bytes are the next two values of the roster

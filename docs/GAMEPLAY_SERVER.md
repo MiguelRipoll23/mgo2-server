@@ -203,9 +203,10 @@ the vitals record's **onset**: it rides from the round's first player vitals
 
 **The lobby-slot arrays** are a handshake of their own (`TeamArrayService`): the
 pair goes out with the run, the client answers `82 NN`/`84 NN`, the host confirms
-`81 NN`, and the pair is republished under the next sequence. Only the
-confirmation moves the client on, so a host that never confirms gets one answer
-and then silence.
+`81 NN`, names the next sequence in the `0b 00 01 … 08 07 NN+1` group beside the
+confirmation, and republishes the pair under the next sequence. Both the
+confirmation and the group move the client on, so a host that writes the pair
+without them gets one answer and then silence.
 
 ### 2.6 The end of a round, and the next briefing
 
