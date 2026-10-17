@@ -828,3 +828,124 @@ the round's run should move from the run onward instead of holding 3 360 for a
 minute. The other thing to look for in that capture is the one the section above
 leaves open: the client's own `1d`/`1f`/`22` trio, which neither of this host's two
 live sessions has produced yet (`myserver11`, `myserver12`).
+
+
+## 16. `myserver18.pcapng`: the room's state is written once where every capture repeats it
+
+§15's clock and countdown are live, and the briefing screen is still not reached.
+This is the next join into the same one-player room (`192.168.1.20:5730` ↔ host
+`89.129.16.203:5731`, 173 s), read the same way as §14: the whole of the host →
+client stream on the reference's own windows. It is the first of these captures in
+which **§15's two changes are both on the wire at once**, and it is the one that
+shows the host's remaining difference from every reference briefing — a record set
+the captures write twice and this host writes once.
+
+### What §15's changes produced
+
+| | `myserver18` |
+| --- | --- |
+| the client's report (`0x0a5c 01` + `0x1ade e1 01`, one datagram) | t+56.092 |
+| the answers (publication, presence answer, the run's marker) | t+56.140 — **0.048 s** |
+| the briefing's run, clock `01 20 0d` (3 360, whole) | t+56.220 |
+| the briefing's countdown `0b 3c 00 00 00 00 00`, one per 2.5 s | t+56.428 → t+116.159, 23 records |
+| **the round's run** | t+116.181 — **60.089 s after the report** |
+| the countdown's closing zero `0b 00 00 00 00 00 00` | t+116.159, 22 ms before the round's run |
+| the round's clock, from the open | 3 360 at t+116.181, 3 335 at t+119.370, 3 322 at t+120.987 |
+| `0x08xx` records in the briefing | **0**; the first is `0x084e fa fa` at t+145.545, 29.4 s after the round opened |
+
+So a briefing's time is now the reporting client's own minute and not the join's
+leftovers, and a round opened at the end of it counts from its own open instead of
+holding a clock for a briefing that has ended: the two defects §15 names are gone
+from the wire. The countdown is held at the room's whole 60 with an **empty** set,
+which is what a room whose only client has not readied writes — the set is the
+ready set (`BriefingCountdownBodiesUtils`), and this client sends no `1f` record
+(after §15's item: the ready still does not arrive).
+
+### The host's stream against the two references, family for family
+
+The briefing windows — the report's answer through the round (or the capture's
+end) — with each host's retransmissions counted as their own records:
+
+| | `started-on-briefing` | `started-briefing-then-solo` | `myserver18` |
+| --- | --- | --- | --- |
+| span | 58.255 → 191.0 | 57.626 → 174.371 | 56.220 → 116.181 |
+| rules pair `0x0261`/`0x0a61` `fe` | 266 | 6 644 | 3 064 |
+| countdown `0b …` (7 B) | 66 | 4 | 24 |
+| the operations clock (`01 …`, 3 B) | 88 | 65 | 35 |
+| the state block (90 B) | 2 | 2 | **1** |
+| the close triple (`07 0f`, `07 2f` ×2) | 2 + 4 | 2 + 4 | **1** |
+| the room's count / blob (23 B) | 34 | 19 | 8 |
+| the item-box group (`0x1250`-family) | 488 | 133 | 156 |
+| `0x08xx` records | 0 | 0 | **0** |
+
+Every family is inside the two references' own spread — the rules pair is 0.8/s in
+one and 57/s in the other, and this host writes 51/s — except one, which is not a
+rate at all: **the run's record set.** Both references write it twice in a
+briefing, and this host writes it once.
+
+### The run's second instant
+
+The 90-byte state block is the one record of the run that can be followed across
+captures without a role table, and every capture writes it twice in a short
+window, then stops:
+
+| capture | the run | the second instant | the third |
+| --- | --- | --- | --- |
+| `mgo2-started-briefing-then-solo-game` | t+57.626 | **t+59.993** (+2.37 s) | — (its round's run at t+174.371) |
+| `mgo2-game-started-on-briefing` | t+58.255 | **t+60.383** (+2.13 s), t+65.124 (+4.74 s) | its round at t+198.371, then t+200.869 (+2.50 s) |
+| `mgo2-game3` | t+59.596 | **t+62.093** (+2.50 s) | — |
+| `mgo2-game1` | t+46.415 | t+48.777 (+2.36 s), t+51.252 (+2.48 s), t+56.389 (+5.14 s) | — |
+| **`myserver18`** | **t+56.220** | **none** | — |
+
+The second instant is the whole set and not the block alone:
+`mgo2-started-briefing-then-solo-game` t+59.993 writes the lobby-slot arrays
+(`0x9001`/`0x1001` 26 B), the room's stage (`0x1001` 22 B and two 54 B), the close
+triple, the state block, the `0f 00` short record, the round clock, the payload and
+the rules pair — **the run's records with the marker and the two empty roster heads
+left out**, keeping the ordinals the run gave them (`0x07`…`0x0e` for the family,
+`00 01 02` for the operations). It is the same set re-sent, not a second run: the
+marker is the answer to the peer's own report and there is nothing for it to answer
+again, and the heads open the roster run it answered.
+
+`docs/analysis/connection-not-stable-disconnect.md` §4 removed the run's copies
+because they were stamped inside the pass that built the run — three datagrams of
+the same frame, which stand or fall together and give a client that lost one
+nothing. That argument holds and this is the other half of the same measurement:
+the repeat a capture writes is spaced by a tick and carries the set again, which is
+what a client that lost the first frame is answered by.
+
+### What was changed
+
+| file | change |
+| --- | --- |
+| `MatchRecords/MatchStartRunFramesUtils.cs` | new `RepeatOf(run, marker)` — the run minus the marker and the two `0x5001` heads, the set the captures write one tick behind the run |
+| `MatchRecords/MatchStartRunService.Runs.cs` | `WriteRunCoreAsync` writes the run, then writes `RepeatOf` one briefing tick (2.5 s) later, and only while the room is still in the phase the run was written for — a briefing whose round opened inside the tick is not repeated over the round's own run |
+
+### What the client does, and the one thing §15 leaves open
+
+**The client is alive and its probes keep coming.** Its `0x9001 00` probe and the
+host's `0xd001` answer run every ~5.1 s from t+2.337 to t+225.209 — 52 client
+datagrams, the last one 109 s after the round opened — so this is not a reaped
+session, a dead client or a broken channel: it is a client that is waiting. What it
+does **not** send is still the §15 item: no `1d`, no `1f`, no `22` in the whole
+session, where both references' clients write their own operations 2.4 s after
+their report and `1f <slot> 01` when their briefing ends.
+
+**The report datagram is missing its own operations.** §1 of `BRIEFING_FLOW.md`
+measures the client's report as the five `1d <slot> …` records, the `e1 <slot>`
+itself and the one-byte companion in one datagram
+(`joined-when-red-team` t+95.464, `started-on-briefing` t+62.623). This client
+sends the companion, the `e1` and the two lobby-slot answers and none of the five
+(`0x0a5c 01`, `0x9001 82 f3`, `0x1001 84 f3`, `0x1ade e1 01`). `0x1d` is the record
+whose writer is not in the image (`udp-handlers-and-senders.md` §5.5), so which of
+the two the client is waiting for cannot be read off the wire: the client's own
+phase is the [U] that the next capture has to settle.
+
+### Not verified live
+
+The build is clean (0 warnings, 0 errors) and the 58 codec tests pass, and the
+change is measured against four captures. What would confirm it is one more join of
+this same room: the state block and the close triple should then appear twice per
+briefing — in the run and one 2.5 s tick behind it — with the same ordinals and no
+marker on the second, and the client's own `1d`/`22` should be looked for in the
+same capture, since that is the record the briefing screen is still missing.

@@ -64,10 +64,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </remarks>
 public static class MatchStartRunFramesUtils
 {
-    // The run is built once and written once. A number of copies stamped inside
-    // the pass that builds it was removed: the captures' repeats are whole record
-    // sets written seconds apart on a later tick, never the same frame again, and
-    // all of a pass's copies stand or fall with one datagram anyway.
+    // The run is built once and written once, and then written again whole one
+    // tick later: the captures' repeats are whole record sets seconds apart on a
+    // later tick and never the same frame twice, which is what a number of copies
+    // stamped inside the pass that built the run got wrong — those stood or fell
+    // with one datagram. The repeat's own shape is RepeatOf below.
 
     /// <summary>
     /// Operations records the run writes — its state block, the short record behind
@@ -94,6 +95,39 @@ public static class MatchStartRunFramesUtils
     /// the records in that order, not the order this file happens to send them in.
     /// </remarks>
     public const int RosterOrdinalCount = 8;
+
+    /// <summary>
+    /// The run's records as the tick behind it writes them again: everything the
+    /// run carries except the marker and the two empty roster heads.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Every capture writes the run twice, and the second one is this.</b> The
+    /// run answering a report and the set behind it are one tick apart —
+    /// <c>mgo2-started-briefing-then-solo-game</c> t+57.626 and t+59.993,
+    /// <c>mgo2-game-started-on-briefing</c> t+58.255 and t+60.383, and its round's
+    /// t+198.371 and t+200.869, <c>mgo2-game3</c> t+59.596 and t+62.093 — and the
+    /// second carries the state block, the short record behind it, the arrays, the
+    /// room's stage, the close triple, the clock, the payload and the rules pair
+    /// with no marker in front of them and no roster heads. The records keep the
+    /// ordinals the run gave them, which is what makes the repeat the same set
+    /// re-sent rather than a second run.
+    /// </para>
+    /// <para>
+    /// The marker is the answer to the peer's own report, so there is nothing for
+    /// it to answer a second time, and the two <c>0x5001</c> heads open the roster
+    /// run it answered; both are the run's opening rather than its state, which is
+    /// what the tick behind it is for.
+    /// </para>
+    /// </remarks>
+    /// <param name="run">The run as it was written.</param>
+    /// <param name="marker">Identifier set's match-start marker, the run's first record.</param>
+    /// <returns>The records to write behind the run.</returns>
+    public static List<MatchRecordFramesUtils.RecordMessage> RepeatOf(
+        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run,
+        ushort marker) =>
+        [.. run.Where(record =>
+            record.Type != marker && record.Type != UdpCommandConstants.RosterHead)];
 
     /// <summary>
     /// The run's records, in send order, built for the identifier set the round

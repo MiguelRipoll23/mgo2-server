@@ -275,19 +275,94 @@ public sealed partial class MatchStartRunService
             round.TimeLimitUnits,
             round.TimeLimitMinutes);
 
-        // Written once, in one frame, as every capture writes it. The run used to
-        // be written three times back to back here, on a count taken from the
-        // rounds that carry two and three whole runs; those repetitions are spaced
-        // — `mgo2-started-briefing-then-solo-game` writes the run's records at
-        // t+57.626 and again at t+59.993 — and neither briefing writes the run
-        // more than once. Three copies inside one pass are not a repeat, they are
-        // the same frame three times: they give a client that lost the first one
-        // nothing, since all three stand or fall with the same datagram, and they
-        // are the one place this host's stream carries a record set three times
-        // over where a capture carries it once
-        // (`docs/analysis/connection-not-stable-disconnect.md` §4).
+        // Written once, in one frame, as every capture writes it — and written
+        // again whole on the tick behind it, which is the other half of the same
+        // measurement. The run used to be written three times inside one pass on a
+        // count taken from the rounds that carry two and three whole runs; those
+        // repetitions are spaced — `mgo2-started-briefing-then-solo-game` writes
+        // the run's records at t+57.626 and again at t+59.993 — and three copies
+        // inside one pass are not a repeat, they are the same frame three times,
+        // which gives a client that lost the first one nothing
+        // (`docs/analysis/connection-not-stable-disconnect.md` §4). The repeat a
+        // capture does write is the one below: the same set one briefing tick
+        // later, with the marker and the roster heads left out
+        // (`MatchStartRunFramesUtils.RepeatOf`).
+        //
+        // The phase the run is being written for is read before it goes out, so
+        // the repeat can tell whether the room moved on in the tick between.
+        var roundNumber = roundState.RoundNumber;
+        var wasOpen = roundState.IsOpen;
+
         await MatchRecordSendUtils.SendAsync(context, run);
 
         roundState.NoteRunWritten(context.Session);
+
+        // The repeat runs beside this worker rather than inside it: a run the tick
+        // wait sat in front of would hold this peer's next run — the round's, when
+        // the room opens inside that tick — behind a timer nothing is waiting on.
+        _ = RepeatRunAsync(context, generation, run, roundNumber, wasOpen);
+    }
+
+    /// <summary>
+    /// Writes a peer the run's records again, one briefing tick after the run
+    /// itself, which is the second instant every capture writes.
+    /// </summary>
+    /// <remarks>
+    /// <b>Only while the room is still in the phase the run was written for.</b>
+    /// A briefing whose round opened inside the tick is a room whose run the
+    /// round's own writer is about to replace, and repeating the briefing's set
+    /// over it would put a whole clock on a round already playing. The repeat does
+    /// not fault: it runs beside the waits for the round, so an exception here
+    /// would be an unobserved one, and a send that fails says the peer is gone,
+    /// which is what ending quietly means.
+    /// </remarks>
+    /// <param name="context">Context the repeat is written through.</param>
+    /// <param name="generation">Identifier set the run was written under.</param>
+    /// <param name="run">The run as it was written.</param>
+    /// <param name="roundNumber">Round number the run was written for.</param>
+    /// <param name="wasOpen">Whether a round was playing when it was written.</param>
+    private async Task RepeatRunAsync(
+        PeerContext context,
+        MatchRecordGenerationUtils generation,
+        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run,
+        int roundNumber,
+        bool wasOpen)
+    {
+        try
+        {
+            await Task.Delay(BriefingCountdownBodiesUtils.PublishPeriodMilliseconds);
+
+            if (!MatchRecordPeerUtils.IsAlive(context.Session))
+            {
+                return;
+            }
+
+            if (roundState.RoundNumber != roundNumber || roundState.IsOpen != wasOpen)
+            {
+                logger.LogDebug(
+                    "UDP {LocalPort}: the room moved on before the tick behind the run written to "
+                    + "{RemoteAddress}, so the run is not repeated",
+                    context.LocalPort,
+                    context.Remote);
+                return;
+            }
+
+            logger.LogDebug(
+                "UDP {LocalPort}: repeating the run written to {RemoteAddress} one tick behind it, "
+                + "without its marker and roster heads",
+                context.LocalPort,
+                context.Remote);
+            await MatchRecordSendUtils.SendAsync(
+                context,
+                MatchStartRunFramesUtils.RepeatOf(run, generation.MatchStartMarker));
+        }
+        catch (Exception exception)
+        {
+            logger.LogDebug(
+                exception,
+                "UDP {LocalPort}: the run written to {RemoteAddress} was not repeated",
+                context.LocalPort,
+                context.Remote);
+        }
     }
 }
