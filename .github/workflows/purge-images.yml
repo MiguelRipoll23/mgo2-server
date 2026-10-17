@@ -23,6 +23,13 @@
 #   is never deleted. That is the rollback window: a rollback is a one-line
 #   commit, so the last few releases have to still pull after this runs.
 #
+#   A version with no tag at all is never deleted, because the untagged ones
+#   are what a multi-arch publish is made of: one tagged index plus the platform
+#   manifests and attestations it points at, and a deleted platform manifest is
+#   a tag that no longer resolves. The rule and the reason are at the check
+#   itself; this line is here because the other three are stated up front and a
+#   later reader should not have to find it by accident.
+#
 #   Of what is left, the newest `keep` versions of each image are kept and the
 #   rest deleted. This is what bounds the growth between two releases, when one
 #   service's builds pile up faster than another's.
@@ -262,12 +269,6 @@ jobs:
 
           sort -t$'\t' -k2,2r -o "$listing" "$listing"
 
-          # A version with no tag at all is the residue of a tag that moved onto
-          # another digest, so no name can pull it. It is deleted rather than
-          # counted against the window — but never one created within the day,
-          # which would be a publish still in flight when the list was taken.
-          hold_off="$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)"
-
           kept=0
           failed=0
 
@@ -294,8 +295,23 @@ jobs:
               fi
             done
 
-            if [ -z "$reason" ] && [ -z "$tags" ] && [ "$created" \> "$hold_off" ]; then
-              reason="untagged, and created within the day"
+            # An untagged version is never deleted, and the reason is
+            # multi-arch. A `buildx` push of linux/amd64,linux/arm64 creates
+            # one tagged index and four untagged manifests — the two platform
+            # manifests and the two attestations — and the platform manifests
+            # ARE the image the tag resolves to. Deleting one leaves the tag
+            # pointing at an index whose child no longer exists, so every pull
+            # of that tag fails with `manifest unknown`. That is not a
+            # hypothetical: this rule used to delete them a day after they were
+            # published, and the tagged indexes outlived their children.
+            #
+            # The registry API exposes no parent link, so an untagged version
+            # cannot be shown to be an orphan; the only number that is always
+            # safe to delete is none. What they hold is manifest metadata of a
+            # few kilobytes each, and the layers they name are shared with the
+            # index rather than copied, so keeping them costs about nothing.
+            if [ -z "$reason" ] && [ -z "$tags" ]; then
+              reason="untagged: a platform manifest its index still needs"
             fi
 
             if [ -z "$reason" ] && [ -n "$tags" ] && [ "$kept" -lt "$keep" ]; then
