@@ -1,14 +1,15 @@
-# Wave 1: the migration bundle, whose PreSync hook Job Argo runs before the
-# wave-2 Applications sync. This is the Application that replaces the deploy
-# pipeline's migration step, and it is why an image that disagrees with the
-# schema cannot start: the rollout has not begun when the hook runs.
+# Wave 2: the migration bundle, whose PreSync hook Job Argo runs before the
+# wave-3 Applications sync and after wave 1 has the database itself accepting
+# connections. This is the Application that replaces the deploy pipeline's
+# migration step, and it is why an image that disagrees with the schema cannot
+# start: the rollout has not begun when the hook runs.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: mgo2-migrate
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "2"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:

@@ -1,0 +1,38 @@
+# Wave 1: the database itself, which has to be accepting connections with its
+# schema applied before wave 2's PreSync hook can migrate it and before any
+# wave-3 workload rolls out.
+#
+# It is a workload rather than a prerequisite like `mgo2-secrets`, because
+# nothing in it is environment-specific: the credentials it reads come from that
+# Secret, and what this folder declares is the shape of the database.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mgo2-postgres
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/MiguelRipoll23/mgo2-server.git
+    targetRevision: main
+    path: deploy/postgres
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mgo2
+  syncPolicy:
+    automated:
+      # prune is left on, and is safe here because the data directory is a
+      # volumeClaimTemplate rather than a tracked resource: nothing Argo prunes
+      # in this folder can take the database's storage with it.
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

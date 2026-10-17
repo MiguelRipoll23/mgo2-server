@@ -1,0 +1,112 @@
+# The database, as a workload, because it is no longer external to the cluster.
+#
+# The image is the project's own mgo2-postgres: PostgreSQL 18 with the EF Core
+# migration bundle in it. Its entrypoint runs the bundle against a temporary
+# instance before it starts the real one, so the pod is never serving a schema
+# the bundle has not applied — which is the same guarantee the PreSync hook Job
+# in deploy/migrate gives, applied from inside the database container instead.
+# Both run; the bundle is idempotent, so a fresh install simply applies the
+# schema twice. See deploy/README.md, "Migrations".
+#
+# A StatefulSet rather than a Deployment, for one reason that matters: its
+# volume is a volumeClaimTemplate, so the PersistentVolumeClaim is owned by the
+# StatefulSet controller rather than listed in this folder. A PVC declared here
+# would be an Argo-tracked resource, and a later prune would take the database
+# with it. A StatefulSet's claim is never pruned.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mgo2-postgres
+  labels:
+    app: mgo2-postgres
+  namespace: mgo2
+spec:
+  # The one pod owns the data directory, so the replacement may not start until
+  # the old one has released it. Recreate, not a surge: two Postgres processes
+  # cannot share a data directory.
+  podManagementPolicy: OrderedReady
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mgo2-postgres
+  serviceName: mgo2-postgres
+  template:
+    metadata:
+      labels:
+        app: mgo2-postgres
+    spec:
+      containers:
+      - envFrom:
+        # DATABASE_CONNECTION_STRING (pointed at this pod's own localhost, which
+        # is what the entrypoint's bundle connects to), plus POSTGRES_DB,
+        # POSTGRES_USER and POSTGRES_PASSWORD for the server itself. The value
+        # never appears in this folder; see deploy/README.md, "Prerequisites".
+        - secretRef:
+            name: mgo2-postgres
+        image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:latest
+        # IfNotPresent, not Always: the image an Argo sync pins is immutable (a
+        # commit SHA), so re-resolving it on every start buys nothing.
+        imagePullPolicy: IfNotPresent
+        name: postgres
+        ports:
+        - containerPort: 5432
+          name: postgres
+          protocol: TCP
+        # The image's own healthcheck: pg_isready AND the migration history
+        # table. That second half is what makes readiness mean "the schema is
+        # applied", so the pod joins the Service's endpoints only after the
+        # bundle has run, and a server that starts against it cannot see a
+        # schema that is behind its code.
+        readinessProbe:
+          exec:
+            command:
+            - /usr/local/bin/healthcheck-postgres.sh
+          failureThreshold: 30
+          periodSeconds: 5
+          timeoutSeconds: 5
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
+          seccompProfile:
+            type: RuntimeDefault
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        # PostgreSQL 18's PGDATA is /var/lib/postgresql/18/docker, so the volume
+        # covers the version directory above it rather than the data directory
+        # itself — the same mount compose.yaml uses.
+        - mountPath: /var/lib/postgresql
+          name: data
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        # The volume is a directory on the node, created root-owned. Without
+        # fsGroup the postgres user (999) could not initialise a data directory
+        # in it. OnRootMismatch rather than Always, so a rescheduled pod does not
+        # walk the whole data directory chowning it on every start.
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+      terminationGracePeriodSeconds: 120
+  updateStrategy:
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi

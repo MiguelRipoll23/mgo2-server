@@ -151,9 +151,11 @@ behind it.
 - `svclb-*` (17 pods): 0 Mi each. Placeholders for the LoadBalancer services.
 - `argocd-redis` (10 Mi), `mgo2-dns` (11 Mi), `mgo2-stun` (12 Mi),
   `local-path-provisioner` (14 Mi): all trivial.
-- **PostgreSQL**: not on this node at all. No Postgres pod exists in the cluster,
-  so the database contributes nothing to these figures and the `mgo2-postgres`
-  image never runs here.
+- **PostgreSQL**: one `mgo2-postgres` pod, and the figures above predate it. The
+  database is no longer external — it runs in the cluster, on this node's own
+  disk — so a measurement taken since includes it, and what it holds is page
+  cache and shared buffers rather than the size of the data. It is the pod to
+  look at first if memory is short, for the same reason.
 
 ## Measuring again
 

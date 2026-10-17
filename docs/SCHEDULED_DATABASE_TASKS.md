@@ -5,8 +5,10 @@ it runs, and which process hosts it. This is the list to read before changing a
 table's write path, tuning an interval, or wondering what a statement in
 `pg_stat_activity` is.
 
-The database is **external to the cluster**: no Postgres pod runs on the k3s
-node, so none of this consumes node memory. It does consume the database's.
+The database runs **in the cluster**, as the `mgo2-postgres` StatefulSet that
+`deploy/postgres/` reconciles, so the work below spends this node's memory and
+disk as well as the database's. `deploy/README.md` covers how it is deployed;
+what follows is what it is asked to do and how often.
 
 ## The engine
 

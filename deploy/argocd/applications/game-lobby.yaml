@@ -1,4 +1,4 @@
-# Wave 2: a workload, and so only ever synced after the migration hook has
+# Wave 3: a workload, and so only ever synced after the migration hook has
 # succeeded. The ten lobby deployments share one image and one tag, so they
 # move together here.
 apiVersion: argoproj.io/v1alpha1
@@ -7,7 +7,7 @@ metadata:
   name: mgo2-game-lobby
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "3"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:

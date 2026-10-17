@@ -1,0 +1,26 @@
+# How the servers reach the database. ClusterIP and nothing else: the database
+# is never reachable from outside the cluster, and no traffic needs its source
+# address preserved, so the source-address rules in deploy/README.md do not
+# apply to it.
+#
+# The name is the host in the servers' DATABASE_CONNECTION_STRING
+# (`Host=mgo2-postgres;Port=5432;...`), which lives in the mgo2-secrets Secret.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mgo2-postgres
+  namespace: mgo2
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: postgres
+    port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    app: mgo2-postgres
+  sessionAffinity: None
+  type: ClusterIP

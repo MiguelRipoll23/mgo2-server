@@ -9,6 +9,7 @@ an image tag here, and Argo does the rest. No workflow runs `kubectl apply`.
 | Folder             | Reconciles                                             | Image                     |
 | ------------------ | ------------------------------------------------------ | ------------------------- |
 | `cluster/`         | the namespace, GatewayClass, Gateway and HTTPRoute      | —                         |
+| `postgres/`        | the in-cluster database                                 | `mgo2-postgres`           |
 | `migrate/`         | the one-shot schema migration, as a PreSync hook Job    | `mgo2-postgres`           |
 | `gate/`            | the gate lobby                                          | `mgo2-gate-lobby-server`  |
 | `account/`         | the account lobby                                       | `mgo2-account-lobby-server` |
@@ -32,7 +33,10 @@ deployments share one image, so they share one tag and move together.
    image tagged with the commit SHA.
 3. The pipeline's last step rewrites `newTag` in that service's
    `kustomization.yaml` and commits it. That is the whole deploy: one line in
-   one folder, on `main`. The `migrate` folder is the one exception: it also
+   one folder, on `main`. Two folders are the exception, and they are the pair
+   `postgres.yml` pins: `deploy/postgres` and `deploy/migrate`, which run the
+   same image as a database and as a hook, so a pin that moved in one without
+   the other is a database and a schema that disagree. `deploy/migrate` also
    carries `bundle.yaml`, the marker ConfigMap the `mgo2-migrate` Application
    compares, and the pipeline rewrites its digest in the same commit. The
    marker is what makes the Application sync and run the PreSync hook — the
@@ -61,19 +65,28 @@ are ordered by sync wave:
 
 | Wave | Application  | Why                                                          |
 | ---- | ------------ | ------------------------------------------------------------ |
-| 0    | `mgo2-cluster` | the namespace and Gateway API resources everything needs    |
-| 1    | `mgo2-migrate` | the migration hook, which has to finish before anything rolls out |
-| 2    | the services | the workloads, none of which may roll out before the schema is ready |
+| 0    | `mgo2-cluster`  | the namespace and Gateway API resources everything needs    |
+| 1    | `mgo2-postgres` | the database, which has to accept connections before anything can migrate it |
+| 2    | `mgo2-migrate`  | the migration hook, which has to finish before anything rolls out |
+| 3    | the services    | the workloads, none of which may roll out before the schema is ready |
 
-Two things are prerequisites and are deliberately **not** in this folder,
+Three things are prerequisites and are deliberately **not** in this folder,
 because they carry environment-specific values that do not belong in git:
 
 - the `mgo2-secrets` Secret, which every deployment and the migration Job take
-  their whole environment from;
+  their whole environment from. Its `DATABASE_CONNECTION_STRING` names the
+  database by its Service (`Host=mgo2-postgres;Port=5432;...`), which is what
+  pointed at the external instance before this folder had a database in it;
+- the `mgo2-postgres` Secret, which the database pod alone reads:
+  `POSTGRES_DB`, `POSTGRES_USER` and `POSTGRES_PASSWORD` for the server itself,
+  and a `DATABASE_CONNECTION_STRING` naming `localhost`, because that is the
+  instance the entrypoint's migration bundle connects to before the pod serves;
 - the `mgo2-appsettings` ConfigMap, which every deployment mounts as
   `/app/appsettings.json`.
 
-Create them before the first sync, or the pods will not start.
+Create them before the first sync, or the pods will not start. The two secrets
+have to agree on the database name and user: one initialises the server, the
+other connects to it.
 
 ### Reloader
 
@@ -120,10 +133,14 @@ the previous revision serving.
 
 The schema rules the migration has to obey:
 
-1. **Never migrate at application start.** Several replicas would race the same
-   `Database.Migrate()` on rollout. The servers cannot migrate at all — the
-   bundle lives in the `mgo2-postgres` image, which is never deployed as a
-   workload.
+1. **The servers never migrate, and cannot.** No server image carries the
+   bundle. It lives in `mgo2-postgres`, and that image reaches the schema from
+   two places: the database pod runs it on startup, before it accepts a single
+   connection, and `migrate/` runs it as a PreSync hook before the rollout.
+   The pod is what migrates a fresh install — its readiness probe passes only
+   once the migration history table exists — and the hook is what keeps a
+   model change ordered against the workloads that need it. Both run the same
+   bundle, so the second to arrive is a no-op.
 2. **The bundle is versioned with the commit that built it.** `mgo2-postgres`
    carries the EF Core bundle built from that revision, and `deploy/migrate/`
    pins the image tag, so the schema a release applies is the schema its code

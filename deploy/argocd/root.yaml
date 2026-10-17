@@ -3,8 +3,9 @@
 # those in sync-wave order.
 #
 #   wave 0  cluster   the namespace and the Gateway API resources
-#   wave 1  migrate   the PreSync migration hook, which must finish first
-#   wave 2  services  every workload, which may not roll out before it has
+#   wave 1  postgres  the database, which has to accept connections first
+#   wave 2  migrate   the PreSync migration hook, which must finish next
+#   wave 3  services  every workload, which may not roll out before it has
 #
 # Apply it once, after ArgoCD is installed on the cluster:
 #

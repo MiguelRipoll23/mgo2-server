@@ -6,6 +6,7 @@ kind: Kustomization
 
 resources:
   - cluster.yaml
+  - postgres.yaml
   - migrate.yaml
   - gate.yaml
   - account.yaml

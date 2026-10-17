@@ -39,7 +39,7 @@ anything about another service's pipeline.
 | `http.yml`                    | `src/Http`                 | `mgo2-http`                 | `deploy/http`           | Http + Shared             |
 | `dns.yml`                     | `src/Dns`                  | `mgo2-dns`                  | `deploy/dns`            | Dns + Shared              |
 | `stun.yml`                    | `src/Stun`                 | `mgo2-stun`                 | `deploy/stun`           | Stun + Shared             |
-| `postgres.yml`                | the EF Core bundle         | `mgo2-postgres`             | `deploy/migrate`        | Shared                    |
+| `postgres.yml`                | the EF Core bundle and the database | `mgo2-postgres`      | `deploy/postgres`, `deploy/migrate` | Shared          |
 | `release.yml`                 | all of the above, forced    | —                           | every folder            | —                         |
 
 Every service workflow calls the same reusable workflow,
@@ -304,9 +304,9 @@ The five checks that matter, and how to run each:
   publish and pin. Break a `Shared`-tagged test instead and every pipeline
   fails, correctly — nothing can be deployed against code that is broken.
 - **A migration runs end-to-end.** Push a change under `src/Shared/Persistence`
-  (which rebuilds the bundle and re-pins `deploy/migrate`) and watch Argo: the
-  `mgo2-migrate` Application's PreSync hook Job must reach `Completed` before
-  any wave-2 Application begins to sync.
+  (which rebuilds the bundle and re-pins `deploy/postgres` and `deploy/migrate`
+  in one commit) and watch Argo: the `mgo2-migrate` Application's PreSync hook
+  Job must reach `Completed` before any wave-3 Application begins to sync.
 - **The purge keeps what it should.** Dispatch `purge-images.yml` with
   `dry_run: true`, and read the log: every `newTag` in `deploy/` and the last
   `keep` release tags must appear on a `keep` line, and nothing carrying
@@ -324,8 +324,11 @@ The spec this implements left four questions open. They are settled:
   plain kustomizations rather than Kustomization objects, and because the
   migration needs a hook that runs before a sync — which Argo has and Flux
   models as a dependency between Kustomizations.
-- **Database**: PostgreSQL 18, one external instance. The bundle is
-  `dotnet ef migrations bundle`, verified in the `postgres` Dockerfile stage.
+- **Database**: PostgreSQL 18, in the cluster, as the `mgo2-postgres`
+  StatefulSet in `deploy/postgres` — the same image the migration hook runs, so
+  the database a release starts and the schema that release applies are one
+  artifact. The bundle is `dotnet ef migrations bundle`, verified in the
+  `postgres` Dockerfile stage.
 - **Replicas**: one per service (`replicas: 1` in every deployment). Expand and
   contract still applies: a rollout runs the old and the new pod together even
   at one replica, so the discipline is about the rollout window, not about

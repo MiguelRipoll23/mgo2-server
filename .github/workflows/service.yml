@@ -44,7 +44,11 @@ on:
         type: string
         required: true
       manifests:
-        description: Folder under deploy/ holding this service's image tag.
+        description: >-
+          Folder(s) under deploy/ holding this service's image tag, space
+          separated. One folder for every service; postgres names both of its
+          own, because the same image is the database workload and the
+          migration hook.
         type: string
         required: true
       target:
@@ -382,34 +386,54 @@ jobs:
           MANIFESTS: ${{ inputs.manifests }}
         run: |
           set -euo pipefail
-          file="deploy/${MANIFESTS}/kustomization.yaml"
 
-          pinned="$(sed -n 's/^ *newTag: *//p' "$file")"
+          # MANIFESTS is one folder for every service but postgres, which names
+          # deploy/postgres and deploy/migrate: the database workload and the
+          # PreSync hook Job run the same image, so their pins have to move in
+          # one commit or a release ships a schema it never applied.
+          files=""
+          for folder in ${MANIFESTS}; do
+            files="$files deploy/${folder}/kustomization.yaml"
 
-          # A run that finished late must not overwrite a newer pin. If the
-          # commit already recorded there is a descendant of this one, a later
-          # run has already been here, and the right move is to leave it alone.
-          if git cat-file -e "${pinned}^{commit}" 2>/dev/null \
-            && git merge-base --is-ancestor "$SHA" "$pinned"; then
-            echo "Already pinned to $pinned; leaving it."
-            exit 0
-          fi
+            # A folder may also carry the bundle marker ConfigMap, the tracked
+            # resource that makes the mgo2-migrate Application sync and run its
+            # PreSync hook — the hook Job itself is not a tracked resource, so
+            # without the marker a new bundle would never mark it OutOfSync. It
+            # has to move with the pin. Only the migrate folder holds one; the
+            # guard skips the rest.
+            if [ -f "deploy/${folder}/bundle.yaml" ]; then
+              files="$files deploy/${folder}/bundle.yaml"
+            fi
+          done
 
-          sed -i "s|^\( *newTag: \).*$|\1${SHA}|" "$file"
+          for file in $files; do
+            case "$file" in
+              */bundle.yaml)
+                pinned="$(sed -n 's|^ *image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:||p' "$file")"
+                ;;
+              *)
+                pinned="$(sed -n 's/^ *newTag: *//p' "$file")"
+                ;;
+            esac
 
-          # The migrate folder also carries the bundle marker ConfigMap, the
-          # tracked resource that makes the mgo2-migrate Application sync and
-          # run its PreSync hook. It has to move with the pin: a pin to a
-          # bundle Argo never ran is what left a release serving a schema its
-          # migrations never reached. No other folder holds one; the guard
-          # skips them.
-          marker="deploy/${MANIFESTS}/bundle.yaml"
-          if [ -f "$marker" ]; then
-            sed -i "s|^\( *image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:\).*$|\1${SHA}|" "$marker"
-            files="$file $marker"
-          else
-            files="$file"
-          fi
+            # A run that finished late must not overwrite a newer pin. If the
+            # commit already recorded there is a descendant of this one, a later
+            # run has already been here, and the right move is to leave it alone.
+            if [ -n "$pinned" ] && git cat-file -e "${pinned}^{commit}" 2>/dev/null \
+              && git merge-base --is-ancestor "$SHA" "$pinned"; then
+              echo "Already pinned to $pinned; leaving it."
+              continue
+            fi
+
+            case "$file" in
+              */bundle.yaml)
+                sed -i "s|^\( *image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:\).*$|\1${SHA}|" "$file"
+                ;;
+              *)
+                sed -i "s|^\( *newTag: \).*$|\1${SHA}|" "$file"
+                ;;
+            esac
+          done
 
           if git diff --quiet -- $files; then
             echo "Already pinned to $SHA."
