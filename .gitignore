@@ -15,3 +15,9 @@ __pycache__/
 # them, with the identifying parts redacted.
 *.pcap
 *.pcapng
+
+# Session output: decoded record dumps, emulator minidumps and one-off scripts
+# written while reading a capture. The findings belong in docs/analysis/.
+_scratch/
+tmpout/
+*.dmp

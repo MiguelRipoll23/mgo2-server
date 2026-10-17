@@ -226,14 +226,21 @@ confirms the one before it.** **[V]**
 other half.** A `0b 00 01 00 00 00 00 00 08 07 NN+1` record carries the sequence
 the pair is about to be republished under — its last byte is that sequence, and
 the two before it are the pair's own index bytes — with two ten-byte companions
-that differ only in their last byte, `00` and `01`. Every reference capture writes
-the group the moment it confirms and the client answers `NN+1` only after it:
-`mgo2-game1` at t+185.2, `mgo2-game2` at t+104.6,
-`mgo2-started-briefing-then-solo-game` at t+170.4 and
-`mgo2-game-started-on-briefing` at t+193.6. A host that confirms and republishes
-the pair without the group gets one answer and then silence — which is what the
-live captures hold. **[V]** on the shape and the order in all four;
-**[U]** on what the two companions' names are.
+that differ only in their last byte, `00` and `01`. The client answers `NN+1` only
+after it, and the group precedes the pair at `NN+1`: `mgo2-game1` at t+185.2,
+`mgo2-game2` at t+104.6, `mgo2-started-briefing-then-solo-game` at t+170.4,
+`mgo2-game-started-on-briefing` at t+193.6, and the live `myserver16` at t+53.580.
+
+**It is not written at every advance, though.** `mgo2-game-joined-when-red-team-then-briefing`
+advances `02`→`03` at t+72.560 with no such record — only the confirmation and the
+pair at `03` — and writes it first on the `03`→`04` advance at t+116.192, then on
+`06`→`07` at t+850.167. **[V]** on the shape, the sequence it names and the order;
+**[U]** on what makes an advance worth naming and what the two companions' names
+are.
+
+The group is also **not sufficient**: `myserver16` wrote it naming `f4` beside
+`81 f3` and got no answer — the client polled `0x9001 00` every five seconds for
+the rest of the capture and never echoed `f4`.
 
 **The confirmation, the group and the pair are one run and take one consecutive
 range of the roster counter.** The confirmation is its head, so the fourth bytes
@@ -248,9 +255,13 @@ and the group unchanged, the pair taking fresh values: `mgo2-game1` at t+187.3 a
 and neither ever writes the group under a second set. **[V]** on the
 consecutiveness and the repeat in every capture that holds the handshake.
 
-`TeamArrayService` answers the confirmation, writes the group and republishes the
-pair under the next sequence. Before it, the live client sent `82 f3`/`84 f3`
-once and never again, because the sequence had nowhere to go.
+`TeamArrayService` answers an echo with the pair at the echoed sequence first,
+then writes the confirmation, the group and the pair under the next sequence. The
+first of those is the captures' own answer: a client that echoes `82 NN` gets
+`85 NN`/`86 NN` back before anything advances — `mgo2-game-joined-when-red-team-then-briefing`
+answers `82 02` four times between t+62.666 and t+67.733 and only confirms at
+t+72.560. Before the service existed, the live client sent `82 f3`/`84 f3` once
+and never again, because the sequence had nowhere to go.
 
 **What the pair carries is the room's, and it is read per publication.**
 `LobbySlotService` pairs the room's own roster — which holds each player's key in

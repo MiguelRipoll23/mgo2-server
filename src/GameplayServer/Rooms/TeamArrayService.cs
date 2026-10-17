@@ -7,8 +7,9 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
-/// Runs the lobby-slot array handshake: it confirms the sequence a client
-/// answered and publishes the pair again under the next one.
+/// Runs the lobby-slot array handshake: it answers the sequence a client echoed
+/// with the pair at that same sequence, then confirms it and publishes the pair
+/// under the next one.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -188,13 +189,38 @@ public sealed class TeamArrayService(
     }
 
     /// <summary>
-    /// Confirms the sequence a client answered and publishes the pair under the
-    /// next one.
+    /// Answers the sequence a client echoed and then confirms it, publishing the
+    /// pair under the next one.
     /// </summary>
+    /// <remarks>
+    /// <b>The pair at the echoed sequence comes first, and it is what the
+    /// captures answer an echo with.</b> A client's <c>82 NN</c>/<c>84 NN</c> is
+    /// met by <c>85 NN</c>/<c>86 NN</c> — the pair at the very sequence it named —
+    /// and only later by the confirmation: `mgo2-game-joined-when-red-team-then-briefing`
+    /// echoes <c>82 02</c> at t+57.983 and is answered with the pair at <c>02</c> at
+    /// t+62.666 and again at t+65.138, the confirmation <c>81 02</c> and the pair at
+    /// <c>03</c> following at t+72.560. Until this change the echo was met with the
+    /// confirmation alone, which is an answer to a sequence the client had not been
+    /// given since it asked. `docs/analysis/udp-protocol-patterns.md` has the
+    /// measured loop and the stall that is still unexplained.
+    /// </remarks>
     /// <param name="context">Context of the answer being confirmed.</param>
     /// <param name="answered">Sequence the client answered.</param>
     public async Task ConfirmAsync(PeerContext context, byte answered)
     {
+        // The echo names the pair the client wants, and the pair is written under
+        // that same sequence before anything advances it.
+        var (answeredTeams, answeredOccupancy) =
+            TeamArrayFramesUtils.BuildPair(answered, await lobbySlots.ReadAsync());
+        var answeredOrdinals = roster.TakeRunOrdinals(2);
+        await RosterRunSendUtils.SendAsync(
+            context,
+            [
+                new(RoomRosterService.HostEntryType, answeredTeams, answeredOrdinals[0]),
+                new(UdpCommandConstants.PlayerProfile, answeredOccupancy, answeredOrdinals[1]),
+            ],
+            compressed: true);
+
         var next = TeamArrayFramesUtils.NextSequence(answered);
         var run = TakeConfirmationRun(context, answered, next);
 
