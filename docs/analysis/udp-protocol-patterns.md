@@ -4,14 +4,17 @@
 design rather than as a list of records. The byte layouts stay in the protocol
 documents (`UDP_GAME_CAPTURE.md`, `BRIEFING_FLOW.md`, `DATA_PHASE_DELIVERY.md`,
 `STATE_VECTOR.md`); what is written here is *why* the records are shaped the way
-they are, and which of those shapes a host has to honour. Every timing below was
-read out of the dump named beside it, and can be re-checked with
-`tools/udp_session_records.py`. A claim a capture settles is **[V]**, one inferred
-from the image is **[I]**, one nothing settles yet is **[U]**.
+they are, and which of those shapes a host has to honour. A claim a capture
+settles is **[V]**, one inferred from the image is **[I]**, one nothing settles
+yet is **[U]**.
 
-Captures: `mgo2-game-joined-when-red-team-then-briefing` (`tmpout/…_recs.txt`),
-`mgo2-started-briefing-then-solo-game` (`tmpout/refsolo_recs.txt`), the live
-`myserver16` (`tmpout/ms16recs.txt`) and its dump (`tmpout/dump16.txt`).
+Every timing below is in seconds from the session's first datagram, and is
+reproducible from the capture it names with
+`python3 tools/udp_session_records.py <capture> --peer <address>` — the decoded
+dumps these numbers were read from are session output and are not committed.
+The captures: `mgo2-game-joined-when-red-team-then-briefing`,
+`mgo2-started-briefing-then-solo-game`, and the live `myserver16` with the
+minidump taken during its freeze.
 
 ## 1. It is replication, not a command stream
 
