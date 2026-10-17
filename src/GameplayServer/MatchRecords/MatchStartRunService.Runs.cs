@@ -275,16 +275,18 @@ public sealed partial class MatchStartRunService
             round.TimeLimitUnits,
             round.TimeLimitMinutes);
 
-        // The recorded host writes the run and the runs behind it, so a client
-        // that lost the first frame is answered by the ones that follow rather
-        // than waiting for the next round. How many it writes moves between the
-        // captures and nothing measured says what moves it; the repetitions are
-        // counted in MatchStartRunFramesUtils.RepeatCount.
+        // Written once, in one frame, as every capture writes it. The run used to
+        // be written three times back to back here, on a count taken from the
+        // rounds that carry two and three whole runs; those repetitions are spaced
+        // — `mgo2-started-briefing-then-solo-game` writes the run's records at
+        // t+57.626 and again at t+59.993 — and neither briefing writes the run
+        // more than once. Three copies inside one pass are not a repeat, they are
+        // the same frame three times: they give a client that lost the first one
+        // nothing, since all three stand or fall with the same datagram, and they
+        // are the one place this host's stream carries a record set three times
+        // over where a capture carries it once
+        // (`docs/analysis/connection-not-stable-disconnect.md` §4).
         await MatchRecordSendUtils.SendAsync(context, run);
-        for (var repeat = 0; repeat < MatchStartRunFramesUtils.RepeatCount; repeat++)
-        {
-            await MatchRecordSendUtils.SendAsync(context, run);
-        }
 
         roundState.NoteRunWritten(context.Session);
     }

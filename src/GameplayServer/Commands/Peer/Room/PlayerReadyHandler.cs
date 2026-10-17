@@ -28,9 +28,13 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// it.
 /// </para>
 /// <para>
-/// <b>The publication is the answer, and it is why the round does not have to
-/// open yet.</b> A client that readied first in a room of six is answered by the
-/// host's publication of the set — its own state in it — and not by the round,
+/// <b>The publication, and the report's own bare answer, are why the round does
+/// not have to open yet.</b> Only the report that opens the round is answered by
+/// the round's marker; every other one draws the same record with the answer bit
+/// set and no body, which is what the reference host writes while its briefing
+/// waits (<c>docs/analysis/connection-not-stable-disconnect.md</c>). A client
+/// that readied first in a room of six is answered by the host's publication of
+/// the set — its own state in it — and not by the round,
 /// which is still minutes away
 /// (<c>docs/protocol/BRIEFING_FLOW.md</c>: the report at t+55.8 s, a second
 /// player's at t+112.6 s, the round at t+193.6 s). A host that answered only by
@@ -104,6 +108,34 @@ public sealed class PlayerReadyHandler(
 
         if (!matchStart.Open(context.Message.Type))
         {
+            // The report that does not open the round is still answered on its
+            // own record, and the marker is only the answer of the report that
+            // does open it. The reference host writes the bare answer beside
+            // its publication while the briefing waits: in
+            // `mgo2-game-joined-when-red-team-then-briefing` the client reports
+            // `0x12de e1 05` at t+57.7 and the host writes `0x52de` at t+60.3 in
+            // the same datagram as its `0x12de e0 05`, with the round still
+            // forty seconds out (`docs/protocol/DATA_PHASE_DELIVERY.md` §2).
+            //
+            // Withholding it is what leaves the client waiting on itself: a
+            // live solo briefing whose report was answered only by the
+            // publication (`myserver17.pcapng`, t+68.5) had the client
+            // retransmit the same record as `0x92de e1 01` eight times over
+            // 24 s — the one capture in the set in which that record appears —
+            // and give up at its own deadline 64 s after reporting, which is
+            // the `CONNECTION NOT STABLE` modal
+            // (`docs/analysis/connection-not-stable-disconnect.md`).
+            //
+            // Only the record without the payload-class bit is answered here,
+            // because that is the record the capture answers: the bare
+            // `0x52de` / `0x5ade` carries no body, and a retransmission under
+            // `0x8000` stops as soon as this one is heard.
+            if ((context.Message.Type & PeerAcknowledgementUtils.PayloadClassBit) == 0)
+            {
+                var answer = PeerAcknowledgementUtils.AcknowledgementOf(context.Message);
+                await context.Send(answer.Type, answer.Body, answer.Flags);
+            }
+
             logger.LogDebug(
                 "UDP {LocalPort}: {RemoteAddress} is ready with {Value}; {ReadyCount} of {PlayerCount} "
                 + "player(s) in the room are ready, so the round stays closed",

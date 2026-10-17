@@ -60,6 +60,19 @@ records: 0x5ade` and sent `0x5ade` at counter 34, then wrote the run's own marke
 solo round carries one host `0x5ade` for its report, at t+46.4155 and with the
 run. **[V]**
 
+**A report that does not open the round is answered by the bare record, and by
+nothing else.** The marker is the answer of the report its round opens on; a
+report the host hears while the briefing still waits gets the same identifier
+with the answer bit set and no body, beside the readiness publication. In
+`mgo2-game-joined-when-red-team-then-briefing` the client reports
+`0x12de e1 05` at t+57.656 and the host writes `0x52de` at t+60.273, in the same
+datagram as its `0x12de e0 05`, with its round forty seconds out; the same group
+repeats at t+62.666. Withholding it leaves the client re-sending its own report
+under the class bit — `0x92de e1 01`, eight times over 24 s in the live session
+recorded in `docs/analysis/connection-not-stable-disconnect.md` — until its own
+60 s deadline raises *CONNECTION NOT STABLE*. **[V]** on the answer, **[V]** on
+what follows its absence.
+
 **Written it is three records, and the report's byte is what the third echoes.**
 `e1 14` is answered `e0 14 …` and `e1 01` is answered `e0 01 …`, so the run's
 payload cannot be built before the report arrives: there is no report to echo, and
@@ -123,10 +136,12 @@ on the room's count being the same population the roster holds.
 
 ## The round start is written for the report, and never before one
 
-The marker and the run — and the run repeated behind it, one to three sets in the
-captures' own flows (`MatchStartRunFramesUtils.RepeatCount`) — go out on the
-report, the run's payload echoing the byte that report carried, and on nothing
-else. There is no
+The marker and the run go out on the report, the run's payload echoing the byte
+that report carried, and on nothing else. The run is written once, in one frame,
+as both briefings write it; where a round's flow carries two or three whole sets
+they are spaced seconds apart on later ticks, and a host that stamps copies into
+the pass that builds the run puts the same frame on the wire several times, which
+no capture does. There is no
 round on a clock: the sparse phase closes at its measured 42 240 ms and the beat
 follows it, and the round opens when the client asks. `PlayerReadyHandler`
 recognises the report and hands it to `MatchStartRunService`, which latches the
