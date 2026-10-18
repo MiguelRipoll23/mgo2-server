@@ -1148,3 +1148,77 @@ instant. Two things beside it stay open: the second entry is still answered with
 the handshake alone (writing the run again for a repeated entry of the same phase
 is not measured in any capture), and a peer that never echoes would now be written
 no briefing run at all.
+
+## 19. `myserver20.pcapng`: the run is behind the entry, and the entry's own confirmation stops the client
+
+§18's change is live: the briefing's run is written behind the client's entry. It
+is, and the client still does not reach its briefing. This is that session
+(`192.168.1.20:5730` ↔ host `89.129.16.203:5731`, 230 s), against the two
+reference briefings of a working host.
+
+### What the run's instant now is
+
+| | entry echo (`82 NN`·`84 NN`) | briefing's run | gap |
+| --- | --- | --- | --- |
+| `started-briefing-then-solo` | t+55.312 | t+57.626 | +2.31 s |
+| `started-on-briefing` | t+56.360 | t+58.255 | +1.90 s |
+| `myserver19` (before §18) | t+59.281 | t+58.906 | **−0.38 s** |
+| **`myserver20`** | **t+61.265** | **t+61.466** | **+0.20 s** |
+
+The instant is inside the references' own range and the client **acknowledges every
+record of the run** — the whole first frame at t+61.847 (`0x5001` classes `06`–`19`,
+`0x5a54` classes `00`–`02`, `0x5ade`) and the repeat's eight records at t+64.201.
+Nothing in the run is dropped.
+
+### Where the client then stops
+
+It sends nothing but its own heartbeat from t+64.201 until t+193.7, when it goes
+silent altogether and the host reaps it 60 s later. It never writes:
+
+* the `1d 03 00 …` stage records plus the 22-byte `22 03 00 …` record, which
+  **both** reference clients write two seconds after their entry
+  (`started-briefing-then-solo` t+57.304, four of them and the `22`), and which
+  `joined-when-red-team` writes at t+95.464;
+* a ready;
+* an echo of the `f4` pair the entry's own pass published twice.
+
+The operator's description — the game renders, its audio stops, and it does not
+move — is a client that entered the world and is waiting for a stage it was never
+moved to.
+
+### What the entry pass writes that no capture does
+
+| host write, in the pass that received the echo | captures |
+| --- | --- |
+| the pair at the echoed sequence, `81 NN`, the next-sequence group, the pair at `NN+1`, **twice** (once per echo record) | `joined-when-red-team` writes the pair at `02` beside the run and confirms `81 02` at t+72.560, 14.6 s later; `started-briefing-then-solo` confirms `81 7e` at t+167.992, 112 s later and 4 s before its round; `started-on-briefing` at t+193.621, 137 s later; `game1` and `started-on-solo` never confirm at all |
+
+So the confirmation is not the entry's answer in any capture, and it is never
+written ahead of the run. Here it went out 37 ms after the echo, the run 164 ms
+behind it, and the client stopped there.
+
+### What was changed
+
+| file | change |
+| --- | --- |
+| `MatchRecords/MatchStartRunService.Entries.cs` | the entry's sequence is noted beside the entry (`entrySequences`), and `ConfirmEntryAsync` writes the confirmation when the round opens |
+| `MatchRecords/MatchStartRunService.Runs.cs` | `RunAsync` confirms the entry after the briefing's run has been written and the round has opened, ahead of the round's own run |
+| `Commands/Peer/Room/PlayerProfileHandler.cs` | the echo's pass notes the entry and writes no handshake record |
+| `MatchRecords/MatchStartRunService.cs` | the service takes `TeamArrayService`; the run watcher is what writes the confirmation |
+
+The rule: **the lobby-slot confirmation is the briefing's last handshake and not
+its first** — it belongs with the round the briefing precedes, which is where the
+two captures that hold one put it (14 s, 112 s and 137 s behind the entry, the
+last two within 4 s of the round).
+
+### Not verified live
+
+No client has joined this build. What would confirm it is this same join: the
+echo should be answered with the run and **nothing else**, the client should then
+write its `1d`/`22` records two seconds later (the records no live session has
+produced yet), and its briefing screen should show with the count held at the
+room's whole minute. What would falsify it is the same silence with the entry
+answered by the run alone, which would put the missing state in the run's contents
+— the ready-set record is 6 bytes here where `started-on-briefing` writes 8 and
+`started-briefing-then-solo` 14 — rather than in what the entry pass writes. A
+room whose round never opens (a solo player who does not ready) now never confirms
+the pair at all, which is what `game1` and `started-on-solo` show.

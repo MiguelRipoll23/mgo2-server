@@ -92,6 +92,10 @@ public sealed partial class MatchStartRunService
                     return;
                 }
 
+                // The briefing ends on the lobby-slot confirmation, which is
+                // written here and not at the entry (ConfirmEntryAsync).
+                await ConfirmEntryAsync(context);
+
                 var round = roundState.RoundNumber;
                 var generation = roundState.Generation;
                 await WriteRunAsync(context, generation);
@@ -121,6 +125,7 @@ public sealed partial class MatchStartRunService
             {
                 writing.Remove(session);
                 entered.Remove(session);
+                ForgetEntry(session);
             }
         }
     }

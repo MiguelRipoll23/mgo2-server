@@ -81,9 +81,15 @@ public sealed class PlayerProfileHandler(
             // the room's state is what answers it: the run the peer is owed is
             // written for the entry and not for its report
             // (<see cref="MatchStartRunService.OnRoomEntry"/>), which arrives
-            // while the client is still loading its map. The handshake is
-            // answered first, so the run follows it in the same pass.
-            await teamArrays.ConfirmAsync(context, TeamArrayFramesUtils.SequenceOf(context.Message.Body));
+            // while the client is still loading its map.
+            //
+            // The lobby-slot confirmation is not written here. Every capture
+            // writes it far behind the entry and none beside it, and a client
+            // answered with it in this pass stops where it stands
+            // (`myserver20.pcapng`: it acknowledged the run and then sent nothing
+            // but its heartbeat). The entry is noted with its sequence, and the
+            // confirmation is written when the room's round opens
+            // (<see cref="MatchStartRunService.ConfirmEntryAsync"/>).
             matchStart.OnRoomEntry(context);
             return;
         }

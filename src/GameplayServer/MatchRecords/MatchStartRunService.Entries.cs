@@ -29,11 +29,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </para>
 /// <para>
 /// The note is taken in the pass that answers the echo
-/// (<see cref="Commands.Peer.Room.PlayerProfileHandler"/>), because the echo is
-/// the lobby-slot handshake's own request and its answer
-/// (<see cref="Rooms.TeamArrayService.ConfirmAsync"/>) is written in the same
-/// pass; the run then waits on the note beside its report
-/// (<c>MatchStartRunService.Runs.cs</c>).
+/// (<see cref="Commands.Peer.Room.PlayerProfileHandler"/>), and what that pass
+/// writes is the briefing's run and nothing else: the lobby-slot handshake's own
+/// confirmation is written when the room's round opens
+/// (<see cref="ConfirmEntryAsync"/>), which is where the captures put it.
 /// </para>
 /// </remarks>
 public sealed partial class MatchStartRunService
@@ -46,18 +45,36 @@ public sealed partial class MatchStartRunService
     private readonly HashSet<PeerSession> entered = [];
 
     /// <summary>
+    /// The sequence each peer's entry named, which is the one its lobby-slot
+    /// confirmation answers.
+    /// </summary>
+    /// <remarks>
+    /// It is kept rather than answered in the pass that heard it: no capture
+    /// confirms the entry's own echo (see <see cref="ConfirmEntryAsync"/>).
+    /// </remarks>
+    private readonly Dictionary<PeerSession, byte> entrySequences = [];
+
+    /// <summary>
     /// Notes that a peer has asked to be placed in the room, which is what a
     /// briefing's run is written in answer to.
     /// </summary>
     /// <param name="context">Context of the entry the peer asked for.</param>
     public void OnRoomEntry(PeerContext context)
     {
+        bool first;
         lock (gate)
         {
-            if (!entered.Add(context.Session))
+            first = entered.Add(context.Session);
+            if (first)
             {
-                return;
+                entrySequences[context.Session] =
+                    Rooms.TeamArrayFramesUtils.SequenceOf(context.Message.Body);
             }
+        }
+
+        if (!first)
+        {
+            return;
         }
 
         logger.LogDebug(
@@ -65,6 +82,47 @@ public sealed partial class MatchStartRunService
             + "follows its entry and not its report",
             context.LocalPort,
             context.Remote);
+    }
+
+    /// <summary>
+    /// Answers the peer's entry with the lobby-slot confirmation and the pair
+    /// under the next sequence, which is what a briefing ends on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not in the pass that heard the echo.</b> Every capture writes the
+    /// confirmation far behind the entry that asked for it and never beside it:
+    /// `mgo2-started-briefing-then-solo-game` echoes <c>82 7e</c> at t+55.312 and
+    /// is confirmed <c>81 7e</c> at t+167.992, four seconds before its round;
+    /// `mgo2-game-started-on-briefing` echoes at t+56.360 and is confirmed at
+    /// t+193.621; `mgo2-game-joined-when-red-team-then-briefing` echoes at t+57.983
+    /// and is confirmed at t+72.560. `mgo2-game1` and `mgo2-started-on-solo-game`
+    /// are confirmed nowhere in their captures at all.
+    /// </para>
+    /// <para>
+    /// <b>A confirmation in the entry pass stops the client where it stands.</b>
+    /// `myserver20.pcapng` is that: the echo at t+61.265 was answered 37 ms later
+    /// with the pair, <c>81 f3</c>, the group and the pair at <c>f4</c> (twice, once
+    /// per echo record), the briefing's run followed 164 ms after it, and the
+    /// client acknowledged every record and then sent nothing but its own heartbeat
+    /// for two minutes — never the <c>1d</c> stage records every reference client
+    /// writes two seconds after its entry, never a ready, and never an echo of the
+    /// <c>f4</c> it had just been handed.
+    /// </para>
+    /// </remarks>
+    /// <param name="context">Context of the peer whose entry is answered.</param>
+    private async Task ConfirmEntryAsync(PeerContext context)
+    {
+        byte sequence;
+        lock (gate)
+        {
+            if (!entrySequences.TryGetValue(context.Session, out sequence))
+            {
+                return;
+            }
+        }
+
+        await teamArrays.ConfirmAsync(context, sequence);
     }
 
     /// <summary>
@@ -77,6 +135,19 @@ public sealed partial class MatchStartRunService
         lock (gate)
         {
             return entered.Contains(session);
+        }
+    }
+
+    /// <summary>
+    /// Forgets a peer's entry: a session that is gone has no sequence left to
+    /// confirm, and the next peer to enter starts its own.
+    /// </summary>
+    /// <param name="session">Session that ended.</param>
+    private void ForgetEntry(PeerSession session)
+    {
+        lock (gate)
+        {
+            entrySequences.Remove(session);
         }
     }
 }

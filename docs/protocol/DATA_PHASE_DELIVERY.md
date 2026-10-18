@@ -278,6 +278,17 @@ answers `82 02` four times between t+62.666 and t+67.733 and only confirms at
 t+72.560. Before the service existed, the live client sent `82 f3`/`84 f3` once
 and never again, because the sequence had nowhere to go.
 
+**And the confirmation is written when the round opens, not in the pass that
+hears the echo.** Every capture puts it far behind the entry it answers —
+`started-briefing-then-solo` echoes at t+55.312 and is confirmed at t+167.992,
+four seconds before its round, `started-on-briefing` at t+193.621, 137 s behind
+its echo, `joined-when-red-team` at t+72.560, 14.6 s behind — and `mgo2-game1`
+and `mgo2-started-on-solo-game` are confirmed nowhere in their captures. The host
+now notes the echoed sequence at the entry and confirms it beside the round's own
+run (`MatchStartRunService.ConfirmEntryAsync`); `analysis/join-stall-after-mode2.md`
+§19 is the live session that stopped when the confirmation went out 37 ms after
+the echo instead.
+
 **What the pair carries is the room's, and it is read per publication.**
 `LobbySlotService` pairs the room's own roster — which holds each player's key in
 the 24-entry player table, because the host is what handed it out — with the side

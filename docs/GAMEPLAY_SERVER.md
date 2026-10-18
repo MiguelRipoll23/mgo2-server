@@ -206,7 +206,14 @@ pair goes out with the run, the client answers `82 NN`/`84 NN`, the host confirm
 `81 NN`, names the next sequence in the `0b 00 01 … 08 07 NN+1` group beside the
 confirmation, and republishes the pair under the next sequence. Both the
 confirmation and the group move the client on, so a host that writes the pair
-without them gets one answer and then silence. **The confirmation, the group and
+without them gets one answer and then silence. **The confirmation is the
+briefing's last handshake and not its first**: no capture writes it in the pass
+that hears the echo — `started-briefing-then-solo` confirms 112 s behind the entry
+it answers and 4 s before its round, `joined-when-red-team` 14.6 s behind, and
+`game1` and `started-on-solo` never confirm at all — so the host notes the echoed
+sequence at the entry and writes the confirmation when the round opens
+(`MatchStartRunService.ConfirmEntryAsync`, `analysis/join-stall-after-mode2.md`
+§19). **The confirmation, the group and
 the pair are one run on the roster counter**: the confirmation takes its head and
 the group the values behind it, so the fourth bytes read in order on the wire, and
 a second answer of the same sequence repeats the confirmation and the group
