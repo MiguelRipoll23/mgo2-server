@@ -1377,7 +1377,7 @@ reference captures do that this host did not are measured there and in the six
 reference captures, and both are now written: the **four-byte `83 …` request**
 the client sends to be placed in the room, which every reference host answers
 with its room's state and which this host dropped as a nameless profile, and
-the **readiness report a round answers promptly**, which this host left open
+the **join report a round answers promptly**, which this host left open
 until the briefing's deadline. Both are measured in `docs/analysis/join-stall-after-mode2.md`, and both are also
 now written: the request is answered with the room's state, the round opens on
 the room's own reports, and §7.1e's own measurement — that the reference host

@@ -32,7 +32,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <b>The round start belongs to another writer.</b> The opening marker, the
 /// <c>0x1a54</c> run and the runs repeated behind it are written by
 /// <see cref="MatchStartRunService"/>, because the captures gate them on a
-/// client's readiness report and nothing here opens a round. This writer goes
+/// client's join report and nothing here opens a round. This writer goes
 /// from the sparse phase straight into the beat: the beat is what keeps the
 /// channel alive, and the round start arrives separately, on the client's own
 /// record, running alongside it on the same session's counter.
@@ -190,7 +190,7 @@ public sealed class MatchRecordService(
     /// <b>The set follows the round, and the counters start over with it.</b> The
     /// capture alternates the set with the rounds it plays — <c>0x1a54</c>, then
     /// <c>0x1254</c> a <c>0x800</c> bit along — and the set a round plays under is
-    /// the one its own readiness report arrived on, which
+    /// the one its own join report arrived on, which
     /// <see cref="MatchRoundStateService.Generation"/> holds. The set is read per
     /// frame rather than captured once, so a beat that spans a round boundary
     /// moves to the next round's identifiers on its next frame instead of

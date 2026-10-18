@@ -193,12 +193,12 @@ registry is what the client accepts, and the second is the larger set.
 | `0x1256` | 33 | — | 2 / 7 / 9 | **[U]** |
 | `0x1258` | 5 | — | 2 | **[U]** |
 | `0x125a` | 310 | — | 6 | **[U]** |
-| `0x12de` | 23 | 2 | 2 / 6 / 14 | readiness report / match-start payload — §3.2 |
+| `0x12de` | 23 | 2 | 2 / 6 / 14 | join report / match-start payload — §3.2 |
 | `0x1a50` | 467 | — | 6 / 9 / 10 | **[U]** |
 | `0x1a54` | 277 | 7 | 2 / 3 / 7 / 90 | **[U]** |
 | `0x1a58` | 8 | — | 2 | **[U]** |
 | `0x1a5a` | 374 | — | 6 | **[U]** |
-| `0x1ade` | 29 | 1 | 1 / 2 / 6 / 14 | readiness report / match-start payload — §3.2 |
+| `0x1ade` | 29 | 1 | 1 / 2 / 6 / 14 | join report / match-start payload — §3.2 |
 | `0x5000` | — | 1 | 0 | keep-alive — §4 |
 | `0x5001` | 60 | **481** | 0 | **[U]** — see below |
 | `0x5250` | — | 336 | 0 | **[U]** |
@@ -375,14 +375,20 @@ occurrences minutes apart. Two independent streams that both emit on the game ti
 produce matching totals whatever they mean; matching totals are not evidence of a pairing.
 Recorded as a negative so the pattern is not rediscovered as a discovery. **[V]**
 
-## 3.2 `0x1ade` / `0x12de` — the client reports itself ready, and the host opens the round [V] as a pairing, **[I]** as a meaning
+## 3.2 `0x1ade` / `0x12de` — the client reports its join, and the host answers with the run [V] as a pairing, **[I]** as a meaning
 
 The one `0x1x..` / `0x5x..` pairing in §3.1 that **does** hold is the one §3.1 did not
 test, because it is not two families but one record read in two directions. The round's
-payload record is also how a client announces it has loaded and is ready to play.
+payload record is also how a client announces its **join**: the room's map is loaded and it
+is on the briefing screen. It is **not** the player's readiness — that is
+`1f <slot> 01` on the operations stream, the record a room's round is opened on
+(`MatchRecords/BriefingReadyBodiesUtils`, `MatchStartRunService.OpenWhenEveryPlayerIsReady`),
+and the two are up to a minute apart in the capture that holds both
+(`mgo2-game-joined-when-red-team-then-briefing`: the client's report at t+57.656 and its
+ready at t+112.750, with the round's run at t+113.758).
 
 ```
-IN  0x1ade  len=2  ord=0   e1 14        the client reports ready: opcode e1, then one byte
+IN  0x1ade  len=2  ord=0   e1 14        the client reports its join: opcode e1, then its own slot
 OUT 0x5ade  len=0  ord=0                the record-level ack (0x1ade | 0x4000)
 OUT 0x1ade  len=6  ord=0   e0 14 00 00 00 00   the host's payload: opcode e0, the same byte back
 OUT … the 13-record match-start run, compressed
@@ -395,8 +401,8 @@ arrives under `0x1ade` in one round and `0x12de` (`| 0x0800`) in the next; a liv
 additionally sets the payload-class bit and sends `0x9ade`.
 
 **The parity is the client's, and the first round is not always `0x1a54`.** Every round in
-the captures plays under the set its own report arrived on — five reports, five rounds, no
-disagreement — and the set is not a function of the round number: game1's first round opens
+the captures plays under the set a join report of its own arrived on — five reports, five
+rounds, no disagreement — and the set is not a function of the round number: game1's first round opens
 on the report `0x1ade` under `0x1a54`, and game2's first opens on `0x12de` under `0x1254`.
 Read in capture order the eight rounds the two files open alternate without a break —
 `0x1a54`, `0x1254`, `0x1a54`, `0x1254`, `0x1a54` (game1, t+46.4 s to t+765.8 s), then
@@ -406,7 +412,7 @@ on the measurement; that the parity is a client-side counter is the reading **[I
 fits it. A host that opened every first round as `0x1a54` would answer game2's client with a
 `0x5ade` marker where that client asked under `0x12de`, and would stream the round under a
 set the client is not on, so a host takes its first round's set from the report
-(`MatchRecordGenerationUtils.OfReadinessReport`) and alternates from there.
+(`MatchRecordGenerationUtils.OfJoinReport`) and alternates from there.
 `MatchStartRunService` opens its round that way.
 
 **The report never arrives alone: it is paired with a one-byte record.** In all
@@ -1251,17 +1257,21 @@ along: operations `0x1a54` → `0x1254`, payload `0x1ade` → `0x12de`, rules `0
 sibling set when it opens its next round; the replay opens none, so `MatchRecordService`
 holds the first set for the whole stream.
 
-**The round is opened by the client's readiness report, not by either clock.** §3.2
-measures the pairing: every round in every capture begins 0.6–5.5 s after an `e1 NN`
-report on the round's own payload record, and none begins without one. The set the round
-plays under is the one that report arrived on, which is why the first round's is read from
-the report rather than fixed (§3.2). So the sparse phase stops at its last state blob and
+**The run is written for the client's join report and the round opens on the room's
+readies.** §3.2 measures the pairing: every round in every capture begins within a second
+or so of a client's own record, and its run is answered to that client's `e1 NN` report on
+the round's own payload record. The set the round plays under is the one that report
+arrived on, which is why the first round's is read from the report rather than fixed
+(§3.2). What the host opens the round *on* is the other record: in
+`mgo2-game-joined-when-red-team-then-briefing` the room's last player readies `1f 05 01`
+at t+112.750 and the round's run is on the wire at t+113.758, one second later, where that
+same client's join report was 55 s before it. So the sparse phase stops at its last state blob and
 the writer of the capture then writes the marker and the match-start run, and writes the run
 again four times *inside* the beat that follows (one every 56 frames, counters
 32849/32905/32961/33017) — echoing the byte the client sent, as every captured payload does.
 The repeats are never sent ahead of the beat: the recorded host keeps the 33 ms frame moving
 after the run and writes the run-shaped frame in place of the beat at those four indices.
-**None of it is written by the replay.** `PlayerReadyHandler` recognises the report and
+**None of it is written by the replay.** `JoinReportHandler` recognises the report and
 answers nothing, the marker and the run are not built, and the sparse phase runs straight
 into the beat, which holds the first identifier set for the whole stream. See
 `DATA_PHASE_DELIVERY.md`, "The round start is not written", for what a live client does with

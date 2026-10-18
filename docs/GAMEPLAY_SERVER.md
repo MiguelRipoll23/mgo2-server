@@ -40,7 +40,7 @@ host-role room is sized to the event's player capacity rather than a room's own.
 
 Nothing here is a simulation of the game. The host's job, as measured, is to be a
 peer the clients can key against, answer their join, gate their round on their
-own readiness reports, and keep the channel moving underneath them.
+own join reports, and keep the channel moving underneath them.
 
 ## 2. The lifecycle
 
@@ -100,8 +100,8 @@ answers in the pass the profile arrived in:
 ### 2.4 The briefing
 
 A client in a briefing repeatedly sends a two-record datagram: a one-byte
-presence record carrying the player's own lobby slot and, on the round's payload
-identifier, `e1 <byte>` — the readiness report. `PlayerReadyHandler` is bound to
+join state record carrying the player's own lobby slot and, on the round's payload
+identifier, `e1 <byte>` — the join report. `JoinReportHandler` is bound to
 the four payload identifiers
 the report can arrive on, records the byte against the peer, and **publishes the
 room's ready set back** as one `e0 <byte>` record per reporting player, each
@@ -133,11 +133,11 @@ membership rather than of a chosen interval:
 AllReady  =  every peer on the roster has readied, which is the record a client
              sends when the player changes its briefing state (`1f <slot> 01`) and
              not the report it sends when it has loaded
-             (PlayerReadyService.AllReady, counted over RoomRosterService.Snapshot)
+             (BriefingStateService.AllReady, counted over RoomRosterService.Snapshot)
 ```
 
 The ready records are also the set the briefing countdown carries, one bit per
-player at the slot its own record named (`PlayerReadyService.ReadyMask`), so the
+player at the slot its own record named (`BriefingStateService.ReadyMask`), so the
 room's readied players and its reported ones are different sets: a bot the host
 adds is ready in the record that adds it and never reports.
 
@@ -152,7 +152,7 @@ its briefing still ends on its own deadline when its player never readies — wh
 is the client's own contract on the other end of it: a client in a briefing waits
 either until every player is ready or until its own briefing timer runs out.
 
-With that gate met, `MatchStartRunService.Open` resolves what the room is running
+With that gate met, `MatchStartRunService.OnJoinReport` resolves what the room is running
 (`MatchSettingsService`, from this instance's settings), latches the round
 (`MatchRoundStateService.Open`, once per round number) and arms the clock. A host
 whose room is not published yet opens no round, and the client simply goes on
@@ -179,7 +179,7 @@ two, `mgo2-game2` three, both briefings one — in one frame (compressed in
 `mgo2-game-started-on-briefing`): the marker, the two empty roster heads, the operations
 state block and the two-byte record behind it, the two lobby-slot arrays — which
 name the room's own players, each in the slot it holds and on the side the room's
-rows put it — the presence answer, the close **triple** (the two twenty-byte
+rows put it — the join state answer, the close **triple** (the two twenty-byte
 records and the seven-byte roster close), the round's clock, the payload echoing
 that peer's own reported byte, and the rules pair
 (`MatchStartRunFramesUtils`). Everything in it that is measured as an offset
@@ -230,7 +230,7 @@ operations state block is written behind it as the `0x02` state write
 side that won. The match's own result at `state[3]` is not written, because how
 many rounds a match is has not been resolved (§5).
 
-Ending a round clears the ready set (`PlayerReadyService.BeginNextBriefing`), so
+Ending a round clears the ready set (`BriefingStateService.BeginNextBriefing`), so
 the next round waits for reports of its own rather than opening on the states of
 the round before — under a fresh briefing deadline of its own — and the round walk
 steps to the next entry of the room's rotation. It also clears the round's score
@@ -264,7 +264,7 @@ steps to the next entry of the room's rotation. It also clears the round's score
 | **the scoreboard each player's own numbers changed for** (`0b <slot+1> <21-byte mask> <values>` on the roster identifier) | `MatchScoreService` → `MatchScoreboardFramesUtils` → `ScoreboardPublishService` |
 | **the fourth byte of every session record: one counter per twelve-bit identifier, the class bits included, consumed in the order the records are written** | `MatchRecordSequenceService`, behind `RoomRosterService.TakeRunOrdinal` and read by `PlayerSettingsBurstService`, `MatchStartRunFramesUtils.BuildRun`, `TeamArrayService`, `ScoreboardPublishService`, the sparse phase's and the beat's controls, the round clock and the item-box group |
 | **the briefing countdown** | `BriefingCountdownService`, `BriefingCountdownBodiesUtils`: the operations clock opened on 128 units, dropping 32 every four seconds and holding at zero from sixteen seconds in |
-| **the ready set while a briefing waits** | `PlayerReadyHandler` on every report, and `BriefingReadyPublishService` repeating the room's set every 2.5 s until the round opens |
+| **the ready set while a briefing waits** | `JoinReportHandler` on every report, and `BriefingReadyPublishService` repeating the room's set every 2.5 s until the round opens |
 | **how long each briefing writer sleeps** | `MatchRoundStateService.WaitBriefingTickAsync`: the tick ends when the round opens, so neither writer holds the beat behind a timer |
 | **the round's result: `state[2]` written as the operations state write when the round ends** | `MatchStartRunService` (score → `MatchRecordBodiesUtils.StateWrite`) |
 | **the vitals record's onset: the round's first player vitals rather than a frame count** | `MatchRoundStateService.VitalsArrived` |
@@ -297,7 +297,7 @@ candidate for §5. The file names are the ones that own it.
 | the operations state block: an 89-byte vector, **49 bytes of which are constants of the layout** and are now written as named runs; the room's own seven offsets are written by name | `MatchStateBodiesUtils` | the two results, the two objective holders, the two capture clocks, the countdown seed and the round clock. The block is byte-identical to the round-open vector of three of six working-server captures, and the three it differs from differ only at offsets named as the room's own — `docs/protocol/STATE_VECTOR.md` |
 | the item-box group's bodies | `ItemBoxRecordBodiesUtils` | the round's opening event pair, then the filler; the later spawn events are not written at all, and §5 item 6 has what the capture settles about them |
 | the match-start payload's trailing zeros and length | `MatchStartBodiesUtils` | game1's six-byte form |
-| the presence answer's first byte | `MatchStartBodiesUtils`, `PlayerReadyService.PresenceMask` | **no longer a replay.** The set is the room's reporting players, one bit each in publication order: `02`, `06`, `0e`, `1e` as four players report and `16` when the third of them leaves are bits 1, 1–2, 1–3, 1–4 and 1,2,4. Read as lobby slots the bits do not fit — the same capture's arrays name slots `0x0b`, `0x0f` and `0x14`. The trailing three bytes are **[U]** |
+| the join state answer's first byte | `MatchStartBodiesUtils`, `BriefingStateService.JoinedMask` | **no longer a replay.** The set is the room's reporting players, one bit each in publication order: `02`, `06`, `0e`, `1e` as four players report and `16` when the third of them leaves are bits 1, 1–2, 1–3, 1–4 and 1,2,4. Read as lobby slots the bits do not fit — the same capture's arrays name slots `0x0b`, `0x0f` and `0x14`. The trailing three bytes are **[U]** |
 | the close triple's two 18-byte remainders | `MatchRecordBodiesUtils` | the third record of the triple is the roster close, `07 00 00 00 00 00 03` (`PlayerProfileRecordUtility.BuildRosterClose`), which is read; nothing names the two remainders |
 | the loadout bodies' unnamed bytes — the four at `0x12`, the two before the appearance block, the byte a no-pair region opens with — and the burst's closing blob's value 50 | `LoadoutBodiesUtils`, `PlayerSettingsBurstService` | the named fields are the room's; these are per-player values nothing names, so a recorded body of the player's own shape supplies them |
 
@@ -318,7 +318,7 @@ byte per record and two orders of magnitude below the bodies):
 | bucket | bytes | share | what is in it |
 | --- | --- | --- | --- |
 | **recorded bodies** | 20 266 | **95.7 %** | the rules pair `0x0a61` 56.3 %, the host's constant vitals record `0x090c` 32.5 %, the item-box group `0x1a50`/`0x9a50`/`0x1a5a` 5.1 %, the state blobs `0x0002` 1.7 %, the control byte `0xd001` 0.1 % |
-| **the room's own** | 428 | **2.0 %** | the roster and array bytes `0x1001` 1.5 % and `0x9001` 0.4 %, the readiness payload `0x1ade` 0.1 %, the presence companion `0x0a5c` |
+| **the room's own** | 428 | **2.0 %** | the roster and array bytes `0x1001` 1.5 % and `0x9001` 0.4 %, the join payload `0x1ade` 0.1 %, the presence companion `0x0a5c` |
 | **mixed** | 483 | **2.3 %** | the operations insertions `0x1a54` 1.8 % and `0x9a54` 0.5 %: the clock value is the round's own, and the 90-byte state block beside it is 49 of 89 bytes constants |
 
 So **95.7 % of what a peer receives in a playing round is still a recorded body,
@@ -368,7 +368,7 @@ survives a round's open; it is not written — `docs/protocol/STATE_VECTOR.md` �
 Nothing is simulated between peers, but nothing is swallowed either: a record
 this host has no handler for is relayed unchanged to the room's other established
 peers — both below and above the gameplay tick threshold — which is how one
-client sees another move. The readiness report and its companion are relayed by
+client sees another move. The join report and its companion are relayed by
 their own handlers, so the relay is a decision there rather than the default.
 
 **What the relay gives a scoreboard, and what it does not.** The scoreboard the
@@ -411,31 +411,38 @@ is left, which is what the beat behind it counts down from. It is also how the
 client is told it is in a round rather than a briefing — the client reads that
 from the records it is sent, and the run's own clock is the one that says so.
 
-### 4.2 A player who never reports
+### 4.2 A player who never readies
 
 The gate is "every roster member has readied", and a member is removed only when
 its session is reaped (60 s of silence). A peer that joins, stays alive and never
-readies would hold the next round shut for as long as it is there — so the gate is
-a **deadline** as well as a count: the room's own briefing time, armed when the
-briefing begins, after which the round opens for the players that did ready and
-the silent peer is served it as a late joiner is. That is the client's own
-contract, and the reason it is a deadline rather than patience: a client in a
-briefing waits either for every player to be ready or for its own briefing timer
-to end, so a room that waited longer would leave the players it did hear from past
-the end of their timer with nothing to play.
+readies would hold the next round shut for as long as it is there — so, **in a room
+that has somebody else in it**, the gate is a **deadline** as well as a count: the
+room's own briefing time, armed at the join report that gives the room its second
+player, after which the round opens for the players that did ready and the silent
+peer is served it as a late joiner is. That is the client's own contract, and the
+reason it is a deadline rather than patience: a client in a briefing waits either
+for every player to be ready or for its own briefing timer to end, so a room that
+waited longer would leave the players it did hear from past the end of their timer
+with nothing to play.
 
-**A room of one is the same shape at the other end.** Its single player has
-reported, so the count is met — and the round still waits, because a report from
-the room's only member does not open one (§2.4). The deadline is what ends that
-wait too, so a room's first player is on the briefing screen for the room's own
-briefing time and then in the round, while a second player's arrival turns the
-room into one whose reports can open it.
+**A room of one has no deadline at all, and its briefing is frozen.** Its count is
+held at the room's whole briefing time — that is what the reference host writes for
+a sole client, `mgo2-game-started-on-briefing` holding `0b 3c` for tens of seconds
+— and its briefing never runs out, because the timer is the *room's* and the second
+player is what the wait is for. So the only thing that starts a solo round is that
+player's own ready: `mgo2-started-briefing-then-solo-game` is one client, alone, and
+its round arrives at t+174.371 after it readies at t+165.780 and re-reports at
+t+173.438, with nothing in the 111 s before that. A host that armed the deadline on
+the client's own join report instead started a round nobody had asked for —
+`myserver17.pcapng`'s sole client was handed a round 60.3 s after its report, with
+its own briefing count still held at the room's whole minute
+(`analysis/join-stall-after-mode2.md` §17).
 
-No capture shows the deadline firing, because every captured client does report;
-what the live experiments *did* produce is a client that sat in its ready state for
-two minutes while a round it had been sent went unrepeated
-(`DATA_PHASE_DELIVERY.md`), which is the shape a gate with no deadline holds in
-place.
+What the live experiments *did* produce, before any of this, is a client that sat
+in its ready state for two minutes while a round it had been sent went unrepeated
+(`DATA_PHASE_DELIVERY.md`); what `myserver17` produced after that is the other half
+of the same lesson — a client that kept re-reporting its join for 54 s while the
+host answered with a round on a clock the client had never been given.
 
 ### 4.3 What ends a round
 
@@ -523,12 +530,12 @@ record should be sent.
 | --- | --- |
 | `GameplayServerService*.cs` | the port, the sessions, the frame pipeline, dispatch, relay, outbound |
 | `Commands/Peer/Connection/*` | handshake, keep-alive, join probe |
-| `Commands/Peer/Room/*` | the profile (join), the readiness report, its companion |
+| `Commands/Peer/Room/*` | the profile (join), the join report, its companion |
 | `Match/MatchService.cs` | the room row (written from this instance's settings) and its heartbeat |
 | `Match/MatchSettings{Service,Utils}.cs` | what the room runs, from this instance's settings |
 | `Match/MatchRuleUtils.cs`, `MatchMapUtils.cs` | the rule and map names and the ids they map to, ported from `rpdt.js` |
 | `Rooms/RoomRosterService.cs`, `RoomRosterFramesUtils.cs` | who is in the room, and the run and copies a join is answered with — the records split out so neither file passes the size limit |
-| `Rooms/PlayerReadyService.cs` | who has reported and who has readied, the publication, and the ready set the countdown carries |
+| `Rooms/BriefingStateService.cs` | who has reported and who has readied, the publication, and the ready set the countdown carries |
 | `Rooms/PlayerSettingsBurstService.cs` | the post-join burst |
 | `Rooms/TeamArrayService.cs` | the lobby-slot handshake |
 | `Rooms/LobbySlotService.cs` | the room's own players and sides, as that pair names them |

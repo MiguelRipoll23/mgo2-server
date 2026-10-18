@@ -12,22 +12,28 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// about, so a reader asking "how long is left" has one place to look. Two readings
 /// live here on purpose: <see cref="Remaining"/> is the count a peer is sent, which
 /// a room of one has held at the whole briefing time because that is what the
-/// reference writes, and <see cref="TimeRemaining"/> is the briefing's own end,
-/// which is what the round's clock hold reads.
+/// reference writes, and <see cref="TimeRemaining"/> is the time the room is being
+/// given before its round opens on its own, which is what the round's clock hold
+/// reads and what a room of one does not get.
 /// </remarks>
 public sealed partial class BriefingCountdownService
 {
     /// <summary>
-    /// Arms the countdown for a briefing that has just begun.
+    /// Arms the countdown for a briefing whose first join report has arrived.
     /// </summary>
     /// <remarks>
-    /// Called where a briefing's first report reaches its room, so the countdown is
-    /// armed by the same event the deadline is (<see cref="MatchStartRunService"/>).
-    /// A briefing with no time recorded — the room is not published yet — arms
-    /// nothing and publishes nothing, which is the same answer
-    /// <see cref="MatchStartRunService"/> gives the round.
+    /// <b>It is the count a client is shown and not the room's deadline.</b> The
+    /// report that arms this is the client saying it is on the briefing screen
+    /// (<see cref="MatchStartRunService.OnJoinReport"/>), and what it is owed is the
+    /// count that screen carries, held at the room's whole briefing time until a
+    /// second player joins (<see cref="StartCounting"/>). The deadline that ends the
+    /// briefing belongs to the room and is armed where the room gets its second
+    /// player, by the same call that starts this count moving. A briefing with no
+    /// time recorded — the room is not published yet — arms nothing and publishes
+    /// nothing, which is the same answer <see cref="MatchStartRunService"/> gives the
+    /// round.
     /// </remarks>
-    /// <param name="begun">When the briefing began.</param>
+    /// <param name="begun">When the briefing's count began.</param>
     /// <param name="minutes">How long the briefing runs for, in minutes.</param>
     public void Begin(DateTimeOffset begun, int minutes)
     {
@@ -44,7 +50,7 @@ public sealed partial class BriefingCountdownService
         }
 
         logger.LogDebug(
-            "A briefing runs for {BriefingTime} minute(s) from now; its peers are sent the countdown, "
+            "A briefing's {BriefingTime}-minute count is now armed; its peers are sent the countdown, "
             + "held at the whole briefing time until a second player reports",
             minutes);
     }
@@ -57,7 +63,8 @@ public sealed partial class BriefingCountdownService
     /// the count at the room's whole briefing time for as long as a single player
     /// is in the room — <c>mgo2-game-started-on-briefing</c> writes
     /// <c>0b 3c …</c> unchanged for tens of seconds — and moves it only once a
-    /// second player has reported
+    /// second player has reported, at which point the room's own deadline starts
+    /// from the same moment (<see cref="MatchStartRunService"/>)
     /// (<c>mgo2-game-joined-when-red-team-then-briefing</c> holds <c>0b 3c</c> at
     /// the briefing's start and then counts it down). The count is the briefing's
     /// own time and not the room's age, so it runs from the moment the second
@@ -137,41 +144,46 @@ public sealed partial class BriefingCountdownService
     }
 
     /// <summary>
-    /// How long the briefing itself has left, whether or not its count is moving,
-    /// and whether a briefing is running at all.
+    /// How long the briefing the room is running has left, and whether the room is
+    /// being timed at all.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>It is the briefing's own end, and the count is not.</b> A room of one has
-    /// its count held at the whole briefing time — the reference writes the count
-    /// that way, and <see cref="Remaining"/> is that reading — but the briefing
-    /// itself still ends: the deadline that opens the room's round is armed on this
-    /// same time (<see cref="MatchStartRunService"/>).
+    /// <b>It ends where the count does, and a frozen count never ends.</b> The
+    /// briefing's time is the room's own — the timer its clients run on their
+    /// briefing screens — so it starts where the count starts moving, at the report
+    /// that gives the room a second player (<see cref="StartCounting"/>), and a room
+    /// of one is not timed at all: its count is held at the whole briefing time and
+    /// its briefing never runs out, which is why its round opens on its player's own
+    /// ready and on nothing else (`docs/analysis/join-stall-after-mode2.md` §17).
+    /// Answering with the held count here instead was the defect: a room of one would
+    /// be given a briefing end it does not have, and — through the round's clock hold
+    /// below — a round would open that nobody asked for, which is the frozen seven
+    /// minutes <c>myserver12.pcapng</c> shows a client from t+62.371 to t+123.973 and
+    /// the round <c>myserver17.pcapng</c> opens at t+113.712, 60.3 s after its only
+    /// client's report.
     /// </para>
     /// <para>
     /// <b>What reads it is the round's clock hold.</b> A round opened while a
     /// briefing still has time to run holds its clock at the round's whole length
     /// for what is left of it, and a round opened once the briefing's time is out
-    /// counts from its own open. The held count is the wrong reading for that: a
-    /// solo room would hold a round's clock for a nominal minute it had already
-    /// spent, which is the frozen seven minutes <c>myserver12.pcapng</c> shows a
-    /// client from t+62.371 to t+123.973.
+    /// counts from its own open — as does a round in a room that was never timed.
     /// </para>
     /// </remarks>
     /// <param name="now">The moment to read the clock at.</param>
     /// <param name="remaining">Time left in the briefing, when one is running.</param>
-    /// <returns><c>true</c> while a briefing is current and has time left.</returns>
+    /// <returns><c>true</c> while the room is being timed and has time left.</returns>
     public bool TimeRemaining(DateTimeOffset now, out TimeSpan remaining)
     {
         lock (gate)
         {
-            if (startedAt is not { } started || length <= TimeSpan.Zero)
+            if (countingFrom is not { } counting || length <= TimeSpan.Zero)
             {
                 remaining = TimeSpan.Zero;
                 return false;
             }
 
-            remaining = (started + length) - now;
+            remaining = (counting + length) - now;
             return remaining > TimeSpan.Zero;
         }
     }

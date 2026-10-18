@@ -112,11 +112,11 @@ and by announcing a player whose skills cannot be expressed with no pairs rather
 than dropping it. That is the reference value the working server's host carries,
 which is what the dedicated host should present.
 
-## 3. The presence answer is never sent on its own, and its byte is derived the wrong way
+## 3. The join state answer is never sent on its own, and its byte is derived the wrong way
 
 ### 3.1 It is only ever written inside the run
 
-The client puts a one-byte presence record in the same datagram as its readiness
+The client puts a one-byte join state record in the same datagram as its join report
 report — `0x0a5c` under the first generation, `0x025c` under the sibling, class
 `0x04`. The live capture:
 
@@ -148,7 +148,7 @@ round opened.
 
 ### 3.2 The first byte is the reported slot, not the publication order
 
-`PlayerReadyService.PresenceMask` built the set as *one bit per reporter in
+`BriefingStateService.JoinedMask` built the set as *one bit per reporter in
 publication order* (bit 1 for the first reporter). The solo capture refutes that
 reading and settles the other one:
 
@@ -171,8 +171,8 @@ The doc's earlier rejection of "slots" (`replay-findings.md` §1.5) read the *lo
 arrays'* keys — `0x0b`, `0x0f`, `0x14` — and those are a different field from the
 byte the report itself carries, which the run's payload echoes back.
 
-**Fixed.** `PresenceMask` now sets `1 << ReportByte` per reporter, and
-`PlayerReadyHandler` writes the answer to the reporting peer under the report's
+**Fixed.** `JoinedMask` now sets `1 << ReportByte` per reporter, and
+`JoinReportHandler` writes the answer to the reporting peer under the report's
 own generation, as both captures do.
 
 ## 4. What is different but is not this host's to fix (or is unresolved)
@@ -223,7 +223,7 @@ a peer's own block can name that peer's vitals slot without guessing.
 So the record the live host writes is the *addressed player's* vitals slot, and
 `0x090c` is the right slot for the session this host replays: it is game1's
 joiner block (`0x090b`…`0x0911`) and its round-1 generation, which is also the
-generation this host takes from the client's own readiness report
+generation this host takes from the client's own join report
 (`MatchRecordGenerationUtils`). The `0x800` bit the generation flips is part of
 the block: game1's host writes `0x090c` while its client writes `0x090b`, and
 `0x010c` while its client writes `0x010b`.
@@ -264,12 +264,12 @@ as a framing defect.
 ### 4.4 The bundle-vs-separate question
 
 Checked for every pair the captures hold. Only one record's *place* differs
-between the live host and a working one, and it is §3's presence answer:
+between the live host and a working one, and it is §3's join state answer:
 
 | record | working host | live host | verdict |
 | --- | --- | --- | --- |
-| readiness publication (`e0 …`) | one frame per report | one frame per report | same |
-| presence answer (`0x0a5c` class 6) | beside the report **and** in the run | in the run only | **defect, fixed** |
+| join publication (`e0 …`) | one frame per report | one frame per report | same |
+| join state answer (`0x0a5c` class 6) | beside the report **and** in the run | in the run only | **defect, fixed** |
 | round marker (`0x5ade`/`0x52de`) | its own datagram in one capture, inside the run in the other | inside the run | not a gate (§1.4) |
 | opening run + repeats | one frame, repeated | one frame, repeated | same |
 | rules pair | one frame per tick | one frame per tick | same |
@@ -277,7 +277,7 @@ between the live host and a working one, and it is §3's presence answer:
 | settings burst | one frame per record, roster pause | same | same |
 
 No capture shows a record the live host splits across datagrams that a working
-host bundles, or the reverse, except the presence answer.
+host bundles, or the reverse, except the join state answer.
 
 ## 5. What was changed
 
@@ -285,8 +285,8 @@ host bundles, or the reverse, except the presence answer.
 | --- | --- |
 | `Rooms/LoadoutBodiesUtils.cs` | added `ReferenceAppearanceBlock()` — the recorded host body's trailing 23-byte appearance block |
 | `Rooms/LobbyLoadoutService.cs` | a player whose appearance cannot be read is announced with the reference block instead of dropped; a player whose skills cannot be expressed is announced with no pairs |
-| `Rooms/PlayerReadyService.cs` | `PresenceMask` sets `1 << reportedByte` (the player's own slot) instead of one bit per publication index |
-| `Commands/Peer/Room/PlayerReadyHandler.cs` | writes the presence answer to the reporting peer under the report's generation, beside the report and not only inside the run |
+| `Rooms/BriefingStateService.cs` | `JoinedMask` sets `1 << reportedByte` (the player's own slot) instead of one bit per publication index |
+| `Commands/Peer/Room/JoinReportHandler.cs` | writes the join state answer to the reporting peer under the report's generation, beside the report and not only inside the run |
 
 ## 6. What would settle the rest
 

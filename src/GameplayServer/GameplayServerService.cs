@@ -33,7 +33,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly MatchService matchService;
     private readonly RoomRosterService roster;
     private readonly MatchRecords.MatchStartRunService matchStart;
-    private readonly PlayerReadyService ready;
+    private readonly BriefingStateService briefingStates;
     private readonly PlayerVitalsService vitals;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
@@ -76,7 +76,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         matchService = serviceProvider.GetRequiredService<MatchService>();
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
         matchStart = serviceProvider.GetRequiredService<MatchRecords.MatchStartRunService>();
-        ready = serviceProvider.GetRequiredService<PlayerReadyService>();
+        briefingStates = serviceProvider.GetRequiredService<BriefingStateService>();
         vitals = serviceProvider.GetRequiredService<PlayerVitalsService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
@@ -243,7 +243,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         // The briefing state the peer reported goes with it. A ready state kept
         // for a player who has left would hold a round shut on somebody who is
         // never going to report, which is a room waiting for nothing.
-        if (ready.Forget(session.RemoteAddress) | ready.Forget(session.DialBack.ToString()))
+        if (briefingStates.Forget(session.RemoteAddress) | briefingStates.Forget(session.DialBack.ToString()))
         {
             logger.LogDebug(
                 "[{LogPrefix}] Cleared the briefing state of reaped peer {RemoteAddress}",

@@ -11,7 +11,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <para>
 /// <b>A round opens on the room's ready set and never on a clock.</b> Measured
 /// over every capture that holds a round, each one begins within 0.6–5.5 s of a
-/// client's readiness report and none begins without one
+/// player's own record and none begins without one
 /// (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §3.2), and the round of
 /// <c>mgo2-game-joined-when-red-team-then-briefing</c> opens one second after the
 /// ready record of the room's last player. A host that opened its round on the
@@ -19,34 +19,41 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// the client sat in its ready state and reported twenty-three times over two
 /// minutes while the run it had already been sent went unrepeated. The gate here is
 /// therefore <see cref="OpenWhenEveryPlayerIsReady"/>, which opens the round on the
-/// ready that completes the room's readied players, or its briefing running out
-/// first, which is the next paragraph.
+/// ready that completes the room's readied players.
 /// </para>
 /// <para>
 /// <b>A room's clients are briefed before they are started, and the briefing is
-/// answered on its own set.</b> A client in a briefing reports itself ready and
-/// waits for the host; what the host writes while it waits is the briefing's own
+/// answered on its own set.</b> A client joins the room, reports that join, and is
+/// briefed; what the host writes while it waits is the briefing's own
 /// run, under the set that first report arrived on, and not a round. The round
-/// opens on the next report, which arrives on the other set once the briefing's
+/// opens on the room's ready records, or on the next join report once the briefing's
 /// time is out — the two reports per round the reference shows
-/// (<c>docs/protocol/BRIEFING_FLOW.md</c> §1–§2) — or on the briefing's deadline
-/// for a room whose client never sends that second report. The earlier reading
+/// (<c>docs/protocol/BRIEFING_FLOW.md</c> §1–§2). The earlier reading
 /// that held a sole client's first report back was withdrawn for the wrong
 /// reason: the report *is* answered, but with the briefing's run, and a report a
 /// capture answers with a round is the second one.
 /// </para>
 /// <para>
-/// <b>How many players are needed is a deadline, not a rule.</b> A client waits
-/// in its briefing for the host's round either until every player is ready or
-/// until its own briefing time is up, so a room that waited for a player who never
-/// readies leaves the others past the end of their timer with no round at all
-/// (<c>docs/GAMEPLAY_SERVER.md</c> §4.2). The first report of a briefing therefore
-/// arms a deadline of the room's own briefing time, and a briefing that runs out
-/// opens the round for the players it did hear from — under the set the last of
-/// their reports arrived on. A briefing no player has answered opens nothing: a
-/// round is still something a report asks for, and a room nothing has answered has
-/// no set to open one under — which is why the ready gate above opens nothing
-/// without one either (<see cref="BriefingGeneration"/>).
+/// <b>A room of one is frozen, and a room of two has a deadline.</b> A client waits
+/// in its briefing either until every player is ready or until its own briefing
+/// timer ends, so a room that waited on a player who never readies leaves the
+/// others past the end of their timer with no round at all
+/// (<c>docs/GAMEPLAY_SERVER.md</c> §4.2). The timer is the room's, though, and a
+/// room of one has none: its briefing count is **held** at the room's whole
+/// briefing time and nothing runs out, which is what the reference host writes for a
+/// sole client (`mgo2-game-started-on-briefing` holds `0b 3c` for tens of seconds,
+/// and `mgo2-started-briefing-then-solo-game` starts its round only after its
+/// client readies and re-reports at t+165.780 and t+173.438). **The map-loaded
+/// report is therefore not a readiness and arms nothing**: it says the client is on
+/// the briefing screen, and the deadline it used to arm was the host starting a round
+/// nobody had asked it for (§17 of <c>docs/analysis/join-stall-after-mode2.md</c>).
+/// The deadline begins where the room has somebody to be briefed with — the second
+/// player's own join report — and a briefing that runs out opens the round for the
+/// players it did hear from, under the set the last of their reports arrived on.
+/// A briefing no player has answered opens nothing: a round is still something a
+/// report asks for, and a room nothing has answered has no set to open one under —
+/// which is why the ready gate above opens nothing without one either
+/// (<see cref="BriefingGeneration"/>).
 /// </para>
 /// <para>
 /// <b>What ends a round.</b> The round's own clock, which is the length its
@@ -70,7 +77,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </para>
 /// </remarks>
 /// <param name="roundState">The room's round, which this service opens and closes.</param>
-/// <param name="ready">The room's briefing states, which a round's end re-arms.</param>
+/// <param name="briefingStates">
+/// The room's briefing states — who has joined and who has readied — which a
+/// round's end re-arms.
+/// </param>
 /// <param name="matchSettings">Resolver of the room's own rule, map and clock.</param>
 /// <param name="lobbySlots">
 /// Reader of the room's own players by their slot in its 24-entry player table
@@ -93,7 +103,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class MatchStartRunService(
     MatchRoundStateService roundState,
-    Rooms.PlayerReadyService ready,
+    Rooms.BriefingStateService briefingStates,
     MatchSettingsService matchSettings,
     Rooms.LobbySlotService lobbySlots,
     Rooms.RoomRosterService roster,
@@ -104,31 +114,40 @@ public sealed partial class MatchStartRunService(
     ILogger<MatchStartRunService> logger)
 {
     /// <summary>
-    /// How many players must have reported before the briefing countdown moves:
-    /// the second player is what ends a room of one's frozen briefing.
+    /// How many players must have joined before the briefing's count moves and its
+    /// deadline is armed: the second player is what ends a room of one's frozen
+    /// briefing.
     /// </summary>
-    private const int CountingReportCount = 2;
+    private const int CountingJoinReportCount = 2;
 
     private readonly Lock gate = new();
 
     private int briefingNumber;
-    private ushort? lastReportIdentifier;
+    private ushort? lastJoinReportIdentifier;
     private MatchRecordGenerationUtils? briefingGeneration;
 
     /// <summary>
-    /// Identifier the room's briefing last heard a report on, or <c>null</c> while
-    /// the briefing current has heard from nobody. It is the set the ready set is
-    /// repeated under while the room waits (<see cref="BriefingReadyPublishService"/>),
-    /// and, for a briefing that runs out before a second report arrives, the set
-    /// the deadline opens the round under.
+    /// Briefing number whose deadline has been armed, or <c>null</c> while the
+    /// briefing current has not been armed with one. A briefing arms its deadline
+    /// once, at the report that gives it a second player, so the reports after that
+    /// one cost nothing (<see cref="ArmBriefingDeadline"/>).
     /// </summary>
-    public ushort? LastReportIdentifier
+    private int? armedDeadlineBriefing;
+
+    /// <summary>
+    /// Identifier the room's briefing last heard a join report on, or <c>null</c>
+    /// while the briefing current has heard from nobody. It is the set the ready set
+    /// is repeated under while the room waits
+    /// (<see cref="BriefingReadyPublishService"/>), and the set a briefing that runs
+    /// out opens its round under.
+    /// </summary>
+    public ushort? LastJoinReportIdentifier
     {
         get
         {
             lock (gate)
             {
-                return lastReportIdentifier;
+                return lastJoinReportIdentifier;
             }
         }
     }
@@ -157,24 +176,44 @@ public sealed partial class MatchStartRunService(
     }
 
     /// <summary>
-    /// Takes a readiness report and, when it is the one the room's round waits
-    /// for, opens the round under the set that report arrived on.
+    /// Takes a client's join report and, when it is the one the room's round waits
+    /// for, opens the round under the set that report arrived on. It is also where
+    /// a briefing's clock is armed with the room it was given.
     /// </summary>
     /// <remarks>
     /// <para>
+    /// <b>It is a join and not a readiness.</b> The record says the client has
+    /// loaded the room and its map and is on the briefing screen
+    /// (<see cref="Rooms.BriefingStateService.JoinReport"/>); a player's own
+    /// readiness arrives on a different record entirely, on the operations
+    /// stream, and it is that one which opens a round
+    /// (<see cref="OpenWhenEveryPlayerIsReady"/>). A gate on the reports themselves
+    /// was measured wrong twice over: a room's reports run up to half a minute ahead
+    /// of its readies (`mgo2-game-joined-when-red-team-then-briefing` reports at
+    /// t+57.656 and readies at t+112.750), and in its second briefing the ready
+    /// comes *before* the report (t+870.222 against t+844.858).
+    /// </para>
+    /// <para>
     /// <b>The briefing is answered first and the round second.</b> A briefing
-    /// hears two reports a round. The first names the set the briefing itself is
+    /// hears two join reports a round. The first names the set the briefing itself is
     /// written under — the client is still being briefed, so what it is served is
     /// that briefing's run and not a round (<see cref="MatchStartRunService.Runs"/>)
     /// — and the second, arriving on the other set once the briefing's time is
     /// out, asks for the round the captures show playing after it
-    /// (<c>docs/protocol/BRIEFING_FLOW.md</c> §1–§2). **That round opens on the
-    /// room's ready records and not on the report**
-    /// (<see cref="OpenWhenEveryPlayerIsReady"/>): the report is what a run is
-    /// written from, and a room whose players have not all readied stays closed
-    /// here. A report on the set the
+    /// (<c>docs/protocol/BRIEFING_FLOW.md</c> §1–§2). A report on the set the
     /// briefing is already on is the first one repeated: a client re-reports until
     /// it is answered, and that is the same report and not a round asked for.
+    /// </para>
+    /// <para>
+    /// <b>The clock is armed here, and only as far as the room has players for.</b>
+    /// A join report is not a readiness, so it arms no deadline: a room of one is
+    /// frozen, its count held at the room's whole briefing time and its briefing
+    /// never out (§17 of <c>docs/analysis/join-stall-after-mode2.md</c>). The report
+    /// that gives the room a second player is the one its timer belongs to, and
+    /// that is where the count is started and the deadline armed
+    /// (<see cref="ArmBriefingDeadline"/>), for the same reason the briefing's own
+    /// preparation waits: the join that made the room can be a minute ahead of the
+    /// client that has to read the briefing.
     /// </para>
     /// <para>
     /// <b>The gate is here and not only in the handler.</b> A round opens for a
@@ -186,55 +225,62 @@ public sealed partial class MatchStartRunService(
     /// next report to arrive is a single player's.
     /// </para>
     /// </remarks>
-    /// <param name="reportIdentifier">Identifier the readiness report arrived on.</param>
+    /// <param name="reportIdentifier">Identifier the join report arrived on.</param>
     /// <returns><c>true</c> when this call opened the round.</returns>
-    public bool Open(ushort reportIdentifier)
+    public bool OnJoinReport(ushort reportIdentifier)
     {
-        var generation = MatchRecordGenerationUtils.OfReadinessReport(reportIdentifier);
+        var generation = MatchRecordGenerationUtils.OfJoinReport(reportIdentifier);
 
         MatchRecordGenerationUtils? briefing;
         int armed;
+        bool first;
+        bool startsBriefing;
         lock (gate)
         {
             briefing = briefingGeneration;
-            lastReportIdentifier = reportIdentifier;
+            lastJoinReportIdentifier = reportIdentifier;
             armed = briefingNumber;
-            if (briefing is null)
+            first = briefing is null;
+            if (first)
             {
                 // The briefing's own set: the first report names it, and the run
                 // the worker writes for the briefing is written under it.
                 briefingGeneration = generation;
             }
+
+            // The briefing's timer is the room's own and runs only once the room
+            // has somebody else in it: a room of one holds its count at the whole
+            // briefing time and never reaches a deadline, so the report that makes
+            // the room a room of two is the one armed here. One briefing arms it
+            // once, whatever the reports after that one say.
+            startsBriefing = armedDeadlineBriefing != armed
+                && briefingStates.JoinedCount >= CountingJoinReportCount;
+            if (startsBriefing)
+            {
+                armedDeadlineBriefing = armed;
+            }
         }
 
-        // The briefing's clock is the report's own: it is armed here and not where
-        // the briefing was prepared, because the join that prepared it can be a
-        // minute ahead of the client that has to read the briefing
-        // (ArmBriefingClock). Only a briefing's first report arms it — a report on
-        // a briefing whose clock is already running is the same report repeated,
-        // and the clock it was armed with is still the one it is on.
-        if (briefing is null)
+        if (first)
         {
-            ArmBriefingClock(armed);
-        }
+            // The count a peer is sent starts at its first report: held at the
+            // room's whole briefing time until a second player reports, and its own
+            // end only once it moves (BriefingCountdownService).
+            BeginBriefingClock();
 
-        // A room with a second reporting player is a room whose briefing counts:
-        // the countdown is held at the room's whole briefing time while one
-        // player is in the room, and starts from the moment the second report
-        // arrives (BriefingCountdownService.StartCounting). The call is
-        // idempotent, so the reports after the second cost nothing.
-        if (ready.ReadyCount >= CountingReportCount)
-        {
-            countdown.StartCounting(DateTimeOffset.UtcNow);
-        }
-
-        if (briefing is null)
-        {
             logger.LogInformation(
-                "The room's briefing heard its first report on 0x{Identifier:x4}; the briefing is written "
-                + "under that set and the round waits for a report on the other one, or for the briefing "
-                + "time, before it opens",
+                "The room's briefing heard its first join report on 0x{Identifier:x4}; the briefing is "
+                + "written under that set and no round opens on a join report",
                 reportIdentifier);
+        }
+
+        if (startsBriefing)
+        {
+            ArmBriefingDeadline(armed);
+        }
+
+        if (first)
+        {
             return false;
         }
 
@@ -247,11 +293,12 @@ public sealed partial class MatchStartRunService(
             return false;
         }
 
-        // The other set: the report the captures show opening the round once the
-        // briefing is done.
+        // The other set: the report the captures show arriving once the briefing is
+        // done. It opens the round only for a room whose players have all readied —
+        // the clock, if the room has one, opens it for the rest (OpenWhenBriefingEndsAsync).
         return OpenRound(
             generation,
-            $"the report arrived on 0x{reportIdentifier:x4}",
+            $"the join report arrived on 0x{reportIdentifier:x4}",
             waitForEveryone: true);
     }
 
@@ -261,12 +308,12 @@ public sealed partial class MatchStartRunService(
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>It is a ready record and not a report that starts the round.</b> In
+    /// <b>It is a ready record and not a join report that starts the round.</b> In
     /// <c>mgo2-game-joined-when-red-team-then-briefing</c> the room readies
     /// <c>1f 05 01</c> at t+112.750 and its round is open at t+113.758, one second
     /// later; the reports of the same briefing are at t+57.656 and later, and the
     /// room's other players readied between t+76.6 and t+111.2 while it waited
-    /// (<see cref="Rooms.PlayerReadyService.ReadyMask"/>). A gate on the reports
+    /// (<see cref="Rooms.BriefingStateService.ReadyMask"/>). A gate on the reports
     /// would open that round at the first pair of them.
     /// </para>
     /// <para>
@@ -297,18 +344,18 @@ public sealed partial class MatchStartRunService(
             return false;
         }
 
-        if (!ready.AllReady)
+        if (!briefingStates.AllReady)
         {
             logger.LogDebug(
-                "A player readied, but {PendingCount} player(s) in the room have not; the round stays "
+                "A player readied, but {PendingReadyCount} player(s) in the room have not; the round stays "
                 + "closed until they do or the briefing runs out",
-                ready.PendingBriefingReadyCount);
+                briefingStates.PendingBriefingReadyCount);
             return false;
         }
 
         return OpenRound(
             briefing.Sibling,
-            $"every player in the room has readied, {ready.BriefingReadyCount} of them",
+            $"every player in the room has readied, {briefingStates.BriefingReadyCount} of them",
             waitForEveryone: false);
     }
 
@@ -338,13 +385,13 @@ public sealed partial class MatchStartRunService(
         // who never readies is still ended by the briefing's own deadline
         // (OpenWhenBriefingEndsAsync), which is the contract the class summary
         // gives it.
-        if (waitForEveryone && !ready.AllReady)
+        if (waitForEveryone && !briefingStates.AllReady)
         {
             logger.LogDebug(
-                "The room asked for a round and {OpenedBy}, but {PendingCount} player(s) in it have not "
+                "The room asked for a round and {OpenedBy}, but {PendingReadyCount} player(s) in it have not "
                 + "readied; the round stays closed until they do or the briefing runs out",
                 openedBy,
-                ready.PendingBriefingReadyCount);
+                briefingStates.PendingBriefingReadyCount);
             return false;
         }
 
@@ -358,10 +405,12 @@ public sealed partial class MatchStartRunService(
         }
 
         // The clock a round opens on is whole, and it stays whole for as much of
-        // the room's briefing as is still to run. A report opens a round while its
-        // client is still being briefed — that is what the report is — so the
-        // round's clock counts from the briefing's own end and not from the open;
-        // a clock that counted from the open would run the round out under a
+        // the room's briefing as is still to run. A ready opens a round while its
+        // room may still be briefed, so the round's clock counts from the briefing's
+        // own end and not from the open — and a room of one has no end to wait for,
+        // its count being frozen and TimeRemaining answering nothing for it, so its
+        // clock counts from the open; a clock that counted from the open would run
+        // the round out under a
         // client still reading the briefing (MatchRoundStateService.RemainingUnits).
         var hold = countdown.TimeRemaining(DateTimeOffset.UtcNow, out var remaining)
             ? (int)remaining.TotalMilliseconds

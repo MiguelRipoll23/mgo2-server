@@ -55,14 +55,14 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="roster">The room's roster, whose ordinals the room-state records take.</param>
 /// <param name="ready">
 /// The room's readied players, whose bit set the countdown carries on every tick
-/// (<see cref="Rooms.PlayerReadyService.ReadyMask"/>).
+/// (<see cref="Rooms.BriefingStateService.ReadyMask"/>).
 /// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class BriefingCountdownService(
     MatchRoundStateService roundState,
     MatchRecordSequenceService sequences,
     Rooms.RoomRosterService roster,
-    Rooms.PlayerReadyService ready,
+    Rooms.BriefingStateService briefingStates,
     ILogger<BriefingCountdownService> logger)
 {
     /// <summary>
@@ -179,7 +179,7 @@ public sealed partial class BriefingCountdownService(
             {
                 await context.Send(
                     CountdownIdentifier,
-                    BriefingCountdownBodiesUtils.CountdownBody(seconds, ready.ReadyMask),
+                    BriefingCountdownBodiesUtils.CountdownBody(seconds, briefingStates.ReadyMask),
                     sequences.Take(CountdownIdentifier));
 
                 // The room's own stage rides with the countdown, which is the one
@@ -240,7 +240,7 @@ public sealed partial class BriefingCountdownService(
                 CountdownIdentifier,
                 BriefingCountdownBodiesUtils.CountdownBody(
                     seconds: 0,
-                    readySet: ready.ReadyMask),
+                    readySet: briefingStates.ReadyMask),
                 sequences.Take(CountdownIdentifier));
         }
         catch (Exception exception)

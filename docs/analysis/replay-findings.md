@@ -178,7 +178,7 @@ against hosts whose runs already had the heads and the close, so neither is a
 negative control. That is a live test, and it is not one this host can run from
 the repository.
 
-### 1.5 The presence answer's first byte is the reporters in order
+### 1.5 The join state answer's first byte is the reporters in order
 
 The row in §2 assumed the set was "a bit set over its slots". It is not, and the
 captures' own values say so:
@@ -196,9 +196,9 @@ none of the three is a bit of a byte. So `02` was never "a room of one" — it i
 the bit of the **first** reporter, and a room of one writes it because its only
 reporter is first.
 
-`PlayerReadyService.PresenceMask` now writes the room's own set — one bit per
+`BriefingStateService.JoinedMask` now writes the room's own set — one bit per
 `ReadyState`, at `PublicationIndex + 1` — and `BuildRun` carries it into
-`MatchStartBodiesUtils.PlayerPresenceAnswer`. What stays **[U]** is the trailing
+`MatchStartBodiesUtils.JoinStateAnswer`. What stays **[U]** is the trailing
 three bytes, which have never moved in a capture and stay the recorded zeros.
 
 ## 2. What is still a literal, and what it would take
@@ -216,7 +216,7 @@ copies; each needs a rule to become a build.
 | the close triple's two 18-byte remainders | `MatchRecordBodiesUtils` | the roster header layout past offset 7; the triple's third record is the roster close and is no longer a literal (§1.4) |
 | `0x0f 0x00` | `MatchRecordBodiesUtils` | the one operation opcode the replay parser does not name |
 | the item-box opening bodies (8) | `ItemBoxRecordBodiesUtils` | the head/item codes and the positions |
-| `PlayerPresenceAnswer`'s trailing three bytes | `MatchStartBodiesUtils` | **the first byte is settled (§1.5)** and written from the room; the three bytes are not |
+| `JoinStateAnswer`'s trailing three bytes | `MatchStartBodiesUtils` | **the first byte is settled (§1.5)** and written from the room; the three bytes are not |
 
 Only the trailing three bytes of the eighth row are left: its first byte had a
 measured rule in hand and is now written from the room (§1.5), because the rule
@@ -478,7 +478,7 @@ number per phase: `game1` carries `0x0032`, `0x0045`, `0x005d`, `0x0062` and
 `0x0064` in fourteen shapes. The sparse 100 under class `0x01` and the steady zero
 under `0x15` are two of them and this host writes those two. **[V]**
 
-### 5.5 The presence answer's trailing bytes move, and only the briefings write
+### 5.5 The join state answer's trailing bytes move, and only the briefings write
 the set
 
 The row in §2 said the first byte is settled and the trailing three are not.
@@ -521,7 +521,7 @@ more. **[I]**
 **It confirms the sibling bit and the ops family.** `OPS_VID_LOW = 0x254`
 (`rpdt.js:243`) with `RULES_VIDS = [0x261, 0xa61]`: the low twelve bits of an
 operations record are `0x254`, the `0xa5c` and `0xa61` forms are that with the
-`0x800` sibling bit set, and the presence record measured in §5.5 sits at
+`0x800` sibling bit set, and the join state record measured in §5.5 sits at
 `0x25c`/`0x0a5c` — `0x254 + 8`. So the run's identifier set is the same family
 `MatchRecordGenerationUtils` models, and the sibling bit is the console's own
 reading rather than this host's convention. **[V]**
@@ -626,7 +626,7 @@ The rows of §2 now split three ways:
 
 * **A rule, buildable.** The fourth byte of a session record (§5.1).
 * **One room's data, not buildable.** The close triple's remainders (§5.3), the
-  presence answer's other hosts' bytes (§5.5), and the sparse phase's bodies and
+  join state answer's other hosts' bytes (§5.5), and the sparse phase's bodies and
   length (§5.2) — each of these is a value the room supplies and no capture can
   give a host that is not that room.
 * **A family, partly named.** The state blob (§5.4).
@@ -674,7 +674,7 @@ restarted where a briefing begins, so the capture's clock starts at `00`.
 
 **The ready set is repeated while a briefing waits.** `BriefingReadyPublishService`
 writes the room's reporting players to each peer every 2.5 s until the round
-opens — the same records `PlayerReadyHandler` answers a report with, under the
+opens — the same records `JoinReportHandler` answers a report with, under the
 same generation — which is the repeat the captures show between reports
 (`56.123`/`60.383`, `112.619`/`114.978`, `144.750`/`147.306`,
 `154.370`/`156.885` in `started-on-briefing`). Before it, a client whose report

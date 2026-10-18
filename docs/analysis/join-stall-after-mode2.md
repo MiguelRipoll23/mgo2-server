@@ -83,7 +83,7 @@ Three things are read off the table:
 reading that a room's first player is briefed rather than started. The captures
 measure the opposite of the delay it caused:
 
-| capture | the client's readiness report | the round's run |
+| capture | the client's join report | the round's run |
 | --- | --- | --- |
 | `mgo2-started-briefing-then-solo-game` | t+173.438, once | t+174.371 (**+0.93 s**) |
 | `mgo2-game2` | t+107.978, once | t+109.120 (**+1.14 s**) |
@@ -194,8 +194,8 @@ that served it (`kubectl logs -n mgo2 mgo2-gameplay-1-*`, whose clock is UTC).
 | --- | --- |
 | 0.122 | the client's profile, first copy |
 | 2.143 | its re-sent copy → the roster answer, 4 records |
-| 48.745 | its presence record `8a5c 01 de` |
-| 51.288 | its readiness report `1ade e1 01` |
+| 48.745 | its join state record `8a5c 01 de` |
+| 51.288 | its join report `1ade e1 01` |
 | 51.377 | the host's run: arrays, clock 90 B, two entries, close, `5ade`, payload `1ade e0 01 …` |
 | 51.650 | **the client opens its own round** (`5ade`) and streams its beat |
 | 64.4 | its room request `9001 83 f3 00 07`, answered in the same pass |
@@ -214,8 +214,8 @@ one that is waiting for a record: a client waiting on this channel re-sends (§2
 Three independent places in the capture and the log name the client **slot 1**,
 and none names it slot 0:
 
-* its presence record's byte is `01`, which is the player's own lobby slot
-  (`PlayerPresenceHandler`, `BRIEFING_FLOW.md` §1);
+* its join state record's byte is `01`, which is the player's own lobby slot
+  (`JoinStateHandler`, `BRIEFING_FLOW.md` §1);
 * the occupancy array the run carries is `86 f3 7f 07 7f …` — index 0 is the
   host's own sentinel `7f` and index 1 is `07`, taken;
 * the run's payload echoes `e0 01` — the report's own byte, `01`.
@@ -383,7 +383,7 @@ capture). A room that has **not** played a round has no round to carry, and
 `started-on-briefing`, the join into a fresh room, writes none of the three.
 
 So the record set belongs to the room's state and not to the phase: a briefing
-writes the pair, the blobs, the controls, the room's count and the readiness
+writes the pair, the blobs, the controls, the room's count and the join
 publications, and the round's close triple only once a round has played. Writing it
 from the join onward is what tells the client that the room is in a round while it
 is still being briefed. **[V]** on the counts above.
@@ -442,7 +442,7 @@ record is one per 2.3 s per peer (t+132.249, t+134.244, t+136.515, t+138.369,
 
 **The run's own shape.** The live run is the same eighteen records as game1's
 (t+46.42): the marker, the two empty roster heads, the state block and the
-`0f 00` behind it, the two lobby-slot arrays, the presence answer, the close
+`0f 00` behind it, the two lobby-slot arrays, the join state answer, the close
 triple, the clock, the payload and the rules pair. What differs is how often it
 goes out — five times in the live capture, and one, two and three times in the
 captures (`mgo2-game1`'s two rounds, `mgo2-game2`) — and nothing measured says what
@@ -453,10 +453,10 @@ shows. Its frame is plain in this capture and in `started-on-briefing` and LZSS
 marked in `mgo2-game1` and `started-briefing-then-solo`, so the compression is the
 host's and not a rule.
 
-**Two records the comparison settles, and one it does not.** The presence answer
+**Two records the comparison settles, and one it does not.** The join state answer
 grows a bit per reporting slot in both references and in the live capture —
 `e1 03` answered `08 00 00 00` and `e1 01` answered `02 00 00 00` — which is
-`PlayerReadyService.PresenceMask`'s reading of the report's own byte. The payload
+`BriefingStateService.JoinedMask`'s reading of the report's own byte. The payload
 publication's **trailing zeros are not the room's population**: the live host writes
 four (`e0 01 00 00 00 00`), `started-on-briefing` six and `started-briefing-then-solo`
 twelve, and each keeps its own length as its room goes from one player to six
@@ -679,10 +679,10 @@ here:
   player (`started-on-briefing` t+93.127), and each carries the reporters' bits —
   `0b 3c 00 02 …` once one player is on the set, `0b 37 00 08 00 00 00` for the solo
   room's slot 3 (a byte, not the room's population). **[V]** on the instants.
-* **The report that arrived beside the client's presence record was answered 3.2 s
+* **The report that arrived beside the client's join state record was answered 3.2 s
   late, by the retry.** The client sends both in one datagram at t+55.010
   (`0x0a5c` slot `01`, then `0x1ade e1 01`) and sends the report alone at t+58.018;
-  the presence answer (`0x0a5c 02 00 00 00`), the publication (`0x1ade e0 01 …`) and
+  the join state answer (`0x0a5c 02 00 00 00`), the publication (`0x1ade e0 01 …`) and
   the briefing's run all follow the **second**, at t+58.065 and t+58.221. The
   reference host answers the same two-record datagram in **0.3 s** (`0x025c 02 00 00 00`
   at t+56.123 for a report at t+55.838) and writes its run 2.4 s later. What the
@@ -755,7 +755,7 @@ answered in **0.049 s** by all three records, where `myserver11` answered the re
 3.2 s late. **[V]** on the instants.
 
 **The one thing the client does in a reference briefing and does not do here.** Both
-reference clients write their own operations 2.4 s after their readiness report —
+reference clients write their own operations 2.4 s after their join report —
 `mgo2-started-briefing-then-solo-game` at t+57.304 sends `1d 03 00 01 03 00 00` five
 times and a 22-byte `22 03 00 0b 16 …`, under `0x1254`, and `1f 03 01` 108 s later.
 `myserver12`'s client writes **none** of the three families in its whole session: its
@@ -815,9 +815,12 @@ how it got there: a briefing of 8.3 s and a clock held for 61.6 s after it.
 
 So a briefing's time is the reporting client's own, as both references' are, and a
 round opened once that time is out counts from its own open instead of holding a
-clock for a briefing that has ended. A room of one still arms a deadline (a solo
-room is briefed and then started), and a briefing no player answers still arms
-nothing.
+clock for a briefing that has ended. ~~A room of one still arms a deadline (a solo
+room is briefed and then started)~~, and a briefing no player answers still arms
+nothing. **The struck clause is §17's subject and was wrong**: the report this arms
+on is the client's join and not a readiness, so a room of one was timed by a join
+that says nothing about playing and was handed a round no one had asked for. §17
+arms the deadline at the room's second player instead.
 
 **Not verified live.** The build is clean (0 warnings, 0 errors) and the 54 codec
 tests pass, and both changes are measured against the captures; no client has joined
@@ -845,7 +848,7 @@ the captures write twice and this host writes once.
 | | `myserver18` |
 | --- | --- |
 | the client's report (`0x0a5c 01` + `0x1ade e1 01`, one datagram) | t+56.092 |
-| the answers (publication, presence answer, the run's marker) | t+56.140 — **0.048 s** |
+| the answers (publication, join state answer, the run's marker) | t+56.140 — **0.048 s** |
 | the briefing's run, clock `01 20 0d` (3 360, whole) | t+56.220 |
 | the briefing's countdown `0b 3c 00 00 00 00 00`, one per 2.5 s | t+56.428 → t+116.159, 23 records |
 | **the round's run** | t+116.181 — **60.089 s after the report** |
@@ -949,3 +952,81 @@ this same room: the state block and the close triple should then appear twice pe
 briefing — in the run and one 2.5 s tick behind it — with the same ordinals and no
 marker on the second, and the client's own `1d`/`22` should be looked for in the
 same capture, since that is the record the briefing screen is still missing.
+
+
+## 17. `myserver17.pcapng`: the round a sole client was handed 60 s after it reported
+
+§15 and §16 both arm a briefing's deadline at the client's **join report** — the
+`0x1ade e1 <slot>` record that says the room's map is loaded and the client is on
+the briefing screen — and both measure a round opening on it. That is the defect
+this section is about, because the join report is not a readiness. A player's
+readiness is a different record, on a different stream: `1f <slot> 01` on the
+operations stream, the one `OperationsStreamHandler` takes and
+`MatchStartRunService.OpenWhenEveryPlayerIsReady` counts. A round opens on the
+room's readies, or — in a room that has a second player to wait on — on the
+briefing's own time running out. A room of one has no such timer: its count is
+held at the room's whole briefing time, which is what the reference writes for a
+sole client, so nothing but that client's own ready starts its round.
+
+### The session
+
+`myserver17.pcapng`, read record by record out of a fresh dump
+(`tmpout/ms17recs.txt`, `_scratch/ms17_timeline.py`): one client
+(`192.168.1.20:5730` ↔ host `89.129.16.203:5731`), 133 s, nobody else ever in the
+room — the presence answer stays `02` (one reporter's bit, §13) from the first
+answer to the last.
+
+| t+ | what | |
+| --- | --- | --- |
+| 53.441 | the client's join report `0x0a5c 01` · `0x1ade e1 01`, one datagram | §1's shape |
+| 53.454 / 53.503 | the host's answers: the presence answer `02` and the bare `0x1ade e0 01 …` | |
+| 53.908 | **the briefing's run**, three copies, with the state block and the countdown's stream opened | |
+| 54.051 | the countdown `0b 3c 00 00 00 00 00` — **60 s, held** | a room of one's frozen count |
+| 54.396 → 107.6 | that countdown again every ~2.5 s, still `3c`, each with the room's own state group | |
+| 68.473 / 91.389 / 107.619 | the client re-reports its join on the sibling set, `0x12de e1 01` | |
+| 71.262 → 95.059 | and retransmits it as `0x92de e1 01` **eight times** over 23.8 s | the retransmission `JoinReportHandler` names |
+| **113.712** | **the round's run** — 60.27 s after the report, with no ready anywhere in the session | **the defect** |
+| 133.208 | the capture ends, the round still playing, the client having sent nothing of its own | |
+
+**Nothing in this session is a ready.** `grep type=0x1f` over the whole dump is
+zero records: the client never changes its briefing state. It also never writes
+`1d` or `22`. So the round at t+113.712 answers no ready, no second report of the
+kind the reference opens on and no clock the client was ever given — it is the
+briefing's one-minute deadline, armed on the join report at t+53.441, firing while
+the count the client was sent still reads 60.
+
+`myserver18` (§16) is the same shape one session along: its briefing's run is at
+t+56.220, its clock records hold `3 360` — the room's whole seven minutes —
+through t+115.322, and its round's run is at t+116.181, ~60 s later. §16 reads the
+held clock as a briefing that then ends; §17 reads the instant it ends on as the
+defect.
+
+### What was changed
+
+| file | change |
+| --- | --- |
+| `MatchRecords/MatchStartRunService.cs` | `Open` → `OnJoinReport`: the first report arms the count only, and the report that gives the room a second player (`JoinedCount >= 2`) arms the deadline, once per briefing (`armedDeadlineBriefing`) |
+| `MatchRecords/MatchStartRunService.Briefing.cs` | `ArmBriefingClock` split: `BeginBriefingClock` (the count a peer is shown, held) and `ArmBriefingDeadline` (the count moving plus `OpenWhenBriefingEndsAsync`) |
+| `MatchRecords/BriefingCountdownService.Clocks.cs` | `TimeRemaining` — the reading the round's clock hold takes — now runs from the moment the count starts and answers nothing while a room of one's count is frozen, so a solo round that is opened by its player's ready counts from its own open |
+| `Rooms/BriefingStateService.cs` | `PlayerReadyService` renamed: it holds both of a briefing's states, the join report and the ready record, and its count of reporters is `JoinedCount` |
+| `Commands/Peer/Room/JoinReportHandler.cs` | `PlayerReadyHandler` renamed: the record it takes is the join report and not a readiness |
+| `Commands/Peer/Room/JoinStateHandler.cs` | `PlayerPresenceHandler` renamed: one join, two records, one vocabulary |
+| `MatchStartBodiesUtils` / `MatchRecordGenerationUtils` | `*ReadinessReport*` → `*JoinReport*`, `PlayerPresence*` → `JoinState*`, `PresenceMask` → `JoinedMask` |
+
+The rule the three code files now hold: **the briefing's count is shown from the
+join report, and the room's deadline from its second player.** A room of one has a
+held count, no deadline and no game clock; it starts a round only when its player
+readies. A room of two starts its briefing's minute at the second join report and
+opens on the readies or at the end of it. The map-loaded report — the join report —
+is never a readiness, in the code or in the name.
+
+### Not verified live
+
+The build is clean (0 warnings, 0 errors) and the 58 codec tests pass; no client
+has joined the built host. What would confirm it is this same join again: a sole
+client should be sent its held count and **no round at all** for as long as it is
+alone, and its round should appear only after its own `1f <slot> 01`. The next
+capture should also be read for that record, because a client that never sends it
+is a client that can no longer be started by this host in a room of one — which is
+the client's own behaviour (`myserver17`'s client sent neither `1f` nor `1d` nor
+`22` in 133 s) and not something a host can supply for it.

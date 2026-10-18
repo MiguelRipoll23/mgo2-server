@@ -20,7 +20,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 /// <c>0x0880</c>; the pair is measured in <c>docs/protocol/UDP_GAME_CAPTURE.md</c>
 /// §5, where health is the byte that falls to 0 on death and rises back to 250,
 /// and the second byte is the one that never moves. Binding it makes the relay a
-/// decision rather than the default — the same thing the readiness report's
+/// decision rather than the default — the same thing the join report's
 /// handlers do — and what the decision is here is unchanged: the record is the
 /// player's and the room's other clients are the ones it is for, since a client
 /// sees every other player's health and its own on its own.

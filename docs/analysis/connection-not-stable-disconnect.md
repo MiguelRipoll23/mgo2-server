@@ -34,22 +34,22 @@ reference host sends resets the watchdog and ours does not.
 
 ## 2. The measured difference: the report that does not open the round is answered
 
-The reference host answers a readiness report with the report's own record: identifier plus
+The reference host answers a join report with the report's own record: identifier plus
 `0x4000`, empty body. In `mgo2-game-joined-when-red-team-then-briefing` the client reports
 `0x12de e1 05` at 57.656, the host writes `0x52de` at 60.273 in the same datagram as its
 `0x12de e0 05` publication, and repeats the publication at 62.666. The round there opens much
 later; that `0x52de` is an answer, not the round's marker.
 
 Our host withholds that answer by construction: `GameplayServerService.FrameDispatch` excludes
-readiness reports from the acknowledgement pass (`!IsReadinessReport`), on the rule that the
+join reports from the acknowledgement pass (`!IsJoinReport`), on the rule that the
 round's marker *is* the report's answer. That rule holds for the report that opens the round —
 answering it twice puts two markers on the wire — but it leaves the waiting report unanswered,
 and `ms17` is what that looks like: the client re-sending the same record under `0x8000` eight
 times over 24 s, the only capture in the set in which `0x92de e1 01` appears at all.
 
-**Fixed** in `PlayerReadyHandler`: a report that does not open the round now sends its own bare
+**Fixed** in `JoinReportHandler`: a report that does not open the round now sends its own bare
 answer, beside the publication, which is where the reference writes it. The pass still skips
-readiness reports, so a report that does open the round still draws exactly one marker.
+join reports, so a report that does open the round still draws exactly one marker.
 
 **Why an unanswered record is fatal rather than late** is already read out of the image
 (`docs/protocol/P2P_CONNECT_FSM.md` §7.1b): the session holds a 24-deep window over the records

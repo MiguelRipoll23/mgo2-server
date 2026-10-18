@@ -12,7 +12,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// companion, is what the game sends after a loading screen — into a briefing and
 /// again into a round, long before anyone has readied — and this is the one the
 /// player's own state change produces. <c>mgo2-game-joined-when-red-team-then-briefing</c>
-/// reports its presence at t+57.656 and readies at t+112.750; its second briefing
+/// joins at t+57.656 and readies at t+112.750; its second briefing
 /// reports at t+870.222 and readies at t+844.858; the solo capture reports at
 /// t+54.918 and readies at t+165.780, with the player's own note ("i changed my
 /// state to ready") between the two.
@@ -27,7 +27,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <c>joined-when-red-team</c> the client that readied last is the one whose bit
 /// is added by the zero — <c>0b 00 00 ea 01 …</c> adds bit 5 to
 /// <c>0b 16 00 ca 01 …</c> — which is the measurement behind
-/// <see cref="Rooms.PlayerReadyService.ReadyMask"/>.
+/// <see cref="Rooms.BriefingStateService.ReadyMask"/>.
 /// </para>
 /// <para>
 /// What the state byte means beyond "ready" is **[U]**: no capture here holds a

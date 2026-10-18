@@ -5,8 +5,8 @@ namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
 /// Tracks the room's players and the two states a briefing hears from each of
-/// them — the presence report and the ready record — and answers the one question
-/// the round opener asks: is everyone ready?
+/// them — the map-loaded report and the ready record — and answers the one
+/// question the round opener asks: is everyone ready?
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,20 +18,21 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </para>
 /// <para>
 /// <b>Two records, and only the second one is the ready.</b> A client sends
-/// <c>e1 &lt;slot&gt;</c> on the round's payload identifier when it has loaded a
-/// briefing or a round, and <c>1f &lt;slot&gt; 01</c> on the operations stream
-/// when the player in front of it changes its briefing state to ready
-/// (<see cref="MatchRecords.BriefingReadyBodiesUtils"/>). The two are not
-/// interchangeable: <c>mgo2-game-joined-when-red-team-then-briefing</c> reports
-/// presence at t+57.656 and readies at t+112.750, and again reports at t+870.222
+/// <c>e1 &lt;slot&gt;</c> on the round's payload identifier when it has loaded the
+/// room and its map — it is on the briefing screen, and nothing more is claimed
+/// by it (<see cref="JoinReport"/>) — and <c>1f &lt;slot&gt; 01</c> on the
+/// operations stream when the player in front of it <em>changes its briefing state
+/// to ready</em> (<see cref="MatchRecords.BriefingReadyBodiesUtils"/>). The two
+/// are not interchangeable: <c>mgo2-game-joined-when-red-team-then-briefing</c> reports
+/// joins at t+57.656 and readies at t+112.750, and again reports at t+870.222
 /// for a ready at t+844.858 — the ready before the report in that second
 /// briefing, so a room gated on the reports would open its round from the wrong
 /// record. What gates the round is
 /// <see cref="AllReady"/>, which reads the ready records.
 /// </para>
 /// <para>
-/// <b>What is measured, and what is not.</b> The client reports its briefing
-/// state as <c>e1 &lt;byte&gt;</c> on the round's payload identifier, and the host
+/// <b>What is measured, and what is not.</b> The client reports the map it has
+/// loaded as <c>e1 &lt;byte&gt;</c> on the round's payload identifier, and the host
 /// publishes one <c>e0 &lt;byte&gt;</c> per tracked player on the same
 /// identifier, each under its own fourth byte. That pairing holds across three
 /// captures, which is what makes this a room-wide publication rather than a
@@ -48,10 +49,10 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </remarks>
 /// <param name="roster">Roster of the room, which owns who is in it.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerReadyService> logger)
+public sealed class BriefingStateService(RoomRosterService roster, ILogger<BriefingStateService> logger)
 {
     /// <summary>
-    /// One player's briefing state: the byte it reported and its place in the
+    /// One player's map-loaded report: the byte it reported and its place in the
     /// publication.
     /// </summary>
     /// <param name="RemoteAddress">Endpoint the player is reached at.</param>
@@ -59,9 +60,9 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     /// Slot the player fills on the room roster, or <c>null</c> when the report
     /// arrived from an endpoint the roster has no entry for.
     /// </param>
-    /// <param name="Value">Byte the player reported.</param>
+    /// <param name="Value">Byte the player reported, which is its own slot.</param>
     /// <param name="PublicationIndex">Fourth byte its record travels under.</param>
-    public sealed record ReadyState(
+    public sealed record JoinReport(
         string RemoteAddress,
         sbyte? RosterIndex,
         byte Value,
@@ -78,7 +79,7 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     public sealed record BriefingReady(string RemoteAddress, byte Slot, byte State);
 
     private readonly Lock gate = new();
-    private readonly Dictionary<string, ReadyState> states = [];
+    private readonly Dictionary<string, JoinReport> joinReports = [];
     private readonly Dictionary<string, BriefingReady> readies = [];
     private int nextPublicationIndex;
 
@@ -87,14 +88,16 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     /// be ready.
     /// </summary>
     /// <remarks>
-    /// <b>It reads the ready records and not the presence reports.</b> A room is
+    /// <b>It reads the ready records and not the join reports.</b> A room is
     /// started when its players have changed their briefing state to ready, which
     /// is the record <c>OperationsStreamHandler</c> takes; the report a client
     /// sends when it has loaded says it is there and not that it is waiting to
     /// play. The capture separates the two by up to half a minute
     /// (<see cref="BriefingReady"/>), and only a record whose state is the ready
     /// counts (<see cref="IsReady"/>), so a state nothing has measured leaves the
-    /// room waiting for the briefing's own deadline.
+    /// room waiting for the briefing's own deadline — or, in a room of one, waiting
+    /// for the player in it, because a briefing with nobody else in it never ends
+    /// (<see cref="MatchRecords.MatchStartRunService"/>).
     /// <para>
     /// An empty room is not a ready room: the round opens for players, and a
     /// room whose last player has left has nobody to open it for. That is what
@@ -138,7 +141,7 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     /// </para>
     /// <para>
     /// The reports are a different set and a narrower one:
-    /// <see cref="PresenceMask"/> over the same room is <c>2a</c> — slots 1, 3 and 5,
+    /// <see cref="JoinedMask"/> over the same room is <c>2a</c> — slots 1, 3 and 5,
     /// the clients that sent a report — because a bot the host adds is ready without
     /// ever reporting. Sixteen bits is the width the countdown record has, so a slot
     /// above 15 has no bit to set; the reference's rooms hold at most fourteen.
@@ -180,22 +183,24 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     public int PendingBriefingReadyCount => Math.Max(0, roster.JoinerCount - BriefingReadyCount);
 
     /// <summary>
-    /// Players in the room that have reported, counted over the presence reports.
+    /// Players in the room that have reported the map they loaded, counted over
+    /// those reports.
     /// </summary>
     /// <remarks>
-    /// It is the report count and not the ready count, and the two callers that
-    /// read it say so: the briefing's countdown starts moving once a second player
-    /// has reported (<see cref="MatchRecords.MatchStartRunService"/>), and a
-    /// briefing whose reporters have all left opens nothing. What gates a round is
-    /// <see cref="AllReady"/>.
+    /// <b>It is not a readiness count and does not open anything.</b> What gates a
+    /// round is <see cref="AllReady"/>, which reads the ready records; this is the
+    /// count of clients that have reached the room's briefing screen. The two
+    /// callers that read it say so: the briefing's countdown starts moving once a
+    /// second player has reported (<see cref="MatchRecords.MatchStartRunService"/>),
+    /// and a briefing whose reporters have all left opens nothing.
     /// </remarks>
-    public int ReadyCount
+    public int JoinedCount
     {
         get
         {
             lock (gate)
             {
-                return states.Count;
+                return joinReports.Count;
             }
         }
     }
@@ -203,12 +208,12 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     /// <summary>Players in the room, counted over the roster that owns who is in it.</summary>
     public int PlayerCount => roster.JoinerCount;
 
-    /// <summary>Players in the room that have not reported yet.</summary>
-    public int PendingCount => Math.Max(0, roster.JoinerCount - ReadyCount);
+    /// <summary>Players in the room that have not reported a map yet.</summary>
+    public int PendingJoinCount => Math.Max(0, roster.JoinerCount - JoinedCount);
 
     /// <summary>
-    /// Records what a player reported, and reports whether that is news to the
-    /// room.
+    /// Records a player's map-loaded report, and reports whether that is news to
+    /// the room.
     /// </summary>
     /// <remarks>
     /// A client re-reports until it is answered, so the same state arrives more
@@ -219,24 +224,24 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     /// <param name="remoteAddress">Endpoint the report came from.</param>
     /// <param name="value">Byte the report carried.</param>
     /// <returns><c>true</c> when the room has something it has not been told.</returns>
-    public bool Note(string remoteAddress, byte value)
+    public bool NoteJoinReport(string remoteAddress, byte value)
     {
         lock (gate)
         {
-            if (states.TryGetValue(remoteAddress, out var existing))
+            if (joinReports.TryGetValue(remoteAddress, out var existing))
             {
                 if (existing.Value == value)
                 {
                     logger.LogDebug(
-                        "{RemoteAddress} re-reported ready state {Value}; the room already has it",
+                        "{RemoteAddress} re-reported map-loaded state {Value}; the room already has it",
                         remoteAddress,
                         value);
                     return false;
                 }
 
-                states[remoteAddress] = existing with { Value = value };
+                joinReports[remoteAddress] = existing with { Value = value };
                 logger.LogInformation(
-                    "{RemoteAddress} changed its ready state from {PreviousValue} to {Value}",
+                    "{RemoteAddress} changed its map-loaded state from {PreviousValue} to {Value}",
                     remoteAddress,
                     existing.Value,
                     value);
@@ -244,14 +249,14 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
             }
 
             var rosterIndex = FindRosterIndex(remoteAddress);
-            var state = new ReadyState(remoteAddress, rosterIndex, value, nextPublicationIndex++);
-            states[remoteAddress] = state;
+            var state = new JoinReport(remoteAddress, rosterIndex, value, nextPublicationIndex++);
+            joinReports[remoteAddress] = state;
             logger.LogInformation(
-                "{RemoteAddress} reports its presence with {Value}: {ReportedCount} of {PlayerCount} "
+                "{RemoteAddress} reports its map-loaded state with {Value}: {ReportedCount} of {PlayerCount} "
                 + "players have reported, at publication index {PublicationIndex}",
                 remoteAddress,
                 value,
-                states.Count,
+                joinReports.Count,
                 roster.JoinerCount,
                 state.PublicationIndex);
             return true;
@@ -304,7 +309,7 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
 
             readies[remoteAddress] = new BriefingReady(remoteAddress, slot, state);
             logger.LogInformation(
-                "{RemoteAddress} reports briefing state {State} for slot {Slot}: {ReadyCount} of "
+                "{RemoteAddress} reports briefing state {State} for slot {Slot}: {BriefingReadyCount} of "
                 + "{PlayerCount} player(s) in the room have readied",
                 remoteAddress,
                 state,
@@ -332,12 +337,12 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
         lock (gate)
         {
             readied = readies.Remove(remoteAddress);
-            if (!states.Remove(remoteAddress))
+            if (!joinReports.Remove(remoteAddress))
             {
                 if (readied)
                 {
                     logger.LogInformation(
-                        "{RemoteAddress} left the briefing with a ready state recorded; {ReadyCount} "
+                        "{RemoteAddress} left the briefing with a ready state recorded; {BriefingReadyCount} "
                         + "player(s) in the room have readied",
                         remoteAddress,
                         readies.Count);
@@ -350,7 +355,7 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
                 "{RemoteAddress} left the briefing with a state recorded; {ReportedCount} player(s) have "
                 + "reported",
                 remoteAddress,
-                states.Count);
+                joinReports.Count);
             return true;
         }
     }
@@ -368,18 +373,18 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     {
         lock (gate)
         {
-            if (states.Count == 0 && readies.Count == 0)
+            if (joinReports.Count == 0 && readies.Count == 0)
             {
                 nextPublicationIndex = 0;
                 return;
             }
 
             logger.LogInformation(
-                "Beginning the next briefing; {ReportedCount} report(s) and {ReadyCount} ready state(s) "
+                "Beginning the next briefing; {ReportedCount} report(s) and {BriefingReadyCount} ready state(s) "
                 + "from the last one are cleared",
-                states.Count,
+                joinReports.Count,
                 readies.Count);
-            states.Clear();
+            joinReports.Clear();
             readies.Clear();
             nextPublicationIndex = 0;
         }
@@ -393,10 +398,10 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     /// <returns>The records in send order.</returns>
     public List<RosterRecord> BuildPublication(MatchRecordGenerationUtils generation)
     {
-        List<ReadyState> ordered;
+        List<JoinReport> ordered;
         lock (gate)
         {
-            ordered = [.. states.Values.OrderBy(state => state.PublicationIndex)];
+            ordered = [.. joinReports.Values.OrderBy(state => state.PublicationIndex)];
         }
 
         return
@@ -409,14 +414,14 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     }
 
     /// <summary>
-    /// The room's reporting players as the presence answer's bit set: one bit
+    /// The room's reporting players as the join state answer's bit set: one bit
     /// per player that has reported, at the slot the player's own report byte
     /// names.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>The bit is the player's own reported byte, and the solo capture is what
-    /// settles it.</b> A host answers the presence record in four bytes under
+    /// settles it.</b> A host answers the join state record in four bytes under
     /// class 6, and its first byte is the set of the room's reporters. Read as
     /// the publication order it fits the rooms whose reporters arrived in slot
     /// order — <c>mgo2-game-started-on-briefing</c> answers <c>02</c>, <c>06</c>,
@@ -437,20 +442,20 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     /// </para>
     /// <para>
     /// So the value is derived from the room's own reports and is not a
-    /// constant: <see cref="MatchStartBodiesUtils.PlayerPresenceAnswer"/> took a
+    /// constant: <see cref="MatchStartBodiesUtils.JoinStateAnswer"/> took a
     /// hard-coded two for a room of one, which is only the first reporter's
     /// correct value by coincidence. A report outside 1…7 has no bit in the
     /// byte, and one that names no such slot contributes none.
     /// </para>
     /// </remarks>
-    public byte PresenceMask
+    public byte JoinedMask
     {
         get
         {
             lock (gate)
             {
                 var mask = 0;
-                foreach (var state in states.Values)
+                foreach (var state in joinReports.Values)
                 {
                     // The report's own byte is the player's slot, and the set is
                     // one bit per slot. Eight players fill the byte; a slot above
@@ -466,14 +471,14 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
         }
     }
 
-    /// <summary>Whether a player has reported itself ready.</summary>
+    /// <summary>Whether a player has reported the map it loaded.</summary>
     /// <param name="remoteAddress">Endpoint the player is filed under.</param>
-    /// <returns><c>true</c> when the player has a state recorded.</returns>
-    public bool HasReported(string remoteAddress)
+    /// <returns><c>true</c> when the player has a report recorded.</returns>
+    public bool HasJoined(string remoteAddress)
     {
         lock (gate)
         {
-            return states.ContainsKey(remoteAddress);
+            return joinReports.ContainsKey(remoteAddress);
         }
     }
 
@@ -488,14 +493,14 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
     {
         lock (gate)
         {
-            if (states.TryGetValue(remoteAddress, out var state))
+            if (joinReports.TryGetValue(remoteAddress, out var state))
             {
                 value = state.Value;
                 return true;
             }
         }
 
-        value = MatchStartBodiesUtils.DefaultReadinessReportValue;
+        value = MatchStartBodiesUtils.DefaultJoinReportValue;
         return false;
     }
 
@@ -542,7 +547,8 @@ public sealed class PlayerReadyService(RoomRosterService roster, ILogger<PlayerR
         // counted: the client is in the room's channel, and dropping its state
         // would leave the room waiting on a player that has already answered.
         logger.LogWarning(
-            "Ready state from {RemoteAddress} has no roster entry; it is counted but its slot is unknown",
+            "Map-loaded state from {RemoteAddress} has no roster entry; it is counted but its slot is "
+            + "unknown",
             remoteAddress);
         return null;
     }

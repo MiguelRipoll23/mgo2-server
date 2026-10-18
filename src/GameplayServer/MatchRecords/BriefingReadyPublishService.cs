@@ -11,7 +11,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <para>
 /// <b>The host answers a briefing more than once, and this is the rest of the
 /// answers.</b> Every report already gets the room's ready set written back to the
-/// reporter and to the room (<c>PlayerReadyHandler</c>), and the captures show the
+/// reporter and to the room (<c>JoinReportHandler</c>), and the captures show the
 /// host repeating that set on its next operations tick without waiting for another
 /// report: in <c>mgo2-game-started-on-briefing</c> the first answer goes out at
 /// t+56.123 and the same set again at t+60.383, the second at t+112.619 and again
@@ -43,7 +43,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="logger">Logger of this service.</param>
 public sealed class BriefingReadyPublishService(
     MatchRoundStateService roundState,
-    PlayerReadyService ready,
+    BriefingStateService briefingStates,
     MatchStartRunService matchStart,
     ILogger<BriefingReadyPublishService> logger)
 {
@@ -139,18 +139,18 @@ public sealed class BriefingReadyPublishService(
     /// Nothing is written while the room's briefing has heard from nobody: the set
     /// is what the reports make it, and a briefing no player has answered has no
     /// generation of its own to publish under
-    /// (<see cref="MatchStartRunService.LastReportIdentifier"/>).
+    /// (<see cref="MatchStartRunService.LastJoinReportIdentifier"/>).
     /// </remarks>
     /// <param name="context">Context the records are written through.</param>
     private async Task PublishOnceAsync(PeerContext context)
     {
-        if (matchStart.LastReportIdentifier is not { } reported)
+        if (matchStart.LastJoinReportIdentifier is not { } reported)
         {
             return;
         }
 
-        var generation = MatchRecordGenerationUtils.OfReadinessReport(reported);
-        var publication = ready.BuildPublication(generation);
+        var generation = MatchRecordGenerationUtils.OfJoinReport(reported);
+        var publication = briefingStates.BuildPublication(generation);
         if (publication.Count == 0)
         {
             return;

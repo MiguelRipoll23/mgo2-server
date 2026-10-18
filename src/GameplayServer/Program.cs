@@ -45,7 +45,7 @@ builder.Services.AddSingleton<MatchStartRunService>();
 builder.Services.AddSingleton<MatchScoreService>();
 builder.Services.AddSingleton<ScoreboardPublishService>();
 builder.Services.AddSingleton<MatchResultService>();
-builder.Services.AddSingleton<PlayerReadyService>();
+builder.Services.AddSingleton<BriefingStateService>();
 builder.Services.AddSingleton<PlayerVitalsService>();
 builder.Services.AddSingleton<TeamArrayService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();

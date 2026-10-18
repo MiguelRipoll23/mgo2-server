@@ -7,14 +7,25 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 
 /// <summary>
-/// Takes a client's briefing ready report, records it against the player that
-/// sent it, publishes the room's ready set, and hands the report to the round
-/// opener, which answers the briefing before it opens a round: the first report
-/// names the set the briefing is written under and the next, on the other set,
-/// opens the round — or the room's own briefing time does, when no second report
-/// arrives (<see cref="MatchStartRunService.Open"/>).
+/// Takes the record a client sends when it has joined the room and loaded its
+/// map — the **join report** — records it against the player that sent it,
+/// publishes the room's states, and hands it to the round opener, which answers
+/// the briefing before it opens a round: the first report names the set the
+/// briefing is written under and the next, on the other set, opens it once the
+/// room has readied (<see cref="MatchStartRunService.OnJoinReport"/>).
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>It is a join and not a readiness.</b> Nothing here is the player pressing
+/// ready: that record is <c>1f &lt;slot&gt; 01</c> on the operations stream and it
+/// is taken elsewhere (<see cref="Gameplay.OperationsStreamHandler"/>,
+/// <see cref="Rooms.BriefingStateService.NoteBriefingReady"/>). A room gated on
+/// this report's own record would open its round on the wrong packet — a client's
+/// report and its ready are up to half a minute apart, and in the reference's
+/// second briefing the ready comes *first* (`mgo2-game-joined-when-red-team-then-briefing`
+/// reports at t+57.656 and readies at t+112.750, and reports at t+870.222 behind a
+/// ready at t+844.858).
+/// </para>
 /// <para>
 /// <b>The report and the host's reply are one record read in two directions.</b>
 /// The body begins <c>e1</c> from the client and <c>e0</c> from the host, and
@@ -45,32 +56,32 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// <para>
 /// The identifier alternates with the round's own set (<c>0x1ade</c>, then
 /// <c>0x12de</c> a <c>0x800</c> bit along), so it is recognised from the body
-/// rather than bound to one value: the readiness opcode in the first byte, at
+/// rather than bound to one value: the join opcode in the first byte, at
 /// the length every capture sends. The identifier also carries the round's other
 /// payloads, which belong on the relay and not to a round; a record on it that
 /// is not a report is still broadcast to the room's other peers.
 /// </para>
 /// </remarks>
-/// <param name="ready">The room's briefing states, which this report is recorded in.</param>
+/// <param name="briefingStates">The room's briefing states, which this report is recorded in.</param>
 /// <param name="matchStart">Writer of the round a room's last report opens.</param>
 /// <param name="logger">Logger of this handler.</param>
-public sealed class PlayerReadyHandler(
-    PlayerReadyService ready,
+public sealed class JoinReportHandler(
+    BriefingStateService briefingStates,
     MatchStartRunService matchStart,
-    ILogger<PlayerReadyHandler> logger) : IPeerCommandHandler
+    ILogger<JoinReportHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(PeerContext context)
     {
         var body = context.Message.Body;
-        if (!MatchStartBodiesUtils.IsReadinessReport(body))
+        if (!MatchStartBodiesUtils.IsJoinReport(body))
         {
             // The same identifier carries the round's other payloads, which the
             // dispatcher relays to the room's other peers. A report is not one of
             // them: it is the reporting client's own and goes no further.
             logger.LogDebug(
                 "UDP {LocalPort}: 0x{MessageType:x4} of {BodyLength} bytes from {RemoteAddress} is not a "
-                + "readiness report; left to the relay",
+                + "join report; left to the relay",
                 context.LocalPort,
                 context.Message.Type,
                 body.Length,
@@ -85,28 +96,28 @@ public sealed class PlayerReadyHandler(
         }
 
         var player = context.Remote.ToString();
-        var reported = body[MatchStartBodiesUtils.ReadinessReportValueIndex];
-        ready.Note(player, reported);
+        var reported = body[MatchStartBodiesUtils.JoinReportValueIndex];
+        briefingStates.NoteJoinReport(player, reported);
 
-        // The presence record the client sends in the same datagram as its report
+        // The join state record the client sends in the same datagram as its report
         // is answered here as well as inside the round's run. Both captures write
         // the answer beside the report it follows — within half a second of it,
         // and again as the set changes — and its first byte is the room's own
-        // reporters, so a client whose presence was heard is told so while the
+        // reporters, so a client whose join was heard is told so while the
         // briefing still waits rather than only when the round opens
         // (docs/protocol/BRIEFING_FLOW.md §1).
-        var generation = MatchRecordGenerationUtils.OfReadinessReport(context.Message.Type);
+        var generation = MatchRecordGenerationUtils.OfJoinReport(context.Message.Type);
         await context.Send(
-            generation.PlayerPresence,
-            MatchStartBodiesUtils.PlayerPresenceAnswer(ready.PresenceMask),
-            MatchStartBodiesUtils.PlayerPresenceAnswerClass);
+            generation.JoinState,
+            MatchStartBodiesUtils.JoinStateAnswer(briefingStates.JoinedMask),
+            MatchStartBodiesUtils.JoinStateAnswerClass);
 
         // The publication goes out on every report and not only on the first: it
         // is the host's answer to the report, and a client whose report changed
         // nothing is still waiting to be answered.
         await PublishAsync(context, generation);
 
-        if (!matchStart.Open(context.Message.Type))
+        if (!matchStart.OnJoinReport(context.Message.Type))
         {
             // The report that does not open the round is still answered on its
             // own record, and the marker is only the answer of the report that
@@ -137,20 +148,22 @@ public sealed class PlayerReadyHandler(
             }
 
             logger.LogDebug(
-                "UDP {LocalPort}: {RemoteAddress} is ready with {Value}; {ReadyCount} of {PlayerCount} "
-                + "player(s) in the room are ready, so the round stays closed",
+                "UDP {LocalPort}: {RemoteAddress} has joined with {Value}; {JoinedCount} of {PlayerCount} "
+                + "player(s) in the room have joined, and the round waits for the room's readies",
                 context.LocalPort,
                 context.Remote,
                 reported,
-                ready.ReadyCount,
-                ready.PlayerCount);
+                briefingStates.JoinedCount,
+                briefingStates.PlayerCount);
         }
     }
 
     /// <summary>
-    /// Writes the room's ready set: the reporting peer gets it as one frame, and
-    /// the rest of the room gets the same records so that every client can see
-    /// which of the others is ready.
+    /// Writes the room's join states: the reporting peer gets them as one frame, and
+    /// the rest of the room gets the same records, so every client can see who has
+    /// joined. It is not the ready set — that one is
+    /// <see cref="MatchRecords.BriefingReadyPublishService"/>'s, out of the ready
+    /// records.
     /// </summary>
     /// <param name="context">Context the report arrived through.</param>
     /// <param name="generation">
@@ -159,14 +172,14 @@ public sealed class PlayerReadyHandler(
     /// </param>
     private async Task PublishAsync(PeerContext context, MatchRecordGenerationUtils generation)
     {
-        var publication = ready.BuildPublication(generation);
+        var publication = briefingStates.BuildPublication(generation);
         if (publication.Count == 0)
         {
             return;
         }
 
         logger.LogDebug(
-            "UDP {LocalPort}: publishing {RecordCount} ready state(s) to {RemoteAddress} and the room",
+            "UDP {LocalPort}: publishing {RecordCount} join state(s) to {RemoteAddress} and the room",
             context.LocalPort,
             publication.Count,
             context.Remote);

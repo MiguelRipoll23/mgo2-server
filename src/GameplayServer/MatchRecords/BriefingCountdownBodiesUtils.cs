@@ -121,7 +121,7 @@ public static class BriefingCountdownBodiesUtils
     /// <param name="seconds">Seconds of briefing the room has left.</param>
     /// <param name="readySet">
     /// The room's readied players as a bit set, one bit per player at the slot its
-    /// ready record named (<see cref="Rooms.PlayerReadyService.ReadyMask"/>).
+    /// ready record named (<see cref="Rooms.BriefingStateService.ReadyMask"/>).
     /// </param>
     /// <returns>The record body.</returns>
     public static byte[] CountdownBody(int seconds, ushort readySet) =>

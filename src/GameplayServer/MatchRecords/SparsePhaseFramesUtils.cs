@@ -59,7 +59,7 @@ public static class SparsePhaseFramesUtils
     /// <remarks>
     /// <para>
     /// <b>The phase ends at the last state blob and the run does not follow it.</b>
-    /// The run is not a step of this list: it waits for the client's readiness
+    /// The run is not a step of this list: it waits for the client's join
     /// report, and the captured client sent it 1.66 s after the phase closed — so
     /// the run lands at the capture's t+46.4 s rather than the phase's t+42.2 s,
     /// and only because the client asked. <see cref="MatchStartRunService"/> writes

@@ -23,16 +23,18 @@ channel only.
 
 ## 1. Arriving into a briefing
 
-A client that joins a game in its briefing sends its briefing state and the host
-publishes the room's states back. Both are measured, in both captures, on the
-round's payload identifier and on the operations stream.
+A client that joins a game in its briefing sends its **join report** — the room's
+map is loaded and it is on the briefing screen — and the host publishes the room's
+states back. Both are measured, in both captures, on the round's payload
+identifier and on the operations stream. It is not the player's readiness, which
+is `1f <slot> 01` and §2's subject.
 
 **The client's report.** Two records in one datagram, carrying the same byte
 [V]:
 
 ```
 0x1254 (ops)     1d <slot> 00 01 03 00 00    x5, the record's class 00..04
-0x12de (payload) e1 <slot>                   the report itself
+0x12de (payload) e1 <slot>                   the join report itself
 0x0a5c (ops)     <slot>                      the one-byte companion
 ```
 
@@ -188,8 +190,9 @@ arrives at t+55.838 on `0x12de` and the run under `0x1254` goes out at t+58.255,
 two and a half seconds later and 140 s before the round; `started-briefing-then-solo`
 reports at t+54.918 on `0x12de`, its run under `0x1254` follows at t+57.626, and
 the run under `0x1a54` — the round's — only at t+174.371. The round opens on the ready that
-completes the room's readied players, or on the briefing's own deadline when a
-player never readies, and it plays under the *other* set: `joined-when-red-team`'s
+completes the room's readied players, or — in a room that has a second player to wait
+on — on the briefing's own deadline when a player never readies
+(`GAMEPLAY_SERVER.md` §4.2); it plays under the *other* set: `joined-when-red-team`'s
 briefing is written under the set its first report named and its round under the
 sibling, which is the set its run and beat are written on. `started-on-briefing`
 reports its second time at t+196.828 on `0x1ade` and `started-briefing-then-solo`
@@ -306,7 +309,7 @@ opens at t+450.297 opens from the same set of reports that opened the last one �
 which is why a host that keeps the states from the round before opens the next
 round on a player who has not reported it.
 
-The full cycle, as `MatchStartRunService`, `PlayerReadyService` and
+The full cycle, as `MatchStartRunService`, `BriefingStateService` and
 `MatchRoundStateService` implement it:
 
 ```

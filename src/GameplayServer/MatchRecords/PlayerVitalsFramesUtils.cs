@@ -33,7 +33,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </list>
 /// <para>
 /// <b>A live room is the same rule from the other side.</b>
-/// <c>myserver4.pcapng</c> (2026-10-15) joins a client whose own presence record
+/// <c>myserver4.pcapng</c> (2026-10-15) joins a client whose own join state record
 /// carries slot <c>01</c>, whose occupancy array marks index 1, and whose run
 /// payload echoes <c>01</c>; the beat this host wrote that client carried the
 /// recorded <c>0x090c</c> — slot 20, a player the room does not hold

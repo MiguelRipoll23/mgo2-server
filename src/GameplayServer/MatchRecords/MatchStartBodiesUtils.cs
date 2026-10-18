@@ -1,7 +1,7 @@
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The bodies of the round's opening exchange: the client's readiness report,
+/// The bodies of the round's opening exchange: the client's join report,
 /// the host's answer to it, and the companion state record the client pairs with
 /// it.
 /// </summary>
@@ -25,65 +25,68 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public static class MatchStartBodiesUtils
 {
     /// <summary>
-    /// Length of the answer to a client's presence record: four bytes in
+    /// Length of the answer to a client's join state record: four bytes in
     /// both captures, and the class byte with it.
     /// </summary>
-    public const int PlayerPresenceAnswerLength = 4;
+    public const int JoinStateAnswerLength = 4;
 
-    /// <summary>Attribute class the host's presence answer carries.</summary>
-    public const byte PlayerPresenceAnswerClass = 0x06;
+    /// <summary>Attribute class the host's join state answer carries.</summary>
+    public const byte JoinStateAnswerClass = 0x06;
 
-    /// <summary>Attribute class a client's presence record carries.</summary>
-    public const byte PlayerPresenceClass = 0x04;
+    /// <summary>Attribute class a client's join state record carries.</summary>
+    public const byte JoinStateClass = 0x04;
 
     /// <summary>
-    /// Opcode a client's readiness report carries, in the record's first byte.
+    /// Opcode a client's join report carries, in the record's first byte.
     /// The host's reply to the same record begins
     /// <see cref="MatchStartPayloadOpcode"/> in that byte, which is what makes the
     /// two a report and its answer rather than two readings of one record.
     /// </summary>
     /// <remarks>
-    /// The report is the client saying it has loaded and is ready to play. That
-    /// the client means *ready* specifically is **[I]**: the timing and the
-    /// pairing are measured, the intent behind them is not. It is recognised and
-    /// handed to <see cref="MatchStartRunService"/>, which writes the round that
+    /// The report is the client saying it has fully joined: it has the room's map
+    /// loaded and is on the briefing screen. It is **not** the player's readiness,
+    /// which travels on the operations stream as <c>1f &lt;slot&gt; 01</c> and is
+    /// what opens a round (<see cref="BriefingReadyBodiesUtils"/>,
+    /// <see cref="MatchStartRunService.OpenWhenEveryPlayerIsReady"/>). The byte the
+    /// record carries is the client's own lobby slot. It is recognised and handed to
+    /// <see cref="MatchStartRunService"/>, which writes the briefing's run that
     /// answers it on the same record read the other way.
     /// </remarks>
-    public const byte ReadinessReportOpcode = 0xe1;
+    public const byte JoinReportOpcode = 0xe1;
 
     /// <summary>Opcode the host's match-start payload carries in its first byte.</summary>
     public const byte MatchStartPayloadOpcode = 0xe0;
 
     /// <summary>
-    /// Byte a round's run echoes when the peer it is written to has not reported
-    /// itself ready: the recorded host's own, <c>0x14</c>, from game1's first
+    /// Byte a round's run echoes when the peer it is written to has not sent a join
+    /// report: the recorded host's own, <c>0x14</c>, from game1's first
     /// round's <c>0xe0 0x14</c>. No run is written without a report to echo, so
     /// this is the measured value and never a substitute for the report's own.
     /// </summary>
-    public const byte DefaultReadinessReportValue = 0x14;
+    public const byte DefaultJoinReportValue = 0x14;
 
     /// <summary>
-    /// Length of the readiness report: the opcode and the one byte the host
+    /// Length of the join report: the opcode and the one byte the host
     /// echoes back. Every report in the captures is exactly this long.
     /// </summary>
-    public const int ReadinessReportLength = 2;
+    public const int JoinReportLength = 2;
 
     /// <summary>
     /// Offset of the byte the report carries and the reply echoes.
     /// </summary>
-    public const int ReadinessReportValueIndex = 1;
+    public const int JoinReportValueIndex = 1;
 
     /// <summary>
-    /// Whether a body is a client's readiness report: the report opcode followed
+    /// Whether a body is a client's join report: the report opcode followed
     /// by the byte the host echoes back.
     /// </summary>
     /// <param name="body">Body of an inbound payload record.</param>
-    /// <returns><c>true</c> when the body says the client is ready to play.</returns>
-    public static bool IsReadinessReport(ReadOnlySpan<byte> body) =>
-        body.Length == ReadinessReportLength && body[0] == ReadinessReportOpcode;
+    /// <returns><c>true</c> when the body says the client has joined the room.</returns>
+    public static bool IsJoinReport(ReadOnlySpan<byte> body) =>
+        body.Length == JoinReportLength && body[0] == JoinReportOpcode;
 
     /// <summary>
-    /// The host's payload record, the answer to a client's readiness report: the
+    /// The host's payload record, the answer to a client's join report: the
     /// payload opcode and the byte the client reported, then the trailing zeros
     /// the recorded bodies carry.
     /// </summary>
@@ -110,20 +113,20 @@ public static class MatchStartBodiesUtils
     /// <c>docs/protocol/UDP_GAME_CAPTURE.md</c> §3.2.
     /// </para>
     /// </remarks>
-    /// <param name="reported">Byte the client's readiness report carried.</param>
+    /// <param name="reported">Byte the client's join report carried.</param>
     /// <returns>The record body.</returns>
     public static byte[] MatchStartPayload(byte reported) =>
         [MatchStartPayloadOpcode, reported, 0x00, 0x00, 0x00, 0x00];
 
     /// <summary>
-    /// The host's answer to a client's presence record.
+    /// The host's answer to a client's join state record.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The client sends its presence as one byte under class
-    /// <see cref="PlayerPresenceClass"/>, in the same datagram as the readiness
+    /// The client sends its join state as one byte under class
+    /// <see cref="JoinStateClass"/>, in the same datagram as the join
     /// report, carrying its own lobby slot. The host answers under class
-    /// <see cref="PlayerPresenceAnswerClass"/> in four bytes.
+    /// <see cref="JoinStateAnswerClass"/> in four bytes.
     /// </para>
     /// <para>
     /// <b>The first byte is the room's players, as a bit set that grows as they
@@ -140,7 +143,7 @@ public static class MatchStartBodiesUtils
     /// <para>
     /// <b>The first byte is derived, and the trailing three are not.</b>
     /// The set is the room's own reporting players, one bit per player at the
-    /// slot its own report byte names (<see cref="Rooms.PlayerReadyService.PresenceMask"/>),
+    /// slot its own report byte names (<see cref="Rooms.BriefingStateService.JoinedMask"/>),
     /// so a room whose only reporter carries <c>03</c> writes <c>08</c> and a
     /// room whose reporters carry slots 1–4 writes the run of bits the capture
     /// writes. **[V]** the length, the class and the growth; **[D]** the set,
@@ -168,6 +171,6 @@ public static class MatchStartBodiesUtils
     /// reported — the first reporter is bit 1.
     /// </param>
     /// <returns>The record body.</returns>
-    public static byte[] PlayerPresenceAnswer(byte reportingSet) =>
+    public static byte[] JoinStateAnswer(byte reportingSet) =>
         [reportingSet, 0x00, 0x00, 0x00];
 }

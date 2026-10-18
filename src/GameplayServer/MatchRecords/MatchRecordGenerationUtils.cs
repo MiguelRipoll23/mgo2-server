@@ -57,9 +57,9 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="MatchStartPayload">Payload record inside the run.</param>
 /// <param name="ItemBox">First identifier of the beat's item-box group.</param>
 /// <param name="ItemBoxState">Second identifier of the beat's item-box group.</param>
-/// <param name="PlayerPresence">
-/// The presence record: a one-byte record the client sends in the same
-/// datagram as its readiness report, carrying its own lobby slot — and answered
+/// <param name="JoinState">
+/// The join state record: a one-byte record the client sends in the same
+/// datagram as its join report, carrying its own lobby slot — and answered
 /// by the host with the room's players in a bit mask.
 /// </param>
 /// <param name="RoomCount">
@@ -74,7 +74,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </param>
 /// <param name="ReportedByte">
 /// Byte the capture's round start carried — the one the client carried in its
-/// readiness report and the one the run's payload record hands back. It is the
+/// join report and the one the run's payload record hands back. It is the
 /// recorded host's own round's value; a run written for a report carries that
 /// report's byte instead (see <see cref="Next(byte)"/>).
 /// </param>
@@ -87,7 +87,7 @@ public sealed record MatchRecordGenerationUtils(
     ushort MatchStartPayload,
     ushort ItemBox,
     ushort ItemBoxState,
-    ushort PlayerPresence,
+    ushort JoinState,
     ushort RoomCount,
     byte ReportedByte)
 {
@@ -117,7 +117,7 @@ public sealed record MatchRecordGenerationUtils(
             (ushort)(MatchStartPayload ^ SiblingBit),
             (ushort)(ItemBox ^ SiblingBit),
             (ushort)(ItemBoxState ^ SiblingBit),
-            (ushort)(PlayerPresence ^ SiblingBit),
+            (ushort)(JoinState ^ SiblingBit),
             (ushort)(RoomCount ^ SiblingBit),
             ReportedByte);
 
@@ -127,12 +127,12 @@ public sealed record MatchRecordGenerationUtils(
     /// opens one round for several peers derives the identifiers once and echoes
     /// each report's own byte, so it uses <see cref="Sibling"/> instead.
     /// </summary>
-    /// <param name="reported">Byte the client's readiness report carried.</param>
+    /// <param name="reported">Byte the client's join report carried.</param>
     /// <returns>The next round's generation.</returns>
     public MatchRecordGenerationUtils Next(byte reported) => Sibling with { ReportedByte = reported };
 
     /// <summary>
-    /// The identifier set a round plays under when its readiness report arrived
+    /// The identifier set a round plays under when its join report arrived
     /// on this identifier: the generation the reporting client is on.
     /// </summary>
     /// <remarks>
@@ -157,20 +157,20 @@ public sealed record MatchRecordGenerationUtils(
     /// parity is carried from the rounds the client has already played rather
     /// than reset with the match. That is the reading **[I]**; the measurement
 /// is that the set a round plays under is the one its own report arrived
-/// under, which is what <see cref="OfReadinessReport"/> reads:
+/// under, which is what <see cref="OfJoinReport"/> reads:
 /// <see cref="MatchStartRunService"/> takes each round's set from the report that
 /// asked for it.
     /// </para>
     /// </remarks>
     /// <param name="identifier">Identifier the report arrived on, class bit included.</param>
     /// <returns>The generation the round the report opens plays under.</returns>
-    public static MatchRecordGenerationUtils OfReadinessReport(ushort identifier) =>
+    public static MatchRecordGenerationUtils OfJoinReport(ushort identifier) =>
         (identifier & ~PeerAcknowledgementUtils.PayloadClassBit) == First.MatchStartPayload
             ? First
             : First.Sibling;
 
     /// <summary>
-    /// The identifiers a readiness report can arrive under: each round's
+    /// The identifiers a join report can arrive under: each round's
     /// payload record, and the same record with the payload-class bit set.
     /// </summary>
     /// <remarks>
@@ -181,7 +181,7 @@ public sealed record MatchRecordGenerationUtils(
     /// captures show <c>0x1ade</c> alone. Registering the four covers both
     /// observations without guessing which one a given build will send.
     /// </remarks>
-    public static IReadOnlyList<ushort> ReadinessReportIdentifiers { get; } =
+    public static IReadOnlyList<ushort> JoinReportIdentifiers { get; } =
     [
         First.MatchStartPayload,
         (ushort)(First.MatchStartPayload | PeerAcknowledgementUtils.PayloadClassBit),
@@ -208,7 +208,7 @@ public sealed record MatchRecordGenerationUtils(
     ];
 
     /// <summary>
-    /// Whether a record identifier is one a client's readiness report arrives
+    /// Whether a record identifier is one a client's join report arrives
     /// under.
     /// </summary>
     /// <remarks>
@@ -219,12 +219,12 @@ public sealed record MatchRecordGenerationUtils(
     /// </remarks>
     /// <param name="identifier">Record identifier to test.</param>
     /// <returns><c>true</c> when the identifier is one a report arrives under.</returns>
-    public static bool IsReadinessReportIdentifier(ushort identifier) =>
-        ReadinessReportIdentifiers.Contains(identifier);
+    public static bool IsJoinReportIdentifier(ushort identifier) =>
+        JoinReportIdentifiers.Contains(identifier);
 
     /// <summary>
-    /// The identifiers the presence record arrives under: the same four shapes
-    /// the readiness report itself does, on its own identifier.
+    /// The identifiers the join state record arrives under: the same four shapes
+    /// the join report itself does, on its own identifier.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -267,11 +267,11 @@ public sealed record MatchRecordGenerationUtils(
     /// setup, not a record id.
     /// </para>
     /// </remarks>
-    public static IReadOnlyList<ushort> PlayerPresenceIdentifiers { get; } =
+    public static IReadOnlyList<ushort> JoinStateIdentifiers { get; } =
     [
-        First.PlayerPresence,
-        (ushort)(First.PlayerPresence | PeerAcknowledgementUtils.PayloadClassBit),
-        First.Next(0).PlayerPresence,
-        (ushort)(First.Next(0).PlayerPresence | PeerAcknowledgementUtils.PayloadClassBit),
+        First.JoinState,
+        (ushort)(First.JoinState | PeerAcknowledgementUtils.PayloadClassBit),
+        First.Next(0).JoinState,
+        (ushort)(First.Next(0).JoinState | PeerAcknowledgementUtils.PayloadClassBit),
     ];
 }

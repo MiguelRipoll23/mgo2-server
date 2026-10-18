@@ -5,7 +5,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
 /// The records the recorded host writes when a round opens: the marker, the
-/// thirteen records behind it, and the presence record's answer inside them.
+/// thirteen records behind it, and the join state record's answer inside them.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -166,8 +166,8 @@ public static class MatchStartRunFramesUtils
     /// not in the array is a room its own clients read as empty.
     /// </param>
     /// <param name="reportingSet">
-    /// The room's reporting players as the presence answer's bit set, one bit per
-    /// player in the order it reported (<see cref="Rooms.PlayerReadyService.PresenceMask"/>).
+    /// The room's reporting players as the join state answer's bit set, one bit per
+    /// player in the order it reported (<see cref="Rooms.BriefingStateService.JoinedMask"/>).
     /// It is the room's own set and not a constant: a room of one writes the bit
     /// of its only reporter, and a room of four the run of bits the briefing
     /// capture writes as its players arrive.
@@ -221,15 +221,15 @@ public static class MatchStartRunFramesUtils
         new(Rooms.RoomRosterService.HostEntryType, teams, runOrdinals[0]),
         new(UdpCommandConstants.PlayerProfile, occupancy, runOrdinals[1]),
 
-        // The presence record's answer, behind the arrays as
+        // The join state record's answer, behind the arrays as
         // DATA_PHASE_DELIVERY.md measures it: the room's reporting players as a
         // bit set, whose first reporter is bit one. Neither capture carries it
         // inside its run — both write it beside the report — and
         // mgo2-game-started-on-briefing writes it in this position as well.
         new(
-            generation.PlayerPresence,
-            MatchStartBodiesUtils.PlayerPresenceAnswer(reportingSet),
-            MatchStartBodiesUtils.PlayerPresenceAnswerClass),
+            generation.JoinState,
+            MatchStartBodiesUtils.JoinStateAnswer(reportingSet),
+            MatchStartBodiesUtils.JoinStateAnswerClass),
 
         // The room's own stage, between the arrays and the closes: the 22-byte
         // record and the two 54-byte entries every capture writes there. Their

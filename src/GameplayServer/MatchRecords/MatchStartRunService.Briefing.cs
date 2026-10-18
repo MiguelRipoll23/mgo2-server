@@ -3,12 +3,13 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The briefing half of the round opener: the deadline that ends a room's wait
-/// for reports, and the number that keeps one deadline acting on its own
-/// briefing rather than on the one after it.
+/// The briefing half of the round opener: the count a room is shown while it is
+/// briefed, the deadline that ends the wait for its players to ready, and the
+/// number that keeps one deadline acting on its own briefing rather than on the
+/// one after it.
 /// </summary>
 /// <remarks>
-/// The reports themselves are taken in <see cref="MatchStartRunService.Open"/>,
+/// The reports themselves are taken in <see cref="MatchStartRunService.OnJoinReport"/>,
 /// which gates them on the room's membership, and the run each round's open
 /// writes lives in <c>MatchStartRunService.Runs.cs</c>. This file is the wait
 /// between the two: a briefing begins where the room's rounds do and ends when
@@ -17,8 +18,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class MatchStartRunService
 {
     /// <summary>
-    /// Begins the room's briefing: the wait for every player to report, whose
-    /// deadline the report that reaches it arms.
+    /// Begins the room's briefing: the wait for every player to ready, whose
+    /// count and deadline the report that gives the room a second player arms.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -28,16 +29,27 @@ public sealed partial class MatchStartRunService
     /// lands.
     /// </para>
     /// <para>
-    /// <b>Its time is armed by its first report and not here.</b> The two are far
-    /// apart on a live join: the join is answered when the client reaches the
-    /// room, and the client reports when it has loaded the map and is reading its
-    /// briefing, fifty seconds later in the capture this was measured on
+    /// <b>Its time is armed by the report that reaches it and not here.</b> The two
+    /// are far apart on a live join: the join is answered when the client reaches
+    /// the room, and the client reports when it has loaded the map and is reading
+    /// its briefing, fifty seconds later in the capture this was measured on
     /// (<c>myserver12.pcapng</c>). A briefing armed at the join is therefore spent
     /// before the player it was armed for has arrived — that client's report at
     /// t+54.050 was followed by its round 8 s later, where both reference
     /// briefings give the reporting client 28 s and 118 s — and a briefing that no
     /// player answers arms nothing at all, which is the contract
     /// <see cref="OpenWhenBriefingEndsAsync"/> already owes it.
+    /// </para>
+    /// <para>
+    /// <b>What is armed where, exactly.</b> The report that opens the briefing arms
+    /// the count its peers are sent and nothing else (<see cref="BeginBriefingClock"/>);
+    /// the report that gives the room a second player starts that count moving and
+    /// arms the deadline that ends it (<see cref="ArmBriefingDeadline"/>). A room of
+    /// one therefore has a count held at the room's whole briefing time and no
+    /// deadline at all, which is the state §17 of
+    /// <c>docs/analysis/join-stall-after-mode2.md</c> measures this host getting
+    /// wrong: it started its sole client's round a nominal minute after that
+    /// client's join report.
     /// </para>
     /// </remarks>
     private void BeginBriefing()
@@ -55,8 +67,9 @@ public sealed partial class MatchStartRunService
         lock (gate)
         {
             briefingNumber++;
-            lastReportIdentifier = null;
+            lastJoinReportIdentifier = null;
             briefingGeneration = null;
+            armedDeadlineBriefing = null;
         }
 
         // The briefing writes on the operations stream, which it opens: the
@@ -78,84 +91,126 @@ public sealed partial class MatchStartRunService
         roundState.NoteBriefingClock(settings.Round(roundState.RoundNumber + 1).TimeLimitUnits);
 
         logger.LogDebug(
-            "A briefing runs for {BriefingTime} minute(s); its clock is armed by the report that reaches "
-            + "it, not by this join",
+            "A briefing runs for {BriefingTime} minute(s); its count is armed by the report that reaches "
+            + "it and starts once a second player has joined, so a room of one is not timed at all",
             settings.BriefingTimeMinutes);
     }
 
     /// <summary>
-    /// Starts the room's briefing clock, at the report that reached the briefing
-    /// it belongs to: the countdown its peers are sent, the deadline that opens the
-    /// round when no second report does, and — through the countdown — the
-    /// remaining time a round opened inside the briefing holds its clock for.
+    /// Arms the count a briefing's peers are sent, at the join report that reaches
+    /// the briefing: the countdown record its client's briefing screen shows. It is
+    /// held at the room's whole briefing time until the room has a second player.
     /// </summary>
     /// <remarks>
-    /// <b>The three are one briefing time, so they are armed at one moment.</b> A
-    /// countdown armed here and a deadline armed elsewhere are two answers to "how
-    /// long is left", and the capture this was measured on is what that looks
-    /// like: the deadline expired eight seconds into the client's own briefing and
-    /// the round it opened held its clock at the room's whole seven minutes for the
-    /// briefing's nominal minute, so the client was shown a frozen 7:00 from
-    /// t+62.371 to t+123.973 while its briefing had lasted eight seconds
-    /// (<see cref="BriefingCountdownService.TimeRemaining"/>).
+    /// <b>The count is shown before the room can be timed.</b> A client that has
+    /// reported is reading its briefing screen and is owed the count that screen
+    /// shows, which the reference writes as the room's whole briefing time and holds
+    /// there while one player is in the room
+    /// (<see cref="BriefingCountdownService.Remaining"/>). What moves it — and what
+    /// arms the deadline behind it — is the report that gives the room a second
+    /// player (<see cref="ArmBriefingDeadline"/>): a room of one is frozen and is not
+    /// timed at all.
     /// </remarks>
-    /// <param name="briefing">The briefing the report reached.</param>
-    private void ArmBriefingClock(int briefing)
+    private void BeginBriefingClock()
     {
         var settings = matchSettings.FindPublished();
         if (settings is null)
         {
             logger.LogDebug(
-                "The room's briefing heard its first report but this host's room is not published, so "
-                + "no briefing time is armed for it");
+                "The room's briefing heard its first join report but this host's room is not published, so "
+                + "no briefing count is armed for it");
             return;
         }
 
-        // The countdown goes to the peers the clock is armed for, so it is armed
+        // The countdown goes to the peers the briefing is shown to, so it is armed
         // with it: a client waiting out its own briefing timer is told how much of
-        // it is left, and one that never received the deadline is the client that
-        // never received this either. It is the seven-byte 0x0b operations record,
-        // counting this same briefing time down in seconds
-        // (<see cref="BriefingCountdownBodiesUtils"/>).
+        // it is left. It is the seven-byte 0x0b operations record, counting this
+        // same briefing time down in seconds (<see cref="BriefingCountdownBodiesUtils"/>).
         countdown.Begin(DateTimeOffset.UtcNow, settings.BriefingTimeMinutes);
+
+        logger.LogDebug(
+            "The room's briefing heard its first join report, so its {BriefingTime}-minute count is "
+            + "armed: it is held at the whole briefing time until a second player has joined",
+            settings.BriefingTimeMinutes);
+    }
+
+    /// <summary>
+    /// Arms the deadline that ends a briefing, at the report that gives the room a
+    /// second player: the count that moves from there, and the wait that opens the
+    /// round once the room's own briefing time is out.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A room of one has no briefing to run out.</b> Its timer is the room's own,
+    /// and the second player is what the wait is for, so the reference holds a sole
+    /// client's count at the room's whole briefing time and opens its round only
+    /// after that client has readied — <c>mgo2-started-briefing-then-solo-game</c>
+    /// reads <c>1f 03 01</c> at t+165.780, re-reports at t+173.438 and is playing at
+    /// t+174.371, with no round and no deadline in the 111 s before it. A deadline
+    /// armed on that client's own join report is this host starting a round nobody
+    /// asked it for, which is what §17 of
+    /// <c>docs/analysis/join-stall-after-mode2.md</c> measures: a sole client,
+    /// `myserver17`'s, was handed a round 60.3 s after its report while its own
+    /// briefing count sat held at the room's whole minute.
+    /// </para>
+    /// <para>
+    /// <b>The count and the deadline are one briefing time, so they start
+    /// together.</b> A countdown armed here and a deadline armed elsewhere are two
+    /// answers to "how long is left", and the capture this was measured on is what
+    /// that looks like: the deadline expired eight seconds into the client's own
+    /// briefing and the round it opened held its clock at the room's whole seven
+    /// minutes for the briefing's nominal minute, so the client was shown a frozen
+    /// 7:00 from t+62.371 to t+123.973 while its briefing had lasted eight seconds
+    /// (<see cref="BriefingCountdownService.TimeRemaining"/>).
+    /// </para>
+    /// </remarks>
+    /// <param name="briefing">The briefing the deadline belongs to.</param>
+    private void ArmBriefingDeadline(int briefing)
+    {
+        var settings = matchSettings.FindPublished();
+        if (settings is null)
+        {
+            logger.LogDebug(
+                "The room has a second reporting player but this host's room is not published, so no "
+                + "briefing time is armed for it");
+            return;
+        }
+
+        countdown.StartCounting(DateTimeOffset.UtcNow);
         _ = OpenWhenBriefingEndsAsync(briefing, settings.BriefingTimeMinutes);
 
         logger.LogInformation(
-            "The room's briefing heard its first report, so its {BriefingTime}-minute clock runs from "
-            + "now: the countdown goes out from the peer's own run and the round opens when the "
-            + "briefing's time is out",
+            "The room has a second reporting player, so its {BriefingTime}-minute briefing runs from now: "
+            + "the countdown moves and the round opens when the briefing's time is out",
             settings.BriefingTimeMinutes);
     }
 
     /// <summary>
     /// Opens the room's round when its briefing time runs out without every player
-    /// having reported.
+    /// having readied.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <b>It is the client's own wait that makes this a deadline.</b> A client in a
     /// briefing waits for the host's round and stops waiting when its own briefing
-    /// time is up, so a room that waited on a player who never reports leaves the
+    /// time is up, so a room that waited on a player who never readies leaves the
     /// players it did hear from past the end of their timer with nothing to play
-    /// (<c>docs/GAMEPLAY_SERVER.md</c> §4.2). <b>It is armed by the briefing's first
-    /// report and for every such briefing, a room of one included</b>
-    /// (<see cref="ArmBriefingClock"/>), which is the client's own briefing time:
-    /// the join that prepared the briefing can be a minute ahead of the client that
-    /// has to read it. A frozen countdown is the count byte being held at
-    /// the room's whole briefing time — that is the client's own frozen timer, which
-    /// the reference records — and it is not the briefing having no end: a solo room
-    /// is briefed and then started, which is what
-    /// <c>mgo2-started-briefing-then-solo-game</c> holds, its client alone in the
-    /// room, its countdown closed on the zero at t+167.992 and its round asked for at
-    /// t+173.438. Waiting for the count to move held a solo room in its briefing for
-    /// as long as its client stayed, which is the state
-    /// <c>docs/analysis/join-stall-after-mode2.md</c> §15 measures against that
-    /// capture. The round it opens is the round those reports asked for — same rule,
-    /// same map, same clock — and the player still to report is served it as a late
-    /// joiner is, which is what §4.1 measures a room doing with a peer that arrives
-    /// mid-round. A briefing nothing answered opens nothing: a round is still
-    /// something a report asks for. And a briefing whose reporters have all left
-    /// opens nothing either: the round is opened for players, and a room that has
-    /// reaped every one of them has no report left to open one under.
+    /// (<c>docs/GAMEPLAY_SERVER.md</c> §4.2). <b>It is armed where the room has a
+    /// second player to be briefed with and not before</b>
+    /// (<see cref="ArmBriefingDeadline"/>), because the briefing's time is the
+    /// room's own: a room of one has no timer to run out, and the deadline that used
+    /// to be armed on its only client's join report started a round that client had
+    /// not asked for (§17 of <c>docs/analysis/join-stall-after-mode2.md</c>). The
+    /// round it opens is the round those reports asked for — same rule, same map,
+    /// same clock — and the player still to ready is served it as a late joiner is,
+    /// which is what §4.1 measures a room doing with a peer that arrives mid-round.
+    /// </para>
+    /// <para>
+    /// A briefing nothing answered opens nothing: a round is still something a
+    /// report asks for. And a briefing whose reporters have all left opens nothing
+    /// either: the round is opened for players, and a room that has reaped every one
+    /// of them has no report left to open one under.
+    /// </para>
     /// </remarks>
     /// <param name="briefing">Briefing this deadline belongs to.</param>
     /// <param name="briefingMinutes">Minutes the briefing runs for.</param>
@@ -175,7 +230,7 @@ public sealed partial class MatchStartRunService
             ushort reportIdentifier;
             lock (gate)
             {
-                if (briefingNumber != briefing || lastReportIdentifier is not { } reported)
+                if (briefingNumber != briefing || lastJoinReportIdentifier is not { } reported)
                 {
                     // Another briefing has begun — its own deadline acts for it — or
                     // nothing in this one has answered the room.
@@ -185,7 +240,7 @@ public sealed partial class MatchStartRunService
                 reportIdentifier = reported;
             }
 
-            if (ready.ReadyCount == 0)
+            if (briefingStates.JoinedCount == 0)
             {
                 // A round is opened for players, and every player this briefing
                 // heard from has left the room: their states are dropped when
@@ -201,14 +256,14 @@ public sealed partial class MatchStartRunService
             }
 
             logger.LogInformation(
-                "The room's {BriefingTime}-minute briefing ran out with {PendingCount} player(s) still to "
-                + "ready; the round opens for the players that readied, on 0x{Identifier:x4}",
+                "The room's {BriefingTime}-minute briefing ran out with {PendingReadyCount} player(s) still "
+                + "to ready; the round opens for the players that readied, on 0x{Identifier:x4}",
                 briefingMinutes,
-                ready.PendingBriefingReadyCount,
+                briefingStates.PendingBriefingReadyCount,
                 reportIdentifier);
             OpenRound(
-                MatchRecordGenerationUtils.OfReadinessReport(reportIdentifier),
-                $"the briefing ran out with its last report on 0x{reportIdentifier:x4}",
+                MatchRecordGenerationUtils.OfJoinReport(reportIdentifier),
+                $"the briefing ran out with its last join report on 0x{reportIdentifier:x4}",
                 waitForEveryone: false);
         }
         catch (Exception exception)

@@ -563,7 +563,7 @@ the one the engine uses — the wire writes it with the `0x800` bit set, `vid | 
 | 7 | `0x00007A58` | `0xA58` | `0x1258` / `0x1A58` | — |
 | 8 | `0x00008A55` | `0xA55` | `0x1255` | — |
 | 9 | `0x00009A5C` | `0xA5C` | `0x125C` / `0x025C` | the one-byte class-4 record of `UDP_GAME_CAPTURE.md` §3.2 |
-| 10 | `0x0000AADE` | `0xADE` | `0x12DE` / `0x1ADE` | **readiness report / match-start payload** |
+| 10 | `0x0000AADE` | `0xADE` | `0x12DE` / `0x1ADE` | **join report / match-start payload** |
 | 11 | `0x0000BADF` | `0xADF` | `0x12DF` | — |
 | 12 | `0x0000CA5D` | `0xA5D` | `0x125D` | — |
 | 13 | `0x0000DA56` | `0xA56` | `0x1256` | was **[U]** |

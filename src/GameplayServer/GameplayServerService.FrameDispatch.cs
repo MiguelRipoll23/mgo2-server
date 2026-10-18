@@ -201,22 +201,22 @@ public sealed partial class GameplayServerService
     }
 
     /// <summary>
-    /// Whether a record is the client's readiness report, which this pass does
+    /// Whether a record is the client's join report, which this pass does
     /// not answer.
     /// </summary>
     /// <remarks>
     /// The answer a report gets depends on whether it opens the round, and that
-    /// is not known until it reaches <c>PlayerReadyHandler</c>: the report that
+    /// is not known until it reaches <c>JoinReportHandler</c>: the report that
     /// opens the round is answered by the round's own marker, which is the same
     /// record, and answering it here as well puts two markers on the wire
     /// (<c>docs/protocol/DATA_PHASE_DELIVERY.md</c> §2). A report that does not
     /// open the round is answered by the handler itself, beside its publication.
     /// </remarks>
     /// <param name="message">Record to test.</param>
-    /// <returns><c>true</c> when the record is a readiness report.</returns>
-    private static bool IsReadinessReport(UdpMessage message) =>
-        MatchRecordGenerationUtils.IsReadinessReportIdentifier(message.Type) &&
-        MatchStartBodiesUtils.IsReadinessReport(message.Body);
+    /// <returns><c>true</c> when the record is a join report.</returns>
+    private static bool IsJoinReport(UdpMessage message) =>
+        MatchRecordGenerationUtils.IsJoinReportIdentifier(message.Type) &&
+        MatchStartBodiesUtils.IsJoinReport(message.Body);
 
     /// <summary>
     /// Records how far the peer's frame counter has got, without transmitting.
@@ -262,10 +262,10 @@ public sealed partial class GameplayServerService
         // exception because its roster response starts with the same 0x5001
         // record-level answer.
         //
-        // The readiness report is the other exception, and it is the handler that
+        // The join report is the other exception, and it is the handler that
         // answers it: the report that opens the round is answered by the round's
         // marker, and only the report that does not open it draws a bare answer
-        // (`PlayerReadyHandler`). The recorded host answers `e1 NN` with the marker
+        // (`JoinReportHandler`). The recorded host answers `e1 NN` with the marker
         // — `0x5ade`, and `0x52de` a 0x800 bit along — when its round opens on that
         // report, and with the bare same record, empty, while the briefing still
         // waits. Answering every report here would put a second marker on the wire
@@ -287,7 +287,7 @@ public sealed partial class GameplayServerService
         // written by.
         var answers = frame.Messages
             .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
-            .Where(message => !IsReadinessReport(message))
+            .Where(message => !IsJoinReport(message))
             .Where(message =>
                 (message.Type & ~PeerAcknowledgementUtils.PayloadClassBit) != UdpCommandConstants.PlayerProfile ||
                 PlayerProfileRecordParseUtils.Parse(message.Body) is not { Name.Length: > 0 })

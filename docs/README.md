@@ -15,7 +15,7 @@ depends on, some is documentation, and some is a tool you run once and forget.
 | `GAMEPLAY_SERVER.md` | The UDP gameplay host: the join, the briefing gate, the round and the beat — and how much of what a client receives is still a replay of a capture. |
 | `protocol/STATE_VECTOR.md` | The operations stream's opcode language and its 89-byte state vector: which of the eighty-nine bytes are constants of the layout, which are the room's own, and which are still unread. |
 | `analysis/udp-protocol-patterns.md` | The gameplay channel read as a design: replication and per-stream acks, the phase's identifier pair, the two stop-and-wait handshakes, ticks and the host's clock, and why a missing state is a stall rather than an error. |
-| `analysis/connection-not-stable-disconnect.md` | The client's "CONNECTION NOT STABLE" modal: its own ~60 s deadline on a readiness report this host never answered, the 24-deep send window that turns a missing answer into a stall, and the fix. Measured against two of our sessions and two reference ones. |
+| `analysis/connection-not-stable-disconnect.md` | The client's "CONNECTION NOT STABLE" modal: its own ~60 s deadline on a join report this host never answered, the 24-deep send window that turns a missing answer into a stall, and the fix. Measured against two of our sessions and two reference ones. |
 | `BACKLOG.md` | Deliberately deferred work, with enough context to pick each item up cold. |
 
 ## Required by the running stack

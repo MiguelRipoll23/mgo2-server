@@ -21,6 +21,12 @@ host is to follow.
 
 ## What is written
 
+* **The briefing half of the freeze** (`join-stall-after-mode2.md` §17). A room of
+  one is not timed: the count its client is sent is held at the room's whole
+  briefing time and no deadline is armed, so the briefing never runs out and no
+  round opens on it. What ends a solo briefing is the other half of the rule below
+  — the client's own ready (`MatchStartRunService.OnJoinReport` arms the count, and
+  `ArmBriefingDeadline` is armed only once the room has a second player).
 * **The reset on empty.** `MatchStartRunService.ResetWhenEmpty` is called from the
   session reaper's drop (`GameplayServerService.DropReapedPeer`), and it is the
   room's population that decides: a leaver among others returns `false` and
@@ -34,14 +40,12 @@ host is to follow.
 
 ## What is not written
 
-* **The freeze at one client**, for both clocks. The design it needs is the same
-  for each and is not yet in the code:
+* **The freeze at one client**, for the round's own clock — the briefing's is
+  written, above. The design it needs is:
   * a clock that counts only the time the room held more than one client, for the
     round (`MatchRoundStateService.RemainingUnits` is a plain elapsed-time
-    subtraction from `openedAt` today) and for the briefing's deadline
-    (`MatchStartRunService.Briefing.cs` arms a plain `Task.Delay` for the room's
-    briefing minutes, and `BriefingCountdownService.Remaining` likewise reads a
-    start time);
+    subtraction from `openedAt` today; the briefing's deadline was the same shape
+    of `Task.Delay` and no longer runs for a room of one at all);
   * one population source for both — `RoomRosterService.JoinerCount`, which is
     what `ResetWhenEmpty` already reads — so the freeze and the reset cannot
     disagree about who is in the room;
@@ -49,6 +53,6 @@ host is to follow.
     every clock record (`MatchRecordBodiesUtils.RoundTimeLimitUnits`): a frozen
     round writes the same value until it unfreezes, which is what "frozen" means
     on the wire.
-  Until it is written, a round with one client in it runs down on wall time and a
-  briefing with one client in it reaches its deadline and opens its round, which
-  is the behaviour the captures show for rooms of two or more.
+  Until it is written, a round with one client in it — the round a solo client
+  starts by readying — runs down on wall time, which is the behaviour the captures
+  show for rooms of two or more and not the freeze the rule asks for.

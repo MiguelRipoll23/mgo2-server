@@ -12,7 +12,7 @@ is a round opened on nobody; the live client then sat in its ready state and
 reported twenty-three times over two minutes while the run it had already been
 sent went unrepeated. The run is the one record the captures gate, so the rule
 this server holds is that it is written **for** a report and never before one:
-`MatchStartRunService`, driven by `PlayerReadyHandler`, opens the round the
+`MatchStartRunService`, driven by `JoinReportHandler`, opens the round the
 moment the report arrives.
 
 ## Method
@@ -44,7 +44,7 @@ block and its two-byte companion, the two lobby-slot arrays, the close triple
 (two twenty-byte records and the seven-byte roster close), the round's clock, the
 payload and the rules pair. Decompressed, `mgo2-game1.pcapng`'s run is that
 thirteen, in that order, and `mgo2-game-started-on-briefing.pcapng`'s is the
-same thirteen with a live item-box group in front of them. Both captures show it only after the client's readiness
+same thirteen with a live item-box group in front of them. Both captures show it only after the client's join
 report — the same payload record read the other way, body `e1 NN` — and
 `UDP_GAME_CAPTURE.md` §3.2 measures every round in every capture beginning
 0.6–5.5 s after one and none beginning without one. **[V]** on the pairing, **[I]**
@@ -63,7 +63,7 @@ run. **[V]**
 **A report that does not open the round is answered by the bare record, and by
 nothing else.** The marker is the answer of the report its round opens on; a
 report the host hears while the briefing still waits gets the same identifier
-with the answer bit set and no body, beside the readiness publication. In
+with the answer bit set and no body, beside the join publication. In
 `mgo2-game-joined-when-red-team-then-briefing` the client reports
 `0x12de e1 05` at t+57.656 and the host writes `0x52de` at t+60.273, in the same
 datagram as its `0x12de e0 05`, with its round forty seconds out; the same group
@@ -143,7 +143,7 @@ they are spaced seconds apart on later ticks, and a host that stamps copies into
 the pass that builds the run puts the same frame on the wire several times, which
 no capture does. There is no
 round on a clock: the sparse phase closes at its measured 42 240 ms and the beat
-follows it, and the round opens when the client asks. `PlayerReadyHandler`
+follows it, and the round opens when the client asks. `JoinReportHandler`
 recognises the report and hands it to `MatchStartRunService`, which latches the
 round for as long as that round's own frames are going out.
 
@@ -163,16 +163,16 @@ sitting in its ready state with `CONNECTION NOT STABLE` and no round: the map
 loaded, the roster was acknowledged, the beat kept moving, and the round never
 opened because nothing opened it.
 
-## The report arrives with a presence record, and the run answers both
+## The report arrives with a join state record, and the run answers both
 
-The readiness report is never sent alone: in five of five reports across the two
+The join report is never sent alone: in five of five reports across the two
 captures the client puts a one-byte record in the same datagram, on an
 identifier that splits the same way (`UDP_GAME_CAPTURE.md` §3.2). The byte it
 carries is the reporting player's own lobby slot — the same byte the run's
 payload echoes back — so it says which player has arrived rather than what that
-player has decided, and it is named for that now (`PlayerPresenceHandler`,
+player has decided, and it is named for that now (`JoinStateHandler`,
 `BRIEFING_FLOW.md` §1). So the round answers two records, not one, and
-`MatchStartRunService` writes the presence record's answer inside the run where
+`MatchStartRunService` writes the join state record's answer inside the run where
 `MatchStartRunFramesUtils` places it — behind the two arrays, the one position a
 capture measures.
 
@@ -190,13 +190,13 @@ Read as the players' *lobby slots* the bits do not fit: the slots that same
 capture's own arrays name are `0x0b`, `0x0f` and `0x14`, and none of the three is
 a bit of a byte.
 
-So it is not the hard-coded one-player body any more: `PlayerReadyService.PresenceMask`
+So it is not the hard-coded one-player body any more: `BriefingStateService.JoinedMask`
 writes the room's own set, and a room of one writes `02` because its only
 reporter is first. What is still **[U]** are the trailing three bytes, which have
 never moved in any capture and stay the recorded zeros.
 
-Inbound, the presence record has a handler of its own
-(`PlayerPresenceHandler`) so that the relay it needs is a decision rather than
+Inbound, the join state record has a handler of its own
+(`JoinStateHandler`) so that the relay it needs is a decision rather than
 the default an unnamed gameplay record falls into.
 
 ## The beat starts at the round open, not at the sparse phase's close
@@ -291,7 +291,7 @@ index bytes, which is what the replay parser tells a pair by.
 
 ## Where this sits
 
-- `UDP_GAME_CAPTURE.md` §3.2 is the byte-level pairing of the readiness report
+- `UDP_GAME_CAPTURE.md` §3.2 is the byte-level pairing of the join report
   and the round start; this file is the delivery rule built on it.
 - `RPDT_REPLAY_RECORDS.md` maps the bodies these records carry.
 - The replay itself: `src/GameplayServer/MatchRecords/MatchStartRunService.cs`

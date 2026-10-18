@@ -60,7 +60,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 /// <param name="results">The round's result, which the ticket end is read from.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class OperationsStreamHandler(
-    PlayerReadyService ready,
+    BriefingStateService briefingStates,
     MatchScoreService score,
     ScoreboardPublishService publisher,
     MatchStartRunService matchStart,
@@ -117,7 +117,7 @@ public sealed class OperationsStreamHandler(
                 state,
                 slot);
 
-            ready.NoteBriefingReady(context.Remote.ToString(), slot, state);
+            briefingStates.NoteBriefingReady(context.Remote.ToString(), slot, state);
 
             // The ready that completes the room opens the round the briefing was
             // waiting on. It is asked here and not only when a report arrives,
@@ -127,7 +127,7 @@ public sealed class OperationsStreamHandler(
         else
         {
             // The stream's clock, state block and this host's own insertions share
-            // the identifier, and so does a client's readiness report. None of them
+            // the identifier, and so does a client's join report. None of them
             // is a kill or a ready, and all of them are relayed unchanged.
             logger.LogDebug(
                 "UDP {LocalPort}: 0x{MessageType:x4} of {BodyLength} bytes from {RemoteAddress} is neither "

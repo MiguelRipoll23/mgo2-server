@@ -13,7 +13,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <b>The run is written per peer because the channel is.</b> Every peer has its
 /// own session, key and counter, and the run's payload echoes the byte that peer
 /// reported, so a run is a peer's own record and not the room's: the room opens
-/// once (<see cref="MatchStartRunService.Open"/>) and each peer's worker writes
+/// once (<see cref="MatchStartRunService.OnJoinReport"/>) and each peer's worker writes
 /// the run for it. A peer is served two runs a round — the briefing's, under the
 /// set its first report named and carrying the round's whole clock, and the
 /// round's own, under the other set and carrying what is left of it once the
@@ -71,7 +71,7 @@ public sealed partial class MatchStartRunService
                 // The briefing is answered before the round is: the first report
                 // names the set the briefing is written under, and what a client
                 // still being briefed is served is that briefing's run rather than
-                // the round it precedes (MatchStartRunService.Open). The wait here
+                // the round it precedes (MatchStartRunService.OnJoinReport). The wait here
                 // is while no briefing has heard a report; the run it writes takes
                 // the set that report named.
                 await WriteBriefingRunAsync(context);
@@ -132,7 +132,7 @@ public sealed partial class MatchStartRunService
     /// <b>The briefing's run is not its round's.</b> A client still being briefed
     /// is served the run the first report named, under that report's own set, and
     /// the round it is waiting for opens later and under the other set
-    /// (<see cref="MatchStartRunService.Open"/>, <c>docs/protocol/BRIEFING_FLOW.md</c>
+    /// (<see cref="MatchStartRunService.OnJoinReport"/>, <c>docs/protocol/BRIEFING_FLOW.md</c>
     /// §1–§2). The run's clock stays whole: nothing of the round has been played
     /// while the client is still reading the briefing, and the clock the countdown
     /// shows it is the briefing's own seven-byte record rather than this one.
@@ -219,9 +219,9 @@ public sealed partial class MatchStartRunService
         MatchRotationEntry round,
         int clockUnits)
     {
-        var reported = ready.TryGetReported(context.Session.RemoteAddress, out var value)
+        var reported = briefingStates.TryGetReported(context.Session.RemoteAddress, out var value)
             ? value
-            : MatchStartBodiesUtils.DefaultReadinessReportValue;
+            : MatchStartBodiesUtils.DefaultJoinReportValue;
 
         // The room's own players, read here rather than at the open: the run is
         // written per peer, and a player who joined between two peers' runs is a
@@ -255,7 +255,7 @@ public sealed partial class MatchStartRunService
             runOrdinals,
             operationsOrdinals,
             slots,
-            ready.PresenceMask,
+            briefingStates.JoinedMask,
             clockUnits);
 
         logger.LogInformation(

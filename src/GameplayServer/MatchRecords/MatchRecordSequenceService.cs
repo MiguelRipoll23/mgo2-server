@@ -28,7 +28,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// state blob <c>0x0002</c>, the vitals <c>0x090c</c>, the rules pair
 /// <c>0x0a61</c> — carries its attribute class in that byte and takes no value
 /// here; a caller that stamped one would be writing a class the client reads.
-/// The countdown and the readiness publication read the same rule from the other
+/// The countdown and the join publication read the same rule from the other
 /// side, which is why neither takes a counter: they are the operations clock and
 /// the payload record, and their fourth bytes are a clock and a per-player place.
 /// </para>

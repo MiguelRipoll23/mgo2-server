@@ -32,26 +32,26 @@ public static class PeerCommandHandlerRegistration
         // not answered because the server cannot read what they mean.
         registry.Register<JoinProbeHandler>(UdpCommandConstants.JoinProbe);
 
-        // A client's readiness report travels on the round's own payload record,
+        // A client's join report travels on the round's own payload record,
         // which alternates between two values as rounds succeed each other
         // (0x1ade, then 0x12de a 0x800 bit along). Both are registered so the
         // report reaches MatchStartRunService rather than being dropped as an
         // unknown command; the handler reads the body, because the same identifier
         // carries the round's other payloads, which belong on the relay and not
         // to a round.
-        foreach (var identifier in MatchRecordGenerationUtils.ReadinessReportIdentifiers)
+        foreach (var identifier in MatchRecordGenerationUtils.JoinReportIdentifiers)
         {
-            registry.Register<PlayerReadyHandler>(identifier);
+            registry.Register<JoinReportHandler>(identifier);
         }
 
-        // The presence record, sent in the same datagram as the report and
+        // The join state record, sent in the same datagram as the report and
         // carrying the player's own lobby slot. Below the tick threshold, so
         // without a handler it would be relayed as an unnamed gameplay record;
         // registering it makes the relay a decision rather than a default, and
         // its answer rides the run.
-        foreach (var identifier in MatchRecordGenerationUtils.PlayerPresenceIdentifiers)
+        foreach (var identifier in MatchRecordGenerationUtils.JoinStateIdentifiers)
         {
-            registry.Register<PlayerPresenceHandler>(identifier);
+            registry.Register<JoinStateHandler>(identifier);
         }
 
         // The players' vitals, the two identifiers that carry one player's health
@@ -90,8 +90,8 @@ public static class PeerCommandHandlerRegistration
         services.AddSingleton<RosterAnswerService>();
         services.AddSingleton<PlayerProfileHandler>();
         services.AddSingleton<JoinProbeHandler>();
-        services.AddSingleton<PlayerReadyHandler>();
-        services.AddSingleton<PlayerPresenceHandler>();
+        services.AddSingleton<JoinReportHandler>();
+        services.AddSingleton<JoinStateHandler>();
         services.AddSingleton<PlayerVitalsHandler>();
         services.AddSingleton<OperationsStreamHandler>();
         return services;

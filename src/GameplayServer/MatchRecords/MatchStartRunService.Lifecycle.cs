@@ -7,7 +7,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// is returned to.
 /// </summary>
 /// <remarks>
-/// The reports that ask for a round are taken in <see cref="MatchStartRunService.Open"/>
+/// The reports that ask for a round are taken in <see cref="MatchStartRunService.OnJoinReport"/>
 /// and the run each round's open writes lives in <c>MatchStartRunService.Runs.cs</c>;
 /// this file is what comes after that — a round that ends, the wait that ends it on
 /// its own time limit, and the fresh briefing a room with nobody left in it goes
@@ -31,10 +31,12 @@ public sealed partial class MatchStartRunService
     /// </para>
     /// <para>
     /// <b>The briefing it begins is the room's own.</b> The streams are re-armed
-    /// where every briefing's are (<see cref="BeginBriefing"/>) and the clock that
-    /// ends it is armed by the first report to reach the fresh briefing
-    /// (<see cref="ArmBriefingClock"/>), which is what makes the reset room a room
-    /// waiting for a game rather than one replaying a match nobody played.
+    /// where every briefing's are (<see cref="BeginBriefing"/>); the count it is
+    /// shown from is armed by the first report to reach the fresh briefing
+    /// (<see cref="BeginBriefingClock"/>) and the deadline that ends it only once
+    /// the room has a second player (<see cref="ArmBriefingDeadline"/>), which is
+    /// what makes the reset room a room waiting for a game rather than one replaying
+    /// a match nobody played.
     /// </para>
     /// </remarks>
     /// <returns><c>true</c> when the room held no clients and has been reset.</returns>
@@ -47,7 +49,7 @@ public sealed partial class MatchStartRunService
 
         var dropped = roundState.Reset();
         score.Reset();
-        ready.BeginNextBriefing();
+        briefingStates.BeginNextBriefing();
         BeginBriefing();
 
         logger.LogInformation(
@@ -79,16 +81,17 @@ public sealed partial class MatchStartRunService
         // A round is preceded by its own briefing: the captures open a round,
         // play it, and then rewrite the ready set for the round after it
         // (docs/protocol/BRIEFING_FLOW.md). Clearing the states here is what
-        // makes the next round wait for reports of its own instead of opening
+        // makes the next round wait for readies of its own instead of opening
         // the moment the last round's clock stopped.
-        ready.BeginNextBriefing();
+        briefingStates.BeginNextBriefing();
 
-        // The next briefing runs on its own deadline as well: a player who reports
-        // late delays the round by the briefing time at most, and never past it.
+        // The next briefing runs on its own deadline as well, once it has a second
+        // player: one who readies late delays the round by the briefing time at
+        // most, and never past it.
         BeginBriefing();
         logger.LogInformation(
             "Round {RoundNumber} ended because {Reason}; the room is back in its briefing and the next "
-            + "round opens when its players have reported again or when the briefing runs out",
+            + "round opens when its players have readied, or when its briefing runs out",
             ended,
             reason);
         return true;
