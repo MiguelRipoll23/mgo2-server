@@ -1,4 +1,5 @@
 using Mgo2Server.Shared.Constants;
+using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameplayServer.MatchRecords;
@@ -97,8 +98,14 @@ public static class MatchStartRunFramesUtils
     public const int RosterOrdinalCount = 8;
 
     /// <summary>
+    /// Records the run opens on and its repeat leaves out: the marker and the
+    /// pair behind it, which answer the peer's report and its entry.
+    /// </summary>
+    public const int RunOpeningCount = 3;
+
+    /// <summary>
     /// The run's records as the tick behind it writes them again: everything the
-    /// run carries except the marker and the two empty roster heads.
+    /// run carries except the marker and the pair behind it.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -115,19 +122,19 @@ public static class MatchStartRunFramesUtils
     /// </para>
     /// <para>
     /// The marker is the answer to the peer's own report, so there is nothing for
-    /// it to answer a second time, and the two <c>0x5001</c> heads open the roster
-    /// run it answered; both are the run's opening rather than its state, which is
-    /// what the tick behind it is for.
+    /// it to answer a second time, and the pair behind it is the peer's entry
+    /// answered — or the recorded empty heads when this host heard no entry; both
+    /// are the run's opening rather than its state, which is what the tick behind
+    /// it is for. They are dropped by their place in the run and not by their
+    /// identifier, because the pair is the peer's own records answered and so
+    /// carries that peer's identifiers.
     /// </para>
     /// </remarks>
     /// <param name="run">The run as it was written.</param>
-    /// <param name="marker">Identifier set's match-start marker, the run's first record.</param>
     /// <returns>The records to write behind the run.</returns>
     public static List<MatchRecordFramesUtils.RecordMessage> RepeatOf(
-        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run,
-        ushort marker) =>
-        [.. run.Where(record =>
-            record.Type != marker && record.Type != UdpCommandConstants.RosterHead)];
+        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run) =>
+        [.. run.Skip(RunOpeningCount)];
 
     /// <summary>
     /// The run's records, in send order, built for the identifier set the round
@@ -180,6 +187,12 @@ public static class MatchStartRunFramesUtils
     /// host that wrote its own default here would run a round neither the client
     /// nor the host could agree on.
     /// </param>
+    /// <param name="entryAnswers">
+    /// The answers the peer's entry echo draws, which are the run's opening pair
+    /// (<see cref="MatchStartRunService.NoteEntryAnswers"/>). Empty for a peer
+    /// whose entry this host never heard, which falls back to the recorded empty
+    /// <c>0x5001</c> heads.
+    /// </param>
     /// <returns>The records of the run.</returns>
     public static List<MatchRecordFramesUtils.RecordMessage> BuildRun(
         MatchRecordGenerationUtils generation,
@@ -189,9 +202,21 @@ public static class MatchStartRunFramesUtils
         IReadOnlyList<byte> operationsOrdinals,
         IReadOnlyList<Rooms.LobbyTeamSlot> lobbySlots,
         byte reportingSet,
-        int timeLimitUnits)
+        int timeLimitUnits,
+        IReadOnlyList<UdpMessage> entryAnswers)
     {
         var (teams, occupancy) = Rooms.TeamArrayFramesUtils.BuildPair(teamArraySequence, lobbySlots);
+
+        // The run's opening pair answers the peer's entry echo when this host
+        // heard one: the echo's own record answered, carrying the same fourth
+        // byte, which is what the captures' runs open with. A peer that never
+        // echoed is written the recorded empty heads the captures hold.
+        IEnumerable<MatchRecordFramesUtils.RecordMessage> heads = entryAnswers.Count > 0
+            ? entryAnswers.Select(answer => new MatchRecordFramesUtils.RecordMessage(
+                answer.Type,
+                answer.Body,
+                answer.Flags))
+            : [new(UdpCommandConstants.RosterHead, []), new(UdpCommandConstants.RosterHead, [])];
 
         return
         [
@@ -200,10 +225,10 @@ public static class MatchStartRunFramesUtils
         // directions.
         new(generation.MatchStartMarker, []),
 
-        // The two empty roster heads the run opens on — the same 0x5001 record a
-        // join's roster run opens on, written twice as the capture writes it.
-        new(UdpCommandConstants.RosterHead, []),
-        new(UdpCommandConstants.RosterHead, []),
+        // The run's opening pair: the answer to the peer's entry echo, which is
+        // the empty 0x5001 record a join's roster run opens on when nothing was
+        // echoed.
+        .. heads,
 
         // The operations stream's state block and the short record behind it,
         // ahead of the arrays: the order both captures write them in.

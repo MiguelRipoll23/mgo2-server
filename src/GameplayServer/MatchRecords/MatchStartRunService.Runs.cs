@@ -286,7 +286,8 @@ public sealed partial class MatchStartRunService
             operationsOrdinals,
             slots,
             briefingStates.JoinedMask,
-            clockUnits);
+            clockUnits,
+            EntryAnswersOf(context.Session));
 
         logger.LogInformation(
             "UDP {LocalPort}: writing an opening run to {RemoteAddress}: {RecordCount} records, "
@@ -384,7 +385,7 @@ public sealed partial class MatchStartRunService
                 context.Remote);
             await MatchRecordSendUtils.SendAsync(
                 context,
-                MatchStartRunFramesUtils.RepeatOf(run, generation.MatchStartMarker));
+                MatchStartRunFramesUtils.RepeatOf(run));
         }
         catch (Exception exception)
         {

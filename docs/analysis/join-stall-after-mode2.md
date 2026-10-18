@@ -1290,3 +1290,93 @@ differently here. And the briefing's beat still writes the round's own item boxe
 and the rules pair every frame, where the reference's briefing writes them as
 events (`docs/analysis/join-stall-after-mode2.md` §9), which is the next thing to
 take out of the briefing window.
+
+## 21. `myserver22.pcapng`: the entry's pass is silent, and the client tears the session down
+
+§20's change is live. The pass that receives the lobby-slot echo writes nothing at
+all — the pod's log has no `answering` line between the entry at 13:57:27 and the
+reap at 13:58:35 — and the client does not reach its briefing screen. This time it
+does not sit there either: it abandons the session itself.
+
+### The session
+
+`myserver22.pcapng` (client `192.168.1.20:5730` ↔ host `89.129.16.203:5731`, a
+fresh room of one), against the deployed pod's log (`tmpout/ms22-server.log`) and
+the client's own emulator log (`RPCS3.log`, whose clock starts 15:35:29 local,
+which is 13:35:29 UTC). Times below are the pod's, UTC.
+
+| UTC | what | |
+| --- | --- | --- |
+| 13:56:31 | the roster run, and the settings burst three seconds later | |
+| 13:57:27 | the client's entry echo `82 f3` · `84 f3` (`0x9001` class `0x0d`, `0x1001` class `0x0e`) | **unanswered** |
+| 13:57:29 | the client's report `0x1ade e1 01` | |
+| 13:57:29 | the briefing's run, thirteen of its eighteen records acked within a second | |
+| 13:57:30 | **the echo re-sent, unchanged** | 3 s retry |
+| 13:57:32 | the run repeated one tick behind it | |
+| 13:58:00.7 | **the client's last datagram** (pcap `t+106.68`) | |
+| 13:58:10.7 | **the client's own modal**: *Disconnected from the host. Exiting the game.* | 42 s after the report |
+| 13:58:35 | the host reaps it — 25 s after the modal | |
+
+**Nothing was lost.** 1 777 host frames decoded from the capture under the
+session key, no duplicate counters, and two gaps in the sequence (`37→40`,
+`67→70`), both before the join. The client acknowledged the run, its repeat and
+the countdown (ordinals 0…32) and stopped on the thirty-third tick.
+
+### What the captures say the echo is answered by
+
+Not by a record written beside it, and not by nothing. Both reference briefings
+answer it with **the run's opening pair, matched by identifier and fourth byte**:
+
+| capture | the echo | the run's opening pair |
+| --- | --- | --- |
+| `started-briefing-then-solo` | t+55.312 `82 7e` · `84 7e`, classes `0x0c`/`0x0d` | t+57.626 `0x5001` class `0x0c`, `0x5001` class `0x0d` |
+
+(It is `0x5001` there because both halves are `0x1001` records; this client's
+first half is `0x9001`, whose answer is `0xd001` with one body byte, which is why
+`PeerAcknowledgementUtils` derives the pair rather than copying it.)
+
+So the pair the run opens with is not a recorded head: it is the peer's own echo
+answered, and this host was writing two empty `0x5001` records with class `0` in
+its place. The client's two echoed records were therefore named by nothing, and
+— §2 of `connection-not-stable-disconnect.md` — a record nothing names does not
+age out of the peer's window.
+
+### What was changed
+
+| file | change |
+| --- | --- |
+| `GameplayServerService.Answers.cs` | the pass that receives the echo holds its answers instead of dropping them (`NoteEntryAnswers`) |
+| `MatchRecords/MatchStartRunService.Entries.cs` | `entryAnswers` per session, dropped with the session's entry |
+| `MatchRecords/MatchStartRunFramesUtils.cs` | `BuildRun` opens on those answers, falling back to the recorded empty pair; `RepeatOf` drops the opening three by position, since the pair now carries the peer's identifiers |
+| `MatchRecords/MatchStartRunService.Runs.cs` | the run is built with the peer's entry answers |
+
+### The rejoin, and the one thing it is missing
+
+The client returned to the menu and joined again at 13:59:38. The handshake was
+answered, the session restarted on its new base, the profile was registered, the
+roster run went out at 13:59:40, and the room told it how many players it held.
+The settings burst did not go out, and the log says why:
+
+```
+UDP 5731: settings burst already scheduled; not scheduling another for 89.129.16.203:5730
+```
+
+`PlayerSettingsBurstSchedulerService` keeps one flag for the process, so the
+rotation and the loadouts are described to the first peer that ever joins and to
+nobody after it. That matches the captures — the peers joining at t+154, t+385
+and t+493 get none — but none of those is a session that *restarted*, which is
+the case this build introduced. The client polled for twenty seconds and then
+stopped, and the host reaped it at 14:00:30.
+
+That is measured here and **not** changed: the capture holds no restarted session
+on a reference host, so which of the two rules it takes is not something this
+session can settle. What is settled is that a rejoining peer currently differs
+from its own first join by exactly the burst.
+
+### Not verified live
+
+No client has joined this build. What would confirm it is this same join: the
+run's opening pair should carry `0xd001` and `0x5001` with the echo's own fourth
+bytes (`0x0d`, `0x0e`) instead of two empty `0x5001` class `0`, the client should
+not re-send its echo, and it should write its `1d`/`22` stage records within a few
+seconds of the run.

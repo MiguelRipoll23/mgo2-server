@@ -65,12 +65,30 @@ public sealed partial class GameplayServerService
     /// answers the echo draws, `0xd001` and `0x5001`). <c>PlayerProfileHandler</c>
     /// reads the echo and returns without writing anything, so suppressing the
     /// answers here is what makes the entry's pass silent as every capture's is.
+    /// They are held, though, and not dropped: the briefing's run opens on them,
+    /// which is the 2.3 s behind the echo the captures put the answer at
+    /// (<see cref="MatchStartRunService.NoteEntryAnswers"/>).
     /// </para>
     /// </remarks>
     /// <param name="frame">Frame as it decoded.</param>
     /// <param name="session">Session the frame arrived on.</param>
     private void AnswerReliableRecords(UdpFrame frame, PeerSession session)
     {
+        // The lobby-slot echo's answer is the briefing's run and not a record
+        // written into this pass: the run opens on the pair, carrying the echo's
+        // own fourth bytes (MatchStartRunService.NoteEntryAnswers). The answers
+        // are read here rather than in the handler because the handler sees one
+        // record of the pair and the run opens on both.
+        var entryAnswers = frame.Messages
+            .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
+            .Where(message => TeamArrayFramesUtils.IsArrayEcho(message.Body))
+            .Select(PeerAcknowledgementUtils.AcknowledgementOf)
+            .ToList();
+        if (entryAnswers.Count > 0)
+        {
+            matchStart.NoteEntryAnswers(session, entryAnswers);
+        }
+
         var answers = frame.Messages
             .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
             .Where(message => !TeamArrayFramesUtils.IsArrayEcho(message.Body))

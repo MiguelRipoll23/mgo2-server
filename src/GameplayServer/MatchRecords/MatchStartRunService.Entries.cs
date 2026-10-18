@@ -55,6 +55,17 @@ public sealed partial class MatchStartRunService
     private readonly Dictionary<PeerSession, byte> entrySequences = [];
 
     /// <summary>
+    /// The record-level answers each peer's entry echo draws, which are the
+    /// records the briefing's run opens on for that peer.
+    /// </summary>
+    /// <remarks>
+    /// The echo is answered by the room's state and not beside it, so its
+    /// answers are held from the pass that heard it until the run is written
+    /// (<see cref="NoteEntryAnswers"/>).
+    /// </remarks>
+    private readonly Dictionary<PeerSession, List<UdpMessage>> entryAnswers = [];
+
+    /// <summary>
     /// Notes that a peer has asked to be placed in the room, which is what a
     /// briefing's run is written in answer to.
     /// </summary>
@@ -126,6 +137,57 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
+    /// Holds the answers a peer's entry echo draws, so its briefing's run opens
+    /// on them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The run's two opening records are these answers, and the captures
+    /// write them as the echo's own records answered.</b> A reference briefing's
+    /// run opens on two empty <c>0x5001</c> records whose fourth bytes are the
+    /// ones the client's echo carried: <c>started-briefing-then-solo</c> echoes
+    /// <c>82 7e</c>/<c>84 7e</c> at classes <c>0x0c</c>/<c>0x0d</c> at t+55.312
+    /// and its run opens <c>0x5001</c> classes <c>0x0c</c>/<c>0x0d</c> at
+    /// t+57.626. So the pair is not a recorded head but the answer to that
+    /// peer's entry, matched by identifier and fourth byte
+    /// (<see cref="PeerAcknowledgementUtils"/>).
+    /// </para>
+    /// <para>
+    /// <b>And it is why the pass that hears the echo writes nothing.</b>
+    /// Answering it beside the echo stops the client where it stands
+    /// (<c>myserver20.pcapng</c>), and answering it nowhere leaves a record whose
+    /// window never drains: <c>myserver22.pcapng</c>'s client re-sent the pair
+    /// three seconds after the first copy and tore its session down 32 s after
+    /// its report, raising its modal ten seconds later. Written as the run's opening pair, the answer arrives where
+    /// every capture puts it — 2.3 s behind the entry — and names the records it
+    /// answers.
+    /// </para>
+    /// </remarks>
+    /// <param name="session">Session the echo arrived on.</param>
+    /// <param name="answers">The records its answer draws, in echo order.</param>
+    public void NoteEntryAnswers(PeerSession session, IReadOnlyList<UdpMessage> answers)
+    {
+        lock (gate)
+        {
+            entryAnswers[session] = [.. answers];
+        }
+    }
+
+    /// <summary>
+    /// The answers a peer's entry echo draws, in echo order; empty when the peer
+    /// has not entered.
+    /// </summary>
+    /// <param name="session">Session the peer is on.</param>
+    /// <returns>The records the run opens on for that peer.</returns>
+    public IReadOnlyList<UdpMessage> EntryAnswersOf(PeerSession session)
+    {
+        lock (gate)
+        {
+            return entryAnswers.TryGetValue(session, out var answers) ? answers : [];
+        }
+    }
+
+    /// <summary>
     /// Whether a peer has asked to be placed in the room.
     /// </summary>
     /// <param name="session">Session the peer is on.</param>
@@ -148,6 +210,7 @@ public sealed partial class MatchStartRunService
         lock (gate)
         {
             entrySequences.Remove(session);
+            entryAnswers.Remove(session);
         }
     }
 }
