@@ -66,6 +66,44 @@ public sealed partial class MatchStartRunService
     private readonly Dictionary<PeerSession, List<UdpMessage>> entryAnswers = [];
 
     /// <summary>
+    /// When each peer's entry was heard, which is the instant the run that
+    /// answers it is spaced from.
+    /// </summary>
+    /// <remarks>
+    /// It is kept rather than answered in the pass that heard the echo, because
+    /// the answer is not written in that pass either: the captures put it
+    /// <see cref="EntryRunDwellMilliseconds"/> behind the entry.
+    /// </remarks>
+    private readonly Dictionary<PeerSession, DateTimeOffset> entryInstants = [];
+
+    /// <summary>
+    /// How long a briefing's run is spaced from the entry it answers.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The captures answer the echo behind a dwell rather than inside its own
+    /// pass.</b> Both reference briefings receive the lobby-slot echo and write
+    /// their run two seconds later: `mgo2-started-briefing-then-solo-game` takes
+    /// the pair at t+55.312 and writes the run at t+57.626 (**2.31 s**), and
+    /// `mgo2-game-started-on-briefing` takes it at t+56.360 and writes at t+58.255
+    /// (**1.90 s**). Neither writes anything else between them.
+    /// </para>
+    /// <para>
+    /// <b>And the client acts in that gap.</b> The reference client starts its own
+    /// operations stream there — five seven-byte records and the twenty-two-byte
+    /// one, at the stream's own first six ordinals
+    /// (`docs/protocol/STATE_VECTOR.md` §1) — at 1.99 s after its entry in the solo
+    /// capture, before the run arrives. A host that writes the run in the entry's
+    /// own dwell therefore overtakes a client that is still entering its briefing,
+    /// which is what `myserver23.pcapng` measures: the echo at t+56.789 was
+    /// answered at t+57.007 (**0.22 s**), the client acknowledged the run and every
+    /// record behind it for the next 3.5 minutes, and it never wrote its own
+    /// operations at all.
+    /// </para>
+    /// </remarks>
+    public const int EntryRunDwellMilliseconds = 2000;
+
+    /// <summary>
     /// Notes that a peer has asked to be placed in the room, which is what a
     /// briefing's run is written in answer to.
     /// </summary>
@@ -80,6 +118,7 @@ public sealed partial class MatchStartRunService
             {
                 entrySequences[context.Session] =
                     Rooms.TeamArrayFramesUtils.SequenceOf(context.Message.Body);
+                entryInstants[context.Session] = DateTimeOffset.UtcNow;
             }
         }
 
@@ -201,6 +240,27 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
+    /// How much of the entry's dwell is left, if the peer has entered and it has
+    /// not passed yet.
+    /// </summary>
+    /// <param name="session">Session the entry was heard on.</param>
+    /// <returns>The wait still owed, or <c>null</c> when it is already spent.</returns>
+    private TimeSpan? EntryRunDwellRemaining(PeerSession session)
+    {
+        DateTimeOffset heardAt;
+        lock (gate)
+        {
+            if (!entryInstants.TryGetValue(session, out heardAt))
+            {
+                return null;
+            }
+        }
+
+        var left = heardAt.AddMilliseconds(EntryRunDwellMilliseconds) - DateTimeOffset.UtcNow;
+        return left > TimeSpan.Zero ? left : null;
+    }
+
+    /// <summary>
     /// Forgets a peer's entry: a session that is gone has no sequence left to
     /// confirm, and the next peer to enter starts its own.
     /// </summary>
@@ -211,6 +271,91 @@ public sealed partial class MatchStartRunService
         {
             entrySequences.Remove(session);
             entryAnswers.Remove(session);
+            entryInstants.Remove(session);
+        }
+    }
+
+    /// <summary>
+    /// Writes the briefing's own run to a peer once the briefing has heard a
+    /// report and the peer has entered the room, and returns when the round it
+    /// precedes opens.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The run is the answer to the peer's entry, and the report only names
+    /// the set.</b> A client reports while it is still loading its map and echoes
+    /// the lobby-slot pair once it has been placed in the room; every capture
+    /// writes the run behind the echo and no capture writes one behind the
+    /// report (<see cref="MatchStartRunService.OnRoomEntry"/>,
+    /// <c>docs/analysis/join-stall-after-mode2.md</c> §18).
+    /// </para>
+    /// <para>
+    /// <b>The briefing's run is not its round's.</b> A client still being briefed
+    /// is served the run the first report named, under that report's own set, and
+    /// the round it is waiting for opens later and under the other set
+    /// (<see cref="MatchStartRunService.OnJoinReport"/>, <c>docs/protocol/BRIEFING_FLOW.md</c>
+    /// §1–§2). The run's clock stays whole: nothing of the round has been played
+    /// while the client is still reading the briefing, and the clock the countdown
+    /// shows it is the briefing's own seven-byte record rather than this one.
+    /// </para>
+    /// <para>
+    /// <b>And it waits out the entry's dwell before it goes.</b> Both reference
+    /// briefings answer the echo two seconds later and nothing else in between,
+    /// and the clients use that gap to start their own operations stream
+    /// (<see cref="EntryRunDwellMilliseconds"/>). A run written in the entry's own
+    /// dwell overtakes that transition, which is <c>myserver23.pcapng</c>'s join.
+    /// </para>
+    /// </remarks>
+    /// <param name="context">Context the run is written through.</param>
+    private async Task WriteBriefingRunAsync(PeerContext context)
+    {
+        var session = context.Session;
+
+        while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
+        {
+            // No run is written before a briefing has heard a report: the run
+            // echoes that report's byte, so a briefing that has heard from nobody
+            // has nothing to write one from.
+            if (BriefingGeneration is not { } generation)
+            {
+                await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
+                continue;
+            }
+
+            // The run is the answer to the client's entry and not to its report,
+            // and the two are not the same instant: the report arrives while the
+            // client is still loading its map, and every capture writes the run
+            // behind the entry it answered (OnRoomEntry). A run written on the
+            // report is written for a client that is not in the room yet, and the
+            // client that is handed one does not report again, does not ready and
+            // never reaches its briefing screen (myserver19.pcapng).
+            if (!HasEntered(session))
+            {
+                await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
+                continue;
+            }
+
+            if (ReadBriefingRound() is not { } round)
+            {
+                // The room is not published yet, so there is no round for the
+                // briefing to precede and no time to hold its clock at.
+                await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
+                continue;
+            }
+
+            if (EntryRunDwellRemaining(session) is { } owed)
+            {
+                await Task.Delay(owed);
+                if (roundState.IsOpen)
+                {
+                    // The briefing ended inside the dwell, so the round's own run
+                    // is this peer's next record and this briefing's is stale.
+                    return;
+                }
+            }
+
+            await WriteRunCoreAsync(context, generation, round, round.TimeLimitUnits);
+            return;
         }
     }
 }

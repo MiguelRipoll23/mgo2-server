@@ -1380,3 +1380,89 @@ run's opening pair should carry `0xd001` and `0x5001` with the echo's own fourth
 bytes (`0x0d`, `0x0e`) instead of two empty `0x5001` class `0`, the client should
 not re-send its echo, and it should write its `1d`/`22` stage records within a few
 seconds of the run.
+
+## 22. `myserver23.pcapng`: the entry is answered, the client stays, and it still
+does not enter its briefing
+
+§21's change is live and it does what it was meant to. The run's opening pair is
+the peer's own echo answered, the echo is not re-sent, and the client keeps the
+session up for the whole capture instead of tearing it down. It still never shows
+the briefing screen, and the one thing both reference clients do in this window —
+start their own operations stream — it never does.
+
+### The session
+
+`myserver23.pcapng` read as the host's side (`tmpout/ms23.log` through
+`tools/pcap_gameplay_log.py`, `tmpout/ms23recs.txt` through
+`tools/udp_session_records.py`): client `192.168.1.20:5730` ↔ host
+`89.129.16.203:5731`, a fresh room of one, 233 s.
+
+| t+ | what | |
+| --- | --- | --- |
+| 0.000 | the handshake | |
+| 2.244 | the roster run, written twice as every capture writes it | |
+| 4.863 | the settings burst: the rotation (161 B), two 50-byte loadouts, the 23-byte blob | |
+| 56.248 | the client's report `0x1ade e1 01`, with its presence in the same datagram | |
+| 56.279 | the report answered: the publication, the join-state answer and the marker | |
+| 56.789 | the client's entry echo `0x1001` class `0x0d` (`82 f3`) · class `0x0e` (`84 f3`), beside its phase tick | |
+| 56.822 | the tick's record-level answer `0xd001 24` | |
+| **57.007** | **the briefing's run: eighteen records, opening on `0x5ade` and the two `0x5001` at the echo's own classes `0x0d`/`0x0e`** | §21's fix, **[V]** |
+| 58.778 | the client acknowledges the run: eight `0x5001` at classes `06`–`0d`, the acks and the marker | |
+| 59.510 | the run's second instant, marker and pair left out | |
+| 60.473 / 62.601 | the client acknowledges the repeat and the beat | |
+| 57.3 → 233 | the beat (rules pair, item boxes) and the countdown `0b 3c 00 00 00 00 00` every 2.5 s | |
+| 73.6 | the client's room request `83 f3 00 07` | |
+| never | the client's own operations (`0x1d`/`0x22`), a ready (`0x1f`), or a second report | |
+| 14:49:28 | the client's last datagram, 30 s before the capture ends — the reaper's window | |
+
+**The run is the reference's, record for record.** Its 90-byte state block is
+byte-identical to `mgo2-game-started-on-briefing`'s, its stage records, its close
+triple and its payload echo are the same bodies, and its clock differs only in the
+room's own length (`01 20 0d` — 3 360 units, seven minutes — against that
+capture's `01 00 0f`, eight). The two records no reference run is missing are
+present, and the two the echoes of both captures open on are now the peer's own
+answered.
+
+### The one instant that is not the captures'
+
+| capture | entry echo | the briefing's run | gap |
+| --- | --- | --- | --- |
+| `started-briefing-then-solo` | t+55.312 | t+57.626 | **2.31 s** |
+| `started-on-briefing` | t+56.360 | t+58.255 | **1.90 s** |
+| **`myserver23`** | **t+56.789** | **t+57.007** | **0.22 s** |
+
+Both references write nothing at all between the echo and the run, and their
+clients use that gap: `started-briefing-then-solo`'s writes its own operations
+stream at t+57.304 — five seven-byte `0x1d` records and the twenty-two-byte
+`0x22`, at the stream's own first six ordinals — **1.99 s after its entry and
+0.32 s before the run arrives** (`docs/protocol/STATE_VECTOR.md` §1,
+`docs/analysis/udp-handlers-and-senders.md` §5.5). This host's run answered the
+echo inside that dwell, and the client acknowledged it and then wrote none of its
+own operations for the rest of the session.
+
+So §21 answered the echo with the right records in the wrong pass: the run is the
+answer, and the captures space it two seconds from the entry rather than writing
+it in the entry's own dwell. That is the rule §19 measured for the confirmation
+(37 ms behind the echo, and the client stopped) — it applies to the run too.
+
+**The room's briefing then never ends, and that is by design.** One player is in
+the room, so the count is held at the room's whole minute and no deadline is
+armed (`BriefingCountdownService.StartCounting`, §17): the round opens on that
+player's own ready, and the ready is the one record the client still does not
+send. Nothing about the host's briefing window is wrong on this capture — the
+client is simply not in it.
+
+### What was changed
+
+| file | change |
+| --- | --- |
+| `MatchRecords/MatchStartRunService.Entries.cs` | the entry's instant is kept (`entryInstants`), `EntryRunDwellMilliseconds` is the measured two-second dwell, and `WriteBriefingRunAsync` moves here — it is the run written in answer to the entry — and waits the dwell out before writing, giving it up if the round opened inside it |
+| `MatchRecords/MatchStartRunService.Runs.cs` | the watcher calls it; the file is back under the 400-line limit |
+
+### Not verified live
+
+No client has joined this build. What would confirm it is this same join: the
+echo at the entry should be answered **two seconds later** instead of two hundred
+milliseconds, the client should write its own `0x1d`/`0x22` operations in that
+gap as both references do, and — the actual success line — its `1f` ready should
+follow, which is what opens a room of one's round.
