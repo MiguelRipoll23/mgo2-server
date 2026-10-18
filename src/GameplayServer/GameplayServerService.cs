@@ -34,6 +34,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly RoomRosterService roster;
     private readonly MatchRecords.MatchStartRunService matchStart;
     private readonly BriefingStateService briefingStates;
+    private readonly TeamArrayService teamArrays;
     private readonly PlayerVitalsService vitals;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
@@ -66,7 +67,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         this.options = options.Value;
         port = this.options.GameplayServerPort;
         sessions = new PeerSessionService(
-            TimeSpan.FromSeconds(60),
+            PeerSessionService.DefaultIdleTimeout,
             logger,
             $"udp:{port}",
             DropReapedPeer);
@@ -77,6 +78,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
         matchStart = serviceProvider.GetRequiredService<MatchRecords.MatchStartRunService>();
         briefingStates = serviceProvider.GetRequiredService<BriefingStateService>();
+        teamArrays = serviceProvider.GetRequiredService<TeamArrayService>();
         vitals = serviceProvider.GetRequiredService<PlayerVitalsService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
@@ -240,13 +242,43 @@ public sealed partial class GameplayServerService : IAsyncDisposable
             session.AcknowledgedRecords.Count,
             session.RosterAcknowledged ? "yes" : "no");
 
+        ForgetPeerState(session);
+    }
+
+    /// <summary>
+    /// Drops every piece of room state this host holds for one peer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It is what a peer that has gone takes with it, and it is the same call a
+    /// peer that starts its handshake over makes: a session the client has
+    /// abandoned and a session the client has replaced hold the same stale state,
+    /// and both have to leave the room as if the player had walked out and come
+    /// back in (<see cref="RestartPeerIfHandshakeStartsOver"/>).
+    /// </para>
+    /// <para>
+    /// Nothing here waits on the reaper's window. The peer is not asked whether
+    /// it is still there; the caller has already decided that, either because the
+    /// window ran out or because the peer sent a handshake for a new session.
+    /// </para>
+    /// </remarks>
+    /// <param name="session">Session whose peer state is dropped.</param>
+    private void ForgetPeerState(PeerSession session)
+    {
+        // The held lobby-slot confirmation is filed by the peer's own endpoint and
+        // not by its session, so it has to be named: its ordinals belong to the
+        // session that answered the pair, and a peer joining again reads the
+        // exchange from the run it is served.
+        teamArrays.Forget(session.RemoteAddress);
+        teamArrays.Forget(session.DialBack.ToString());
+
         // The briefing state the peer reported goes with it. A ready state kept
         // for a player who has left would hold a round shut on somebody who is
         // never going to report, which is a room waiting for nothing.
         if (briefingStates.Forget(session.RemoteAddress) | briefingStates.Forget(session.DialBack.ToString()))
         {
             logger.LogDebug(
-                "[{LogPrefix}] Cleared the briefing state of reaped peer {RemoteAddress}",
+                "[{LogPrefix}] Cleared the briefing state of peer {RemoteAddress}",
                 LogPrefix,
                 session.RemoteAddress);
         }
@@ -257,7 +289,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         if (vitals.Forget(session.RemoteAddress) | vitals.Forget(session.DialBack.ToString()))
         {
             logger.LogDebug(
-                "[{LogPrefix}] Cleared the vitals of reaped peer {RemoteAddress}",
+                "[{LogPrefix}] Cleared the vitals of peer {RemoteAddress}",
                 LogPrefix,
                 session.RemoteAddress);
         }

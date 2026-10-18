@@ -32,11 +32,14 @@ public static class MatchRecordPeerUtils
 
     /// <summary>
     /// Whether the records should keep being written to a peer: the peer is
-    /// still there until it has been quiet for the whole window.
+    /// still there until it has been quiet for the whole window, and a session
+    /// that has been replaced by a newer one is over whatever its clock says
+    /// (<see cref="PeerSession.Retired"/>).
     /// </summary>
     /// <param name="session">Session the records are written to.</param>
     /// <returns><c>true</c> while the peer is still there.</returns>
     public static bool IsAlive(PeerSession session) =>
+        !session.Retired &&
         DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - session.LastSeenAt
         < IdleTimeout.TotalMilliseconds;
 }

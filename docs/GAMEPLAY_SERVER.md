@@ -51,8 +51,11 @@ own join reports, and keep the channel moving underneath them.
 2. The host's endpoint pair is registered against the character
    (`GameService.SaveConnectionInformationAsync`), which is what a lobby hands a
    joining client over TCP.
-3. The UDP socket binds, the session reaper starts (`PeerSessionService`, 60 s of
-   idle), and `MatchService` publishes/heartbeats the room row.
+3. The UDP socket binds, the session reaper starts (`PeerSessionService`, 30 s of
+   idle, checked every 5 s), and `MatchService` publishes/heartbeats the room row.
+   The window is measured: a live client answers every five seconds and the
+   longest silence any reference capture holds is 22.44 s, a client reading its
+   map (`mgo2-started-on-solo-game`, t+60.41 → t+82.85).
 4. On a stop request the host enters **drain mode**: it answers no new handshake
    (`GameplayServerService.FrameDispatch.cs`), keeps serving the peers it has,
    and returns once they have left.
@@ -71,6 +74,21 @@ that cannot be dialled back.
 From here the peer's traffic is keyed with the session key, carries a fifteen-bit
 outbound counter per session, and is marked compressed only when the records in
 it were compressed (`GameplayServerService.Outbound.cs`).
+
+**A peer that comes back starts a session, not a conversation.** A handshake
+arriving for an endpoint that already has a session is one of two things, and the
+counter base it carries says which: the same base is the client re-sending a
+handshake this host has not answered (the captures hold up to four, two seconds
+apart), and a new base is the same client joining again — after a restart, or
+after the reaper let it go. The second kind retires the session it replaces and
+provisions a fresh one (`GameplayServerService.SessionRestart.cs`): the old
+session's key, counter and acknowledgement window belong to a conversation the
+client has forgotten, and every worker watching it ends on the retirement instead
+of writing into it. The room state held for that peer — its roster entry, its
+ready state, its vitals and the lobby-slot confirmation held for it — is dropped
+the way a reap drops it, so the peer's join is the ordinary join of a new arrival,
+and a room it left empty goes back to its first round exactly as it would have
+when the reaper reached it.
 
 ### 2.3 The join
 
@@ -265,7 +283,8 @@ steps to the next entry of the room's rotation. It also clears the round's score
 | what | where it comes from |
 | --- | --- |
 | frame cipher, session key, counter bases, tail digest, per-session counters | the peer's handshake |
-| session lifecycle, reaper, roster and ready-state cleanup on a reaped peer | `PeerSessionService`, `GameplayServerService.DropReapedPeer` |
+| session lifecycle, reaper, roster and ready-state cleanup on a reaped peer | `PeerSessionService`, `GameplayServerService.DropReapedPeer` / `ForgetPeerState` |
+| a peer starting its session over on a new handshake | `GameplayServerService.SessionRestart.cs` |
 | handshake answer, host identity, advertised/private endpoints | `HostIdentityService` (character id from the database) |
 | roster entries, their slots, names, clans, endpoint pairs, run ordinals | `RoomRosterService` + each peer's profile and handshake |
 | the ready set: who reported, the byte, and the publication order | the clients' own reports |
@@ -436,7 +455,7 @@ from the records it is sent, and the run's own clock is the one that says so.
 ### 4.2 A player who never readies
 
 The gate is "every roster member has readied", and a member is removed only when
-its session is reaped (60 s of silence). A peer that joins, stays alive and never
+its session is reaped (30 s of silence). A peer that joins, stays alive and never
 readies would hold the next round shut for as long as it is there — so, **in a room
 that has somebody else in it**, the gate is a **deadline** as well as a count: the
 room's own briefing time, armed at the join report that gives the room its second

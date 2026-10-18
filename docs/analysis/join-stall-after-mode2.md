@@ -1222,3 +1222,71 @@ answered by the run alone, which would put the missing state in the run's conten
 `started-briefing-then-solo` 14 — rather than in what the entry pass writes. A
 room whose round never opens (a solo player who does not ready) now never confirms
 the pair at all, which is what `game1` and `started-on-solo` show.
+
+## 20. `myserver21.pcapng`: the run is behind the entry and the entry is still answered
+
+§19's change is live and it moves the client further than any run before it: the
+game renders its own screens — the basic UI and the room's rule text — and fades
+out. It then sits on the black screen between that fade and the briefing screen,
+which is where this section leaves it.
+
+### The session
+
+`myserver21.pcapng`, read record by record (`tmpout/ms21.log` through
+`tools/pcap_gameplay_log.py`), against the two reference briefings: one client
+(`192.168.1.20:5730` ↔ host `89.129.16.203:5731`), a fresh room, nobody else in it.
+
+| t+ | what | |
+| --- | --- | --- |
+| 2.237 | the roster burst: the two entries, the close, and no `0x0261` pair | |
+| 4.813 | the settings payloads: the rotation (`0b 00`, 161 B) and two loadouts (`0b 01`, `0b 02`) | |
+| 57.083 | the client's companion `0x8a5c 01` — **before** its report, where both references send it with one | |
+| 57.091 | the host: the answer `0xca5c 24` | |
+| 58.341 | the client's entry echo `82 f3` · `84 f3` | |
+| **58.427** | **the host: `0xd001 24` · `0x5001`** | **the entry answered, where no capture answers it** |
+| 59.635 | the client's join report `0x1ade e1 01` — **after** its entry, where both references report first | |
+| 59.679–59.722 | the presence answer, the publication `e0 01 …` and the briefing's run, 0.09 s behind the report | |
+| 60.226 / 62.603 | the client acknowledges the run and its repeat, `0x5a54` ×241 over the session | |
+| 62.9 | the host's beat: the pair and the round's own item boxes, every frame | |
+| 88.560 | the client's room request `83 f3 00 07`, 30 s after its entry, answered with the arrays and its entry | |
+| never | the client's `1d`/`22` stage records, its ready, or a second report | |
+
+**What the references do in that pass.** `started-on-briefing` takes the echo at
+t+56.360 and writes **nothing** until its run at t+58.255; `started-briefing-then-solo`
+takes it at t+55.312 and writes nothing until its run at t+57.626, and its client
+writes its own `1254 7` stages and the 22-byte record 2.0 s after the echo and
+**0.3 s before that run arrives** — so the stage the live client never reaches is
+not written by the run in the capture that reaches it without one. No capture
+answers `82 NN` · `84 NN` at all.
+
+**What this host still wrote there.** `PlayerProfileHandler` returns on the echo
+without writing anything (§19), and the two records that went out 86 ms behind it
+are the dispatch's own record-level answers: `0xd001 24` for the `0x9001` half of
+the pair and `0x5001` for its `0x1001` half. They are the last of what the entry
+pass used to write — the confirmation went in §19 — and they are exactly the shape
+§19 measured a client stopping on.
+
+### What was changed
+
+| file | change |
+| --- | --- |
+| `GameplayServer/GameplayServerService.FrameDispatch.cs` | the automatic answer skips a body `TeamArrayFramesUtils.IsArrayEcho` reads, so the pass that receives the lobby-slot echo writes nothing, as every capture's does |
+
+### Not verified live
+
+No client has joined this build. What would confirm it is this same join: the echo
+should be answered by the run and by **no** record-level answer before it, the
+client should then write its `1d`/`22` records within a few seconds, and its
+briefing screen should show with the count held at the room's whole minute. What
+would falsify it is the same black screen with a silent entry pass, which would
+leave the missing state in the run's contents or in the client's own phase rather
+than in what the entry is answered with.
+
+**Two differences beside it are measured and not changed.** The live client sends
+its companion **before** its report where both references send it 0.4 s after, and
+its entry echo carries the `0x8000` class bit on the `82` half where both
+references write it plain; the host reads both by body, so neither is answered
+differently here. And the briefing's beat still writes the round's own item boxes
+and the rules pair every frame, where the reference's briefing writes them as
+events (`docs/analysis/join-stall-after-mode2.md` §9), which is the next thing to
+take out of the briefing window.

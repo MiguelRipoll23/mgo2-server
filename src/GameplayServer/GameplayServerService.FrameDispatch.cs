@@ -1,5 +1,6 @@
 using System.Net;
 using Mgo2Server.GameplayServer.MatchRecords;
+using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
@@ -135,15 +136,27 @@ public sealed partial class GameplayServerService
         var frame = MessageCodecUtility.DecodeFrame(decoded);
         var first = frame.Messages.Count > 0 ? frame.Messages[0] : null;
 
+        // A handshake is the one frame a peer may open with, and it can arrive
+        // with a session already held: the client re-sending a handshake this
+        // host has not answered yet, or the same client starting its session
+        // over. The counter base it carries is what tells those two apart, and a
+        // peer starting over is retired here rather than served on a key its
+        // client has forgotten (`GameplayServerService.SessionRestart.cs`).
+        var isHandshake =
+            decoded.Length == 44 &&
+            first is not null &&
+            first.Type == UdpCommandConstants.Handshake;
+        var session = sessions.Get(remoteAddress);
+        if (isHandshake && first is not null)
+        {
+            session = RestartPeerIfHandshakeStartsOver(first, remote, remoteAddress, session);
+        }
+
         // An unknown peer sending a handshake gets its session provisioned
         // before the message reaches its handler. A draining host takes none: the
         // peers in the match it is still hosting are the ones it waits for, and a
         // new one would only be a joiner whose host is about to leave.
-        var session = sessions.Get(remoteAddress);
-        if (session is null &&
-            first is not null &&
-            decoded.Length == 44 &&
-            first.Type == UdpCommandConstants.Handshake)
+        if (session is null && isHandshake)
         {
             if (draining)
             {
@@ -169,8 +182,6 @@ public sealed partial class GameplayServerService
                 note);
             return;
         }
-
-        var isHandshake = decoded.Length == 44 && first is not null && first.Type == UdpCommandConstants.Handshake;
 
         // The frame as it decoded, with its messages: the same shape the TCP
         // lobbies log, so a gameplay session reads like a lobby session.
@@ -257,56 +268,9 @@ public sealed partial class GameplayServerService
             $"compression={(frame.Compressed ? "compressed" : "uncompressed")} from {session.DialBack}",
             decoded);
 
-        // Answer numbered records before handing them to a handler. Frame ACK
-        // entries are excluded by the utility, and a valid profile is the
-        // exception because its roster response starts with the same 0x5001
-        // record-level answer.
-        //
-        // The join report is the other exception, and it is the handler that
-        // answers it: the report that opens the round is answered by the round's
-        // marker, and only the report that does not open it draws a bare answer
-        // (`JoinReportHandler`). The recorded host answers `e1 NN` with the marker
-        // — `0x5ade`, and `0x52de` a 0x800 bit along — when its round opens on that
-        // report, and with the bare same record, empty, while the briefing still
-        // waits. Answering every report here would put a second marker on the wire
-        // in the same second as the run, ahead of the `0xd001` the capture writes
-        // first. `docs/protocol/DATA_PHASE_DELIVERY.md` carries both rules and
-        // `docs/protocol/UDP_GAME_CAPTURE.md` §3.2 the pairing.
-        //
-        // An earlier reading of this host's answers was that they cannot be what
-        // the peer waits for, because a live join was served them and still
-        // stalled. The measurement says otherwise once the answers are read
-        // beside the capture's: the answers served then carried an empty body,
-        // and every answer a 0x8000-class record draws in either capture carries
-        // one byte. The peer went on building records — eighteen of them, its
-        // sequence climbing a step each time — while the window's base stood
-        // still, which is what a window whose base is never moved does.
-        // `PeerAcknowledgementUtils` carries the rule and
-        // `docs/protocol/P2P_CONNECT_FSM.md` §7.1c the measurement, including
-        // what the object at `[0xc]` — the base the window advances from — is
-        // written by.
-        var answers = frame.Messages
-            .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
-            .Where(message => !IsJoinReport(message))
-            .Where(message =>
-                (message.Type & ~PeerAcknowledgementUtils.PayloadClassBit) != UdpCommandConstants.PlayerProfile ||
-                PlayerProfileRecordParseUtils.Parse(message.Body) is not { Name.Length: > 0 })
-            .Select(PeerAcknowledgementUtils.AcknowledgementOf)
-            .ToList();
-        if (answers.Count > 0)
-        {
-            logger.LogDebug(
-                "[{LogPrefix}] OUT {RemoteAddress} answering {AnswerCount} reliable records: {MessageTypes}",
-                LogPrefix,
-                session.DialBack,
-                answers.Count,
-                string.Join(", ", answers.Select(message => $"0x{message.Type:x4}")));
-
-            // Written in this pass, not scheduled off it: the answers carry the
-            // same fourth byte as the records they answer, so a peer matches
-            // them against the bookkeeping of the frame it has just sent.
-            SendMessages(session, answers);
-        }
+        // The answer pass, with the three records it deliberately does not
+        // answer and the measurement behind each (`GameplayServerService.Answers.cs`).
+        AnswerReliableRecords(frame, session);
 
         foreach (var message in frame.Messages)
         {

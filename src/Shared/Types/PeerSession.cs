@@ -38,6 +38,19 @@ public sealed class PeerSession
     /// <summary>True once the session key has been established.</summary>
     public bool Established { get; set; }
 
+    /// <summary>
+    /// True once a newer session has replaced this one for the same peer.
+    /// </summary>
+    /// <remarks>
+    /// A peer that starts its handshake over gets a fresh session, and the
+    /// workers of the old one are watching this object: they are waiting on a
+    /// report or on a round for a peer that has already told this host to start
+    /// again. Retiring it is what ends them, because nothing else does — there
+    /// is no close to watch, and the peer keeps sending, so the idle window
+    /// would never run out for the object nobody reads any more.
+    /// </remarks>
+    public bool Retired { get; set; }
+
     /// <summary>Timestamp of the last datagram received from this peer.</summary>
     public long LastSeenAt { get; set; }
 

@@ -34,13 +34,43 @@ public sealed class PeerSessionService(
     /// has no reason to choose another window.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// It is a named value rather than a literal at the construction site
     /// because a second rule has to agree with it: the recorded host's stream
     /// stops for a peer once that peer has been quiet for this long, and it must
     /// stop no later than the reaper lets the peer go, or it keeps writing to a
     /// session that no longer exists.
+    /// </para>
+    /// <para>
+    /// <b>The window is measured, not chosen.</b> A client that is still there
+    /// answers every five seconds by itself, and the longest silence in any of the
+    /// reference captures is <b>22.44 s</b> — <c>mgo2-started-on-solo-game</c>, a
+    /// client that answers its entry echo at t+60.41 and then reads its map until
+    /// t+82.85, when it lands a backlog of 298 acknowledgements at once. Every
+    /// other reference peer stays inside 8.05 s. Half a minute is therefore the
+    /// first whole number above the slowest measured load with room to spare, and
+    /// the window was sixty seconds only because nothing had measured it.
+    /// </para>
+    /// <para>
+    /// A peer that is let go early is not lost: a handshake on the endpoint of a
+    /// session that is still held — or a fresh one after the reaper took it —
+    /// starts that peer over, and it joins the room again
+    /// (<see cref="Mgo2Server.GameplayServer.PeerSessionResetService"/>).
+    /// </para>
     /// </remarks>
-    public static readonly TimeSpan DefaultIdleTimeout = TimeSpan.FromSeconds(60);
+    public static readonly TimeSpan DefaultIdleTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How often the reaper looks for sessions past <see cref="DefaultIdleTimeout"/>.
+    /// </summary>
+    /// <remarks>
+    /// The window a peer is actually given is the timeout rounded up to the next
+    /// tick, so a tick nearly half the window is what made the sixty-second
+    /// timeout a wait of up to seventy-five. Five seconds is inside the peer's
+    /// own cadence: a live client is seen this often, and a peer that has left is
+    /// let go within five seconds of the window rather than up to fifteen.
+    /// </remarks>
+    public static readonly TimeSpan ReapInterval = TimeSpan.FromSeconds(5);
 
     private readonly Lock gate = new();
     private readonly Dictionary<string, PeerSession> sessions = [];
@@ -48,7 +78,7 @@ public sealed class PeerSessionService(
 
     /// <summary>Starts the reaper that drops idle sessions.</summary>
     public void Start() =>
-        reaper ??= new Timer(_ => Reap(), null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
+        reaper ??= new Timer(_ => Reap(), null, ReapInterval, ReapInterval);
 
     /// <summary>Stops the reaper.</summary>
     public void Stop()

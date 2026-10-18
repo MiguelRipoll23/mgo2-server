@@ -312,6 +312,31 @@ public sealed class TeamArrayService(
     }
 
     /// <summary>
+    /// Forgets the confirmation run held for a peer that is starting over.
+    /// </summary>
+    /// <remarks>
+    /// <b>The held run belongs to one session.</b> Its ordinals are a position in
+    /// the roster exchange's counter, and a peer that has re-handshaken expects
+    /// the exchange to go on from where the run it is served leaves it — replaying
+    /// a cached run would hand back ordinals the peer's own sequence has already
+    /// passed, which is a pair it can only drop. The answer is the next run this
+    /// service takes, not the last one it took.
+    /// </remarks>
+    /// <param name="remoteAddress">Endpoint the peer was filed under.</param>
+    public void Forget(string remoteAddress)
+    {
+        lock (confirmationGate)
+        {
+            if (confirmationRuns.Remove(remoteAddress))
+            {
+                logger.LogDebug(
+                    "UDP: dropped the held lobby-slot confirmation for {RemoteAddress}; it is joining again",
+                    remoteAddress);
+            }
+        }
+    }
+
+    /// <summary>
     /// A confirmation and the next-sequence group written for one answered
     /// sequence, held so a second answer of the same sequence repeats them.
     /// </summary>
