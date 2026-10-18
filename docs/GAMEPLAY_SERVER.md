@@ -212,6 +212,21 @@ the group the values behind it, so the fourth bytes read in order on the wire, a
 a second answer of the same sequence repeats the confirmation and the group
 unchanged rather than numbering a second group.
 
+**The client's echo is also the entry the run answers, and not its report.** A
+joining client's map-loaded report arrives while it is still loading its map —
+0.4 s before its echo in `mgo2-started-briefing-then-solo-game` and 0.5 s in
+`mgo2-game-started-on-briefing` — and every run those captures write follows the
+echo, 0.3 s to 4.7 s behind it; two of them in
+`mgo2-game-joined-when-red-team-then-briefing` come 39 s and 75 s after that
+room's last report and are explained by nothing but the entries they follow. So
+the report names the set the run is written under and the byte its payload
+echoes, and the echo is the instant it goes out
+(`MatchStartRunService.OnRoomEntry`, `analysis/join-stall-after-mode2.md` §18).
+A host that writes it on the report hands the room's state to a client that has
+not entered yet, and that client reports again, readies nothing and never shows
+its briefing screen — `myserver19.pcapng`, where the run went out 0.38 s before
+the echo and the client wrote no `1d`, no `1f` and no `22` in 220 s.
+
 ### 2.6 The end of a round, and the next briefing
 
 A round ends on whichever of its two limits comes first. The clock is the first:

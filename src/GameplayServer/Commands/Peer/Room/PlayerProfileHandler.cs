@@ -77,7 +77,14 @@ public sealed class PlayerProfileHandler(
         // the one already bound to both.
         if (TeamArrayFramesUtils.IsArrayEcho(context.Message.Body))
         {
+            // The echo is the client's own request to be placed in the room, and
+            // the room's state is what answers it: the run the peer is owed is
+            // written for the entry and not for its report
+            // (<see cref="MatchStartRunService.OnRoomEntry"/>), which arrives
+            // while the client is still loading its map. The handshake is
+            // answered first, so the run follows it in the same pass.
             await teamArrays.ConfirmAsync(context, TeamArrayFramesUtils.SequenceOf(context.Message.Body));
+            matchStart.OnRoomEntry(context);
             return;
         }
 

@@ -44,8 +44,8 @@ public sealed partial class MatchStartRunService
 
         // The room's first briefing begins with the first peer that reaches it:
         // that peer's report names the set the briefing is written under, and the
-        // room's own briefing time is the deadline that opens the round when no
-        // second report does.
+        // room's own briefing time is the deadline that opens the round, armed
+        // once the room has a second player to be timed with (ArmBriefingDeadline).
         BeginBriefing();
 
         logger.LogDebug(
@@ -120,15 +120,26 @@ public sealed partial class MatchStartRunService
             lock (gate)
             {
                 writing.Remove(session);
+                entered.Remove(session);
             }
         }
     }
 
     /// <summary>
-    /// Writes the briefing's own run to a peer, once the briefing has heard a
-    /// report, and returns when the round it precedes opens.
+    /// Writes the briefing's own run to a peer once the briefing has heard a
+    /// report and the peer has entered the room, and returns when the round it
+    /// precedes opens.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <b>The run is the answer to the peer's entry, and the report only names
+    /// the set.</b> A client reports while it is still loading its map and echoes
+    /// the lobby-slot pair once it has been placed in the room; every capture
+    /// writes the run behind the echo and no capture writes one behind the
+    /// report (<see cref="MatchStartRunService.OnRoomEntry"/>,
+    /// <c>docs/analysis/join-stall-after-mode2.md</c> §18).
+    /// </para>
+    /// <para>
     /// <b>The briefing's run is not its round's.</b> A client still being briefed
     /// is served the run the first report named, under that report's own set, and
     /// the round it is waiting for opens later and under the other set
@@ -136,6 +147,7 @@ public sealed partial class MatchStartRunService
     /// §1–§2). The run's clock stays whole: nothing of the round has been played
     /// while the client is still reading the briefing, and the clock the countdown
     /// shows it is the briefing's own seven-byte record rather than this one.
+    /// </para>
     /// </remarks>
     /// <param name="context">Context the run is written through.</param>
     private async Task WriteBriefingRunAsync(PeerContext context)
@@ -148,6 +160,19 @@ public sealed partial class MatchStartRunService
             // echoes that report's byte, so a briefing that has heard from nobody
             // has nothing to write one from.
             if (BriefingGeneration is not { } generation)
+            {
+                await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
+                continue;
+            }
+
+            // The run is the answer to the client's entry and not to its report,
+            // and the two are not the same instant: the report arrives while the
+            // client is still loading its map, and every capture writes the run
+            // behind the entry it answered (OnRoomEntry). A run written on the
+            // report is written for a client that is not in the room yet, and the
+            // client that is handed one does not report again, does not ready and
+            // never reaches its briefing screen (myserver19.pcapng).
+            if (!HasEntered(session))
             {
                 await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
                 continue;

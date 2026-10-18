@@ -189,7 +189,17 @@ own set while the room is still briefed: `started-on-briefing`'s first report
 arrives at t+55.838 on `0x12de` and the run under `0x1254` goes out at t+58.255,
 two and a half seconds later and 140 s before the round; `started-briefing-then-solo`
 reports at t+54.918 on `0x12de`, its run under `0x1254` follows at t+57.626, and
-the run under `0x1a54` — the round's — only at t+174.371. The round opens on the ready that
+the run under `0x1a54` — the round's — only at t+174.371.
+
+**The report names the set; the client's entry is the instant.** Between the report
+and the run the client echoes the run's lobby-slot pair — `82 NN` · `84 NN`, the
+handshake's own request to be placed in the room — and every run in every capture
+held here follows that echo, 0.3 s to 4.7 s behind it (`started-briefing-then-solo`
+t+55.312 → t+57.626; `started-on-briefing` t+56.360 → t+58.255; and
+`joined-when-red-team`'s mid-round entries at t+94.2 → t+96.9 and t+131.9 →
+t+132.8, where the room's last report was 39 s and 75 s earlier). A run written on
+the report instead goes out before the client is in the room
+(`docs/analysis/join-stall-after-mode2.md` §18). The round opens on the ready that
 completes the room's readied players, or — in a room that has a second player to wait
 on — on the briefing's own deadline when a player never readies
 (`GAMEPLAY_SERVER.md` §4.2); it plays under the *other* set: `joined-when-red-team`'s

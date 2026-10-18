@@ -1030,3 +1030,121 @@ capture should also be read for that record, because a client that never sends i
 is a client that can no longer be started by this host in a room of one — which is
 the client's own behaviour (`myserver17`'s client sent neither `1f` nor `1d` nor
 `22` in 133 s) and not something a host can supply for it.
+
+
+## 18. `myserver19.pcapng`: the run is written before the client has entered the room
+
+§17's rule is on the wire and holds: a room of one is frozen, and the client in it
+is handed **no round at all** in 220 s. The briefing screen is still not reached,
+and this section is the measurement that separates the two — the round rule is
+right, and the room's state is written at the wrong instant.
+
+### The session
+
+`myserver19.pcapng`, read record by record (`tmpout/ms19recs.txt`) against the
+deployed pod's log (`tmpout/ms19-server.log`): one client (`192.168.1.20:5730` ↔
+host `89.129.16.203:5731`), 220 s, nobody else ever in the room.
+
+| t+ | what | |
+| --- | --- | --- |
+| 58.568 | the client's join report `0x0a5c 01` · `0x1ade e1 01`, one datagram | §1's shape |
+| 58.612 | the host's publications: the join state answer, the payload echo and its bare ack | |
+| **58.906** | **the briefing's run** — 18 records, state block and clock whole, the pair at `f3` | **0.34 s after the report** |
+| 59.281 | **the client's entry** — `82 f3` · `84 f3`, the answer to the pair in the run | **0.38 s after the run** |
+| 59.319 | the host's answer to it: confirm `81 f3`, the group naming `f4`, the pair at `f4` | |
+| 60.196 | the client's acks of the run and the settings burst | the frame was read |
+| 61.320 | the run repeated, one tick behind it, without marker or heads (§16) | |
+| 75.104 | the client's next entry `82 f4` · `84 f4` — the handshake advancing, and its own retry 15.8 s after the first | |
+| 75.31 | the host answers it with the bare `0x52de`, the confirm `81 f4` and the pair at `f5` — **no run** | |
+| 220.9 | the capture ends, the countdown still held at `3c`, the client sending probes only | |
+
+**No round starts, and that is the rule working.** At t+74.5 the client reports a
+second time, on the sibling set, and the log answers it in the terms §17 asked for:
+
+```
+The room asked for a round and the join report arrived on 0x12de, but 1 player(s)
+in it have not readied; the round stays closed until they do or the briefing runs out
+```
+
+and no round's run is anywhere in the capture. The client can no longer be started
+by this host in a room of one because it never readies, and it never readies
+because it never shows the briefing screen: `grep` over the whole dump returns
+**zero** `1d`, zero `1f` and zero `22` records from the client, where both
+reference clients write their `1d`/`22` phase record within five seconds of the
+entry and the solo one readies with `1f 03 01` at t+165.780.
+
+### What every capture says the run is the answer to
+
+Every run in every capture held here, and the two events that precede it — the
+client's **entry echo** (`82 NN`·`84 NN`, the lobby-slot handshake's request to be
+placed in the room) and its **join report** (`e1 NN`):
+
+| capture | run | behind its entry | behind its report |
+| --- | --- | --- | --- |
+| `started-briefing-then-solo` | 57.626 | **2.31 s** | 2.71 s |
+| | 174.371 | **0.34 s** | 0.93 s |
+| `started-on-briefing` | 58.255 | **1.90 s** | 2.42 s |
+| | 198.371 | **1.20 s** | 1.54 s |
+| `started-team-selection-blue` | 66.159 | **1.41 s** | 1.91 s |
+| `game1` | 46.415 | **0.73 s** | 1.66 s |
+| `game2` | 62.181 | **0.59 s** | 5.46 s |
+| | 109.120 | **0.89 s** | 1.14 s |
+| | 224.618 | **0.67 s** | 0.99 s |
+| `joined-when-red-team` | 62.666 | **4.68 s** | 5.01 s |
+| | 65.138 | **2.36 s** | 7.48 s |
+| | 96.915 | **2.73 s** | **39.3 s** |
+| | 132.791 | **0.88 s** | **75.1 s** |
+| | 450.300 | **0.61 s** | none |
+| | 819.290 | **2.11 s** | none |
+
+Every run follows an entry, and the two in `joined-when-red-team` at t+96.9 and
+t+132.8 cannot follow a report: the room's last report before them is 39 s and
+75 s earlier, while each comes 2.7 s and 0.9 s behind that peer's own entry. The
+entry echoes in these captures are the room filling up — one per player placed in
+the room — and the host's answer to each is the room's state.
+
+**And the live host writes the same run at the opposite end of that entry.**
+
+| session | the run | the client's entry | |
+| --- | --- | --- | --- |
+| `myserver16` | t+52.997 | t+53.557 | **run 0.56 s early** |
+| `myserver17` | t+53.910 | t+54.280 | **run 0.37 s early** |
+| `myserver19` | t+58.906 | t+59.281 | **run 0.38 s early** |
+
+The client reports while it is still loading its map — 0.4 s before its entry here,
+0.4 s in `started-briefing-then-solo`, 0.5 s in `started-on-briefing` — so a host
+that answers the report with the run hands the room's whole state to a client that
+has not reached the room yet, and the client that then enters asks for it and is
+answered with the handshake alone. `myserver19`'s second entry at t+75.1 is that
+question asked a second time and answered with no run at all.
+
+That is the shape the operator reports: the map fades in, out and in again, and
+the client sits on the last frame — it entered the room twice and was never given
+the state of the phase it entered.
+
+### What was changed
+
+| file | change |
+| --- | --- |
+| `MatchRecords/MatchStartRunService.Entries.cs` | new partial — `OnRoomEntry` notes the peer's entry, and `HasEntered` is the note the run waits on |
+| `MatchRecords/MatchStartRunService.Runs.cs` | `WriteBriefingRunAsync` waits for the peer's entry beside the briefing's report, so the run is written when the client has been placed in the room |
+| `Commands/Peer/Room/PlayerProfileHandler.cs` | the lobby-slot echo's pass — which already answers the handshake — notes the entry, so the run follows the echo in the same pass |
+| `MatchRecords/MatchStartRunService.Reports.cs` | new partial — `OnJoinReport` moved out of `MatchStartRunService.cs`, which had passed the 400-line limit |
+
+The rule the three code files now hold: **the run is the room's answer to the
+client's entry, not to its report.** The report names the set the run is written
+under and the byte its payload echoes; the entry is the instant it goes out.
+
+### Not verified live
+
+No client has joined the built host. What would confirm it is this same join: the
+briefing's run should appear **behind** the client's `82 NN`·`84 NN` rather than
+0.4 s before it, the client should then write its own `1d`/`22` record within a
+few seconds — the record no live session has produced in five captures — and the
+briefing screen should show with the count held at the room's whole minute. What
+would falsify it is the same fade-in, fade-out and silence with the run behind the
+entry, which would put the missing state in the run's contents rather than in its
+instant. Two things beside it stay open: the second entry is still answered with
+the handshake alone (writing the run again for a repeated entry of the same phase
+is not measured in any capture), and a peer that never echoes would now be written
+no briefing run at all.
