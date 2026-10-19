@@ -83,7 +83,7 @@ same way for every record:
 | session record | `id >= 0x1000` | `{id u16 LE, len u8, flags2 u8}` | the **body length** |
 | in-game tick record | `id < 0x1000` | `{id u16 LE, len u8, class u8}` | the **body length plus one** |
 
-The tick form is the one `tools/mgo2_replay_parser.py` already walks — *"`len` is
+The tick form is the one `tools/mgo2_replay_parser.js` already walks — *"`len` is
 `data_len+1`"* — and it is the same shape the replay records use. The extra byte is the
 **attribute class**, which the tick parser reads as a separate field and the session
 parser reads as the message flags. One wire, two framings, told apart by the identifier.
@@ -951,7 +951,7 @@ selector consumer and group membership policy remain unresolved; they are not
 enough to synthesize the required live membership state.
 
 **`0x0081` is the position record.** Its 16-, 32-, 38- and 44-byte bodies are the
-four sizes `mgo2_replay_parser.py` maps to the compressed position and the yaw
+four sizes `mgo2_replay_parser.js` maps to the compressed position and the yaw
 pair, at the same offsets. The capture also has three 17-byte bodies whose meaning
 remains unresolved. The capture confirms the replay parser's transform table on
 live wire bytes rather than on a recorded file. **[V]**

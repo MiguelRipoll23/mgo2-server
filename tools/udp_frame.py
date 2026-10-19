@@ -278,7 +278,7 @@ def parse_messages(content: bytes) -> list[tuple[int, int, int, bytes]]:
       - the length byte is the body length.
     - id < 0x1000, an in-game tick record: `{id u16 LE, len u8, class u8,
       body[len-1]}` - the length byte counts the body plus the class byte, which
-      is the same shape the replay parser walks (tools/mgo2_replay_parser.py).
+      is the same shape the replay parser walks (tools/mgo2_replay_parser.js).
 
     Records start at offset 0 of the content region, which is everything between
     the two-byte frame header and the ten-byte tail.

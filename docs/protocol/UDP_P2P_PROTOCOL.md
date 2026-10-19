@@ -667,7 +667,7 @@ not established. The observation that stands is the one from the capture: `0x500
 > **session-record** framing and it
 > is **not the only one on this wire**. A record whose identifier is **below `0x1000`** is
 > an in-game tick record and its `len` byte counts the **body plus the `flags2`/class byte**
-> — `len = data + 1`, exactly the framing `tools/mgo2_replay_parser.py` and §6.6 below
+> — `len = data + 1`, exactly the framing `tools/mgo2_replay_parser.js` and §6.6 below
 > already walk. Reading a tick record the session way over-reads it by one byte and
 > desynchronises the rest of the content region. Measured over the 19 018
 > digest-verified frames of that game: session framing

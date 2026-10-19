@@ -21,10 +21,12 @@ server**, read with `tools/udp_state_vector.py` over the operations stream:
 | `mgo2-game-joined-when-red-team-then-briefing.pcapng` | three rounds, one match decided | 2 400 units (5:00) |
 
 A seventh source, the RPDT `.dat` replays under `tools/replays/`, was **not**
-used: a record-framing walk over four of the five files returns plausible-looking
-vectors that do not survive contact with the file's own tick structure
-(`tools/mgo2_replay_parser.py`), so nothing here rests on them. `rpdt.js` is used
-only for the field *names* it already carries, cross-checked against the wire.
+used: a hand-written record-framing walk over four of the five files returned
+plausible-looking vectors that did not survive contact with the file's own tick
+structure. `tools/mgo2_replay_parser.js` no longer performs that walk — it
+delegates the replay to `rpdt.js` — so nothing here rests on the old reading.
+`rpdt.js` is used only for the field *names* it already carries, cross-checked
+against the wire.
 
 ## 1. The stream is an opcode language, not a stream of blocks
 

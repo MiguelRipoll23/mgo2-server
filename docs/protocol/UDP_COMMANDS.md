@@ -158,7 +158,7 @@ content region at its first in-game record.
 | in-game tick record | `id < 0x1000` | the **attribute class** | the **body length + 1** |
 
 Both share the wire and the header shape; the identifier is what tells them apart. The
-tick form is the one `tools/mgo2_replay_parser.py` already walks (*"`len` is
+tick form is the one `tools/mgo2_replay_parser.js` already walks (*"`len` is
 `data_len+1`"*), so the replay format and the live channel agree and the lobby section of
 this file was the odd one out.
 
@@ -278,7 +278,7 @@ the `class 0x03` family, position the `class 0x02` family; slot 0 is `0x0076` / 
 slot 1 `0x0080` / `0x0081`, and so on (`0x75 + 10*slot + 1` / `+ 2`). The replay is **not a raw
 capture** (it has no handshakes, `module_magic` or IP/port pairs) and the protocol document
 scopes the UDP record shape to the opening block only, so whether these records go on the wire
-verbatim is not established. Class meanings are from `tools/mgo2_replay_parser.py`.
+verbatim is not established. Class meanings are from `tools/mgo2_replay_parser.js`.
 
 | class | name | data | guess | tag |
 | --- | --- | --- | --- | --- |
