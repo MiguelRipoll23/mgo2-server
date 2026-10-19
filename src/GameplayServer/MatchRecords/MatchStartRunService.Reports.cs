@@ -85,8 +85,12 @@ public sealed partial class MatchStartRunService
             if (first)
             {
                 // The briefing's own set: the first report names it, and the run
-                // the worker writes for the briefing is written under it.
+                // the worker writes for the briefing is written under it. Its
+                // instant is kept with the set because the run is spaced from it
+                // as well as from the entry (EntryRunDwellRemaining): a client
+                // may enter before it reports.
                 briefingGeneration = generation;
+                briefingReportInstant = DateTimeOffset.UtcNow;
             }
 
             // The briefing's timer is the room's own and runs only once the room

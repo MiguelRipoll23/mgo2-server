@@ -69,6 +69,7 @@ public sealed partial class MatchStartRunService
             briefingNumber++;
             lastJoinReportIdentifier = null;
             briefingGeneration = null;
+            briefingReportInstant = null;
             armedDeadlineBriefing = null;
         }
 

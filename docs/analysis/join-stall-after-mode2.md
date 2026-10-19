@@ -1466,3 +1466,42 @@ echo at the entry should be answered **two seconds later** instead of two hundre
 milliseconds, the client should write its own `0x1d`/`0x22` operations in that
 gap as both references do, and — the actual success line — its `1f` ready should
 follow, which is what opens a room of one's round.
+
+## 23. `myserver24.pcapng`: the client enters before it reports, so the two-second dwell is already spent
+
+`myserver24.pcapng` is the first join of the build §22 shipped
+(`mgo2-gameplay-1`'s ReplicaSet was created at 17:23:27 local and the capture
+runs 17:26–17:29). The room is the same fresh room of one, and the record set is
+the references' — the rules pair, the item boxes, the 90-byte state block, the
+`85`/`86` arrays, the `02` mask, the clock, the `0b` countdown, the `e0`
+publication and the settings burst, all present — so nothing is missing from it.
+
+**The dwell did not apply, and the order of the two instants is why.** Both the
+report and the entry were measured, and this client sends them the other way
+round from both references:
+
+| capture | report | entry (`82`/`84`) | entry − report | entry → run |
+| --- | --- | --- | --- | --- |
+| `mgo2-game-started-on-briefing` | t+55.838 | t+56.360 | +0.52 s | 1.90 s |
+| `mgo2-started-briefing-then-solo-game` | t+54.918 | t+55.312 | +0.39 s | 2.31 s |
+| **`myserver24`** | **t+59.024** | **t+56.047** | **−2.98 s** | **0.29 s** |
+
+The echo arrived 2.98 s *before* the report, so `EntryRunDwellRemaining` found
+its two seconds already spent when the report gave the briefing its set, and the
+run went out 0.29 s behind the report — the same overtaking the fix was for. The
+client acknowledged it and everything behind it, and over the following 117 s it
+wrote none of its own `0x1d`/`0x22` operations, no `1f` ready and no second
+report. `/proc` confirms the image was `4f8d653`, so this is the dwell's anchor
+and not the deployment.
+
+**What was changed.** The dwell now runs from the later of the peer's entry and
+the briefing's first report (`briefingReportInstant`), because a client that
+enters before it reports is still loading its map at the entry and its report is
+the instant it finishes. That gives this join a run at report + 2.0 s, the gap
+both references give their clients, and leaves a client that enters after its
+report — the references' order — on the entry it already had.
+
+**Not verified live.** What would confirm it is the same join: the run should
+land about two seconds after the `e1` report rather than 0.29 s behind it, the
+client should write its `0x1d`/`0x22` operations, and its `1f` ready should
+follow.

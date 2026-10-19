@@ -77,6 +77,21 @@ public sealed partial class MatchStartRunService
     private readonly Dictionary<PeerSession, DateTimeOffset> entryInstants = [];
 
     /// <summary>
+    /// When the room's briefing first heard a report, which is the other instant
+    /// a briefing's run is spaced from.
+    /// </summary>
+    /// <remarks>
+    /// <b>A client enters and reports in either order.</b> Both references report
+    /// first and enter half a second later, which is the order the dwell was
+    /// measured in; <c>myserver24.pcapng</c>'s client entered at t+56.047 and
+    /// reported at t+59.024, three seconds later. A dwell counted from the entry
+    /// alone is spent before that report names the briefing's set, and the run
+    /// overtakes the transition it was spaced from — 0.29 s behind the report,
+    /// against 1.90 s and 2.31 s after the entry in the references.
+    /// </remarks>
+    private DateTimeOffset? briefingReportInstant;
+
+    /// <summary>
     /// How long a briefing's run is spaced from the entry it answers.
     /// </summary>
     /// <remarks>
@@ -243,20 +258,29 @@ public sealed partial class MatchStartRunService
     /// How much of the entry's dwell is left, if the peer has entered and it has
     /// not passed yet.
     /// </summary>
+    /// <remarks>
+    /// The dwell runs from the later of the peer's entry and the briefing's first
+    /// report: a client that enters before it reports is still loading its map
+    /// when it enters, so the report is the instant its transition ends.
+    /// </remarks>
     /// <param name="session">Session the entry was heard on.</param>
     /// <returns>The wait still owed, or <c>null</c> when it is already spent.</returns>
     private TimeSpan? EntryRunDwellRemaining(PeerSession session)
     {
         DateTimeOffset heardAt;
+        DateTimeOffset reportedAt;
         lock (gate)
         {
             if (!entryInstants.TryGetValue(session, out heardAt))
             {
                 return null;
             }
+
+            reportedAt = briefingReportInstant ?? heardAt;
         }
 
-        var left = heardAt.AddMilliseconds(EntryRunDwellMilliseconds) - DateTimeOffset.UtcNow;
+        var anchor = reportedAt > heardAt ? reportedAt : heardAt;
+        var left = anchor.AddMilliseconds(EntryRunDwellMilliseconds) - DateTimeOffset.UtcNow;
         return left > TimeSpan.Zero ? left : null;
     }
 
