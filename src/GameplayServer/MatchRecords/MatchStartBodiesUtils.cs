@@ -101,22 +101,26 @@ public static class MatchStartBodiesUtils
     /// constant nor a count this server can derive.
     /// </para>
     /// <para>
-    /// <b>The trailing length is not settled.</b> game1 answers in six bytes
+    /// <b>The trailing length is not settled, and the fresh-room briefing settles
+    /// which form to write.</b> game1 answers in six bytes
     /// (<c>e0 14 00 00 00 00</c>) and game2 in five (<c>e0 01 00 00 00</c>), on
     /// the same record and the same report shape; game1 later grows the same
-    /// record to fourteen bytes mid-round. Nothing measured here separates the
-    /// two — both captures hold four roster entries and neither occupies a slot
-    /// in the array that opens the run — so this writes game1's six-byte form,
-    /// the capture the rest of the replay is measured from, rather than
-    /// inventing a rule. A round opened against a game2-shaped host would carry
-    /// one zero more than that host writes. Recorded as **[U]** in
+    /// record to fourteen bytes mid-round. The two captures of a fresh room's
+    /// briefing — the case this host serves first — both hold an eight-byte form:
+    /// <c>mgo2-game-started-on-briefing</c> answers <c>e0 01 00 00 00 00 00 00</c>
+    /// at t+56.123, and <c>mgo2-joined-game-in-progress-last-round</c> and
+    /// <c>joined-final-round-solo-then-final-round-started-when-other-player-joined</c>
+    /// grow the same zeros further. The trailing bytes are zeros in every one, so
+    /// the length is the only thing chosen here; this writes the fresh-room form
+    /// rather than game1's six, which was the only capture measured when the
+    /// shorter body was chosen. Recorded as **[U]** in
     /// <c>docs/protocol/UDP_GAME_CAPTURE.md</c> §3.2.
     /// </para>
     /// </remarks>
     /// <param name="reported">Byte the client's join report carried.</param>
     /// <returns>The record body.</returns>
     public static byte[] MatchStartPayload(byte reported) =>
-        [MatchStartPayloadOpcode, reported, 0x00, 0x00, 0x00, 0x00];
+        [MatchStartPayloadOpcode, reported, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 
     /// <summary>
     /// The host's answer to a client's join state record.

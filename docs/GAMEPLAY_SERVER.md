@@ -208,6 +208,19 @@ so a peer that joins inside a round is handed the round it joined and the beat
 behind it counts down from the same moment; at a round's own open the two values
 are one, nothing having been spent in the first 125 ms tick.
 
+**The run has two shapes, and the room's history picks one.** The one above is
+the round's. A room that has **not played a round** is answered with the
+briefing's own: the marker, the two heads, the state block and the two-byte
+record behind it, the arrays, the join state answer and the close triple — no
+room stage, no round clock, no payload and no rules pair, and the closes take the
+counter values directly behind the arrays
+(`MatchStartRunFramesUtils.BriefingRosterOrdinalCount`). That is
+`mgo2-game-started-on-briefing`'s run at t+58.255, record for record; the
+between-rounds run that carries the stage is `mgo2-started-briefing-then-solo-game`
+at t+57.626, a room with a played round behind it. The stage records are what tell
+a client a round exists, so a fresh room sent them enters the game instead of
+showing the briefing screen (`analysis/join-stall-after-mode2.md` §24).
+
 **The beat** (`MatchRecordService`) then runs per peer for as long as the peer is
 there: a frame every 33 ms carrying the rules-roster pair, and, on the capture's
 periods, an insertion at its head — the round's **clock, counted down**
@@ -217,7 +230,12 @@ item-box group in one frame in eight. The clock, the generation (which flips to
 the sibling identifier set each round) and the round number are live, and so is
 the vitals record's **onset**: it rides from the round's first player vitals
 (`MatchRoundStateService.NoteVitalsArrived`), with the capture's own 818-frame
-(27.0 s) offset kept as its floor. The rest of the cadence is the capture's.
+(27.0 s) offset kept as its floor. The rest of the cadence is the capture's. **A fresh room's briefing gets no beat**:
+the reference host writes its first beat when the round opens, not when the
+briefing's run goes out — `mgo2-game-started-on-briefing` holds 3.8 frames a second
+through a 140 s briefing and 42 a second in the round — so the beat waits for the
+round there and a room between rounds keeps it through the briefing that follows
+the round it played.
 
 **The lobby-slot arrays** are a handshake of their own (`TeamArrayService`): the
 pair goes out with the run, the client answers `82 NN`/`84 NN`, the host confirms
@@ -337,7 +355,7 @@ candidate for §5. The file names are the ones that own it.
 | the host's vitals record: always full health and stamina (`fa fa`) | `MatchRecordBodiesUtils.Vitals` | the capture measures it constant while `0x0080` reports deaths, and says not to substitute a player's values into it; the players' own values are read and kept instead |
 | the operations state block: an 89-byte vector, **49 bytes of which are constants of the layout** and are now written as named runs; the room's own seven offsets are written by name | `MatchStateBodiesUtils` | the two results, the two objective holders, the two capture clocks, the countdown seed and the round clock. The block is byte-identical to the round-open vector of three of six working-server captures, and the three it differs from differ only at offsets named as the room's own — `docs/protocol/STATE_VECTOR.md` |
 | the item-box group's bodies | `ItemBoxRecordBodiesUtils` | the round's opening event pair, then the filler; the later spawn events are not written at all, and §5 item 6 has what the capture settles about them |
-| the match-start payload's trailing zeros and length | `MatchStartBodiesUtils` | game1's six-byte form |
+| the match-start payload's trailing zeros and length | `MatchStartBodiesUtils` | the fresh-room briefing's eight-byte form (`e0 NN 00 00 00 00 00 00`), which is `mgo2-game-started-on-briefing`'s; game1's older six-byte form is one of the lengths the same record holds |
 | the join state answer's first byte | `MatchStartBodiesUtils`, `BriefingStateService.JoinedMask` | **no longer a replay.** The set is the room's reporting players, one bit each in publication order: `02`, `06`, `0e`, `1e` as four players report and `16` when the third of them leaves are bits 1, 1–2, 1–3, 1–4 and 1,2,4. Read as lobby slots the bits do not fit — the same capture's arrays name slots `0x0b`, `0x0f` and `0x14`. The trailing three bytes are **[U]** |
 | the close triple's two 18-byte remainders | `MatchRecordBodiesUtils` | the third record of the triple is the roster close, `07 00 00 00 00 00 03` (`PlayerProfileRecordUtility.BuildRosterClose`), which is read; nothing names the two remainders |
 | the loadout bodies' unnamed bytes — the four at `0x12`, the two before the appearance block, the byte a no-pair region opens with — and the burst's closing blob's value 50 | `LoadoutBodiesUtils`, `PlayerSettingsBurstService` | the named fields are the room's; these are per-player values nothing names, so a recorded body of the player's own shape supplies them |

@@ -1505,3 +1505,107 @@ report — the references' order — on the entry it already had.
 land about two seconds after the `e1` report rather than 0.29 s behind it, the
 client should write its `0x1d`/`0x22` operations, and its `1f` ready should
 follow.
+
+## 24. The three streams a fresh room's briefing must not carry
+
+§23's dwell is right and the client still does not show the briefing screen. The
+newer captures say why, and they say it in three records rather than one: what
+this host writes to a peer whose room has **not played a round** is the stream of
+a room that has. This section is measured against the two split cases the
+captures now hold — a fresh room's briefing (`mgo2-game-started-on-briefing`,
+map 5, TDM) and a room between rounds (`mgo2-started-briefing-then-solo-game`,
+map 5, its round 2) — and against the default room this host actually runs, the
+map 7 TDM room of `mgo2-game-joined-when-red-team-then-briefing`.
+
+### The run
+
+`MatchStartRunFramesUtils.BuildRun` writes one shape for both the briefing and
+the round. The reference writes two. Its fresh room's run at t+58.255 is ten
+records — the two heads, the 90-byte block, the two-byte companion, the arrays,
+the join-state answer, the close triple — and four item-box records; its
+between-rounds run at t+57.626 is seventeen, with the room's stage (the 22-byte
+record and the two 54-byte entries), the round's clock, the payload and the rules
+pair. This host's briefing run at `myserver24` t+59.3 is the between-rounds
+seventeen, in a room with no round behind it.
+
+That is the symptom the user sees. The 22-byte `07 0f` record and its two `07 2f`
+entries are the room's stage, and the clock behind them is a round's; a client
+handed them while it is still loading its map concludes a round exists — in a
+one-round rotation, *the final round* — and enters the game instead of showing the
+briefing screen. The reference never sends them to a fresh room.
+
+The report's answer is the same split. This host wrote the six-byte
+`MatchStartPayload` (`e0 NN 00 00 00 00`) that game1's older room holds; both
+captures of a fresh briefing answer with eight bytes (`e0 01 00 00 00 00 00 00`,
+`mgo2-game-started-on-briefing` t+56.123), and the trailing bytes are zeros in
+every form, so the shorter one was a length chosen from the only capture measured
+then. `MatchStartBodiesUtils.MatchStartPayload` now writes the eight-byte form, in
+the run and in the publication beside the report.
+
+**What was changed.** `BuildRun` takes `carriesRoundState`, which
+`WriteRunCoreAsync` derives as `!briefing || roundState.RoundNumber > 0`; a false
+one leaves out the stage, the clock, the payload and the rules pair, and the close
+triple takes the values directly behind the arrays (`BriefingRosterOrdinalCount`
+= 5, `BriefingOperationsRecordCount` = 2), which is where the reference's t+58.255
+run numbers them (`08`, `09` arrays then `0a`, `0b`, `0c` closes). A room that has
+played a round keeps the full run, which is what t+57.626 measures.
+
+### The beat
+
+The beat started on the briefing's run, by design (§10–§14): a peer left with
+nothing but sparse publications was the stall being fixed. The rate it then held
+does not match a fresh room's briefing. Host frames a second, measured:
+
+| window | `started-on-briefing` | this host (`myserver24`, t+65–170) |
+| --- | --- | --- |
+| fresh briefing | **3.8** (71 frames in 20 s) | **27.9** (2 924 frames in 105 s) |
+| the round after it | **42.2** | — |
+
+So a fresh briefing received roughly 56 rules records a second here against the
+reference's 2 — the stream of a round, in a room that is not in one. **What was
+changed.** `MatchRecordService` now starts the beat only when the room has a round
+behind it or one is open; a fresh room waits for `WaitForOpenAsync` and a peer
+that leaves before a round is written no beat. A room between rounds keeps the
+beat through its briefing, which is `started-briefing-then-solo`'s 34 a second.
+
+The beat's period is also held by a `PeriodicTimer` rather than a delay behind the
+send: `Task.Delay(33)` cost the send as well and the live beat measured 28 frames
+a second against the recording's `tickRate` of 30.303 (33 ms). The timer holds the
+measured rate.
+
+### The entry's tail, and the camera
+
+The 25-byte entry's fifteen recorded bytes are two positions on the stage, and the
+body this host wrote was `mgo2-started-briefing-then-solo-game`'s — **map 5's**.
+This host's default room is Blood Bath (map 7), so the client was placed at map
+5's spawn on Blood Bath, which is the camera outside the map the user reports:
+`mgo2-started-briefing-then-solo`'s slot-3 body reads
+`(2457, -50)` against Blood Bath's own spawns at `(-819, 2075)` and
+`(2457, -2375)`.
+
+**What was changed.** `RoomPlayerEntryBodiesUtils` no longer carries one map's
+recorded bodies: it writes the pair `MapSpawnUtils` holds for the map the room
+plays (`MatchSettingsService.Map`). Each pair was measured from a completed
+Survival match downloaded through
+`https://mgo2pc.com/api/v2/survival/matches` — its `replayUrl` archive, read by
+the checked-in `docs/analysis/replay-console/rpdt.js` decoder. The decoder's
+first frame is the round's opening; each player's first position is that
+player's spawn, and the entry uses an actual member's spawn nearest the side's
+centroid rather than an average. The side is the decoder's `teamGroup` (0 red,
+1 blue), not the raw `0`/`2` team byte; all nineteen replays were cross-checked
+against the match record's `redPlayers` and `bluePlayers`, and the two sets
+agree. The second point is the other side's spawn, which is the direction both
+teams face at that opening. The replay's world
+coordinates are divided by `PlayerPosition.CoordinateScale` to the entry's
+signed 16-bit units, so Desert Duel and Icebound Inferno's far sides stay inside
+the record. `19` Perilous Palace and `20` Quaint Quarrel have no completed
+Survival match in the API's list, so no replay exists for them; they fall back
+to Blood Bath's pair until one is measured.
+
+### Not verified live
+
+No client has joined this build. What would confirm it is the same join: the run
+should carry no `07 0f`, `07 2f` or round clock before the round opens, the host
+should write about four frames a second through the briefing, the client should
+show the briefing screen and write its `1d`/`22` operations, and its camera should
+sit on a spawn of the configured map rather than outside it.

@@ -1,3 +1,5 @@
+using Mgo2Server.GameplayServer.Match;
+
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
@@ -10,9 +12,8 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// what makes it look like one, but it is a fifth the length, it names a player by
 /// the key of the room's 24-entry player table rather than by a roster index, and
 /// it carries no name, no character identifier and no endpoint. What it carries
-/// instead is the tail this file cannot build — see
-/// <see cref="RecordedBody"/> — which is why it is a record of the room's state
-/// and not a copy of the roster's own entry.
+/// instead is the map's spawn tail (<see cref="MapSpawnUtils"/>), which is why it
+/// is a record of the room's state and not a copy of the roster's own entry.
 /// </para>
 /// <para>
 /// <b>Four fields are read, and the rest is a recorded body's.</b> Measured over
@@ -44,15 +45,20 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// <c>docs/protocol/UDP_GAME_CAPTURE.md</c> and the analysis file named below.
 /// </para>
 /// <para>
-/// <b>The last fourteen bytes are recorded, and that is the whole of what this
-/// file claims about them.</b> They move per capture, per player and per
-/// rejoin — <c>mgo2-game1</c> writes slot <c>06</c> as <c>ff 5f 0c fe …</c> while
-/// it sat at roster index 4 and as <c>01 c0 78 ec …</c> after re-joining under
-/// the same slot — so they are per-player values this host has no source for, and
-/// they are carried as the recording has them rather than invented. The recorded
-/// body is <c>mgo2-started-briefing-then-solo-game</c>'s, the answer to this
-/// request in a room of one; see <c>docs/analysis/join-stall-after-mode2.md</c>
-/// §4.
+/// <b>The last fifteen bytes are the map's.</b> They are two points on the
+/// stage: the team's spawn at <c>+10</c> and the point that side faces at
+/// <c>+16</c>, each three signed 16-bit coordinates in the position records'
+/// wire units. They are not map-independent — a body recorded on one stage puts
+/// the client's briefing camera outside the map when the room plays another —
+/// so the pair is resolved from the map the room plays, not from one recording.
+/// </para>
+/// <para>
+/// <b>Each stage's pair is measured from a Survival replay.</b>
+/// <see cref="MapSpawnUtils"/> holds the map id to spawn table and the replay
+/// each row was read from; a map with no measured replay falls back to Blood
+/// Bath. <c>docs/analysis/join-stall-after-mode2.md</c> §4 carries the original
+/// measurement of the tail and the map 5 body that put a Blood Bath room's camera
+/// out of bounds.
 /// </para>
 /// </remarks>
 public static class RoomPlayerEntryBodiesUtils
@@ -101,21 +107,23 @@ public static class RoomPlayerEntryBodiesUtils
     /// </summary>
     public const byte NoTeamByte = 0x00;
 
-    /// <summary>
-    /// A recorded copy of the record, supplying the fourteen bytes behind the team
-    /// byte. See the type's remarks for why they are a recording's and what
-    /// measured them as per-player.
-    /// </summary>
-    private static readonly byte[] RecordedBody =
-    [
-        0x07, 0x12, 0x00, 0x04, 0x00, 0x03, 0x00, 0x03, 0x03, 0x00,
-        0xff, 0x5f, 0x0c, 0xfe, 0xff, 0xff, 0xe4, 0x0c, 0x00, 0x00,
-        0xdc, 0x82, 0x00, 0x00, 0x00,
-    ];
+    /// <summary>Offset of the spawn's first coordinate, a signed 16-bit value.</summary>
+    public const int SpawnOffset = 0x0a;
+
+    /// <summary>Offset of the facing point's first coordinate, a signed 16-bit value.</summary>
+    public const int FacingOffset = 0x10;
 
     /// <summary>
-    /// Builds the room's entry for one player: the recorded body with the index,
-    /// the player's own key and its side written into it.
+    /// Offset of the three bytes behind the two points. The map 7 recording
+    /// carries <c>ff ff 00</c> on side zero and <c>00 00 00</c> on side one, and
+    /// those are written unchanged; what they say is not established.
+    /// </summary>
+    public const int TailOffset = 0x16;
+
+    /// <summary>
+    /// Builds the room's entry for one player: the map's spawn and facing pair
+    /// for the player's side, with the index, the player's own key and its side
+    /// written into it.
     /// </summary>
     /// <param name="index">The entry's index, written as given.</param>
     /// <param name="slot">
@@ -124,16 +132,47 @@ public static class RoomPlayerEntryBodiesUtils
     /// It is written raw and not as the key plus one the loadout record carries.
     /// </param>
     /// <param name="team">The raw team byte, <c>0</c> or <c>1</c>, or <see cref="NoTeamByte"/>.</param>
+    /// <param name="map">Map id the room plays; the side's spawn comes from it.</param>
     /// <returns>The record body.</returns>
-    public static byte[] Build(byte index, byte slot, byte team)
+    public static byte[] Build(byte index, byte slot, byte team, int map)
     {
-        var body = (byte[])RecordedBody.Clone();
+        var spawns = MapSpawnUtils.For(map);
+        var spawn = spawns.SpawnOf(team);
+        var facing = spawns.FacingOf(team);
+
+        var body = new byte[BodyLength];
+        body[0] = Opcode;
+        body[1] = EntryIdentifier;
+        body[2] = ReservedByte;
+        body[3] = FourthByte;
         body[IndexByteOffset] = index;
         body[SlotByteOffset] = slot;
+        body[SeparatorByteOffset] = 0;
         body[RepeatSlotByteOffset] = slot;
         body[SecondRepeatSlotByteOffset] = slot;
         body[TeamByteOffset] = team;
+
+        WriteCoordinate(body, SpawnOffset, spawn.X);
+        WriteCoordinate(body, SpawnOffset + 2, spawn.Z);
+        WriteCoordinate(body, SpawnOffset + 4, 0);
+        WriteCoordinate(body, FacingOffset, facing.X);
+        WriteCoordinate(body, FacingOffset + 2, facing.Z);
+        WriteCoordinate(body, FacingOffset + 4, 0);
+
+        body[TailOffset] = team == 1 ? (byte)0x00 : (byte)0xff;
+        body[TailOffset + 1] = team == 1 ? (byte)0x00 : (byte)0xff;
+        body[TailOffset + 2] = 0x00;
         return body;
+    }
+
+    /// <summary>Writes one signed 16-bit coordinate little-endian.</summary>
+    /// <param name="body">Body to write into.</param>
+    /// <param name="offset">Offset of the low byte.</param>
+    /// <param name="value">Coordinate to write.</param>
+    private static void WriteCoordinate(byte[] body, int offset, short value)
+    {
+        body[offset] = (byte)(value & 0xff);
+        body[offset + 1] = (byte)((value >> 8) & 0xff);
     }
 
     /// <summary>

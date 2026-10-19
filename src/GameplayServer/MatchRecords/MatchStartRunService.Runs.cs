@@ -162,7 +162,7 @@ public sealed partial class MatchStartRunService
             return;
         }
 
-        await WriteRunCoreAsync(context, generation, round, roundState.RemainingUnits);
+        await WriteRunCoreAsync(context, generation, round, roundState.RemainingUnits, briefing: false);
     }
 
     /// <summary>
@@ -177,12 +177,27 @@ public sealed partial class MatchStartRunService
     /// briefing's run, which has played nothing, and what is left of it for a
     /// round that is already playing.
     /// </param>
+    /// <param name="briefing">
+    /// Whether this is the run a briefing is answered with. A room that has not
+    /// played a round writes the briefing's own shape, without the round's stage,
+    /// its clock, its payload or its rules pair; a room whose round has played
+    /// keeps the full run, which is what the reference writes between one round
+    /// and the next.
+    /// </param>
     private async Task WriteRunCoreAsync(
         PeerContext context,
         MatchRecordGenerationUtils generation,
         MatchRotationEntry round,
-        int clockUnits)
+        int clockUnits,
+        bool briefing)
     {
+        // A room's first briefing has no round behind it, so the run that answers
+        // it carries no round state. Writing the stage and the clock there is what
+        // told the client a round already existed and started it in the game
+        // instead of on the briefing screen; the reference host's fresh-room run
+        // (`mgo2-game-started-on-briefing` t+58.255) holds neither.
+        var carriesRoundState = !briefing || roundState.RoundNumber > 0;
+
         var reported = briefingStates.TryGetReported(context.Session.RemoteAddress, out var value)
             ? value
             : MatchStartBodiesUtils.DefaultJoinReportValue;
@@ -195,22 +210,32 @@ public sealed partial class MatchStartRunService
         var slots = await lobbySlots.ReadAsync();
 
         // The run's own 0x1001 identifiers take the roster exchange's counter's
-        // next values — the arrays, the room's own stage and the close triple:
-        // the join's records and the burst took the ones before them, and every
-        // record written under those identifiers behind this one takes the next,
-        // which is what the captured stream does — its run carries 7 and 8 for the
-        // two arrays and 9, 10 and 11 for the close triple behind them
-        // (docs/protocol/GAMEPLAY_SERVER.md §7).
-        var runOrdinals = roster.TakeRunOrdinals(MatchStartRunFramesUtils.RosterOrdinalCount);
+        // next values — the arrays, the room's own stage where a round has played
+        // and the close triple: the join's records and the burst took the ones
+        // before them, and every record written under those identifiers behind
+        // this one takes the next, which is what the captured stream does — its
+        // run carries 7 and 8 for the two arrays and 9, 10 and 11 for the close
+        // triple behind them (docs/protocol/GAMEPLAY_SERVER.md §7). A fresh
+        // briefing's run has no stage, so its closes are the values directly
+        // behind the arrays.
+        var runOrdinals = roster.TakeRunOrdinals(
+            carriesRoundState
+                ? MatchStartRunFramesUtils.RosterOrdinalCount
+                : MatchStartRunFramesUtils.BriefingRosterOrdinalCount);
 
         // The run's operations records take its stream's first values. The stream
         // was restarted where the run's own stage began — the briefing restarted
         // it for the countdown (BeginBriefing), the round restarted it for its run
         // (OpenRound) — so the block reads 00, the record behind it 01 and the
         // clock 02, and the beat's own clocks go on from 03: the numbering the
-        // capture's run and its beat show.
-        var operationsOrdinals =
-            sequences.Take(generation.Operations, MatchStartRunFramesUtils.OperationsRecordCount);
+        // capture's run and its beat show. A fresh briefing's run has no clock and
+        // takes the first two only; the round's own run opens its stream again at
+        // the open.
+        var operationsOrdinals = sequences.Take(
+            generation.Operations,
+            carriesRoundState
+                ? MatchStartRunFramesUtils.OperationsRecordCount
+                : MatchStartRunFramesUtils.BriefingOperationsRecordCount);
 
         var run = MatchStartRunFramesUtils.BuildRun(
             generation,
@@ -221,13 +246,14 @@ public sealed partial class MatchStartRunService
             slots,
             briefingStates.JoinedMask,
             clockUnits,
-            EntryAnswersOf(context.Session));
+            EntryAnswersOf(context.Session),
+            carriesRoundState);
 
         logger.LogInformation(
             "UDP {LocalPort}: writing an opening run to {RemoteAddress}: {RecordCount} records, "
             + "payload echoing {Reported}, operations 0x{Operations:x4}, payload 0x{Payload:x4}, "
             + "rule {Rule}, map {Map}, {ClockUnits} of {TimeLimitUnits} units carried of its "
-            + "{TimeLimitMinutes}-minute clock",
+            + "{TimeLimitMinutes}-minute clock, {Phase}",
             context.LocalPort,
             context.Remote,
             run.Count,
@@ -238,7 +264,8 @@ public sealed partial class MatchStartRunService
             round.Map,
             clockUnits,
             round.TimeLimitUnits,
-            round.TimeLimitMinutes);
+            round.TimeLimitMinutes,
+            carriesRoundState ? "with the round's stage and clock" : "as a fresh briefing, with no round state");
 
         // Written once, in one frame, as every capture writes it — and written
         // again whole on the tick behind it, which is the other half of the same

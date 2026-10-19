@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
@@ -58,6 +59,7 @@ namespace Mgo2Server.GameplayServer.Rooms;
 public sealed class TeamArrayService(
     LobbySlotService lobbySlots,
     RoomRosterService roster,
+    MatchSettingsService matchSettings,
     ILogger<TeamArrayService> logger)
 {
     /// <summary>
@@ -151,7 +153,8 @@ public sealed class TeamArrayService(
                 RoomPlayerEntryBodiesUtils.Build(
                     0,
                     member.SessionSlot,
-                    RoomPlayerEntryBodiesUtils.TeamByteOf(side?.Team)));
+                    RoomPlayerEntryBodiesUtils.TeamByteOf(side?.Team),
+                    matchSettings.Map));
         }
         else
         {

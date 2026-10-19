@@ -575,15 +575,20 @@ echoes — not a round number and not a constant. **[V]** that it varies this wa
 of the values counts is **[U]**. `MatchStartBodiesUtils.MatchStartPayload` carries the
 client's own byte back rather than a value this server would have to invent.
 
-**The payload's length is not settled, and is the one thing here that is a guess.** game1
-answers in **six** bytes (`e0 14 00 00 00 00`) and game2 in **five** (`e0 01 00 00 00`), on
-the same record and the same two-byte report; game1 later grows the same record to
-**fourteen** bytes mid-round (`e0 06 00 00 00 00 …`). Nothing measured separates them —
-both captures hold four roster entries and neither marks a slot occupied in the array that
-opens the run — so the rule is not a player count, a slot count or the round length.
-`MatchStartBodiesUtils.MatchStartPayload` writes game1's six-byte form, the capture the
-rest of the replay is measured from. A round opened against a game2-shaped host carries one
-zero more than that host writes. **[U]**
+**The payload's length is not settled, and the trailing bytes are zeros in every form.**
+game1 answers in **six** bytes (`e0 14 00 00 00 00`) and game2 in **five**
+(`e0 01 00 00 00`), on the same record and the same two-byte report; game1 later grows the
+same record to **fourteen** bytes mid-round (`e0 06 00 00 00 00 …`). Nothing measured
+separates the game1 and game2 forms — both captures hold four roster entries and neither
+marks a slot occupied in the array that opens the run — so the rule is not a player count,
+a slot count or the round length. The captures of a **fresh room's briefing**, which is
+what this host serves first, hold an **eight**-byte form:
+`mgo2-game-started-on-briefing` answers `e0 01 00 00 00 00 00 00` at t+56.123, and
+`mgo2-joined-game-in-progress-last-round` and
+`joined-final-round-solo-then-final-round-started-when-other-player-joined` grow the same
+zeros further. `MatchStartBodiesUtils.MatchStartPayload` writes that eight-byte form, in
+the run and in the publication beside the report. **[U]** for the length's meaning; the
+trailing bytes themselves are **[V]** zeros.
 
 ---
 

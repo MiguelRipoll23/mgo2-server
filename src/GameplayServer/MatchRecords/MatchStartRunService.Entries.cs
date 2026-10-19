@@ -378,7 +378,7 @@ public sealed partial class MatchStartRunService
                 }
             }
 
-            await WriteRunCoreAsync(context, generation, round, round.TimeLimitUnits);
+            await WriteRunCoreAsync(context, generation, round, round.TimeLimitUnits, briefing: true);
             return;
         }
     }

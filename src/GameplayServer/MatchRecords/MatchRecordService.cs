@@ -158,6 +158,35 @@ public sealed class MatchRecordService(
             await roundState.WaitForRunWrittenAsync(session);
             await readyPublication;
             await roomPublication;
+
+            // A fresh room's briefing is not the round's, so it carries no beat.
+            // The reference host writes its first beat only once the round opens:
+            // `mgo2-game-started-on-briefing` holds its host at 3.8 frames a second
+            // through the 140 s briefing and 42 a second in the round, while this
+            // host wrote the 30 a second beat from the briefing's first run onward —
+            // the client was handed a round's stream while it was still being
+            // briefed, and paid for it in the frame rate it could hold. A room that
+            // has already played a round keeps its beat through the briefing that
+            // follows it, which is `mgo2-started-briefing-then-solo-game`'s shape.
+            if (roundState.RoundNumber == 0)
+            {
+                await roundState.WaitForOpenAsync(session, MatchRoundStateService.WaitWhilePeerIsThere);
+                if (!roundState.IsOpen)
+                {
+                    logger.LogDebug(
+                        "UDP {LocalPort}: the briefing to {RemoteAddress} ended without a round, so no beat "
+                        + "is written",
+                        context.LocalPort,
+                        session.RemoteAddress);
+                    return;
+                }
+
+                // The round's own run opens its stream, and the beat's insertions
+                // are numbered behind that run: waiting for the open alone would
+                // let the first frame overtake the run it belongs behind.
+                await roundState.WaitForRunWrittenAsync(session);
+            }
+
             await BeatAsync(context);
         }
         catch (Exception exception)
@@ -184,7 +213,8 @@ public sealed class MatchRecordService(
 
     /// <summary>
     /// Beats for as long as the peer is there: the capture's steady phase, at its
-    /// 33 ms frame period, under the round's own identifier set.
+    /// 33 ms frame period (30.3 frames a second), under the round's own identifier
+    /// set.
     /// </summary>
     /// <remarks>
     /// <b>The set follows the round, and the counters start over with it.</b> The
@@ -209,6 +239,13 @@ public sealed class MatchRecordService(
         var beat = new BeatCounters { FrameIndex = FirstBeatFrameIndex };
         var round = roundState.RoundNumber;
         var generation = BeatGenerationFor(context);
+
+        // The period is held by a timer and not by a delay behind the send: a
+        // `Task.Delay(33)` costs the send as well, and the measured beat came out
+        // at 28 frames a second against the recording's 30.3. The timer ticks on
+        // its own clock, so a slow frame does not push the next one out.
+        using var period = new PeriodicTimer(
+            TimeSpan.FromMilliseconds(MatchRecordFramesUtils.FramePeriodMilliseconds));
 
         while (IsAlive(session))
         {
@@ -260,7 +297,7 @@ public sealed class MatchRecordService(
             beat.ItemBoxStateSequence = plan.ItemBoxStateSequenceAfter;
 
             beat.FrameIndex++;
-            await Task.Delay(MatchRecordFramesUtils.FramePeriodMilliseconds);
+            await period.WaitForNextTickAsync();
         }
 
         logger.LogDebug(

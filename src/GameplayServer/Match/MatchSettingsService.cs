@@ -35,6 +35,17 @@ public sealed class MatchSettingsService(
     private readonly ServerOptions options = options.Value;
 
     /// <summary>
+    /// The map this host's room plays: the id its configured name states, which
+    /// is what the room's own entry resolves its spawn and facing against.
+    /// </summary>
+    /// <remarks>
+    /// The map is the configuration's and is validated at startup
+    /// (<see cref="MatchSettingsUtils.Validate"/>), so it is known before the room
+    /// is published and does not wait on <see cref="FindPublished"/>.
+    /// </remarks>
+    public int Map => MatchSettingsUtils.Round(options).Map;
+
+    /// <summary>
     /// The settings of the room this host publishes, which is the room every writer
     /// of this host's channel is answering for.
     /// </summary>
