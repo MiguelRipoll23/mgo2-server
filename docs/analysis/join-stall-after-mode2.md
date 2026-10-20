@@ -1945,9 +1945,16 @@ units = 300 s there, and §25 already measured 5-, 6-, 8- and 14-byte
 publications across the corpus). The **pair's occupancy** is the one difference
 that is not a value: both references' runs publish the pair with every slot
 free, and the slots are marked later — `game1`'s pair gains `(14, 0)` 27 s after
-its run — while this host marks the joiner at the run. It is left open rather
+its run — while this host marks the joiner at the run. It was left open rather
 than changed, because `joined-when-red-team`'s join burst does mark its slots
-and nothing measured says a marked slot in a briefing's run is wrong.
+and nothing measured said a marked slot in a briefing's run was wrong;
+**§29.1 closes it**: the run now publishes both arrays with every slot free and
+the entry answer marks the slot.
+
+Two more of this section's numbers are superseded. The "six `0x0261` in the run"
+and the 44 ms behind it are one run, not a rhythm; **§30.1** measures the pair's
+tick over ten captures (2.13–2.38 s median, and 0.07 s once a round plays), and
+**§30.2** measures what a tick carries — the pair alone, at every tick.
 
 ### 27.6 What `MGO2.ELF` says, and what it does not
 
