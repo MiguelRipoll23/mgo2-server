@@ -1609,3 +1609,88 @@ should carry no `07 0f`, `07 2f` or round clock before the round opens, the host
 should write about four frames a second through the briefing, the client should
 show the briefing screen and write its `1d`/`22` operations, and its camera should
 sit on a spawn of the configured map rather than outside it.
+
+## 25. `myserver26.pcapng`: the briefing's run is right, and the entry takes the client into the round
+
+**What the live join holds.** `myserver25` and `myserver26` are two joins of the
+build pinned at `aa9703a`, and §24's run is fixed in both: the frame that answers
+a fresh room's briefing carries the marker, the heads, the state block and its
+companion, the arrays, the join-state answer and the close triple — and **no room
+stage, no round clock, no payload and no rules pair** (`myserver26` t+56.351). The
+briefing's own countdown rides behind it, `0b 3c 00 00 00 00 00` every 2.5 s: held
+at the room's whole minute with an empty ready set, which is
+`docs/protocol/BRIEFING_FLOW.md` §1's frozen hold for a room of one that never
+readied. Nothing in the capture opens a round — the operations identifier never
+flips generation and the count stays `3c` to the last frame.
+
+**And the client still does not show the briefing screen.** It leaves the briefing
+0.9 s after one record, and that record is not the run:
+
+```
+t+51.820  IN  e1 01                    the report
+t+56.351  OUT the briefing's run        (its shape, no round state)
+t+67.770  IN  83 f3 00 07              the client asks to be placed in the room
+t+67.840  OUT 85 f3 / 86 f3            the lobby-slot pair, slot 1 occupied
+          OUT 07 12 00 04 00 01 …      the player's own entry, with map 7's spawn
+          OUT 07 00 00 00 00 00 03     the roster close
+t+68.740  IN  08 4f / 08 4d / 08 51 …  the client's own position and aim records
+t+69.510  IN  (nothing after this)
+```
+
+The client never writes its `1d`/`22` operations, never readies, and its own
+position records — the records a client writes from inside the map — start
+0.9 s after the entry. `myserver25` is the same join to the second (request
+t+186.98, entry t+187.00, first position t+191.11) with the entry body byte for
+byte identical. RPCS3 then reads `[r28 + 0xb0]` with `r28` clear and freezes,
+28 s after the client's last packet (`0:21:04.471`, CIA `0x8d2fbc`): the client is
+in a map whose round never opened.
+
+**Every live capture says the entry is the record that does it.** Counted over the
+whole `myserver` series — twenty-six sessions — the client's own position records
+exist in exactly the two that were written a 25-byte entry, and in none of the
+twenty-four that were not:
+
+| capture | entry written | client's first position record |
+| --- | --- | --- |
+| `myserver26` | t+67.8 | t+68.7 (0.9 s later) |
+| `myserver25` | t+187.0 | t+191.1 (4.1 s later) |
+| the other twenty-four | never | none — the client sits in the briefing, which is §15's stall |
+
+**The reference writes it only for a round.** Split the six captures' answers to
+the same `83 NN` request by the phase the room was in:
+
+| capture | phase | answer |
+| --- | --- | --- |
+| `mgo2-game-started-on-briefing` t+93.13 | briefing | pair, countdown, 24-byte loadout header — **no entry, no close** |
+| `mgo2-game2` t+78.99 | briefing | pair, countdown, loadout header — **no entry, no close** |
+| `mgo2-game1` t+201.04 | round | pair, **entry**, close, the requester's entity block |
+| `mgo2-started-on-solo-game` t+101.41 | round (clock `01 20 0d` at t+99.03) | pair, **entry**, close, loadout header |
+| `mgo2-started-briefing-then-solo` t+180.49 | round (opened t+174.371) | pair, **entry**, close, beat |
+| `myserver26` t+67.84 | **briefing** | pair, **entry**, close |
+
+The entry carries the map's spawn and the player's side, which is where a player
+stands *in a round*; the reference publishes it with the round's records — the same
+six entries for the room's six players ride the round's run at t+134.92 of
+`joined-when-red-team` — and never while the room is being briefed. Handed one
+there, the client acts on it: it leaves the briefing screen for a map that has no
+round behind it, which is the "round start" the player sees in place of the
+briefing and, in this room's one-round rotation, the *final* round.
+
+**What was changed.** `TeamArrayService.EnterRoomAsync` writes the pair always and
+the player's entry and the roster close only while `MatchRoundStateService.IsOpen`,
+so a briefing's answer is the pair alone, as the two reference briefings answer it.
+The answer is otherwise unchanged: still in the pass that received the request,
+still under the sequence the request named.
+
+**Not verified live.** No client has joined this build. What would confirm it is
+the same join: the `83` answer should carry two records and no `07 12` body, the
+client should stay on its briefing screen, write its `1d`/`22` operations and then
+its `1f` ready — and the round should open from that ready rather than from a
+record the client acted on.
+
+**Still open: the briefing's own stream is thinner than the reference's.** A fresh
+briefing here is written 0.4 frames a second (the countdown alone) against the
+reference's 3.8, which is the six-byte `1250`/`125a` pairs and the `0261` rules
+pairs riding that window. §24 removed a round's beat from a fresh briefing; what
+the reference writes there instead is a briefing's own sparse stream, and this host
+writes none of it yet.

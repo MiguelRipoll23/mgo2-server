@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pcap_conversations import UDP, Pcapng  # noqa: E402
 from udp_frame import (  # noqa: E402
     decode_frame,
+    gameplay_endpoints,
     handshake_identity_of,
     lzss_decompress,
     parse_messages,
@@ -80,21 +81,6 @@ OTHER_OPCODES = {
 }
 
 
-def gameplay_flow(datagrams: list[tuple]) -> set[str]:
-    """The two endpoints the gameplay session ran between.
-
-    The busiest flow. A capture of a game is dominated by it, and the lobby,
-    STUN and HTTPS flows beside it are smaller by an order of magnitude.
-    """
-    flows = Counter(
-        frozenset((source, destination)) for _, source, destination, _ in datagrams
-    )
-    endpoints = flows.most_common(1)[0][0]
-    if len(endpoints) != 2:
-        raise SystemExit(f"the busiest flow is not a pair: {sorted(endpoints)}")
-    return endpoints
-
-
 def session_records(capture_path: str) -> list[tuple[float, str, int, bytes]]:
     """Every record of the gameplay session, in capture order.
 
@@ -117,7 +103,7 @@ def session_records(capture_path: str) -> list[tuple[float, str, int, bytes]]:
     if not datagrams:
         raise SystemExit(f"{capture_path}: holds no UDP datagrams")
 
-    endpoints = gameplay_flow(datagrams)
+    endpoints = gameplay_endpoints(datagrams)
 
     bases: dict[str, int] = {}
     joiner: str | None = None

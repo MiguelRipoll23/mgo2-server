@@ -29,6 +29,7 @@ builder.Services.AddServerTelemetry(builder.Configuration, "mgo2-gameplay");
 builder.Services.AddSingleton<HostIdentityService>();
 builder.Services.AddSingleton<AccountService>();
 builder.Services.AddSingleton<MatchService>();
+builder.Services.AddSingleton<MatchMapRotationService>();
 builder.Services.AddSingleton<MatchSettingsService>();
 builder.Services.AddSingleton<RoomRosterService>();
 builder.Services.AddSingleton<LobbySlotService>();

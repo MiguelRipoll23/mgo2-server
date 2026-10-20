@@ -106,8 +106,26 @@ public static class MatchMapUtils
     }
 
     /// <summary>
-    /// The map id a name states.
+    /// The map a room moves to after this one: the next named entry of the table,
+    /// wrapping at its end.
     /// </summary>
+    /// <remarks>
+    /// <b>It walks the named maps only.</b> Id <c>16</c> is the table's own
+    /// placeholder and has no name, so a rotation that landed on it would publish a
+    /// room nobody can ask for and a spawn nothing measured; the entry is skipped
+    /// rather than written. An id the table does not hold — a row written by an
+    /// older build — starts the walk at the table's first map instead of leaving
+    /// the room without one.
+    /// </remarks>
+    /// <param name="map">Map the room played last, or zero when none is known.</param>
+    /// <returns>The map the room plays next.</returns>
+    public static int Next(int map)
+    {
+        var named = Maps.Where(entry => entry.Name is not null).Select(entry => entry.Map).ToArray();
+        return named[(Array.IndexOf(named, map) + 1) % named.Length];
+    }
+
+    /// <summary>The map id a name states.</summary>
     /// <remarks>
     /// Either column of the table answers, because both are names a person was
     /// given: the room's own — Blood Bath — and the stage the disc ships — n007a.

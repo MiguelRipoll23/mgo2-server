@@ -22,12 +22,23 @@ The room is a row in `games`, published inside a gameplay lobby
 then heartbeats it, so the row survives a restart of the container and a client
 only ever joins a room whose heartbeat is inside `GameStaleSeconds`.
 
-The room runs the rule and the map this instance is configured with
-(`GameplayServerRule`, `GameplayServerMap`), each named the way the replay
-console names it — `TDM`, `Blood Bath`, `n007a` — and mapped to the id a rotation
-carries by `MatchRuleUtils` and `MatchMapUtils` (`GAME_SETTINGS_WIRE.md`). A name
-neither table holds stops the process at startup rather than opening a round no
-client can play.
+The room runs the rule this instance is configured with (`GameplayServerRule`)
+and a map that **advances one map at every start** (`GameplayServerMap` names the
+first), each named the way the replay console names it — `TDM`, `Blood Bath`,
+`n007a` — and mapped to the id a rotation carries by `MatchRuleUtils` and
+`MatchMapUtils` (`GAME_SETTINGS_WIRE.md`). A name neither table holds stops the
+process at startup rather than opening a round no client can play.
+
+**The map rotation is one object and the room row is its record.**
+`MatchMapRotationService` states the map this process plays; `MatchService` reads
+the rotation stored in the room row it found — the map the previous start wrote
+there — advances it one along `MatchMapUtils.Next`, and writes the new rotation
+back, and `MatchSettingsService` builds every record of the channel from that same
+map, so the room a client is listed and the round it plays cannot disagree. The
+walk covers the table's named maps and skips its placeholder (id `16`), wrapping at
+the end; a row with no readable rotation, which is a room that has never started,
+plays the configured map. A restart of the container is therefore the advance: the
+row survives it, the process's own filesystem does not.
 
 The host plays as a character of its own (`GameplayServerCharacterName`, derived
 from the port when unset) whose identifier is the character id in the room and in
@@ -269,6 +280,22 @@ A host that writes it on the report hands the room's state to a client that has
 not entered yet, and that client reports again, readies nothing and never shows
 its briefing screen — `myserver19.pcapng`, where the run went out 0.38 s before
 the echo and the client wrote no `1d`, no `1f` and no `22` in 220 s.
+
+**The 25-byte player entry is a round's record, and the answer to the client's
+room-entry request carries it only while a round is playing.** The request is the
+four-byte `83 NN SS FF` on the roster identifiers, and what it is answered with is
+the lobby-slot pair plus — in a round — the requester's own `07 12 00 04 …` entry
+and the roster close. The entry names the map's spawn and the player's side, and a
+client handed one while it is still being briefed leaves the briefing screen for a
+map whose round has not opened: `myserver26` took the entry at t+67.84, wrote its
+first position record 0.9 s later and never wrote its `1d`/`22` operations, and
+its RPCS3 froze 28 s later on a clear player pointer; `myserver25` is the same
+join. Neither reference briefing's answer carries the entry
+(`mgo2-game-started-on-briefing` t+93.13, `mgo2-game2` t+78.99) and all three
+in-round answers do (game1 t+201.04, `started-on-solo-game` t+101.41,
+`started-briefing-then-solo` t+180.49), so `TeamArrayService.EnterRoomAsync` gates
+it on `MatchRoundStateService.IsOpen`
+(`analysis/join-stall-after-mode2.md` §25).
 
 ### 2.6 The end of a round, and the next briefing
 

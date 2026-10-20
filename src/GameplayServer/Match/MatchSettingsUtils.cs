@@ -57,9 +57,24 @@ public static class MatchSettingsUtils
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        return Round(options, MatchMapUtils.Parse(options.GameplayServerMap));
+    }
+
+    /// <summary>
+    /// The round the room plays on a map the caller states, which is the map the
+    /// rotation moved the room to at startup (<see cref="MatchMapRotationService"/>).
+    /// </summary>
+    /// <param name="options">Options of this instance, which state the rule and the round.</param>
+    /// <param name="map">Map id the round plays on.</param>
+    /// <returns>The round's rule, map, flags, length and kill limit.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the configured rule is not one the client knows.</exception>
+    public static MatchRotationEntry Round(ServerOptions options, int map)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
         return new MatchRotationEntry(
             MatchRuleUtils.Parse(options.GameplayServerRule),
-            MatchMapUtils.Parse(options.GameplayServerMap),
+            map,
             Flags,
             options.GameplayServerRoundMinutes,
             options.GameplayServerKillLimit);
@@ -73,7 +88,7 @@ public static class MatchSettingsUtils
     /// <param name="gameIdentifier">Identifier of the room row this host published.</param>
     /// <param name="name">Name that row is published under.</param>
     /// <returns>The room's settings.</returns>
-    public static MatchSettings From(ServerOptions options, int gameIdentifier, string name)
+    public static MatchSettings From(ServerOptions options, int gameIdentifier, string name, int map)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -81,7 +96,42 @@ public static class MatchSettingsUtils
             gameIdentifier,
             name,
             options.GameplayServerBriefingMinutes,
-            [Round(options)]);
+            [Round(options, map)]);
+    }
+
+    /// <summary>
+    /// The map a stored room row played last, or <c>null</c> when it states none.
+    /// </summary>
+    /// <remarks>
+    /// <b>The row is the rotation's own record of where it stands.</b> A room row's
+    /// <c>games</c> column holds what <see cref="StoredRotationJson"/> writes — one
+    /// triple per round, rule then map then flags — so the first triple's map is
+    /// the map the previous start played, and the start that reads it advances one
+    /// map along <see cref="MatchMapUtils.Next"/>. Anything else a container could
+    /// keep is the pod's own filesystem, which is empty on the next start, so a
+    /// file would be a rotation that begins again every time. A column that cannot
+    /// be read states no map rather than stopping the host, and the room then
+    /// begins at the configured map.
+    /// </remarks>
+    /// <param name="storedRotation">The row's <c>games</c> column, as stored.</param>
+    /// <returns>The map the row names, or <c>null</c>.</returns>
+    public static int? StoredMap(string? storedRotation)
+    {
+        if (string.IsNullOrWhiteSpace(storedRotation))
+        {
+            return null;
+        }
+
+        try
+        {
+            var rotation = JsonSerializer.Deserialize<List<int[]>>(storedRotation);
+            var first = rotation?.FirstOrDefault();
+            return first is { Length: >= 2 } ? first[1] : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

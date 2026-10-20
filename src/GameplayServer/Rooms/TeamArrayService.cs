@@ -60,6 +60,7 @@ public sealed class TeamArrayService(
     LobbySlotService lobbySlots,
     RoomRosterService roster,
     MatchSettingsService matchSettings,
+    MatchRoundStateService roundState,
     ILogger<TeamArrayService> logger)
 {
     /// <summary>
@@ -83,14 +84,15 @@ public sealed class TeamArrayService(
     /// <remarks>
     /// <para>
     /// <b>The request is answered with the room, not with one record.</b> Every
-    /// capture answers it with four records in one frame — the lobby-slot array
-    /// pair under the sequence the request carried, the requesting peer's own
-    /// entry, and the roster's close (`mgo2-game1` t+201.0, `mgo2-game2` t+79.0,
-    /// `mgo2-game-started-on-briefing` t+93.1, `mgo2-started-on-solo-game`
-    /// t+101.4, and `mgo2-started-briefing-then-solo-game` t+180.5, measured in
-    /// `docs/analysis/join-stall-after-mode2.md`) — and the group is what this
-    /// writes: the peer's own slot, the room's sides and the close are the three
-    /// things the client cannot read off a channel it is not in yet.
+    /// capture answers it with the lobby-slot array pair under the sequence the
+    /// request carried — the peer's own slot and the room's sides, which the
+    /// client cannot read off a channel it is not in yet — and what follows the
+    /// pair is the round's: a peer answered during a *briefing* gets the pair
+    /// alone (`mgo2-game-started-on-briefing` t+93.13, `mgo2-game2` t+78.99), and
+    /// one answered during a round gets the pair, its own entry and the roster's
+    /// close (game1 t+201.04, `started-on-solo-game` t+101.41,
+    /// `started-briefing-then-solo` t+180.49, measured in
+    /// `docs/analysis/join-stall-after-mode2.md`).
     /// </para>
     /// <para>
     /// <b>The order is the captures', and so is what the group does not
@@ -106,6 +108,20 @@ public sealed class TeamArrayService(
     /// <see cref="RoomPlayerEntryBodiesUtils"/> carries the 25-byte record's four
     /// measured fields and the recorded tail behind them; its remarks hold the
     /// measurement and the one field left unresolved.
+    /// </para>
+    /// <para>
+    /// <b>And it is a round's record, written only while one is playing.</b> The
+    /// entry carries the map's spawn, and a client handed one while it is still
+    /// being briefed leaves the briefing for the map: `myserver26`'s join took it
+    /// at t+67.84, its first position record followed 0.9 s later and its round
+    /// never opened, which is the round start the player saw in place of the
+    /// briefing screen (`myserver25` is the same join one second apart). The two
+    /// answers the captures give a *briefing* carry the pair and no entry
+    /// (`mgo2-game-started-on-briefing` t+93.13, `mgo2-game2` t+78.99), and the
+    /// three given during a round carry it with the close behind it (game1
+    /// t+201.04, `started-on-solo-game` t+101.41, `started-briefing-then-solo`
+    /// t+180.49). So the answer before a round is the pair alone, and the entry
+    /// and the close are written for a round the client is in.
     /// </para>
     /// <para>
     /// <b>What the captures carry beyond this group is not written.</b> A 24-byte
@@ -130,42 +146,49 @@ public sealed class TeamArrayService(
         var bodies = new List<byte[]>();
 
         // The pair opens the answer, under the sequence the request named, and
-        // the entry and the close follow it: the captures' own order, measured in
-        // the four answers named above.
+        // the entry and the close follow it while a round is playing: the
+        // captures' own order, measured in the five answers named above.
         var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(sequence, slots);
         bodies.Add(teams);
         bodies.Add(occupancy);
 
-        // The requesting peer's own entry, when the room has a player for it. A
-        // request that arrives before the profile is answered with the room's
-        // other records: the entry names a player of the room, and the room does
-        // not hold this one yet. Both endpoints are looked up, for the reason the
-        // roster's own reaper does: a peer is filed under the endpoint its
-        // profile arrived from, which is the observed source, while the session
-        // answers at the one the peer advertised. The two are one for a peer out
-        // on the internet.
-        var member = roster.Find(context.Remote.ToString())
-            ?? roster.Find(context.Session.DialBack.ToString());
-        if (member is not null)
+        // A briefing's answer is the pair alone: the entry and the close that
+        // follow it are the round's records, and a peer still being briefed that
+        // is handed the entry leaves the briefing for a round that has not
+        // opened (the remarks above).
+        if (roundState.IsOpen)
         {
-            var side = slots.Find(slot => slot.Slot == member.SessionSlot);
-            bodies.Add(
-                RoomPlayerEntryBodiesUtils.Build(
-                    0,
-                    member.SessionSlot,
-                    RoomPlayerEntryBodiesUtils.TeamByteOf(side?.Team),
-                    matchSettings.Map));
-        }
-        else
-        {
-            logger.LogDebug(
-                "UDP {LocalPort}: a room request from {RemoteAddress} has no roster entry behind it yet; "
-                + "answering with the room's own state only",
-                context.LocalPort,
-                context.Remote);
-        }
+            // The requesting peer's own entry, when the room has a player for it.
+            // A request that arrives before the profile is answered with the
+            // room's other records: the entry names a player of the room, and the
+            // room does not hold this one yet. Both endpoints are looked up, for
+            // the reason the roster's own reaper does: a peer is filed under the
+            // endpoint its profile arrived from, which is the observed source,
+            // while the session answers at the one the peer advertised. The two
+            // are one for a peer out on the internet.
+            var member = roster.Find(context.Remote.ToString())
+                ?? roster.Find(context.Session.DialBack.ToString());
+            if (member is not null)
+            {
+                var side = slots.Find(slot => slot.Slot == member.SessionSlot);
+                bodies.Add(
+                    RoomPlayerEntryBodiesUtils.Build(
+                        0,
+                        member.SessionSlot,
+                        RoomPlayerEntryBodiesUtils.TeamByteOf(side?.Team),
+                        matchSettings.Map));
+            }
+            else
+            {
+                logger.LogDebug(
+                    "UDP {LocalPort}: a room request from {RemoteAddress} has no roster entry behind it yet; "
+                    + "answering with the room's own state only",
+                    context.LocalPort,
+                    context.Remote);
+            }
 
-        bodies.Add(PlayerProfileRecordUtility.BuildRosterClose());
+            bodies.Add(PlayerProfileRecordUtility.BuildRosterClose());
+        }
 
         // The pair travels under the tag the joiner opened the exchange with and
         // the rest under the roster's own, as both the run and the answer do.
@@ -181,12 +204,15 @@ public sealed class TeamArrayService(
 
         logger.LogInformation(
             "UDP {LocalPort}: answering {RemoteAddress}'s request to be placed in the room: {RecordCount} "
-            + "records at sequence {Sequence:x2}, {SlotCount} player(s) on the lobby-slot arrays",
+            + "records at sequence {Sequence:x2}, {SlotCount} player(s) on the lobby-slot arrays, {Phase}",
             context.LocalPort,
             context.Remote,
             run.Count,
             sequence,
-            slots.Count);
+            slots.Count,
+            roundState.IsOpen
+                ? "with the player's own entry"
+                : "as a briefing's pair alone");
 
         await RosterRunSendUtils.SendAsync(context, run, compressed: true);
     }

@@ -25,7 +25,7 @@ from __future__ import annotations
 import hashlib
 import struct
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from pcap_conversations import TCP, UDP, Pcapng
 from udp_record_semantics import COMPRESSION_MARKER, HANDSHAKE, PAYLOAD_CLASS_BIT
@@ -186,6 +186,38 @@ def handshake_of(wire: bytes) -> tuple[int, int] | None:
     """The peer id and counter base a pre-keyed handshake announces, or None."""
     identity = handshake_identity_of(wire)
     return None if identity is None else identity[:2]
+
+
+def gameplay_endpoints(datagrams: list[tuple]) -> frozenset[str]:
+    """The two endpoints the gameplay session ran between.
+
+    The busiest flow is normally the game's, and that was the rule until a capture
+    held the game's own peer-to-peer channel beside the session it was taken on:
+    that channel carried more datagrams than the session did, and every reading
+    of the run then described the wrong flow. So the flow is chosen among those
+    that carry a handshake **from both sides**, which is the one thing only a
+    session has; the busiest of a capture with no such flow is still returned,
+    because a listing of it is what a reader then needs.
+
+    `datagrams` is `(timestamp, source, destination, payload)` per UDP datagram.
+    """
+    counts = Counter(
+        frozenset((source, destination)) for _, source, destination, _ in datagrams
+    )
+    announced: dict[frozenset, set[str]] = defaultdict(set)
+    for _, source, destination, payload in datagrams:
+        if handshake_identity_of(payload) is not None:
+            announced[frozenset((source, destination))].add(source)
+
+    sessions = {
+        pair: count
+        for pair, count in counts.items()
+        if len(pair) == 2 and len(announced.get(pair, ())) == 2
+    }
+    busiest = max(sessions or counts, key=lambda pair: (counts[pair], sorted(pair)))
+    if len(busiest) != 2:
+        raise SystemExit(f"the busiest flow is not a pair: {sorted(busiest)}")
+    return busiest
 
 
 def decode_frame(frame: bytes, session_key: int) -> tuple[int, bytes, bool, bool]:

@@ -29,7 +29,7 @@ from one source.
 | game id | `games.id`, the row this host publishes | none: the row is the room |
 | game name | this instance's own, and `server-<port>` when unset | `GAMEPLAY_SERVER_GAME_NAME` |
 | rule | this instance's own, by the decoder's name | `GAMEPLAY_SERVER_RULE` — `TDM`, `TSNE`, … |
-| map | this instance's own, by name or by stage | `GAMEPLAY_SERVER_MAP` — `Blood Bath`, `n007a` |
+| map | this instance's own, by name or by stage; advanced one map per start | `GAMEPLAY_SERVER_MAP` — `Blood Bath`, `n007a` (the first start's map) |
 | briefing time | this instance's own | `GAMEPLAY_SERVER_BRIEFING_MINUTES` |
 | round length | this instance's own, for every rule | `GAMEPLAY_SERVER_ROUND_MINUTES` |
 | the round's kill limit | this instance's own | `GAMEPLAY_SERVER_KILL_LIMIT`, unset for a clock-only round |

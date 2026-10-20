@@ -95,14 +95,18 @@ public sealed class ServerOptions
     public string GameplayServerRule { get; set; } = "TDM";
 
     /// <summary>
-    /// Map the gameplay server's room runs, by the name a player knows it by
-    /// (<c>Blood Bath</c>) or by the stage the disc ships it as (<c>n007a</c>).
-    /// Both are the replay console's table, ported in <c>MatchMapUtils</c>.
+    /// The map the gameplay server's room plays on its first start, by the name a
+    /// player knows it by (<c>Blood Bath</c>) or by the stage the disc ships it as
+    /// (<c>n007a</c>). Both are the replay console's table, ported in
+    /// <c>MatchMapUtils</c>.
     /// <para>
-    /// Like the rule, this is the room's own setting rather than a draw or a row:
-    /// a host whose map was drawn at random would publish a room whose round no
-    /// operator chose. The default is the map of the recorded briefing this host
-    /// follows, and a name that is no map stops the process at startup.
+    /// <b>It is the first start's map and not every start's.</b> The room advances
+    /// one map along at each start — the map the previous start wrote into the
+    /// room's own rotation is the one it reads to advance from — so a host that is
+    /// restarted plays the next map rather than the same one. A room with no row
+    /// behind it, which is the first start on a fresh database, plays this map. The
+    /// default is the map of the recorded briefing this host follows, and a name
+    /// that is no map stops the process at startup.
     /// </para>
     /// </summary>
     public string GameplayServerMap { get; set; } = "Blood Bath";

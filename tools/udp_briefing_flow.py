@@ -33,7 +33,6 @@ host that does not.
 from __future__ import annotations
 
 import sys
-from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -41,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pcap_conversations import UDP, Pcapng  # noqa: E402
 from udp_frame import (  # noqa: E402
     decode_frame,
+    gameplay_endpoints,
     handshake_identity_of,
     lzss_decompress,
     parse_messages,
@@ -62,22 +62,6 @@ PUBLISH_OPCODE = 0xE0
 # and a little-endian 16-bit count of 125 ms units.
 CLOCK_OPCODE = 0x01
 CLOCK_LENGTH = 3
-
-
-def gameplay_flow(datagrams: list[tuple]) -> set[str]:
-    """The two endpoints the session ran between.
-
-    The gameplay channel is the flow with the most datagrams; a capture of a
-    game is dominated by it, and the lobby, STUN and HTTPS flows beside it are
-    smaller by an order of magnitude.
-    """
-    flows = Counter(
-        frozenset((source, destination)) for _, source, destination, _ in datagrams
-    )
-    endpoints = flows.most_common(1)[0][0]
-    if len(endpoints) != 2:
-        raise SystemExit(f"the busiest flow is not a pair: {sorted(endpoints)}")
-    return endpoints
 
 
 def briefing_countdown(body: bytes) -> int | None:
@@ -116,7 +100,7 @@ def main() -> None:
     if not datagrams:
         raise SystemExit("capture holds no UDP datagrams")
 
-    endpoints = gameplay_flow(datagrams)
+    endpoints = gameplay_endpoints(datagrams)
     session = [datagram for datagram in datagrams if {datagram[1], datagram[2]} == endpoints]
 
     # Both counter bases, from the handshake each side opened with. Neither side

@@ -34,7 +34,6 @@ else in `tools/`.
 from __future__ import annotations
 
 import sys
-from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -42,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pcap_conversations import UDP, Pcapng  # noqa: E402
 from udp_frame import (  # noqa: E402
     decode_frame,
+    gameplay_endpoints,
     handshake_identity_of,
     lzss_decompress,
     parse_messages,
@@ -138,8 +138,7 @@ def main() -> None:
     if not datagrams:
         raise SystemExit("capture holds no UDP datagrams")
 
-    flows = Counter(frozenset((source, destination)) for _, source, destination, _ in datagrams)
-    endpoints = flows.most_common(1)[0][0]
+    endpoints = gameplay_endpoints(datagrams)
     session = [datagram for datagram in datagrams if {datagram[1], datagram[2]} == endpoints]
 
     bases: dict[str, int] = {}
