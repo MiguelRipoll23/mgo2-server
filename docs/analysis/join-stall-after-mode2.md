@@ -1676,21 +1676,37 @@ there, the client acts on it: it leaves the briefing screen for a map that has n
 round behind it, which is the "round start" the player sees in place of the
 briefing and, in this room's one-round rotation, the *final* round.
 
-**What was changed.** `TeamArrayService.EnterRoomAsync` writes the pair always and
-the player's entry and the roster close only while `MatchRoundStateService.IsOpen`,
-so a briefing's answer is the pair alone, as the two reference briefings answer it.
-The answer is otherwise unchanged: still in the pass that received the request,
-still under the sequence the request named.
+**What was changed.** `TeamArrayService.EnterRoomAsync` writes the player's entry
+and the roster close only while `MatchRoundStateService.IsOpen`, and answers a
+briefing with the records the reference answers one with: the pair, the countdown
+(`BriefingCountdownService.AnswerRecord` — the tick's own body and its own stream,
+so the record is one the client could have received a tick later) and the
+player's twenty-four-byte settings header (`SettingsHeaderBodiesUtils`,
+`0b <key+1> 02` and a zero tail). The answer is still written in the pass that
+received the request, still under the sequence the request named.
+
+**And the briefing now carries its own beat.** The rules-roster pair
+(`0x0261 fe`) used to stop at the peer's run, on the reading that the reference
+writes nothing of the room's between its run and its round; the measurement says
+the opposite. Over `mgo2-game-started-on-briefing` t+68.0 to t+92.0 — twenty-four
+seconds behind the run at t+58.255 — the host writes 22 pairs at 2.0 to 2.6 s,
+with the `0xd001` controls and `0x0002` blobs riding two to four of them, and
+nothing else of the room's. So `BriefingRoomPublishService` runs until the round
+opens rather than until the run is written, and the window that used to carry the
+countdown alone (0.4 frames a second) now carries the pair on the same tick
+(0.8 to 1.2), against the recording's 1.3.
 
 **Not verified live.** No client has joined this build. What would confirm it is
-the same join: the `83` answer should carry two records and no `07 12` body, the
-client should stay on its briefing screen, write its `1d`/`22` operations and then
-its `1f` ready — and the round should open from that ready rather than from a
-record the client acted on.
+the same join: the `83` answer should carry four records — pair, countdown,
+header — and no `07 12` body, the client should stay on its briefing screen,
+write its `1d`/`22` operations and then its `1f` ready — and the round should
+open from that ready rather than from a record the client acted on.
 
-**Still open: the briefing's own stream is thinner than the reference's.** A fresh
-briefing here is written 0.4 frames a second (the countdown alone) against the
-reference's 3.8, which is the six-byte `1250`/`125a` pairs and the `0261` rules
-pairs riding that window. §24 removed a round's beat from a fresh briefing; what
-the reference writes there instead is a briefing's own sparse stream, and this host
-writes none of it yet.
+**Still open.** The `0xd001` controls and `0x0002` state blobs the reference
+spaces at 5 and 10 s through that window are still only written in the sparse
+phase before the run, and the six-byte `1250`/`125a` groups the reference replays
+in the four bursts that follow a join (t+58.2 to t+65.1) are not written at all:
+they are a round's item-box group and this host writes none of them before a
+round opens. The header's trailing byte — `0x00` and `0x01` for the same slot in
+the same briefing — is a per-player value no record here carries, and is written
+zero.

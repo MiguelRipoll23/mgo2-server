@@ -255,4 +255,44 @@ public sealed partial class BriefingCountdownService(
 
     /// <summary>The stream this service writes under, named for the log and the docs.</summary>
     public static ushort Identifier => CountdownIdentifier;
+
+    /// <summary>
+    /// The countdown record a room's answer carries, or <c>null</c> when the room
+    /// is not briefing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A briefing's answer to <c>83 NN</c> is the pair, this record and the
+    /// player's settings header, and no entry</b> — `mgo2-game-started-on-briefing`
+    /// t+93.127 and `mgo2-game2` t+78.987 both write
+    /// <c>85 NN / 86 NN / 0b 3c 00 00 00 00 00 / 0b SS 02 …</c> under the request's
+    /// own sequence, and the countdown there is the same body the tick writes, at
+    /// the count the room holds at that instant. The record says which briefing the
+    /// client is waiting in, which the pair alone does not.
+    /// </para>
+    /// <para>
+    /// <b>It is the tick's own count and the tick's own stream.</b> The answer
+    /// takes its fourth byte from the countdown stream, as the tick does, so the
+    /// record the answer carries is one the client could have received a tick later
+    /// — the same numbering, the same set — rather than a second series beside the
+    /// countdown. A room whose briefing has not been armed (no join report yet) has
+    /// no count to answer with and returns <c>null</c>: the reference writes none
+    /// before its first run either.
+    /// </para>
+    /// </remarks>
+    /// <returns>The record, or <c>null</c> when no briefing is current.</returns>
+    public Rooms.RosterRecord? AnswerRecord()
+    {
+        if (!Remaining(DateTimeOffset.UtcNow, out var remaining))
+        {
+            return null;
+        }
+
+        return new Rooms.RosterRecord(
+            CountdownIdentifier,
+            BriefingCountdownBodiesUtils.CountdownBody(
+                BriefingCountdownBodiesUtils.CountdownSeconds(remaining),
+                briefingStates.ReadyMask),
+            sequences.Take(CountdownIdentifier));
+    }
 }

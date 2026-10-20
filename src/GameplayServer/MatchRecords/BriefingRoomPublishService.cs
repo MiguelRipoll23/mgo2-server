@@ -23,6 +23,17 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// (<see cref="MatchRecordFramesUtils.RulesPair"/>).
 /// </para>
 /// <para>
+/// <b>It runs for the whole briefing, and the peer's run does not end it.</b> Measured
+/// again over the window behind that run — `mgo2-game-started-on-briefing`
+/// t+68.0 to t+92.0, twenty-four seconds between the briefing's run and the
+/// request it answers — the pair is the stream's every record that matters: 22
+/// pairs at 2.0 to 2.6 s, one per tick, with the <c>0xd001</c> controls and
+/// <c>0x0002</c> blobs riding two to four of them. Nothing of the room's stops
+/// when the run is written, so ending the publication there left the briefing with
+/// the countdown alone — 0.4 frames a second against the recording's 1.3 — which
+/// is the gap `docs/analysis/join-stall-after-mode2.md` §25 records.
+/// </para>
+/// <para>
 /// <b>The count is the room's and not the host's.</b> Every captured one carries
 /// the same number the Lobby's own details state for that room — one player of a
 /// limit of seventeen in <c>started-on-briefing</c>, five joiners in
@@ -60,15 +71,17 @@ public sealed class BriefingRoomPublishService(
     private const int NoCountSent = -1;
 
     /// <summary>
-    /// Writes the room to one peer, on the briefing's tick, until the peer's own
-    /// run is written, the round opens, or the peer goes.
+    /// Writes the room to one peer, on the briefing's tick, until the round opens
+    /// or the peer goes.
     /// </summary>
     /// <remarks>
-    /// <b>The run ends the pair.</b> The rules pair is the briefing's until the
-    /// peer is served its run and the beat's from there: the reference writes
-    /// nothing of the room's between its run at t+57.626 and its round at t+174.371
-    /// beyond the beat's own records (<c>docs/analysis/join-stall-after-mode2.md</c>
-    /// §10), and the beat writes the pair again under the round's own generation.
+    /// <b>The run does not end the pair, and the round does.</b> The peer's own run
+    /// is written two to three seconds after its first report, and the reference
+    /// keeps the pair on the same tick from there to its round —
+    /// `mgo2-game-started-on-briefing` t+68.0 to t+92.0 is pairs and nothing else of
+    /// the room's — so a publication that stopped at the run left the window the
+    /// briefing's run opens with the countdown alone. The round opens the pair's
+    /// own generation and the beat writes it from there.
     /// </remarks>
     /// <param name="context">Context the records are written through.</param>
     public async Task PublishAsync(PeerContext context)
@@ -76,9 +89,7 @@ public sealed class BriefingRoomPublishService(
         var session = context.Session;
         var sentCount = NoCountSent;
 
-        while (MatchRecordPeerUtils.IsAlive(session)
-            && !roundState.IsOpen
-            && !roundState.HasRunWritten(session))
+        while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
         {
             try
             {

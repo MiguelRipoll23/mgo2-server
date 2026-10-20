@@ -82,6 +82,32 @@ the byte is the room's population and not its limit — and `joined-when-red-tea
 writes `00 05` into a room of five joiners. Written as
 `BriefingRoomPublishService`, which also writes the pair.
 
+**A briefing's answer to `83 NN` is the pair, the countdown and a settings
+header — and no entry.** The four-byte request to be placed in the room is
+answered with the lobby-slot pair under its own sequence, the countdown record at
+the count the room holds, and a twenty-four-byte `0b SS 02 00 …` for the
+requesting player, in that order:
+
+```
+t+93.127  OUT 0x1001 cls=0f  85 00 fe …      the pair, at the request's sequence
+t+93.127  OUT 0x1001 cls=10  86 00 7f 07 …
+t+93.127  OUT 0x1254 cls=02  0b 3c 00 00 00 00 00   the countdown, 60 s, set empty
+t+93.127  OUT 0x1001 cls=11  0b 02 02 00 … 01      slot 2, the player's own key + 1
+```
+
+(`mgo2-game-started-on-briefing` t+93.127; `mgo2-game2` t+78.987 answers
+t+78.148's request the same way, slot byte and all. The countdown keeps its own
+stream — class `02` while the pair's runs `0f`, `10` and the header takes `11` —
+because it is the same series the tick writes.) The pair is the room's and the
+header is the player's; **the entry is not here**, because it carries the map's
+spawn and belongs to a round that is playing: the two answers given during a
+round carry it with the roster close behind it (`mgo2-game1` t+201.04,
+`started-on-solo-game` t+101.41, `started-briefing-then-solo` t+180.49). Handed
+one while it is being briefed, a client leaves the briefing screen for a map with
+no round behind it (`docs/analysis/join-stall-after-mode2.md` §24–§25). Written as
+`TeamArrayService.EnterRoomAsync`, with `SettingsHeaderBodiesUtils` and
+`BriefingCountdownService.AnswerRecord`.
+
 **The countdown that precedes a round.** A seven-byte operations record counts
 the briefing down, and its two halves move apart:
 

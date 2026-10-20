@@ -297,6 +297,22 @@ in-round answers do (game1 t+201.04, `started-on-solo-game` t+101.41,
 it on `MatchRoundStateService.IsOpen`
 (`analysis/join-stall-after-mode2.md` §25).
 
+**A briefing's answer carries what the briefing is made of instead: the countdown
+and the player's own settings header.** Both reference briefings answer the same
+request with the pair, then the seven-byte `0b 3c 00 00 00 00 00` countdown at
+the count the room holds, then a twenty-four-byte `0b SS 02 00 …` whose `SS` is
+the player's key plus one — `mgo2-game-started-on-briefing` t+93.13, `mgo2-game2`
+t+78.99. The countdown is the one the briefing's tick writes, under the same
+stream (`BriefingCountdownService.AnswerRecord`), and the header is
+`SettingsHeaderBodiesUtils`.
+
+**And the briefing is written for its whole length, not only up to the run.** The
+rules-roster pair (`0x0261 fe`, `BriefingRoomPublishService`) used to stop at the
+peer's run; the recording keeps it on the 2.0–2.6 s tick from the roster answer
+through its briefing and into its round, so the publication now ends on the
+round's open alone, and a briefing's window carries the pair beside the
+countdown (`analysis/join-stall-after-mode2.md` §25).
+
 ### 2.6 The end of a round, and the next briefing
 
 A round ends on whichever of its two limits comes first. The clock is the first:
