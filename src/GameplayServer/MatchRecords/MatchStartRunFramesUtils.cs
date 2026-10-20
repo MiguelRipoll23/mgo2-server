@@ -166,7 +166,20 @@ public static class MatchStartRunFramesUtils
         // A briefing's run opens on the entry's pair alone, so the marker is not
         // there to drop: the opening count is the one that run was built with.
         var answersReport = run.Count > 0 && run[0].Type == generation.MatchStartMarker;
-        return [.. run.Skip(answersReport ? RunOpeningCount : BriefingRunOpeningCount)];
+
+        // The item-box group is left behind as well, because its bytes are
+        // sequence numbers: a repeat would hand the client a second record with a
+        // number it has already accepted, which is the shape the family's window
+        // never drains under (`ItemBoxFramesUtils`). The repeat writes its own
+        // groups on the counters instead
+        // (`MatchStartRunService.RepeatItemBoxGroupsAsync`).
+        return
+        [
+            .. run
+                .Skip(answersReport ? RunOpeningCount : BriefingRunOpeningCount)
+                .Where(record => record.Type != generation.ItemBox
+                    && record.Type != generation.ItemBoxState),
+        ];
     }
 
     /// <summary>

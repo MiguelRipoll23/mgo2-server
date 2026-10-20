@@ -54,20 +54,71 @@ public sealed partial class MatchStartRunService
         MatchRecordGenerationUtils generation,
         List<MatchRecordFramesUtils.RecordMessage> run)
     {
-        // Three groups, each two records per identifier, numbered from the stream
-        // the identifiers own: the run's own group rides in its frame and the two
-        // behind it go out as datagrams of their own.
+        await WriteItemBoxGroupsAsync(context, generation, run);
+    }
+
+    /// <summary>
+    /// Writes the groups a repeated fresh-briefing run carries, on the counters the
+    /// run's own groups left behind.
+    /// </summary>
+    /// <remarks>
+    /// <b>The repeat continues the numbering and does not repeat it.</b> The
+    /// captured repeat two seconds behind the run writes ordinals <c>6</c>/<c>7</c>
+    /// and on where the run left off at <c>4</c>/<c>5</c>, which is why the run's
+    /// own group is stripped from the repeated records
+    /// (<see cref="MatchStartRunFramesUtils.RepeatOf"/>): the same bytes twice would
+    /// be a duplicate sequence number, and the item-box family is keyed on it.
+    /// </remarks>
+    /// <param name="context">Context the groups are written through.</param>
+    /// <param name="generation">Identifier set of the briefing.</param>
+    private async Task RepeatItemBoxGroupsAsync(
+        PeerContext context,
+        MatchRecordGenerationUtils generation)
+    {
+        await WriteItemBoxGroupsAsync(context, generation, attachTo: null);
+    }
+
+    /// <summary>
+    /// Writes the fresh briefing's item-box groups, optionally riding the first in a
+    /// frame the caller is about to send.
+    /// </summary>
+    /// <remarks>
+    /// Three groups, each two records per identifier, numbered from the streams the
+    /// identifiers own. The run's own group rides in its frame and the two behind it
+    /// go out as datagrams of their own, which is the captured shape; the repeat
+    /// attaches none and sends all three.
+    /// </remarks>
+    /// <param name="context">Context the groups are written through.</param>
+    /// <param name="generation">Identifier set of the briefing.</param>
+    /// <param name="attachTo">
+    /// The frame the first group is appended to, or <c>null</c> to send every group
+    /// in a datagram of its own.
+    /// </param>
+    private async Task WriteItemBoxGroupsAsync(
+        PeerContext context,
+        MatchRecordGenerationUtils generation,
+        List<MatchRecordFramesUtils.RecordMessage>? attachTo)
+    {
         for (var group = 0; group < ItemBoxFramesUtils.BriefingGroupCount; group++)
         {
+            // Two values per identifier per group, because the group writes two
+            // records under each and the second takes the value behind the first:
+            // the run's groups go out on 0/1, 2/3 and 4/5, as the capture numbers
+            // them (`ItemBoxFramesUtils.BriefingGroupCount`).
+            var itemBoxOrdinals = sequences.Take(
+                generation.ItemBox, ItemBoxFramesUtils.ItemBoxRecords);
+            var stateOrdinals = sequences.Take(
+                generation.ItemBoxState, ItemBoxFramesUtils.ItemBoxStateRecords);
+
             var records = ItemBoxFramesUtils.ItemBoxGroup(
                 generation,
                 ItemBoxFramesUtils.OpeningEventGroups,
-                sequences.Take(generation.ItemBox),
-                sequences.Take(generation.ItemBoxState));
+                itemBoxOrdinals[0],
+                stateOrdinals[0]);
 
-            if (group == 0)
+            if (group == 0 && attachTo is not null)
             {
-                run.AddRange(records);
+                attachTo.AddRange(records);
                 continue;
             }
 

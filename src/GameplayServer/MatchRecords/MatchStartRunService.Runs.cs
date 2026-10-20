@@ -351,6 +351,13 @@ public sealed partial class MatchStartRunService
             await MatchRecordSendUtils.SendAsync(
                 context,
                 MatchStartRunFramesUtils.RepeatOf(generation, run));
+
+            // A fresh briefing's repeat carries the item-box groups again, numbered
+            // on from the run's own.
+            if (!wasOpen && roundNumber == 0)
+            {
+                await RepeatItemBoxGroupsAsync(context, generation);
+            }
         }
         catch (Exception exception)
         {
