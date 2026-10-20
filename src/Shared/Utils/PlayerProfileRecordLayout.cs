@@ -155,7 +155,8 @@ namespace Mgo2Server.Shared.Utils;
 /// seven, a <c>0x00</c> and then that kind. None of the four is an entry —
 /// no roster index, no name, no close — so nothing reads them; the offset is a
 /// field rather than padding, and <c>UDP_COMMANDS.md</c> lists the lengths each
-/// kind was measured at.
+/// kind was measured at and how far its body is read: kind <c>0x04</c> is a
+/// spawn point per slot, written by the host beside its roster.
 /// </para>
 /// <para>
 /// <b>The three [U] bytes, measured over all 152 entries on the bench.</b>

@@ -2664,7 +2664,17 @@ the player's 24-table slot at `0x05` and again at `0x07`, and the character id a
 `0x08` — one of each, which is what `PlayerProfileRecordUtility` already writes. What is
 still missing from this host's answer is not the entry's fields but the four kinds beside
 it: 39 records of kind `0x01`, 162 of `0x02`, 43 of `0x03` and 155 of `0x04` in the
-captures, none of them an entry and none yet decoded.
+captures, none of them an entry.
+
+Those four are decoded now, as far as the wire goes, in `UDP_COMMANDS.md`: they are
+host-to-joiner records that ride the same datagram as the team and occupancy arrays, the
+seven-byte header above with the slot at `0x05`, and **kind `0x04` is one spawn point per
+slot** — slot, its place in the group, a sixteen-bit heading and three signed coordinates,
+written one per player and every two seconds or so. Kinds `0x02` and `0x03` carry geometry
+that reads as a box's four corners and a mirrored pair of points; kind `0x01` is a count and
+four eight-byte tuples that are not yet read. Which of them this host has to write for a
+join to proceed is not settled by the bodies — nothing in the captures shows a client
+refusing an answer for the want of one — so none of the four is written here yet.
 
 **The rules family's `len 4`/`len 5` bodies are the roster list.** They read
 `ff <key> [<key>] fe fe`: `mgo2-game1` writes `ff 14 fe fe` (4532 of them), `ff 06 fe fe`

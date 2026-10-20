@@ -259,10 +259,23 @@ over the thirteen captures on this repository's bench, on `0x1001` and `0x9001` 
 | `[0x03]` | lengths | records | what it is |
 | --- | --- | --- | --- |
 | `0x00` | 7, 9, 57, 61–67, 78–83 | 152 + 253 + 29 | the roster entry (152), its close (253), a name-less entry (10), a nine-byte shape (29) |
-| `0x01` | 54 | 39 | **[U]** — the same version byte, no name and no roster index |
-| `0x02` | 20, 52 | 134, 28 | **[U]** |
-| `0x03` | 22, 29 | 41, 2 | **[U]** |
-| `0x04` | 9, 25 | 13, 142 | **[U]** |
+| `0x01` | 54 | 39 | four eight-byte tuples behind a count of four — **[U]** |
+| `0x02` | 20, 52 | 134, 28 | a box: an eight-byte header, a count, then that many eight-byte corners |
+| `0x03` | 22, 29 | 41, 2 | a tag byte, a six-byte triple written twice, and a sixteen-bit tail |
+| `0x04` | 9, 25 | 13, 142 | one spawn point per slot, and a marker for a slot whose point the host does not write |
+
+**The seven-byte header, shared by all five shapes.** Little-endian:
+
+| offset | size | field |
+| --- | --- | --- |
+| `0x00` | 1 | `0x07`, the record version |
+| `0x01` | 1 | the payload's length, `L - 7` — on all 152 entries and on 386 of the 399 kind-`0x01`…`0x04` records; the thirteen nine-byte records of kind `0x04` write `0x00`, as the twenty-nine of kind `0x00` do |
+| `0x02` | 1 | `0x00` in every record here |
+| `0x03` | 1 | the kind |
+| `0x04` | 1 | the record's index within its kind: the roster index on an entry, `0`, `1`, `2`… on the others |
+| `0x05` | 1 | the slot in the host's 24-entry player table: the entry's and kind `0x04`'s; `0x00` on kinds `0x01`–`0x03`, and equal to the index on the nine-byte kind-`0x00` shape |
+| `0x06` | 1 | `0x00` on the entry and on kinds `0x01`–`0x03`, `0x01` on the nine-byte shape, `0x03` on the close |
+| `0x07`– | | the payload, which is what every offset table below indexes |
 
 **A roster entry, long layout — 61 records here, and the 79/83-byte form §4 measured.**
 Little-endian, and `L` is the body's length:
@@ -305,9 +318,86 @@ What it does line up with is the kind of entry: **`0x00` on all ten name-less 57
 and on all 51 `BOT-01`…`BOT-11` entries**, `0x01` on the host and on ten records of three
 players, `0x02` on the other 63. Nothing in the captures names the distinction; **[U]**.
 
-**The nine-byte kind-0 body is a fifth shape, not an entry.** `07 00 00 00 02 02 01 00 01`
-carries length byte `0x00` and no name, so it satisfies neither layout's minimum; 29 records
-here, and the reading that it is one of the client's one-byte answers to the run is **[I]**.
+**The nine-byte body is a fifth shape, not an entry.** `07 00 00 00 02 02 01 00 01` carries
+length byte `0x00` and no name, so it satisfies neither layout's minimum; 29 records of kind
+`0x00` here, and 13 of kind `0x04`. Its seven-byte header is followed by the constant `00 01`
+whatever the kind, and it names a player in the two bytes before that: `kind | index | slot`.
+On kind `0x00` the index and the slot are the same byte (`03 03`, `04 04`, `06 06`…); on kind
+`0x04` they differ (`01 03`, `02 04`, `00 0f`), and slots the same capture also writes with
+a 25-byte body. The reading that it is a player the host names without a payload is **[I]**.
+
+### Kinds `0x01`–`0x04`: what the host writes beside the roster
+
+**Not entries, and not the joiner's.** These travel the other way from the roster: **host to
+joiner**. Every one of the 399 records here was written by a host endpoint to the joining
+client's `5730`; none travels the other way in any capture. 164 datagrams carry one across
+the thirteen captures, and in 147 of those the team and occupancy arrays precede them and
+the roster close follows. They repeat every two to two and a half seconds while the state
+holds, and the same burst is written two or three times before the next.
+
+They are read out of the captures whose two handshakes are both present, so the frame key is
+recoverable — the session key, and for the hosts that digest with the constant instead, the
+fallback in `udp_frame.decode_frame`; a frame that verifies under neither is dropped rather
+than read.
+
+**Kind `0x04` — a spawn point, one record per slot. [I]**
+
+The strongest of the four. A burst carries one 25-byte record per player (four, five, six or
+eight of them, never two naming the same slot), and the payload reads:
+
+| offset | size | field |
+| --- | --- | --- |
+| `0x07` | 1 | the slot, repeated |
+| `0x08` | 1 | the slot, repeated — `0x05`, `0x07` and `0x08` are the same byte in 136 of the 142 records |
+| `0x09` | 1 | this player's place in the group: `0` in 67 records, `1` in 46, `2` in 19, `3` in 6, `4` in 2, and `0x16` on the last two |
+| `0x0a` | 2 | heading, a signed sixteen-bit turn: `0x0000` in 30 records, `0x3fff` in 32, `0xc001` in 27, `0x5fff` in 19, and values between |
+| `0x0c` | 4 | x, signed |
+| `0x10` | 4 | y, signed — the ground height, 625, 656, 800, 5925 across a map |
+| `0x14` | 4 | z, signed |
+| `0x18` | 1 | `0x00` in 139 of the 142 |
+
+`mgo2-game-joined-when-red-team-then-briefing` t+134.92 is the clearest: six slots, three at
+`x` −37500, −36000, −34500 with `y` 656, 496, 302 and `z` −5000, and three at `x` 43000,
+44500, 46000 with `y` 625 and `z` −500, the two groups facing `0x3fff` and `0xc001`. Two
+spawn lines a round apart, the height tracking the ground under each of the three points.
+How many units a count is, the captures do not say; the three are read as a point **[I]**,
+and that they are three signed thirty-twos, that the fourth byte is the slot and that each
+slot appears once are **[V]**.
+
+**Kind `0x03` — a tag, a triple written twice, and a sixteen-bit tail.** 41 records of 22
+bytes and 2 of 29. `[0x07]` is a tag nibble and the record's index (`0x40`, `0x50`, `0x60`,
+`0x61` measured); the six bytes at `0x08`–`0x0d` are written again at `0x0e`–`0x13`, and a
+sixteen-bit value closes the record (`0x00fd`, `0x0012`, `0x0002`). The two records of
+`mgo2-game-failed-memoryviolation` carry triples that mirror — `-2500, 916, 1800` and
+`2500, 900, -1800` — reading the six as three signed sixteen-bit values with x and z
+negated and y the ground height, **[I]**. The 29-byte form is the same tag and the same
+triple with seven more bytes behind it, and only two of those exist.
+
+**Kind `0x02` — a box.** 134 records of 20 bytes and 28 of 52, and the two lengths are the
+same record with a count of nought and of four:
+
+| offset | size | field |
+| --- | --- | --- |
+| `0x07` | 1 | the index, or its complement — it and `0x04` differ on which of the two is set, per capture |
+| `0x08` | 1 | `0x02` on the 20-byte form, `0x03` on the 52-byte one |
+| `0x09`–`0x10` | 8 | a header, unread — `cc 5b 00 00 00 00 89 7e` is its commonest value |
+| `0x11`–`0x13` | 3 | the count, little-endian: `00 00 00` on every 20-byte record, `00 00 04` on every 52-byte one |
+| `0x14` | 8 × count | that many eight-byte tuples |
+
+The four tuples of a 52-byte record are **the corners of an axis-aligned box**, and that is
+what fixes the reading: read as four signed sixteen-bit values they take two distinct values
+in the first and third positions and the full 2 × 2 product of them, with the second position
+constant and the fourth within a few counts of itself — `(22500, 0, 12288, 32385)`,
+`(22500, 0, 28672, 32416)`, `(24500, 0, 12288, 32385)`, `(24500, 0, 28672, 32416)` in one,
+and the negatives of that in another. **[I]**, and the count is what the length agrees with in
+all 162 — while 22 of the 28 corner records fit the two-by-two pattern, the other six
+carrying four corners that do not.
+
+**Kind `0x01` — four eight-byte tuples behind a ten-byte header.** 39 records, all 54 bytes,
+and only seven distinct bodies: `[0x07]` the index, `[0x08]` `0x26` on every one, `[0x09]` one
+of `00`, `01`, `03`, then ten bytes that vary, then `00 00 04` at `0x13`–`0x15` — the same
+count shape kind `0x02` writes — and 32 bytes behind it. Those last 32 do not show kind
+`0x02`'s two-by-two pattern and are not read here. **The record is [U] beyond its frame.**
 
 ### Loadout — 16 per replay, bodies 25–161 bytes [U]
 
