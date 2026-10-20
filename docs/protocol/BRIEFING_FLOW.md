@@ -371,6 +371,12 @@ simulate cannot know a round's winner — which is why the round's result write 
 the seam `MatchStartRunService.End` leaves open, and not a record this server
 sends today.
 
+**Three records a briefing is shown to carry here are still not written** — the
+`0xd001` controls on their 4–5 s tick, the `0x0002` blobs re-published per player
+every 10 s, and the `1250`/`125a` groups inside the bursts a join triggers. Each
+has its measurement, its cadence and what stops it in
+`docs/analysis/join-stall-after-mode2.md` §25, "To write later".
+
 ## 7. Open
 
 * **Corrected: the `0x0b` countdown *is* the briefing's, and the reasons it was

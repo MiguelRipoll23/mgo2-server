@@ -1702,11 +1702,49 @@ header — and no `07 12` body, the client should stay on its briefing screen,
 write its `1d`/`22` operations and then its `1f` ready — and the round should
 open from that ready rather than from a record the client acted on.
 
-**Still open.** The `0xd001` controls and `0x0002` state blobs the reference
-spaces at 5 and 10 s through that window are still only written in the sparse
-phase before the run, and the six-byte `1250`/`125a` groups the reference replays
-in the four bursts that follow a join (t+58.2 to t+65.1) are not written at all:
-they are a round's item-box group and this host writes none of them before a
-round opens. The header's trailing byte — `0x00` and `0x01` for the same slot in
-the same briefing — is a per-player value no record here carries, and is written
-zero.
+**Still open.** The three records below, which the reference writes in this window
+and this host does not; and the header's trailing byte — `0x00` and `0x01` for the
+same slot in the same briefing — a per-player value no record here carries, and
+written zero.
+
+### To write later: what the reference writes in that window and this host does not
+
+Each of these is measured in the reference and absent here; none is written yet.
+They are listed with the measurement behind them so the next change starts from
+bodies and a cadence rather than from a resemblance.
+
+**1. The `0xd001` controls, on a 4 to 5 s tick.** One-byte bodies under a session
+sequence — `mgo2-game-started-on-briefing` t+56.123 `05`, t+65.124 `0c`,
+t+69.999 `03`, t+74.495 `0d`, t+78.874 `03`, t+83.495 `06`, t+90.748 `0a`;
+`mgo2-game-joined-when-red-team-then-briefing`'s briefing t+65.138 `0c` to
+t+111.166 `08`, ten of them, 1.8 to 9 s apart. The bodies come from a small set
+(`00 03 04 05 06 08 0a 0c 0d 10 2c`) and what they mean is **[U]**;
+`SparsePhaseFramesUtils` already pins its own `02`–`09` for the steps before the
+run, and those are the capture's own values. What is missing is the
+*continuation*: the sparse phase ends at its last blob (`SparseSteps`) and a
+briefing after it carries the countdown and the pair alone.
+
+**2. The `0x0002` state blobs, on a 10 s tick and one per player.** The 22-byte
+body the sparse phase writes, but re-published for the whole room and not once:
+`mgo2-game-started-on-briefing` t+62.878, 72.554 and 83.495 carry one, its fourth
+byte `02` each time and its trailing value `0x000a`; `joined-when-red-team`
+re-announces every slot — `02`–`06` at t+62.667, `02`–`06` again at t+72.560,
+`07` and `08` at t+76.665, all of them at t+83.546, 94.541 and 101.665 — with the
+value `0x32` (50) for most and `0x0a` (10) or `0x64` (100) for some. So the
+fourth byte is the player's own place and the body is that player's state, which
+is the burst's blob written per player rather than once. The two open questions
+are the same one: **what the trailing value is** ([U]; the burst's own is 50 at
+the join, 100 through the round) and which players a tick re-announces.
+
+**3. The `1250`/`125a` groups inside the bursts a join triggers.** Both captures
+write them in the two to four seconds after the room's run —
+`mgo2-game-started-on-briefing` t+58.255 to t+65.124, thirty-two groups;
+`joined-when-red-team` t+62.666 to t+65.138 — and **nowhere else in the
+briefing**: the steady window t+68.0 to t+92.0 above holds none. They are a
+round's item-box group with no round behind it, and in `joined-when-red-team`
+they carry content — the 10-byte position records (`02 a2 fe 07 ea 20 03 00 00
+00`) and 9-byte tails beside the 6-byte pair — which is the map's own objects,
+not a body this host holds. The two six-byte filler pairs are writable from
+`ItemBoxRecordBodiesUtils`; the position and tail records are not, so a group
+written here would be the filler alone and the client would be told about boxes
+that were never placed.
