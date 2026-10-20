@@ -16,17 +16,37 @@ public static class MatchStateBodiesUtils
     /// <summary>Length of a state blob: every recorded one is this long.</summary>
     public const int StateBlobLength = 22;
 
-    /// <summary>Offset of the marker byte inside a state blob.</summary>
-    public const int StateBlobMarkerOffset = 18;
+    /// <summary>
+    /// Length of the presence map a state blob opens with: one bit per field of
+    /// a slot state, <c>ceil(164 / 8)</c> bytes.
+    /// </summary>
+    public const int StateBlobMapLength = 21;
 
-    /// <summary>Marker byte every recorded state blob carries.</summary>
-    public const byte StateBlobMarker = 0x40;
+    /// <summary>
+    /// The one field of a slot state a state blob carries. A slot state has 164
+    /// fields and exactly this one is flagged <c>0x0040</c>; it is a single byte
+    /// at state offset 287.
+    /// </summary>
+    /// <remarks>
+    /// The map's bit for this index is the <c>0x40</c> every recorded blob carries
+    /// at body offset 18 — <c>150 >> 3 = 18</c>, <c>1 << (150 &amp; 7) = 0x40</c> —
+    /// and its byte is the one that moves, at body offset 21.
+    /// </remarks>
+    public const int StateBlobFieldIndex = 150;
 
-    /// <summary>Offset of a state blob's only varying field, a big-endian 16-bit value.</summary>
-    public const int StateBlobValueOffset = 20;
+    /// <summary>Offset of a state blob's only varying field: one byte, behind the map.</summary>
+    public const int StateBlobValueOffset = StateBlobMapLength;
 
-    /// <summary>Value the sparse phase's blobs carry.</summary>
-    public const ushort SparseStateBlobValue = 100;
+    /// <summary>Value the sparse phase's blobs carry, and the host's own slot's.</summary>
+    public const byte MeasuredStateBlobValue = 100;
+
+    /// <summary>
+    /// Value a peer's slot reads before the host has measured it: the first value
+    /// every briefing capture names a peer with, bar `mgo2-game-started-on-
+    /// briefing`'s three already-measured peers, and the value the join-time burst
+    /// carries.
+    /// </summary>
+    public const byte UnmeasuredStateBlobValue = 50;
 
     /// <summary>Length of the state vector the state block's opcode introduces.</summary>
     public const int StateVectorLength = 89;
@@ -115,44 +135,72 @@ public static class MatchStateBodiesUtils
     public const byte StateUnwritten = 0xff;
 
     /// <summary>
-    /// Builds a state blob from its two fields: eighteen zero bytes, the marker,
-    /// a zero, and the value big-endian. Only the value moves across the round's
-    /// 141 blobs, which is why the record is built rather than copied twice.
+    /// Builds a state blob: a <see cref="StateBlobMapLength"/>-byte presence map
+    /// with <see cref="StateBlobFieldIndex"/>'s bit set, then that field's byte.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The capture's measurement, not a mapping: the replay parser does not
-    /// dispatch the blob's identifier.
+    /// <b>A state blob is a state transfer, and it parses exactly.</b> The record
+    /// is <c>{ 0x0002, len, class, body }</c> with <c>len</c> counting the class
+    /// byte, and a reader of <c>len</c> bytes — class first — is the whole record:
+    /// one byte of slot-state index, <c>ceil(164 / 8) = 21</c> bytes of presence
+    /// map, and the bytes of the fields whose bits are set. Every one of the 1429
+    /// copies in the thirteen captures has <c>len = 23</c> and a map holding one
+    /// bit, at index 150, whose field is one byte: <c>1 + 21 + 1 = 23</c> exactly.
+    /// The class byte is that state index, so it is the player's slot byte
+    /// (<c>key + 1</c>, the byte the loadout records carry) and names slot states
+    /// <c>0x01</c>–<c>0x18</c>, which are the session's twenty-four slot states.
     /// </para>
     /// <para>
-    /// <b>The identifier carries more than this one shape, and the class byte
-    /// moves with the value.</b> Measured over the six captures, <c>0x0002</c>
-    /// appears under <b>nineteen</b> fourth-byte values — every value from
-    /// <c>0x01</c> to <c>0x12</c>, and <c>0x15</c> — and the trailing value is
-    /// not one number per phase: game1
-    /// carries <c>0x0032</c>, <c>0x0045</c>, <c>0x005d</c>, <c>0x0062</c> and
-    /// <c>0x0063</c> as well as the sparse 100. So "only the value moves across
-    /// the round's blobs", as an earlier reading here had it, is true of *this*
-    /// shape and not of the identifier. What the other shapes are is **[U]**;
-    /// this host writes the two it can name (the sparse 100 under <c>0x01</c> and
-    /// the steady zero under <c>0x15</c>) and no value it cannot.
+    /// <b>The parse is the client's own, read out of `MGO2.ELF`.</b> The body
+    /// dispatcher <c>0x27E8B0</c> reads one byte as a state index into the 26-entry
+    /// table <c>0x0187E990</c>, reads <c>ceil(count / 8)</c> bytes of map, and walks
+    /// the map's bits — <c>srawi 3</c> for the byte, <c>clrlwi 0x1d</c> for the bit,
+    /// <c>sraw r0, r0, r11</c> then <c>clrlwi 0x1f</c> — so a bit is the byte's low
+    /// bit first and <c>0x40</c> in byte 18 is index <c>18 × 8 + 6 = 150</c>. Each
+    /// set bit then runs the descriptor's handler object (<c>0x0122A5C8</c>, vtable
+    /// <c>0x011F17F0</c>, slot 0 <c>0x27EC48</c>), which moves that field between the
+    /// stream and the slot's 1248-byte state block. Field 150's entry in the 164-field
+    /// table is <c>state+287</c>, one byte, and the only field of the 164 flagged
+    /// <c>0x0040</c> — the flag that publishes a field whether or not it changed,
+    /// which is why the record repeats on a tick instead of only on a change.
+    /// </para>
+    /// <para>
+    /// <b>The value is the host's measurement of that peer.</b> It starts at 50 the
+    /// first time a player is named, sits at that player's own level (55 to 100 in
+    /// <c>mgo2-game1</c>), reads 100 for the host's own slot in every capture that
+    /// holds it, and falls to 0 once the peer's records stop. What it measures is
+    /// **[I]**: a round trip is the reading the numbers fit, and the same host holds
+    /// a per-player ping over TCP (<c>0x4398</c>, <c>GamePlayer.Ping</c>), but
+    /// nothing on either wire names the unit.
+    /// </para>
+    /// <para>
+    /// <b>The identifier carries more than this one shape.</b> Measured over the six
+    /// captures, <c>0x0002</c> appears under <b>nineteen</b> fourth-byte values —
+    /// every value from <c>0x01</c> to <c>0x12</c>, and <c>0x15</c> — and the trailing
+    /// value is not one number per phase: <c>game1</c> carries <c>0x0045</c>,
+    /// <c>0x005d</c>, <c>0x0062</c> and <c>0x0063</c> as well as the sparse 100. What
+    /// the other shapes are is **[U]**; this host writes the two it can name (the
+    /// sparse 100 under <c>0x01</c> and the steady zero under <c>0x15</c>) and no
+    /// value it cannot. The briefing's tick writes it once per player rather than
+    /// once per room, and writes 50 for a peer it has not measured
+    /// (<see cref="UnmeasuredStateBlobValue"/>, `BriefingRoomPublishService`, and
+    /// `docs/analysis/join-stall-after-mode2.md` §28).
     /// </para>
     /// </remarks>
-    /// <param name="value">Value the blob's trailing field carries.</param>
+    /// <param name="value">Byte the carried field holds.</param>
     /// <returns>The record body.</returns>
-    public static byte[] StateBlobBody(ushort value)
+    public static byte[] StateBlobBody(byte value)
     {
         var body = new byte[StateBlobLength];
-        body[StateBlobMarkerOffset] = StateBlobMarker;
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(
-            body.AsSpan(StateBlobValueOffset, sizeof(ushort)),
-            value);
+        body[StateBlobFieldIndex / 8] = (byte)(1 << (StateBlobFieldIndex % 8));
+        body[StateBlobValueOffset] = value;
         return body;
     }
 
     /// <summary>The sparse phase's 100-valued state blob.</summary>
     /// <returns>The record body.</returns>
-    public static byte[] SparseStateBlob() => StateBlobBody(SparseStateBlobValue);
+    public static byte[] SparseStateBlob() => StateBlobBody(MeasuredStateBlobValue);
 
     /// <summary>The steady phase's zero-valued state blob.</summary>
     /// <returns>The record body.</returns>

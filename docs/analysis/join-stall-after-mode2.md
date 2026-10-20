@@ -1751,6 +1751,11 @@ not a body this host holds. The two six-byte filler pairs are writable from
 written here would be the filler alone and the client would be told about boxes
 that were never placed.
 
+**All three were then measured again and closed or re-read in §27** — the control
+bodies are not derivable (§27.2), the blob already matches the closest
+reference byte for byte (§27.3), and the item-box group belongs to the room that
+writes it rather than to a briefing (§27.4).
+
 ## 26. `myserver27.pcapng`: the briefing's run answers the report a second time
 
 `myserver27` is the first join of the build §25 shipped (`deploy` pin `a144b37`
@@ -1812,3 +1817,446 @@ entry should open on the two answers to the `82`/`84` echo and carry no `0x5ade`
 the client should stay on its screens past the fade, write its own operations and
 then its `1f` ready — and the round should open from that ready rather than from
 a record the client acted on.
+
+## 27. The briefing's remaining gaps, measured against the two references
+
+§25 listed three records the reference writes through a briefing and this host
+does not, and §26 left two client-only shapes unexplained. This section answers
+those five questions from the captures and from `MGO2.ELF`, so the next change
+starts from a measurement rather than from a resemblance. Nothing was changed
+in the server for this section: what it establishes is that three of the five
+are already matched or not writable, and what it leaves open is named.
+
+### 27.1 The identifiers are a vid under class bits, and that names both client shapes
+
+Every identifier in the session is `class bits | vid`, and reading them that way
+turns the two "client-only" shapes into ordinary streams:
+
+| identifier | bits | vid | what it is |
+| --- | --- | --- | --- |
+| `0x0a5c` / `0x025c` | `0x0800` / — | `0x25c` | the presence companion |
+| `0x0a61` / `0x0261` | `0x0800` / — | `0x261` | the rules pair |
+| `0x1a54` / `0x1254` | `0x1800` / `0x1000` | `0x254` | the operations stream |
+| `0x1ade` / `0x12de` | `0x1800` / `0x1000` | `0x2de` | the readiness report and its publication |
+| `0x5ade` / `0x52de` | add `0x4000` | `0x2de` | the same record with the answer bit |
+| `0xd001` | `0x4000` on `0x9001` | `0x001` | the answer to a join request |
+| **`0x0b0c`** | `0x0800` | **`0x30c`** | the live client's 16-byte record |
+| **`0x1ae2`…`0x1ae9`** | `0x1800` | **`0x2e2`…`0x2e9`** | the live client's `ff 01` reports |
+
+So the eight `ff 01` records are not eight unrelated identifiers: they are the
+eight vids immediately above the readiness vid `0x2de`, and the `0x0b0c` record
+is one vid of its own under the `0x0800` class. [V] the arithmetic, over every
+identifier in all the captures; what either vid states stays [U].
+
+**Both shapes track the build, not the client.** `myserver24` — the join
+captured before §25 — carries neither: no `0x0b0c` and no `0x1ae2`…`0x1ae9` in
+the whole session, while `myserver27` carries twelve of the first and fourteen
+groups of the second. The client is the same console in both, so the two shapes
+are a reaction to what this host now writes, not a constant of the client.
+
+### 27.2 `0xd001` is an answer per request, and its body is not derivable — the constant stays
+
+§25 item 1 asked for the control bodies to continue through a briefing. Read as
+a request/answer pair, the identifier is `0x4000 | 0x9001`, and the captures say
+what the pair does:
+
+| capture | client request | host answers | distinct bodies written (count in brackets) |
+| --- | --- | --- | --- |
+| `started-on-briefing` | `0x9001` len 1 body `00`, every 3–5 s, class 3…19 | `0xd001` len 1, same class | `01`…`10` and `12`, `9a` — `0a`(9), `10`(7), `02`(7), `0b`(6), `01`(6), `03`(5) … |
+| `joined-when-red-team` | same, class 3…19 | same | `08`(48), `10`(45), `04`(38), `0c`(33), `00`(11), `14`(7), then `2c 34 58 78 7c 84 8c a4 b4 bc c8` once each |
+| **`myserver27`** | same, class 11…21 | same | `24`, every time |
+
+The request body is **always `00`** and the answer's class is the request's own,
+so the body is neither an echo nor a reply derived from what was asked: it varies
+inside a session with no record between the two that could move it. The two sets
+are not even shaped alike — the five-player room's are all multiples of four
+(`00`, `04`, `08`, `0c`, `10`, `14`, `2c`, `34`, `58`, `78`, `7c`, `84`, `8c`,
+`a4`, `b4`, `bc`, `c8`), while the one-player room's run `01` to `10` with `12`
+and `9a` among them — so whatever the body carries, the two rooms do not carry
+it the same way, and no field is being echoed under two codings without a
+mapping the captures do not show. Its meaning is therefore [U] and the value is
+not writable faithfully, which is what `PeerAcknowledgementUtils.HostControlByte`
+already documents. Nothing in the captures shows a client's next record following
+this body, so it is not a gate either. **Closed: no change.**
+
+### 27.3 The `0x0002` blob is already the reference's, byte for byte
+
+§25 item 2 asked for a per-player re-announcement on a ten-second tick. The
+closest reference — the same one-player room, `started-briefing-then-solo` —
+writes exactly what this host writes:
+
+| | the join's blob | the tick's blob |
+| --- | --- | --- |
+| `started-briefing-then-solo` | t+6.006 class 4, `…40 00 00 32` | class 1, `…40 00 00 64` at 8.99, 15.1, 20.4, 27.4, 32.6, 39.2, 44.0 … |
+| `myserver27` | t+4.761 class 0, `…40 00 00 32` | class 1, `…40 00 00 64` at 7.17, 14.4, 19.5, 26.6, 31.5, 38.2, 44.5 … |
+
+Same body, same two values, same tick. The *per-player* form §25 describes
+(bodies under classes 2…9 with `32`, `0a` and one `64`) is in
+`joined-when-red-team`, a room of five, and its values are constant per slot for
+the whole briefing — a slot at `0a` stays at `0a` for two minutes while one
+momentarily reaches `64` — so they are not a load percentage climbing to 100 and
+the value is [U]. **Closed for a solo room; not indicated for a room of one.**
+
+**Withdrawn in part by §28.** That comparison stopped at t+44, where this host's
+replay of the recorded sparse phase stops; the reference host goes on writing the
+blob for the rest of the session, and one copy per player rather than one for the
+room. §28 measures it over the whole corpus and the tick is written now.
+
+The one byte that differs is the join blob's class: `4` there, `0` here. In
+`joined-when-red-team` that class is the player's lobby key (`2`…`9`), so it is
+the announcing player's own slot rather than a constant — a measured candidate,
+left open below.
+
+### 27.4 The `1250`/`125a` group is the room's, not the briefing's
+
+§25 item 3 listed the item-box group as missing from a briefing. The two
+reference briefings disagree, and that settles it:
+
+* `started-on-briefing` t+58.255 — its briefing's run carries **24 six-byte
+  filler pairs**, `0x1250` and `0x125a` alternating, each pair `000000000000`
+  and `010000000000`, and no position or tail record at all in the window.
+* `started-briefing-then-solo` t+57.626 — its briefing's run carries **none**;
+  the run is the marker, two heads, the state block, the pair, the three
+  room-state records, the close, the clock and the publication.
+
+So the group rides the run of the room that has one and not of the room that
+does not, and what decides it is not the phase. Writing it would be copying one
+room's contents into another's; **closed: not written.**
+
+### 27.5 What the reference's run carries that a solo room's does not
+
+Side by side, the two runs are close, and both references' *pair* marks no slot
+occupied while this host's marks the joiner:
+
+| record | `started-briefing-then-solo` | `myserver27` |
+| --- | --- | --- |
+| marker `0x52de`/`0x5ade` | present (this run answers the report) | **absent**, per §26 |
+| two `0x5001` heads | `f2=12, 13` | `f2=12, 13` |
+| state block + `0f00` | `90` + `2` | `90` + `2` |
+| pair `0x9001`/`0x1001` | `85 7e fe ff…` / `86 7e 7f 7f…` — **no slot marked** | `85 f3 fe 00 ff…` / `86 f3 7f 07 7f…` — slot 1 marked |
+| room state | 22 + 54 + 54 | 22 + 54 + 54 |
+| close pair + close | `20`+`20`+`7` | `20`+`20`+`7` |
+| round clock | `0x1254` len 3 `01 60 09` | none |
+| publication | `0x12de` len 14 | `0x1ade` len 8 |
+| rules pair | six `0x0261` in the run | none in the run; the tick writes two `0x0a61` 44 ms later |
+
+The clock and the publication's length are the room's own (the clock is 2 400
+units = 300 s there, and §25 already measured 5-, 6-, 8- and 14-byte
+publications across the corpus). The **pair's occupancy** is the one difference
+that is not a value: both references' runs publish the pair with every slot
+free, and the slots are marked later — `game1`'s pair gains `(14, 0)` 27 s after
+its run — while this host marks the joiner at the run. It is left open rather
+than changed, because `joined-when-red-team`'s join burst does mark its slots
+and nothing measured says a marked slot in a briefing's run is wrong.
+
+### 27.6 What `MGO2.ELF` says, and what it does not
+
+The binary was read with the Capstone readers in `tools/` (`mgo2_immediate_scan.py`,
+plus the raw scans used below), and it answers the question §25 would have
+asked of it — *what does the client mean by these bodies* — in the negative:
+
+* **No site constructs any of these vids as an immediate.** Sweeping every
+  `addi`/`addis`/`cmpwi`/`cmplwi`/`ori`/`oris` word whose low half is `0x30c`,
+  `0x2e2`, `0x2de`, `0x254`, `0x25c`, `0x261`, `0x001` or `0x002` returns no
+  identifier build: the hits are the `0x0254xxxx`/`0x0261xxxx` pointer setups
+  (`lis` at `0x01076760`, `0x010a9c1c`, `0x0100ef24`) and structure displacements
+  (`stw r0, 0x1a54(r11)` at `0x0043283c`). The ids are read from a table, which
+  the corpus already records for `0x1ade`/`0x0a5c`
+  (`docs/protocol/UDP_GAME_CAPTURE.md`), and that is true of the two shapes of
+  §27.1 as well.
+* **The 16-byte body is computed, not stored.** Its invariant word `46 1e e3 00`
+  occurs nowhere in the image, so the body is not a recorded constant a scan can
+  follow to its builder; the vid has to be found through its handler.
+* **Finding the handler needs the analysed project.** `docs/GHIDRA.md`'s
+  instructions are for the machine that holds `MGO2.gpr`; there is no Ghidra on
+  this host, and the table-driven dispatch is not reachable by immediate or
+  string search. Until the project is analyzed and `Mgo2Probe.java offset` can
+  be asked for the vid table's reader, the two shapes of §27.1 stay [U] — named
+  now, which they were not before.
+
+### 27.7 What is left
+
+1. The two client-only vids (`0x30c`, `0x2e2`…`0x2e9`) — named, both appearing
+   only on this build. The next measurement is a live run of the §26 fix: if
+   they vanish, they were §25's records being answered twice; if they remain,
+   they are the next thing to read with a decompiler.
+2. The join blob's class byte (`0` here, the announcing player's lobby key in
+   `joined-when-red-team`) — §28 finds it in every capture and settles the
+   briefing's tick, but the settings burst's closing copy still writes `0`.
+3. The run's pair, which this host marks occupied and both references' runs do
+   not.
+
+## 28. The `0x0002` blob is one record per player, and a briefing keeps writing it
+
+§27.3 closed the blob on the join window — eight copies, then silence on this host,
+against a reference that writes the same eight — and left the value and the class
+open. Read over the seven captures the repository holds, whole sessions rather than
+their first minute, both are settled: the record is **the host's statement about one
+player**, the fourth byte is that player's slot byte, and no briefing stops writing
+it.
+
+### 28.1 The record is the host's, one per player, keyed by the player's slot byte
+
+Decoded with `tools/udp_frame.py`'s frame reader (`tools/udp_briefing_flow.py` carries
+the pipeline); every `0x0002` of twenty-two bytes in the five reference captures and
+`myserver27`:
+
+| capture | records | client-sent | fourth bytes | players in the room |
+| --- | --- | --- | --- | --- |
+| `mgo2-game1` | 141 | **0** | `01`, `05`, `07`, `0c`, `10`, `15` | host + keys `04`, `06`, `0b`, `0f`, `14` |
+| `mgo2-game2` | 45 | **0** | `02`, `03` | host + key `01` |
+| `mgo2-game-started-on-briefing` | 86 | **0** | `02`…`07` | host + keys `01`…`06` |
+| `mgo2-started-briefing-then-solo-game` | 51 | **0** | `01`, `04`, `08`, `14` | host + keys `03`, `07`, `13` |
+| `mgo2-game-joined-when-red-team-then-briefing` | 570 | **0** | `02`…`15` | host + keys `01`…`14` |
+| `mgo2-joined-game-in-progress-last-round` | 69 | **0** | `01`, `08`, `0c`, `14` | host + keys `07`, `0b`, `13` |
+| **`myserver27`** | **8** | 0 | `00`, `01` | host + key `01` |
+
+Two facts fall out. **The fourth byte is the player's own slot byte, key plus one** —
+the byte the loadout records carry (`UDP_SETTINGS_PAYLOAD.md`) and not the raw table
+key the pair writes: `game1`'s five joiners are keys `04`, `06`, `0b`, `0f`, `14` and
+the capture announces `05`, `07`, `0c`, `10`, `15`, with `01` for the host's own slot
+zero. And **the record never travels from the client**: none of the 962 copies in the
+corpus is inbound, so it is the host's own report and nothing echoes it. The body is
+one shape in all of them — eighteen zeros, `40`, `00`, a `u16` — which is
+what `MatchStateBodiesUtils` writes. **§28.7 re-reads that shape**: the leading
+twenty-one bytes are a state transfer's presence map, the `0x40` is bit 150 of it,
+and the last byte is that field's value — the trailing two bytes only *look* like a
+big-endian `u16` because the map's last byte is zero.
+
+### 28.2 The value is the player's own, it starts at 50, and it moves
+
+The value per fourth byte, in order (§28.7 makes it one byte, not a `u16`):
+
+| capture | fourth byte | value over the session |
+| --- | --- | --- |
+| `game1` | `07` | 50, 69, 93, 99, 98, 94, 100, 98, 94, 100, 93, 98, 99 |
+| `game1` | `0c` | 50, 55, 73, 83, 77, 78, 83, 78, 73, 85, 74, 79 |
+| `game1` | `10` | 50, 91, 90, 94, 98, 94, 99, 94 |
+| `game1` | `15` | 50, then 0 for the rest of the session |
+| `game1` | `01` | 100, every copy |
+| `started-on-briefing` | `02` | 50, then 10 for 60 s |
+| `started-on-briefing` | `03`, `04`, `06` | 100, every copy |
+| `started-briefing-then-solo` | `04` | 50, then 0 |
+| `started-briefing-then-solo` | `08` | 50, 38, 0 |
+| `joined-in-progress` | `14` | 89, 84, 89, 84, 85, 90, 87, 92, 88, 83 … |
+| `joined-in-progress` | `0c` | 0, 9, 35, 30, 40, 0 |
+| `myserver27` | `00` | 50 — once, at the join |
+| `myserver27` | `01` | 100, seven times, then nothing for 100 s |
+
+So the value is **per player**, **bounded by 100**, **starts at 50 the first time a
+player is named**, **sits at that player's own level afterwards**, and **falls to 0
+when that player's records stop**; the host's own slot reads 100 in every capture
+that holds it. It is not a clock, a count of players, a round length or a load
+percentage that climbs once: `game1`'s class `0c` moves 73 → 85 → 74 and
+`joined-in-progress`'s class `14` moves 89 → 84 → 92 → 83 with no direction, which is
+a figure the host measures per peer and not a monotone.
+
+**The standing reading is the peer's round-trip time in milliseconds, capped at
+100.** Three things in the values point at it and rule out a stored attribute — the
+class of thing the lobby's own player record carries:
+
+* **A level, a clan emblem or a friend flag does not move.** Those are one value
+  per player for the session, and the blob's moves per copy: `game1`'s class `0c`
+  reads 73, 83, 77, 78, 83, 78, 73, 85 and `joined-in-progress`'s class `14` 89,
+  84, 89, 84, 85, 90, 87, 92, 88, 83. A few milliseconds of jitter between
+  samples is what a latency does and what none of those fields do.
+* **Every player starts at 50 and the host's own slot reads 100.** No attribute
+  schema starts every player at 50, and no player's own level or clan is 100 by
+  being the host. 50 is a "not measured yet" sentinel and 100 a cap and a self
+  value.
+* **A silent peer falls to 0**, which is what a round-trip time reads when nothing
+  is coming back, and not what a stored field does.
+
+**And the TCP lobby carries exactly this per character.** `0x4398 UpdatePings` is
+sent by the host only, is keyed by character identifier, and stores one `u32` per
+player (`UpdatePingsHandler` → `GamePlayer.Ping`, written back out by
+`RoomBrowserHandlers`); `TCP_GAME_SERVER_PROTOCOL.md` calls the pair "targetId+ping
+pairs". So the same host that writes the blob already has a per-player RTT to put in
+it, over the other channel, in the other direction — a ping is the one per-player
+figure the client is known to be handed, and it is the shape the numbers have.
+
+**What it measures is still [I]**, because nothing on the UDP wire names the unit and
+the client's handler is not reachable to settle it: the identifier is registered
+(the inbound registry's entry 0, `udp-record-dispatch.md` §4.1) but its handler is
+read off a runtime container and no site builds the vid as an immediate (§27.6), and
+the replay console does not decode the record at all
+(`RPDT_REPLAY_RECORDS.md`, the `0x0002` row). What this does settle is that it is a
+measurement of the peer and not one of its stored attributes, which is what a server
+has to know before it writes one.
+
+### 28.3 What the briefings do, and what this host did
+
+**The tick does not stop at the sparse phase.** `mgo2-game-started-on-briefing`
+writes the blob at t+6.0, 12.2, 22.7, 32.4, 38.9, 42.7, 51.6, then 62.9, 72.6, 83.5,
+93.1, 102.8 as its briefing runs to 198 s, and on through its round: gaps of 3.9 to
+11.3 s, which is the host's own tick and not a fixed period.
+`mgo2-started-briefing-then-solo-game` writes one every 5 to 9 s from t+9.0 to the
+round it opens at t+174, its host's copy at class `01` and the guest's at `04` from
+t+92.9 on, two per instant once there are two players.
+
+This host's sparse phase is a replay of the recorded host's own draw, so its eight
+blobs at t+4.8…44.5 are the recording's — and then it wrote **no `0x0002` at all**
+for the 100 s of briefing that followed (`myserver27`), while its join burst's
+closing copy carried class `0` where the reference names the joining player's slot
+byte. The client was told its own state once at the join and once per sparse step,
+and never again from its own slot.
+
+### 28.4 What was changed
+
+`BriefingRoomPublishService` writes the blob again, on its own ten-second tick, for
+as long as the briefing runs:
+
+* **one record per player of the room**, its fourth byte the player's slot byte
+  (`key + 1`) from `LobbySlotService`, which is the byte every capture carries;
+* **from the end of the sparse phase onward** — `SparsePhaseFramesUtils`'s steps are
+  the recording's and a blob written among them would be a copy no capture holds;
+* **the host's own slot 100 and every peer 50** (§28.7.3): the field is the host's
+  measurement of that peer, and 50 is the pre-measurement value — every peer of
+  seven of the ten captures is named with it first, and it is the value the
+  join-time burst carries. A host that later reports pings over TCP
+  (`UpdatePingsHandler`) has the measurement and can write it here instead.
+
+The settings burst's own closing copy takes the same rule from the other side: it
+is sent to one peer, so its fourth byte is **that peer's** slot byte
+(`PlayerSettingsBurstService.BuildSettingsBurst`'s `answeringSlot`), which is what
+all three captures that hold a burst carry.
+
+### 28.5 What is left
+
+1. **The burst's closing copy names the joiner now.** It wrote class `0`; the
+   scheduler resolves the peer's slot from the roster
+   (`RoomRosterService.Find(context.Session.RemoteAddress)`) and the burst writes
+   `key + 1` — `4` in `started-briefing-then-solo`, `2` in `started-on-briefing`,
+   `0x15` in `game1` — which is the byte each capture carries. It is `0` only for a
+   peer the roster cannot name, which is a burst that should not have been
+   scheduled.
+2. **The value is a measurement this host does not make**, so 100 is a statement
+   that the peer is there and nothing more.
+3. **Nothing here is verified live**: the change is measured against the captures and
+   the build and the codec tests pass, but a client has not joined it. What would
+   confirm it is the same join, its briefing carrying one `0x0002` per player every
+   ten seconds with the client's own slot byte, and the client left on its screens
+   past the fade.
+
+### 28.6 What `MGO2.ELF` says about it, and where it stops
+
+The binary was swept with the Capstone readers in `tools/`
+(`mgo2_immediate_scan.py`'s segment map plus the raw scans below), for the four
+things a builder or a reader of this body would have to contain.
+
+* **The marker is not a constant any site sets.** No instruction in the image
+  loads `0x4000` at all (`addi rD, 0, 0x4000` → **0 hits**), so the word at body
+  offset `16` is not written as a literal from code — it is either computed or
+  copied. `li rD, 0x40` near a `stb …, 0x12(…)` returns six sites, all of them
+  `0x0053…`/`0x0091…` graphics code, and none is on this path.
+* **There is no static template of the body.** A `18`-zero + `40 00` sequence
+  appears seven times in the file, every one of them unaligned inside other data,
+  and none in a read-only block a body would be copied from.
+* **The value is computed somewhere with a 100 cap.** The only `li rD, 100` beside
+  a `sth rS, 0x14(…)` in the whole image is `0x00263874`, in a block that reads a
+  `u16` at `+0xb2`, multiplies it by `200` (`mulli r0, r0, 0xc8`), divides by
+  `100 − x` (`subfic r9, r28, 0x64`), clamps the result at `100`
+  (`cmpwi r25, 0x64` / `ble`), compares two such figures at `19` (`0x13`) and `9`
+  and averages them. That is a **percentage the host derives per peer with the
+  blob's own cap**, and it is the only one in the module the record handlers live
+  in — a lead for the value's meaning, not a reading.
+* **The registry entries are not built as immediates either.** Of the eighteen
+  entry words `udp-record-dispatch.md` §4.1 reads out of the live container
+  (`(index << 12) | vid`), only four occur as immediates anywhere in the text, and
+  the one that looks like an identifier — `0x1001` at `0x00bdc688` — is an `ori`
+  of a UI flag on an object at `+0x64`, not a registration. The table is filled
+  from computed values, which is what the dump read.
+
+So the handler for vid `0x002` is not reachable this way: it is bound at runtime
+into a container whose populate sites do not name the vid, and the body it reads
+carries no literal a scan can follow back. **§28.7 supersedes this section's
+conclusion**, though not its measurements: the route that closed it is not the
+vid's handler but the body's own shape, which is a parse `MGO2.ELF` contains in
+full and whose length arithmetic the corpus checks.
+
+## 28.7 The handler is the state dispatcher, and the body is one field of a slot state
+
+The four scans of §28.6 were looking for a per-`vid` handler and a body built from
+literals. Neither exists for this record: the client's body dispatcher reads a
+**state index, a presence map and the present fields**, and this record is one of
+those transfers — the shape `udp-record-dispatch.md` §3.5–§3.6 reads out and puts at
+`0x27E8B0`, which is the module object's own vtable slot 0.
+
+### 28.7.1 The length arithmetic closes, in all 1429 copies
+
+The record is `{ id u16, len u8, class u8, body }` and for an id below `0x1000` the
+`len` byte counts the class byte with the body (`tools/udp_frame.py`,
+`parse_messages`). Every one of the 1429 copies of `0x0002` in the thirteen captures
+in the repository root has **`len = 23`** and a 22-byte body, so a reader of `len`
+bytes — class first — is the whole record. Read through the state schema
+(`tools/mgo2_record_schema.py`):
+
+| byte of the payload | what the schema says it is |
+| --- | --- |
+| 1 | the state index. `0x01`–`0x18` are the session's **24 slot states**, 164 fields each; the class byte is `key + 1`, so slot `0x01` is the host's own and `0x15` the key-`0x14` joiner of `game1` |
+| 21 | the **presence map**, `ceil(164 / 8)` bytes, one bit a field |
+| 1 | the byte of the one field whose bit is set |
+
+`1 + 21 + 1 = 23`, exactly, in every copy. The map of every copy is zero but for
+one bit. **Which bit** the code answers itself: `0x27E8B0` walks the map with
+
+```
+0x27E964: srawi  r9, r31, 3      ; byte index = field index / 8
+0x27E968: clrlwi r11, r31, 0x1d  ; bit       = field index & 7
+0x27E984: lbz    r0, 8(r9)       ; the map byte
+0x27E988: sraw   r0, r0, r11     ; shift right by the bit
+0x27E98C: clrlwi r0, r0, 0x1f    ; and take bit 0
+```
+
+so **a byte's low bit is its first field** and the `0x40` every copy carries at body
+offset 18 is `18 × 8 + 6 = 150`. Field 150 of the shared 164-field table is
+`state+287`, **one byte**, and — measured over the table — the **only field of the
+164 flagged `0x0040`**, the flag `0x27E578` publishes whether or not the value
+changed (`udp-record-dispatch.md` §3.6). That is why the record repeats on the
+host's tick instead of only on a change.
+
+The two superseded readings are both arithmetic that this closes: the body is not
+"eighteen zeros, `40 00`, a big-endian `u16`" (§28.1) — the last two bytes are the
+map's final byte (zero) and the field's one byte, which coincide with a `u16` only
+because the map's last byte is zero — and the value is not a sixteen-bit field.
+
+### 28.7.2 The chain the record runs on the client
+
+1. **the body dispatcher** — `0x27E8B0`, the module object's vtable `0x011A63C8`
+   slot 0: read one byte (`0x26CB20`), scale it by four and index the 26-entry table
+   `0x0187E990` (`rlwinm r0, r0, 2, 0x16, 0x1D`, so the code is written for 256
+   entries and the module fills 26). The class byte is that index.
+2. **the map** — `ceil(field count / 8)` bytes, read by the same cursor.
+3. **the field mover** — one call per set bit to the descriptor's handler object
+   `0x0122A5C8` (vtable `0x011F17F0`, slot 0 `0x27EC48`), which moves that field's
+   bytes between the stream and the slot's **1248-byte state block**
+   (`0x01876F88 + k × 0x4E0`). Field 150 is one byte at `+287` of it, so this record
+   writes one byte of one slot's state and nothing else.
+
+So the handler for the record is not a per-`vid` handler at all: it is the state
+dispatcher, reached for every record whose payload opens on a state index, and the
+`0x002` entry of §4.1's inbound registry only says the client accepts the stream.
+What is still **[U]** is the **name** of field 150. Nothing reads it through the
+accessor at the size the table gives it: of the 283 `bl 0x27E480` sites, the nearest
+`li r4, 0x96` before each call is size `0x7c` (124) in all three that carry one, a
+different descriptor's field 150; the only size-1 call with index `0x96` is a
+*setter* at `0x009e94ac`, in another module. So field 150 is read as part of the slot
+state block by code that owns that block, and
+the block's fields are addressed by the table rather than by literals in code, which
+is why no `stb …, 0x11f(…)` exists either. The reading of the value stands as §28.2
+has it: a per-peer figure the host measures, 100 for its own slot, 50 before the
+first measurement, 0 once the peer's records stop.
+
+### 28.7.3 What the code writes now
+
+`MatchStateBodiesUtils.StateBlobBody` builds the record as the schema describes it —
+the bit for `StateBlobFieldIndex` in a `StateBlobMapLength`-byte map, then the byte
+at `StateBlobValueOffset` — which is byte-for-byte what the earlier `18 zeros + 0x40
++ u16` builder wrote, since the field is the map's last byte plus one. The briefing's
+tick (`BriefingRoomPublishService`) now writes **100 for the host's own slot and 50
+for every peer**. The host's own slot is 100 in every capture that holds it, and 50
+is the value a peer is named with before it has been measured: every peer of seven
+of the ten captures starts there, and the join-time burst carries it. The three
+exceptions name a peer with the measurement it already has — 100 for a peer whose
+figure the host has settled, and 62, 0 and 89 in a join into a running game — which
+is a measurement this host cannot make, so 50 is what a peer's slot takes.

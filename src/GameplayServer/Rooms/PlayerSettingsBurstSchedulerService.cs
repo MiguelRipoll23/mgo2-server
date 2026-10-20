@@ -38,11 +38,16 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// <param name="burst">Builder of the settings burst and the control record that follows it.</param>
 /// <param name="matchSettings">Resolver of the room's own rotation.</param>
 /// <param name="loadoutReader">Reader of the room's own players and their loadouts.</param>
+/// <param name="roster">
+/// The room's roster, whose slot for the peer the burst answers is the fourth byte
+/// of its closing state blob.
+/// </param>
 /// <param name="logger">Logger of this scheduler.</param>
 public sealed class PlayerSettingsBurstSchedulerService(
     PlayerSettingsBurstService burst,
     MatchSettingsService matchSettings,
     LobbyLoadoutService loadoutReader,
+    RoomRosterService roster,
     ILogger<PlayerSettingsBurstSchedulerService> logger)
 {
     /// <summary>
@@ -97,9 +102,17 @@ public sealed class PlayerSettingsBurstSchedulerService(
             context.Remote,
             loadouts.Count);
 
+        // The burst answers one peer, and every capture says so in its closing
+        // state blob: the fourth byte is that peer's slot byte, `key + 1`, which
+        // is the record's own announcement of the player rather than of the room
+        // (PlayerSettingsBurstService.BuildSettingsBurst).
+        var answeringSlot = roster.Find(context.Session.RemoteAddress) is { } member
+            ? (byte)(member.SessionSlot + 1)
+            : (byte)0;
+
         await RosterRunSendUtils.SendAsync(
             context,
-            burst.BuildSettingsBurst(rotation, loadouts),
+            burst.BuildSettingsBurst(rotation, loadouts, answeringSlot),
             compressed: true);
         logger.LogDebug(
             "UDP {LocalPort}: settings burst sent to {RemoteAddress}; sending its closing control",

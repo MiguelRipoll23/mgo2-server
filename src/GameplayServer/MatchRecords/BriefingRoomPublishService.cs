@@ -1,4 +1,5 @@
 using Mgo2Server.GameplayServer.Rooms;
+using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
 
@@ -53,11 +54,16 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// The stream counters a session record's fourth byte comes from: the room's
 /// count is one of those and takes its own stream's next value.
 /// </param>
+/// <param name="lobbySlots">
+/// The room's players, by the key each holds in its 24-entry player table: every
+/// player is announced in a state blob of its own.
+/// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class BriefingRoomPublishService(
     RoomRosterService roster,
     MatchRoundStateService roundState,
     MatchRecordSequenceService sequences,
+    LobbySlotService lobbySlots,
     ILogger<BriefingRoomPublishService> logger)
 {
     /// <summary>
@@ -66,6 +72,23 @@ public sealed class BriefingRoomPublishService(
     /// its ready set are written on.
     /// </summary>
     public const int PublishPeriodMilliseconds = BriefingReadyPublishService.PublishPeriodMilliseconds;
+
+    /// <summary>
+    /// Ticks of <see cref="PublishPeriodMilliseconds"/> between two state blobs:
+    /// ten seconds, which is the spacing the two reference briefings keep.
+    /// </summary>
+    /// <remarks>
+    /// <b>The blob does not stop where the sparse phase does.</b> Our sparse
+    /// phase is a replay of the recorded host's own draw, so it ends at its last
+    /// blob — 42.2 s after the roster answer — and this host wrote no
+    /// <c>0x0002</c> record after it, while every reference keeps writing one for
+    /// as long as the room waits. `mgo2-game-started-on-briefing` writes one from
+    /// t+6.0 through its 198 s briefing and on into its round, 3.9 to 11.3 s
+    /// apart, and `mgo2-started-briefing-then-solo-game` one every 5 to 9 s from
+    /// t+9.0 to the round it opens
+    /// (`docs/analysis/join-stall-after-mode2.md` §28).
+    /// </remarks>
+    public const int StateBlobTickInterval = 4;
 
     /// <summary>Sent count of a peer nothing has been told yet.</summary>
     private const int NoCountSent = -1;
@@ -89,6 +112,14 @@ public sealed class BriefingRoomPublishService(
         var session = context.Session;
         var sentCount = NoCountSent;
 
+        // Counted from the same instant the sparse phase is, because the two are
+        // started together and the blob's own tick is read off the phase's end
+        // (StateBlobTickInterval): the phase's steps are the recorded host's, and
+        // a blob written among them on this counter would repeat ones the
+        // recording already carries.
+        var started = DateTimeOffset.UtcNow;
+        var ticks = 0;
+
         while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
         {
             try
@@ -101,7 +132,9 @@ public sealed class BriefingRoomPublishService(
                     await context.Send(record.Type, record.Body, record.FourthByte);
                 }
 
+                await PublishStateBlobAsync(context, started, ticks);
                 sentCount = await PublishCountAsync(context, sentCount);
+                ticks++;
             }
             catch (Exception exception)
             {
@@ -123,6 +156,81 @@ public sealed class BriefingRoomPublishService(
             "UDP {LocalPort}: the room's rules and count to {RemoteAddress} ended",
             context.LocalPort,
             session.RemoteAddress);
+    }
+
+    /// <summary>Slot key the host's own player holds in the room's player table.</summary>
+    private const byte HostOwnSlot = 0;
+
+    /// <summary>
+    /// Writes one state blob per player of the room on its own ten-second tick,
+    /// once the sparse phase has written its last one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It is one record per player and not one record for the room.</b> The
+    /// identifier never travels alone in a room of more than one: every captured
+    /// <c>0x0002</c> carries the slot byte the loadout records carry — the player's
+    /// key plus one — and a capture's records for the room's players repeat on
+    /// that tick. `mgo2-game1` writes seven of them, for classes `01`, `05`, `07`,
+    /// `0c`, `10` and `15`, and its five joiners hold keys `04`, `06`, `0b`, `0f`
+    /// and `14`; `mgo2-game-started-on-briefing` writes one for each of the six
+    /// players it briefs. The class is therefore the player's own and the value is
+    /// that player's own, which is what this writes.
+    /// </para>
+    /// <para>
+    /// <b>The record is a one-field state transfer, and the class is its state.</b>
+    /// The class byte is a slot state's index — one of the session's 24 slot states
+    /// — and the body behind it is a 21-byte presence map plus the one field bit 150
+    /// names, a single byte (`MatchStateBodiesUtils.StateBlobBody`);
+    /// `docs/analysis/join-stall-after-mode2.md` §28.7 carries the parse and the
+    /// client's handler that reads it.
+    /// </para>
+    /// <para>
+    /// <b>This host measures nothing, so it writes the only two values it can name.</b>
+    /// The field is the host's figure for that player: a peer is named with 50 the
+    /// first time and sits at its own measured level afterwards (`mgo2-game1`'s
+    /// class `0c` reads 50, 55, 73, 83, 77, 78, 83, 78, 73, 85), and the host's own
+    /// slot reads 100 in every capture that holds it. 50 is the pre-measurement value
+    /// — every peer in seven of the ten captures is named with it first, and it is
+    /// the value the join-time burst carries — so it is what a peer's slot takes
+    /// here, where 100 would be a measurement this host has not made; the host's own
+    /// slot takes 100.
+    /// A host that later reports pings over TCP (`UpdatePingsHandler`) has the
+    /// measurement and can write it here instead.
+    /// </para>
+    /// </remarks>
+    /// <param name="context">Context the records are written through.</param>
+    /// <param name="started">When this publication started, beside the sparse phase.</param>
+    /// <param name="ticks">Passes this publication has made.</param>
+    private async Task PublishStateBlobAsync(
+        PeerContext context,
+        DateTimeOffset started,
+        int ticks)
+    {
+        if (ticks % StateBlobTickInterval != 0)
+        {
+            return;
+        }
+
+        // The sparse phase writes the recording's own blobs, so nothing here goes
+        // out until it has closed: a blob beside a recorded one would be a second
+        // record the capture does not carry.
+        if (DateTimeOffset.UtcNow - started
+            < TimeSpan.FromMilliseconds(SparsePhaseFramesUtils.SparsePhaseMilliseconds))
+        {
+            return;
+        }
+
+        foreach (var slot in await lobbySlots.ReadAsync())
+        {
+            var value = slot.Slot == HostOwnSlot
+                ? MatchStateBodiesUtils.MeasuredStateBlobValue
+                : MatchStateBodiesUtils.UnmeasuredStateBlobValue;
+            await context.Send(
+                UdpCommandConstants.GameStateBlob,
+                MatchStateBodiesUtils.StateBlobBody(value),
+                slot.Slot >= byte.MaxValue ? byte.MaxValue : (byte)(slot.Slot + 1));
+        }
     }
 
     /// <summary>

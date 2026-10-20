@@ -877,12 +877,19 @@ in the whole round of that shape. **[V]**
 
 A seventh record follows 300µs later on counter 6: `0xd001` with body `02`. **[V]**
 
-**The state blob is fully pinned.** All 141 `0x0002` records in the round are 22
-bytes and all go server to client. Eighteen are zero, then `40 00`, then a
-sixteen-bit big-endian value — the only part that moves: 100 for 56 of them, then
-0, 94, 98, 99, and the 50 this burst carries.
-`PlayerSettingsBurstService.BuildClosingStateBlob()` reproduces the join-time blob
-exactly. What the value counts is **[U]**. **[V]**
+**The state blob is a one-field state transfer.** All 141 `0x0002` records in the
+round are 22 bytes and all go server to client; with the class byte the `len` byte
+counts, the payload is 23 bytes and parses exactly: one slot-state index, a 21-byte
+presence map and one byte for the field the map's single bit names — field 150 of the
+shared 164-field table, `state+287`, one byte. The `0x40` at body offset 18 is that
+bit (`150 >> 3 = 18`, `1 << 6 = 0x40`); the map is read low bit first, which the
+dispatcher `0x27E8B0` says in its own instructions. The last byte is the field's
+only moving part: 100 for 56 of them, then 0, 94, 98, 99, and the 50 this burst
+carries. `PlayerSettingsBurstService.BuildClosingStateBlob()` reproduces the
+join-time blob exactly. The field is the host's per-player figure and what it
+measures is **[I]**; the whole derivation is
+`docs/analysis/join-stall-after-mode2.md` §28.7. **[V]** for the parse, **[I]** for
+the name.
 
 **`0xd001` is mostly the host's, not the peer's.** The round holds 181 of them:
 **176 server to client, 5 the other way.** It was registered receive-only here on

@@ -494,6 +494,12 @@ round-over, `0x12` race goal, `0x13` rating, `0x0f` unnamed), are:
 | `0x1f` | — | 3 B ×2 | `1f 05 01` |
 | `0x22` | — | 22 B ×2 | `22 05 00 0b 16 00 0e 0e …` |
 
+**A wire record that does carry this parse has since been found**: the `0x0002`
+body is `[state index][21-byte map][1 byte]`, `len = 23` in all 1429 copies of
+thirteen captures, and `join-stall-after-mode2.md` §28.7 walks it through `0x27E8B0`
+to `0x27EC48` and field 150 of the slot state — so the operations stream is somebody
+else's and this identifier's records are the state level's own.
+
 So the two levels are separate, and each is now read out:
 
 * **The state level** — `0x27E8B0` and `0x27EC48`: a state index, `ceil(count/8)` bytes of

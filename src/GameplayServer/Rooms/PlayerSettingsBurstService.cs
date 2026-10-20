@@ -152,10 +152,22 @@ public sealed class PlayerSettingsBurstService(
     /// recorded host's loadout bodies in the burst, which is what a room that
     /// could not be read gets.
     /// </param>
+    /// <param name="answeringSlot">
+    /// The slot byte (<c>key + 1</c>) of the player the burst is answering, carried
+    /// as the closing state blob's fourth byte, or <c>0</c> for a peer the roster
+    /// cannot name. Every capture writes the joiner's own there:
+    /// `mgo2-started-briefing-then-solo-game` t+6.006 carries `4` and its request
+    /// reads `0b 04`, `mgo2-game-started-on-briefing` t+5.996 carries `2` behind a
+    /// `0b 02`, and `mgo2-game1` t+6.687 carries `0x15` for the joiner whose key is
+    /// `0x14` — the blob is that player's statement about itself, on the same
+    /// record the briefing's tick later writes one per player under
+    /// (`docs/analysis/join-stall-after-mode2.md` §28).
+    /// </param>
     /// <returns>The records in send order, each with the type it travels as.</returns>
     public List<RosterRecord> BuildSettingsBurst(
         IReadOnlyList<MatchRotationEntry>? rotation,
-        IReadOnlyList<LobbyLoadout>? loadouts)
+        IReadOnlyList<LobbyLoadout>? loadouts,
+        byte answeringSlot = 0)
     {
         // The fourth byte continues the roster run's numbering instead of
         // restarting it, and it comes from the one counter every record of the
@@ -210,7 +222,7 @@ public sealed class PlayerSettingsBurstService(
                 roster.TakeRunOrdinal()));
         }
 
-        burst.Add(new(UdpCommandConstants.GameStateBlob, BuildClosingStateBlob()));
+        burst.Add(new(UdpCommandConstants.GameStateBlob, BuildClosingStateBlob(), answeringSlot));
         return burst;
     }
 
@@ -355,42 +367,34 @@ public sealed class PlayerSettingsBurstService(
     }
 
     /// <summary>
-    /// Builds the state blob the burst closes with: eighteen zero bytes, a
-    /// marker, a zero, and a sixteen-bit big-endian value.
+    /// Builds the state blob the burst closes with: a presence map with bit 150
+    /// set, then that field's one byte.
     /// </summary>
     /// <remarks>
-    /// The shape is fixed across all 141 blobs the round contains, and only the
-    /// trailing value moves — 100 for 56 of them, then 0, 94, 98, 99 and the 50
-    /// this burst carries. What it counts is unknown, and the replay parser's
-    /// record table does not dispatch its identifier either.
+    /// <b>It is a one-field state transfer, not a body with a marker</b>: a presence
+    /// map with field 150's bit set, then that field's one byte, which is the host's
+    /// still-unmeasured figure for the peer — 50. The parse is
+    /// `docs/analysis/join-stall-after-mode2.md` §28.7 and what the field measures is
+    /// **[U]**.
     /// </remarks>
     /// <returns>The record body.</returns>
     public static byte[] BuildClosingStateBlob()
     {
         var body = new byte[StateBlobLength];
-        body[StateBlobMarkerOffset] = StateBlobMarker;
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(
-            body.AsSpan(StateBlobValueOffset, sizeof(ushort)),
-            JoinStateValue);
+        body[ClosingStateFieldIndex / 8] = (byte)(1 << (ClosingStateFieldIndex % 8));
+        body[ClosingStateMapLength] = JoinStateValue;
         return body;
     }
 
-    /// <summary>Body length of the state blob.</summary>
+    /// <summary>Body length of the state blob: the map, then the field's byte.</summary>
     public const int StateBlobLength = 22;
 
-    /// <summary>Offset of the fixed marker inside the state blob.</summary>
-    private const int StateBlobMarkerOffset = 18;
+    /// <summary>The slot state's field the blob carries, one byte at <c>state+287</c>.</summary>
+    private const int ClosingStateFieldIndex = 150;
 
-    /// <summary>Value the state blob's fixed marker carries in every capture.</summary>
-    private const byte StateBlobMarker = 0x40;
+    /// <summary>Length of the presence map the blob opens with, <c>ceil(164 / 8)</c>.</summary>
+    private const int ClosingStateMapLength = 21;
 
-    /// <summary>Offset of the blob's only varying field, a sixteen-bit value.</summary>
-    private const int StateBlobValueOffset = 20;
-
-    /// <summary>
-    /// The value the blob carries in the captured burst. Later blobs in the same
-    /// round carry 100 for the most part, so this one is the join-time value
-    /// rather than a constant.
-    /// </summary>
-    private const ushort JoinStateValue = 50;
+    /// <summary>The value the captured burst carries: the figure before any measurement.</summary>
+    private const byte JoinStateValue = 50;
 }
