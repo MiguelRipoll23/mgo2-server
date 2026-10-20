@@ -2305,7 +2305,7 @@ last byte. So:
 
 | family | map bit | field | value seen |
 | --- | --- | --- | --- |
-| `0b SS 02 00 … 00` | byte 0 = `0x02` | 1 (`state+1`, 1 byte) | `0x00`, `0x01`, and `0xe0` once (`mgo2-game1` t+449.043) |
+| `0b SS 02 00 … 00` | byte 0 = `0x02` | 1 (`state+1`, 1 byte) | `0x00`, `0x01`, and `0xe0` (three in `mgo2-game1` from t+449.043, three in `mgo2-joined-game-in-progress-last-round`) |
 | `0b SS 00 … 01 00 02` | byte 19 = `0x01` | 152 (`state+289`, 1 byte) | `0x02` |
 
 Both families are the same answer carrying a different field, and both are read the

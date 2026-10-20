@@ -36,7 +36,8 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// <b>The value is the player's own, and written zero here.</b> Field 1 reads
 /// <c>0x00</c> and <c>0x01</c> for the same slot in the same briefing
 /// (`started-on-briefing`'s slot <c>04</c> at t+156.885 and slot <c>05</c> at
-/// t+198.371) and <c>0xe0</c> once (`mgo2-game1` t+449.043), which is the byte the
+/// t+198.371) and <c>0xe0</c> three times in <c>mgo2-game1</c> from t+449.043 and
+/// three in <c>mgo2-joined-game-in-progress-last-round</c>, which is the byte the
 /// team array writes for a player whose side is not known — but the two do not agree
 /// slot by slot in the same capture (slot <c>05</c> reads <c>01</c> here and <c>0</c>
 /// in the array), so the side is not the field and this host has no source for it.
