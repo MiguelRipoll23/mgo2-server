@@ -2528,3 +2528,86 @@ countdown (2.372 s over 78) — and the pair, the countdown and the ready set al
 and its poll is 50 ms so the tick lands on the number instead of on the quarter second
 above it. Nothing else on the wire moves: the four-tick blob interval becomes 9.4 s and
 the state blob, headers and closes stay where §30.2 puts them, on the run.
+
+### 30.7 What the client does with `0xd001`'s byte: field 24, two readers, one event
+
+§30.5 followed the record into `MGO2.ELF` and stopped at its destination. Continuing
+from there names what the byte *is* to the client, and rules out the readings the
+corpus alone left open.
+
+**It is stored and never read back out.** `0x27E578` walks the state's field table and,
+having copied the value, tests the field's flags (`0x27E6A4`–`0x27E6C4`): `clrlwi r0, r9,
+0x1f` for bit `0x0001` and `rlwinm r0, r9, 0, 0x19, 0x19` for bit `0x0040`. Field 24's
+flags are `0x0000`, so neither branch is taken and nothing is marked in the state's map —
+the byte is a leaf the session keeps, not a field the client republishes.
+
+**Two readers, both on the same pattern.** Every `get(offset, size, dest)` call to
+`0x27E480` that names offset `0x63` and size `1` — there are exactly two in the image —
+copies the field into their own object and then does the same five things:
+
+| site | what it does with it |
+| --- | --- |
+| `0x77E668` (read at `0x77E6A0`) | `lbz r5, 0xd0(obj)`; **`cmpwi r5, 0xff` → return**; if the screen step (`0xb8`) is `12` → return; else step = `12`, flag `0xc4` = 1, `emit(0x16002C, byte)` |
+| `0x77F7E0` (read at `0x77F878`) | the same five, after testing field 161 of the same state with `0x27E198` |
+
+`0x7770F0` is `emit(r4 = id, r5 = value)`: it takes the singleton from `0xB2F598` and
+calls `0xC1208`, which walks a listener list at `+0x34` (entries of `{id, listener,
+argument}`) and calls the listener whose id matches, passing the byte as the argument.
+So the byte is a **one-shot argument to event `0x16002C`**, consumed by a screen state
+machine that moves to step 12 and does not do it again until it has moved on.
+
+**What that fixes about the reading.** Three things are now settled and one is not:
+
+* **`0xFF` means "no value".** Both readers test for it and skip the event, and no
+  reference capture ever sends it — the corpus's range is `0x00`–`0x1c`.
+* **It is one record per tick, not one per player.** The double writes at a single
+  instant carry the *same* byte (`joined-when-red-team` t+18.8, `target 04` twice), so
+  they are a second write in the same pass; the record is not a per-player announcement
+  in a multi-record group.
+* **The host authors it** — the record's handler is the only writer of field 24 in the
+  image, and a client record carrying the same code within three seconds of each
+  `0xd001` is a chance match, not an echo (`whole` 1–9 of 20–196 in every capture).
+* **Its meaning is still [U]**, but narrower than before: a value with `0xFF` as the
+  empty case, one per tick, that a screen consumes once. A five-bit code with a
+  sentinel is the shape of an **index into a table of at most 31 entries** — and the
+  session's player table is 24 — but `started-on-briefing` sends `0x12` and `0x1a` in a
+  six-player room and `game1` sends `0x24`/`0x25`, above both 24 and any class id, so a
+  bare index does not fit either unless `0x20`, `0x40` and `0x80` are flags, which the
+  corpus cannot confirm.
+
+This host writes four pinned bytes from the sparse phase (`24`, `04`, `02`, `03`) and
+never `0xFF`, which is the honest shape of the gap: the destination, the reader, the
+event and the empty value are known; the code itself is not.
+
+### 30.8 What is still different, counted the same way on both sides
+
+With the tick settled (§30.6), the rest of the diff is in *what* a briefing carries, not
+when. The comparison below is the first 60 s of each capture, host side, with the
+sibling bit (`0x800`) and the class bit (`0x8000`) masked off so a generation form is not
+counted as a missing record, and with `myserver24`/`myserver27` summed as "ours":
+
+| shape | reference | ours | reading |
+| --- | ---: | ---: | --- |
+| `0x0261 len 1` rules pair | 1253 | 90 | same record, ours denser per tick but the capture is shorter |
+| `0x0002 len 22` state blob | 195 | 16 | ours every fourth tick (§30.6); the reference's count is over a longer window |
+| `0x5001 len 1` | 152 | 48 | the same family |
+| **`0x125a len 6`** | 144 | **0** | the item-box pair, absent outside a round here |
+| **`0x1250 len 6`** | 130 | **0** | the same, the other half of the pair |
+| `0x1001 len 54` loadout | 55 | 2 | present in both |
+| `0x1254 len 3` clock | 47 | 1 | ours writes the sibling form and rarely |
+| **`0x1001 len 63`** | 41 | **0** | a profile body the join answer does not carry (33 of the 41 in `game-failed-memoryviolation`) |
+| **`0x1001 len 25`** | 25 | **0** | 13 of them in `joined-game-in-progress` |
+| **`0x1001 len 79 / 52 / 83 / 51 / 57 / 67`** | 18 / 14 / 12 / 10 / 10 / 10 | **0** | further profile and entry bodies, one or two per capture |
+| **`0x0261 len 4 / 5`** | 19 / 15 | **0** | rules-family bodies; this host writes the pair as `len 1` only |
+| **`0x1250 len 9 / 10`** | 17 / 17 | **0** | the item-box group's other two bodies |
+
+Nothing this host writes is absent from the reference in that window — the extra shapes
+in its own captures (`0x5ae2`–`0x5ae9`, `0xdae9`) are the same item-box group under the
+generation this host plays, so they are the mirror of the two rows above.
+
+So the remaining differences, in order of how much wire they are: **the item-box group
+is not written through a briefing** (only with a round), **the join answer carries fewer
+`0x1001` profile bodies** than the reference's (lengths 25 to 83), **the rules family
+sends no `len 4`/`len 5` record**, and **`0xd001`'s cadence and byte set** are the
+pinned ones of §30.3/§30.7. Each is a record body and a cadence to be read out of the
+captures in turn, not a protocol question.
