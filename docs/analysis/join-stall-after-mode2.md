@@ -2315,3 +2315,85 @@ the read-out no longer calls the `0x02` a phase.
    triple at instants no join triggers (65.1 s and 86.1 s in `started-on-briefing`'s
    window). Nothing measured says what schedules those.
 3. **Field 1's value**, above.
+
+## 30. The briefing tick measured over every reference capture
+
+§27.5 read the pair's rhythm off one 24-second window and called it "9 instants 1.9 to
+4.4 s apart"; that was a window, not the cadence. Counted over the ten reference
+captures (the two `myserver*` ones excluded), the pair is written on a steady tick and
+is the only record that tick carries.
+
+### 30.1 The rhythm
+
+Instants are deduplicated at 50 ms (a pass that writes the pair twice writes both
+within a millisecond), and gaps of 30 s or more are dropped as a phase change.
+
+| capture | pair instants | median gap | min | max | blob median |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `joined-when-red-team-then-briefing` | 205 | 2.23 | 0.06 | 4.87 | 9.72 |
+| `started-on-briefing` | 78 | 2.30 | 1.56 | 4.53 | 9.00 |
+| `started-team-selection-selected-blue` | 107 | 2.13 | 0.05 | 3.36 | 2.40 |
+| `game1` | 182 | 2.38 | 0.10 | 5.12 | 5.77 |
+| `game2` | 92 | 2.21 | 0.22 | 5.00 | 9.69 |
+| `started-briefing-then-solo-game` | 55 | 2.25 | 0.15 | 2.58 | 6.00 |
+| `joined-game-in-progress-last-round` | 536 | 0.07 | 0.05 | 4.91 | 5.99 |
+| `started-on-solo-game` | 506 | 0.07 | 0.05 | 5.00 | 2.61 |
+| `game-failed-memoryviolation` | 59 | 0.47 | 0.05 | 4.96 | 10.17 |
+| `game3` | 0 | — | — | — | 6.02 |
+
+Two rhythms, and which one a capture shows is its phase: **~2.2 s** where the room is
+briefing and **~0.07 s** (a beat frame) where a round is playing. So `§27.5`'s "nine
+instants" is withdrawn — it counted one window — and this host's 2.5 s tick was close
+rather than wrong. It is **2.25 s** now (`BriefingRoomPublishService`), which puts the
+blob's four-tick interval at 9 s, and the pair holds during a round because the beat
+writes it a frame at a time.
+
+### 30.2 What a tick carries
+
+Composition of each pair instant in the two briefing captures, as "records of this
+shape at this instant / instants":
+
+| record | `started-on-briefing` | `started-briefing-then-solo` |
+| --- | --- | --- |
+| the pair `0x0261` | **78/78** | **55/55** |
+| `0xd001`, one byte | 37/78 | 30/55 |
+| `0x0002` blob | 23/78 | 19/55 |
+| the briefing's countdown `0x1254` len 7 / the clock `0x9254` len 3 | 28/78 | 42/55 |
+| the arrays `0x1001` len 26 | 13/78 | 4/55 |
+| the filler pairs `0x1250`/`0x125a` | 12/78 | 5/55 |
+| the state block `0x1254` len 90, the headers len 20 and the closes | **3/78** | **2/55** |
+
+So the state block, the settings headers and the close triple are *not* per-tick
+records — they arrive with a join and a handful of times beside one — which is what
+this host already writes, on the run. The pair is the one record a tick owes, and it
+is the one this host writes every 2.25 s.
+
+### 30.3 The one stream a briefing has and this host does not: `0xd001`
+
+Every reference capture writes host-side `0xd001` records with a **one-byte** body,
+2.4 to 4.8 s apart, through the whole briefing:
+
+| capture | count | median gap | bytes |
+| --- | ---: | ---: | --- |
+| `joined-when-red-team` | 196 | 4.63 | `08` 48, `10` 45, `04` 38, `0c` 33, `00` 11, `14` 7 |
+| `game1` | 176 | 4.75 | `04` 56, `05` 41, `02` 25, `03` 25 |
+| `game2` | 86 | 3.02 | `07`, `05`, `0b`, `0d`, `0a`, `11` … |
+
+The byte is a **slot key with a flag in its high bits** — `0x24 = 0x04 | 0x20`,
+`0x34 = 0x14 | 0x20`, `0x45 = 0x05 | 0x40`, `0x58 = 0x18 | 0x40`, and `game3`'s two
+players alternate `04` and `03`. The family is vid `0x001`, the identifier
+`udp-record-dispatch.md` §4.1 calls the *player entry, keep-alive class*, and its stream
+bits `0x0D` are one of the ten live registry entries — key `0x0D` → handler `0x26DB78`,
+which **reads one byte and stores it through `0x27E578(…, 0x63, 1, byte)`**, a field of
+the state it resolves. **[U]** is what the flag means, and this host writes no `0xd001`
+in a briefing at all, so the stream is missing rather than miswritten.
+
+### 30.4 The settings header's field 1, re-checked
+
+§29.2 left field 1's value open, with the side as a candidate. Re-checked against the
+team arrays in all ten captures: at the **nearest** array in time the slot reads the
+vacant byte (the arrays a briefing writes are the vacant ones, §29.1), and at the
+capture's **last** array the side disagrees with the header for the slots that switched
+— `started-on-briefing`'s slot `05` reads `0x01` in the header and `0` in the array. So
+the side is not the field, `0x00` stays what this host writes, and the value remains
+**[U]**.

@@ -67,15 +67,28 @@ public sealed class BriefingRoomPublishService(
     ILogger<BriefingRoomPublishService> logger)
 {
     /// <summary>
-    /// Spacing between rules pairs. The captures write the pair 2.0 to 2.5 s
-    /// apart in a briefing, which is the operations tick the briefing's clock and
-    /// its ready set are written on.
+    /// Spacing between rules pairs, measured over the reference briefings rather
+    /// than taken from the ready set's tick: 2.25 s, the median gap the pair is
+    /// written at once a room is briefing.
     /// </summary>
-    public const int PublishPeriodMilliseconds = BriefingReadyPublishService.PublishPeriodMilliseconds;
+    /// <remarks>
+    /// <b>The pair is the one record every tick carries, and its gap is ~2.25 s.</b>
+    /// Counted over the ten reference captures, a briefing's gaps between two pair
+    /// instants have a median of 2.13 to 2.38 s; the body of the distribution sits
+    /// between 1.5 and 2.6 s, the 4.4 to 5.1 s gaps are a missed tick and the
+    /// 0.05 to 0.3 s ones a second write in the same pass. A briefing's tick is
+    /// therefore ~2.25 s and not the 2.5 s this used to share with the countdown
+    /// and the ready set, whose own streams measure differently (`0x1254`'s
+    /// seven-byte countdown appears at 2.8 ticks there, `0x9254`'s clock at 1.3).
+    /// During a round the pair is a beat frame's instead and goes every ~0.07 s,
+    /// which the beat already writes (`MatchRecordFramesUtils.Frame`).
+    /// </remarks>
+    public const int PublishPeriodMilliseconds = 2250;
 
     /// <summary>
     /// Ticks of <see cref="PublishPeriodMilliseconds"/> between two state blobs:
-    /// ten seconds, which is the spacing the two reference briefings keep.
+    /// four, which is 9 s — the medians the reference briefings keep are 9.0, 9.7
+    /// and 9.7 s.
     /// </summary>
     /// <remarks>
     /// <b>The blob does not stop where the sparse phase does.</b> Our sparse
