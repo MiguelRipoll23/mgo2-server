@@ -31,6 +31,20 @@ public static class ItemBoxFramesUtils
     public const int ItemBoxRecords = 2;
 
     /// <summary>
+    /// Item-box groups a fresh briefing's run writes: three, the first in the run's
+    /// own datagram and the next two in datagrams of their own.
+    /// </summary>
+    /// <remarks>
+    /// <c>mgo2-game-started-on-briefing</c> t+58.255 carries the first group at the
+    /// end of its run and the next two in the frames immediately behind it — the
+    /// same capture second — under the ordinals <c>0</c>/<c>1</c>, <c>2</c>/<c>3</c>
+    /// and <c>4</c>/<c>5</c>, and its repeat two seconds later goes on from <c>6</c>.
+    /// All three carry the filler pair, because a room that has started no round has
+    /// spawned no box.
+    /// </remarks>
+    public const int BriefingGroupCount = 3;
+
+    /// <summary>
     /// Records the group writes under
     /// <see cref="MatchRecordGenerationUtils.ItemBoxState"/>: one per box.
     /// </summary>

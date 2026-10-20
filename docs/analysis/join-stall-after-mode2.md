@@ -2644,3 +2644,35 @@ two identifiers, in the run's burst rather than on the tick (`started-on-briefin
 t+58.255 and t+60.383, twelve groups each, sequence-numbered per identifier); the
 profile bodies `0x1001` at lengths 25 to 83 in the join's answer; the rules family's
 `len 4`/`len 5` bodies; and `0xd001`'s code with its `~4.6 s` insert.
+
+### 30.10 The two record groups this host does not write, read out of the bodies
+
+§30.8's remaining rows are two families, and both are now identified by their bodies
+rather than by their lengths.
+
+**The long `0x1001` records are the player-entry structs of the `07` opcode.** Every one
+of them opens `07 <size>`, where `<size>` is the body length minus seven — `07 0d` for a
+twenty-byte record, `07 12` for twenty-five, `07 2d` for fifty-two, `07 2f` for
+fifty-four, `07 32` for fifty-seven, `07 37` and `07 3a`–`07 3c` for the sixties, `07 48`
+for seventy-nine. That is the same opcode the two hundred-byte-plus shapes carry
+(`07 09` at 161 bytes is `0b`'s neighbour and a state record, not this), so a host cannot
+write one without holding every field the client reads out of it: the records carry a
+per-player count and repeated `(key, key, flag, value)` runs —
+`07 12 00 04 03 01 00 01 01 01 00 00 d6 83 …` — and the `07 48` shape repeats
+`<x> <key> 00 <key> <hi> <lo>` three times over
+(`e2 14 00 14 2f 23`, `e5 0b 00 0b b2 20`, `e6 06 00 06 b5 22`). These are the settings
+and statistics bodies of each player, and reproducing them is a struct decode of its
+own, not a cadence.
+
+**The rules family's `len 4`/`len 5` bodies are the roster list.** They read
+`ff <key> [<key>] fe fe`: `mgo2-game1` writes `ff 14 fe fe` (4532 of them), `ff 06 fe fe`
+(534), `ff 0f fe fe` (272), `ff 0b fe fe` (56) and the two-entry `ff 04 14 fe fe` (429),
+`ff 06 14 fe fe` (84) — and the keys are the room's own: that capture's five joiners hold
+`04`, `06`, `0b`, `0f` and `14`. `mgo2-joined-game-in-progress` the same way, `ff 07 fe
+fe`, `ff 0b fe fe`, `ff 13 fe fe` and `ff 0b 13 fe fe`. So the pair is not always the
+empty `fe` this host writes twice: the second record is a list of the room's slot keys,
+terminated by `fe fe`, and it grows as the room does.
+
+Both are implementations of their own and neither was written in this pass: the first
+needs a struct decode, and the second needs the list's rule (which keys one record
+carries, and when a record replaces the previous one) read out of the same captures.

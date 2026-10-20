@@ -284,6 +284,11 @@ public sealed partial class MatchStartRunService
         var roundNumber = roundState.RoundNumber;
         var wasOpen = roundState.IsOpen;
 
+        if (briefing && roundNumber == 0)
+        {
+            await AppendItemBoxGroupsAsync(context, generation, run);
+        }
+
         await MatchRecordSendUtils.SendAsync(context, run);
 
         roundState.NoteRunWritten(context.Session);
