@@ -60,35 +60,6 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
     public const int BriefingRunPollMilliseconds = 250;
 
     /// <summary>
-    /// Spacing between two ticks of a briefing: 2.35 s, the period every record of
-    /// a briefing is written on.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>One tick, not three.</b> The rules pair, the countdown and the ready set
-    /// are three writers here and one tick in the reference: measured over the ten
-    /// reference captures, a briefing writes the pair 813 times at a median gap of
-    /// 2.336 s and the seven-byte countdown 78 times at 2.372 s, and where both are
-    /// on the wire they are written in the **same pass** — separate datagrams a
-    /// millisecond apart, <c>mgo2-game-started-on-briefing</c> at 28 of 31 countdown
-    /// instants and <c>mgo2-game-joined-when-red-team</c> at 21 of 39. Writers that
-    /// kept their own periods drifted apart instead, which is the difference these
-    /// captures can see: a pair at 2.25 s beside a countdown at 2.5 s meets the
-    /// countdown on one tick in nine and none after that.
-    /// </para>
-    /// <para>
-    /// <b>Why 2.35 and not 2.5.</b> The 2.5 s came from the ready set's own timer
-    /// and was never measured; the countdown's own medians are 2.34 to 2.45 s per
-    /// capture, and the pair's are pulled below them by a second write in the same
-    /// pass (0.05 to 0.3 s apart). The four-tick interval the state blob is written
-    /// at agrees with the median rather than with the round number: the reference
-    /// blobs are 9.0, 9.7 and 9.7 s apart, and four of these ticks are 9.4 s
-    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §30.1, §30.6).
-    /// </para>
-    /// </remarks>
-    public const int BriefingTickMilliseconds = 2350;
-
-    /// <summary>
     /// A wait that lasts while the peer is there, for the callers whose writes
     /// must not happen at all until the round does.
     /// </summary>
