@@ -2386,14 +2386,9 @@ Every reference capture writes host-side `0xd001` records with a **one-byte** bo
 | `game1` | 176 | 4.75 | `04` 56, `05` 41, `02` 25, `03` 25 |
 | `game2` | 86 | 3.02 | `07`, `05`, `0b`, `0d`, `0a`, `11` … |
 
-The byte is a **slot key with a flag in its high bits** — `0x24 = 0x04 | 0x20`,
-`0x34 = 0x14 | 0x20`, `0x45 = 0x05 | 0x40`, `0x58 = 0x18 | 0x40`, and `game3`'s two
-players alternate `04` and `03`. The family is vid `0x001`, the identifier
-`udp-record-dispatch.md` §4.1 calls the *player entry, keep-alive class*, and its stream
-bits `0x0D` are one of the ten live registry entries — key `0x0D` → handler `0x26DB78`,
-which **reads one byte and stores it through `0x27E578(…, 0x63, 1, byte)`**, a field of
-the state it resolves. **[U]** is what the flag means, and this host writes no `0xd001`
-in a briefing at all, so the stream is missing rather than miswritten.
+The family is vid `0x001`, the identifier `udp-record-dispatch.md` §4.1 calls the
+*player entry, keep-alive class*, and its stream bits `0x0D` are one of the ten live
+registry entries. §30.5 follows that handler to the byte's destination.
 
 ### 30.4 The settings header's field 1, re-checked
 
@@ -2404,3 +2399,66 @@ capture's **last** array the side disagrees with the header for the slots that s
 — `started-on-briefing`'s slot `05` reads `0x01` in the header and `0` in the array. So
 the side is not the field, `0x00` stays what this host writes, and the value remains
 **[U]**.
+
+### 30.5 Where `0xd001`'s byte lands, read out of `MGO2.ELF`
+
+§30.3 stopped at "a slot key with a flag in its high bits". The binary settles the
+destination and the corpus rules that reading out.
+
+**The chain, instruction by instruction.** Stream key `0x0D`'s handler is `0x26DB78`:
+
+```
+0x26DBA4: bl   0x26CC88        ; read 1 byte from the record into r1+0x70
+0x26DBAC: cmpwi cr7, r3, 0     ; bytes read
+0x26DBB0: li   r3, 0           ; state index 0
+0x26DBB4: ble  cr7, 0x26DBEC   ; nothing read -> return
+0x26DBB8: bl   0x27E2B0        ; 0x27E2B0(0) = table[0] + 8, state 0x00's BLOCK pointer
+0x26DBC8: li   r4, 0x63        ; byte offset 99
+0x26DBCC: li   r5, 1           ; one byte
+0x26DBD0: bl   0x27E578        ; write it
+```
+
+and `0x27E578` is `(block pointer, byte offset, size, value)` — it finds the descriptor
+whose `+0x08` is that block (`0x27E5D4`), then the field whose `[offset, offset+len×mult)`
+holds the offset (`0x27E628`–`0x27E664`), copies at `block + offset`, and applies the
+flags. So the record writes **state `0x00`, byte `99`**, which is **field 24** of that
+state's 55: one byte, flags `0x0000`, so nothing is queued for publication — the client
+stores it and says nothing back. `udp-record-dispatch.md` §3.6 carries the signature,
+which this corrects there and here: the `0x63` in the earlier reading was taken for a
+field index and is an offset.
+
+**What the value is not.** Measured over every capture in the repository, host-side,
+body length 1:
+
+| capture | records | value range | high bits seen (count) |
+| --- | ---: | --- | --- |
+| `joined-final-round-solo-then-final-round` | 196 | `02`–`08` | `0x20` (2) |
+| `joined-when-red-team-then-briefing` | 196 | `00`–`1c` | `0x20` (3), `0x40` (2), `0x60` (2), `0x80` (2), `0xa0` (3), `0xc0` (1) |
+| `game1` | 176 | `02`–`09`, `10` | `0x20` (17), `0x40` (2), `0x60` (1) |
+| `game2` | 86 | `01`–`11`, `13` | none |
+| `game3` | 57 | `03`, `04`, `07` | `0x20` (3) |
+| `started-on-briefing` | 71 | `01`–`10`, `0e`, `0f`, `12`, `1a` | `0x80` (1) |
+| `started-on-solo-game` | 43 | `01`–`05`, `12`–`14` | `0x20` (4) |
+| `started-team-selection-selected-blue` | 68 | `02`–`05`, `12`–`16` | `0x20` (1) |
+| `joined-game-in-progress-last-round` | 86 | `03`–`0a` | `0x20` (10), `0x40` (2) |
+| `started-briefing-then-solo-game` | 81 | `02`–`06` | `0x40` (1) |
+| `game-failed-memoryviolation` | 20 | `00`, `04`, `08`, `0c`, `10` | none |
+
+So the value is a **five-bit code, `0`–`31`**, and the high bits are a minority variant
+(`0x20`, `0x40`, `0x80`, and combinations) rather than part of every record. Three
+readings are ruled out by that table:
+
+* **a slot key** — `started-on-briefing` reaches `0x12` and `0x1a` in a room whose six
+  players hold keys `1`–`6` (classes `02`–`07`), and `game2` reaches `0x13` with two
+  players;
+* **a clock or a sequence** — `started-on-briefing` steps `0c 0a 03 0a 10 0b 10 02 08 …`
+  with no order at all, and `game3` holds `03` for a hundred seconds before stepping to
+  `04`;
+* **a rotation over the room's players** — that is exactly one value per player, and
+  `started-on-briefing` writes eighteen distinct values with six players.
+
+What is left is a per-copy code of the session's own — a state index or an event code —
+and **that stays [U]**, as does the meaning of the high bits. The gain is that its
+*destination* is now exact, so the one thing a server must not do is invent it: this
+host still writes no `0xd001` in a briefing, and a future one can write the byte into
+the same place the client does without re-deriving anything here.

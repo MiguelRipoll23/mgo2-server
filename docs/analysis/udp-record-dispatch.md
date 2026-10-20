@@ -395,6 +395,17 @@ directions), and it does exactly this:
 | neither bit | `0x27EDBC` | **`multiplier` elements of `length` bytes**: the loop moves `length` bytes and advances the state pointer by `length`, `multiplier` times (`0x27EDE0`–`0x27EE08`); with `multiplier ≤ 0` nothing is moved at all (`0x27EDC8` falls to the map write) |
 | — | `0x27ED68` | **every** path ends here, and it sets a **two-bit code `2`** for this field index in the state's own map at `+0x0C`: `base + i/4`, `2 << (2 × (i & 3))` — the map is `count × 2` bits, i.e. `ceil(count / 4)` = **41 bytes** per 164-field state, which is the `0x29` stride the 24 maps are allocated on |
 
+**`0x27E578` takes an offset, not a field index.** Its arguments are
+`(state block pointer, byte offset, element size, value)`: it scans the 26 descriptors
+for the one whose `+0x08` equals the block pointer it was handed (`0x27E5B8`–`0x27E5DC`,
+`cmpw cr7, r0, r3` at `0x27E5D4`), then walks that descriptor's field table for the
+entry whose `[offset, offset + length × multiplier)` contains the offset and whose
+`length` equals the size (`0x27E628`–`0x27E664`), copies the bytes at
+`block + offset` (`0x27E674`, `0xfa4e20`), and only then applies the flags. So a
+handler's `li r4, N` is a **byte offset into the state block**, and a state field is
+looked up twice over: by *index* on the reader path (`0x27EC48`, from the wire's
+presence map) and by *offset* on the setter path.
+
 The **low byte** of the flags (`0x24`, `0x25`, `0x35`, `0x40`, `0x64` recur) is read by
 none of `0x27EC48`'s branches — and it is not unread: `0x27E578`, the one-field *setter*,
 locates the same field entry, tests `0x0001` and `0x0040` of the flags
@@ -515,9 +526,12 @@ So the two levels are separate, and each is now read out:
   left **[U]** (`udp-handlers-and-senders.md` §4). Live in the dump: key `0x08` → `0x26DE98`, which loops over `[u8 key][u16 value]`
   triples and calls `0x280A38` per one — a *stepper* over three-byte groups, which is the
   shape of several of the bodies above (`09 02 01`, `26 02 06`); key `0x0d` → `0x26DB78`,
-  which reads one byte, calls `0x27E2B0` — one of the **14** functions that read
-  `*(0x011A646C)`, i.e. the state table — then `0x27E578(…, 0x63, 1, byte)` and loads
-  state `0x00`'s descriptor.
+  which reads one byte and calls `0x27E2B0(0)` — one of the **14** functions that read
+  `*(0x011A646C)`, i.e. the state table; index 0 returns `table[0] + 8`, state `0x00`'s
+  **block pointer** — then `0x27E578(block, 0x63, 1, byte)`, which by the signature
+  above writes **one byte at state `0x00`, offset `0x63`**: field 24 of that state's 55
+  (`state+99`, one byte, flags `0x0000`, so the setter queues nothing). The wire record
+  that reaches it is `0xd001` (`join-stall-after-mode2.md` §30.5).
 
 **The joiner's own three records (`0x1d`, `0x1f`, `0x22`) are named by neither table, and
 the schema cannot decode them.** They are past the end of the state table — its indices
