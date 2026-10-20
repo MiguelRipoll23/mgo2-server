@@ -2560,10 +2560,13 @@ machine that moves to step 12 and does not do it again until it has moved on.
 
 * **`0xFF` means "no value".** Both readers test for it and skip the event, and no
   reference capture ever sends it — the corpus's range is `0x00`–`0x1c`.
-* **It is one record per tick, not one per player.** The double writes at a single
-  instant carry the *same* byte (`joined-when-red-team` t+18.8, `target 04` twice), so
-  they are a second write in the same pass; the record is not a per-player announcement
-  in a multi-record group.
+* **It is written in groups, and the bytes differ within one.** 68 instants in the
+  corpus carry two different bytes — `game-failed-memoryviolation` t+17.5 has `04` and
+  `0c`, `joined-when-red-team` t+46.4 `00` and `04`, `started-on-briefing` t+107.5 `0a`
+  and `0f` — beside instants that repeat one byte (`joined-when-red-team` t+18.8, `04`
+  twice). So a pass writes one record per something that varies within the pass, and a
+  group is not a duplicate; that rules out the "one scalar per tick" reading the
+  single example first suggested.
 * **The host authors it** — the record's handler is the only writer of field 24 in the
   image, and a client record carrying the same code within three seconds of each
   `0xd001` is a chance match, not an echo (`whole` 1–9 of 20–196 in every capture).
@@ -2611,3 +2614,33 @@ is not written through a briefing** (only with a round), **the join answer carri
 sends no `len 4`/`len 5` record**, and **`0xd001`'s cadence and byte set** are the
 pinned ones of §30.3/§30.7. Each is a record body and a cadence to be read out of the
 captures in turn, not a protocol question.
+
+### 30.9 Two candidates checked and dropped, so the list does not grow back
+
+Before treating §30.8's rows as things to write, two of them looked like a single
+systematic cause and are not.
+
+**The generation is not inverted.** Reading §30.8's identifiers raw suggests this host
+briefs on the set the reference rounds on (`0x0a61`/`0x1a54`/`0x1a50`) while the
+reference briefs on the other (`0x0261`/`0x1254`/`0x1250`). It follows the *client's
+report*, as `MatchRecordGenerationUtils.OfJoinReport` already has it: every capture whose
+client reported on `0x12de` briefs on `0x0261` (`started-on-briefing` 382 against 130,
+`started-briefing-then-solo` 6644 against 5746 at its open) and `mgo2-game3`, whose
+client reported on `0x1ade`, briefs on `0x0a61` alone (8852 to none). This host's own two
+captures report on `0x1ade` and get `0x0a61`, which is the same rule. Nothing to change.
+
+**The records this host sends and the reference does not are answers to records only this
+project's test client sends.** `0x5ae2`–`0x5ae9` are `PeerAcknowledgementUtils`' answers
+(`| 0x4000`, empty body) to the client's `0x1ae2`–`0x1ae9` group — eight two-byte
+settings records written at `myserver27` t+54.70. No reference capture carries that group
+in either direction, so the host has nothing else to answer there, and the answers are
+faithful to what it was sent. The briefing writes nothing of its own that the reference
+does not.
+
+What §30.8 lists is therefore all in the other direction — records the reference writes
+and this host does not — and each needs its bodies read out of the captures: the
+item-box filler pair `00 00 00 00 00 00` / `01 00 00 00 00 00` under the generation's own
+two identifiers, in the run's burst rather than on the tick (`started-on-briefing`
+t+58.255 and t+60.383, twelve groups each, sequence-numbered per identifier); the
+profile bodies `0x1001` at lengths 25 to 83 in the join's answer; the rules family's
+`len 4`/`len 5` bodies; and `0xd001`'s code with its `~4.6 s` insert.
