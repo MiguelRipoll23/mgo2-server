@@ -50,16 +50,20 @@ public static class PlayerProfileRecordUtility
     /// a length byte that agrees with the body it is in.
     /// </summary>
     /// <remarks>
-    /// Those two bytes are what tell a record from a body that merely lines up
-    /// with the layout: the <c>0b</c> settings payload lines up and fails both, and
-    /// without the test it reads back as a record named with two control bytes and
-    /// is registered as a player. See <c>docs/protocol/UDP_SETTINGS_PAYLOAD.md</c>.
+    /// The version and the length tell a record from a body that merely lines up
+    /// with the layout: the <c>0b</c> settings payload fails both, and without the
+    /// test it reads back as a record named with two control bytes. The kind is
+    /// the third — an entry is <c>0x00</c>, and the records that share this
+    /// version and identifier without being one carry <c>0x01</c>–<c>0x04</c>
+    /// there; <see cref="PlayerProfileRecordLayout"/> has them.
     /// </remarks>
     /// <param name="body">Body to test.</param>
     /// <returns><c>true</c> when the body opens a roster record.</returns>
     public static bool IsRosterRecord(ReadOnlySpan<byte> body) =>
         body.Length > RecordLengthOffset &&
         body[0] == RecordVersion &&
+        body[PlayerProfileRecordLayout.KindOffset] ==
+            PlayerProfileRecordLayout.RosterKind &&
         body[RecordLengthOffset] == body.Length - FixedPrefixLength;
 
     /// <summary>
@@ -131,9 +135,9 @@ public static class PlayerProfileRecordUtility
     private const byte ClanNameMarker = 0x03;
 
     /// <summary>
-    /// The byte at <see cref="BlockConstantOffset"/>. It is the same in all six
-    /// captured records and is the only non-zero constant in the part of the
-    /// block before the name marker that every record agrees on.
+    /// The byte at <see cref="BlockConstantOffset"/>: the number of endpoint
+    /// pairs behind it, <c>0x02</c> in all sixty-one long entries on the bench and
+    /// <c>0x00</c> in all ninety-one short ones.
     /// </summary>
     private const byte BlockConstant = 0x02;
 
@@ -160,7 +164,7 @@ public static class PlayerProfileRecordUtility
 
     /// <summary>
     /// Offset of the unresolved per-record value the captured roster reads
-    /// <c>0x01</c> and <c>0x02</c> at.
+    /// <c>0x00</c>, <c>0x01</c> and <c>0x02</c> at.
     /// </summary>
     public const int UnresolvedByteOffset = 0x10;
 
@@ -208,11 +212,12 @@ public static class PlayerProfileRecordUtility
     public const int ShortNameOffset = 0x38;
 
     /// <summary>
-    /// Smallest body a profile record can have. A body must reach past the
-    /// fixed fields to carry a name, so this is the fixed-field size plus the
-    /// marker and at least one character.
+    /// Smallest body a profile record can have: the <b>short</b> layout's name
+    /// offset plus the NUL and one character — a record without the endpoint
+    /// field carries its name at <see cref="ShortNameOffset"/> and the shortest on
+    /// the bench is 61 bytes, where a floor at <see cref="NameOffset"/> refused them.
     /// </summary>
-    internal const int MinimumBodySize = NameOffset + 2;
+    internal const int MinimumBodySize = ShortNameOffset + 2;
 
     /// <summary>Longest character name a record will carry.</summary>
     /// <remarks>

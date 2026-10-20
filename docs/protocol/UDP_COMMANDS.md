@@ -248,6 +248,67 @@ at `0x48b` onward. Only **two** distinct bodies alternate — `85 12 fe ff ff ff
 player state". **Not implemented** — sending guessed structure would be worse than sending
 none.
 
+### The `07` record, field by field — and the kind byte at `0x03` [V]
+
+Every body these two identifiers carry opens `07`, and the six bytes behind it are fixed:
+the record's own length less seven, a zero, and a **kind** byte. The kind is what the four
+shapes above never accounted for — `[0x03]` is `0x00` on a roster entry and on its close, and
+`0x01`–`0x04` on the records that share the version byte without being entries at all. Read
+over the thirteen captures on this repository's bench, on `0x1001` and `0x9001` only:
+
+| `[0x03]` | lengths | records | what it is |
+| --- | --- | --- | --- |
+| `0x00` | 7, 9, 57, 61–67, 78–83 | 152 + 253 + 29 | the roster entry (152), its close (253), a name-less entry (10), a nine-byte shape (29) |
+| `0x01` | 54 | 39 | **[U]** — the same version byte, no name and no roster index |
+| `0x02` | 20, 52 | 134, 28 | **[U]** |
+| `0x03` | 22, 29 | 41, 2 | **[U]** |
+| `0x04` | 9, 25 | 13, 142 | **[U]** |
+
+**A roster entry, long layout — 61 records here, and the 79/83-byte form §4 measured.**
+Little-endian, and `L` is the body's length:
+
+| offset | size | field |
+| --- | --- | --- |
+| `0x00` | 1 | `0x07`, the record version |
+| `0x01` | 1 | `L - 7` — the record's own length, which is why it moves with the name |
+| `0x02` | 1 | `0x00` |
+| `0x03` | 1 | kind: `0x00` |
+| `0x04` | 1 | roster index: `0x00` for the host; otherwise a per-session base plus the index (`0xe2`… in `mgo2-game1`, `0x01`…) |
+| `0x05` | 1 | slot in the host's 24-entry player table |
+| `0x06` | 1 | `0x00` |
+| `0x07` | 1 | the same slot as `0x05` |
+| `0x08` | 4 | character id |
+| `0x0c` | 1 | `0x01` on all 28 records whose `0x04` is `0x00` and `0x00` on the other 124 **[U]** |
+| `0x0d` | 1 | `0x02` wherever `0x0c` is `0x01`, `0x00` elsewhere — it moves with it and with nothing else **[U]** |
+| `0x0e`–`0x0f` | 2 | `0x00` |
+| `0x10` | 1 | `0x01` on the 18 named host entries and on 10 player records, `0x02` in 63, `0x00` in 61 — the 51 `BOT-xx` entries and the 10 name-less ones; **[U]**, below |
+| `0x11` | 1 | `0x00` |
+| `0x12` | 1 | **the number of endpoint pairs that follow**: `0x02` in all 61 long entries, `0x00` in all 91 short ones **[I]** |
+| `0x13`–`0x18` | 6 | first pair: four address octets, then its port little-endian |
+| `0x19`–`0x1e` | 6 | second pair, the same shape |
+| `0x1f` | 2 | clan id, `0x0000` in 150 of the 152 and `0x2284` on the two records whose clan is `gta6` **[I]** — `rpdt.js`'s `clanId` |
+| `0x21`–`0x42` | 34 | `0x00` in every record here |
+| `0x43` | 1 | `0x03` when a clan name follows, `0x00` when none does |
+| `0x44` | var | the character name, NUL-terminated, then the clan name to the end |
+
+**The short layout is the same record with no endpoint pair.** `[0x12]` is `0x00`, no pair
+follows, and every offset from `0x13` moves down twelve: clan id at `0x13`, the thirty-four
+zeros at `0x15`–`0x36`, the marker at `0x37` and the name at `0x38`. That is why the short
+entries are 57–67 bytes and the long ones 78–83, and it is the same twelve bytes either way —
+so `[0x12]` is the field that decides which layout a record is, not a constant.
+
+**What `0x10` is not.** It is not the player's side: the `0b` loadout record carries a team
+byte at `0x02` (`UDP_SETTINGS_PAYLOAD.md`), and that byte is `0x02` for every slot in each of
+the ten captures that hold both records, while `0x10` reads `0x01` on the host's own slot and
+on `Libertine`'s beside it. It is not the layout either — both layouts carry all three values.
+What it does line up with is the kind of entry: **`0x00` on all ten name-less 57-byte records
+and on all 51 `BOT-01`…`BOT-11` entries**, `0x01` on the host and on ten records of three
+players, `0x02` on the other 63. Nothing in the captures names the distinction; **[U]**.
+
+**The nine-byte kind-0 body is a fifth shape, not an entry.** `07 00 00 00 02 02 01 00 01`
+carries length byte `0x00` and no name, so it satisfies neither layout's minimum; 29 records
+here, and the reading that it is one of the client's one-byte answers to the run is **[I]**.
+
 ### Loadout — 16 per replay, bodies 25–161 bytes [U]
 
 **Superseded.** The record is decoded in `UDP_SETTINGS_PAYLOAD.md`: it is the

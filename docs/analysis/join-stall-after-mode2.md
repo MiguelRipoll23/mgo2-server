@@ -2650,19 +2650,21 @@ profile bodies `0x1001` at lengths 25 to 83 in the join's answer; the rules fami
 §30.8's remaining rows are two families, and both are now identified by their bodies
 rather than by their lengths.
 
-**The long `0x1001` records are the player-entry structs of the `07` opcode.** Every one
-of them opens `07 <size>`, where `<size>` is the body length minus seven — `07 0d` for a
-twenty-byte record, `07 12` for twenty-five, `07 2d` for fifty-two, `07 2f` for
-fifty-four, `07 32` for fifty-seven, `07 37` and `07 3a`–`07 3c` for the sixties, `07 48`
-for seventy-nine. That is the same opcode the two hundred-byte-plus shapes carry
-(`07 09` at 161 bytes is `0b`'s neighbour and a state record, not this), so a host cannot
-write one without holding every field the client reads out of it: the records carry a
-per-player count and repeated `(key, key, flag, value)` runs —
-`07 12 00 04 03 01 00 01 01 01 00 00 d6 83 …` — and the `07 48` shape repeats
-`<x> <key> 00 <key> <hi> <lo>` three times over
-(`e2 14 00 14 2f 23`, `e5 0b 00 0b b2 20`, `e6 06 00 06 b5 22`). These are the settings
-and statistics bodies of each player, and reproducing them is a struct decode of its
-own, not a cadence.
+**The long `0x1001` records are the player-entry structs of the `07` opcode, and they are
+now decoded field by field.** Every one of them opens `07 <size>`, where `<size>` is the
+body length minus seven, and then a zero and a **kind** byte: `0x00` is the roster entry
+— `07 48` for a seventy-nine-byte one, `07 3c` for a sixty-seven-byte short one — while
+`07 12`/`07 2d` are kind `0x04` and `0x02`, `07 0f`/`07 16` kind `0x03`, and `07 2f` kind
+`0x01`. `UDP_COMMANDS.md` has the offset table for the entry in both layouts, together
+with what each field was measured against.
+
+The reading here that supersedes the earlier one: the `07 48` shape is **not** a repeated
+`(key, key, flag, value)` run. `e2 14 00 14 2f 23 01 00` is the roster index at `0x04`,
+the player's 24-table slot at `0x05` and again at `0x07`, and the character id as a u32 at
+`0x08` — one of each, which is what `PlayerProfileRecordUtility` already writes. What is
+still missing from this host's answer is not the entry's fields but the four kinds beside
+it: 39 records of kind `0x01`, 162 of `0x02`, 43 of `0x03` and 155 of `0x04` in the
+captures, none of them an entry and none yet decoded.
 
 **The rules family's `len 4`/`len 5` bodies are the roster list.** They read
 `ff <key> [<key>] fe fe`: `mgo2-game1` writes `ff 14 fe fe` (4532 of them), `ff 06 fe fe`

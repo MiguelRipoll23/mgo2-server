@@ -1787,11 +1787,14 @@ It also carries a **second roster layout, twelve bytes shorter**: the name at
 recorded from 2026-10-07, and told apart per record by walking back from the end
 to whatever precedes the nick's NUL. Nothing in these three captures is that
 shape — every record here is the 79/83-byte form — and
-`PlayerProfileRecordUtility.Build` writes only that form. The reader does not
-implement the short layout either, but a short record fails its marker test at
-`[0x43]` and is then read by the trailing fallback, which recovers the nick from
-the end exactly as `rosterNameOff` does. **[I]** on that fallback covering it:
-no short record has been through this reader.
+`PlayerProfileRecordUtility.Build` writes only that form. The reader reads both:
+`Parse` picks the name offset by walking back from the end, and reads the twelve
+endpoint bytes only off the long layout — the one whose `[0x12]` counts their two
+pairs — so a short entry parses with its name, slot, index and character id and
+with no address data. It did not until the
+layout was decoded — its minimum body size was the long layout's name offset,
+which refused every short record before the shape test ran — and now all 33
+distinct short bodies on the bench parse. **[V]**
 
 **`[0x01]` is not a sub-type. It is the record's own length, and the length is
 the name's.** Every roster record in all four captures reads `[0x01] = L - 7`:

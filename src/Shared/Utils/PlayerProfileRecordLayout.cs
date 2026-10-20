@@ -27,7 +27,9 @@ namespace Mgo2Server.Shared.Utils;
 /// <code>
 /// [0x00] u8   record version, 0x07 in every captured record
 /// [0x01] u8   the record's own length less seven -- not a sub-type
-/// [0x02] u16  zero
+/// [0x02] u8   zero
+/// [0x03] u8   kind: 0x00 for a roster entry, 0x01-0x04 for the records that
+///              share the version byte without being one
 /// [0x04] u8   0xe2 + roster index, or zero for the host
 /// [0x05] u8   per-player value, repeated at 0x07
 /// [0x06] u8   zero
@@ -36,10 +38,13 @@ namespace Mgo2Server.Shared.Utils;
 ///              read as, which is why that column is not a field of its own
 /// [0x0c] u8   unresolved: 0x01 0x02 on the host's own entry, zero on a player's
 /// [0x0d] u8   unresolved, and it moves with 0x0c
-/// [0x10] u8   two values across the captured roster and nothing else varies
-///              with it; **[U]**, named by nothing in the capture
+/// [0x10] u8   0x01 on the named host entries; on a player's 0x02, 0x01 or
+///              0x00, and the 0x00s are the BOT entries and the name-less
+///              records; **[U]**, named by nothing in the capture
 /// [0x11] u8   zero
-/// [0x12] u8   BlockConstant, 0x02 in every captured record
+/// [0x12] u8   the number of six-byte endpoint pairs that follow: 0x02 here,
+///              0x00 in the short layout, which is what makes it twelve bytes
+///              shorter rather than a constant
 /// [0x13..0x18]    first endpoint pair from the character's handshake: four
 ///                   address octets, then its port little-endian -- so 0x17 is
 ///                   that port's low byte and 0x18 its high byte
@@ -142,6 +147,34 @@ namespace Mgo2Server.Shared.Utils;
 /// endpoint. **[V]**
 /// </para>
 /// <para>
+/// <b>The two bytes at <c>0x02</c> were read as zero, and the second of them is
+/// a kind.</b> A roster entry carries <c>0x00</c> there and so does its close,
+/// but the records that share this version byte and this identifier do not:
+/// <c>0x01</c> (54-byte bodies), <c>0x02</c> (20 and 52), <c>0x03</c> (22 and
+/// 29) and <c>0x04</c> (9 and 25) all open <c>07</c>, their own length less
+/// seven, a <c>0x00</c> and then that kind. None of the four is an entry —
+/// no roster index, no name, no close — so nothing reads them; the offset is a
+/// field rather than padding, and <c>UDP_COMMANDS.md</c> lists the lengths each
+/// kind was measured at.
+/// </para>
+/// <para>
+/// <b>The three [U] bytes, measured over all 152 entries on the bench.</b>
+/// <c>0x0c</c>/<c>0x0d</c> read <c>0x01</c>/<c>0x02</c> on all 28 records whose
+/// <c>0x04</c> is <c>0x00</c> and <c>0x00</c>/<c>0x00</c> on the other 124, in both
+/// layouts, and
+/// nothing else in the record varies with them. <c>0x10</c> is <c>0x01</c> on
+/// the 18 named host entries and on 10 player records, <c>0x02</c> in 63, and
+/// <c>0x00</c> in 61 — which is exactly the 51 <c>BOT-01</c>…<c>BOT-11</c>
+/// entries and the ten name-less 57-byte records.
+/// <b>It is not the player's side</b>: the <c>0b</c> loadout beside it carries a
+/// team byte at <c>0x02</c>, and that byte is <c>0x02</c> for every slot in each
+/// of the ten captures that hold both records — including the host's own slot,
+/// where <c>0x10</c> reads <c>0x01</c>
+/// (<c>docs/protocol/UDP_SETTINGS_PAYLOAD.md</c>). No capture names the
+/// distinction, so all three stay **[U]** with those bounds rather than a guess
+/// written on the wire.
+/// </para>
+/// <para>
 /// Two offsets are easy to misread. The host sits at roster index
 /// <see cref="HostRosterIndex"/>, signed because the index is, but it carries
 /// a plain <c>0x00</c> at offset <c>0x04</c> where the joining players carry
@@ -177,6 +210,16 @@ public static class PlayerProfileRecordLayout
     /// <summary>Offset of the character id, a u32 little-endian.</summary>
     public const int CharacterIdOffset = PlayerProfileRecordUtility.CharacterIdOffset;
 
-    /// <summary>Offset of the unresolved per-record value that reads 0x01 or 0x02.</summary>
+    /// <summary>
+    /// Offset of the record's kind byte: <c>0x00</c> for a roster entry and
+    /// <c>0x01</c>–<c>0x04</c> for the records that share its version and
+    /// identifier without being one.
+    /// </summary>
+    public const int KindOffset = 0x03;
+
+    /// <summary>The kind a roster entry carries.</summary>
+    public const byte RosterKind = 0x00;
+
+    /// <summary>Offset of the unresolved per-record value that reads 0x00, 0x01 or 0x02.</summary>
     public const int UnresolvedByteOffset = PlayerProfileRecordUtility.UnresolvedByteOffset;
 }
