@@ -202,13 +202,6 @@ public sealed partial class MatchStartRunService
             ? value
             : MatchStartBodiesUtils.DefaultJoinReportValue;
 
-        // The room's own players, read here rather than at the open: the run is
-        // written per peer, and a player who joined between two peers' runs is a
-        // player the later peer can be told about. A room that cannot be read
-        // leaves the pair with no slot taken, which is the shape the captures
-        // open with anyway.
-        var slots = await lobbySlots.ReadAsync();
-
         // The run's own 0x1001 identifiers take the roster exchange's counter's
         // next values — the arrays, the room's own stage where a round has played
         // and the close triple: the join's records and the burst took the ones
@@ -243,7 +236,6 @@ public sealed partial class MatchStartRunService
             Rooms.TeamArrayFramesUtils.OpeningSequence,
             runOrdinals,
             operationsOrdinals,
-            slots,
             briefingStates.JoinedMask,
             clockUnits,
             EntryAnswersOf(context.Session),

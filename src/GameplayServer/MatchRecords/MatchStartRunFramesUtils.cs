@@ -199,12 +199,6 @@ public static class MatchStartRunFramesUtils
     /// the capture's run takes <c>00 01 02</c> and the beat's clocks behind it go
     /// on from <c>03</c>.
     /// </param>
-    /// <param name="lobbySlots">
-    /// The room's own players, by the slot each one holds in its 24-entry player
-    /// table, and the side each is on. The pair names them, so it is the room's
-    /// roster that is written and not a recorded table: a room whose players are
-    /// not in the array is a room its own clients read as empty.
-    /// </param>
     /// <param name="reportingSet">
     /// The room's reporting players as the join state answer's bit set, one bit per
     /// player in the order it reported (<see cref="Rooms.BriefingStateService.JoinedMask"/>).
@@ -248,14 +242,20 @@ public static class MatchStartRunFramesUtils
         byte teamArraySequence,
         IReadOnlyList<byte> runOrdinals,
         IReadOnlyList<byte> operationsOrdinals,
-        IReadOnlyList<Rooms.LobbyTeamSlot> lobbySlots,
         byte reportingSet,
         int timeLimitUnits,
         IReadOnlyList<UdpMessage> entryAnswers,
         bool carriesRoundState = true,
         bool answersReport = true)
     {
-        var (teams, occupancy) = Rooms.TeamArrayFramesUtils.BuildPair(teamArraySequence, lobbySlots);
+        // The arrays are published with every slot free, which is what both
+        // reference runs carry: 85 7e fe ff… / 86 7e 7f 7f… in
+        // `started-briefing-then-solo` and the same shape in `started-on-briefing`.
+        // The slot is marked later, by the entry answer, never inside the run —
+        // `mgo2-game1`'s pair gains its slot 27 s after the run, and
+        // `started-on-briefing` marks it with the entry answered at t+93.1
+        // (`docs/analysis/join-stall-after-mode2.md` §27.5).
+        var (teams, occupancy) = Rooms.TeamArrayFramesUtils.BuildPair(teamArraySequence, []);
 
         // The run's opening pair answers the peer's entry echo when this host
         // heard one: the echo's own record answered, carrying the same fourth

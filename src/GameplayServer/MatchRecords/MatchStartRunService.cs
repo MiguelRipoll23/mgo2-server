@@ -82,11 +82,6 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// round's end re-arms.
 /// </param>
 /// <param name="matchSettings">Resolver of the room's own rule, map and clock.</param>
-/// <param name="lobbySlots">
-/// Reader of the room's own players by their slot in its 24-entry player table
-/// and the side each is on: the run's lobby-slot pair names them, so a room whose
-/// players were never read is a run that tells its clients nobody is here.
-/// </param>
 /// <param name="score">
 /// The host's own score for the round, cleared when a round opens.
 /// </param>
@@ -105,7 +100,6 @@ public sealed partial class MatchStartRunService(
     MatchRoundStateService roundState,
     Rooms.BriefingStateService briefingStates,
     MatchSettingsService matchSettings,
-    Rooms.LobbySlotService lobbySlots,
     Rooms.RoomRosterService roster,
     Rooms.TeamArrayService teamArrays,
     MatchScoreService score,

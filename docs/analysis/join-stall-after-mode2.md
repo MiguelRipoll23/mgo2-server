@@ -1980,11 +1980,14 @@ asked of it — *what does the client mean by these bodies* — in the negative:
    only on this build. The next measurement is a live run of the §26 fix: if
    they vanish, they were §25's records being answered twice; if they remain,
    they are the next thing to read with a decompiler.
-2. The join blob's class byte (`0` here, the announcing player's lobby key in
-   `joined-when-red-team`) — §28 finds it in every capture and settles the
-   briefing's tick, but the settings burst's closing copy still writes `0`.
-3. The run's pair, which this host marks occupied and both references' runs do
-   not.
+2. ~~The join blob's class byte~~ **closed by §28**: the class is the player's slot
+   byte, and the burst's closing copy carries the joining peer's.
+3. ~~The run's pair, which this host marks occupied and both references' runs do
+   not~~ **closed by §29.1**: the run now publishes both arrays with every slot
+   free, and the marking is the entry answer's.
+4. ~~The settings header's trailing byte~~ **read by §29.2**: it is not a trailing
+   value at all but the byte of the one slot-state field the body carries, and
+   what names it is still [U].
 
 ## 28. The `0x0002` blob is one record per player, and a briefing keeps writing it
 
@@ -2260,3 +2263,55 @@ of the ten captures starts there, and the join-time burst carries it. The three
 exceptions name a peer with the measurement it already has — 100 for a peer whose
 figure the host has settled, and 62, 0 and 89 in a join into a running game — which
 is a measurement this host cannot make, so 50 is what a peer's slot takes.
+
+## 29. Two more bodies are the same state transfer, and a run publishes its arrays free
+
+§28.7 found that the `0x0002` blob is a one-field state transfer. Two of §27's open
+items turn out to be the same shape, and one of them is a change rather than a
+reading.
+
+### 29.1 The run's arrays are published with every slot free
+
+§27.5 measured it and left it open: both reference briefings' runs carry
+`85 7e fe ff …` / `86 7e 7f 7f …` — the pair with **no slot marked** — and this
+host's run carried `85 f3 fe 00 ff …` / `86 f3 7f 07 7f …`, its joining player's slot
+taken. The marking arrives later in the reference, and not in the run: `mgo2-game1`'s
+pair gains `(14, 0)` 27 s after its run, and `started-on-briefing` marks the slot with
+the entry answered at t+93.127.
+
+`MatchStartRunFramesUtils.BuildRun` now builds the pair with an empty slot list, so
+every slot of both arrays is the vacant byte. Nothing else changes: the run's own
+ordinals, the room's stage, the closes, the clock and the rules pair are untouched,
+and the marking still happens where the reference puts it — `TeamArrayService`'s
+answer to the peer's entry, which reads the room's slots and writes them marked.
+
+### 29.2 The settings header is a state transfer too, and its "phase byte" is a map bit
+
+`SettingsHeaderBodiesUtils` described its twenty-four bytes as a type, a slot, a
+*phase* byte (`0x02` through a briefing) and a zero tail whose last byte moves. The
+length is what corrects that: `1 + 1 + 21 + 1`, the same twenty-one-byte presence map
+and single field bytes `0x0002` carries (§28.7), and the map's first byte `0x02` is
+`1 << 1` — **field 1**, one byte at slot-state offset 1, whose value is the body's
+last byte. So:
+
+| family | map bit | field | value seen |
+| --- | --- | --- | --- |
+| `0b SS 02 00 … 00` | byte 0 = `0x02` | 1 (`state+1`, 1 byte) | `0x00`, `0x01`, and `0xe0` once (`mgo2-game1` t+449.043) |
+| `0b SS 00 … 01 00 02` | byte 19 = `0x01` | 152 (`state+289`, 1 byte) | `0x02` |
+
+Both families are the same answer carrying a different field, and both are read the
+same way as the blob — one byte of map, one field. **The value is still [U]**: it moves
+per player and per copy, and the side it resembles does not agree slot by slot with
+the team array in the same capture (`started-on-briefing`'s slot `05` reads `0x01` in
+the header and `0` in the array). This host writes **field 1 at zero**, which is the
+byte the earlier builder wrote, so no wire byte changes here — what changes is that
+the read-out no longer calls the `0x02` a phase.
+
+### 29.3 What is still different
+
+1. **Cadence.** The pair goes every 2.5 s here; the reference writes 22 pairs at nine
+   instants 1.9–4.4 s apart. Ours is strictly periodic and slightly denser.
+2. **The join-free republication.** The reference re-publishes the pair and the close
+   triple at instants no join triggers (65.1 s and 86.1 s in `started-on-briefing`'s
+   window). Nothing measured says what schedules those.
+3. **Field 1's value**, above.
