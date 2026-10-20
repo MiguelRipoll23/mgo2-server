@@ -113,14 +113,23 @@ public static class MatchStartRunFramesUtils
     public const int BriefingRosterOrdinalCount = 5;
 
     /// <summary>
-    /// Records the run opens on and its repeat leaves out: the marker and the
-    /// pair behind it, which answer the peer's report and its entry.
+    /// Records a run that answers the report opens on and its repeat leaves out:
+    /// the marker and the pair behind it, which answer the peer's report and its
+    /// entry.
     /// </summary>
     public const int RunOpeningCount = 3;
 
     /// <summary>
+    /// Records a briefing's run opens on and its repeat leaves out: the pair that
+    /// answers the peer's entry, with no marker. The report was already answered
+    /// beside its publication, so a marker here is the same record twice.
+    /// </summary>
+    public const int BriefingRunOpeningCount = 2;
+
+    /// <summary>
     /// The run's records as the tick behind it writes them again: everything the
-    /// run carries except the marker and the pair behind it.
+    /// run carries except its opening — the pair behind the marker, and the
+    /// marker itself when the run is the report's answer.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -136,20 +145,29 @@ public static class MatchStartRunFramesUtils
     /// re-sent rather than a second run.
     /// </para>
     /// <para>
-    /// The marker is the answer to the peer's own report, so there is nothing for
-    /// it to answer a second time, and the pair behind it is the peer's entry
-    /// answered — or the recorded empty heads when this host heard no entry; both
-    /// are the run's opening rather than its state, which is what the tick behind
-    /// it is for. They are dropped by their place in the run and not by their
-    /// identifier, because the pair is the peer's own records answered and so
-    /// carries that peer's identifiers.
+    /// The marker, where the run carries one, is the answer to the peer's own
+    /// report and there is nothing for it to answer a second time; the pair
+    /// behind it is the peer's entry answered — or the recorded empty heads when
+    /// this host heard no entry. Both are the run's opening rather than its state,
+    /// which is what the tick behind it is for. They are dropped by their place in
+    /// the run and not by their identifier, because the pair is the peer's own
+    /// records answered and so carries that peer's identifiers. A briefing's run
+    /// opens on the pair alone — its marker went out beside the report it answered
+    /// — so the count it drops is the one it was built with.
     /// </para>
     /// </remarks>
+    /// <param name="generation">Identifier set the run was written under.</param>
     /// <param name="run">The run as it was written.</param>
     /// <returns>The records to write behind the run.</returns>
     public static List<MatchRecordFramesUtils.RecordMessage> RepeatOf(
-        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run) =>
-        [.. run.Skip(RunOpeningCount)];
+        MatchRecordGenerationUtils generation,
+        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run)
+    {
+        // A briefing's run opens on the entry's pair alone, so the marker is not
+        // there to drop: the opening count is the one that run was built with.
+        var answersReport = run.Count > 0 && run[0].Type == generation.MatchStartMarker;
+        return [.. run.Skip(answersReport ? RunOpeningCount : BriefingRunOpeningCount)];
+    }
 
     /// <summary>
     /// The run's records, in send order, built for the identifier set the round
@@ -215,6 +233,14 @@ public static class MatchStartRunFramesUtils
     /// records tell a client a round exists, and a client told that while it is
     /// still being briefed enters the game instead of showing the briefing screen.
     /// </param>
+    /// <param name="answersReport">
+    /// Whether this run is the report's answer and so opens on the round's marker.
+    /// A briefing's run is not: its report was answered beside the publication it
+    /// drew, with the same marker, and writing it again here hands the peer a
+    /// second round start three seconds after its entry — where the reference
+    /// host's fresh-room run (t+58.255) carries none, its marker having gone out
+    /// beside the report at t+56.123.
+    /// </param>
     /// <returns>The records of the run.</returns>
     public static List<MatchRecordFramesUtils.RecordMessage> BuildRun(
         MatchRecordGenerationUtils generation,
@@ -226,7 +252,8 @@ public static class MatchStartRunFramesUtils
         byte reportingSet,
         int timeLimitUnits,
         IReadOnlyList<UdpMessage> entryAnswers,
-        bool carriesRoundState = true)
+        bool carriesRoundState = true,
+        bool answersReport = true)
     {
         var (teams, occupancy) = Rooms.TeamArrayFramesUtils.BuildPair(teamArraySequence, lobbySlots);
 
@@ -243,11 +270,14 @@ public static class MatchStartRunFramesUtils
 
         return
         [
-        // The marker the round is opened with. In a full run the answer to the
-        // report is the payload record below, and the two are the same identifier
-        // in two directions; a fresh briefing's answer is the publication written
-        // beside the report, because its run carries no payload.
-        new(generation.MatchStartMarker, []),
+        // The marker the round is opened with, for the run that is the report's
+        // answer. In a full run the answer to the report is the payload record
+        // below, and the two are the same identifier in two directions; a fresh
+        // briefing's answer is the publication written beside the report, because
+        // its run carries no payload and its marker has already gone out there.
+        .. (answersReport
+            ? new MatchRecordFramesUtils.RecordMessage[] { new(generation.MatchStartMarker, []) }
+            : []),
 
         // The run's opening pair: the answer to the peer's entry echo, which is
         // the empty 0x5001 record a join's roster run opens on when nothing was

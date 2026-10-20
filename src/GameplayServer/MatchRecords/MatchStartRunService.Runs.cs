@@ -247,7 +247,14 @@ public sealed partial class MatchStartRunService
             briefingStates.JoinedMask,
             clockUnits,
             EntryAnswersOf(context.Session),
-            carriesRoundState);
+            carriesRoundState,
+
+            // A briefing's run does not answer the report: the report was
+            // answered beside its publication, with the round's marker, in the
+            // pass that received it. A run that repeats that marker hands the
+            // peer a second round start a few seconds after it entered
+            // (`docs/analysis/join-stall-after-mode2.md` §26).
+            answersReport: !briefing);
 
         logger.LogInformation(
             "UDP {LocalPort}: writing an opening run to {RemoteAddress}: {RecordCount} records, "
@@ -341,12 +348,12 @@ public sealed partial class MatchStartRunService
 
             logger.LogDebug(
                 "UDP {LocalPort}: repeating the run written to {RemoteAddress} one tick behind it, "
-                + "without its marker and roster heads",
+                + "without its opening answer",
                 context.LocalPort,
                 context.Remote);
             await MatchRecordSendUtils.SendAsync(
                 context,
-                MatchStartRunFramesUtils.RepeatOf(run));
+                MatchStartRunFramesUtils.RepeatOf(generation, run));
         }
         catch (Exception exception)
         {

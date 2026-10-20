@@ -221,16 +221,25 @@ are one, nothing having been spent in the first 125 ms tick.
 
 **The run has two shapes, and the room's history picks one.** The one above is
 the round's. A room that has **not played a round** is answered with the
-briefing's own: the marker, the two heads, the state block and the two-byte
-record behind it, the arrays, the join state answer and the close triple — no
-room stage, no round clock, no payload and no rules pair, and the closes take the
-counter values directly behind the arrays
-(`MatchStartRunFramesUtils.BriefingRosterOrdinalCount`). That is
-`mgo2-game-started-on-briefing`'s run at t+58.255, record for record; the
+briefing's own: the two heads, the state block and the two-byte record behind it,
+the arrays, the join state answer and the close triple — no room stage, no round
+clock, no payload and no rules pair, and the closes take the counter values
+directly behind the arrays (`MatchStartRunFramesUtils.BriefingRosterOrdinalCount`).
+That is `mgo2-game-started-on-briefing`'s run at t+58.255, record for record; the
 between-rounds run that carries the stage is `mgo2-started-briefing-then-solo-game`
 at t+57.626, a room with a played round behind it. The stage records are what tell
 a client a round exists, so a fresh room sent them enters the game instead of
 showing the briefing screen (`analysis/join-stall-after-mode2.md` §24).
+
+**The marker is the report's answer, and whichever record carries it carries it
+once.** This host answers every report beside it — the marker, the publication
+and the companion in the report's own pass (`JoinReportHandler`) — so neither of
+its runs repeats the marker: the briefing's run opens on the peer's entry answers
+and the round's run carries the marker only because it is the answer to the
+report that opened the round. A briefing whose run opened on the marker as well
+handed the client a second round start three seconds after it entered, and the
+client sat on the fade between its screens:
+`analysis/join-stall-after-mode2.md` §26.
 
 **The beat** (`MatchRecordService`) then runs per peer for as long as the peer is
 there: a frame every 33 ms carrying the rules-roster pair, and, on the capture's

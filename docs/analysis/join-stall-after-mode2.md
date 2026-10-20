@@ -1750,3 +1750,65 @@ not a body this host holds. The two six-byte filler pairs are writable from
 `ItemBoxRecordBodiesUtils`; the position and tail records are not, so a group
 written here would be the filler alone and the client would be told about boxes
 that were never placed.
+
+## 26. `myserver27.pcapng`: the briefing's run answers the report a second time
+
+`myserver27` is the first join of the build §25 shipped (`deploy` pin `a144b37`
+→ `2dc7da9`): one client (`192.168.1.20:5730` ↔ host `89.129.16.203:5731`), a
+fresh room of one, 176 s. Every time below is seconds from the flow's first
+datagram.
+
+**What §25 fixed, measured on the wire.** The `83 f3 00 07` request at t+108.411
+is answered 14 ms later with the pair, the countdown `0b 3c 00 00 00 00 00` and
+the 24-byte `0b 02 02 …` header, and with **no** `07 12` entry and no roster
+close. The run at t+57.626 carries no room stage, no round clock, no payload and
+no rules pair, and the countdown is held at the room's whole minute with an empty
+set to the last frame. So the records §25 names are gone from the window.
+
+**The client still does not leave the fade**, and its own stream says which record
+it acted on. The operator's description is the map, then the rule text, then a
+fade out that never fades in to the briefing; the client never writes `1f`, never
+re-reports, and goes quiet at t+146.4. What it does write are two shapes no
+reference client writes — `0b0c` (16 B, 12 times, ~6 s apart) and `1ae2 … 1ae9`
+with the body `ff 01` (eight records, 14 times, ~6 s apart, acknowledged by the
+host as `5ae2 … 5ae9` and otherwise unanswered). Those are the client's phase, not
+this host's records, and are left [U] here.
+
+**The one host record that says a round is starting was written twice.** The
+report at t+54.698 is answered at t+54.740 with the marker `0x5ade` beside the
+publication and the companion — which is what `mgo2-game-started-on-briefing`
+writes at t+56.123 (`0x52de`, `0x025c`, `0x12de e0 01 …`). The run that follows
+at t+57.626 then opens on **`0x5ade` again**:
+
+```
+54.740  OUT 0x5ade / 0x0a5c 02 00 00 00 / 0x1ade e0 01 00 00 00 00 00 00   the report's answer
+57.626  OUT 0x5ade 0xd001 24 0x5001 0x1a54 90 …                            the run, marker first
+```
+
+**The marker belongs to whichever record answers the report, and to one only.**
+
+| capture | the report | answered beside it | the run's opening |
+| --- | --- | --- | --- |
+| `mgo2-game-started-on-briefing` | t+55.838 | t+56.123 `0x52de` + `0x025c` + `0x12de` | t+58.255: two `0x5001` heads, **no marker** |
+| `mgo2-started-briefing-then-solo` | t+54.918 | nothing — the next host datagram is the run | t+57.626: `0x52de` + two heads |
+| `mgo2-game1` (round) | t+44.76 | nothing | t+46.415: `0x5ade` + two heads |
+| `mgo2-game2` (round) | t+56.72 | answered before the run | t+62.181: one head, **no marker** |
+| **`myserver27`** | t+54.698 | t+54.740 `0x5ade` + publication | t+57.626: **`0x5ade`** + `d001` + one head |
+
+This host answers every report beside it (`JoinReportHandler`), so its briefing's
+run is never the report's answer and must not open on the marker. A client handed
+one there has been told twice that a round is starting, three seconds after it
+entered, and the round it waits for never opens — the fade out with no fade in.
+
+**What was changed.** `MatchStartRunFramesUtils.BuildRun` takes `answersReport`,
+and a briefing's run omits the marker (`MatchStartRunService.Runs` passes
+`!briefing`; a round's run still carries it, which is the record that answers the
+report that opened the round). `RepeatOf` takes the generation and drops the
+opening by what the run actually carries — three records when it opens on the
+marker, two when it opens on the entry's pair.
+
+**Not verified live.** What would confirm it is the same join: the run behind the
+entry should open on the two answers to the `82`/`84` echo and carry no `0x5ade`,
+the client should stay on its screens past the fade, write its own operations and
+then its `1f` ready — and the round should open from that ready rather than from
+a record the client acted on.
