@@ -114,9 +114,15 @@ public sealed partial class BriefingCountdownService(
     }
 
     /// <summary>
-    /// Spacing between countdown records, measured on the same cadence as the
-    /// round's own operations insertion.
+    /// Spacing between countdown records: the briefing's one tick.
     /// </summary>
+    /// <remarks>
+    /// <b>It is the tick the rules pair and the ready set are written on, in the
+    /// same pass.</b> The reference writes the countdown and the pair a millisecond
+    /// apart at most of its countdown instants (28 of 31 in
+    /// <c>started-on-briefing</c>), so the periods are one number:
+    /// <see cref="MatchRoundStateService.BriefingTickMilliseconds"/>.
+    /// </remarks>
     public const int PublishPeriodMilliseconds = BriefingCountdownBodiesUtils.PublishPeriodMilliseconds;
 
     /// <summary>
@@ -201,7 +207,7 @@ public sealed partial class BriefingCountdownService(
             // The tick ends the moment the round opens: this task is awaited
             // before the beat, and a period slept out after the run was written
             // would hold the beat's first frame behind it.
-            await roundState.WaitBriefingTickAsync(session, PublishPeriodMilliseconds);
+            await roundState.WaitBriefingTickAsync(session);
         }
 
         // A briefing's last word to a peer is a zero, and it carries the room's

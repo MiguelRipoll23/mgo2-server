@@ -83,8 +83,8 @@ mechanism above comes from the image rather than the dump.
    reference datagram carries one. It is the same outbound frame set re-sent inside a hundredth
    of a second, and no capture shows it. Not proven to be what the client objects to, but it is
    the largest unexplained difference on our wire and it should not be there.
-2. **The publication rate.** `BriefingReadyPublishService` repeats the ready set every 2.5 s for
-   the whole wait (`ms17`: 68.5, 71.3, 79.5, 81.8, 84.9, 88.1, 91.4, 95.1, 107.6). The reference
+2. **The publication rate.** `BriefingReadyPublishService` repeats the ready set every briefing
+   tick (2.35 s, `MatchRoundStateService.BriefingTickMilliseconds`) for the whole wait (`ms17`: 68.5, 71.3, 79.5, 81.8, 84.9, 88.1, 91.4, 95.1, 107.6). The reference
    writes it twice, 2.4 s apart, and then nothing until its round. Whether the watchdog is reset
    by the publication, by the countdown, or by neither is what §2's fix is meant to settle.
 

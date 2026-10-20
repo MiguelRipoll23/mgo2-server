@@ -59,10 +59,18 @@ public static class BriefingCountdownBodiesUtils
     public const int RecordLength = 7;
 
     /// <summary>
-    /// Spacing between countdown records, the operations tick the rest of the
-    /// stream is written on.
+    /// Spacing between countdown records: the briefing's one tick, which the rules
+    /// pair and the ready set are written on in the same pass.
     /// </summary>
-    public const int PublishPeriodMilliseconds = 2500;
+    /// <remarks>
+    /// <b>It is the room's tick and not this record's.</b> The reference writes
+    /// the countdown in a datagram of its own a millisecond beside the rules pair at
+    /// 28 of <c>started-on-briefing</c>'s 31 countdown instants, so the two cannot
+    /// be given different periods without drifting off each other:
+    /// <see cref="MatchRoundStateService.BriefingTickMilliseconds"/> carries the
+    /// measurement and the reason it is 2.35 s rather than the 2.5 s this held.
+    /// </remarks>
+    public const int PublishPeriodMilliseconds = MatchRoundStateService.BriefingTickMilliseconds;
 
     /// <summary>Seconds in one minute, the factor between a briefing's minutes and its count.</summary>
     public const int SecondsPerMinute = 60;

@@ -138,9 +138,21 @@ public sealed partial class MatchRoundStateService
     }
 
     /// <summary>
-    /// Waits out one briefing tick: the period the caller names, or until the
-    /// round opens, whichever comes first, and returns early when the peer has
-    /// gone.
+    /// How often the briefing tick's wait looks for the round to have opened.
+    /// </summary>
+    /// <remarks>
+    /// <b>Finer than the round's own poll on purpose.</b> The tick is
+    /// <see cref="BriefingTickMilliseconds"/>, which is not a multiple of the
+    /// quarter second the round's waits use; a poll that coarse would round every
+    /// tick up to it and write a 2.35 s briefing at 2.5 s, which is what the three
+    /// writers did before they shared this one.
+    /// </remarks>
+    private const int TickPollMilliseconds = 50;
+
+    /// <summary>
+    /// Waits out one briefing tick: <see cref="BriefingTickMilliseconds"/>, or
+    /// until the round opens, whichever comes first, and returns early when the
+    /// peer has gone.
     /// </summary>
     /// <remarks>
     /// <b>The round's own opening cuts the tick short.</b> The briefing writers run
@@ -151,19 +163,19 @@ public sealed partial class MatchRoundStateService
     /// beat follows the run by at most it.
     /// </remarks>
     /// <param name="session">Session the waiting writer writes to.</param>
-    /// <param name="milliseconds">Length of the tick.</param>
-    public async Task WaitBriefingTickAsync(PeerSession session, int milliseconds)
+    /// <param name="session">Session the waiting writer writes to.</param>
+    public async Task WaitBriefingTickAsync(PeerSession session)
     {
         var waited = 0;
-        while (!IsOpen && waited < milliseconds)
+        while (!IsOpen && waited < BriefingTickMilliseconds)
         {
             if (!MatchRecordPeerUtils.IsAlive(session))
             {
                 return;
             }
 
-            await Task.Delay(PollMilliseconds);
-            waited += PollMilliseconds;
+            await Task.Delay(TickPollMilliseconds);
+            waited += TickPollMilliseconds;
         }
     }
 

@@ -24,12 +24,12 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// (<see cref="MatchRecordFramesUtils.RulesPair"/>).
 /// </para>
 /// <para>
-/// <b>It runs for the whole briefing, and the peer's run does not end it.</b> Measured
-/// again over the window behind that run — `mgo2-game-started-on-briefing`
-/// t+68.0 to t+92.0, twenty-four seconds between the briefing's run and the
-/// request it answers — the pair is the stream's every record that matters: 22
-/// pairs at nine instants 1.9 to 4.4 s apart, with the <c>0xd001</c> controls
-/// and <c>0x0002</c> blobs riding among them. Nothing of the room's stops
+/// <b>It runs for the whole briefing, and the peer's run does not end it.</b> The
+/// pair is the one record every tick of a briefing carries: over the ten reference
+/// captures it is written at every one of their 78 and 55 ticks, while the state
+/// block, the settings headers and the close triple arrive two or three times a
+/// capture and the <c>0xd001</c> controls and <c>0x0002</c> blobs ride among them
+/// (`docs/analysis/join-stall-after-mode2.md` §30.2). Nothing of the room's stops
 /// when the run is written, so ending the publication there left the briefing with
 /// the countdown alone — 0.4 frames a second against the recording's 1.3 — which
 /// is the gap `docs/analysis/join-stall-after-mode2.md` §25 records.
@@ -67,27 +67,27 @@ public sealed class BriefingRoomPublishService(
     ILogger<BriefingRoomPublishService> logger)
 {
     /// <summary>
-    /// Spacing between rules pairs, measured over the reference briefings rather
-    /// than taken from the ready set's tick: 2.25 s, the median gap the pair is
-    /// written at once a room is briefing.
+    /// Spacing between rules pairs: <see cref="MatchRoundStateService.BriefingTickMilliseconds"/>,
+    /// the one tick a briefing is written on.
     /// </summary>
     /// <remarks>
-    /// <b>The pair is the one record every tick carries, and its gap is ~2.25 s.</b>
-    /// Counted over the ten reference captures, a briefing's gaps between two pair
-    /// instants have a median of 2.13 to 2.38 s; the body of the distribution sits
-    /// between 1.5 and 2.6 s, the 4.4 to 5.1 s gaps are a missed tick and the
-    /// 0.05 to 0.3 s ones a second write in the same pass. A briefing's tick is
-    /// therefore ~2.25 s and not the 2.5 s this used to share with the countdown
-    /// and the ready set, whose own streams measure differently (`0x1254`'s
-    /// seven-byte countdown appears at 2.8 ticks there, `0x9254`'s clock at 1.3).
-    /// During a round the pair is a beat frame's instead and goes every ~0.07 s,
-    /// which the beat already writes (`MatchRecordFramesUtils.Frame`).
+    /// <b>The pair is the one record every tick carries, and the tick is the
+    /// room's.</b> Counted over the ten reference captures, a briefing's gaps
+    /// between two pair instants have a median of 2.13 to 2.38 s each and 2.336 s
+    /// pooled over all 813 of them; the body of the distribution sits between 1.5
+    /// and 2.6 s, the 4.4 to 5.1 s gaps are a missed tick and the 0.05 to 0.3 s
+    /// ones a second write in the same pass. The countdown measures 2.372 s and is
+    /// written in the same pass, so the period is not this service's to choose:
+    /// <see cref="MatchRoundStateService.BriefingTickMilliseconds"/> holds the
+    /// measurement and the reason. During a round the pair is a beat frame's
+    /// instead and goes every ~0.07 s, which the beat already writes
+    /// (<see cref="MatchRecordFramesUtils.Frame"/>).
     /// </remarks>
-    public const int PublishPeriodMilliseconds = 2250;
+    public const int PublishPeriodMilliseconds = MatchRoundStateService.BriefingTickMilliseconds;
 
     /// <summary>
     /// Ticks of <see cref="PublishPeriodMilliseconds"/> between two state blobs:
-    /// four, which is 9 s — the medians the reference briefings keep are 9.0, 9.7
+    /// four, which is 9.4 s — the medians the reference briefings keep are 9.0, 9.7
     /// and 9.7 s.
     /// </summary>
     /// <remarks>
@@ -162,7 +162,7 @@ public sealed class BriefingRoomPublishService(
             // The tick ends the moment the round opens: this task is awaited
             // before the beat, and a period slept out after the run was written
             // would hold the beat's first frame behind it.
-            await roundState.WaitBriefingTickAsync(session, PublishPeriodMilliseconds);
+            await roundState.WaitBriefingTickAsync(session);
         }
 
         logger.LogDebug(

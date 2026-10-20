@@ -375,8 +375,8 @@ steps to the next entry of the room's rotation. It also clears the round's score
 | **the scoreboard each player's own numbers changed for** (`0b <slot+1> <21-byte mask> <values>` on the roster identifier) | `MatchScoreService` → `MatchScoreboardFramesUtils` → `ScoreboardPublishService` |
 | **the fourth byte of every session record: one counter per twelve-bit identifier, the class bits included, consumed in the order the records are written** | `MatchRecordSequenceService`, behind `RoomRosterService.TakeRunOrdinal` and read by `PlayerSettingsBurstService`, `MatchStartRunFramesUtils.BuildRun`, `TeamArrayService`, `ScoreboardPublishService`, the sparse phase's and the beat's controls, the round clock and the item-box group |
 | **the briefing countdown** | `BriefingCountdownService`, `BriefingCountdownBodiesUtils`: the operations clock opened on 128 units, dropping 32 every four seconds and holding at zero from sixteen seconds in |
-| **the ready set while a briefing waits** | `JoinReportHandler` on every report, and `BriefingReadyPublishService` repeating the room's set every 2.5 s until the round opens |
-| **how long each briefing writer sleeps** | `MatchRoundStateService.WaitBriefingTickAsync`: the tick ends when the round opens, so neither writer holds the beat behind a timer |
+| **the ready set while a briefing waits** | `JoinReportHandler` on every report, and `BriefingReadyPublishService` repeating the room's set every briefing tick until the round opens |
+| **how long each briefing writer sleeps, and that they share one period** | `MatchRoundStateService.BriefingTickMilliseconds` (2.35 s, measured: the reference writes the rules pair and the countdown in the same pass), read by the pair, the countdown and the ready set; `WaitBriefingTickAsync` ends the tick when the round opens, so no writer holds the beat behind a timer |
 | **the round's result: `state[2]` written as the operations state write when the round ends** | `MatchStartRunService` (score → `MatchRecordBodiesUtils.StateWrite`) |
 | **the vitals record's onset: the round's first player vitals rather than a frame count** | `MatchRoundStateService.VitalsArrived` |
 
@@ -679,7 +679,7 @@ record should be sent.
   the room's peers share it (§5 item 5).
 
 * **[U]** whether a client acts on the ready set at all: a report is answered and
-  the set is now repeated every 2.5 s while the briefing waits, and no capture
+  the set is now repeated every briefing tick while the briefing waits, and no capture
   shows what a client does with a set that has not changed. What it does when its
   own timer runs out in a room that has opened no round is the older **[I]** below.
 

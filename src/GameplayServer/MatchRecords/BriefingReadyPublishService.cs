@@ -48,10 +48,17 @@ public sealed class BriefingReadyPublishService(
     ILogger<BriefingReadyPublishService> logger)
 {
     /// <summary>
-    /// Spacing between repeats. The captures' repeats are 2.4–4.3 s apart, which is
-    /// the same operations tick the briefing clock is written on.
+    /// Spacing between repeats: the briefing's one tick, which the captures' repeats
+    /// and the briefing clock are both written on.
     /// </summary>
-    public const int PublishPeriodMilliseconds = 2500;
+    /// <remarks>
+    /// <b>2.35 s and not 2.5 s.</b> The repeats measured 2.4 to 4.3 s apart, a
+    /// missed tick being the upper half of that range, and the seven-byte countdown
+    /// written beside them medians 2.372 s over the ten reference captures. The
+    /// period is <see cref="MatchRoundStateService.BriefingTickMilliseconds"/>, which
+    /// holds the measurement.
+    /// </remarks>
+    public const int PublishPeriodMilliseconds = MatchRoundStateService.BriefingTickMilliseconds;
 
     /// <summary>
     /// Writes the room's ready set to one peer, repeatedly, until the peer's own
@@ -82,7 +89,7 @@ public sealed class BriefingReadyPublishService(
             // The tick ends the moment the round opens: this task is awaited
             // before the beat, and a period slept out after the run was written
             // would hold the beat's first frame behind it.
-            await roundState.WaitBriefingTickAsync(session, PublishPeriodMilliseconds);
+            await roundState.WaitBriefingTickAsync(session);
             if (!MatchRecordPeerUtils.IsAlive(session) || roundState.IsOpen)
             {
                 return;
@@ -112,7 +119,7 @@ public sealed class BriefingReadyPublishService(
             return;
         }
 
-        await roundState.WaitBriefingTickAsync(session, PublishPeriodMilliseconds);
+        await roundState.WaitBriefingTickAsync(session);
         if (!MatchRecordPeerUtils.IsAlive(session) || roundState.IsOpen)
         {
             return;

@@ -371,11 +371,16 @@ simulate cannot know a round's winner — which is why the round's result write 
 the seam `MatchStartRunService.End` leaves open, and not a record this server
 sends today.
 
-**Three records a briefing is shown to carry here are still not written** — the
-`0xd001` controls on their 4–5 s tick, the `0x0002` blobs re-published per player
-every 10 s, and the `1250`/`125a` groups inside the bursts a join triggers. Each
-has its measurement, its cadence and what stops it in
-`docs/analysis/join-stall-after-mode2.md` §25, "To write later".
+**Of the three records a briefing is shown to carry here, two are written and the
+third is written with the wrong byte set.** The `0xd001` control goes out on the
+beat's insert — every ~5 s through a briefing, against the reference's median of 3.0
+to 4.8 s — carrying four pinned capture values where the reference varies a five-bit
+code in every copy; the destination of that byte is known (field 24 of the session
+state) and its meaning is not (`docs/analysis/join-stall-after-mode2.md` §30.3,
+§30.5). The `0x0002` blobs ride the briefing's tick, one every fourth (§30.6). The
+`1250`/`125a` pair is the item-box group of the other generation, and this host
+writes the pair its own generation owns (`0x1a50`/`0x1a5a`) — §30.2 counts the 12 and
+5 a briefing is shown to carry.
 
 ## 7. Open
 

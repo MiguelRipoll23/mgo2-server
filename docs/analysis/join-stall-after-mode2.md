@@ -1710,9 +1710,10 @@ written zero.
 
 ### To write later: what the reference writes in that window and this host does not
 
-Each of these is measured in the reference and absent here; none is written yet.
-They are listed with the measurement behind them so the next change starts from
-bodies and a cadence rather than from a resemblance.
+Each of these is measured in the reference. The first two are written here now and the
+third is not; each item carries what changed under it. They are listed with the
+measurement behind them so the next change starts from bodies and a cadence rather than
+from a resemblance.
 
 **1. The `0xd001` controls, on a 4 to 5 s tick.** One-byte bodies under a session
 sequence — `mgo2-game-started-on-briefing` t+56.123 `05`, t+65.124 `0c`,
@@ -1721,9 +1722,10 @@ t+69.999 `03`, t+74.495 `0d`, t+78.874 `03`, t+83.495 `06`, t+90.748 `0a`;
 t+111.166 `08`, ten of them, 1.8 to 9 s apart. The bodies come from a small set
 (`00 03 04 05 06 08 0a 0c 0d 10 2c`) and what they mean is **[U]**;
 `SparsePhaseFramesUtils` already pins its own `02`–`09` for the steps before the
-run, and those are the capture's own values. What is missing is the
-*continuation*: the sparse phase ends at its last blob (`SparseSteps`) and a
-briefing after it carries the countdown and the pair alone.
+run, and those are the capture's own values. **Written since:** the continuation goes
+out on the beat's insert, every ~5 s through a briefing, carrying those pinned values
+rather than the reference's per-copy code — §30.3 counts it in this project's own two
+captures and §30.5 says where the byte lands in the client.
 
 **2. The `0x0002` state blobs, on a 10 s tick and one per player.** The 22-byte
 body the sparse phase writes, but re-published for the whole room and not once:
@@ -2316,12 +2318,15 @@ the read-out no longer calls the `0x02` a phase.
 
 ### 29.3 What is still different
 
-1. **Cadence.** The pair goes every 2.5 s here; the reference writes 22 pairs at nine
-   instants 1.9–4.4 s apart. Ours is strictly periodic and slightly denser.
-2. **The join-free republication.** The reference re-publishes the pair and the close
-   triple at instants no join triggers (65.1 s and 86.1 s in `started-on-briefing`'s
-   window). Nothing measured says what schedules those.
-3. **Field 1's value**, above.
+Three items were listed here and two of them are closed; the section is kept as the
+record of what reading one window got wrong.
+
+1. **Cadence — closed.** §30.1 measures the tick over all ten captures and §30.6 the
+   countdown beside it; this host now writes every briefing record on that one tick.
+2. **The "join-free republication" — withdrawn.** The instants at 65.1 s and 86.1 s
+   in `started-on-briefing` are ordinary ticks: §30.1's median gap covers them and
+   nothing special happens there. There is no rule to find.
+3. **Field 1's value — still [U]**, above.
 
 ## 30. The briefing tick measured over every reference capture
 
@@ -2348,12 +2353,14 @@ within a millisecond), and gaps of 30 s or more are dropped as a phase change.
 | `game-failed-memoryviolation` | 59 | 0.47 | 0.05 | 4.96 | 10.17 |
 | `game3` | 0 | — | — | — | 6.02 |
 
-Two rhythms, and which one a capture shows is its phase: **~2.2 s** where the room is
+Two rhythms, and which one a capture shows is its phase: **~2.3 s** where the room is
 briefing and **~0.07 s** (a beat frame) where a round is playing. So `§27.5`'s "nine
-instants" is withdrawn — it counted one window — and this host's 2.5 s tick was close
-rather than wrong. It is **2.25 s** now (`BriefingRoomPublishService`), which puts the
-blob's four-tick interval at 9 s, and the pair holds during a round because the beat
-writes it a frame at a time.
+instants" is withdrawn — it counted one window. Pooled over every reference capture
+that has the record, the pair's 813 gaps median **2.336 s** and the seven-byte
+countdown's 78 gaps **2.372 s**, so the briefing's tick is **2.35 s** and the blob's
+four-tick interval is **9.4 s**, between the reference blobs' 9.0, 9.7 and 9.7 s. The
+pair holds during a round because the beat writes it a frame at a time. §30.6 measures
+the countdown against the pair, which is where the earlier per-capture medians stopped.
 
 ### 30.2 What a tick carries
 
@@ -2373,9 +2380,9 @@ shape at this instant / instants":
 So the state block, the settings headers and the close triple are *not* per-tick
 records — they arrive with a join and a handful of times beside one — which is what
 this host already writes, on the run. The pair is the one record a tick owes, and it
-is the one this host writes every 2.25 s.
+is the one this host writes every 2.35 s (§30.6).
 
-### 30.3 The one stream a briefing has and this host does not: `0xd001`
+### 30.3 `0xd001` through a briefing: what the reference writes, and what this host does
 
 Every reference capture writes host-side `0xd001` records with a **one-byte** body,
 2.4 to 4.8 s apart, through the whole briefing:
@@ -2389,6 +2396,23 @@ Every reference capture writes host-side `0xd001` records with a **one-byte** bo
 The family is vid `0x001`, the identifier `udp-record-dispatch.md` §4.1 calls the
 *player entry, keep-alive class*, and its stream bits `0x0D` are one of the ten live
 registry entries. §30.5 follows that handler to the byte's destination.
+
+**The record is not missing here — the first reading of it was.** Counted on this
+project's own two captures, which the earlier sections of this file had excluded, the
+host writes `0xd001` through a briefing too:
+
+| capture | records | in the briefing window | gap there | bytes |
+| --- | ---: | ---: | --- | --- |
+| `myserver24` | 64 | 3 of 21 datagrams, t+46.2 to t+59.3 | ~5.0 s | `24`, `04`, `02`, `03` |
+| `myserver27` | 41 | 20 of 194 datagrams, t+46.0 on | 5.0 to 5.4 s | `24`, `02`, `03` |
+
+The bodies are the sparse phase's pinned capture values
+(`SparsePhaseFramesUtils`, `MatchRecordBodiesUtils.EarlyControl`), which the beat goes
+on writing after the phase, and the cadence is the beat's insert rather than the
+briefing's tick. Two differences remain against the table above: the gap is ~5.0 s
+where the reference medians 3.0 to 4.8 s, and the bytes are four pinned values where
+the reference's vary per copy. Both are the *value* question of §30.5, which the
+binary answers only as far as the destination.
 
 ### 30.4 The settings header's field 1, re-checked
 
@@ -2459,6 +2483,48 @@ readings are ruled out by that table:
 
 What is left is a per-copy code of the session's own — a state index or an event code —
 and **that stays [U]**, as does the meaning of the high bits. The gain is that its
-*destination* is now exact, so the one thing a server must not do is invent it: this
-host still writes no `0xd001` in a briefing, and a future one can write the byte into
-the same place the client does without re-deriving anything here.
+*destination* is now exact: field 24 of the session state, one byte, no reply owed, so a
+server can write one into the place the client reads without re-deriving anything here.
+What this host writes today is the four pinned capture values of §30.3, on the beat's
+insert, and that is the difference left in this record rather than its absence.
+
+### 30.6 The countdown and the pair are one tick, and this host had them on two
+
+§30.1 and §30.5 leave the briefing's records counted but not their *phase*. Comparing
+the two streams instant by instant answers the remaining cadence question, and it is
+the one diff left in it.
+
+**The reference writes them in the same pass.** For every reference capture, each
+seven-byte countdown instant (`0b <seconds> 00 <ready set>`, on `0x1254`/`0x1a54`) was
+measured against the nearest rules-pair instant:
+
+| capture | countdown instants | inside the pair's span | within 50 ms of a pair | median distance |
+| --- | ---: | ---: | ---: | ---: |
+| `started-on-briefing` | 31 | 31 | **28** | 0.000 |
+| `joined-when-red-team` | 39 | 39 | **21** | 0.000 |
+| `game2` | 3 | 3 | **3** | 0.000 |
+| `started-briefing-then-solo` | 2 | 2 | **2** | 0.001 |
+| `game-failed-memoryviolation` | 3 | 1 | 1 | 0.000 |
+| `game1` | 16 | 16 | 0 | 28.1 |
+| `joined-game-in-progress` | 6 | 6 | 0 | 7.9 |
+
+Where both records are on, the countdown lands on the pair's instant to the
+millisecond — the two are separate datagrams in one pass, not one frame (a frame
+carrying both was seen once in the whole corpus). The captures that show no coincidence
+are the ones where the countdown is written while the pair is absent from that stretch,
+which is a counting-room's second half rather than a second tick.
+
+**This host ran three periods.** The pair on 2.25 s, the countdown on 2.5 s and the
+ready set on 2.5 s, each a constant of its own service, and the tick wait polled every
+250 ms — so a period that was not a multiple of a quarter second was rounded up to one
+anyway. A pair at 2.25 s and a countdown at 2.5 s drift 0.25 s apart per tick: they
+meet on one tick in nine and never again, where the reference has them together at every
+countdown instant it writes.
+
+**What changed.** `MatchRoundStateService.BriefingTickMilliseconds` is now the one
+period — 2.35 s, the pooled median of the pair (2.336 s over 813 gaps) and of the
+countdown (2.372 s over 78) — and the pair, the countdown and the ready set all read it.
+`WaitBriefingTickAsync` no longer takes a period, so no writer can choose its own again,
+and its poll is 50 ms so the tick lands on the number instead of on the quarter second
+above it. Nothing else on the wire moves: the four-tick blob interval becomes 9.4 s and
+the state blob, headers and closes stay where §30.2 puts them, on the run.
