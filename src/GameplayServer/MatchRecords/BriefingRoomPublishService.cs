@@ -27,8 +27,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// again over the window behind that run — `mgo2-game-started-on-briefing`
 /// t+68.0 to t+92.0, twenty-four seconds between the briefing's run and the
 /// request it answers — the pair is the stream's every record that matters: 22
-/// pairs at 2.0 to 2.6 s, one per tick, with the <c>0xd001</c> controls and
-/// <c>0x0002</c> blobs riding two to four of them. Nothing of the room's stops
+/// pairs at nine instants 1.9 to 4.4 s apart, with the <c>0xd001</c> controls
+/// and <c>0x0002</c> blobs riding among them. Nothing of the room's stops
 /// when the run is written, so ending the publication there left the briefing with
 /// the countdown alone — 0.4 frames a second against the recording's 1.3 — which
 /// is the gap `docs/analysis/join-stall-after-mode2.md` §25 records.

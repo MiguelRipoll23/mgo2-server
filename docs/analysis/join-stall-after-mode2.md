@@ -1689,9 +1689,10 @@ received the request, still under the sequence the request named.
 (`0x0261 fe`) used to stop at the peer's run, on the reading that the reference
 writes nothing of the room's between its run and its round; the measurement says
 the opposite. Over `mgo2-game-started-on-briefing` t+68.0 to t+92.0 — twenty-four
-seconds behind the run at t+58.255 — the host writes 22 pairs at 2.0 to 2.6 s,
-with the `0xd001` controls and `0x0002` blobs riding two to four of them, and
-nothing else of the room's. So `BriefingRoomPublishService` runs until the round
+seconds behind the run at t+58.255 — the host writes 22 pairs at nine instants
+1.9 to 4.4 s apart (some instants carry the pair two to four times), with the
+`0xd001` controls and `0x0002` blobs riding among them, and nothing else of the
+room's. So `BriefingRoomPublishService` runs until the round
 opens rather than until the run is written, and the window that used to carry the
 countdown alone (0.4 frames a second) now carries the pair on the same tick
 (0.8 to 1.2), against the recording's 1.3.
@@ -1737,10 +1738,11 @@ are the same one: **what the trailing value is** ([U]; the burst's own is 50 at
 the join, 100 through the round) and which players a tick re-announces.
 
 **3. The `1250`/`125a` groups inside the bursts a join triggers.** Both captures
-write them in the two to four seconds after the room's run —
-`mgo2-game-started-on-briefing` t+58.255 to t+65.124, thirty-two groups;
-`joined-when-red-team` t+62.666 to t+65.138 — and **nowhere else in the
-briefing**: the steady window t+68.0 to t+92.0 above holds none. They are a
+write them in the seconds after the room's run — `mgo2-game-started-on-briefing`
+45 groups across t+58.3 (3), t+60.4 (18), t+62.9 (9) and t+65.1 (15), and
+`joined-when-red-team` 33 across t+62.7 (15), t+65.1 (16) and t+67.7 (2) — and
+**nowhere else in the briefing**: the steady window t+68.0 to t+92.0 above holds
+none. They are a
 round's item-box group with no round behind it, and in `joined-when-red-team`
 they carry content — the 10-byte position records (`02 a2 fe 07 ea 20 03 00 00
 00`) and 9-byte tails beside the 6-byte pair — which is the map's own objects,
