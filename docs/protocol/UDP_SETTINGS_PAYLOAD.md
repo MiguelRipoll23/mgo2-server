@@ -47,6 +47,11 @@ The slot byte picks the shape:
   so `52` is one pair and `59` is four pairs with the suffix. **[D]** for the
   rule; **[V]** for the slot byte.
 
+A `0b` body of exactly **10** bytes is not this family: it is a state-`0x00`
+transfer of one field — `[key 0x0b][state 0x00][7-byte map][value]` — read by
+`0x27E8B0`, and all 188 in the corpus fit that parse
+(`docs/analysis/join-stall-after-mode2.md` §34).
+
 ## When they arrive — and whose body the slot-0 loadout is
 
 A `0b` payload is **not** part of the roster run. The run carries roster entries

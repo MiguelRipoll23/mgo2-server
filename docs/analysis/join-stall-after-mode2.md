@@ -3200,7 +3200,10 @@ writes the *answer* form.
 02`, the settings family's byte, the slot at `+9`: two copies in `started-on-briefing`'s join,
 three in `game2`'s, none in `failed-memoryviolation`'s and none in this host's. It names a
 slot in the same burst as the arrays — with one player in the room it can only be slot 0's,
-the host's own — and its meaning is otherwise **[U]**.
+the host's own. Its meaning is no longer **[U]**: §34 parses it as a state-0x00 transfer of
+one field through `0x27E8B0` — field 10 at `state+83` on the join, field 0 at `state+0` on
+the round's own phases — and all 188 ten-byte bodies in the corpus fit that parse with one
+field each.
 
 **The loadout is not the third.** It looked like a difference of four bytes before the
 appearance block — reference (`game2`, 54 B) against this host (`myserver28`, 50 B):
@@ -3282,3 +3285,82 @@ falsify it is the same silence with the header there, which would leave the ten-
 and the second field's value as the remaining candidates. The loadout is not one: its
 length follows the player's equipped skills, and this host already writes the reference's
 own 50-byte no-skill body byte for byte.
+
+## 34. The ten-byte control is a state-0x00 transfer, and its handler is `0x27E8B0`
+
+§33 left the ten-byte record `0b 00 00 04 00 00 00 00 00 NN` as the join's second candidate
+with its meaning **[U]**. It is not a settings record at all: it is one field of the round's
+own **state**, written through the state-transfer handler, and the arithmetic of its length
+settles both its parse and which byte is the record's dispatch key.
+
+### 34.1 It is `[key 0x0b][state 0x00][7-byte map][one value]`
+
+`0x27E8B0` reads a **state index** byte, then `ceil(count / 8)` bytes of one-bit-per-field
+presence map, then each present field's bytes, indexing the 26 descriptors at
+`*(0x011A646C)` (`docs/analysis/udp-handlers-and-senders.md` §4). State `0x00` has **55
+fields**, so its map is `ceil(55 / 8) = 7` bytes and a body carrying one field is
+
+```
+1 key + 1 index + 7 map + 1 value = 10 bytes
+```
+
+which is exactly the record. Its map byte 1 is `0x04` — bit 2 of that byte, field **10** —
+and the value is the byte at `+9`. The other family the corpus holds, `0b 00 01 00 00 00 00 00
+00 NN`, sets map byte 0's bit 0, field **0**, with the value at `+9`.
+
+**All 188 ten-byte `0b` bodies in the fourteen captures fit that parse and nothing else**:
+each has exactly one bit set, each consumes exactly ten bytes, and every one is state `0x00`.
+There is no second reading of the length. The fields are state `0x00`'s own:
+
+| field | offset | length | flags | values measured |
+|---:|---:|---:|---|---|
+| 0 | `state+0` | 1 | `0x0025` | `00`–`06` |
+| 10 | `state+83` | 1 | `0x0025` | `02`–`09` |
+
+Field 10's values climb with the room: `02` at the first join of `started-on-briefing`
+(t+93.147), `03` at the second (t+189.909), and on to `09` in the red-team capture. In the
+bursts whose answering peer is identifiable the value is that peer's loadout slot byte —
+`started-on-briefing` t+93.147 sends `0b 02` beside the `02`, t+189.909 `0b 03` beside the
+`03`, the red-team capture t+148.371 `0b 06` beside the `06` — but not in every one:
+`joined-final-round…` t+606.647 sends `03` beside a single `0b 12` loadout. So the field is a
+small slot-or-player counter that rises with each join, and the corpus does not say which of
+the two it is; a room with a gap in its slots would separate them. Field 0's values (`00`–`06`)
+come in the phases' own bursts, `00`/`01` alternating while the briefing waits and `03`–`05`
+after it. **[V]** for the parse, the fields and the values; **[I]** for either name — the
+schema names neither field, and **no reader of `state+83` through `0x27E480` exists anywhere
+in the image** (the 283 call sites of that accessor carry no `0x53` offset), so the consumer
+that would name them is not read.
+
+### 34.2 The handler, and the chain that reaches it
+
+| step | address | what it does |
+| --- | --- | --- |
+| dispatcher | `0x26E7D0` | pops one queued record, reads its **first byte**, looks that byte up in the container's sorted keys and hands the entry and the cursor past the byte to `0x27A180` |
+| entry | key `0B`, OPD `0x011F17E0` | the container's fifth entry (`udp-record-dispatch.md` §3.3.1) |
+| registered by | `0x270E00` → `0x2711B0` | the run opener registers keys `0x0B`, `0x08` and `0x0D` as it opens a phase |
+| handler | **`0x27E8B0`** | `0x27E8E8` reads the state index, `0x27E8F8` indexes the descriptor table, `0x27E934` reads the map, `0x27E998` calls the descriptor's field handler (`0x27EC48`) per set bit |
+
+So the record's **first byte is the key and the second is the state index** — the seam
+`udp-handlers-and-senders.md` §4 left **[U]** is closed for this record, because the parse
+only balances when `0b` is consumed as the key: keep it in the body and the index would be
+`0x0B`, a slot state whose presence map alone is 21 bytes against a 10-byte record.
+
+**What this does not settle is the rest of the burst.** Key `0x0B` is registered for the
+whole `0b` family, so a queued 161-byte rotation or a 50–62-byte loadout is read by the same
+handler; but neither fits that handler's arithmetic the way the ten-byte record does. Tested
+against all 26 descriptors, of the 63 distinct rotation and loadout bodies 14 fit state
+`0x00`, 47 fit every slot state at once (the loose case: a mostly-zero map against small
+fields) and two fit nothing. So whether the
+burst's longer records are state transfers too — and the replay console's rotation and
+appearance reads a second reading of the same bytes — is **[U]**, and the ten-byte record's
+exact fit is what makes it the one case this section can claim.
+
+### 34.3 What this changes
+
+`§33`'s table called the record a control and its meaning **[U]**; the handler is
+`0x27E8B0`, and what it carries is state `0x00` field 10 (join) or field 0 (round phase). The
+server still writes neither, and this section did not add one: with the field unnamed by the
+binary and the reference omitting the record in one of its three fresh-room joins, a value to
+write would be a guess. What it does settle is that the record is cheap to write correctly
+once a capture shows the client reading `state+83` — the body is one field, and the state
+schema gives its offset and length.
