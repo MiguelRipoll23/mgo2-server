@@ -3202,18 +3202,24 @@ three in `game2`'s, none in `failed-memoryviolation`'s and none in this host's. 
 slot in the same burst as the arrays — with one player in the room it can only be slot 0's,
 the host's own — and its meaning is otherwise **[U]**.
 
-**The loadout is the third: ours is four bytes short, in the fields before the appearance
-block.** Reference (`game2`, 54 B) and this host (`myserver28`, 50 B):
+**The loadout is not the third.** It looked like a difference of four bytes before the
+appearance block — reference (`game2`, 54 B) against this host (`myserver28`, 50 B):
 
 ```
 ref   0b 02 02 00×15 78 00 00 | 50 02 ff 01 03 02 01 ff 7b 05 | 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00
 here  0b 01 00 00×18            50 02 fe ff c2 05             | 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00
 ```
 
-So the appearance block sits at `0x1f` there and at `0x1b` here — four bytes earlier — and
-the four are `78 00 00` (zeros here) plus four of the eight behind `50 02`. The tail from
-`0b 16` on is byte-identical. §30.8 counted the shape and could not say which copy was
-wrong; the join is where the full-length one belongs.
+So the appearance block sits at `0x1f` there and at `0x1b` here — and the four bytes are
+the **skill list**: the region after `50 02` is a marker, the pairs and an end —
+`ff 01 03 02 01 ff` there against `fe ff` here — so the four extra are the two pairs the
+decoder reads, `HAND_MAS/3` and `SBMC_MAS/1`, where this player has none. Length is
+`50 + 2·pairs`, so two equipped skills are 54 bytes and none is 50. The reference's own
+no-skill body settles it: `mgo2-game1` t+197.829 writes
+`0b 01 02 00 … 50 02 fe ff c2 05 1e 45 …`, **byte for byte what this host writes** for the
+same shape. The `78 00 00` at `0x12` is that player's and is zero in the no-skill recorded
+body, which is what both no-skill copies carry. Nothing is short; §30.8's shape count is
+the skills'.
 
 **And the entry's length is a name, not a record.** Ours are 80 and 81 bytes where the
 reference's are 57 and 67, because `PlayerProfileRecordUtility` pads the roster entry's name
@@ -3272,6 +3278,7 @@ consecutiveness, not the values).
 
 What would confirm it is the same join with the header on the wire: the client should reach
 its `1d` rows within two seconds of its echo, as the three captures above do. What would
-falsify it is the same silence with the header there, which would leave the ten-byte control,
-the second field's value and the four bytes the loadout is short of as the remaining
-candidates.
+falsify it is the same silence with the header there, which would leave the ten-byte control
+and the second field's value as the remaining candidates. The loadout is not one: its
+length follows the player's equipped skills, and this host already writes the reference's
+own 50-byte no-skill body byte for byte.

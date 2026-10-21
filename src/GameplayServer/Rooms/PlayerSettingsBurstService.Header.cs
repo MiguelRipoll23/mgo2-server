@@ -30,8 +30,10 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// What would confirm it is the same join with this record on the wire: the
 /// client's own `1d` rows within two seconds of its echo, as the three captures
 /// above show. What would falsify it is the same silence with the header there,
-/// which leaves the ten-byte control, the second field's value and the four
-/// bytes the loadout is short of as the remaining candidates.
+/// which leaves the ten-byte control and the second field's value as the
+/// remaining candidates. The loadout is not one: its length follows the
+/// player's equipped skills, and this host already writes the reference's own
+/// 50-byte no-skill body byte for byte.
 /// </para>
 /// </remarks>
 public sealed partial class PlayerSettingsBurstService
