@@ -99,6 +99,11 @@ public sealed partial class MatchStartRunService
                 var round = roundState.RoundNumber;
                 var generation = roundState.Generation;
                 await WriteRunAsync(context, generation);
+
+                // The room's phase, which a joining client's own state machine
+                // waits on: the round it is now playing, written behind its run
+                // (MatchStartRunService.Phases).
+                await WriteRoundPhaseAsync(context, (byte)round);
                 await roundState.WaitForCloseAsync(round, session);
 
                 // The result is written behind the round, on the set it played
@@ -108,6 +113,10 @@ public sealed partial class MatchStartRunService
                 if (!roundState.IsOpen)
                 {
                     await results.WriteResultAsync(context, generation);
+
+                    // The closed round's phase is the one a client waits on, and
+                    // the reference writes it at this boundary too.
+                    await WriteRoundPhaseAsync(context, 0);
                 }
             }
         }

@@ -3382,8 +3382,46 @@ including one whose peer the roster cannot name at slot time — a count needs n
 is the change from the first version of this record, which wrote `slot + 1` and left itself
 out when it had no slot to write.
 
-The field-0 form is **not** written: it belongs to the phase transitions, not to a join, and
-nothing in the burst names a phase byte. One reference join (`failed-memoryviolation`)
-writes none of the family at all, so its absence is not a stall on its own. What would still
-refute the count is a burst whose room's player count is knowable and differs from the value
-it writes; every one checked here agrees.
+The field-0 form belongs to the room's transitions rather than to a join, and it is written
+there (§34.4). One reference join (`failed-memoryviolation`) writes none of the ten-byte
+family at all, so its absence is not a stall on its own. What would still refute the count is
+a burst whose room's player count is knowable and differs from the value it writes; every one
+checked here agrees.
+
+### 34.4 Field 0 is the room's phase, and the client's join waits on it
+
+The two fields are not the same kind of fact. Field 10 is a figure about the room — how many
+players it holds. Field 0 is the **phase the room is in**, and the client's own join machine
+is where that is legible:
+
+```
+0x2882A8: li    r4, 0            ; the field entry's offset: field 0
+0x2882AC: li    r5, 1            ; one byte
+0x2882B4: bl    0x27E480         ; read state 0x00's field 0 into the stack
+0x2882B8: lbz   r0, 0x71(r1)
+0x2882C0: cmpwi cr7, r0, 0       ; 0 -> wait
+0x2882C4: beq   cr7, 0x2883D0    ;    and ask again after a delay
+0x2882C8: cmpwi cr7, r0, 7       ; 7 -> wait
+0x2882CC: beq   cr7, 0x2883D0
+                                 ; anything else: write the lobby-slot echo
+0x288324: stb   r0=0x82, 0x71(r1)
+0x28832C: bl    0x26CC10         ; the stream gets 0x82
+0x288340: bl    0x26CC10         ; and then the peer's slot byte
+```
+
+So a peer whose room state says `0` or `7` keeps waiting, and every other value releases it.
+The corpus' values are `00`–`06`: `mgo2-game2` writes `00` in its round's opening datagram
+(t+102.663) and again at the close (t+218.629), its round's own number in between, and the
+value behind the close; `game1` climbs `04` → `06` and starts over at `01` when its room
+does. That is **the round the match is on, `0` for a room with none**, which is also what the
+room's own reset does to the count. **[V]** for the reader, the gate and the values;
+**[I]** for the name, since the schema names no field.
+
+**Written at the round's open and close.** `MatchStartRunService` writes it behind the round's
+run and again behind the result, from `RoundStateBodiesUtils.RoundPhaseBody` — the reference's
+two boundaries, `00` at the close and the round's number while it plays. All 7 distinct
+field-0 bodies in the corpus are that layout (`0b 00 01` then six zero map bytes and the
+value) and the builder reproduces every one. What this host does not do is the reference's
+periodic re-send of the same value inside a round, which `mgo2-game2` writes thirteen times
+over seventy-seven seconds; the beat carries the round's other state, and a value that only
+changes at a boundary is not worth a frame.
