@@ -136,9 +136,9 @@ public sealed partial class PlayerSettingsBurstService(
 
     /// <summary>
     /// Builds the burst in the order the recorded host sends it: the opening
-    /// control byte, the joining player's round-state transfer, the room's
-    /// rotation and the host's own settings header, one loadout per joining
-    /// player, the two second loadouts, and the state blob that closes it.
+    /// control byte, the round-state transfer, the room's rotation and the host's
+    /// own settings header, one loadout per joining player, the two second
+    /// loadouts, and the state blob that closes it.
     /// </summary>
     /// <param name="rotation">
     /// The room's own rotation, or <c>null</c> when the room could not be read, in
@@ -154,9 +154,9 @@ public sealed partial class PlayerSettingsBurstService(
     /// could not be read gets.
     /// </param>
     /// <param name="answeringSlot">
-    /// The slot byte (<c>key + 1</c>) of the player the burst is answering, carried
-    /// as the closing state blob's fourth byte, or <c>0</c> for a peer the roster
-    /// cannot name. Every capture writes the joiner's own there:
+    /// The slot byte (<c>key + 1</c>) of the player the burst is answering, which
+    /// the closing state blob takes as its ordinal, or <c>0</c> for a peer the
+    /// roster cannot name. Every capture numbers the blob with the joiner's own:
     /// `mgo2-started-briefing-then-solo-game` t+6.006 carries `4` and its request
     /// reads `0b 04`, `mgo2-game-started-on-briefing` t+5.996 carries `2` behind a
     /// `0b 02`, and `mgo2-game1` t+6.687 carries `0x15` for the joiner whose key is
@@ -182,7 +182,7 @@ public sealed partial class PlayerSettingsBurstService(
         List<RosterRecord> burst =
         [
             new(UdpCommandConstants.InGameControl, [OpeningControlByte]),
-            .. JoinPreamble(rotation, answeringSlot),
+            .. JoinPreamble(rotation),
         ];
 
         if (loadouts is { Count: > 0 })

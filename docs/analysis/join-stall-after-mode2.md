@@ -3197,13 +3197,12 @@ writes no header at all until the client asks for the room at t+76.22, at which 
 writes the *answer* form.
 
 **The ten-byte control is the second, and it is not universal.** `0b 00 00 04 00 00 00 00 00
-02`, the settings family's byte, the slot at `+9`: two copies in `started-on-briefing`'s join,
-three in `game2`'s, none in `failed-memoryviolation`'s and none in this host's. It names a
-slot in the same burst as the arrays — with one player in the room it can only be slot 0's,
-the host's own. Its meaning is no longer **[U]**: §34 parses it as a state-0x00 transfer of
-one field through `0x27E8B0` — field 10 at `state+83` on the join, field 0 at `state+0` on
-the round's own phases — and all 188 ten-byte bodies in the corpus fit that parse with one
-field each.
+02`, the settings family's byte, one value at `+9`: two copies in `started-on-briefing`'s join,
+three in `game2`'s, none in `failed-memoryviolation`'s and none in this host's. It carries the
+room's population, the host counted — `02` in a room holding the host and one joiner. Its
+meaning is no longer **[U]**: §34 parses it as a state-0x00 transfer of one field through
+`0x27E8B0` — field 10 at `state+83` on the join, field 0 at `state+0` on the round's own
+phases — and all 188 ten-byte bodies in the corpus fit that parse with one field each.
 
 **The loadout is not the third.** It looked like a difference of four bytes before the
 appearance block — reference (`game2`, 54 B) against this host (`myserver28`, 50 B):
@@ -3318,17 +3317,24 @@ There is no second reading of the length. The fields are state `0x00`'s own:
 | 10 | `state+83` | 1 | `0x0025` | `02`–`09` |
 
 Field 10's values climb with the room: `02` at the first join of `started-on-briefing`
-(t+93.147), `03` at the second (t+189.909), and on to `09` in the red-team capture. In the
-bursts whose answering peer is identifiable the value is that peer's loadout slot byte —
-`started-on-briefing` t+93.147 sends `0b 02` beside the `02`, t+189.909 `0b 03` beside the
-`03`, the red-team capture t+148.371 `0b 06` beside the `06` — but not in every one:
-`joined-final-round…` t+606.647 sends `03` beside a single `0b 12` loadout. So the field is a
-small slot-or-player counter that rises with each join, and the corpus does not say which of
-the two it is; a room with a gap in its slots would separate them. Field 0's values (`00`–`06`)
+(t+93.147), `03` at the second (t+189.909), and on to `09` in the red-team capture. Earlier
+readings took the value for the answered peer's slot byte, because a joiner usually takes the
+next slot and the two figures then agree; the corpus refutes it where the slots have gaps.
+The red-team capture t+106.610 publishes the roster entry for key `8` and the loadout
+`0b 09` in the same datagram and writes `07` here; its t+772.235 join writes `08` beside a
+`0b 0b` loadout; `game1` t+154.328 writes `03` beside a `0b 10`. And the range does not fit
+a slot at all: the same captures hand out keys up to `0x14` (`game1` t+6.687), while all 188
+values lie between `02` and `09`. What they do fit is the number of players in the room, the
+host counted: `started-on-briefing` writes `02`, `03`, `04`, `05` and `06` as one player
+joins after another, and `game1` alternates `03` and `04` across its rounds as its room loses
+and regains a player. `mgo2-game2` writes `02` in a room the host's own count record
+(`0x1258 00 01`) calls one joiner. Field 0's values (`00`–`06`)
 come in the phases' own bursts, `00`/`01` alternating while the briefing waits and `03`–`05`
-after it. **[V]** for the parse, the fields and the values; **[I]** for either name — the
-schema names neither field, and **no call site of `0x27E480` in the image passes `0x53` as
-its offset** (283 sites scanned, none), so the consumer that would name them is not read.
+after it. **[V]** for the parse, the fields and the values; **[D]** for field 10 being the
+room's population, the reading every captured value fits and the slot reading does not;
+**[I]** for either name — the schema names neither field, and **no call site of `0x27E480`
+in the image passes `0x53` as its offset** (283 sites scanned, none), so the consumer that
+would name them is not read.
 
 ### 34.2 The handler, and the chain that reaches it
 
@@ -3362,14 +3368,22 @@ exact fit is what makes it the one case this section can claim.
 **The field-10 form is now written.** Seven of the nine reference gameplay captures hold the
 record, and the join burst is where the reference puts it — the first data record after the
 control byte in `started-on-briefing` t+93.147, `game2` t+120.811 and the red-team capture
-t+148.371 — so the burst writes it too, from `RoundStateBodiesUtils.JoinSlotBody` at the
-answered peer's slot byte, between the control byte and the rotation. The value is the one
-the burst already carries twice (the loadout's slot byte and the closing blob's fourth
-byte), so the record adds no new reading of the room. All 56 field-10 copies in the corpus
-are that layout with the slot byte last, so the builder reproduces every one.
+t+148.371 — so the burst writes it too, from
+`RoundStateBodiesUtils.JoinPlayerCountBody` between the control byte and the rotation. Its
+value is the room's **population, the host counted** (`RoomRosterService.JoinerCount` plus one),
+not the answered peer's slot: §34.1's measurement, and the one difference the burst's own
+reading of the room cannot get wrong — the room's players are already in it as loadouts.
+All 56 field-10 copies in the corpus are this layout with one byte last, so the builder
+reproduces the shape of every one; what changes between copies is the figure, which this
+host computes from its own room rather than copying.
+
+Because the value is the room's and not the peer's, the record is written on every join,
+including one whose peer the roster cannot name at slot time — a count needs no name. That
+is the change from the first version of this record, which wrote `slot + 1` and left itself
+out when it had no slot to write.
 
 The field-0 form is **not** written: it belongs to the phase transitions, not to a join, and
-nothing in the burst names a phase byte. What would name either field is a capture of the
-client reading `state+83` or a room whose slots have a gap; one reference join
-(`failed-memoryviolation`) writes none of the family at all, so its absence is not a stall
-on its own.
+nothing in the burst names a phase byte. One reference join (`failed-memoryviolation`)
+writes none of the family at all, so its absence is not a stall on its own. What would still
+refute the count is a burst whose room's player count is knowable and differs from the value
+it writes; every one checked here agrees.

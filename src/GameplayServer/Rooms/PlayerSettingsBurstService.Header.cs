@@ -39,35 +39,28 @@ namespace Mgo2Server.GameplayServer.Rooms;
 public sealed partial class PlayerSettingsBurstService
 {
     /// <summary>
-    /// The burst's opening records, after the control byte: the joining player's
-    /// round-state transfer, the room's rotation and the host's own settings
-    /// header in the join-time form.
+    /// The burst's opening records, after the control byte: the round-state
+    /// transfer, the room's rotation and the host's own settings header in the
+    /// join-time form.
     /// </summary>
     /// <param name="rotation">
     /// The room's rotation, or <c>null</c> to write the recorded room's own body.
     /// </param>
-    /// <param name="answeringSlot">
-    /// The slot byte (<c>key + 1</c>) of the player the burst answers, or <c>0</c>
-    /// for a peer the roster cannot name — in which case the state transfer is
-    /// left out rather than claiming the host's own slot.
-    /// </param>
     /// <returns>The records, in the order a reference host sends them.</returns>
-    private List<RosterRecord> JoinPreamble(
-        IReadOnlyList<MatchRotationEntry>? rotation,
-        byte answeringSlot)
+    private List<RosterRecord> JoinPreamble(IReadOnlyList<MatchRotationEntry>? rotation)
     {
         // The state transfer comes first where the reference writes it as the
         // burst's first data record (`started-on-briefing` t+93.147, `game2`
         // t+120.811, the red-team capture t+148.371), and the rotation and header
-        // keep the order the burst already had.
-        List<RosterRecord> preamble = [];
-        if (answeringSlot != 0)
-        {
-            preamble.Add(new(
+        // keep the order the burst already had. Its value is the room's, so it is
+        // written whether or not the roster can name the peer that asked.
+        List<RosterRecord> preamble =
+        [
+            new(
                 UdpCommandConstants.PlayerProfile,
-                RoundStateBodiesUtils.JoinSlotBody(answeringSlot),
-                roster.TakeRunOrdinal()));
-        }
+                RoundStateBodiesUtils.JoinPlayerCountBody((byte)(roster.JoinerCount + 1)),
+                roster.TakeRunOrdinal()),
+        ];
 
         preamble.Add(new(
             RoomRosterService.HostEntryType,
