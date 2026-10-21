@@ -4,8 +4,8 @@ using Mgo2Server.Shared.Constants;
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
-/// The host's own settings header, written in the burst beside the room's
-/// rotation.
+/// The host's own settings header and the joining player's round-state transfer,
+/// written in the burst beside the room's rotation.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -39,22 +39,44 @@ namespace Mgo2Server.GameplayServer.Rooms;
 public sealed partial class PlayerSettingsBurstService
 {
     /// <summary>
-    /// The burst's opening records: the room's rotation, and the host's own
-    /// settings header behind it in the join-time form.
+    /// The burst's opening records, after the control byte: the joining player's
+    /// round-state transfer, the room's rotation and the host's own settings
+    /// header in the join-time form.
     /// </summary>
     /// <param name="rotation">
     /// The room's rotation, or <c>null</c> to write the recorded room's own body.
     /// </param>
-    /// <returns>The two records, in the order a reference host sends them.</returns>
-    private List<RosterRecord> RotationAndHostHeader(IReadOnlyList<MatchRotationEntry>? rotation) =>
-    [
-        new(
+    /// <param name="answeringSlot">
+    /// The slot byte (<c>key + 1</c>) of the player the burst answers, or <c>0</c>
+    /// for a peer the roster cannot name — in which case the state transfer is
+    /// left out rather than claiming the host's own slot.
+    /// </param>
+    /// <returns>The records, in the order a reference host sends them.</returns>
+    private List<RosterRecord> JoinPreamble(
+        IReadOnlyList<MatchRotationEntry>? rotation,
+        byte answeringSlot)
+    {
+        // The state transfer comes first where the reference writes it as the
+        // burst's first data record (`started-on-briefing` t+93.147, `game2`
+        // t+120.811, the red-team capture t+148.371), and the rotation and header
+        // keep the order the burst already had.
+        List<RosterRecord> preamble = [];
+        if (answeringSlot != 0)
+        {
+            preamble.Add(new(
+                UdpCommandConstants.PlayerProfile,
+                RoundStateBodiesUtils.JoinSlotBody(answeringSlot),
+                roster.TakeRunOrdinal()));
+        }
+
+        preamble.Add(new(
             RoomRosterService.HostEntryType,
             rotation is null ? RecordedRotationBody() : RoomRotationBody(rotation),
-            roster.TakeRunOrdinal()),
-        new(
+            roster.TakeRunOrdinal()));
+        preamble.Add(new(
             UdpCommandConstants.PlayerProfile,
             SettingsHeaderBodiesUtils.BuildJoin((byte)(RoomRosterService.HostSessionSlot + 1)),
-            roster.TakeRunOrdinal()),
-    ];
+            roster.TakeRunOrdinal()));
+        return preamble;
+    }
 }

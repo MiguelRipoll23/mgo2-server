@@ -136,9 +136,9 @@ public sealed partial class PlayerSettingsBurstService(
 
     /// <summary>
     /// Builds the burst in the order the recorded host sends it: the opening
-    /// control byte, the room's rotation and the host's own settings header, one
-    /// loadout per joining player, the two second loadouts, and the state blob
-    /// that closes it.
+    /// control byte, the joining player's round-state transfer, the room's
+    /// rotation and the host's own settings header, one loadout per joining
+    /// player, the two second loadouts, and the state blob that closes it.
     /// </summary>
     /// <param name="rotation">
     /// The room's own rotation, or <c>null</c> when the room could not be read, in
@@ -182,7 +182,7 @@ public sealed partial class PlayerSettingsBurstService(
         List<RosterRecord> burst =
         [
             new(UdpCommandConstants.InGameControl, [OpeningControlByte]),
-            .. RotationAndHostHeader(rotation),
+            .. JoinPreamble(rotation, answeringSlot),
         ];
 
         if (loadouts is { Count: > 0 })

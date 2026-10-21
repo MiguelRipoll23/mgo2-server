@@ -3281,10 +3281,10 @@ consecutiveness, not the values).
 
 What would confirm it is the same join with the header on the wire: the client should reach
 its `1d` rows within two seconds of its echo, as the three captures above do. What would
-falsify it is the same silence with the header there, which would leave the ten-byte control
-and the second field's value as the remaining candidates. The loadout is not one: its
-length follows the player's equipped skills, and this host already writes the reference's
-own 50-byte no-skill body byte for byte.
+falsify it is the same silence with the header there, which would leave the second field's
+value as the remaining candidate — the ten-byte control is now written too (§34). The
+loadout is not one: its length follows the player's equipped skills, and this host already
+writes the reference's own 50-byte no-skill body byte for byte.
 
 ## 34. The ten-byte control is a state-0x00 transfer, and its handler is `0x27E8B0`
 
@@ -3357,9 +3357,19 @@ exact fit is what makes it the one case this section can claim.
 ### 34.3 What this changes
 
 `§33`'s table called the record a control and its meaning **[U]**; the handler is
-`0x27E8B0`, and what it carries is state `0x00` field 10 (join) or field 0 (round phase). The
-server still writes neither, and this section did not add one: with the field unnamed by the
-binary and the reference omitting the record in one of its three fresh-room joins, a value to
-write would be a guess. What it does settle is that the record is cheap to write correctly
-once a capture shows the client reading `state+83` — the body is one field, and the state
-schema gives its offset and length.
+`0x27E8B0`, and what it carries is state `0x00` field 10 (join) or field 0 (round phase).
+
+**The field-10 form is now written.** Seven of the nine reference gameplay captures hold the
+record, and the join burst is where the reference puts it — the first data record after the
+control byte in `started-on-briefing` t+93.147, `game2` t+120.811 and the red-team capture
+t+148.371 — so the burst writes it too, from `RoundStateBodiesUtils.JoinSlotBody` at the
+answered peer's slot byte, between the control byte and the rotation. The value is the one
+the burst already carries twice (the loadout's slot byte and the closing blob's fourth
+byte), so the record adds no new reading of the room. All 56 field-10 copies in the corpus
+are that layout with the slot byte last, so the builder reproduces every one.
+
+The field-0 form is **not** written: it belongs to the phase transitions, not to a join, and
+nothing in the burst names a phase byte. What would name either field is a capture of the
+client reading `state+83` or a room whose slots have a gap; one reference join
+(`failed-memoryviolation`) writes none of the family at all, so its absence is not a stall
+on its own.
