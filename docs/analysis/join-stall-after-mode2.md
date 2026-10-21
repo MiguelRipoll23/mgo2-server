@@ -3327,9 +3327,8 @@ small slot-or-player counter that rises with each join, and the corpus does not 
 the two it is; a room with a gap in its slots would separate them. Field 0's values (`00`–`06`)
 come in the phases' own bursts, `00`/`01` alternating while the briefing waits and `03`–`05`
 after it. **[V]** for the parse, the fields and the values; **[I]** for either name — the
-schema names neither field, and **no reader of `state+83` through `0x27E480` exists anywhere
-in the image** (the 283 call sites of that accessor carry no `0x53` offset), so the consumer
-that would name them is not read.
+schema names neither field, and **no call site of `0x27E480` in the image passes `0x53` as
+its offset** (283 sites scanned, none), so the consumer that would name them is not read.
 
 ### 34.2 The handler, and the chain that reaches it
 
