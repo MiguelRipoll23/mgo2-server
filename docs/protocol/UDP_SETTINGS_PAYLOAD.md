@@ -37,6 +37,8 @@ entry on one datagram and a `0b` payload on the next (`UDP_GAME_CAPTURE.md` §4)
 The slot byte picks the shape:
 
 * `0x00` with `L >= 71` — the host's own settings/rotation record.
+* `>= 1` with `L` `24` or `25` — the player's settings header, a slot-state
+  transfer of one or two fields (below).
 * `>= 1` with `L` in `{50..62}` — a player loadout, whose slot is the byte minus
   one, so slot `0` is the same first joining player the roster counts from zero.
   The host itself is the rotation record, never a loadout (`rpdt.js` requires
@@ -100,6 +102,69 @@ hold — and what the peer does with it is still **[U]**.
 * `mgo2-game2.pcapng` (`0b 00`, 161 B) — `7/15, 5/7, 15/7, 2/7, 10/7, 6/7, 7/7,
   9/7, 12/7, 3/7, 17/7, 4/7, 8/7, 1/7, 13/7` — one mode repeated, a single-rule
   rotation (`rpdt.js`'s `TSNE_RULE` is `7`). **[V]**
+
+## The settings header — `0b <slot + 1>`, `L` 24 or 25
+
+A third shape shares the discriminator, and it is neither the rotation nor a
+loadout: a **state transfer** of the player's own slot state, one field or two.
+It is the record a host writes for a player at the join and again when that
+player asks to be placed in the room (`SettingsHeaderBodiesUtils`). **[V]**
+
+| offset | size | field |
+| --- | --- | --- |
+| `0x00` | 1 | `0x0b` |
+| `0x01` | 1 | slot + 1 — the same slot byte the loadouts carry |
+| `0x02` | 21 | presence map, one bit per slot-state field, read low bit first |
+| `0x17` | 1–2 | the value of each field whose bit is set, in field order |
+
+So the body is the map and then one byte per field it names; the length follows
+the field count, which is what tells the two forms apart:
+
+| form | `L` | map bits set | values | when |
+| --- | ---: | --- | --- | --- |
+| join | 25 | field 1 (`0x02` at `0x02`), field 156 (`0x10` at `0x15`) | `0xFE`, `0xFF` | the host's own player, in the post-join burst |
+| answer | 24 | field 1 only | `0x00` | the player asking to be placed in the room |
+
+```
+join   0b 01 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 10 00 fe ff
+answer 0b 02 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+```
+
+The map is **not** a phase. Bit 1 is field 1 — the map reads low bit first, so
+`0x02` is field 1 and not field 0 — and bit 156 is `0x10` of the map's
+twentieth byte, at body `0x15`. A copy whose map sets other bits is another
+family of the same length: a scoreboard row or a slot-state patch is a 25-byte
+`0b` body too, and only the map says which. `tools/join_header_check.py`
+separates them and checks every join copy against the layout above.
+
+**The join form is in every reference join of a room that has not played** —
+`mgo2-game2.pcapng` four times (t+10.236 ×3, t+12.361),
+`mgo2-game-started-on-briefing.pcapng` twice (t+8.125, t+10.379) and
+`mgo2-game-failed-memoryviolation.pcapng` twice (t+11.085, t+13.206) — always
+host-to-joiner, always slot `01`, always the same bytes, and 47 to 49 s before
+that client echoes its own lobby slot. Two more in
+`mgo2-game-joined-when-red-team-then-briefing.pcapng` (t+150.644, t+153.153) are
+the same bytes, later in that session. Ten copies over four captures, byte for
+byte identical. `join_header_check.py` checks every copy
+against the layout above; a harness calling
+`SettingsHeaderBodiesUtils.BuildJoin` for each slot reproduced all ten exactly,
+so the server's body and the reference's agree byte for byte. The join captures
+whose clients are already in a round
+(`mgo2-game1`, `myserver28`) hold none, and neither `myserver24` nor `myserver27`
+does. **[V]**
+
+The first field's value is the team array's **"no side"** byte, `0xFE`
+(`TeamArrayFramesUtils` writes the same byte for a player on none), and the
+second field's is `0xFF`, which reads as the empty value; what either field
+*means* is **[U]**. The answer form carries the first field at `0x00`, which is
+the same slot-state field written with no value.
+
+**Who writes it.** `PlayerSettingsBurstService` writes the join form for the
+host's own player between the rotation and the loadouts, under the same
+consecutive ordinals as the rest of the burst; `TeamArrayService.RoomEntry`
+writes the answer form when a peer asks to be placed in the room. See
+`docs/analysis/join-stall-after-mode2.md` §33 for the measurement that made the
+join copy a requirement rather than an answer.
 
 ## The loadout record — `0b <slot + 1>`, `L` in 50–62
 
@@ -264,6 +329,7 @@ shown to read.
 ## See also
 
 - `tools/udp_settings_semantics.py` — the decoder
+- `tools/join_header_check.py` — the join-time settings header, byte for byte
 - `tools/pcap_roster_acks.py` — prints it under "settings payloads (0x0b)"
 - `docs/analysis/replay-console/` — the vendored `rpdt.js` these offsets come from
 - `RPDT_REPLAY_RECORDS.md` — settings records, `TYPE_SETTINGS`

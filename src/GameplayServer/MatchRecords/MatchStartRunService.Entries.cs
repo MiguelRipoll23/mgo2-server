@@ -170,9 +170,14 @@ public sealed partial class MatchStartRunService
     /// with the pair, <c>81 f3</c>, the group and the pair at <c>f4</c> (twice, once
     /// per echo record), the briefing's run followed 164 ms after it, and the
     /// client acknowledged every record and then sent nothing but its own heartbeat
-    /// for two minutes — never the <c>1d</c> stage records every reference client
-    /// writes two seconds after its entry, never a ready, and never an echo of the
-    /// <c>f4</c> it had just been handed.
+    /// for two minutes — never the five <c>1d</c> rows that open every reference
+    /// client's own operations stream, never a ready, and never an echo of the
+    /// <c>f4</c> it had just been handed. **How far behind the entry those rows
+    /// come is the client's own and not a stage host or client can time:**
+    /// 1.69 s, 1.71 s, 1.99 s, 6.26 s, 37.5 s, 224.7 s and 424.5 s across the seven
+    /// captures that write them, so a client missing them at t+2 s has not been
+    /// shown to be stalled by that alone
+    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §32.1).
     /// </para>
     /// </remarks>
     /// <param name="context">Context of the peer whose entry is answered.</param>

@@ -6,9 +6,11 @@ Usage:
 
 Prints, in capture order, the three things that make up a briefing:
 
-- the **briefing countdown**: the operations record (`0x1a54` / `0x1254`) whose
-  payload opens `01` and whose two bytes are the remaining time in the stream's
-  own 125 ms units, counting from 128 (16 s) down to 0;
+- the **operations clock**: the operations record (`0x1a54` / `0x1254`) whose
+  payload opens `01` and whose two bytes are a time in the stream's own 125 ms
+  units. It is the *round's* clock — the rule's own time, 2 400 units for five
+  minutes, held there through a briefing — and not the briefing's countdown,
+  which is a separate `0x0b` record (`docs/protocol/STATE_VECTOR.md` §4);
 - the **ready state**: every record on the round's payload identifier
   (`0x1ade` / `0x12de`, and the same with the `0x8000` class bit) whose body
   opens `e1` or `e0`. `e1` is a client reporting its own state; `e0` is the host
@@ -64,8 +66,8 @@ CLOCK_OPCODE = 0x01
 CLOCK_LENGTH = 3
 
 
-def briefing_countdown(body: bytes) -> int | None:
-    """The remaining briefing time a clock body carries, or None.
+def clock_units(body: bytes) -> int | None:
+    """The time a clock body carries, in 125 ms units, or None.
 
     The body is the opcode and a little-endian 16-bit count. A body of any other
     length, or one on another opcode, is another record of the same stream.
@@ -190,9 +192,9 @@ def main() -> None:
                     publications += 1
                     line = f"host publishes a ready state: {body.hex(' ')}"
             elif message_type in OPERATIONS_IDENTIFIERS:
-                countdown = briefing_countdown(body)
+                countdown = clock_units(body)
                 if countdown is not None:
-                    line = f"briefing clock {countdown} x 125 ms"
+                    line = f"operations clock {countdown} x 125 ms"
 
             if line is None:
                 continue

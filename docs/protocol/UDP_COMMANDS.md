@@ -254,13 +254,13 @@ Every body these two identifiers carry opens `07`, and the six bytes behind it a
 the record's own length less seven, a zero, and a **kind** byte. The kind is what the four
 shapes above never accounted for — `[0x03]` is `0x00` on a roster entry and on its close, and
 `0x01`–`0x04` on the records that share the version byte without being entries at all. Read
-over the thirteen captures on this repository's bench, on `0x1001` and `0x9001` only:
+over the fourteen captures on this repository's bench, on `0x1001` and `0x9001` only:
 
 | `[0x03]` | lengths | records | what it is |
 | --- | --- | --- | --- |
-| `0x00` | 7, 9, 57, 61–67, 78–83 | 152 + 253 + 29 | the roster entry (152), its close (253), a name-less entry (10), a nine-byte shape (29) |
-| `0x01` | 54 | 39 | four eight-byte tuples behind a count of four — **[U]** |
-| `0x02` | 20, 52 | 134, 28 | a box: an eight-byte header, a count, then that many eight-byte corners |
+| `0x00` | 7, 9, 57, 61–67, 78–83 | 156 + 257 + 29 | the roster entry (156), its close (257), a name-less entry (10 of the entries), a nine-byte shape (29) |
+| `0x01` | 54 | 39 | four eight-byte items behind a count of four, which is kind `0x02`'s tail two bytes further down — **[U]** what the items state |
+| `0x02` | 20, 52 | 138, 28 | a box: an eight-byte header, a count, then that many eight-byte corners |
 | `0x03` | 22, 29 | 41, 2 | a tag byte, a six-byte triple written twice, and a sixteen-bit tail |
 | `0x04` | 9, 25 | 13, 142 | one spawn point per slot, and a marker for a slot whose point the host does not write |
 
@@ -269,7 +269,7 @@ over the thirteen captures on this repository's bench, on `0x1001` and `0x9001` 
 | offset | size | field |
 | --- | --- | --- |
 | `0x00` | 1 | `0x07`, the record version |
-| `0x01` | 1 | the payload's length, `L - 7` — on all 152 entries and on 386 of the 399 kind-`0x01`…`0x04` records; the thirteen nine-byte records of kind `0x04` write `0x00`, as the twenty-nine of kind `0x00` do |
+| `0x01` | 1 | the payload's length, `L - 7` — on all 156 entries and on 390 of the 403 kind-`0x01`…`0x04` records; the thirteen nine-byte records of kind `0x04` write `0x00`, as the twenty-nine of kind `0x00` do |
 | `0x02` | 1 | `0x00` in every record here |
 | `0x03` | 1 | the kind |
 | `0x04` | 1 | the record's index within its kind: the roster index on an entry, `0`, `1`, `2`… on the others |
@@ -296,10 +296,10 @@ Little-endian, and `L` is the body's length:
 | `0x0e`–`0x0f` | 2 | `0x00` |
 | `0x10` | 1 | `0x01` on the 18 named host entries and on 10 player records, `0x02` in 63, `0x00` in 61 — the 51 `BOT-xx` entries and the 10 name-less ones; **[U]**, below |
 | `0x11` | 1 | `0x00` |
-| `0x12` | 1 | **the number of endpoint pairs that follow**: `0x02` in all 61 long entries, `0x00` in all 91 short ones **[I]** |
+| `0x12` | 1 | **the number of endpoint pairs that follow**: `0x02` in all 65 long entries, `0x00` in all 91 short ones **[I]** |
 | `0x13`–`0x18` | 6 | first pair: four address octets, then its port little-endian |
 | `0x19`–`0x1e` | 6 | second pair, the same shape |
-| `0x1f` | 2 | clan id, `0x0000` in 150 of the 152 and `0x2284` on the two records whose clan is `gta6` **[I]** — `rpdt.js`'s `clanId` |
+| `0x1f` | 2 | clan id, `0x0000` in 153 of the 156, `0x2284` on the two records whose clan is `gta6`, and `0x04cb` on one **[I]** — `rpdt.js`'s `clanId` |
 | `0x21`–`0x42` | 34 | `0x00` in every record here |
 | `0x43` | 1 | `0x03` when a clan name follows, `0x00` when none does |
 | `0x44` | var | the character name, NUL-terminated, then the clan name to the end |
@@ -329,9 +329,9 @@ a 25-byte body. The reading that it is a player the host names without a payload
 ### Kinds `0x01`–`0x04`: what the host writes beside the roster
 
 **Not entries, and not the joiner's.** These travel the other way from the roster: **host to
-joiner**. Every one of the 399 records here was written by a host endpoint to the joining
-client's `5730`; none travels the other way in any capture. 164 datagrams carry one across
-the thirteen captures, and in 147 of those the team and occupancy arrays precede them and
+joiner**. Every one of the 403 records here was written by a host endpoint to the joining
+client's `5730`; none travels the other way in any capture. 166 datagrams carry one across
+the fourteen captures, and in 146 of those the team and occupancy arrays precede them and
 the roster close follows. They repeat every two to two and a half seconds while the state
 holds, and the same burst is written two or three times before the next.
 
@@ -390,20 +390,64 @@ in the first and third positions and the full 2 × 2 product of them, with the s
 constant and the fourth within a few counts of itself — `(22500, 0, 12288, 32385)`,
 `(22500, 0, 28672, 32416)`, `(24500, 0, 12288, 32385)`, `(24500, 0, 28672, 32416)` in one,
 and the negatives of that in another. **[I]**, and the count is what the length agrees with in
-all 162 — while 22 of the 28 corner records fit the two-by-two pattern, the other six
+all 166 — while 22 of the 28 corner records fit the two-by-two pattern, the other six
 carrying four corners that do not.
 
-**Kind `0x01` — four eight-byte tuples behind a ten-byte header.** 39 records, all 54 bytes,
-and only seven distinct bodies: `[0x07]` the index, `[0x08]` `0x26` on every one, `[0x09]` one
-of `00`, `01`, `03`, then ten bytes that vary, then `00 00 04` at `0x13`–`0x15` — the same
-count shape kind `0x02` writes — and 32 bytes behind it. Those last 32 do not show kind
-`0x02`'s two-by-two pattern and are not read here. **The record is [U] beyond its frame.**
+**Kind `0x01` — four items behind a quad, and kind `0x02`'s tail two bytes down.** 39
+records, all 54 bytes, and only seven distinct bodies across five captures
+(`mgo2-game1`, `mgo2-game3`, `mgo2-started-briefing-then-solo-game`,
+`mgo2-joined-game-in-progress-last-round`, `myserver24`). Read as a frame it is complete:
+
+| offset | size | field |
+| --- | --- | --- |
+| `0x04` | 1 | index: `0`, `1`, `2` measured, and never higher — the recorded room's stage carries a pair at `0` and `1`, and `joined-game-in-progress` a third at `2` |
+| `0x05`–`0x06` | 2 | `0x00` in all 39 |
+| `0x07` | 1 | the index again, equal to `0x04` in all 39 |
+| `0x08` | 1 | `0x26` in all 39, which is the byte that tells the kind apart from `0x02`'s `[0x08]` |
+| `0x09` | 1 | variant: `0x01` in 26 records, `0x03` in 6, `0x00` in 7 — the four changed copies of `mgo2-game1`'s pair and the three of `joined-game-in-progress`'s index `1` |
+| `0x0a` | 1 | `0x00` in 36 records, `0xc1` in the three of that same index `1` body |
+| `0x0b`–`0x12` | 8 | a **quad of four signed sixteens**, the record's own |
+| `0x13`–`0x15` | 3 | `00 00 04` — the number of items behind it, in all 39 |
+| `0x16`–`0x35` | 8 × 4 | four items, each four signed sixteens |
+
+**The tail is kind `0x02`'s, moved two bytes down.** The 52-byte `0x02` body carries its
+quad at `0x09`–`0x10`, its `00 00 04` at `0x11`–`0x13` and its 32 bytes at `0x14`; this one
+carries the same three pieces at `0x0b`, `0x13` and `0x16` — the same eight, three and
+thirty-two bytes at the same spacing, two bytes further down — with a byte and a zero at
+`0x09`–`0x0a` in front of the quad, and `0x26` at `0x08` where the other writes its
+`0x02`/`0x03`. So the difference is one type byte and two bytes before the list, not two
+unrelated records that happen to start alike.
+
+**The items are not a box's corners.** On the 32 bytes, kind `0x02`'s four corners take the
+2 × 2 product of two of their four positions in **22 of the 28** corner records, which is
+what reads them as a box. None of this kind's **seven** bodies does that with any pair of
+positions: the four items are four independent entries, `(-18750, -3041, 22529, 32045)`,
+`(-28000, -2945, 12289, 32135)`, `(-28125, 30495, 12289, 32177)` and
+`(-27750, 2751, -2046, 32060)` in `mgo2-game1`'s index `0`, where no pair of positions
+holds two values between them. In two of the seven bodies the items do repeat the quad's
+second word — `8031` in `joined-game-in-progress`'s index `0` and `-12608` in its index
+`1`, in all four items of each — so the quad and the items do share a field there; in the
+other five they share nothing.
+
+**What the records are, and what is left [U].** They are a stage's, not a session's: the
+pair `mgo2-game1` writes at indices `0` and `1` is byte for byte the pair
+`mgo2-started-briefing-then-solo-game` writes — two sessions with no client in common —
+and `myserver24`'s run writes the same bytes because this host copies the recorded pair.
+The one live change is `[0x09]` moving `0x01` → `0x00` in `mgo2-game1` at t+765.794, with
+the two copies written after it carrying `0x00`; nothing else in the 39 records has ever
+differed from its body. The quad's words are not coordinates in the kind-`0x04` sense —
+`11500`, `14464`, `-32767` and `437` in that same body — and no reading of the four items
+fixes them to a point, a box or a pair of points. **The frame is [V]; what a stage is
+saying here is [U].** A capture of a room on a stage other than `mgo2-game1`'s (the
+`mgo2-game2` room writes the 22-byte record and no entries) or the client's own parser for
+this kind is what would settle it.
 
 ### Loadout — 16 per replay, bodies 25–161 bytes [U]
 
 **Superseded.** The record is decoded in `UDP_SETTINGS_PAYLOAD.md`: it is the
-replay console's `TYPE_SETTINGS`, the host's rotation record and each player's
-appearance and skills. The reading below is kept for provenance.
+replay console's `TYPE_SETTINGS` — the host's rotation record, each player's
+appearance and skills, and the 24/25-byte settings header a player is announced
+with. The reading below is kept for provenance.
 
 **Guess: a per-thing loadout record, not per-player.** **[U]**
 

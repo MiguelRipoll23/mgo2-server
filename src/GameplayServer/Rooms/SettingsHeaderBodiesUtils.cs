@@ -103,4 +103,56 @@ public static class SettingsHeaderBodiesUtils
         body[MapOffset + (CarriedFieldIndex / 8)] = (byte)(1 << (CarriedFieldIndex % 8));
         return body;
     }
+
+    /// <summary>
+    /// Body length of the header's join-time form, one byte longer than
+    /// <see cref="PayloadLength"/> because it carries a second field.
+    /// </summary>
+    public const int JoinPayloadLength = 25;
+
+    /// <summary>
+    /// The second field the join-time form carries: one byte at slot-state offset
+    /// 289, whose map bit is the <c>0x10</c> of the map's nineteenth byte.
+    /// </summary>
+    public const int JoinSecondFieldIndex = 156;
+
+    /// <summary>
+    /// The join-time form's field 1 value: <c>0xFE</c>, the byte the team array
+    /// writes for a player the room puts on no side.
+    /// </summary>
+    public const byte JoinCarriedValue = 0xfe;
+
+    /// <summary>The join-time form's second field value, <c>0xFF</c>, the empty value.</summary>
+    public const byte JoinSecondValue = 0xff;
+
+    /// <summary>
+    /// The settings header a reference host writes for its own player at the join,
+    /// before that peer reports: two fields, where <see cref="Build"/> carries one.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured in every reference join of a room that has not played.</b>
+    /// `mgo2-game-started-on-briefing` t+8.125 and t+10.379, `mgo2-game2` t+10.236
+    /// (three copies) and t+12.361, and `mgo2-game-failed-memoryviolation` t+11.085
+    /// and t+13.206 all write
+    /// <c>0b 01 02 00 … 10 00 fe ff</c>: slot <c>01</c> — the host's own, key zero
+    /// plus one — the map's bit 0 set for field 1 with the value <c>0xFE</c>, and
+    /// the map's nineteenth byte <c>0x10</c> for field 156 with <c>0xFF</c>. The
+    /// answer to a request to be placed in the room is the shorter
+    /// <see cref="Build"/> instead (`started-on-briefing` t+93.127 and
+    /// `game2` t+78.987), so the two forms are one record written at two moments
+    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §33).
+    /// </remarks>
+    /// <param name="slot">The player's key plus one, as <see cref="Build"/> takes it.</param>
+    /// <returns>The record body.</returns>
+    public static byte[] BuildJoin(byte slot)
+    {
+        var body = new byte[JoinPayloadLength];
+        body[0] = SettingsPayloadType;
+        body[SlotIndex] = slot;
+        body[MapOffset + (CarriedFieldIndex / 8)] = (byte)(1 << (CarriedFieldIndex % 8));
+        body[MapOffset + (JoinSecondFieldIndex / 8)] = (byte)(1 << (JoinSecondFieldIndex % 8));
+        body[ValueOffset] = JoinCarriedValue;
+        body[ValueOffset + 1] = JoinSecondValue;
+        return body;
+    }
 }

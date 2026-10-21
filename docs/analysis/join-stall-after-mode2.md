@@ -2663,7 +2663,7 @@ The reading here that supersedes the earlier one: the `07 48` shape is **not** a
 the player's 24-table slot at `0x05` and again at `0x07`, and the character id as a u32 at
 `0x08` — one of each, which is what `PlayerProfileRecordUtility` already writes. What is
 still missing from this host's answer is not the entry's fields but the four kinds beside
-it: 39 records of kind `0x01`, 162 of `0x02`, 43 of `0x03` and 155 of `0x04` in the
+it: 39 records of kind `0x01`, 166 of `0x02`, 43 of `0x03` and 155 of `0x04` in the
 captures, none of them an entry.
 
 Those four are decoded now, as far as the wire goes, in `UDP_COMMANDS.md`: they are
@@ -2671,9 +2671,10 @@ host-to-joiner records that ride the same datagram as the team and occupancy arr
 seven-byte header above with the slot at `0x05`, and **kind `0x04` is one spawn point per
 slot** — slot, its place in the group, a sixteen-bit heading and three signed coordinates,
 written one per player and every two seconds or so. Kinds `0x02` and `0x03` carry geometry
-that reads as a box's four corners and a mirrored pair of points; kind `0x01` is a count and
-four eight-byte tuples that are not yet read. Which of them this host has to write for a
-join to proceed is not settled by the bodies — nothing in the captures shows a client
+that reads as a box's four corners and a mirrored pair of points; kind `0x01` is a quad of
+four signed sixteens and then four items of the same, which is kind `0x02`'s tail moved two
+bytes down, with what the items state still **[U]**. Which of them this host has to write
+for a join to proceed is not settled by the bodies — nothing in the captures shows a client
 refusing an answer for the want of one — so none of the four is written here yet.
 
 **The rules family's `len 4`/`len 5` bodies are the roster list.** They read
@@ -2688,3 +2689,589 @@ terminated by `fe fe`, and it grows as the room does.
 Both are implementations of their own and neither was written in this pass: the first
 needs a struct decode, and the second needs the list's rule (which keys one record
 carries, and when a record replaces the previous one) read out of the same captures.
+
+### 30.11 `myserver28`: the briefing's records are all on the wire, and the screen still does not come
+
+The live capture of 2026-10-21 (`myserver28.pcapng`, `192.168.1.20:5730` joiner ↔
+`89.129.16.203:5731` host, key `0xc22ed7fd`) is another where the briefing's own records
+are present and the client does not reach its screen. Read with `tools/udp_frame.py` and
+`tools/udp_briefing_flow.py`:
+
+| t+ | what |
+| --- | --- |
+| 4.9 | the join: roster answer, run, and the sparse phase's `0xd001`/`0x0a61` records |
+| 54.88 | the client's report: `1ade e1 01`, `1af3 00 01 ac aa`, `1afe/fd/fc 00 01`, `0a5c 01`, and its `82 f3`/`84 f3` echoes in the same datagram |
+| 54.93 | the host's answer: the four acknowledgements (`da f3`, `5a fe/fd/fc`), `0a5c 02 00 00 00`, the publication `1ade e0 01 00 …` and the `5ade` marker |
+| 56.95 | the run: state block, the two arrays, the close pair, the roster close, and the item-box pair — **and the first countdown**, `0b 3c 00 00 00 00 00` |
+| 56.95–76.2 | the countdown repeats every 2.4 s with the ready set at `00 00`; the client sends no ready, only its `0x9001 … 00` keep-alives |
+| 76.17 | the client asks for entry (`83 f3 e0 7f`); the host answers with the arrays, the countdown and the **24-byte** settings header |
+
+So the answer to the report, the run, the close triple, the countdown and the entry answer
+are all written, and the client still never ready — it never left whatever screen it is on.
+
+**The row that looked like an absence is a loadout, not a settings header, and the earlier
+reading of it was wrong.** The fifty-four-byte body
+opens `0b 02 02` — the settings payload type, slot `0x02`, side `0x02` — carries the skill
+region at `0x16` (`02 ff 01 03 02 01 ff`) and the appearance block at `0x1f`
+(`1e 45 2f 57 39 67 68`), which is `LoadoutFramesUtils`' layout and the shape §30.8 already
+counts as its "`0x1001 len 54` loadout" row. The settings header is the other family — 24
+bytes, a twenty-one-byte presence map and one field (`0b SS 02 00 …`, §29.2) — and the
+reference writes it at t+8.125 (a 25-byte copy) and t+93.127 (24 bytes), neither of them in
+this window. So both hosts write both families; what differs here is when.
+
+Host-side records in the 25 s after each client's `e1` report, with the class and
+generation bits masked, reference (`mgo2-game-started-on-briefing` t+55.8) and this capture
+(t+54.9):
+
+| shape | reference | `myserver28` |
+| --- | ---: | ---: |
+| `0x1001` 50–62 B opening `0b` (a loadout) | **3** (t+56.123, 58.255, 60.383) | **0** — its two are in the join burst at t+4.953 |
+| `0x1001` 24–25 B opening `0b` (the settings header) | 0 | **1** (t+76.220, on the `83` request) |
+| `0x9001`/`0x1001 len 26` (the arrays) | 8 | 3 |
+| `0x1001 len 20` (the close pair) | 8 | 4 |
+| `0x1001 len 7` (the close) | 4 | 2 |
+| `0x1250`/`0x125a len 6` (the item-box pair, under either generation) | 45 each | 6 each |
+| `0x1254 len 7` (the countdown) | 0 | 11 |
+| `0xd001 len 1` | 5 | 6 |
+
+The three loadouts are a repeat of the peer's own record and not an answer to the report:
+of the fourteen captures that decode, only this one writes a loadout within six seconds of a
+report, and its own second report (t+196.828) is answered with none. So the row is a phase
+difference, as are the item-box pair and the countdown, and the window holds **no record
+this host never writes at all** — the correction withdraws the "test the 54-byte header
+first" that stood here. The shapes this host does not write are the ones §30.8 already
+lists, and one of them is now measurable as a rule rather than a count:
+
+### 30.12 The loadout is rewritten when the room's membership changes, and this host writes it only at the join
+
+**The reference writes a player's loadout again at each join.** Host-side `0x1001` bodies
+opening `0b` at a length of 50 to 62 bytes, with the slot byte at `+1`, are 142 across the
+eleven reference captures and 2 in each of this project's three. Their instants:
+
+| capture | loadout instants (slot) |
+| --- | --- |
+| `started-on-briefing` | 6.0 ×2 (2), 8.1, 10.4, 34.4 (2), 56.1, 58.3, 60.4 (2), 102.8 (3), 138.4 (4), 149.9 + 152.0 (5), 184.5 + 186.9 (6), 213.1 + 215.5 (7) |
+| `game1` | 6.7 ×3 (1, 21, 21), 156.0 + 158.2 + 160.6 + 162.8 (16), 208.2 + 210.7 ×2 (5), 386.7 + 391.2 (12), 494.2 + 496.7 ×2 (7) |
+| `game2` | 6.1 ×3 (2), 10.2 ×3, 12.4, 36.0, 203.5 ×2 (3) |
+
+In `started-on-briefing`, each slot that is not the joining peer's own first appears a few
+seconds **before** that player's ready state is first published — slot `3` at t+102.758
+against its `e0 02` at t+112.619, slot `4` at 138.369 against `e0 03` at 144.750, slot `5`
+at 149.860 against `e0 04` at 154.370 — and the copies of one slot sit 2.1 to 2.5 s apart,
+which is the briefing's tick (§30.1), one to four of them. The record is therefore written
+when a player joins the room, and not on a clock of its own.
+
+**And the join reaches the peers already in the room as four records.** In the same
+capture, at t+102.758, to the peer that joined at t+6.0: `0x1001 len 65` (the
+newcomer's roster entry, `07 3a 00 00 02 02 …`), `0x1001 len 7` (the run's close
+`07 00 00 00 00 00 03`), `0x1001 len 10` (`0b 00 00 04 00 00 00 00 00 03`, its slot at
+`+9`) and `0x1001 len 56` (that player's loadout, opening `0b 03`). The quartet is the same
+at each of the room's next three joins, entry length first and loadout last: `66 / 7 /
+10 / 57` at t+138.369 (slot `4`), `62 / 7 / 10 / 56` at t+149.860 (slot `5`) and `65 / 7 /
+10 / 55` at t+184.538 (slot `6`).
+
+**This host announces the entry and the close, and neither of the other two.**
+`PlayerProfileHandler`'s answer ends by broadcasting every record of the newcomer's run to
+the other peers — the entry, the close and the host's own entry — and the loadout is not in
+that run: it is built by `PlayerSettingsBurstService` into the burst one peer receives,
+once, 2.52 s after that peer's own roster answer. So a peer that joined earlier is never
+told what a later player looks like, and a briefing that draws the room from these records
+has nothing to draw for the players who arrived after it.
+
+**Not verified live.** What would confirm it is a three-client join: each peer already in
+the room should receive the newcomer's entry, close, ten-byte control and loadout, and this
+host today writes the first two. Nothing in `myserver28` tests it — that capture holds one
+client — and nothing here says the missing loadout is what holds the screen.
+
+**The countdown row is a phase too.** Both hosts write the same seven-byte body,
+`0b <seconds> 00 <ready set> 00 00 00`. This host writes 56 copies from t+57.092 to
+189.016, all of them `0b 3c 00 00 00 00 00`; the reference's first is at t+93.127, 37 s
+after its report and 35 s after its run, and it writes `0x3c` with a zero set for 26.7 s
+before the set reads `0x02` (t+119.874) and the count moves (`0x3b` by 132.249, `0x00` at
+193.621). The set's first non-zero bit is the second player ready. This host's room has one
+ready player — the client's `e1 01` load report is not a ready record, and
+`BriefingStateService.ReadyMask` counts only the ready ones — so its count is held by the
+one-player rule and its set stays empty, which is exactly the reference's own state for
+those 26.7 s. Nothing there is a defect; it is the same rule, caught at a different point
+in the briefing.
+
+### 30.13 The client retries four vids no reference client sends, and this host can only acknowledge them
+
+The one thing in `myserver28` that no reference capture holds at all is a client-side
+retry group. Counted over both directions of all fourteen captures with
+`tools/udp_frame.py`'s reader, **no record of vid `0xAF3`, `0xAFE`, `0xAFD` or `0xAFC`
+exists outside `myserver28`**: the eleven reference captures hold none, and neither do
+`myserver24` and `myserver27`, whose clients are stuck in the same place. The sixty
+copies here are all inbound, in two class forms:
+
+| wire id | body | copies | this host answers with |
+| --- | --- | ---: | --- |
+| `0x1AF3` | `00 01 ac aa` | 5 | `0x5AF3`, empty |
+| `0x9AF3` | `00 01 ac aa` | 10 | `0xDAF3`, body `24` |
+| `0x1AFE` / `0x1AFD` / `0x1AFC` | `00 01` | 15 each | `0x5AFE` / `0x5AFD` / `0x5AFC`, empty |
+
+They are written as one group, at t+54.9 and then at 5.1 to 8.2 s intervals (12.3 s to the
+second): 54.9, 67.2, 75.4, 82.1, 87.6, 93.3, 99.1, 105.7, 111.3, 116.4, 122.1, 127.7,
+133.3, 139.4, 145.3 — fifteen instants, the same four records each time, byte for byte.
+The first copy rides the join report's own datagram (`9af3`, and `1ade e1 01` behind it),
+and the rest ride the keep-alive datagrams the client writes between its heartbeats.
+
+**Every one of the sixty is answered.** The host's `PeerAcknowledgementUtils` answers each
+numbered record with the same identifier and the ack bit, and the client sends the group
+again at the next interval regardless. So the ack is not what the client is waiting for:
+either it wants a record of its own on one of those vids, which nothing on the reference
+wire suggests because no reference host ever writes one, or it is a retry timer that a
+later answer is supposed to clear.
+
+**What it does and does not change.** It does not name the stall, because `myserver24` and
+`myserver27` sit on the same screen without ever sending one — the group is the *marker* of
+a client state, not its cause. What it does name is where the state is entered: the first
+copy is already in the report's datagram, so it was set inside the join, before the report
+at t+54.9 answered it — which is the window §30.8 lists the differences in
+(the item-box groups, the `07` entry kinds, the rules family's `len 4`/`len 5` bodies) and
+not the report's answer, whose four records match the reference's byte for byte except the
+sequence byte the pair carries, which is the request's own. A capture that does not carry
+this group is the one that will show which of those records cleared it.
+
+## 31. The retry group is operations-class, and the fade's step is what the binary says to read next
+
+§30.13 named the sixty retries by their wire ids and could go no further with them. This
+section re-reads the same session with the identifier split the way the client's own
+registry splits it, which turns the four ids into four records of one class; then it
+checks what a healthy host writes in that class, what the fade window carries in each
+direction, and what `MGO2.ELF` says about the screen a peer is on when it never leaves
+the fade. Nothing in the server was changed: every claim below is a measurement or an
+instruction, and the records §30.8 still lists are still unwritten.
+
+### 31.1 The identifier is a class byte and a sub byte, and that is what the group is
+
+Every session record's identifier is `class << 8 | sub`, and the client's inbound
+registry — eighteen entries, `udp-record-dispatch.md` §4.1 — is keyed by the **sub**:
+`0xA54` is the operations stream's sub `0x54`, and the wire writes it `0x1254` / `0x1A54`,
+which are class `0x12` and class `0x1A` on that same sub. Read that way the §30.13 table
+is one class and four subs:
+
+| wire id | class | sub | the sub's other forms in the corpus |
+| --- | --- | --- | --- |
+| `0x1af3` | `0x1a` | `0xf3` | `0x82f3` / `0x84f3` — **the lobby-slot pair** |
+| `0x1afc` | `0x1a` | `0xfc` | none |
+| `0x1afd` | `0x1a` | `0xfd` | none |
+| `0x1afe` | `0x1a` | `0xfe` | none |
+
+The class is the operations family's second generation — the one `0x1a54` and `0x1ade`
+carry — so the group is not four vids at all, it is four operations-class records on
+four subs, one of which is the sub the slot pair is written on. Its bodies (`00 01`,
+and `00 01 ac aa` on the pair's) are the same statement on each.
+
+**No reference host writes those four subs, and no healthy client does either.** Counted
+over both directions of the eleven reference captures: zero records on subs `f3`, `fc`,
+`fd` or `fe` in class `0x12` or `0x1a` — the pair's sub `f3` is written only as
+`0x82f3`/`0x84f3`, the class-`0x82`/`0x84` slot pair.
+
+**The body `00 01` is a real record, but in the other direction and on another sub.**
+Three reference records carry it, all host-side and all on sub `0x58`: `0x1258` in
+`mgo2-game-started-on-briefing` at t+8.125 and t+10.379 (with the settings burst, 2.25 s
+apart) and in `mgo2-game2` at t+6.112. Each is answered by the client 132 ms later with
+an **empty** `0x5258`, so the shape is a numbered record that draws an empty
+acknowledgement — the same shape the retry group draws from this host. So the group is
+the client sending request records of a kind the reference host also sends, on four subs
+no host ever answers with data, and the reference client never sends one at all.
+
+**What the reference host does write in that class is a *different* set of subs.**
+`mgo2-game-joined-when-red-team-then-briefing` writes `0x12e2` … `0x12e7` — six
+operations-class records on subs `e2` to `e7`, three bytes each, `ff <value> 18` —
+in one pass, then re-sent as `ff 01 18`, `ff 0a 18` and `ff 09 18` under ordinals `00`,
+`01` and `02` at t+799.165, 800.807 and 805.291;
+`mgo2-game-started-team-selection-selected-blue-then-game`
+writes `0x12e1` (7 bytes, twice) beside `0x12e2` and `0x12e3`. This host writes none of
+them. They are round-side records — every capture that holds them holds them beside tick
+traffic — so they are not what a client in a fade is waiting for, and they were not
+written.
+
+### 31.2 The early rules pair is not the cause, and the ordinal stream is inconsistent
+
+Two candidates were checked before treating the composition of the fade window itself
+as the remaining difference.
+
+**The pair written before a report is not it.** This host writes the rules pair from
+t+2.4, before the peer has reported; `mgo2-started-briefing-then-solo-game` writes its
+first pair only at t+57.6, after its report, which made the early pair look like the
+cause. It is not: `mgo2-game-started-on-briefing` writes its first pair at t+6.0 and
+`mgo2-game2` at t+6.1, both before their reports (t+55.8 and t+56.7). Two references
+open the fade with the pair and two do not, so the pair's start is a phase this host
+may choose and nothing in the corpus says the client acts on it.
+
+**The control record's ordinal is written twice for two different bodies.** `0xd001` is
+one byte in a class of its own (`0xd0` = `0x10 | 0x40 | 0x80`) and the one record §30.5
+follows into the client, where it is a one-shot argument to event `0x16002C`. The
+reference host never lets it go backwards — `01` at t+6.0 through `0b` at t+55.2 and on to
+`13` in `started-briefing-then-solo` — and repeats an ordinal only for an identical body
+(t+32.644 and t+32.645, `02` twice; f=12 twice at t+88.117 and 88.118, `02` both times).
+This host's
+ordinals run `01, 00, 00, 02, 02, 02, 03, 03, 03 …` (t+2.5 to 14.5) and carry **two
+different bodies**: ordinal `00` is `24` and then `02` at the same instant (t+4.953),
+ordinal `02` is `24` at t+5.4 and `02` twice at t+7.3, and ordinal `03` is `24`, `03`,
+`02` at t+10.7, 12.1 and 14.5 — the pinned continuation of `SparsePhaseFramesUtils` and
+the answers of `PeerAcknowledgementUtils` counting separately, where the reference numbers
+every copy of the record on one counter and only repeats an ordinal for the same byte.
+**[I]** a receiver that drops a repeated ordinal drops one of the two bodies; the corpus
+cannot say that it does, and the first copy in every session is free of the collision, so
+this is recorded rather than changed.
+
+### 31.3 The screen the fade belongs to, and the steps it can and cannot leave
+
+The binary was read for the screen state machine the `0xd001` byte moves (§30.7). The
+object carries a 32-bit **step** at `+0xb8`, a 32-bit companion at `+0xbc` and a one-byte
+flag at `+0xc4`; every transition writes all three and most emit an event through
+`0x7770F0(event, argument)`. The transitions the image holds are:
+
+| step written | site | condition |
+| ---: | --- | --- |
+| `9` | `0x77EB98` | step != 9; `0xbc = 0`, `0xc4 = 1`, `emit(0x16001B, 0)` |
+| `9` | `0x77EC24` | bit `0x04` of `+0xc0` set; `0xbc = 0` |
+| `10` | `0x77F438` | step != 10; `0xbc = 0`, `0xc4 = 1` |
+| `11` | `0x77AAE8`, `0x77ABE0` | step ≤ 6 — the test is `bgt` on 6, so `step == 6` as first recorded here is wrong (§32.3); `0xc4 = 1` |
+| **`12`** | `0x77E668` | **step <= 9**, state `0x00` field 24 (`0x63`) != `0xff`; `0xbc = 0`, `0xc4 = 1`, `emit(0x16002C, byte)` |
+| **`12`** | `0x77F7E0` | the same, **after** a test of state `0x00` field 161 (`0xA1`): a nonzero byte there skips the transition |
+
+So the byte `0xd001` carries can only move a screen that is at step **nine or below**,
+and `0x77E668` reads it from the session state (`0x27E480(block, 0x63, 1, obj+0xd0)`) every
+time it runs. A screen at step `10` or `11` is one the byte cannot reach at all — which is
+exactly what a fade with a missing next event looks like, and it is where the next reading
+has to start: what enters `10` and `11`, and which step the join screen is on when the map
+and the rule text have been drawn. Both readers are virtual — no `bl` in the image names
+`0x77E668` or `0x77F7E0` — so the entry is the screen class's vtable, and the step-10 and
+step-11 handlers are the functions to read next.
+
+### 31.4 What is left, in the order the wire supports
+
+1. **The step-10 and step-11 handlers**, and the vtable that reaches them (§31.3). This is
+the only measured place where the client can sit and be unreachable by the records this
+host writes.
+2. **The operations-class records on subs `e1`–`e7`** (§31.1), unwritten here and
+round-side in every capture that holds them.
+3. **The `0xd001` ordinal** (§31.2): one counter for the continuation and the answers.
+4. **§30.8's remaining rows**, unchanged: the join answer's `0x1001` bodies below the
+reference's lengths, the rules family's `len 4`/`len 5` roster list, and the item-box
+group through a briefing.
+
+None of these is a gate the corpus names. What the corpus does say is that the state the
+peer is in is entered **inside the join and before the report** (§30.13), that no
+reference client has ever produced its marker, and that the record §30.7 followed — the one
+this host writes with a pinned byte — is the only one in the join whose value the binary
+turns into a screen transition.
+
+## 32. The client's `1d` rows are its own stream, and the step setters are dispatched dynamically
+
+§31.3 left two questions: what enters steps `10` and `11`, and which step the joining
+screen holds. This section answers the second as far as the image allows, closes the
+timing hypothesis §31.4 left open, and withdraws a claim the code has been leaning on.
+Nothing in the server changed.
+
+### 32.1 Sub `0x54` is one channel with a one-byte opcode, and each side writes its own
+
+Every record on sub `0x54` — the identifier `0x1254`/`0x1A54` — begins with a **one-byte
+opcode**, and the two sides write different opcodes on it:
+
+| opcode | length | writer | the body behind it |
+| --- | ---: | --- | --- |
+| `00` | 90 | host | the room's state blob, the operations clock in its tail (`… ff <lo> <hi>`) |
+| `01` | 3 | host | the operations clock, 125 ms units, little-endian |
+| `02` | 4, 27 | host | a state write — offset, count, values |
+| `0b` | 7 | host | the briefing countdown |
+| `0f` | 2 | host | the short record the replay parser does not name |
+| `1d` | 7, five of them | client | one row per slot `00`–`04` |
+| `1f` | 3 | client | one player's readiness |
+| `22` | 22 | client | the room's second table |
+
+The five `1d` rows are one table: `1d <session> <slot> <four bytes>`, with the slots
+`00`–`04` and the same session byte in every row (`03` in
+`mgo2-started-briefing-then-solo-game`, `01` in `mgo2-game2`); slot `00` carries
+`01 03 00 00`, slot `01` `02 01 00 00` and slots `02`–`04` zeros. They travel beside the
+22-byte `22` record in one datagram, which is the six records
+`docs/protocol/STATE_VECTOR.md` §1 counts as the client's operations-stream opening — its
+first six ordinals, written by the client rather than the host.
+
+**So the delay is the client's, and it is not two seconds.** Measured from the client's
+lobby-slot echo (`82`/`84 NN`) to its first `1d` row, over every capture that writes one:
+
+| capture | entry | first `1d` | delay |
+| --- | ---: | ---: | ---: |
+| `mgo2-game2` | t+57.355 | t+59.040 | **1.69 s** |
+| `mgo2-game-failed-memoryviolation` | t+59.988 | t+61.694 | **1.71 s** |
+| `mgo2-started-briefing-then-solo-game` | t+55.312 | t+57.304 | **1.99 s** |
+| `mgo2-game-started-on-briefing` | t+56.360 | t+62.623 | **6.26 s** |
+| `mgo2-game-joined-when-red-team-then-briefing` | t+57.983 | t+95.464 | 37.48 s |
+| `mgo2-joined-game-in-progress-last-round` | t+56.730 | t+281.402 | 224.7 s |
+| `mgo2-game1` | t+45.688 | t+470.168 | 424.5 s |
+| `myserver24`, `myserver27`, `myserver28` | 56.0, 55.6, 54.9 | — | none |
+
+Seven captures write the rows and no two at the same distance from the entry; the long
+delays are second entries into a room whose round has already played. `1d` is therefore
+the client's own stream opening and not a stage a host can wait a fixed two seconds for,
+which is what the remark on `MatchStartRunService.ConfirmEntryAsync` in
+`MatchStartRunService.Entries.cs` says of `myserver20` — *"never the `1d` stage records
+every reference client writes two seconds after its entry"* — and the table above
+withdraws it. What `myserver20` lacks is the client's own stream at all, and that is the
+same fact this host's three later captures show, not a second one about a two-second
+stage.
+
+### 32.2 A run that precedes the rows does not stop the client
+
+`mgo2-game-started-on-briefing` writes its briefing's run **1.90 s** after the entry
+(t+58.255) and the client's five rows only at t+62.623 — **4.4 s behind the run** — and
+that client briefs, readies at t+115.771 and plays. So a run before the client's own
+stream opening is tolerated, and
+`MatchStartRunService.EntryRunDwellMilliseconds` (2 000, against the 1.90 s and 2.31 s
+the two briefings measure) is a difference this host has already closed: `myserver28`'s
+run lands 2.07 s after the entry, inside the measured range, and that client still never
+opens its stream.
+
+**[V]** the timings; **[D]** the conclusion, which is that the dwell is necessary and not
+sufficient — a run 164 ms behind the echo fails (`myserver20`) *and* a run 2.07 s behind it
+fails (`myserver28`), while the reference's 1.90 s succeeds, so what is left in that run is
+its **content** and not its instant.
+
+### 32.3 The five step setters are one table, and nothing in the image names them
+
+§31.3's five sites are methods of one object, laid out as a descriptor array of
+`(code, TOC)` pairs at **`0x11FEB80`**. The read-only data holds a run of class records
+at a `0x18`–`0x1C` stride, each carrying one vtable pointer: `0x123E2BC` holds
+`0x11FEB80`, and its neighbours hold `0x11FFC00`, `0x11FFC70`, `0x11FFF40`, `0x1200048`,
+`0x1200090` and `0x12000E8` — the **sibling screens'** vtables, which is where the screen
+a joining client actually holds has to be read next.
+
+A slot is an offset of eight bytes from the base, which gives the methods §31.3 lists:
+
+| slot | offset | method | what it writes |
+| ---: | ---: | --- | --- |
+| 0 | `0x000` | `0x77C1C0` | — |
+| 21 | `0x0A8` | `0x77E668` | step `12` from the `d001` byte, only while step ≤ 9 |
+| 24 | `0x0C0` | `0x77EB98` | step `9` |
+| 39 | `0x138` | `0x77F430` | step `10` |
+| 44 | `0x160` | `0x77F7E0` | step `12` from the `d001` byte, gated on state `0xA1` |
+
+**No instruction in the image reaches any of them by name.** No `bl` in any segment
+targets `0x77E668`, `0x77EB98`, `0x77F430` or `0x77F7E0`, and of the four slot offsets the
+only load inside the screen's own range (`0x770000`–`0x790000`) is
+`0x782980 lwz r4, 0xA8(r31)`, a field of the object and not a slot of the table. The
+dispatch is dynamic — a caller computes the slot, or the object is messaged — so a static
+search cannot reach it, and §31.3's "the entry is the screen class's vtable" is where
+that search stops rather than a step it completes.
+
+**And the step-`11` guard is `step <= 6`, not `step == 6` as §31.3 records it.** Both
+sites test `cmpwi r0, 6; bgt skip` (`0x77AAEC`, `0x77ABD8`), so the transition is taken
+from **six or below**: a screen at `3` can jump to `11`, and a screen at `9` or `10`
+cannot. The step-`10` setter has no step guard at all beyond `step != 10` (`0x77F438`),
+clears `0xbc`, sets `0xc4` and returns `0`. So the chains a join can walk are
+`… → 6 → 11` (a loading screen) and `9 → 12` or `10 → 12` (the briefing's byte), and
+`10` is enterable from anywhere and leaves only through `12`.
+
+### 32.4 What is left, in the order the wire supports
+
+1. **The six sibling vtables** (§32.3), and the class records that name them. The joining
+   screen's step and its triggers can only be read there now.
+2. **§30.8's remaining rows**, unchanged: the join answer's `0x1001` bodies, the rules
+   family's `len 4`/`len 5` roster list, and the item-box group through a briefing.
+
+The operations clock through a briefing is **not** on that list, though an earlier draft of
+this section put it there: the captures say the opposite, and §32.5 measures it. The timing
+hypothesis §31.4 left open is closed: the dwell is inside the measured range and the client
+still does not open its stream, so the difference is in what the run carries, not when it
+arrives.
+
+### 32.5 The clock through a briefing belongs to a played room, and the working capture has none
+
+The claim worth withdrawing is that a briefing is owed the operations clock (`01`, three
+bytes) and that its absence is what this host lacks. The first half is wrong: the second is
+true of a fresh room here and equally true of the reference. Measured per capture: the
+window from a briefing's first `0b` count to the round that ends it, and every `01` record
+inside that window.
+
+| capture | briefing window | `01` inside | `01` before the window |
+| --- | --- | ---: | --- |
+| `mgo2-game-started-on-briefing` | 93.127 → 198.371 | **0** | **0** |
+| `mgo2-game2` | 78.987 → 104.649 | **0** | **0** |
+| `mgo2-game-failed-memoryviolation` | 62.332 → 77.235 | **0** | **0** |
+| `mgo2-started-briefing-then-solo-game` | 167.992 → 174.371 | 1 (2 400) | 65, 2 400 from 57.626 |
+| `mgo2-game1` | 517.542 → 565.467 | 25, every one 2 400 | 325 |
+| `mgo2-joined-game-in-progress-last-round` | 306.441 → 320.438 | 8 | 139 |
+| `myserver24` (this host) | counts 59.553 → 175.448 | 71, every one 3 360 | — |
+| `myserver27`, `myserver28` (this host) | first count 57.626 / 57.092 | **0** | **0** |
+
+**The three reference briefings with no round behind them write no standalone clock at
+all** — no `01` is in their runs either, and a run carries one only when the room has a
+round. The one among them whose client briefs and readies —
+`mgo2-game-started-on-briefing`, §32.2 — writes its first `01` as `3840` at its own round's
+open, t+198.371, **105 s** after the first `0b`. So the record is not a briefing's timer and
+not what a joining client waits for; the briefing's own timer is the `0b` count, which this
+host writes.
+
+**The clock's value does ride a briefing — in the run's 90-byte state block, whose tail is
+`ff <lo> <hi>` of the room's own limit — and both sides write it there.** Measured from
+each host's run:
+
+| capture | state block tail | units | the room's limit |
+| --- | --- | ---: | --- |
+| `mgo2-game-started-on-briefing` | `… ff 00 0f` | 3 840 | 8 min |
+| `mgo2-game-failed-memoryviolation` | `… ff 80 25` | 9 600 | 20 min |
+| `myserver28`, `myserver24` (this host) | `… ff 20 0d` | 3 360 | 7 min |
+
+So a briefing is told the round's length on both sides, and the only record the reference
+omits from a fresh briefing is the separate three-byte `01`.
+
+**Where the reference does write `01` through a briefing, the room has a round behind it,
+and the value is held at the round's whole time** — 2 400 in all 25 records inside
+`game1`'s window, 2 400 again in `started-briefing-then-solo`, whose run is what starts it
+at t+57.626. That is the branch this host already has: `carriesRoundState` in
+`MatchStartRunFramesUtils`, measured in `myserver24`, which holds 3 360 across its briefing
+at the ~2.5 s tick. A fresh room writes none on either side — `myserver27` and `myserver28`
+write zero `01` records in their whole captures, exactly as `game2` and
+`started-on-briefing` do before their rounds open.
+
+**[V]** the counts, the tails and the times; **[D]** that adding the clock to a fresh
+briefing is not supported by the captures and would not have been the missing record —
+`myserver24`, which writes it, is one of the runs whose client never opens its stream
+either, and the reference's own working briefing never writes it.
+
+One measurement kept apart: `mgo2-game-joined-when-red-team-then-briefing` reads `01`
+as `128 → 96 → 64 → 32 → 0` over 16.2 s from t+11.671 and holds at zero for 45 s, all
+**before** the briefing's first `0b` at t+72.560. That is the short timer
+`STATE_VECTOR.md` §4 separates from the briefing countdown, and it is not one of the
+records this section counts as inside a briefing window.
+
+`tools/udp_briefing_flow.py` printed this record as `briefing clock` — the label this claim
+came from, though its values are 2 400, 3 840 and 14 400 units of the room's time and not a
+countdown. It now says `operations clock`.
+
+## 33. The screen is decided at the join, and the settings header is the record the join lacks
+
+The client that briefs does not wait for the host after it echoes the slot pair: it opens its
+own stream on its own clock. Measured from the client's echo (`82`/`84 NN`) to its first
+`1d` row, in the captures where the two can be told apart from surrounding traffic:
+
+| capture | echo | first `1d` | gap | host traffic in the gap |
+| --- | ---: | ---: | ---: | --- |
+| `mgo2-started-briefing-then-solo-game` | 55.312 | 57.304 | **1.99 s** | **none at all** |
+| `mgo2-game2` | 57.355 | 59.040 | **1.69 s** | the answer at 57.362 |
+| `mgo2-game-failed-memoryviolation` | 59.988 | 61.694 | **1.71 s** | the run at 60.871 |
+| `mgo2-game-started-on-briefing` | 56.360 | 62.623 | 6.26 s | the run at 58.255, 60.383 |
+
+`started-briefing-then-solo` is the case that settles it: between its echo and its `1d`
+records the host writes **nothing**, and the client still reaches the map. So the screen is
+not opened by a record of the briefing's tick — it is opened by state the client already
+holds, and that state is what the **join burst** (§30.13's window) gave it. What the
+briefing writes after the report can only fill a screen the client has already entered.
+
+That moves the search off the tick and onto the join, and the join is where the one
+universal difference is. Host-side records of the first ten seconds, by shape (class bit
+`0x8000` folded), for the three reference joins into a fresh room and for `myserver28`:
+
+| shape | `started-on-briefing` | `game2` | `failed-memoryviolation` | `myserver28` |
+| --- | ---: | ---: | ---: | ---: |
+| `0x1001` 26 B, the arrays | 2 | 2 | 2 | 2 |
+| `0x1001` 7 B, the close | 2 | 2 | 2 | 2 |
+| entries, kind `0x00` | 57, 67 | 57, 67 | 63, 67 | **80, 81** |
+| **`0x1001` 25 B, the settings header** | **2** | **4** | **2** | **0** |
+| **`0x1001` 10 B, the control** | **2** | **3** | 0 | **0** |
+| loadout opening `0b` | 54 | 54 | 54 / 52 / 51 | **50, 50** |
+| `0x1001` 161 B, the settings blob | 2 | 4 | 2 | 1 (`0x9001`) |
+
+**The settings header is the only family missing outright, and every reference join has it.**
+Its join-time body is `0b <slot> 02` then a 21-byte map and **two** values, where the answer
+the client gets from a `83` request carries one:
+
+```
+join   0b 01 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 10 00 fe ff
+answer 0b 02 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+```
+
+read as `0x02` at map byte 0 = field 1 with the value `0xFE`, and `0x10` at map byte 19 =
+field 156 with the value `0xFF`. So the join's copy sets the player's **side-or-unknown field
+to the team array's "no side" byte** (`0xFE`, the value `TeamArrayFramesUtils` writes for a
+player on none) beside the second field, where `SettingsHeaderBodiesUtils.Build` writes one
+field at `0x00` and 24 bytes. The reference writes it **before its client reports** — 8.125
+and 10.379 in `started-on-briefing`, 10.236 ×3 and 12.361 in `game2`, 11.085 and 13.206 in
+`failed-memoryviolation` — that is, 47 to 49 s before the echo it precedes, and this host
+writes no header at all until the client asks for the room at t+76.22, at which point it
+writes the *answer* form.
+
+**The ten-byte control is the second, and it is not universal.** `0b 00 00 04 00 00 00 00 00
+02`, the settings family's byte, the slot at `+9`: two copies in `started-on-briefing`'s join,
+three in `game2`'s, none in `failed-memoryviolation`'s and none in this host's. It names a
+slot in the same burst as the arrays — with one player in the room it can only be slot 0's,
+the host's own — and its meaning is otherwise **[U]**.
+
+**The loadout is the third: ours is four bytes short, in the fields before the appearance
+block.** Reference (`game2`, 54 B) and this host (`myserver28`, 50 B):
+
+```
+ref   0b 02 02 00×15 78 00 00 | 50 02 ff 01 03 02 01 ff 7b 05 | 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00
+here  0b 01 00 00×18            50 02 fe ff c2 05             | 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00
+```
+
+So the appearance block sits at `0x1f` there and at `0x1b` here — four bytes earlier — and
+the four are `78 00 00` (zeros here) plus four of the eight behind `50 02`. The tail from
+`0b 16` on is byte-identical. §30.8 counted the shape and could not say which copy was
+wrong; the join is where the full-length one belongs.
+
+**And the entry's length is a name, not a record.** Ours are 80 and 81 bytes where the
+reference's are 57 and 67, because `PlayerProfileRecordUtility` pads the roster entry's name
+field to a fixed width. The record set is the same; the length is the name's.
+
+### What this rules out, and the reading it withdraws
+
+The retry group (§30.13) is **a symptom and not the cause**: it begins in the report's own
+datagram, so the client was already in that state before the host answered the report; it
+repeats every 5.1 to 8.2 s while the join's data is what it wants; and `myserver24` and
+`myserver27` sit on the same screen without sending one.
+
+The earlier reading of its bodies as an unsatisfied retransmission request — `00 01` as a
+first ordinal and a count, and `00 01 ac aa` as the same plus a sixteen-bit value — **does
+not survive the mirror image**. A two-byte `00 NN` body is a record the reference **host**
+writes, on sub `0x58`, as the room's count: `0x1258 00 01` at t+8.125 and t+10.379 in
+`started-on-briefing`, `00 02`, `00 03`, `00 04` as its players join (t+194.645 to
++241.521), and `00 01` in `game2` at t+6.112. The reference **client** answers each one with
+an **empty** `0x5258`, 131 to 144 ms later (`started-on-briefing` t+95.408 and t+97.674) —
+the same empty acknowledgement `PeerAcknowledgementUtils` writes, for the same two-byte
+body. So an empty ack is not evidence of an unsatisfied request; it is what the reference
+client itself gives that shape.
+
+What would be needed to answer with data is a record on one of those four subs, and no
+reference host writes sub `0xf3`, `0xfc`, `0xfd` or `0xfe` in class `0x12`/`0x1a` in any of
+the eleven reference captures (§31.1: zero records). An answer carrying records would have
+to invent the family it carries. The acks stay empty, and the claim is withdrawn rather
+than turned into a second defect; a capture in which a host answers those subs would reopen
+it. It is not the gate in any case, because the client that is missing the join's header
+asks before any of it.
+
+The arrays are **not** a heartbeat, which is why their sequence byte is not the gate either:
+the client echoes `82`/`84` only when the sequence **changes** — `00` through the whole
+briefing and `01` at the round's open in `started-on-briefing` (t+56.360 and t+197.175), one
+pair in each — so the 136 host-side array records of that capture produce two answers. This
+host's `0xf3` (`OpeningSequence`) is a room constant like the captures' `00`, `0f` and `0x6b`,
+and its single echo at t+54.882 is the same behaviour.
+
+**[V]** the counts, the bodies, the gaps and the absence of host traffic between an echo and
+a `1d`. **[D]** that the gate is the join, and that the settings header — the one family
+missing there — is the record to write.
+
+### What was changed
+
+| file | change |
+| --- | --- |
+| `Rooms/SettingsHeaderBodiesUtils.cs` | `BuildJoin` — the 25-byte form: field 1 at `0xFE` and field 156 at `0xFF`, with the offsets as constants |
+| `Rooms/PlayerSettingsBurstService.Header.cs` | new: `RotationAndHostHeader`, the rotation and the host's own header under the burst's consecutive ordinals |
+| `Rooms/PlayerSettingsBurstService.cs` | the burst opens with that pair instead of the rotation alone; the class is `partial`, 399 lines |
+
+So the join's burst is now: the control byte, the rotation, **the host's header**, one
+loadout per player, the two second loadouts and the state blob — the reference's order, with
+the header where `game2` puts it (rotation ordinal `5`, header `6`, loadout `7`; this host's
+counter is at `3` for the rotation there, and what the capture settles is the order and the
+consecutiveness, not the values).
+
+What would confirm it is the same join with the header on the wire: the client should reach
+its `1d` rows within two seconds of its echo, as the three captures above do. What would
+falsify it is the same silence with the header there, which would leave the ten-byte control,
+the second field's value and the four bytes the loadout is short of as the remaining
+candidates.

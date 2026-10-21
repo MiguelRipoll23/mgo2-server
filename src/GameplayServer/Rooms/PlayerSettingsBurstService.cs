@@ -72,7 +72,7 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </remarks>
 /// <param name="roster">Roster of the room this host is playing.</param>
 /// <param name="logger">Logger of this builder.</param>
-public sealed class PlayerSettingsBurstService(
+public sealed partial class PlayerSettingsBurstService(
     RoomRosterService roster,
     ILogger<PlayerSettingsBurstService> logger)
 {
@@ -136,8 +136,9 @@ public sealed class PlayerSettingsBurstService(
 
     /// <summary>
     /// Builds the burst in the order the recorded host sends it: the opening
-    /// control byte, the room's rotation, one loadout per joining player, the
-    /// two second loadouts, and the state blob that closes it.
+    /// control byte, the room's rotation and the host's own settings header, one
+    /// loadout per joining player, the two second loadouts, and the state blob
+    /// that closes it.
     /// </summary>
     /// <param name="rotation">
     /// The room's own rotation, or <c>null</c> when the room could not be read, in
@@ -173,18 +174,16 @@ public sealed class PlayerSettingsBurstService(
         // restarting it, and it comes from the one counter every record of the
         // roster identifier consumes: at the join the run reads 0 for its head
         // and the host's own entry, 1 for the player and 2 for the close, and the
-        // burst that follows takes 3, 4, 5 and 6 — the rotation, the player's
-        // loadout, and the two second loadouts, in that order
-        // (<see cref="RoomRosterService.TakeRunOrdinal"/>). Writing zero on all
-        // four, as this did, tells the peer the same sequence four times over.
-        var burst = new List<RosterRecord>
-        {
+        // burst that follows takes the values after them in the order it writes:
+        // the rotation, the host's header, then a loadout per player and the two
+        // second loadouts (<see cref="RoomRosterService.TakeRunOrdinal"/>).
+        // Writing zero on all of them, as this did, tells the peer the same
+        // sequence over and over.
+        List<RosterRecord> burst =
+        [
             new(UdpCommandConstants.InGameControl, [OpeningControlByte]),
-            new(
-                RoomRosterService.HostEntryType,
-                rotation is null ? RecordedRotationBody() : RoomRotationBody(rotation),
-                roster.TakeRunOrdinal()),
-        };
+            .. RotationAndHostHeader(rotation),
+        ];
 
         if (loadouts is { Count: > 0 })
         {
