@@ -102,8 +102,10 @@ public sealed partial class MatchStartRunService
 
                 // The room's phase, which a joining client's own state machine
                 // waits on: the round it is now playing, written behind its run
+                // and then once a tick for as long as the round lasts
                 // (MatchStartRunService.Phases).
                 await WriteRoundPhaseAsync(context, (byte)round);
+                _ = PublishRoundPhaseAsync(context, round);
                 await roundState.WaitForCloseAsync(round, session);
 
                 // The result is written behind the round, on the set it played

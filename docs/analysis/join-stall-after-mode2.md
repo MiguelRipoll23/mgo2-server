@@ -3417,11 +3417,20 @@ does. That is **the round the match is on, `0` for a room with none**, which is 
 room's own reset does to the count. **[V]** for the reader, the gate and the values;
 **[I]** for the name, since the schema names no field.
 
-**Written at the round's open and close.** `MatchStartRunService` writes it behind the round's
-run and again behind the result, from `RoundStateBodiesUtils.RoundPhaseBody` — the reference's
-two boundaries, `00` at the close and the round's number while it plays. All 7 distinct
-field-0 bodies in the corpus are that layout (`0b 00 01` then six zero map bytes and the
-value) and the builder reproduces every one. What this host does not do is the reference's
-periodic re-send of the same value inside a round, which `mgo2-game2` writes thirteen times
-over seventy-seven seconds; the beat carries the round's other state, and a value that only
-changes at a boundary is not worth a frame.
+**Written at the round's open, on every tick of it, and at its close.** `MatchStartRunService`
+writes it behind the round's run, once a tick for as long as the round lasts, and again behind
+the result, from `RoundStateBodiesUtils.RoundPhaseBody` — the reference's boundaries, `00` at
+the close and the round's number while it plays. All 7 distinct field-0 bodies in the corpus
+are that layout (`0b 00 01` then six zero map bytes and the value) and the builder reproduces
+every one.
+
+**The tick is the briefing's own 2.35 s.** The gaps between two copies of the record, over
+the fourteen captures and ignoring the zero gaps that are several peers' copies at one
+instant, cluster at 2.37 s (five), 2.35, 2.38, 2.40, 2.41, 2.46 and 2.48 — thirteen of the
+thirty-eight gaps in the 1–4 s band — which is
+`MatchRoundStateService.BriefingTickMilliseconds`, the period the countdown, the ready set and
+the room's rules pair already share. The second mode is 1.87 s, seven gaps in
+`started-briefing-then-solo-game` alone, so the reference is not perfectly regular; the slower
+gaps (4.9 s, 10 s, 40 s and more) are the stretches in which no round was playing. The record
+rides the tick in `MatchStartRunService.PublishRoundPhaseAsync` and stops with the round, so a
+peer never receives a phase for a round that has ended.
