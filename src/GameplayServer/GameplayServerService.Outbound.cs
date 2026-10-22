@@ -127,6 +127,14 @@ public sealed partial class GameplayServerService
                 : UdpCryptoKeyConstants.TailDigestKey;
 
             var wire = FrameCryptoUtility.EncodeFrame(plain, counter, key, digestKey);
+
+            // Each record's instant is kept so the peer's answer to it can measure a
+            // round trip (`PeerSession.RoundTripMilliseconds`); a client answers one
+            // record per answer, which is what pairs them.
+            foreach (var message in messages)
+            {
+                session.NoteSent(message.Type, message.Flags);
+            }
             logger.LogDebug(
                 "[{LogPrefix}] OUT {RemoteAddress} building frame counter={Counter}, compression={Compression}, " +
                 "keyed={Keyed}, records=[{Records}]",

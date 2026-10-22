@@ -45,6 +45,46 @@ public static class ItemBoxFramesUtils
     public const int BriefingGroupCount = 3;
 
     /// <summary>
+    /// Item-box groups a fresh briefing writes after its run and its repeat:
+    /// thirty, one every <see cref="BriefingContinuationPeriodMilliseconds"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The group does not stop with the repeat.</b> A fresh briefing's run is
+    /// followed by a stretch in which the pair keeps going at the beat's own
+    /// spacing: `mgo2-started-briefing-then-solo-game` writes its run at t+57.626
+    /// and the pair at t+59.993, t+62.244, t+64.71, t+65.04 and t+67.37 — 61
+    /// records, thirty groups, 7.9 s — and nothing of it afterwards for the rest of
+    /// its briefing; `mgo2-game-started-on-briefing` writes its run at t+58.25 and
+    /// the pair through t+65.12, then not again until another player reports.
+    /// </para>
+    /// <para>
+    /// <b>The client answers every record of it, which is what makes the silence
+    /// ours measurable.</b> It acknowledges one <c>0x5250</c>/<c>0x525a</c> per
+    /// record received: 164 of each over the same window of
+    /// `mgo2-game-started-on-briefing`, against this host's twelve in each — the
+    /// run's three groups and its repeat's — after which its client goes quiet on
+    /// that exchange for the whole briefing (`myserver28`, t+59.21 to t+60.97).
+    /// </para>
+    /// <para>
+    /// What the stretch is not: a cadence of the briefing. It follows a run and
+    /// not the room's tick, and the same captures write none of it in the quiet
+    /// middle of a briefing — `mgo2-game-started-on-briefing` t+70 to t+110 holds
+    /// no item-box record at all. The round's own opener keeps its measured ten
+    /// seconds (<see cref="BeatFramePlan.ItemBoxOpeningFrames"/>), which is the
+    /// same window seen from the round's side.
+    /// </para>
+    /// </remarks>
+    public const int BriefingContinuationGroups = 30;
+
+    /// <summary>
+    /// Spacing of those groups: <see cref="ItemBoxPeriodFrames"/> beat frames,
+    /// which is 264 ms at the beat's measured 33 ms frame.
+    /// </summary>
+    public const int BriefingContinuationPeriodMilliseconds =
+        ItemBoxPeriodFrames * MatchRecordFramesUtils.FramePeriodMilliseconds;
+
+    /// <summary>
     /// Records the group writes under
     /// <see cref="MatchRecordGenerationUtils.ItemBoxState"/>: one per box.
     /// </summary>

@@ -3484,3 +3484,173 @@ repeating its echo (it only echoes when the sequence changes) and send its `1d` 
 silence with the pair present, which leaves the four `07` entry kinds §30.10 decodes and the
 join answer's profile bodies as the remaining candidates — both are records this host still
 does not write.
+
+## 36. The item-box pair runs on past the briefing's run, and this host stopped it at the repeat
+
+**The record.** The item-box pair — `0x1250`/`0x125a` 6-byte bodies under a fresh briefing's
+set, `0x1a50`/`0x1a5a` under the next round's — is the one family a briefing writes in bursts
+rather than once. Counted host side in `mgo2-started-briefing-then-solo-game`: the run at
+t+57.626, then the pair at t+59.993, t+62.244, t+64.71, t+65.04 and t+67.37 — **61 records,
+thirty groups, 7.9 s** — and none of it for the rest of that briefing. `mgo2-game-started-on-briefing`
+writes its run at t+58.25 and the pair through t+65.12, 90 records, and then not again until
+another player reports at t+112.6.
+
+**What that is not.** It is not the briefing's tick. The quiet middle of the same capture,
+t+70 to t+110, holds **1.43 host datagrams a second** and **no item-box record at all**: the
+rules pair, a state blob every 8.7 s, a `0xd001` control, and a burst of arrays and `0x1254`
+when a player joins at t+86.0. `mgo2-game2`'s t+70 to t+100 is the same — 1.27 a second, no
+item-box record. So the steady briefing is not the 30 fps beat an earlier reading of the run's
+own burst implied, and this host's 2.35 s tick is within a factor of two of it rather than the
+wrong shape.
+
+**The client answers every record of the stretch, one for one.** It sends one `0x5250` and one
+`0x525a` per item-box record received — `mgo2-game-started-on-briefing` 164 of each between
+t+62.6 and t+115.4. `myserver28`'s client sends **twelve** of each, from t+59.21 to t+60.97:
+the run's three groups and the repeat's three, and then nothing, because this host wrote
+nothing more on that exchange for the remaining sixty-four seconds of its briefing.
+
+**What was changed.** `MatchStartRunService` keeps the pair going behind a fresh briefing's
+repeat: thirty groups at `ItemBoxFramesUtils.BriefingContinuationPeriodMilliseconds`
+(264 ms — `ItemBoxPeriodFrames` at the beat's measured 33 ms), stopped on the round's open or
+on the peer's departure, numbered on from the repeat's last value by
+`MatchRecordSequenceService`. The bodies are the existing filler pair, which is what a room
+with no spawned box writes, so nothing here invents a box's event.
+
+**What it does not change.** The run's own copies stay as they are — the captures write three
+full run frames in the first 2.1 s of a briefing and this host writes two, which is a
+repetition of the same bytes rather than a different record and is left for a capture to
+confirm. The players' profile records (`0x1001` `07 3x`) are already written, one per player
+with its own roster index, in the roster run `RoomRosterFramesUtils.BuildRun` answers the join
+with; the `07 37`/`07 3a`/`07 65` records a briefing carries at t+102.76 are that run sent again
+when another player joins, which is a broadcast this host has no join-after-join path for yet.
+
+**What would confirm it** is the next live briefing with the pair continuing: the client's
+`0x5a50`/`0x5a5a` acknowledgements should go on at roughly four a second for eight seconds
+after the run's repeat, against the twelve this host's clients finish on today.
+**What would falsify it** is the same acknowledgements with the pair present — which would make
+the acks a client clock rather than a reply, and the stretch a record the client does not need.
+
+## 37. The briefing's frame is one second, and the lobby-slot pair is not on it
+
+**The quiet window, counted.** `mgo2-game-started-on-briefing`, t+70 to t+110 — forty
+seconds with no report and no join in them — holds **1.43 host datagrams a second**, 76 rules
+records (**1.9 a second**), five `0x0002` records of **one** player, that player's alone
+repeating every 9.7 s, nine `0xd001` controls, and
+**six** 26-byte lobby-slot records — all six inside the burst a join drew at t+86.0, and none
+outside it. `mgo2-game2` over its own thirty quiet seconds is the same shape: 1.27 a second,
+six array records in one burst at t+79.0, no item-box record at all.
+
+**What this host wrote after §35.** The pair on every 2.35 s tick — 51 array records a minute
+against the reference's nine — and the rules pair twice per tick, 51 a minute against 114.
+§35 is right that the pair was missing; its rate was not the reference's, and the rate is half
+of what a briefing is.
+
+**What was changed.** `BriefingRoomPublishService` runs on a **one-second frame** instead of the
+room's 2.35 s tick: the rules pair every frame (1.8 records a second), the pair of arrays every
+thirteenth frame (2 records per 13 s — 9 a minute), the state blob every ninth frame (9.0 s),
+and the count still only when the room's population moves. The countdown and the ready set keep
+the room's tick (`MatchRoundStateService.BriefingTickMilliseconds`, 2.35 s), which is the
+measurement they were written from, and `MatchRoundStateService.WaitBriefingFrameAsync` is the
+wait that lets a writer choose its own period while the round's open still cuts it short.
+
+**Why the arrays stay periodic and are not made event-driven.** The reference's burst is drawn
+by a join, and this host has no join-time hook that reaches a peer already in the room; more to
+the point, §35's client echoes the pair at its sequence and must be answered whatever moved, so
+a pair that only went out on a change would leave the second echo unanswered — the exact shape
+`myserver29` failed on. Thirteen frames is the burst's average on the frame loop: nine records
+a minute, the reference's rate, without the answer depending on a change.
+
+**What still differs.** The run's own copies: the captures write three full run frames in the
+first 2.1 s of a briefing (`started-on-briefing` t+58.25, t+60.38 ×2) where this host writes
+two. That is the same records sent again rather than a record missing, and it is left until a
+capture shows whether the third copy is what a client waits on. The per-player profile records
+are written once, in the roster run; a room whose players join one after another is a room the
+reference re-announces, and this host has no path for that broadcast yet.
+
+**One blob per player, not one per instant — measured before it was changed.** The blob is the
+room's per-player record and a briefing writes one for every player at the same instant:
+`mgo2-game-joined-when-red-team-then-briefing` t+62.67 carries five 22-byte `0x0002` records
+under fourth bytes `2`, `3`, `4`, `5`, `6` — five players, values `32 32 32 32 0a` — and again
+at t+72.56, 9.9 s later. `mgo2-game-started-on-briefing` grows the same way as its room fills:
+one record at t+62.88, two from t+107.49, four from t+152.0, five from t+186.87. A single
+record per instant would announce one player and drop the rest, so the per-player loop in
+`BriefingRoomPublishService.PublishStateBlobAsync` stands, with this section as the reason.
+
+## 38. The state blob's value is a per-player ladder: 50, then the host's own figure, then 0
+
+**Every copy of the record, per slot.** `0x0002` is a one-field state transfer whose class is
+the slot key plus one and whose last byte is the value (`MatchStateBodiesUtils.StateBlobBody`).
+Surveyed over the five captures that hold a briefing, the value follows one ladder:
+
+| capture | slot | the value over the capture |
+| --- | --- | --- |
+| `game1` | `01` | 100 on every tick, 6.7 s to the end |
+| `game1` | `10` | **50**, 91, 90, 90, 94, 98, 94, 94, 99, 94, 98, 94, 94 |
+| `game1` | `07` | **50**, 69, 93, 99, 98, 98, 94, 100, 98, 98, 94, 100, 93, 98 |
+| `game1` | `0c` | **50**, 55, 73, 83, 77, 78, 78, 83, 83, 78, 73, 85, 74, 79 |
+| `game1` | `05` | **50**, 53 — then the slot stops being written |
+| `game1` | `15` | **50** at t+6.7, **0** on every tick from t+78.3 |
+| `game2` | `02` | **50**, then 10 on every tick from t+10.2 |
+| `game2` | `03` | 100 on every tick |
+| `started-on-briefing` | `02` | **50** at t+6.0 … t+32.4, then 10 from t+38.9 |
+| `started-on-briefing` | `03`, `04`, `06` | 100 from each one's first tick |
+| `started-on-briefing` | `05`, `07` | 50, never measured |
+| `red-team` | ten slots | 50 throughout; `06` moves to 10 at t+27.9 |
+| `solo` | `01` | 100 on every tick |
+| `solo` | `04` | **50** at t+6.0, **0** from t+92.9 |
+| `solo` | `08` | **50**, 38, 0 |
+
+**What that reads.** Three values are measured facts rather than inference: **50** is what every
+peer is named with first, in all five captures and for all fourteen players — the rung the
+ladder starts on; **100** is what the host's own player carries in every capture that holds it
+(`game1` slot `01`, `game2` slot `03`, the solo capture's `01`), and what some peers sit at
+(`started-on-briefing`'s `03`, `04`, `06`); **0** is what a slot falls to once its player has
+gone, and no slot's record is dropped when that happens.
+
+**What it counts is still [I].** Higher is better and the numbers never leave 0–100. A round
+trip is the reading they fit — 100 for the host's own player, 50 for a peer the host has not
+measured, 10 for one at 90 ms — and the same host holds a per-player ping over TCP (`0x4398`,
+`GamePlayer.Ping`), but no packet in these captures carries that ping (their TCP streams are
+all HTTPS) and nothing on either wire names the unit. A host that measured a peer could write
+it here; this host measures none, so it writes the two values it can name.
+
+**What was changed.** `MatchStateBodiesUtils.EmptyStateBlobValue` (0) is new and
+`BriefingRoomPublishService` keeps the slots it has announced, writing a slot that its player
+has left as empty instead of letting the client keep the last value it was told. The 100 for
+the host's own slot and the 50 for a peer are unchanged: those *are* the measured values for
+the two cases this host can be in, and inventing a measured figure it has not measured is what
+`docs/analysis/briefing-start-comparison.md` §4.3 refuses.
+
+## 39. The blob's value is now this host's own round trip, timed from the peer's answers
+
+**The measurement is on the wire already.** A client answers a record it received by sending
+the same identifier under the answer bit (`0x1001 → 0x5001`, `0x1250 → 0x5250`) with the
+record's fourth byte echoed in its own. One answer per record, no batching: `myserver28`'s
+client sends twelve `0x5a50` and twelve `0x5a5a` for this host's twelve item-box records, and
+`mgo2-game-started-on-briefing`'s sends 164 of each for 164. So the pairing is the protocol's
+own and needs nothing added to the stream.
+
+**What was changed.** `PeerSession` stamps every record it writes with the instant it left
+(`NoteSent`, called once per message in `GameplayServerService.Outbound.SendMessages`) and, on
+an answer that names a record still waiting, records the difference as a round-trip sample:
+smoothed over four samples (`(3 × previous + sample) / 4`), dropped if the record is older than
+ten seconds, and bounded to 512 pending records per session so a peer that answers nothing
+costs nothing. `MatchStateBodiesUtils.StateBlobValueFor` turns that figure into the byte the
+briefing writes — `100 - roundTrip`, clamped to 0…100 — and the host's own player stays at 100.
+
+**Why that mapping.** It is the only reading of §38's ladder that puts every observed value in
+the byte's range with no unit of its own: 100 is the host's own player (0 ms), 50 is the
+unmeasured default (50 ms), `game1`'s 91–99 is 1–9 ms, its 73–85 is 15–27 ms, `game2`'s and
+`started-on-briefing`'s 10 is 90 ms, and a peer above 100 ms lands on the 0 that the captures
+write for a slot whose player has gone. A peer this host measures at 12 ms is written 88; one
+that has answered nothing is still written 50.
+
+**What it is not.** It is an upper bound of the wire's round trip rather than the wire's alone —
+the peer's frame handling is inside the interval — and it is **[I]**, because nothing on either
+wire names the unit; if a client answers with a fourth byte that names something other than the
+record's own, the pairing fails and the value stays at 50, which is the reference's own value for
+a peer it has not measured.
+
+**What would falsify it** is a live briefing where a healthy peer's value lands at 0 or a slow
+one at 100: that would mean the ladder is not `100 - roundTrip` and the value should go back to
+the fixed 50 rather than stay wrong.

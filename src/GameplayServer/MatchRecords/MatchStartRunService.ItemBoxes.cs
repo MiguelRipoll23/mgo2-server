@@ -126,4 +126,76 @@ public sealed partial class MatchStartRunService
         }
     }
 
+    /// <summary>
+    /// Keeps the item-box pair going after a fresh briefing's run and repeat, at
+    /// the group's measured spacing, until the window the captures show or the
+    /// round opens.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The pair outlives the repeat, and a client answers every record of it.</b>
+    /// The run's three groups and the repeat's three are the first 1.6 s of a
+    /// stretch the reference keeps for eight: `mgo2-started-briefing-then-solo-game`
+    /// writes thirty groups between its run and t+67.37, and
+    /// `mgo2-game-started-on-briefing`'s client acknowledges 164 records of each
+    /// identifier where this host's twelve left its own client acknowledging and
+    /// then silent for the rest of the briefing
+    /// (<see cref="ItemBoxFramesUtils.BriefingContinuationGroups"/>).
+    /// </para>
+    /// <para>
+    /// <b>It ends where the round begins.</b> Once the round opens the group is the
+    /// round's and the beat writes it (<see cref="BeatFramePlan"/>), so this stops
+    /// on the open rather than running beside it, and it stops at the window's own
+    /// end rather than at the briefing's: a room still briefed an hour later is a
+    /// room the reference has written no item-box record for since its run.
+    /// </para>
+    /// </remarks>
+    /// <param name="context">Context the groups are written through.</param>
+    /// <param name="generation">Identifier set of the briefing.</param>
+    private async Task ContinueItemBoxGroupsAsync(
+        PeerContext context,
+        MatchRecordGenerationUtils generation)
+    {
+        var session = context.Session;
+
+        try
+        {
+            using var period = new PeriodicTimer(
+                TimeSpan.FromMilliseconds(ItemBoxFramesUtils.BriefingContinuationPeriodMilliseconds));
+
+            for (var group = 0; group < ItemBoxFramesUtils.BriefingContinuationGroups; group++)
+            {
+                if (!MatchRecordPeerUtils.IsAlive(session) || roundState.IsOpen)
+                {
+                    return;
+                }
+
+                // The counters are taken per group, as the run and the repeat take
+                // them: a group is two records under each identifier and the next
+                // group goes on from the value behind them.
+                var itemBoxOrdinals = sequences.Take(
+                    generation.ItemBox, ItemBoxFramesUtils.ItemBoxRecords);
+                var stateOrdinals = sequences.Take(
+                    generation.ItemBoxState, ItemBoxFramesUtils.ItemBoxStateRecords);
+
+                await MatchRecordSendUtils.SendAsync(
+                    context,
+                    ItemBoxFramesUtils.ItemBoxGroup(
+                        generation,
+                        ItemBoxFramesUtils.OpeningEventGroups,
+                        itemBoxOrdinals[0],
+                        stateOrdinals[0]));
+
+                await period.WaitForNextTickAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.LogDebug(
+                exception,
+                "UDP {LocalPort}: the item-box groups behind the run written to {RemoteAddress} stopped",
+                context.LocalPort,
+                context.Remote);
+        }
+    }
 }

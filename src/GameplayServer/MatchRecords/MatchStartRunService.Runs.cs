@@ -364,10 +364,13 @@ public sealed partial class MatchStartRunService
                 MatchStartRunFramesUtils.RepeatOf(generation, run));
 
             // A fresh briefing's repeat carries the item-box groups again, numbered
-            // on from the run's own.
+            // on from the run's own, and the pair goes on behind it for the stretch
+            // every capture holds before the briefing goes quiet
+            // (ContinueItemBoxGroupsAsync).
             if (!wasOpen && roundNumber == 0)
             {
                 await RepeatItemBoxGroupsAsync(context, generation);
+                await ContinueItemBoxGroupsAsync(context, generation);
             }
         }
         catch (Exception exception)

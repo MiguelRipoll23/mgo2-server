@@ -42,11 +42,62 @@ public static class MatchStateBodiesUtils
 
     /// <summary>
     /// Value a peer's slot reads before the host has measured it: the first value
-    /// every briefing capture names a peer with, bar `mgo2-game-started-on-
-    /// briefing`'s three already-measured peers, and the value the join-time burst
-    /// carries.
+    /// every peer is named with in all five captures that carry a briefing, and the
+    /// value the join-time burst carries.
     /// </summary>
+    /// <remarks>
+    /// <b>It is the ladder's first rung and not a default.</b> Every peer of every
+    /// surveyed capture appears at 50 before anything else — `mgo2-game1`'s four
+    /// measured joiners (`05`, `07`, `0c`, `10`), `mgo2-game2`'s `02`,
+    /// `mgo2-game-started-on-briefing`'s `02`, `05` and `07`, and the ten slots of
+    /// `mgo2-game-joined-when-red-team-then-briefing`, nine of which never leave it.
+    /// What a peer is measured at afterwards is the host's own figure and is not on
+    /// this wire: `game1`'s `10` climbs 50, 91, 90, 94, 98, 99 and its `07` 50, 69,
+    /// 93, 99, 98, while `07`'s `0c` stays between 73 and 85 for the whole round.
+    /// </remarks>
     public const byte UnmeasuredStateBlobValue = 50;
+
+    /// <summary>
+    /// Value a slot's record falls to once the player it named has gone: 0, measured
+    /// twice and never anything else.
+    /// </summary>
+    /// <remarks>
+    /// <b>The slot keeps its record and empties it.</b> `mgo2-game1`'s slot `15`
+    /// reads 50 at t+6.7 and 0 at every tick from t+78.3 to the end of the capture;
+    /// `mgo2-started-briefing-then-solo-game`'s slot `04` reads 50 at t+6.0 and 0
+    /// from t+92.9, and its slot `08` walks 50, 38, 0. No capture drops a slot's
+    /// record when its player leaves, and none writes a value above 0 or below 100.
+    /// </remarks>
+    public const byte EmptyStateBlobValue = 0;
+
+    /// <summary>
+    /// Value a slot's record carries for a peer whose round trip this host has
+    /// measured: the ladder's top less that round trip, or the unmeasured value while
+    /// nothing of ours has been answered.
+    /// </summary>
+    /// <remarks>
+    /// <b>The ladder reads downwards from 100, and that is the only reading that fits
+    /// every observed value.</b> The host's own player reads 100 in every capture that
+    /// holds it; a peer starts at 50 and then sits at its own figure — 91 to 99 for a
+    /// fast one (`mgo2-game1` slot `10`), 73 to 85 for a middling one (slot `0c`), 10
+    /// for a slow one (`mgo2-game2` slot `02`) — and a slot whose player has gone
+    /// reads 0, which is the one value a round trip above 100 ms produces. Under
+    /// "100 less the round trip in milliseconds" those are 0 ms for the host's own
+    /// stream, 50 ms for the default, and 1 to 9, 15 to 27 and 90 ms for the measured
+    /// peers, all of them plausible for players in one room and none of them leaving
+    /// the byte's range. **[I]**: nothing on either wire names the unit, and the value
+    /// this host writes is its own measurement — see
+    /// `docs/analysis/join-stall-after-mode2.md` §39.
+    /// </remarks>
+    /// <param name="roundTripMilliseconds">Measured round trip, or -1 while none is.</param>
+    /// <returns>The value the slot's record carries.</returns>
+    public static byte StateBlobValueFor(int roundTripMilliseconds) =>
+        roundTripMilliseconds < 0
+            ? UnmeasuredStateBlobValue
+            : (byte)Math.Clamp(
+                MeasuredStateBlobValue - roundTripMilliseconds,
+                EmptyStateBlobValue,
+                (int)MeasuredStateBlobValue);
 
     /// <summary>Length of the state vector the state block's opcode introduces.</summary>
     public const int StateVectorLength = 89;
@@ -166,12 +217,18 @@ public static class MatchStateBodiesUtils
     /// which is why the record repeats on a tick instead of only on a change.
     /// </para>
     /// <para>
-    /// <b>The value is the host's measurement of that peer.</b> It starts at 50 the
-    /// first time a player is named, sits at that player's own level (55 to 100 in
-    /// <c>mgo2-game1</c>), reads 100 for the host's own slot in every capture that
-    /// holds it, and falls to 0 once the peer's records stop. What it measures is
-    /// **[I]**: a round trip is the reading the numbers fit, and the same host holds
-    /// a per-player ping over TCP (<c>0x4398</c>, <c>GamePlayer.Ping</c>), but
+    /// <b>The value is the host's measurement of that peer, and its ladder is
+    /// measured.</b> Surveyed over the five captures that hold a briefing: every
+    /// peer is named with **50** first, the host's own slot reads **100** in every
+    /// capture that holds it (`game1` slot `01`, `game2` slot `03`, the solo
+    /// capture's `01`), a player who has been measured sits somewhere between
+    /// (`game1`: 91, 90, 94, 98, 99 on slot `10`; 73 to 85 on `0c`; 10 on `game2`'s
+    /// `02` and on `started-on-briefing`'s), and a slot whose player has gone falls
+    /// to **0** (<see cref="EmptyStateBlobValue"/>) rather than disappearing. What
+    /// the number counts is **[I]**: a round trip is the reading the numbers fit —
+    /// 100 for the host's own player, 50 for a peer at 50 ms, 10 for one at 90 ms —
+    /// and the same host holds a per-player ping over TCP (<c>0x4398</c>,
+    /// <c>GamePlayer.Ping</c>), but
     /// nothing on either wire names the unit.
     /// </para>
     /// <para>

@@ -198,10 +198,28 @@ public sealed partial class MatchRoundStateService
     /// </remarks>
     /// <param name="session">Session the waiting writer writes to.</param>
     /// <param name="session">Session the waiting writer writes to.</param>
-    public async Task WaitBriefingTickAsync(PeerSession session)
+    public Task WaitBriefingTickAsync(PeerSession session) =>
+        WaitBriefingFrameAsync(session, BriefingTickMilliseconds);
+
+    /// <summary>
+    /// Waits out one frame of a briefing writer's own period, or until the round
+    /// opens, whichever comes first, and returns early when the peer has gone.
+    /// </summary>
+    /// <remarks>
+    /// <b>The period is the caller's, the cut-short is the room's.</b> A briefing's
+    /// writers do not all write on the same clock: the countdown and the ready set
+    /// are the room's tick (<see cref="BriefingTickMilliseconds"/>), while the rules
+    /// pair is written at the rate the reference's own frames carry it — 1.9 records
+    /// a second over the quiet middle of `mgo2-game-started-on-briefing`
+    /// (`BriefingRoomPublishService`). What the two share is the exit: the round's
+    /// open ends the wait on the first poll rather than at the end of the period.
+    /// </remarks>
+    /// <param name="session">Session the waiting writer writes to.</param>
+    /// <param name="milliseconds">The period to wait out.</param>
+    public async Task WaitBriefingFrameAsync(PeerSession session, int milliseconds)
     {
         var waited = 0;
-        while (!IsOpen && waited < BriefingTickMilliseconds)
+        while (!IsOpen && waited < milliseconds)
         {
             if (!MatchRecordPeerUtils.IsAlive(session))
             {

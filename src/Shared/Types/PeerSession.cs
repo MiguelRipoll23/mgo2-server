@@ -88,8 +88,108 @@ public sealed class PeerSession
     /// <param name="recordType">Identifier of the record being answered, answer bit cleared.</param>
     /// <param name="ordinal">Fourth byte of the answer, which names the record's place.</param>
     /// <returns><c>true</c> when this record had not been acknowledged before.</returns>
-    public bool NoteAcknowledgement(ushort recordType, byte ordinal) =>
-        acknowledgedRecords.Add((recordType, ordinal));
+    public bool NoteAcknowledgement(ushort recordType, byte ordinal)
+    {
+        NoteRoundTrip(recordType, ordinal);
+        return acknowledgedRecords.Add((recordType, ordinal));
+    }
+
+    /// <summary>
+    /// Records of ours written and not yet answered, each with the instant it went
+    /// out: what a round trip to this peer is measured from.
+    /// </summary>
+    private readonly Dictionary<(ushort Type, byte Ordinal), long> unacknowledgedRecords = [];
+
+    private readonly Lock unacknowledgedGate = new();
+
+    /// <summary>Entries kept before the oldest are dropped, which bounds a peer that answers nothing.</summary>
+    private const int PendingRecordLimit = 512;
+
+    /// <summary>Age at which an unanswered record stops being waited for.</summary>
+    private const int PendingRecordMilliseconds = 10_000;
+
+    private int roundTripMilliseconds = -1;
+
+    /// <summary>
+    /// Smoothed round trip to this peer, in milliseconds, or -1 while it has
+    /// answered nothing of ours.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It is measured from the records the peer answers, one per record.</b> A
+    /// client answers a record it received with the same identifier under the
+    /// answer bit and the record's own fourth byte (<c>0x5250</c> for a
+    /// <c>0x1250</c> item box, <c>0x5001</c> for a <c>0x1001</c>), and that pairing
+    /// is what <see cref="NoteSent"/> and the endpoint behind this property use:
+    /// the instant a record leaves and the instant its answer arrives. It is an
+    /// upper bound of the wire's round trip rather than the wire's alone, because
+    /// the peer's own frame handling sits inside it.
+    /// </para>
+    /// <para>
+    /// The value is smoothed over four samples so one delayed frame does not read
+    /// as a slow peer, and a record answered after <see cref="PendingRecordMilliseconds"/>,
+    /// or not at all, contributes nothing.
+    /// </para>
+    /// </remarks>
+    public int RoundTripMilliseconds => Volatile.Read(ref roundTripMilliseconds);
+
+    /// <summary>
+    /// Notes that a record of ours has just gone out, which is the start of the round
+    /// trip its answer will measure.
+    /// </summary>
+    /// <param name="recordType">Identifier of the record written.</param>
+    /// <param name="ordinal">Fourth byte the record carries.</param>
+    public void NoteSent(ushort recordType, byte ordinal)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        lock (unacknowledgedGate)
+        {
+            if (unacknowledgedRecords.Count >= PendingRecordLimit)
+            {
+                var oldest = now - PendingRecordMilliseconds;
+                foreach (var entry in unacknowledgedRecords.Where(entry => entry.Value < oldest).ToList())
+                {
+                    unacknowledgedRecords.Remove(entry.Key);
+                }
+
+                if (unacknowledgedRecords.Count >= PendingRecordLimit)
+                {
+                    unacknowledgedRecords.Clear();
+                }
+            }
+
+            unacknowledgedRecords[(recordType, ordinal)] = now;
+        }
+    }
+
+    /// <summary>
+    /// Turns one answer into a round-trip sample, if the record it answers was still
+    /// being waited for.
+    /// </summary>
+    /// <param name="recordType">Identifier the answer names.</param>
+    /// <param name="ordinal">Fourth byte the answer echoes.</param>
+    private void NoteRoundTrip(ushort recordType, byte ordinal)
+    {
+        long sentAt;
+        lock (unacknowledgedGate)
+        {
+            if (!unacknowledgedRecords.Remove((recordType, ordinal), out sentAt))
+            {
+                return;
+            }
+        }
+
+        var measured = (int)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - sentAt);
+        if (measured < 0)
+        {
+            return;
+        }
+
+        var previous = Volatile.Read(ref roundTripMilliseconds);
+        Volatile.Write(
+            ref roundTripMilliseconds,
+            previous < 0 ? measured : (previous * 3 + measured) / 4);
+    }
 
     /// <summary>
     /// Whether the peer acknowledged a player-profile record, which is the only
