@@ -7,9 +7,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
 /// Writes the room itself to a peer for as long as that peer is in a briefing:
-/// the rules-roster pair, which the room's stream carries in every phase, and the
-/// room's own count, which is written when a peer is answered and again whenever
-/// the room's population moves.
+/// the rules-roster pair, which the room's stream carries in every phase, the
+/// lobby-slot array pair, which is the room's membership and the record a joining
+/// client answers, and the room's own count, which is written when a peer is
+/// answered and again whenever the room's population moves.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -145,6 +146,7 @@ public sealed class BriefingRoomPublishService(
                     await context.Send(record.Type, record.Body, record.FourthByte);
                 }
 
+                await PublishArraysAsync(context);
                 await PublishStateBlobAsync(context, started, ticks);
                 sentCount = await PublishCountAsync(context, sentCount);
                 ticks++;
@@ -169,6 +171,59 @@ public sealed class BriefingRoomPublishService(
             "UDP {LocalPort}: the room's rules and count to {RemoteAddress} ended",
             context.LocalPort,
             session.RemoteAddress);
+    }
+
+    /// <summary>
+    /// Writes the room's lobby-slot array pair — the record a joining client
+    /// answers on its own clock.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The pair is published through the briefing and it is the one record the
+    /// client asks for by name.</b> A client that has been placed in the room
+    /// echoes the sequence it holds as <c>82 NN</c>/<c>84 NN</c>, and the host
+    /// answers with the pair at that same sequence
+    /// (<see cref="TeamArrayService.ConfirmAsync"/>). The reference writes the
+    /// pair all through a briefing and not only beside the run: over the forty
+    /// seconds of `mgo2-game-started-on-briefing` that follow its run, t+60 to
+    /// t+100, it writes twelve 26-byte array records, while the run carries two
+    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §33). This host wrote none
+    /// of them in a briefing at all, so `myserver29`'s client echoed
+    /// <c>82 f3</c>/<c>84 f3</c> eleven times over thirty-five seconds and was
+    /// answered nothing, while the room's rules pair, its blobs and its count went
+    /// out on the tick beside it.
+    /// </para>
+    /// <para>
+    /// <b>It is published at the room's constant sequence and never confirmed
+    /// here.</b> <see cref="TeamArrayFramesUtils.OpeningSequence"/> is the room's
+    /// sequence and the one its client echoes, so a pair published under it is the
+    /// answer to every echo the room draws; the confirmation belongs to the
+    /// round's open, which is where the captures put it
+    /// (<see cref="MatchStartRunService.ConfirmEntryAsync"/>). A confirmation
+    /// beside the echo is what stopped `myserver20`'s client where it stood.
+    /// </para>
+    /// <para>
+    /// <b>What it says is the room's, read per publication.</b> The peer that
+    /// joins during a briefing must be on the arrays the room publishes: the pair
+    /// is the room's occupancy and sides by player-table key, so a copy carried
+    /// over from the join would name a room that has since changed.
+    /// </para>
+    /// </remarks>
+    /// <param name="context">Context the pair is written through.</param>
+    private async Task PublishArraysAsync(PeerContext context)
+    {
+        var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(
+            TeamArrayFramesUtils.OpeningSequence,
+            await lobbySlots.ReadAsync());
+        var ordinals = roster.TakeRunOrdinals(2);
+
+        await RosterRunSendUtils.SendAsync(
+            context,
+            [
+                new(RoomRosterService.HostEntryType, teams, ordinals[0]),
+                new(UdpCommandConstants.PlayerProfile, occupancy, ordinals[1]),
+            ],
+            compressed: true);
     }
 
     /// <summary>Slot key the host's own player holds in the room's player table.</summary>

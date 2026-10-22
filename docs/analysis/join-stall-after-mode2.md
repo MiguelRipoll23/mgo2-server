@@ -3434,3 +3434,53 @@ the room's rules pair already share. The second mode is 1.87 s, seven gaps in
 gaps (4.9 s, 10 s, 40 s and more) are the stretches in which no round was playing. The record
 rides the tick in `MatchStartRunService.PublishRoundPhaseAsync` and stops with the round, so a
 peer never receives a phase for a round that has ended.
+
+## 35. The briefing's tick carries the lobby-slot pair, and this host wrote none of it
+
+`myserver29.pcapng` (2026-10-22, `192.168.1.20:5730` joiner ↔ `89.129.16.203:5731` host, key
+`0x542b0f05`, 196 frames over 129.5 s) is the join §33's change was meant to serve, and its
+client does not report either. What it does instead is in one shape, repeated:
+
+| t+ | what |
+| --- | --- |
+| 0.28 / 2.32 | its profile, twice |
+| 2.37 – 65.4 | its acknowledgements, its `0x9001` keep-alives and nothing else |
+| **65.382** | `0a5c 01` — its join state — **and `82 f3` / `84 f3`**, the lobby-slot echo |
+| 68.6 – 98.0 | that echo ten more times, 2.0 to 2.3 s apart |
+| 70.4 – 101.6 | `1001 NN 00` records of its own; then silence |
+
+So the client reached the step the reference client reaches half a second after its report
+(§33's table), said it is in the room, and asked for the arrays — and the host answered the
+echo **eleven times with nothing at all**, while the room's rules pair, its state blobs, its
+count and its `0xd001` records went out on the tick beside it. That is the whole of the gap
+in that session: no run, no countdown, no phase, and no report to ask for any of them.
+
+**The pair is written through a reference briefing, and this host wrote none.** Counted host
+side between t+60 and t+100 of `mgo2-game-started-on-briefing` — forty seconds in which that
+room is briefed and no round plays — the 26-byte records of the two arrays number **twelve**
+(six pairs, one pair per ~7 s, sometimes two copies in one instant); over the same forty
+seconds this host writes **zero**. The steady tick of that window is the rules pair, a state
+blob every ~11 s, a `0xd001` control, one `0x0002` blob and the occasional array pair; the
+item-box pair is *not* on it, and neither are the close pair and the close — those ride the
+run's own burst at t+58.255 and t+60.383 (§30.9).
+
+**What was changed.** `MatchRecords/BriefingRoomPublishService` publishes the room's pair on
+the briefing's tick, from `TeamArrayFramesUtils.BuildPair` at
+`TeamArrayFramesUtils.OpeningSequence` and read per publication from `LobbySlotService`, the
+way the confirmation and the entry answer already read it. The sequence is the room's
+constant and therefore the one its client echoes — `myserver28` and `myserver29` both echo
+`f3` before they have been sent a pair at all — and no confirmation is written beside it: the
+`81 NN` belongs to the round's open, which is where the captures put it and where
+`myserver20` was stopped by one written 37 ms behind the echo.
+
+**What it does not change.** The run still waits for a report, and the briefing's own
+families — the close pair, the close, the item-box groups, the countdown — still ride the
+run's burst rather than the tick, because that is where the captures write them. So this
+change is one record family on the wire, and it is stated as such.
+
+**What would confirm it** is the same join with the pair on the wire: the client should stop
+repeating its echo (it only echoes when the sequence changes) and send its `1d` rows and its
+`e1` report behind it, as every reference client does. **What would falsify it** is the same
+silence with the pair present, which leaves the four `07` entry kinds §30.10 decodes and the
+join answer's profile bodies as the remaining candidates — both are records this host still
+does not write.
