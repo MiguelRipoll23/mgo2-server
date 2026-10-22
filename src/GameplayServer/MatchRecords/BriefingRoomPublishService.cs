@@ -169,6 +169,15 @@ public sealed partial class BriefingRoomPublishService(
                     await PublishArraysAsync(context);
                 }
 
+                // The room's phase rides this frame as well as the round's own
+                // tick: a peer waiting for a round that has not opened is sent no
+                // copy of it by the round's writer, and the field it gates its join
+                // on would then be whatever its last room left there.
+                if (frames % RoundPhaseFrameInterval == 0)
+                {
+                    await PublishRoundPhaseAsync(context);
+                }
+
                 await PublishStateBlobAsync(context, started, frames);
                 sentCount = await PublishCountAsync(context, sentCount);
                 frames++;

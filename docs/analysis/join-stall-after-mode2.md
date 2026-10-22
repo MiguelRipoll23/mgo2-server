@@ -3654,3 +3654,680 @@ a peer it has not measured.
 **What would falsify it** is a live briefing where a healthy peer's value lands at 0 or a slow
 one at 100: that would mean the ladder is not `100 - roundTrip` and the value should go back to
 the fixed 50 rather than stay wrong.
+
+## 40. `myserver30`: the client reports, and the briefing's records match the references family for family
+
+`myserver30.pcapng` (2026-10-22, `192.168.1.20:5730` console ↔ `89.129.16.203:5731` host, key
+`0xab1cc0da`, 844 frames, 235.4 s) is the join §35's pair was written for, and it is the first
+capture of this host in which the client **reports**. Its screen still does not come.
+
+**§35's prediction is half confirmed, and on the wire it is exact.** With the pair published
+through the briefing the client stops repeating its echo — one `82 f3`/`84 f3` at t+50.740,
+where `myserver29` re-sent it eleven times over thirty-five seconds — and, in the same
+datagram, it writes the load report `1ade e1 01` and the presence companion `0a5c 01`. The
+host answers at t+50.785 with the companion at `02 00 00 00`, the publication `1ade e0 01 00 00
+00 00 00 00` and the marker `5ade`, then writes the run at t+52.799 and the countdown at
+t+52.950. The second half of the prediction — the client's own `1d` rows behind the report —
+does not happen: the capture holds **no `0x1d` row and no `0x1f` ready** from the client at all.
+
+**What it writes instead is one group, twenty-nine times.** Every ~5.4 s from t+50.740 to
+t+201.919 the client sends `1acd 01 01` and then `1ae2` … `1ae7`, each `ff 01`, in one
+datagram. The host answers the first with `dacd` and the six with empty `5ae2` … `5ae7`
+acknowledgements, one for one. The client's last datagram is t+205.762; the capture's host
+traffic runs to t+235.4.
+
+**The briefing's own records are all there, and they are the references' byte for byte.** Over
+t+50.7 to t+76, folded by class bit and compared with `mgo2-game-started-on-briefing`'s
+t+55.5 to t+80 (a fresh room, no round behind it) and with `mgo2-game3` at its run (the one
+reference on this host's own generation, `0x0a61`/`0x1a54`/`0x1ade`), every family the
+reference writes is written:
+
+| what | this host | reference |
+| --- | --- | --- |
+| answer to the `82` echo (`0x9001`) | `d001` one byte `24` | `d001` one byte `24` (`game3` t+59.596) |
+| answer to the `84` echo (`0x1001`) | empty `5001`, the echo's own fourth byte | empty `5001`, same fourth byte (`game3` t+59.596) |
+| marker | `5ade` beside the publication only, run clear of it (§26) | the same |
+| run's state block, 90 B | `00 00 00 ff … 18 18 ff ff ff ff 18 18 18 18 18 00 00 00 00 fe fe fe fe 3c 3c 3c 3c … ff 20 0d` | identical to `started-on-briefing` t+58.255's, whose tail reads `ff 00 0f`: the room's own limit and nothing else |
+| `0f 00` | present | present |
+| arrays, 26 B | `85 f3 fe 00 ff …` / `86 f3 7f 07 7f …` | `85 00 fe ff …` / `86 00 7f 7f …`: same two bodies, the room's players as the arrays name them |
+| close pair, close | two 20 B and one 7 B, twice | the same |
+| countdown, 7 B | `0b 3c 00 00 00 00 00`, every 2.4 s | `0b 3c 00 00 00 00 00`, from t+93.127 |
+| item-box pair | six groups at the run, then one every 264 ms | 90 of each through the run's 7 s |
+| rules pair | two `fe`, 1.9 a second | two `fe`, 1.9 a second |
+| state blob, 23 B | once a run | once a run |
+
+**So the gate is not in the briefing's own stream.** The 90-byte state block matching
+`started-on-briefing`'s byte for byte except for the room's own time limit (3360 against 3840)
+is the strongest single identity available: the client is handed the same room description a
+client that briefs is handed. The answer to its echo is `game3`'s answer, record for record.
+What `myserver30` removes from the list is therefore the whole of §30.8 still open on the
+briefing's side, and the pair's absence that §35 named.
+
+**The one stream with no counterpart is the client's own.** No reference client writes
+`1acd`/`1ae2` … `1ae7`; `mgo2-game3`'s client — same generation, same host build shape — sends
+none of them, and the capture that holds them host-side (`mgo2-game-joined-when-red-team-then-
+briefing` t+850.167) writes them as `1acd 00 <value> ff ff 00` and `1ae2` … `1ae7` `ff <value>
+18`, three bytes each, with `<value>` the same across both families. This host's client writes
+the two-byte form `ff 01` and gets an empty answer, and repeats it for 151 s.
+
+**What would confirm the next reading** is a capture in which those seven records are answered
+with the reference's bodies: the client's repetition should stop there, as its echo stopped when
+the pair appeared. **What would falsify it** is the repetition continuing with them answered, or
+a reference client that writes the group at all. Nothing was changed in the server for this
+section: the measurement closes §35 and §30.8's briefing rows, and the two candidates left are
+§32.4's sibling vtables and this group.
+
+**The binary adds one constraint, and it is about the fade.** §31.3/§32.3 left the step
+machine at "the joining screen's step and its triggers can only be read there now", so the
+seven tables were read. The child screen — the one the `0xd001` byte drives, table
+`0x11FEB80` — has its step-12 setter at slot 44 (`+0x160`), code `0x77F7E0`, and the guard is
+exactly
+
+```
+0x77f840: bl    0x27e198        ; read state 0x00 byte 0xa1 (field 161)
+0x77f850: bne   0x77f900        ; nonzero: the other path, which re-enters the same test
+0x77f880: lwz   r0, 0xb8(r28)   ; the screen's step
+0x77f888: bgt   0x77f8d0        ;   step > 9 -> nothing happens
+0x77f88c: lbz   r5, 0xd0(r29)   ;   field 24, the d001 byte
+0x77f894: beq   0x77f8d0        ;   == 0xff -> nothing happens
+0x77f898: beq   0x77f8d0        ;   step == 12 -> nothing happens
+0x77f8c8: bl    0x7770f0        ; emit(0x16002C, byte), step = 12, 0xbc = 0, 0xc4 = 1
+```
+
+So the byte this host writes every five seconds can move a screen that is at **step nine or
+below**, and nothing else — a screen already at `10` or `12` is untouched by it, and the
+`0xa1` path at `0x77f900` merely reads bytes `0x52` and `0x58` and rejoins the same test. The
+six sibling tables (`0x11FFC00`, `0x11FFC70`, `0x11FFF40`, `0x1200048`, `0x1200090`,
+`0x12000E8`) carry their own methods at the same slots, and none of their slot-44 entries
+touches `+0xb8` at all: the join screen is the only object this record's byte reaches.
+
+The consequence for the symptom is that **the fade-out is not a state `0xd001` can rescue**.
+If the client has drawn the map and the rule text and is sitting in the fade, its step is
+already past the only window the byte opens, and the fade-in has to be another object or
+another input. That is what the next reading has to name, and it is the one thing in this
+capture's session that is still unexplained.
+
+## 41. The `0xc4` flag is read by the script bindings, and the `1d` rows wait on a session flag
+
+§40 left one question for the binary: who consumes the screen's `0xc4` flag, and which screen it
+builds at step `12`. The answer is that **no C++ code builds it** — the flag is exposed to the
+game's own script layer — and the client's missing `1d` rows turn out to be gated on a flag of
+the session object, which is a better place to look than the screen.
+
+**The flag has one reader in the whole image.** The writers are the step setters themselves
+(`0x77A904`, `0x77AA48`, `0x77AAFC`, `0x77ABE8`, `0x77B278`, `0x77B2B0`, `0x77B46C`,
+`0x77E6E8`, `0x77F454`, `0x77F8C0` and the rest — thirty sites in the screen code). The only
+instruction that reads the byte is
+
+```
+0x77baf0: lbz r3, 0xc4(r3)
+0x77baf4: blr
+```
+
+and it is reached from exactly one call site, `0x74903C`:
+
+```
+0x74902c: lwz  r30, -0x7300(r2)   ; the UI manager
+0x749034: lwz  r9,  -0x8000(r30)  ; its screen slot
+0x749038: lwz  r3,  0(r9)         ; the screen the client is on
+0x74903c: bl   0x77baf0           ; its 0xc4 byte, returned as-is
+```
+
+That function is one of a run of one-line thunks at `0x748FE0`–`0x749100` that each fetch the
+same global and return one field of the current screen (`0xb0`, `0xc4`, and the predicates at
+`0x77BB08`: step `== 4` with `0xbc == 0`, and `0x77BB30`). They take no arguments, and the only
+things that call them are `0xB2DFA0` and `0xB35670`, the script bridge's own call path — the
+thunk `0x749020` draws two callers and both are in it. So the byte is read by a **script**, from
+a screen the C++ side never inspects for it, and no vtable is installed when the step is
+written. **The "next reading" of §40 — the hand-off — is therefore answered as far as the image
+allows and withdrawn as a lead.**
+
+**The event the step writes carries no subscribable name.** `0x16002C` is formed by exactly two
+instructions in the image (`0x77E6C8` and `0x77F8C8`, both emitters). No other site builds the
+constant, so the listener is registered at run time: the bus `0x7770F0` forwards to `0xC1208`,
+which walks a table of twelve-byte entries (`addi r29, r29, 0xc`) keyed by the event word and
+compares with `cmpw` against an id it never materialises as an immediate. The subscriber is a
+script callback, for the same reason the flag's reader is a thunk.
+
+**And the client's `1d` rows are gated on a session flag, not on a screen step.** The writer is
+`0xB9C2F8` — one of two copies, the other at `0xB9D5F8` — and the guard around it is
+
+```
+0xb9c2c0: bl    0x26d540        ; returns session->0xbcc & 1
+0xb9c2c8: beq   0xb9c224        ;   zero -> no row
+0xb9c2d0: lbz   r0, 0x70(r1)    ; a per-slot byte the helper at 0xb9b3b8 filled
+0xb9c2d4: beq   0xb9c224        ;   zero -> no row
+0xb9c2f8: li    r0, 0x1d
+0xb9c30c: bl    0x26cc10        ; the stream gets 0x1d
+0xb9c320: bl    0x26cc10        ; and the row's second byte
+```
+
+`0x26D540` is `lwz r3, 0xbcc(r11); clrldi r3, r3, 0x3f` — the low bit of the flag word at
+`0xbcc` on the object reached through `r2-0x7a9c` → `-0x8000` → `0(r9)`; the neighbours in the
+same block read `0xbcc`, `0xbc9` and `0xc9` of the same object, so it is the client's session
+state **[I]**, and bit 0 of `0xbcc` is "this session may write its operations rows". A jump
+table at `0xB9C260` switches on `r29` (`0`–`6`, `cmplwi 6`), and the case that falls through to
+`0xB9C2F8` is the one that writes a row's `1d` opcode and then its slot byte, so the same
+function is what writes the five rows `00`–`04`.
+
+**Bit 0 is not set by any of the word's own setters.** The family at `0x26D6A8` (bit 17),
+`0x26DBE8` (bit 3), `0x26F42C` and `0x2716EC` and `0x2721F0` (bit 2), `0x271240` (bit 3),
+`0x27158C` (bits 8–11) and `0x272BBC` (bit 11) all write other bits, and no `stw` to `0xbcc`
+follows an `ori …,1`. So the bit that opens the client's stream is set somewhere the block
+above does not name, and until it is set the client can neither open its stream nor ready — which
+is the state `myserver30` shows for 151 s.
+
+**What would settle it** is the caller chain of the setter that touches bit 0: it will name the
+record the client is waiting for, exactly as `TeamArrayFramesUtils`' pair named the echo. Until
+that chain is read, the briefing's records stay as §40 leaves them — matching a working
+reference family for family.
+
+## 42. Bit 0 is a session kind chosen where the session is built, not a flag a record sets
+
+§41 closed with one question: *the caller chain of the setter that touches bit 0 of `0xbcc`*.
+There is no such setter. The word has twenty writers in the session object, and not one of them
+sets `0x1`; the single write that can carry it is the constructor's, and the value it carries is
+an argument its six call sites each spell out. So bit 0 asks **what kind of session this is**, and
+the client answers that itself.
+
+**The writers, read from the whole image rather than a block.** Every `stw …,0xbcc(rA)` with a
+real base register is below — the whole population, twenty writers on the session object and a
+handful on unrelated objects that happen to hold a `0xbcc` field:
+
+| Site | Operation | Bits |
+| --- | --- | --- |
+| `0x26D6A8` | `oris r0,r0,2` | `0x00020000` |
+| `0x26D6CC` | `rlwinm 14,1,31` + `rotlwi 18` | clears `0x80000000` |
+| `0x26D7F4` | `oris r0,r0,0x20` | `0x00200000` |
+| `0x26D824` | `rlwinm 10,1,31` + `rotlwi 22` | clears `0x80000000` |
+| `0x26DBE8` | `ori r0,r0,8` | `0x8` |
+| `0x26E340` | `oris r0,r0,0x40` | `0x00400000` |
+| `0x26E374` | `stw r9` from `rotlwi r9,r9,0x17` | whole word, field extract |
+| `0x26F42C` | `ori r0,r0,4` | `0x4` |
+| `0x270460` | `and r0,r0,0x12` | keeps `0x12` only |
+| `0x2709DC` | `stw r29` with `li r29,0` | clears the word |
+| `0x270EFC` | `stw r29` with `r29 = r5` | **the constructor's argument** |
+| `0x271240` | `ori r0,r0,8` | `0x8` |
+| `0x27158C` | `ori r0,r0,0x700` | `0x700` |
+| `0x2716EC` | `ori r0,r0,4` | `0x4` |
+| `0x2721F0` | `ori r0,r0,4` | `0x4` |
+| `0x272A68` | `or r0,r9,r3`, gated on `0x10` | a computed word |
+| `0x272B14` | `rlwinm 11,1,31` + `rotlwi 21` | clears `0x80000000` |
+| `0x272BBC` | `oris r0,r0,0x10` | `0x00100000` |
+| `0x272DB4` | `or r0,r0,(r24 & 0x00100000)` | `0x00100000` |
+| `0x272E60` | `oris r0,r0,4` | `0x00040000` |
+
+Not one immediate in that column is `1`, and the three rotate pairs are `rlwinm …,1,31` followed
+by a `rotlwi` that sums to thirty-two — they *clear* the top bit, they do not set a low one. So
+the low bit is not written by any of the twenty. **It is written once, when the word is created**:
+
+```
+0x270e5c: mr    r29, r5            ; arg 5
+0x270e6c: lwz   r31, 0xc0(r9)      ; field 0xc0 = "a session already exists"
+0x270e74: beq   0x270ec8           ;   zero -> build it
+...
+0x270ef8: clrlwi r28, r29, 0x1f    ; the low five bits are kept separately
+0x270efc: stw   r29, 0xbcc(r9)     ; and the whole argument becomes 0xbcc
+```
+
+**And the six call sites each spell the kind out**, `0x270E00` being the session constructor:
+
+| Call site | `r5` | Low bit |
+| --- | --- | --- |
+| `0x288DD8` | `li r5, 0x18` | `0` |
+| `0x2890C0` | `li r5, 0x18` | `0` |
+| `0x8EE3B8` | `li r5, 2` | `0` |
+| `0x8EE60C` | `li r5, 3` | **`1`** |
+| `0x9E97D4` | `r5 = r28`, `r28` possibly `\| 0x2000` | caller's flags |
+| `0xAA13A0` | `r5 = 0x2002` or `mask \| 0x2002` | `0` |
+
+So `0xbcc` is a **kind word**, and the gate at `0xB9C2C0` reads "was this session built as kind
+`3`?" rather than "has a flag arrived". Only one of the six construction paths produces that low
+bit, and it is a branch of the client's own connect flow:
+
+```
+0x8ee5a0: lbz   r9,  0x85(r31)   ; two flag bytes of the menu object
+0x8ee5a4: lbz   r11, 0x86(r31)
+0x8ee5ac: andc  r0, r11, r9      ; bits set in 0x86 and not in 0x85
+0x8ee5b0: rlwinm r0, r0, 0, 0x1d, 0x1d
+0x8ee5b8: bne   cr7, 0x8ee700    ;   bit 2 -> a different branch
+0x8ee5cc: bl    0xf06808         ; a query of the client's own state
+0x8ee5d8: cmpwi cr7, r3, 0
+0x8ee5dc: bne   cr7, 0x8ee320    ;   non-zero -> a different branch of the same machine
+0x8ee608: li    r5, 3            ; zero -> a kind-3 session
+0x8ee60c: bl    0x270e00
+```
+
+and its sibling, which builds kind `2` after a virtual call returns `8` behind a `cmplwi r3,
+0x3a98` timer test (`0x8EE35C`, `0x8EE38C`). Both are branches of the menu state machine that
+writes its own state word at `0x78(r31)` (`li r0,7` at `0x8EE3C8`, `li r0,0xa` at `0x8EE320`). No
+host record is consulted at either branch.
+
+**What that settles.** §40 and §41 both ended on a missing record — the fade-in's input, and the
+record the client waits on before it writes its `1d` rows. Neither exists. The rows, the ready
+and the fade are all behind state the client builds for itself at session creation, so a client
+that never writes `1d` was constructed as some kind other than `3` and is waiting on its own
+transition, not on this host. §41's last paragraph ("set somewhere the block above does not
+name") is answered, and no server change is implied by any of it: the briefing stream still
+matches a working reference family for family (§40).
+
+**The same reading answers the screen question from §40 from the other side.** The script table
+`0x11FD700` is a forty-slot mirror of the screen's vtable `0x11FEA80` — slots `11`–`16` are the
+same function in both, and each thunk fetches the current screen through
+`*(*(r2-0x7300)-0x8000) → 0(r9)` and tail-calls it. The accessors:
+
+| Slot | Address | Returns |
+| --- | --- | --- |
+| `11` | `0x77BAC8` | `0xb8 == 3` |
+| `12` | `0x77BAF0` | the `0xc4` byte — the only reader in the image |
+| `13` | `0x77BAF8` | `0xb0` |
+| `14` | `0x77BB00` | `0xb4` |
+| `15` | `0x77BB08` | `0xb8 == 4` and `0xbc == 0` |
+| `16` | `0x77BB30` | **writes**: `++0x6ac`, `0x6ad = r4`, `0xbc = 0`, `0xb0 = r5`, step `4` |
+| `17` | `0x77BB58` | entry base `this + 0xd8 + n*0x34` |
+| `18` | `0x77BB70` | `0x5b8` |
+| `19` | `0x77BB80` | `*(0x5bc + n*4)` |
+| `20` | `0x77BBA0` | `*(0x5cc + n*4)` |
+| `21` | `0x77BBC0` | `0xac`, with its setter at `0x77BBD0` |
+
+A script can therefore ask the screen for two step *predicates* and one step *transition*; it
+cannot ask for the step itself, and the only byte records drive that it can read is `0xc4` at slot
+`12` — which the step setter refuses to move at step `≥ 10` (§40). So **no second screen is built
+at step `12`**: the steps are fields of this one object, written by its own transition at slot
+`16`, and the predicate that reads them (`0xb8 == 4`, `0xbc == 0`) is false both before and after
+`12`. The hand-off lead of §40 is withdrawn on both sides — there is no hand-off, because there is
+no other object.
+
+**What is left to read** is the pair of branch conditions above: the virtual call whose result is
+compared with `8` (`0x8EE38C`) and `0xF06808`, whose result is compared with `0` (`0x8EE5D8`).
+Those two name what the client waits on before it builds a kind-3 session, and they are the last
+place a host answer could possibly be felt. Everything else on this path is now accounted for.
+
+## 43. The phase record now rides the briefing's frame, and the re-test's falsifiers
+
+§34.4 measured the room's phase as the one host-written field a client's join machine gates on, and
+§42 showed that the fade and the `1d` rows are not driven by any record. What survives both is a
+hole the round's own writer cannot cover: **every copy this host writes comes from a round**.
+
+**The gap, in the code rather than the wire.** `MatchStartRunService` writes field `0` three times
+— behind the round's run, once a `PhasePeriodMilliseconds` for as long as the round lasts, and
+again at its close with `0` — and there is no other writer in the tree. So a peer that is in a
+briefing *before its first round*, and the peer that joins between two rounds, receives no copy of
+the field at all, and its state store keeps whatever the last room it was in put there. The
+reference does write it in those stretches: §34.4's slow gaps (4.9 s, 10 s, 40 s) are exactly the
+intervals in which no round was playing, and a record that only a round writes cannot produce them.
+
+**What was changed.** `MatchRecords/BriefingRoomPublishService.Phases.cs` adds the writer and its
+period to the briefing's publication, and the frame loop calls it every second frame —
+`RoundPhaseFrameInterval = 2`, which is 2.0 s against the reference's 2.35 s tick, the nearest whole
+frame on a one-second loop (0.5 records a second against 0.43). The value is
+`MatchRoundStateService.RoundNumber`, the round the room is on and `0` while none is open, which is
+the figure the corpus' briefings carry and the one `RoundStateBodiesUtils.RoundPhaseBody` is built
+for. Nothing else of the briefing's frame moved: the rules pair, the array pair, the state blob and
+the count keep their rates.
+
+**What it does not do.** It does not release a client that is holding a wait value: `0` and `7` are
+the values the client waits on, and a briefing's room is `0` until its first round opens. What it
+changes is *whose* `0` the client holds — this room's, written 2 s ago, instead of the one its last
+room left — and it puts the round's number on the wire the moment one opens, without waiting for
+that peer's own report. It is a correctness fix on the wire's own terms, and it is stated as that
+rather than as a remedy for the stall.
+
+**What a re-test has to falsify, in order.**
+
+1. If a client that joins a room which never opens a round now reaches its `1d` rows, the field was
+   the gate and §34.4's reading is promoted from **[I]** to **[V]**. If the same silence follows
+   with the record written every 2 s, the join's gate is not what holds that client, and the
+   remaining candidates are the four `07` entry kinds §30.10 decodes and the join answer's profile
+   bodies.
+2. If a stalled client begins writing `1d` rows with no further host change, §42's kind reading is
+   wrong — the session kind is not fixed at construction, or something else re-creates it.
+3. If a capture shows a host writing field `0` at a boundary other than a briefing's tick and a
+   round's open, tick and close, the period above is wrong and the record belongs to that boundary.
+4. A stalled client whose own `82`/`84` echo stops being repeated, with the arrays unchanged, says
+   the echo was answered at its sequence and the pair is not the gate (§35).
+
+## 44. The two conditions that build a kind-3 session are the client's own, and one is a pad byte
+
+§42 left two branch conditions unread — the pair that must hold before the client builds the kind
+`3` session whose low bit opens its `1d` rows. Both are now read, and neither consults the wire.
+
+**The state query is a 130-entry table, and the id is `0x1A`.** `0xF06808` is a thunk, not a
+function: `li r4, 0x1a` then `bl 0xEFEDD0`, which is
+
+```
+0xefedd4: cmplwi cr6, r4, 0x81     ; ids 0..0x81 only
+0xefede0: slwi   r9, r4, 2
+0xefede8: addi   r0, r9, 0x370     ; entry at 0x370 + id*4
+0xefedf4: lwzx   r11, r3, r0
+0xefedf8: extsw  r3, r11           ; -0x18 for an id out of range
+```
+
+so the join's idle path asks whether **slot `0x1A` of a 130-entry word table is zero**, and its
+sibling thunks at `0xF06834`/`0xF06860` ask the same table for ids `0x20` and `0x1F` through
+`0xF015D0`, which reads a second array at `0x168 + id*4` and answers `-1` when that word is `2`.
+The table is the client's own — the id is a constant in the thunk, the base is an argument, and no
+record of the gameplay stream is read to decide it.
+
+**The `0x85`/`0x86` bytes are the menu's input bits, written per frame.** The gate at `0x8EE5A0`
+takes `0x86 & ~0x85` — the bits pressed this frame — and the writes around it are the frame
+bookkeeping: at `0x8EE56C` the code consumes bit `0x4` (`0x86 |= 4`, `0x85 &= ~0x4` via
+`rlwinm r11,r0,0x1d,1,31` + `rotlwi 3`), and at `0x8EE714` it sets it. So the kind-3 branch is
+taken on a frame with **no new press** whose table slot `0x1A` is zero: an idle frame of the
+client's own menu, not an answer to anything.
+
+**What is still unread** is the third condition beside it, the virtual at `0x8EE384` whose result is
+compared with `8`. It is reached through three dereferences from `0x88(r31)`
+(`lwz r9,0(r11)` → `lwz r10,0(r9)` → `ld r0,0(r10)` → `bctrl`), so its class is not identifiable
+statically and the `8` is not attributable to a record. Nothing in the readings above needs it:
+the two conditions that decide the session kind are the client's own state and its input.
+
+## 45. The `0x88` virtual is a peer slot's state, and `8` is the value that drops the client to kind 2
+
+§44 left the virtual at `0x8EE384` unread. Its operand and its meaning are now read; its getter's
+body is not, and the reason is a gap in the pool's construction that is worth stating rather than
+papering over.
+
+**`0x88(r31)` is one of the client's fixed 24 peer slots.** The screen stores it at `0x8EE498`, from
+`0x261FE0(buf, 4, 0)`, and that function is a pool allocator:
+
+```
+0x261fec: lwz   r30, -0x7abc(r2)   ; the module's own block
+0x262004: lwz   r9,  -0x8000(r30)  ; its session
+0x26200c: cmpwi cr7, r0, 2         ; 2 -> allocate nothing, return 0
+0x26203c: li    r0, 0x18           ; twenty-four slots
+0x262040: lwz   r31, 0x28(r9)      ; the pool's base
+0x262050: addi  r31, r31, 0x6d8    ; stride
+0x26205c: lbz   r0, 4(r3)          ; the slot's "in use" byte
+0x262074: bl    0x268148           ; the initialiser
+```
+
+There is a second pool for one kind (`0x2620A0`: `addis r9,r9,1` then `addi -0x6298`, i.e.
+`+0x10000-0x6298`), used when the requested kind is `2` (`0x262034`). The initialiser writes
+`+4 = kind`, `+5 = arg3`, `+0x56 = 1`, `+0x78 = 0`, `+0x88 = 0x708`, clears `+0x40`, `+0x42` and
+`+0x44`, and copies a five-word descriptor out of the caller's structure into `+0x18`–`+0x28`. So
+`0x88(r31)` is the screen's **peer slot** — 24 of them, 0x6d8 apart, the same width as the room's
+own player table.
+
+**The virtual is slot 0 of that slot, and `8` is the state that ends the client's session.** The
+dispatch is the ordinary PPC64 shape — `lwz r9,0(r11)` (the slot's vtable), `lwz r10,0(r9)` (its
+slot-0 descriptor), `lwz r0,0(r10)` + `lwz r2,4(r10)` (code and TOC), `bctrl` — and its result is
+compared with `8`:
+
+```
+0x8ee38c: cmpwi cr7, r3, 8
+0x8ee390: bne   cr7, 0x8ee268    ; not 8 -> the frame ends doing nothing
+0x8ee3b0: li    r5, 2            ; 8 -> a kind-2 session
+0x8ee3b8: bl    0x270e00
+0x8ee3c8: li    r0, 7            ;   and the screen moves on
+0x8ee3cc: stw   r0, 0x78(r31)
+```
+
+So the value is a **state code of the peer slot**, and `8` is the one at which the client builds a
+session of kind `2` — the kind §42 showed never writes `1d` rows, because only kind `3` carries the
+low bit of `0xbcc`.
+
+**What that implies, and how far it is evidence.** If a client's peer slot reaches `8` — the slot the
+screen allocated for its own connection, then told to move on — the client rebuilds its session as
+kind `2` and from that instant cannot write its operations rows, cannot ready, and cannot leave the
+fade, which is the state `myserver30` shows for 151 s. That is **[I]**: the getter's body is unread,
+so the field it returns and the write that puts `8` there are both still open.
+
+**Why the body is unread.** The pool's initialiser installs no vtable: over `0x268148`–`0x268B00`
+the only word store to a zero displacement is a buffer (`0x268418`, `stw r0,0(r11)`), so the slot's
+first word is set where the pool is first built or by a base constructor outside that range. The
+candidate reached through the GOT is `0x1191AF8` (installed by `0x269130`, `stw r0,0(r3)` from
+`*(*(r2-0x7ab8)-0x7ff8)`), and its slots `0`–`7` are all descriptor `0x0121A628` → `0xFB32B8`,
+which calls `0xFBA650` and returns `0`: the pure-virtual stub. A table whose slot 0 always answers
+zero cannot be the one a slot-0 state getter lives in, so the vtable belongs to another class in the
+same neighbourhood and the slot's own is still to be found. What would settle it is the pool's first
+construction site — the one that writes a vtable into `+0(rX)` of the base at `0x28(r9)` — and that
+is the next thing to read.
+
+## 46. The slot's vtable is `0x1191AB8`, slot 0 returns its `+4` byte, and `8` is its teardown mark
+
+§45 left two things open: which table the pool's slots carry, and what puts `8` into the field that
+`0x8EE38C` compares. Both are read now, and they resolve each other.
+
+**The vtable is `0x1191AB8`.** The class's setup blocks install it from the module's GOT —
+`lwz r0,-0x7ffc(r30)` then `stw r0,0(r3)`/`0(r29)` at `0x2850A4`, `0x28513C`, `0x2851DC`, `0x285684`,
+`0x2856B4`, `0x28599C` and `0x285A34` — and the GOT page holds it at `0x11A632C` (`*(*(r2-0x7ab8)
+-0x7ffc)`), one word before the abstract base `0x1191AF8` whose slots `0`–`7` are the pure-virtual
+stub. The derived table is complete:
+
+| slot | address | what it does |
+| --- | --- | --- |
+| `0` | `0x263328` | `lbz r3, 4(r3); blr` — **the byte at `+4`, returned** |
+| `2` | `0x263330` | `if (+4 != 0) +4 = 1` — the "taken" mark |
+| `8` | `0x269130` | installs this vtable (`stw r0,0(r3)`) |
+| `9` | `0x269148` | the same, for a reset path |
+| `12` | `0x264C78` | |
+| `13` | `0x263DF0` | |
+
+So the virtual at `0x8EE384` is not an opaque state call: it returns **the byte at `+4`**, the same
+byte the pool allocator tests for zero when it looks for a free entry (`0x26205C`), the same byte the
+peer table's own step gates on (`0x262544`: `lbz r0,4(r31)` … `cmplwi 6` … `bgt`, so a slot past six
+is not stepped), and the same byte `0x268148` initialises to the allocation kind.
+
+**`8` is written in exactly three places, and both kinds of writer are the client's own teardown.**
+
+```
+0x268c44: clrlwi r0, r11, 0x1e    ; the low two bits of the flag halfword at +0x14
+0x268c4c: cmpwi  cr7, r0, 3
+0x268c50: bne    cr7, 0x268c5c
+0x268c54: li     r0, 8
+0x268c58: stb    r0, 4(r28)       ; and the function answers 1
+```
+
+`0x268C58` sits in `0x268BA8`, the slot's **step**, and its entry shows where the flags come from:
+`lhz r11, 0x14(r3)` then `rlwinm r0,r11,0,0x1e,0x1e` — bit `0x2` of the halfword at `+0x14`. The
+step is reached from only two call sites, `0x262550` and `0x2625C0`, both inside the peer table's
+step, and both after a check that a record has arrived for that peer (`0x262528: bl 0x2666C8`, then
+`cmpwi r0,0; beq`). The other two writers are two copies of one block:
+
+```
+0x285434: stb  r26, 3(r25) ...    ; the four bytes at +0xca and +0xce cleared
+0x285454: lhz  r9, 0x14(r29)
+0x285458: li   r0, 8
+0x28545c: stw  r28, 0x10(r29)
+0x285460: ori  r9, r9, 7          ; +0x14 |= 7 — the same two bits and a third
+0x285464: stb  r0, 4(r29)         ; then +4 = 8
+```
+
+with `+0x90 = 0x0001F400`, `+0xb0`–`+0xb6` zeroed and the class vtable installed just above it — a
+session slot being torn down and left marked, not opened.
+
+**What that means for the screen, and for this host.** The test at `0x8EE38C` reads "is this slot
+torn down", and `8` is the answer that tears the client's session down with it: `li r5,2` → kind `2`
+(§42), which cannot write `1d` rows or carry the low bit of `0xbcc`. Both routes to `8` are inside the
+client — its own step, once the flags at `+0x14` say so, or its own teardown block — and no record
+this host writes appears in either. So the sequence §45 offered as **[I]** is now read in its parts:
+the value, its writers, and the kind-2 branch it selects. What remains unread is the write that
+first puts `+0x14 & 3` to `3` on a live connection; the teardown arms `+0x90` with `0x1F400`
+(128000) in the same block, which if it is milliseconds is about two minutes — the order of
+`myserver30`'s 151 s of silence, and a hypothesis to check rather than one to assume.
+
+**Still open.** `+0x14`'s bit `0x2` is set by the teardown itself (`|= 7`) and read by the step, so
+the step's condition is true for a slot already torn down — which suggests the step's `8` is a
+confirmation of a teardown that happened elsewhere, not an independent close. The write that first
+sets `+0x14 & 3 == 3` in a live connection is the next thing to read.
+
+## 47. The two writes that make `+0x14 & 3` equal `3` are a send and a comparison
+
+§46 left the write that first sets the flag pair. It is two writes, not one, and each belongs to a
+different half of the slot's own activity.
+
+**Bit `0x1` comes from the transport, at `0x267430`.** The block is the slot's send path: it xors the
+stream bytes with the values it just read (`lbz r0,0(r21)` … `xor` … `stb`), calls `0xFA4E20`, and on
+its answer
+
+```
+0x267414: cmpwi  cr7, r3, 0
+0x267418: bne    cr7, 0x266918   ; non-zero -> the send did not finish
+0x26741c: lhz    r0, 0x14(r25)
+0x267428: ori    r0, r0, 9        ; bits 0x8 and 0x1
+0x267430: sth    r0, 0x14(r25)
+```
+
+So `0x1` is raised where a send has completed — the same block that binds the stream's key bytes.
+
+**Bit `0x2` comes from the slot's own handshake, at `0x268608`.** The block writes the slot's
+descriptor bytes to the stream — `addi r4,r1,0x70` with `li r5,1`, then `bl 0x26CC10` per byte — and
+then compares:
+
+```
+0x2685f4: bl    0x26b778          ; 0x26b778(slot, id) — reads *(slot) and resolves it through 0x261438
+0x2685fc: beq   cr3, 0x268610     ; not equal -> no flag
+0x268600: lhz   r0, 0x14(r27)
+0x268604: ori   r0, r0, 2
+0x268608: sth   r0, 0x14(r27)
+```
+
+`0x26B778` takes the slot's **first word** (`lwz r3,0(r3)`), resolves it with `0x261438` and compares
+the result; equality sets the bit. So `0x2` is the "this slot's descriptor matched the table" mark.
+
+**Together they are `& 3 == 3`, and the next step for that peer writes `8`** (§46, `0x268C58`). Both
+halves are the client's: one is its stream's send completing, the other its own lookup comparing
+equal. Nothing on the wire from this host appears in either, and the value compared is a local id, not
+a received one.
+
+## 48. `0x1F400` is not a timeout, and §46's two-minute hypothesis is withdrawn
+
+§46 noted `0x1F400` (128000) stored at `+0x90` beside the teardown and asked whether it is
+milliseconds. The slot's own clock reader settles it in the negative.
+
+**The slot's timers are 16-bit and seeded in milliseconds.** The update block decrements two
+halfwords by the clock delta and treats a negative result as expiry:
+
+```
+0x263654: bl    0x26c9f8          ; the delta
+0x26365c: lhz   r0, 0x50(r31)     ; the countdown
+0x263664: subf  r0, r3, r0
+0x26366c: sth   r0, 0x50(r31)
+0x263670: cmpwi cr7, r9, 0
+0x263674: blt   cr7, 0x2638e0     ; expired
+```
+
+and the same for `+0x52`. Their seeds in the same function are `0x3E8` (1000), `0x3E80` (16000) and
+`0xE10` (3600) — one second, sixteen and 3.6 — so the millisecond scale lives at `+0x50`/`+0x52`, in
+halfwords that cannot hold 128000 at all (it truncates to `0x400`).
+
+**`0x1F400` is a word-sized limit, not a timer.** The connect block builds it into `r29`
+(`lis 1; ori 0xf400`) in the branch that also stores `+0x50 = 1000` and `+0x88 = 3600`, and the
+teardown block writes it to `+0x90`, a word. So it is a capacity/limit carried with the slot, and the
+two-minute reading §46 offered as a coincidence is withdrawn: `myserver30`'s 151 s is not this
+constant.
+
+## 49. The id the descriptor match compares is a 12-bit index into the session's own table
+
+§47's `0x26B778` resolves the slot's first word through `0x261438`, and that function says exactly
+what the id is:
+
+```
+0x26143c: rldicl r0, r3, 0x34, 0x34   ; index = word & 0xFFF
+0x261444: slwi   r11, r0, 4           ; 16-byte entries
+0x26144c: bge    cr7, 0x261460        ; a negative word resolves to nothing
+0x261460: lwz    r9,  -0x8000(r30)    ; the module's session wrapper
+0x261464: lwz    r0,  0x34(r9)        ; the table base
+0x261468: add    r0, r11, r0
+0x261470: lwz    r0, 0(r9)            ; the entry's id word
+0x261474: cmpw   cr7, r0, r3
+0x261478: bne    cr7, 0x261450        ; -> return 0
+0x26147c: lbz    r0, 0xa(r9)          ; the entry's state byte
+0x261484: cmpwi  cr7, r0, 0
+0x261488: bge    cr7, 0x261450        ; not negative -> return 0
+```
+
+So the word is a **12-bit index into a 16-byte entry table at `wrapper+0x34`**, on the same wrapper
+(`r2-0x7abc` → `-0x8000`) that owns the 24-slot pool at `+0x28` and the `0xbcc` kind word: index in
+the low twelve bits, the rest carried along, and resolution requires the entry's id word to match
+exactly and its state byte `+0xa` to be negative.
+
+`0x26B778` then copies that entry into a stack descriptor — `0(r31)` → `0x70(r1)`, `4(r31)` →
+`0x74(r1)`, byte `0xa`'s low bit → `0x79(r1)`, bytes `0xb`/`0xc` bounded against `0x17` and `0xff` —
+and the comparison that matters happens against that copy:
+
+```
+0x26ba28: lwz  r3, 8(r28)
+0x26ba2c: lwz  r0, 0(r31)
+0x26ba30: cmpw cr7, r3, r0        ; the descriptor's id against the entry's
+0x26ba34: bne  cr7, 0x26ba78
+0x26ba38: lbz  r9, 9(r31)         ; then (byte9 & 5) == 5 and byte9 >= 0
+```
+
+So the "descriptor matched the table" flag (§47's `0x2`) is the client finding **its own** session
+entry: an id from a local descriptor, matched against a table the client itself owns. No value this
+host writes selects which index is looked up, and none can make the entry's state byte negative.
+
+## 50. Silence does not tear the slot down: the timers expire to zero and carry on
+
+§47 left the possibility that a slot is closed because an answer never came. It is not. The two
+countdowns the slot keeps are read, decremented and tested, and the expiry branch of each does
+nothing but zero itself:
+
+```
+0x263674: blt  cr7, 0x2638e0      ; +0x50 expired
+...
+0x2638e0: li   r0, 0
+0x2638e4: sth  r0, 0x50(r31)
+0x2638e8: b    0x263678           ; straight on to the next field
+
+0x26368c: blt  cr7, 0x2638d0      ; +0x52 expired
+0x2638d0: li   r0, 0
+0x2638d4: sth  r0, 0x52(r31)
+0x2638d8: b    0x263690
+```
+
+No flag is set, no teardown block is called, and the update continues. Both routes to `8` are
+completions, not absences: bit `0x1` only after `0xFA4E20` answers (`0x267430`), bit `0x2` only after
+the descriptor resolves and compares equal (`0x268608`), and the `8` itself only in the step that
+reads the pair (`0x268C58`).
+
+**That rules out the reading this host's stall seemed to invite.** A client that is sent nothing for
+two minutes — `myserver30`'s 151 s — does not close its own slot for the silence; the countdowns it
+keeps for that purpose reach zero and it keeps waiting. Whether that client's slot reads `8` at all
+is therefore a question for its own step, not for the absence of traffic, and no host record is
+implicated either way. What remains is the step above these: the one that decides to send, since
+that is what raises `0x1` and lets the pair complete.
+
+## 51. `0xFA4E20` is `memcmp`, so bit `0x1` is a verification and §47's "send" is withdrawn
+
+§47 read the block at `0x267430` as the slot's send path and the bit it raises as "the send
+finished". The callee says otherwise: `0xFA4E20` is **`memcmp`**.
+
+```
+0xfa4e38: ld    r0, 0(r3)
+0xfa4e3c: ld    r10, 0(r4)
+0xfa4e44: cmpd  cr7, r0, r10
+0xfa4e48: bne   cr7, 0xfa4f58      ; differ
+...
+0xfa4ecc: li    r3, 0              ; equal
+0xfa4ed0: blr
+0xfa4f58: cmpld cr7, r0, r10       ; the ordered compare decides the sign
+0xfa4f60: li    r3, -1
+0xfa4f70: li    r3, 1
+```
+
+The 8-byte and 4-byte chunk loops, the ordered and unsigned compares and the three returns are the
+C library's own. Its callers in the block are the buffer builders — `0xF99B60` to append a field,
+`0xF99D28` and `0xF99B00` to patch one — and the bytes it then xors into `0(r21)`, `0(r31)` and
+`0(r24)` are the tail of that build. So the block **builds a packet and verifies it against a second
+copy**:
+
+```
+0x267414: cmpwi cr7, r3, 0
+0x267418: bne   cr7, 0x266918      ; the copies differ -> elsewhere
+0x267428: ori   r0, r0, 9          ; equal -> the pair's first half is set
+0x267430: sth   r0, 0x14(r25)
+```
+
+**What that means for the pair.** The two bits that make `+0x14 & 3 == 3` — and so the step's `8` —
+are both *checks the client performs on its own material*: the packet it just built against the
+expected bytes (`0x1`), and the descriptor id it resolved against its own table (`0x2`). Neither is an
+event on the wire, and neither has an absence behind it, which is consistent with §50's reading of the
+countdowns: the slot closes on two verified matches, not on a send and not on silence.
+
+**Withdrawn: §47's "the transport send completed" and the question it invited** — the step that decides
+to send. Nothing in that block sends. What is left is to read the branch that reaches `0x2672C0`,
+where the builder begins, because that names *what* is being verified; the enclosing function is the
+large one whose frame is `0x2900` bytes, and its entry is the next thing to read.

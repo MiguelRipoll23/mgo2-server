@@ -371,7 +371,7 @@ steps to the next entry of the room's rotation. It also clears the round's score
 | **the rotation the settings burst carries: this instance's configured rounds, the field walked round when the room names fewer than fifteen** | `MatchSettingsService` → `PlayerSettingsBurstService.RoomRotationBody` |
 | **the settings header each player is announced with: its own slot, and the join-time form of its slot state** (`0b <slot+1> <21-byte mask> <values>` in the join burst, where the recorded host writes it) | `RoomRosterService` (slot and host slot) → `SettingsHeaderBodiesUtils.BuildJoin` in `PlayerSettingsBurstService`, `Build` in `TeamArrayService.RoomEntry` |
 | **the join's round-state transfer: state `0x00`, field 10, the room's population, the host counted** (`0b 00 00 04 00 00 00 00 00 <players>` — one field, read by the client's `0x27E8B0`) | `RoomRosterService` (joiner count) → `RoundStateBodiesUtils.JoinPlayerCountBody` in `PlayerSettingsBurstService` |
-| **the room's phase: state `0x00`, field 0, the round the match is on and `0` once it closes** (`0b 00 01 00 00 00 00 00 00 <round>` — the field the client's join machine waits on, where `0` and `7` mean wait; written at the round's open, every 2.35 s of it and at its close) | `MatchRoundStateService.RoundNumber` → `RoundStateBodiesUtils.RoundPhaseBody` in `MatchStartRunService` |
+| **the room's phase: state `0x00`, field 0, the round the match is on and `0` once it closes** (`0b 00 01 00 00 00 00 00 00 <round>` — the field the client's join machine waits on, where `0` and `7` mean wait; written on the briefing's own frame, at the round's open, every 2.35 s of it and at its close) | `MatchRoundStateService.RoundNumber` → `RoundStateBodiesUtils.RoundPhaseBody` in `BriefingRoomPublishService` and `MatchStartRunService` |
 | **the loadout each player is announced under: its own appearance, its equipped skills, the slot it holds and the side the room puts it on** | `CharacterService` (appearance + equipped skills) and `GameService` (sides) → `LobbyLoadoutService` → `LoadoutFramesUtils.TryWrite` |
 | **the vitals each player last reported: health and stamina, kept per player and cleared when it leaves** | `PlayerVitalsHandler` → `PlayerVitalsService`, cleared by the session reaper |
 | **the round's score: a death when a player's health reaches zero, a kill and a death when a kill feed names one, and a side's total over the slots the room puts it on** | `PlayerVitalsHandler`/`OperationsStreamHandler` → `MatchScoreService`, reset when the round opens |
@@ -568,6 +568,34 @@ win is written. A **goal** is still invisible on this channel as a cause — the
 is scored in the round's state block and the end-of-round report travels over the
 lobby's TCP channel — so `End(reason, result)` remains the seam a goal would
 call, and no round ends early for one here.
+
+### 4.4 The client's peer slot, and the one value that ends its session
+
+The client keeps a fixed table of **24 peer slots**, `0x6d8` bytes apart, and each one
+carries a byte at `+4` that its own vtable's slot 0 returns verbatim: `0` while the
+entry is free, `1` once it is taken, and `8` when the slot has been torn down. Its
+join screen allocates from that table at `0x261FE0` and reads that byte through a
+virtual call; when the answer is `8` it rebuilds its session as **kind 2**
+(`li r5,2` → `0x270E00`), and a kind-2 session never writes the client's `1d`
+operations rows and never readies — which is the state a stalled client sits in.
+
+Both routes to `8` are the client's own. One is a step function that fires when the
+flag halfword at `+0x14` holds both the packet-verified bit (set when the buffer it
+built compares equal to the expected bytes — `0xFA4E20` is `memcmp` — `0x267430`)
+and the descriptor-matched bit (set when its own lookup compares equal,
+`0x268608`). The other is a teardown block that clears its streams, sets
+`+0x14 |= 7` and marks the slot (`0x285458`/`0x285628`). Neither is a
+silence: the slot's own countdowns expire to zero and carry on (`0x2638D0`,
+`0x2638E0`), so a client that is sent nothing keeps waiting rather than closing.
+
+**Nothing this server writes sets or clears that byte**, so a peer whose slot reads
+`8` has ended its own session, and no record added to the briefing brings it back.
+What the host can still do is what §§2.3–2.5 do: keep the room's own records on the
+wire — the phase, the arrays, the header, the count — so that a client still making
+its decision makes it against a correct room. `analysis/join-stall-after-mode2.md`
+§§42 and 45–51 carry the disassembly: §47 and §51 the two flag writes and the `memcmp`
+behind the first, §48 rules the `0x1F400` at `+0x90` out as a timeout, §49 names the id
+the match compares, and §50 the countdowns that expire without closing anything.
 
 ## 5. Suggested followups
 
