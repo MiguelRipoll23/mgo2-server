@@ -4799,3 +4799,60 @@ own state table, or in the script that registers the listener — neither of whi
 What is worth taking to that source is small and exact: **32 codes, `0x17` still unseen, three flag
 bits that combine freely, and `0xff` reserved.** A scoreboard of names against that is the whole of
 the remaining gap; this document does not guess at any of them.
+
+## 59. The stage data has been searched: it names the screen, not the codes
+
+§57 said there was no game data on this machine. There is, and this section records what the search
+of it found, so the same ground is not walked twice: the install's stage tree at
+`MGO2RE/Game files/o` holds **641 files, 2.16 GB** in **42 stage directories** — 19 under `stage/`
+and 23 patch copies under `dl/p/stage/` — and it holds no handler for `0x16002C` and no name for any
+of the values.
+
+**What is in it.** The extensions are the data-side ones only: 228 `.dlz`, 102 `.dar`, 56 `.dci`,
+44 `.qar`, 44 `.gcx`, 43 `.vfp`, 43 `.cnf`, 29 `.geom`, 20 `.ptl`, 17 `.nni`, 10 `.dld`, 4 `.ssp`
+and one `.gsp`. There is no executable here — `EBOOT.BIN` sits beside this tree, not in it — and the
+`.gcx` files are **scenario scripts with a multilingual string table**, not a table of event ids:
+`stage/lobby/scenerio.gcx` unrolls to 30 157 printable runs, among them the room's own labels
+(`WAITING ROOM`, `LEADER OPTIONS`, `MEMBER OPTIONS`, `Team Standby`, `HOST`, `HOST NAME`) and the
+one line that describes the screen the byte drives:
+
+```
+Number of Players Currently Joined: %d / %d
+```
+
+So the data names the *screen* and its vocabulary, and nothing in it names a code.
+
+**The identifier is not in it, and the first reading that said it was is wrong.** Scanning all 641
+files for `0x0016002C` and `0x0015002C`, both endiannesses and as ASCII, produces hits in 40, 36, 24
+and 42 files — every one of them a coincidence of **16-bit** data. The contexts show it: in
+`stage/lobby/cache.dar` the match is `00 16 00 2c` between `00 11 ff ff` and `00 19 00 17`, a run of
+16-bit values; in `n001a.ptl` it is one pair among `00 45`, `00 46`, `00 45`, `00 2d`. The largest
+"table" the scan reports — 3192 values from `0x00150000` upward in `r_sna01_n/resident.dar` — is the
+same artifact at scale: a stream of 16-bit words whose first is `0x0015`, read as the high half of a
+word it never is. Nothing in the tree builds `0x0016002C`, which agrees with the image: the id is
+formed only at its two emitters, so a script cannot name it by value.
+
+**And the one reader that looked like the answer is a different structure.** The image has, besides
+the two screen readers §30.7 counts, a pair at `0x1197D4` and `0x1384F8` that take a byte at
+`+0x63`, test it against `0xff` and index a table of `0x50`-byte entries:
+
+```
+0x1197d4: lbz   r9, 0x63(r22)
+0x1197d8: cmpwi cr7, r9, 0xff
+0x1197dc: beq   cr7, 0x119ebc
+0x1197e0: slwi  r11, r9, 6      ; v*64
+0x1197e4: slwi  r9, r9, 4       ; v*16
+0x1197e8: add   r9, r9, r11     ; v*80, the entry stride
+```
+
+Each entry carries **three string references** (at `+0x20`, `+0x30`, `+0x40`, each a pointer and a
+length), and the offsets are not a lone byte: the same block reads `0x61` and `0x62` the same way, so
+the object holds three consecutive indices with `0xff` as the empty one — a profile-style slot triple
+with a name, a short name and a description per entry, not this record's single field in state
+`0x00`. It is the place a `+0x63` byte with an `0xff` sentinel gets mistaken for it, and it is worth
+recording as such.
+
+**What that leaves.** The codes are named where the listener is registered, and that registration is
+still a run-time act of the client's screen (§57). The stage data would name them only if a scenario
+script carried the id, and it does not; the reference host's state table remains the one source that
+can. What this search removes is the assumption that the data was merely missing.
