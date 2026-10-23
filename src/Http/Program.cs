@@ -6,6 +6,7 @@ using Mgo2Server.Http.Errors;
 using Mgo2Server.Http.Middleware;
 using Mgo2Server.Http.Options;
 using Mgo2Server.Http.Services;
+using Mgo2Server.Http.Tls;
 using Mgo2Server.Infrastructure.DependencyInjection;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Telemetry;
@@ -32,12 +33,34 @@ var internalGrpcPort = int.TryParse(builder.Configuration["INTERNAL_GRPC_PORT"],
     ? configuredGrpcPort
     : PortConstants.InternalGrpcPort;
 
+var httpsPort = int.TryParse(builder.Configuration["HTTPS_PORT"], out var configuredHttpsPort)
+    ? configuredHttpsPort
+    : PortConstants.HttpsPort;
+
+// HTTPS is switched on by the pair a deployment mounts, not by a flag of its
+// own: a mount that is there is a mount that is meant to be served. The game
+// console never reaches this port — its HTTP client speaks plaintext on 80 —
+// and the TLS is terminated here rather than by an ingress, so the certificate
+// names the hostname clients dial.
+var tlsCertificate = CertificateUtils.LoadFromPem(
+    builder.Configuration["TLS_CERTIFICATE_PATH"],
+    builder.Configuration["TLS_CERTIFICATE_KEY_PATH"]);
+
 // Bind Kestrel directly. The image clears the base image's inherited
 // ASPNETCORE_HTTP_PORTS, so no server URL is generated for the host to override
 // and the app owns the binding outright.
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.ListenAnyIP(httpPort);
+
+    if (tlsCertificate is not null)
+    {
+        // The same routes on the port a browser expects. HTTP/1.1 and HTTP/2
+        // are both offered; nothing on the console's side dials this one.
+        options.ListenAnyIP(
+            httpsPort,
+            listen => listen.UseHttps(tlsCertificate));
+    }
 
     // The coordination endpoint speaks HTTP/2 without TLS. It is reached by the
     // gameplay lobbies over the internal network of the deployment and never by
@@ -183,9 +206,20 @@ app.MapGrpcService<LobbyCoordinationGrpcService>();
 app.Services.ActivateServerTelemetry();
 await app.Services.GetRequiredService<ServerMetricsService>().ReportTotalUsersAsync();
 
-app.Logger.LogInformation(
-    "HTTP API listening on port {Port}, coordinating the game lobbies on port {GrpcPort}",
-    httpPort,
-    internalGrpcPort);
+if (tlsCertificate is null)
+{
+    app.Logger.LogInformation(
+        "HTTP API listening on port {Port}, coordinating the game lobbies on port {GrpcPort}",
+        httpPort,
+        internalGrpcPort);
+}
+else
+{
+    app.Logger.LogInformation(
+        "HTTP API listening on port {Port} and HTTPS on port {HttpsPort}, coordinating the game lobbies on port {GrpcPort}",
+        httpPort,
+        httpsPort,
+        internalGrpcPort);
+}
 
 await app.RunAsync();

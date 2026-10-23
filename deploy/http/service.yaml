@@ -23,6 +23,15 @@ spec:
     port: 80
     protocol: TCP
     targetPort: 80
+  # The pod terminates TLS itself, so 443 maps straight to the container rather
+  # than to an ingress. A node's port belongs to one Service at a time — k3s's
+  # ServiceLB binds the host port for whichever LoadBalancer claims it — so the
+  # cluster's Traefik Service publishes no host port at all and this is the only
+  # claimant of 443; see deploy/README.md, "HTTPS on 443".
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 443
   - name: grpc
     port: 5743
     protocol: TCP

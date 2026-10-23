@@ -9,6 +9,12 @@ public static class PortConstants
     public const int HttpPort = 80;
 
     /// <summary>
+    /// Port of the same API over TLS. It is served only where a certificate is
+    /// mounted, because the console's own client speaks the plaintext port.
+    /// </summary>
+    public const int HttpsPort = 443;
+
+    /// <summary>
     /// Port the HTTP API serves the internal server-to-server gRPC endpoint on.
     /// The endpoint is internal to the deployment and is never the port the
     /// game clients or the public API are reached on.

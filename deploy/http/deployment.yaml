@@ -4,6 +4,11 @@ metadata:
   annotations:
     # Reloader rolls this pod when mgo2-appsettings changes; see deploy/README.md.
     configmap.reloader.stakater.com/reload: "mgo2-appsettings"
+    # The certificate is mounted from a Secret that is replaced rather than
+    # edited when it is renewed, so the pod has to be rolled to read the new
+    # one. Reloader writes the same annotation for either kind; see
+    # deploy/README.md, "HTTPS on 443".
+    secret.reloader.stakater.com/reload: "mgo2-tls"
   name: mgo2-http
   namespace: mgo2
 spec:
@@ -43,6 +48,11 @@ spec:
         name: http
         ports:
         - containerPort: 80
+          protocol: TCP
+        # The TLS port the LoadBalancer Service publishes, served from the pair
+        # mounted below. It carries the same routes as 80 and is never the
+        # console's port; see deploy/README.md, "HTTPS on 443".
+        - containerPort: 443
           protocol: TCP
         - containerPort: 5743
           protocol: TCP
@@ -97,6 +107,16 @@ spec:
           subPath: appsettings.json
         - mountPath: /root/.aspnet/DataProtection-Keys
           name: http-keys
+        - mountPath: /app/certs
+          name: tls
+          readOnly: true
+        # The two paths are the only switch that turns HTTPS on: a deployment
+        # that mounts no pair still serves the console's port and nothing else.
+        env:
+        - name: TLS_CERTIFICATE_PATH
+          value: /app/certs/tls.crt
+        - name: TLS_CERTIFICATE_KEY_PATH
+          value: /app/certs/tls.key
         envFrom:
         - secretRef:
             name: mgo2-secrets
@@ -124,3 +144,9 @@ spec:
           name: mgo2-appsettings
       - emptyDir: {}
         name: http-keys
+      # A kubernetes.io/tls Secret: tls.crt is the PEM certificate and tls.key
+      # its private key. It is created out of band with the other secrets; see
+      # deploy/README.md, "Bootstrap".
+      - name: tls
+        secret:
+          secretName: mgo2-tls

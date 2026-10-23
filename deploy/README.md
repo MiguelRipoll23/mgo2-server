@@ -75,15 +75,18 @@ because they carry environment-specific values that do not belong in git:
   and a `DATABASE_CONNECTION_STRING` naming `localhost`, because that is the
   instance the entrypoint's migration bundle connects to before the pod serves;
 - the `mgo2-appsettings` ConfigMap, which every deployment mounts as
-  `/app/appsettings.json`.
+  `/app/appsettings.json`;
+- the `mgo2-tls` Secret, which the HTTP API alone mounts, as the certificate its
+  HTTPS port serves: `tls.crt` holding the PEM certificate and `tls.key` its
+  private key. See [HTTPS on 443](#https-on-443).
 
-Create them before the first sync, or the pods will not start. The two secrets
-have to agree on the database name and user: one initialises the server, the
-other connects to it.
+Create them before the first sync, or the pods will not start. The two database
+secrets have to agree on the database name and user: one initialises the server,
+the other connects to it.
 
 ### Reloader
 
-Both of those carry values that do not belong in this folder, so nothing Argo
+Those carry values that do not belong in this folder, so nothing Argo
 reconciles can connect a change in them to the pods that mount them. Reloader
 does: it watches ConfigMaps and Secrets and rolls the workloads that name them.
 
@@ -116,6 +119,74 @@ service's deploy is not reproducible and Argo will happily redeploy whatever the
 registry's `latest` points at. The pipeline replaces it with a commit SHA on its
 first run — which is why the recommended order is: merge this change, let the
 pipelines pin every folder, and only then apply `root.yaml`.
+
+## HTTPS on 443
+
+The HTTP API serves both ports a client can dial, from one process and the same
+routes:
+
+| Port | Served how      | Dialled by                                                        |
+| ---- | --------------- | ----------------------------------------------------------------- |
+| 80   | Kestrel, plaintext | the game console, whose HTTP client does not speak TLS        |
+| 443  | Kestrel, TLS    | a browser — the patch launcher, the replays page, the API reference |
+
+TLS is terminated in the pod rather than at an ingress, because the certificate
+has to name the hostname a client dials and the deployment is the thing that
+knows which hostname that is. The pair is mounted from the `mgo2-tls` Secret at
+`/app/certs`, and `TLS_CERTIFICATE_PATH` and `TLS_CERTIFICATE_KEY_PATH` are the
+whole switch: a deployment that mounts no Secret still starts
+and serves port 80 alone, so HTTPS is opt-in per environment rather than a
+second mode the server has to be told about.
+
+Create the Secret from the PEM files the certificate was issued as:
+
+```sh
+kubectl create namespace mgo2
+kubectl --namespace mgo2 create secret tls mgo2-tls \
+  --cert=cert.pem --key=privkey.pem
+```
+
+Two things about the certificate itself are not this folder's to arrange. It has
+to cover the hostname clients use — the current one names `mgo2pc.com` — and the
+CA that issued it has to be trusted on the client, or a browser rejects the
+connection even though the server is serving the pair correctly. The development
+pair used on this cluster is issued by `mkcert`, whose root CA has to be
+installed on each machine that dials 443.
+
+### Why 443 is free for this Service
+
+k3s's ServiceLB binds a LoadBalancer's port on the node, so a host port belongs
+to exactly one Service at a time. On this cluster that was Traefik: its chart
+published `websecure` as 443, which is why 443 answered Traefik's own default
+certificate and never reached this API. The node's Traefik release is therefore
+reconfigured through a `HelmChartConfig` at
+`/var/lib/rancher/k3s/server/manifests/traefik-config.yaml`, which sets its
+Service type to `ClusterIP` and stops publishing `websecure`. Traefik keeps
+running and keeps serving the Gateway and the HTTPRoute inside the cluster, but
+it no longer owns a host port; the HTTP API's LoadBalancer is the only claimant
+of 443, and it already held 80.
+
+That override lives on the node rather than in this folder because a
+`HelmChartConfig` has to be in k3s's own manifest directory for the addon
+controller to read it before it starts Traefik; a resource Argo applies cannot
+configure the ingress controller Argo is reached through. It is one file, and
+k3s reapplies it at every start.
+
+### Renewing the certificate
+
+Replace the Secret; the pod rolls and reads the new pair:
+
+```sh
+kubectl --namespace mgo2 create secret tls mgo2-tls \
+  --cert=cert.pem --key=privkey.pem \
+  --dry-run=client --output yaml | kubectl apply --filename -
+```
+
+Reloader watches it because the Deployment names it under
+`secret.reloader.stakater.com/reload`, which is the same annotations strategy
+the ConfigMap uses. Replacing the Secret without that annotation would change
+the file under `/app/certs` without a restart, and Kestrel reads the pair once
+at startup — so the mount being current is not the same as the listener being.
 
 ## Migrations
 
