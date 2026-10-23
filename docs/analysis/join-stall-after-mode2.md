@@ -4832,6 +4832,13 @@ same artifact at scale: a stream of 16-bit words whose first is `0x0015`, read a
 word it never is. Nothing in the tree builds `0x0016002C`, which agrees with the image: the id is
 formed only at its two emitters, so a script cannot name it by value.
 
+**The archives hold layouts, not bindings.** A `.dar` opens with a count and a name table, and the
+names it lists are the screen's own assets: `stage/lobby/cache.dar` carries 121 `.la2` entries —
+the layout files `album_name.la2`, `brghtadjst_online.la2` and their siblings — beside 84 `.cpef`,
+58 `.mdn` and 50 `.img` resources. So the join screen's *appearance* is data in this tree and its
+*behaviour* is not: a `.la2` places an element, and no layout in the tree references the event id or
+names a slot state, so the enum cannot be recovered from the layouts either.
+
 **And the one reader that looked like the answer is a different structure.** The image has, besides
 the two screen readers §30.7 counts, a pair at `0x1197D4` and `0x1384F8` that take a byte at
 `+0x63`, test it against `0xff` and index a table of `0x50`-byte entries:
