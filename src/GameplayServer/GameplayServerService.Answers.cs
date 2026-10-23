@@ -74,6 +74,13 @@ public sealed partial class GameplayServerService
     /// <param name="session">Session the frame arrived on.</param>
     private void AnswerReliableRecords(UdpFrame frame, PeerSession session)
     {
+        // The control byte an answer carries is the phase this host is in, which
+        // is what the reference hosts write: their joining pass carries one value,
+        // a waiting briefing another and a playing round a third
+        // (PeerAcknowledgementUtils). It is computed once per pass so two answers
+        // written together cannot disagree.
+        var controlByte = ControlByteForAnswers();
+
         // The lobby-slot echo's answer is the briefing's run and not a record
         // written into this pass: the run opens on the pair, carrying the echo's
         // own fourth bytes (MatchStartRunService.NoteEntryAnswers). The answers
@@ -82,7 +89,7 @@ public sealed partial class GameplayServerService
         var entryAnswers = frame.Messages
             .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
             .Where(message => TeamArrayFramesUtils.IsArrayEcho(message.Body))
-            .Select(PeerAcknowledgementUtils.AcknowledgementOf)
+            .Select(message => PeerAcknowledgementUtils.AcknowledgementOf(message, controlByte))
             .ToList();
         if (entryAnswers.Count > 0)
         {
@@ -96,7 +103,7 @@ public sealed partial class GameplayServerService
             .Where(message =>
                 (message.Type & ~PeerAcknowledgementUtils.PayloadClassBit) != UdpCommandConstants.PlayerProfile ||
                 PlayerProfileRecordParseUtils.Parse(message.Body) is not { Name.Length: > 0 })
-            .Select(PeerAcknowledgementUtils.AcknowledgementOf)
+            .Select(message => PeerAcknowledgementUtils.AcknowledgementOf(message, controlByte))
             .ToList();
         if (answers.Count == 0)
         {
@@ -114,5 +121,33 @@ public sealed partial class GameplayServerService
         // fourth byte as the records they answer, so a peer matches them against
         // the bookkeeping of the frame it has just sent.
         SendMessages(session, answers);
+    }
+
+    /// <summary>
+    /// Control byte the answers of this pass carry, as the phase this host is in.
+    /// </summary>
+    /// <remarks>
+    /// <b>Three phases, and the round is the outer one.</b> A round that is playing
+    /// answers in <see cref="PeerAcknowledgementUtils.RoundControlByte"/>; a room
+    /// that has briefed — its briefing heard a report and named a set
+    /// (<see cref="MatchRecords.MatchStartRunService.BriefingGeneration"/>) —
+    /// answers in <see cref="PeerAcknowledgementUtils.BriefingControlByte"/>; and a
+    /// room that has not briefed yet answers in
+    /// <see cref="PeerAcknowledgementUtils.HostControlByte"/>, which is the value
+    /// the reference hosts write on their joining pass. The byte is a leaf the
+    /// client hands to a script event, so any value but <c>0xff</c> moves the same
+    /// screen; what changes here is what the script is told.
+    /// </remarks>
+    /// <returns>The control byte this pass's answers carry.</returns>
+    private byte ControlByteForAnswers()
+    {
+        if (roundStates.IsOpen)
+        {
+            return PeerAcknowledgementUtils.RoundControlByte;
+        }
+
+        return matchStart.BriefingGeneration is null
+            ? PeerAcknowledgementUtils.HostControlByte
+            : PeerAcknowledgementUtils.BriefingControlByte;
     }
 }

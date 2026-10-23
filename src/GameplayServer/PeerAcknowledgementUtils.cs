@@ -68,13 +68,55 @@ public static class PeerAcknowledgementUtils
     public const ushort PayloadClassBit = 0x8000;
 
     /// <summary>
-    /// Control byte an answer to a <see cref="PayloadClassBit"/> record carries.
+    /// Control byte an answer carries while the room has not briefed yet — the
+    /// join pass, and the pass that writes a run.
     /// </summary>
     /// <remarks>
-    /// The value the reference round's host wrote when it answered the joiner's
-    /// first <c>0x9001</c>. One round's value rather than a rule.
+    /// <para>
+    /// The value the reference hosts write in their joining passes. Measured on
+    /// host side, one byte, over the three captures that carry the answer:
+    /// <c>mgo2-game3</c> writes <c>24</c> on both answers of its join pass at
+    /// t+8.595 and again on the single answer issued in the pass that writes its
+    /// briefing's run (t+59.596, beside the <c>0x5ade</c> marker);
+    /// <c>mgo2-game1</c> writes <c>24</c> at t+6.687 and <c>25</c> and <c>24</c>
+    /// beside its two <c>0x52de</c> runs; <c>mgo2-game-started-on-briefing</c>
+    /// writes <c>0c</c> and <c>0a</c> there, so the value itself is the host's own
+    /// and only its <em>place</em> is general — the pass a run is written in.
+    /// </para>
+    /// <para>
+    /// The byte is a leaf of the client's session state (state <c>0x00</c>, byte
+    /// <c>99</c>, one byte, no flags), and the only C++ reader of it raises the
+    /// script event <c>0x16002C</c> with it, so what a value <em>means</em> is not
+    /// in the image (<c>docs/analysis/join-stall-after-mode2.md</c> §30.7, §56).
+    /// The three constants here are the phases the captures separate and nothing
+    /// finer.
+    /// </para>
     /// </remarks>
     public const byte HostControlByte = 0x24;
+
+    /// <summary>
+    /// Control byte an answer carries while a briefing is waiting on its players.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured, and it is not the joining value.</b> <c>mgo2-game3</c> holds
+    /// <c>03</c> for the whole of its briefing — from t+10.967, the answer behind
+    /// its join, to t+118.218, the pass its round opens in — and
+    /// <c>mgo2-game1</c> alternates <c>02</c> and <c>03</c> over the same stretch,
+    /// so a host that wrote its joining byte through a briefing would be telling
+    /// the client it is still on the screen the join was answered on.
+    /// </remarks>
+    public const byte BriefingControlByte = 0x03;
+
+    /// <summary>
+    /// Control byte an answer carries while a round is playing.
+    /// </summary>
+    /// <remarks>
+    /// Both hosts that hold a briefing step to <c>04</c> when their round opens
+    /// (<c>mgo2-game3</c> at t+118.218, where its run precedes the answer,
+    /// <c>mgo2-game1</c> at t+88.035) and stay in <c>04</c>–<c>07</c> for the rest
+    /// of the capture.
+    /// </remarks>
+    public const byte RoundControlByte = 0x04;
 
     /// <summary>
     /// Whether a message is a frame acknowledgement rather than a record that
@@ -133,10 +175,16 @@ public static class PeerAcknowledgementUtils
     /// Builds the record that answers one of the peer's.
     /// </summary>
     /// <param name="message">Record being answered.</param>
+    /// <param name="controlByte">
+    /// Control byte the answer carries, which is the phase the answering host is
+    /// in: <see cref="HostControlByte"/> on the join pass,
+    /// <see cref="BriefingControlByte"/> while a briefing waits and
+    /// <see cref="RoundControlByte"/> while a round plays.
+    /// </param>
     /// <returns>The answer to send.</returns>
-    public static UdpMessage AcknowledgementOf(UdpMessage message)
+    public static UdpMessage AcknowledgementOf(UdpMessage message, byte controlByte = HostControlByte)
     {
-        byte[] body = (message.Type & PayloadClassBit) != 0 ? [HostControlByte] : [];
+        byte[] body = (message.Type & PayloadClassBit) != 0 ? [controlByte] : [];
 
         return FrameBuilderUtility.MessageOf(
             (ushort)(message.Type | AcknowledgementBit),

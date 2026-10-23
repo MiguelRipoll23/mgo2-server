@@ -33,6 +33,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly MatchService matchService;
     private readonly RoomRosterService roster;
     private readonly MatchRecords.MatchStartRunService matchStart;
+    private readonly MatchRecords.MatchRoundStateService roundStates;
     private readonly BriefingStateService briefingStates;
     private readonly TeamArrayService teamArrays;
     private readonly PlayerVitalsService vitals;
@@ -77,6 +78,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         matchService = serviceProvider.GetRequiredService<MatchService>();
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
         matchStart = serviceProvider.GetRequiredService<MatchRecords.MatchStartRunService>();
+        roundStates = serviceProvider.GetRequiredService<MatchRecords.MatchRoundStateService>();
         briefingStates = serviceProvider.GetRequiredService<BriefingStateService>();
         teamArrays = serviceProvider.GetRequiredService<TeamArrayService>();
         vitals = serviceProvider.GetRequiredService<PlayerVitalsService>();

@@ -2558,8 +2558,10 @@ machine that moves to step 12 and does not do it again until it has moved on.
 
 **What that fixes about the reading.** Three things are now settled and one is not:
 
-* **`0xFF` means "no value".** Both readers test for it and skip the event, and no
-  reference capture ever sends it — the corpus's range is `0x00`–`0x1c`.
+* **`0xFF` means "no value".** Both readers test for it and skip the event. The corpus sends it
+  exactly once, in `game1`, and that copy is inert for the same reason; §58 counts the field
+  whole, and the range over all twelve captures is `0x00`–`0x1c` in the code bits with the flag
+  bits above them.
 * **It is written in groups, and the bytes differ within one.** 68 instants in the
   corpus carry two different bytes — `game-failed-memoryviolation` t+17.5 has `04` and
   `0c`, `joined-when-red-team` t+46.4 `00` and `04`, `started-on-briefing` t+107.5 `0a`
@@ -4596,3 +4598,204 @@ joined the built host. What would confirm it is the same join: the pair should a
 echo instead of 0.5 s before it, on the run's own pass. What it would not settle is the fade itself —
 with the heap now readable, the next dump taken at the stall can be asked the one question this one
 answers negatively: whether *any* screen object exists, and if one does, which step its `+0xb8` holds.
+
+## 56. The `0xd001` byte is the answering host's phase, and this host wrote the joining phase for ever
+
+§30.5 and §30.7 stopped at a byte whose meaning the image could not name, and §27.2 closed the
+record with "the constant stays". This section reads the same byte from the other end — when a
+value changes in the captures, and where the binary puts it — and it separates into three phases
+that the captures hold without contradiction. Only the *place* of a value is general; the value
+itself is the host's own, so the three phases are what this host can be made to follow.
+
+**What the descriptor says.** State `0x00`'s table is `0x01229B80`, 55 entries of ten bytes, and
+entry 24 is `off 99, size 1, mult 1, flags 0x0000` — the smallest entry in the table: the fields
+around it carry `0x0037`. Five fields of the 55 are unflagged (offsets 84, 86, 89, 99, 165) and
+field 24 is one, which is why `0x27E578` marks nothing for it and no second field is written with
+it. So the byte is a leaf of the session note and nothing in the state is derived from it.
+
+**What steps.** Host side, one byte, aligned against each capture's own run markers:
+
+| capture | join pass | briefing | the run's pass | round |
+| --- | --- | --- | --- | --- |
+| `mgo2-game3` | `24`, t+8.595 | `03`, t+10.967 to t+108.6 (nine answers) | **`24`**, t+59.596 beside the `0x5ade` marker | `07` then `04` from t+118.218, the pass its own run opens in |
+| `mgo2-game1` | `24`, t+6.687 | `02`/`03` alternating, t+9.102 to t+78.298 | **`25`** at t+194.042 (first `0x52de`), `04` at t+196.417 (the second) | `04`-`06` from t+88.035 |
+| `started-on-briefing` | `0c`, t+8.125 | `0a`, `03`, `0a`, `10`, `0b`, `10`, `02`, `08`, `0b`, `01`, `04`, `05` — a value per answer, no phase band | `05` at t+56.123 beside its `0x52de` | — |
+
+So the byte is **not** a function of the record answered: it holds `03` over nine answers of
+`mgo2-game3` and then moves in one pass to `04`, where the answer's own identifier, length and
+class are identical throughout. It is the answering host's own phase, it changes when that host's
+screen changes, and the two hosts that brief step at the same two moments — the briefing's run and
+the round's opening run. `started-on-briefing` is the widening case: six players, a value per
+answer, the same band (`01`-`0f`, `10`, `12`) and the same `0x0x`-`0x1x` shape, which is why no
+derivation of the value is attempted here and only the phase is.
+
+**What this host did.** `PeerAcknowledgementUtils.HostControlByte` (`0x24`) was written on every
+`0xd001` this host answers, for the whole session — the value a reference host writes in its
+joining pass and in the pass that writes its run. A room that had briefed, and a room playing a
+round, were both told the value that says "you have just been handed a run". The byte reaches one
+screen step (`0x77E668`: step at most 9 to 12, once) and one script event (`0x16002C`), so nothing
+in the C++ path changed with it — but the argument the script was handed every four seconds named
+a pass that was forty seconds old.
+
+**What was changed.** The answer's byte is the phase now, read once per pass so two answers
+written together cannot disagree:
+
+| phase | byte | source |
+| --- | --- | --- |
+| a round is playing | `0x04` | `MatchRoundStateService.IsOpen` |
+| a briefing has begun, no round | `0x03` | `MatchStartRunService.BriefingGeneration` |
+| a room that has not briefed (the join pass) | `0x24` | unchanged |
+
+| file | change |
+| --- | --- |
+| `PeerAcknowledgementUtils.cs` | `BriefingControlByte` and `RoundControlByte` added, `HostControlByte` keeps the joining pass, `AcknowledgementOf` takes the byte |
+| `GameplayServerService.Answers.cs` | `ControlByteForAnswers`, computed once in `AnswerReliableRecords` |
+| `GameplayServerService.cs` | the round's state is resolved beside the other services |
+
+**Not verified live.** The build is clean (0 warnings, 0 errors) and the 58 codec tests pass; no
+client has joined the built host. What would confirm it is the same join with a briefing and then
+a round: the `0xd001` answers should read `24` while the room waits, `03` from the first report,
+and `04` from the round's opening run — three byte sets on one wire where this host wrote one. What
+it would not settle is what the script does with each, which stays [U]; the next dump taken at the
+stall can be asked the one thing this reading leaves open: whether the screen's step moved to 12
+on the new values or not at all.
+
+## 57. `0x16002C` has no handler to name: nothing in the image and nothing in the dump binds it
+
+§56 named the phases the byte holds but not the values, on the reading (§41) that the listener for
+`0x16002C` is a script callback registered at run time. This section asks the question that
+reading left — *which* handler, and what each value means to it — and the answer is that neither
+the image nor this dump can produce one. The negative is worth recording with its evidence,
+because it also removes the byte from the stall's causes.
+
+**Nothing in the image can be its handler.** The identifier occurs **zero** times as a 32-bit or
+64-bit word anywhere in `MGO2.ELF`'s two loadable segments, and as an instruction operand only at
+its two emitters (`0x77E6C8`, `0x77F8A4`). A static table of `{id, handler}` cannot therefore hold
+it, and the family's own dispatcher does not either: the compare chain at `0xB32C68` — the one
+that owns the `0x1600xx` family, in a binary search over `0x160002`, `004`, `008`, `00a`, `00e`,
+`00f`, `010`, `012`, `01d`, `01f`, `021`, `022`, `024`, `025`, `027`, `029`, `02b`, `02d`, `02e` —
+skips `0x16002C`. So the id is neither a case of the script engine's chain nor an entry of any
+data table, which leaves exactly one registration path: the runtime listener list.
+
+**Nothing in the dump holds it.** The bus the emitter walks is `0xC1208`, whose list sits at the
+object's `+0x34` and whose entries are twelve bytes — `{id, descriptor, argument}`, with the
+descriptor holding `{code, toc}`. Over every guest range in `rpcs3.dmp` (`0x30000000`–`0x60000000`)
+there is **no entry whose id falls in `0x00150000`–`0x0016ffff`**, and with the descriptor test
+tightened to a code pointer below `0x01190000` and a TOC inside `0x01190000`–`0x012ac000` there is
+no entry at all. §55 explains it: the client built no screen of the join family, and the screen is
+what registers. A session with no screen has no listener, so the byte this host wrote every four
+seconds arrived at a list that had nothing to match it.
+
+**And there is no game data to read either.** The install this dump came from holds one executable
+and nothing else: `dev_hdd0/game/NPMG00010/USRDIR/` is `EBOOT.BIN` alone, and `dev_bdvd/` is empty
+(`RPCS3.log`, the paths at `0:00:10.98` and `0:00:11.02`). So the "script" the §41 reading points
+at is not a file on this machine; there is no archive to search for the handler, and no name to be
+found for a value.
+
+**What that means for the stall.** Both effects the byte can have need the screen: the step move
+(`0x77E668`, step at most 9 → 12) is a screen method, and the script event is a listener the same
+screen registers. With no screen there is neither, which is consistent with §54's live run: the
+client stored the byte (§30.5's field 24) and did nothing with it. So §56's phase change is a wire
+correction and not a lever, and the fade has to be explained by something that does not pass
+through this record.
+
+**The one experiment that would name the values.** Take a dump while the client is **on a screen**
+— an ordinary join that reaches the briefing, not the stall — and read two things:
+`*(0x0121af44)` → `0x011a6308` → `*(…-0x8000)` for the module table, then the bus the emitter uses,
+`*(module+8)`; its `+0x34` list's entry for `0x16002C` is the handler's descriptor, and the
+function at that descriptor is the consumer. Its first comparison against the event argument names
+the value set, and a dump of the *same* client on a different screen says whether the handler
+changes with the screen. Until such a dump exists the values stay nameless, and this document does
+not guess at them.
+
+**The twin does say what the byte is, even though it cannot name each value.** The same code is
+also raised as `0x15002C`, from three sites that are not a session's field at all: `0x79D288`,
+`0x7A0A00` and `0x7A0D7C`. The two `0x7A0...` sites read the byte **out of a received record**
+(`0x26CC88`); the `0x79D...` one takes it as its argument and stores it. All three emit
+`0x15002C` with it, and then test `0x7504F8()` against `0xE`. `0x79D288`'s enclosing function
+starts at `0x79D218`, which is entry 19 — offset `+0x98` — of the function table at `0x011FF600`,
+a sibling of the seven screen tables §55 lists (the same `{code, toc}` eight-byte entries — the
+join screen's `0x011FEB80` carries `0x77F7E0` at slot 44, which is §40's step-12 setter), and its
+first instructions index `this + 0x14 + index·4`
+for a per-slot pointer and skip the slot when that pointer is null. So the family is a screen's
+**per-slot** method: the byte is a peer slot's **state code**, arriving either in a record (the
+`0x15002C` sites) or in the session's own copy of it (the `0x16002C` sites). The neighbouring slot
+code reads a slot object's byte at `+0x20` and compares it with `0x17` — the state space is a small
+enumeration, not a set of flags — but the image's only use of it is that single `> 0x17` test, so
+the enumeration's names are still not in the image and are still [U] here.
+
+That reading is consistent with every measurement §56 records, including the ones that looked
+arbitrary: two hosts write one byte that holds for minutes and steps where their screens step
+(`03` through a briefing, `04` in a round), and the host whose room churns writes values in strides
+of four because its states are spaced that way. It is still not a name for `0x02` or for `0x2c`,
+and this document does not invent one.
+
+## 58. The value's alphabet is the whole code space; its names are not in any of the three artifacts
+
+§57 left the values unnamed and asked what each artifact could add. This section answers the
+narrower question — *can the possible values be enumerated?* — by taking the same measurement over
+every capture in the repository rather than one at a time, and by asking the image and the dump
+what they bound rather than what they name.
+
+**The corpus is now counted whole, and both peers write the record.** `0xd001`, body length 1, all
+twelve captures: 1157 copies, 60 distinct bytes — 1123 written by the host and **34 written by the
+client**, which answers the host's own `0x9001` requests with the same record and a byte of its own.
+That second side matters: the client writes from the same code space, so the field is a state the
+two peers exchange rather than a value only a host invents.
+
+| capture | host | client | distinct | values (both peers) |
+| --- | ---: | ---: | ---: | --- |
+| `joined-final-round-solo-then-final-round` | 196 | 4 | 12 | `02`–`06`, `08`, `12`, `22`, `24`, `25`, `39`, `3a` |
+| `game-failed-memoryviolation` | 20 | 0 | 5 | `00`, `04`, `08`, `0c`, `10` |
+| `joined-when-red-team-then-briefing` | 196 | 0 | 19 | `00`–`14` in fours, then `1c`, `20`, `2c`, `34`, `58`, `78`, `7c`, `84`, `8c`, `a4`, `b4`, `bc`, `c8` |
+| `started-on-briefing` | 71 | 0 | 18 | `01`–`10`, `12`, `9a` |
+| `started-team-selection-selected-blue` | 68 | 1 | 11 | `02`–`05`, `12`–`16`, `22`, `34` |
+| `game1` | 178 | 5 | 18 | `01`–`06`, `08`, `09`, `10`, `23`–`28`, `49`, `69`, **`ff`** |
+| `game2` | 86 | 0 | 18 | `01`–`11`, `13` |
+| `game3` | 57 | 2 | 5 | `03`, `04`, `07`, `22`, `24` |
+| `joined-game-in-progress-last-round` | 86 | 15 | 20 | `02`–`09`, `0f`, `11`, `1d`, `22`, `27`, `28`, `2a`, `2e`, `3b`, `46`–`48` |
+| `started-briefing-then-solo-game` | 81 | 2 | 7 | `02`, `03`, `04`, `06`, `2d`, `39`, `45` |
+| `started-on-solo-game` | 43 | 2 | 10 | `01`–`03`, `10`, `12`–`14`, `24`, `34`, `3a` |
+| `myserver34` (ours) | 41 | 3 | 6 | `02`, `03`, `1e`, `1f`, `22`, `24` |
+
+**Split into five bits and three, the two sides together fill the code space.** Read `v & 0x1f` as
+the code and `v & 0xe0` as flags. The host alone writes 26 of the 32 codes (`0x17`, `0x19`, `0x1b`,
+`0x1d`, `0x1e`, `0x1f` absent); the client alone writes 17, and they are almost disjoint — its 34
+copies carry `0x19`, `0x1b`, `0x1d`, `0x1e` and `0x1f`, which the host never writes. Over both,
+**31 of the 32 codes appear and only `0x17` is unseen**, and the flag bits are set on 107 copies in
+**all seven** combinations (`0x20` 87, `0x40` 9, `0x60` 3, `0x80` 3, `0xa0` 3, `0xc0` 1, `0xe0` 1,
+the last from the client). That is why §30.5, reading one capture at a time, called the high bits
+"a minority variant": within a session they are rare, across the corpus they are every value, and
+the codes a host does not use are the ones its peer does. So the observed alphabet is the full code
+range `0`–`31` with an independent flag byte beside it, and §57's `> 0x17` test bounds a range
+inside that code, not the whole field.
+
+**`0xff` is on the wire once, from the client, and is skipped.** `game1` carries a single `ff` and it
+is one of the five copies that session's client wrote; both readers test `cmpwi r5, 0xff` and return
+before the event (`0x77E6C0`, `0x77F890`), so that copy is inert and cannot be named by what it
+moves. It also corrects §30.7's "no reference capture ever sends it". Two readings survive — a peer
+writing the reserved value, or all three flags over code 31 — and the corpus does not choose.
+
+**What each artifact can and cannot add.**
+
+* *The captures* give exactly the set above: what the two peers wrote, 1157 copies over twelve
+  sessions of briefing, round and run. They cannot give a value neither side has written.
+* *The image* gives bounds and no names. The field is one byte (the readers zero-extend with
+  `clrldi r5, r5, 0x38`), it is masked nowhere, it is compared only with `0xff` and guarded by the
+  screen step, no table is indexed by it, and `0x7770F0` forwards it verbatim. So `0x00`–`0xfe` are
+  all representable and the binary names none of them. The identifier itself is built by exactly
+  two instructions in the whole file — `lis r4, 0x16` at `0x77E6C8` and `0x77F8A4` with
+  `ori r4, r4, 0x2c` behind it — which confirms §57's pair and rules out a third emitter.
+* *The dump* gives one session's stored byte: field 24 of state `0x00`, the `0x63` the record
+  handler writes. That is a single value already present in that session's capture, so it adds
+  nothing to the set. It also has to be re-read before it is cited: the file now beside
+  `myserver34` is **not** the session §55 describes — `0x500E23F8` is zeroed and the module's data
+  sits elsewhere — so §55's addresses belong to the previous dump.
+
+**So the possible set cannot be closed from these three, and one artifact would close it.** The
+writer is the reference host, and the reader is a script callback the client registers only while a
+screen of the join family exists (§57). The enumeration therefore lives in the reference server's
+own state table, or in the script that registers the listener — neither of which is on this machine.
+What is worth taking to that source is small and exact: **32 codes, `0x17` still unseen, three flag
+bits that combine freely, and `0xff` reserved.** A scoreboard of names against that is the whole of
+the remaining gap; this document does not guess at any of them.
