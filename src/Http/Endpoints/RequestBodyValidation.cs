@@ -49,18 +49,16 @@ internal static partial class RequestBodyValidation
 
         Require(form.Name, "name", issues);
         Require(form.Passwd, "passwd", issues);
-        Require(form.Product, "product", issues);
-        Require(form.Lang, "lang", issues);
-        Require(form.Tz, "tz", issues);
-        Require(form.Disk, "disk", issues);
-        Require(form.Ps3, "ps3", issues);
-        Require(form.Stime, "stime", issues);
-        Require(form.Seed, "seed", issues);
-        RequireNumber(form.Lang, "lang", issues);
-        RequireNumber(form.Tz, "tz", issues);
-        RequireNumber(form.Disk, "disk", issues);
-        RequireNumber(form.Ps3, "ps3", issues);
-        RequireNumber(form.Stime, "stime", issues);
+
+        // Two clients post here: the console sends the console fields along with
+        // the credentials, while the PC client (mgo-native, client 2.18.x) sends
+        // the credentials alone. The console fields are checked when a client
+        // carries them, and not demanded of one that does not.
+        RequireNumberWhenPresent(form.Lang, "lang", issues);
+        RequireNumberWhenPresent(form.Tz, "tz", issues);
+        RequireNumberWhenPresent(form.Disk, "disk", issues);
+        RequireNumberWhenPresent(form.Ps3, "ps3", issues);
+        RequireNumberWhenPresent(form.Stime, "stime", issues);
 
         if (issues.Count == 0)
         {
@@ -180,6 +178,18 @@ internal static partial class RequestBodyValidation
             issues.Add($"{fieldName}: required");
         }
         else if (!long.TryParse(value, out _))
+        {
+            issues.Add($"{fieldName}: expected a number");
+        }
+    }
+
+    /// <summary>Reports a field that is present but is not a number.</summary>
+    /// <param name="value">Value the client sent.</param>
+    /// <param name="fieldName">Name of the field.</param>
+    /// <param name="issues">Issues collected so far.</param>
+    private static void RequireNumberWhenPresent(string? value, string fieldName, List<string> issues)
+    {
+        if (!string.IsNullOrEmpty(value) && !long.TryParse(value, out _))
         {
             issues.Add($"{fieldName}: expected a number");
         }
