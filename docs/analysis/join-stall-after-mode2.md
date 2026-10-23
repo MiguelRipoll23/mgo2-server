@@ -3424,16 +3424,27 @@ the close and the round's number while it plays. All 7 distinct field-0 bodies i
 are that layout (`0b 00 01` then six zero map bytes and the value) and the builder reproduces
 every one.
 
-**The tick is the briefing's own 2.35 s.** The gaps between two copies of the record, over
-the fourteen captures and ignoring the zero gaps that are several peers' copies at one
-instant, cluster at 2.37 s (five), 2.35, 2.38, 2.40, 2.41, 2.46 and 2.48 — thirteen of the
-thirty-eight gaps in the 1–4 s band — which is
+**The tick is the briefing's own 2.35 s, and only while a round plays.** The gaps between two
+copies of the record, over the fourteen captures and ignoring the zero gaps that are several
+peers' copies at one instant, cluster at 2.37 s (five), 2.35, 2.38, 2.40, 2.41, 2.46 and 2.48 —
+thirteen of the thirty-eight gaps in the 1–4 s band — which is
 `MatchRoundStateService.BriefingTickMilliseconds`, the period the countdown, the ready set and
 the room's rules pair already share. The second mode is 1.87 s, seven gaps in
-`started-briefing-then-solo-game` alone, so the reference is not perfectly regular; the slower
-gaps (4.9 s, 10 s, 40 s and more) are the stretches in which no round was playing. The record
+`started-briefing-then-solo-game` alone, so the reference is not perfectly regular. The record
 rides the tick in `MatchStartRunService.PublishRoundPhaseAsync` and stops with the round, so a
 peer never receives a phase for a round that has ended.
+
+**A briefing ticks none of it, and the slower gaps are another record.** The 4.9 s, 10 s and
+40 s stretches taken for a briefing's own copies of it are all field **10**: every 10-byte body
+in a stretch no round was playing is the count, `0b 00 00 04 00 00 00 00 00 <players>`, whose map
+byte names field 10 and not field 0. Field 0 is written at a **boundary** and never on a tick
+through a briefing, and the two boundaries are its entry's confirmation and its round:
+`mgo2-game-started-on-briefing` writes the pair `00`/`01` at t+193.62, again at t+196.03, and
+`04` as its round opens at t+200.87, with not one copy in the 193 s of briefing before it;
+`mgo2-game-joined-when-red-team-then-briefing` writes `01`/`02` at t+72.56 and again at
+t+76.67. **The pair's last copy is never `0`** — so a reference briefing answers the wait with
+a non-zero phase and then says nothing until the round's own boundary, while the record it
+ticks through the briefing is the count (§52 records what ticking the phase there did).
 
 ## 35. The briefing's tick carries the lobby-slot pair, and this host wrote none of it
 
@@ -3945,6 +3956,14 @@ place a host answer could possibly be felt. Everything else on this path is now 
 
 ## 43. The phase record now rides the briefing's frame, and the re-test's falsifiers
 
+> **Withdrawn by §52.** The premise — that the reference's 4.9 s, 10 s and 40 s gaps are field 0 — is
+> wrong: those records are field 10, the room's count, and the reference writes field 0 only at a
+> boundary — its entry's confirmation and its round — with a non-zero last copy. The writer this
+> section adds is removed again, and `myserver31.pcapng` is the
+> measurement: a `0` every 2 s keeps the client's placement machine in its wait, so the echo that
+> opens its entry is never written and the briefing's run never goes out. The falsifiers below stand
+> as they were.
+
 §34.4 measured the room's phase as the one host-written field a client's join machine gates on, and
 §42 showed that the fade and the `1d` rows are not driven by any record. What survives both is a
 hole the round's own writer cannot cover: **every copy this host writes comes from a round**.
@@ -4331,3 +4350,49 @@ countdowns: the slot closes on two verified matches, not on a send and not on si
 to send. Nothing in that block sends. What is left is to read the branch that reaches `0x2672C0`,
 where the builder begins, because that names *what* is being verified; the enclosing function is the
 large one whose frame is `0x2900` bytes, and its entry is the next thing to read.
+
+## 52. A field-0 record written through a briefing does not answer the wait: it repeats it
+
+**What was changed, and why it was wrong.** §34.4's slower gaps were taken for a briefing host's own
+copies of state `0x00` field 0, and `BriefingRoomPublishService` was made to write
+`RoundStateBodiesUtils.RoundPhaseBody((byte)roundState.RoundNumber)` every second frame — `0` for a
+room with no round open. The first live run after that change does not reach its briefing.
+
+**The measurement.** `myserver31.pcapng` (2026-10-23, `192.168.1.20:5730` joiner ↔
+`89.129.16.203:5731` host, key `0x8bcea1e3`, 1360 host frames over 350 s) holds 167 records of
+`0x1001`/10 bytes, all of them
+
+```
+0b 00 01 00 00 00 00 00 00 00
+```
+
+from t+2.2 through the peer's last datagram. The client answers with the same two records it always
+does at the end of its wait — `0x0a5c`/1 byte (`01`, its slot) and `0x1ade`/8 bytes (`e0 01 …`, the
+map-loaded report) at t+47.86 — and with nothing else:
+
+| record | `myserver30` (before the change) | `myserver31` (after) |
+| --- | --- | --- |
+| `0x9001`/2, `82 f3` — the lobby-slot echo | t+50.74 | **never** |
+| `0x1001`/2, `84 f3` — the occupancy echo | t+50.74 | **never** |
+| the client's own operations stream (`0x1ae2`–`0x1ae7`, then the `0x5a..` rows) | t+50.74 onward | **never** |
+| the briefing's run (`0x1a54`/90 + the array pair + the two header records) | t+52.80 | **never** |
+| the host's relay of the client's own records | from t+52.80 | **never** |
+
+The echo is the entry `MatchStartRunService.OnRoomEntry` waits on (§18), so without it the briefing's
+run is never written: that is the client's map without its rule instructions and without the fade
+into the briefing, and the host's log says as much — no `asked to be placed in the room` line at all,
+then the round watcher waiting for a round that never comes.
+
+**Why repeating the value is worse than never writing it.** The machine at `0x2882B4` reads field 0
+and treats `0` as "wait, and ask again after a delay". A single copy is a value the client eventually
+times out of; a copy every 2 s re-arms the wait each time it arrives, so the placement machine never
+reaches the echo that opens the entry. The reference's briefing writes are the pair at its entry's
+confirmation whose **last copy is non-zero** — `00`/`01` in `started-on-briefing`, `01`/`02` in
+`joined-when-red-team-then-briefing` (§34.4) — and then nothing until the round's own boundary; it
+never leaves the field sitting at `0` for the client to keep reading. What the reference's briefing
+host ticks is the count, field 10.
+
+**The fix.** The publication is withdrawn: `BriefingRoomPublishService` no longer writes field 0, and
+its partial file with it. The round's own writes — at the open, on its tick, and at the close — are
+unchanged, which is the whole of the reference's field-0 corpus. What remains of §34.4 stands; its
+last paragraph is corrected there.
