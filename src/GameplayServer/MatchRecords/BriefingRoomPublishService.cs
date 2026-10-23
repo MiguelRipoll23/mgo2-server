@@ -59,12 +59,17 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// The room's players, by the key each holds in its 24-entry player table: every
 /// player is announced in a state blob of its own.
 /// </param>
+/// <param name="countdown">
+/// The room's briefing clock, whose arming is the report the pair waits for: a
+/// briefing that has heard from nobody has the pair's first copy still owed.
+/// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class BriefingRoomPublishService(
     RoomRosterService roster,
     MatchRoundStateService roundState,
     MatchRecordSequenceService sequences,
     LobbySlotService lobbySlots,
+    BriefingCountdownService countdown,
     ILogger<BriefingRoomPublishService> logger)
 {
     /// <summary>
@@ -152,22 +157,33 @@ public sealed partial class BriefingRoomPublishService(
         var started = DateTimeOffset.UtcNow;
         var frames = 0;
 
+        // The pair's own counter, started where the pair is due: the first copy is
+        // written on the pass that hears the briefing's first report and every
+        // ArrayPairFrameInterval passes after it.
+        var pairFrames = ArrayPairFrameInterval;
+
         while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
         {
             try
             {
-                // The pair goes out on the first pass as well and not only on a
-                // tick: the captures write it in the roster run itself, so a peer
-                // answered its roster is told the room's stream at once.
+                // The rules pair goes out on the first pass as well and not only
+                // on a tick: the captures write it in the roster run itself, so a
+                // peer answered its roster is told the room's stream at once.
                 foreach (var record in MatchRecordFramesUtils.RulesPair(roundState.Generation))
                 {
                     await context.Send(record.Type, record.Body, record.FourthByte);
                 }
 
-                if (frames % ArrayPairFrameInterval == 0)
+                // The pair waits for the briefing's first report, which is the
+                // pass every reference host writes its first copy after.
+                if (countdown.Remaining(DateTimeOffset.UtcNow, out _)
+                    && pairFrames >= ArrayPairFrameInterval)
                 {
                     await PublishArraysAsync(context);
+                    pairFrames = 0;
                 }
+
+                pairFrames++;
 
                 await PublishStateBlobAsync(context, started, frames);
                 sentCount = await PublishCountAsync(context, sentCount);
@@ -215,6 +231,19 @@ public sealed partial class BriefingRoomPublishService(
     /// <c>82 f3</c>/<c>84 f3</c> eleven times over thirty-five seconds and was
     /// answered nothing, while the room's rules pair, its blobs and its count went
     /// out on the tick beside it.
+    /// </para>
+    /// <para>
+    /// <b>Its first copy is written after the peer's report and never before it.</b>
+    /// Every reference host writes the pair for the first time inside its run, 0.9
+    /// to 5.5 s after that client's report: <c>started-on-briefing</c>
+    /// t+58.255, <c>started-briefing-then-solo-game</c> t+57.626, <c>game2</c>
+    /// t+62.181 and <c>failed-memoryviolation</c> t+60.871, and none of the four
+    /// writes one in the twenty seconds before it. A pair published from the join
+    /// instead reaches a client that has not loaded its map, and it answers it:
+    /// <c>myserver32</c>'s client echoed <c>82 f3</c>/<c>84 f3</c> at t+52.6 and
+    /// reported its map at t+57.2, the reverse of the 0.4 and 0.5 s by which both
+    /// working references report first and enter second — so the pass that hears
+    /// the report is where this starts.
     /// </para>
     /// <para>
     /// <b>It is published at the room's constant sequence and never confirmed

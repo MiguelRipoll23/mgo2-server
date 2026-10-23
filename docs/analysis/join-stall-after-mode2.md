@@ -4396,3 +4396,58 @@ host ticks is the count, field 10.
 its partial file with it. The round's own writes — at the open, on its tick, and at the close — are
 unchanged, which is the whole of the reference's field-0 corpus. What remains of §34.4 stands; its
 last paragraph is corrected there.
+
+## 53. `myserver32`: the revert restores the entry, and the pair's first copy belongs after the report
+
+**What the re-test shows.** `myserver32.pcapng` (2026-10-23, gameplay pinned to `10c6ef5`, `192.168.1.20:5730` joiner ↔ `89.129.16.203:5731` host, key `0xa56f798d`, 196 s) is the run §52's
+withdrawal was written for, and it does what that section predicted:
+
+| measurement | `myserver31` (with §34.4's writer) | `myserver32` (after its withdrawal) |
+| --- | --- | --- |
+| field-0 records (`0b 00 01 …`) | 167, from t+2.2 to the end | **none** |
+| client's `82 f3`/`84 f3` echo | never | t+52.605, t+57.181, t+59.679 |
+| client's map-loaded report (`0x1ade e1 01`) | t+47.86 | t+57.181 |
+| the briefing's run (`0x1a54`/90 + `0f 00` + the array pair + the two headers + the closes) | never | t+60.221, repeated t+62.597 |
+| the client's own operations stream (the five `1d` rows and the `22` record) | never | **never** |
+| the retry group (`0x1ae2`–`0x1ae7`, `ff 01`) | never | **gone** (present 29× in `myserver30`) |
+
+So the room's rule instructions are drawn, accepted, and the client fades out and reports its map —the entry §52's mechanism blocked — and it then stays in the fade, which is §33's stall and not a new one.
+
+**The fade-in is not a host record, again.** In `mgo2-started-briefing-then-solo-game` the host writes
+*nothing* between the client's echo (t+55.312) and its five `1d` rows (t+57.304); in `game2` it writes
+the report's answer at t+57.362 and the rows follow at t+59.040; in `failed-memoryviolation` the run
+goes at t+60.871 and the rows at t+61.694. The rows are the client's own stream opening, and §32.1
+measures them 1.7 s to 424 s behind an echo in the seven captures that write them. `myserver32` is an
+eighth capture that does not, with the join burst, the run and the tick now matching the references
+family for family (§33's join table re-measured, §1's run and §30.1's tick).
+
+**The one ordering the references never show.** In both working single-join captures the client
+reports its map **first** and echoes the lobby-slot pair **second** — `started-briefing-then-solo`
+t+54.918 → t+55.312 (0.39 s), `started-on-briefing` t+55.838 → t+56.360 (0.52 s) — and in this host's
+live sessions the order is inverted: the echo at t+52.605 precedes the report at t+57.181 by 4.6 s,
+and the client echoes twice more after it. The echo is the client's own request to be placed, and it
+is drawn by the pair: this host publishes `85`/`86` from t+2.2 and every 13 s (`ArrayPairFrameInterval`),
+where **every reference host writes the pair for the first time inside its run**, after the report —
+
+| capture | client's report | first `85`/`86` pair | where |
+| --- | --- | --- | --- |
+| `started-briefing-then-solo-game` | t+54.918 | t+57.626 | inside the briefing's run |
+| `started-on-briefing` | t+55.838 | t+58.255 | inside the briefing's run |
+| `game2` | t+56.7 | t+62.181 | inside the briefing's run |
+| `failed-memoryviolation` | t+59.988 | t+60.871 | inside the briefing's run |
+| `myserver32` | t+57.181 | **t+2.216** | **before any report** |
+
+and none of the four writes one in the twenty seconds before its entry.
+
+**What was changed.** `BriefingRoomPublishService` publishes the pair from the pass that hears the
+briefing's first report — the arming `BriefingCountdownService.Begin`, which
+`MatchStartRunService.BeginBriefingClock` does on that report — and every
+`ArrayPairFrameInterval` passes after it, which is the reference's own shape: a burst at the report
+followed by copies through the briefing. Nothing else of the publication moves, and the pair the run
+carries is unchanged.
+
+**What would confirm it.** The client's echo should follow its map-loaded report by roughly half a
+second, as both single-join references do, its run should follow the echo by the two-second dwell, and
+the five `1d` rows should then open its operations stream. **What would falsify it** is the same
+silence with the order restored: that would leave the state the client holds from the join's own
+records as the remaining candidate, which is where §33 and §42 stopped.

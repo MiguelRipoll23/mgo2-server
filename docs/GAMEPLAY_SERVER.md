@@ -260,7 +260,15 @@ the round it played.
 **The lobby-slot arrays** are a handshake of their own (`TeamArrayService`): the
 pair goes out with the run, the client answers `82 NN`/`84 NN`, the host confirms
 `81 NN`, names the next sequence in the `0b 00 01 … 08 07 NN+1` group beside the
-confirmation, and republishes the pair under the next sequence. Both the
+confirmation, and republishes the pair under the next sequence. **Its first copy
+belongs after the client's report and not at its join**: every reference host
+writes the pair for the first time inside its run — `started-briefing-then-solo`
+t+57.626, `started-on-briefing` t+58.255, `game2` t+62.181,
+`failed-memoryviolation` t+60.871, 0.9 to 5.5 s behind the report — and a pair
+published from the join draws the echo before the client has loaded its map,
+which is the order no reference shows (`myserver32`: echo t+52.605, report
+t+57.181, against the 0.4 and 0.5 s of the report-first order;
+`analysis/join-stall-after-mode2.md` §53). Both the
 confirmation and the group move the client on, so a host that writes the pair
 without them gets one answer and then silence. **The confirmation is the
 briefing's last handshake and not its first**: no capture writes it in the pass
