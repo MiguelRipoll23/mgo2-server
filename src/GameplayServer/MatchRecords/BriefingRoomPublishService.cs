@@ -59,9 +59,9 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// The room's players, by the key each holds in its 24-entry player table: every
 /// player is announced in a state blob of its own.
 /// </param>
-/// <param name="countdown">
-/// The room's briefing clock, whose arming is the report the pair waits for: a
-/// briefing that has heard from nobody has the pair's first copy still owed.
+/// <param name="matchStart">
+/// The run the briefing writes, whose due instant is the pair's first copy: a peer
+/// that has not entered the room has no pair owed to it.
 /// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class BriefingRoomPublishService(
@@ -69,7 +69,7 @@ public sealed partial class BriefingRoomPublishService(
     MatchRoundStateService roundState,
     MatchRecordSequenceService sequences,
     LobbySlotService lobbySlots,
-    BriefingCountdownService countdown,
+    MatchStartRunService matchStart,
     ILogger<BriefingRoomPublishService> logger)
 {
     /// <summary>
@@ -158,7 +158,7 @@ public sealed partial class BriefingRoomPublishService(
         var frames = 0;
 
         // The pair's own counter, started where the pair is due: the first copy is
-        // written on the pass that hears the briefing's first report and every
+        // written on the pass the peer's run is due on and every
         // ArrayPairFrameInterval passes after it.
         var pairFrames = ArrayPairFrameInterval;
 
@@ -174,9 +174,11 @@ public sealed partial class BriefingRoomPublishService(
                     await context.Send(record.Type, record.Body, record.FourthByte);
                 }
 
-                // The pair waits for the briefing's first report, which is the
-                // pass every reference host writes its first copy after.
-                if (countdown.Remaining(DateTimeOffset.UtcNow, out _)
+                // The pair waits for the peer's own entry and the run's dwell
+                // behind it, which is the instant every reference host writes its
+                // first copy at: the copy is the run's own opening pair there and
+                // none of the four working joins holds one before it.
+                if (matchStart.IsEntryAnswerDue(session)
                     && pairFrames >= ArrayPairFrameInterval)
                 {
                     await PublishArraysAsync(context);
@@ -233,7 +235,7 @@ public sealed partial class BriefingRoomPublishService(
     /// out on the tick beside it.
     /// </para>
     /// <para>
-    /// <b>Its first copy is written after the peer's report and never before it.</b>
+    /// <b>Its first copy is written after the peer's own entry and never before it.</b>
     /// Every reference host writes the pair for the first time inside its run, 0.9
     /// to 5.5 s after that client's report: <c>started-on-briefing</c>
     /// t+58.255, <c>started-briefing-then-solo-game</c> t+57.626, <c>game2</c>
@@ -242,8 +244,18 @@ public sealed partial class BriefingRoomPublishService(
     /// instead reaches a client that has not loaded its map, and it answers it:
     /// <c>myserver32</c>'s client echoed <c>82 f3</c>/<c>84 f3</c> at t+52.6 and
     /// reported its map at t+57.2, the reverse of the 0.4 and 0.5 s by which both
-    /// working references report first and enter second — so the pass that hears
-    /// the report is where this starts.
+    /// working references report first and enter second.
+    /// </para>
+    /// <para>
+    /// <b>And the briefing's own report is not what it waits for.</b> Waiting for
+    /// the clock to arm started the pair at the report, which in <c>myserver33</c>
+    /// was 5.4 s before the peer's entry: the host wrote <c>85</c>/<c>86</c> at
+    /// t+58.6, the client echoed <c>82 f3</c>/<c>84 f3</c> at t+64.0 and nothing
+    /// was written between, so the first copy of the room's membership reached a
+    /// peer that had not been placed in the room and started a sequence of its own
+    /// ahead of the run. The pair is owed from the entry and the run's dwell, which
+    /// is <see cref="MatchStartRunService.IsEntryAnswerDue"/> and what the reference
+    /// writes it inside.
     /// </para>
     /// <para>
     /// <b>It is published at the room's constant sequence and never confirmed

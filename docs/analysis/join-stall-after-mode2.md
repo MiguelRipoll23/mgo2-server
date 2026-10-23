@@ -4451,3 +4451,148 @@ second, as both single-join references do, its run should follow the echo by the
 the five `1d` rows should then open its operations stream. **What would falsify it** is the same
 silence with the order restored: that would leave the state the client holds from the join's own
 records as the remaining candidate, which is where §33 and §42 stopped.
+
+## 54. `myserver34`: the entry order is restored, the run is answered, and the fade does not move
+
+**What was tested.** §53 moved the lobby-slot pair's first copy from the join to the pass that hears the
+briefing's first report, so that a client's map-loaded report precedes its `82`/`84` echo. `myserver34`
+(2026-10-23, `192.168.1.20:5730` joiner ↔ `89.129.16.203:5731` host, 2912 packets over 328.8 s; the
+session's last client datagram is at t+157.0) is the first run on that build, and the ordering §53
+predicted is on the wire.
+
+| measurement | `myserver32` (pair from the join) | `myserver33` (pair from the join) | `myserver34` (pair after the report) |
+| --- | ---: | ---: | ---: |
+| client's map-loaded report | 57.181 | 58.955 | **55.439** |
+| client's `82 f3`/`84 f3` echo | 52.605 (**4.58 s before**) | 54.252 (**4.70 s before**) | **56.785 (1.35 s after)** |
+| the pair's first copy | t+2.2, repeated | t+2.2, repeated | **56.260 (+0.82 s)** |
+| the briefing's run | 60.221 | 61.502 | **58.894 (+2.11 s after the echo)** |
+| the client's own operations stream | never | never | **never** |
+| the client's `1ae2`…`1ae9` group | never | never | **11 copies from 55.439** |
+| the client's `0b0c` heartbeat | never | never | **10 copies from 56.785** |
+
+**The briefing's own records are the references', and the client acknowledges them.** The run at
+t+58.894 carries `0x1a54`/90 (`00 00 00 ff …`), `0x1a54`/2 (`0f 00`), the array pair
+`85 f3 fe 00 ff …` / `86 f3 7f 07 7f …`, the close triple (`20`, `20`, `7`) and the count
+`0b 3c 00 00 00 00 00`; the repeat at t+61.154 carries the same without the echo answers. The client
+returns `0x5a50` (72), `0x5a5a` (72) and `0x5a54` (45) over the next 95 s — it is parsing the item-box
+groups and the count — and never writes a `1d` row or a `1f` ready.
+
+**The run's instant is inside the measured dwell.** It follows the echo by 2.11 s, against 1.90 s in
+`mgo2-game-started-on-briefing` and 2.31 s in `mgo2-started-briefing-then-solo-game`. So the copy of §53
+that could have been wrong — the run arriving outside the window the client tolerates — is not what this
+capture shows.
+
+**The one record no reference writes before the echo is the pair.** Both reference briefings write their
+first `85`/`86` copy *inside the run*, 1.90 s and 2.31 s after the echo (`started-on-briefing` t+58.255,
+`started-briefing-then-solo-game` t+57.626), and neither writes one in the twenty seconds before it. This
+host's copy at t+56.260 is 0.53 s before the echo, and the client answers it — the echo follows 0.53 s
+later, which is the first capture of this host in which the report precedes the echo. Whether the pair's
+presence is what drew the echo cannot be told from this capture alone: in `myserver32` and `myserver33`
+the pair had been circulating for fifty seconds before the client echoed, and in the references the echo
+precedes any pair at all.
+
+**The client's own state moved, and not towards the screen.** The eight-record group `1ae2`…`1ae9`
+(`ff 01`, one record per vid, all under class `0x00`) rides its ~6.7 s heartbeat from the report onward,
+and every copy is answered — `0x5ae2`…`0x5ae9` empty, `0xdae9` one byte `24` — so the group is not an
+unanswered retry in the sense §30.13 measured. It is the same shape `myserver30` carried (there as
+`1acd` + `1ae2`…`1ae7`), and `myserver32`/`myserver33` carry none of it. The `0b0c` heartbeat (17 bytes,
+`b4 00 00 00` then a fixed-point stamp climbing by `0x2ccd1100` a copy) appears with it and in no
+reference capture. Both are the client's own statements; nothing in the room's stream is missing that
+they could be asking for, family for family.
+
+**What the room never does is end its briefing.** The count is `0b 3c 00 00 00 00 00` from t+58.894 to
+the client's last datagram at t+157.0 — 98 s of a one-minute briefing, held at the room's whole time.
+That is `BriefingCountdownService.Remaining`'s held value, which is returned while `countingFrom` is null,
+and `countingFrom` is set by `MatchStartRunService.ArmBriefingDeadline`, which `OnJoinReport` calls only
+when `briefingStates.JoinedCount >= CountingJoinReportCount` (2). `JoinedCount` counts *peers that
+reported*; the host's own player is not one of them, so a room holding the host's character and one joiner
+— the population the join's own ten-byte control states as `02`, and the two loadouts the burst writes —
+has exactly one report and never arms a deadline. The round therefore opens only on the client's `1f`
+ready, which never comes, and the briefing's own time never runs out.
+
+**The memory dump does not hold the object the question is about.** `rpcs3.dmp` is a Windows minidump
+(`MDMP`, 17 streams, a `Memory64List` of 6 034 ranges, 4.49 GB of data, written 2026-10-23 12:18:13, 49 s
+after the session's last datagram). The guest's RAM is mapped at `0x300000000` — the ELF header at
+`0x300010000`, entry `0x11E7368` — but the dump holds only the first 32.2 MB of it, the loaded image and
+its `.data`/`.bss` (`0x300010000`–`0x301ED0000`). The next region, `0x301ED0000`–`0x310000000` (236 MB),
+is `MEM_COMMIT` with `PAGE_NOACCESS` in the dump's `MemoryInfoList` (state `0x1000`, protect `0x1`) and
+was skipped by the writer; that is the guest heap, and the session object, the screen object and the
+state store all live in it. The `0x400010000` range that also begins with an ELF header is the loader's
+file image, not guest memory. So the dump can say the image is intact — the screen class's vtable at
+`0x11FEB80` is present with its `(entry, TOC 0x1222A00)` pairs — but not what step the client's screen
+holds. No live instance of any of the seven screen classes appears in the dumped pages, which is expected
+of objects in the missing heap and is therefore not evidence either way.
+
+**What the next test has to separate.** With the ordering settled, the remaining candidates are the
+client's state from the join (§33, §42) and the room's own timer:
+
+1. If the client is on the briefing screen with a stopped `1:00`, the held count is the defect, and a
+   room whose population is the host plus one joiner should arm its deadline at that joiner's report.
+   The falsifier is the same join with the count moving: the client should reach its `1f` ready (or the
+   round should open when the room's briefing time is out) and the run's entry should place it.
+2. If the client is still in the fade with no screen, the timer is not the gate, and the pair's copy
+   before the echo is the only remaining host-side difference: the next run should write its first pair
+   inside the run, where both references do.
+
+## 55. The dump in this pair *does* hold the client's heap, and it holds no screen at all
+
+§54 read `rpcs3.dmp` as an image-only dump and could not answer which screen the client was in. That
+reading is wrong for the file beside `myserver34`, and this section corrects it, then uses what the heap
+says.
+
+**What the file is.** `MDMP`, 17 streams, a `Memory64List` (stream type 9, file offset `0x22A4A1`) of
+**6 034 ranges holding 4.49 GB**, and **444 of those ranges are the guest's memory**, mapped at
+`guest + 0x300000000` as `docs/analysis/udp-record-dispatch.md` §1 reads them. The writer did not skip
+the heap: `0x50000000`–`0x50100000`, the `0x54xxxxxx` aliases and the `0xD0xxxxxx` upper copy are all
+present with live data. §54's "the dump holds only the first 32.2 MB" is true of the 8.5 GB dump that
+document was written from and not of this one; the `MEM_INFO` entry it read as `PAGE_NOACCESS` describes
+a reservation beside the committed pages, not their absence from the file. `tools/mgo2_dump_read.py`
+reads and searches the file by that one constant.
+
+**The client is in our room and has read the run.** The P2P module's instance is `0x011A6308` →
+**`0x01856C10`**, module state `2`, its session array at **`0x50000060`**, and slot 0 carries the endpoint
+`59 81 10 cb` (`89.129.16.203`) on port `16 63` (`5731`) — the capture's host. The received-record ring
+at **`0x500E2xxx`** holds the run's own records: the lobby-slot pair `85 f3 fe 00 ff ff …` at
+`0x500E23F8`, the countdown `0b 3c 00 00 00 00 00` at `0x500E246C` and `0x500E2480`, and the rules
+records beside them. So the records that §54 measured on the wire were all read and kept.
+
+**And no screen object of the join family exists.** The seven sibling vtables §32.3 names —
+`0x11FEB80`, `0x11FFC00`, `0x11FFC70`, `0x11FFF40`, `0x1200048`, `0x1200090`, `0x12000E8` — are each
+referenced from their own class record in the read-only data (`0x123E2BC` onward, stride `0x1C`) and,
+outside it, only at unaligned addresses inside other data. No object base in the guest's memory carries
+one — and of those unaligned occurrences, none has a plausible step at `+0xb8` with an empty `+0xbc` —
+so no live object carries a step to read, and the answering of §31.4's first open item ("which step the joining screen holds")
+is that there is no such screen to hold a step: the client never built one. The module's own stream
+objects are live and do carry their vtables (`0x551C6A60` → `0x011953A8`, `0x551C711C`/`0x551C7130`/
+`0x551C7144` → `0x01195448`, `0x554C6918` → `0x01195888`), so the scan does find live objects where
+they exist; the screen family's absence is a read and not a failure of the scan.
+
+**What was changed.** §54's branch 2 is applied: the room's withdrawal of the pair's first copy. The pair
+is no longer written on the pass that hears the briefing's first report; it waits for
+`MatchStartRunService.IsEntryAnswerDue` — a briefing generation, the peer's own entry, and the run's
+`EntryRunDwellMilliseconds` behind it — which is the instant both references write it *inside* the run.
+
+| file | change |
+| --- | --- |
+| `MatchRecords/MatchStartRunService.Entries.cs` | new `IsEntryAnswerDue`, the run's own three preconditions read from outside the service |
+| `MatchRecords/BriefingRoomPublishService.cs` | the pair's first copy is gated on it instead of on `BriefingCountdownService.Remaining`; the countdown service is no longer a dependency |
+
+**The countdown's set was checked against the captures and is right.** Our host holds `0b 3c 00 00 00 00 00`
+— sixty seconds and an empty set — which §54 recorded as a candidate defect. It is not one: the reference
+briefings open the same way. `mgo2-game-started-on-briefing`'s first countdown is `60` with set `0x0000`
+at t+93.127 and holds that set for 37 s past the client's report (t+55.838) and the host's `e0 01`
+answers to it; the set becomes `0x0002` only at t+119.874, **4.10 s after the client's `1f 01 01` at
+t+115.771**, and `0x0006` at t+149.860 adds a second bit. `mgo2-game2` is the shorter version of the same
+record: `secs=60 set=0x0000` at t+78.987, then `secs=0 set=0x0002` at t+104.649, **1.46 s after its
+`1f 01 01` at t+103.190**. So a bit is the slot a `1f` names and nothing else — not the reports, which
+arrive 40 s earlier in both — and an empty set on a room whose only client has not readied is the
+reference's own opening state. What `mgo2-game-joined-when-red-team-then-briefing` adds is the bits the
+host itself fills: `0x0040` and `0x00c0` at t+72.560, before any `1f` in the capture at all, which are the
+host's own bots readied on creation — a room of ours holds no bots and seeds no bit, so `00` is what it
+should write. Nothing in this record is changed.
+
+**Not verified live.** The build is clean (0 warnings, 0 errors) and the 58 codec tests pass; no client has
+joined the built host. What would confirm it is the same join: the pair should appear 0.5 s after the
+echo instead of 0.5 s before it, on the run's own pass. What it would not settle is the fade itself —
+with the heap now readable, the next dump taken at the stall can be asked the one question this one
+answers negatively: whether *any* screen object exists, and if one does, which step its `+0xb8` holds.
