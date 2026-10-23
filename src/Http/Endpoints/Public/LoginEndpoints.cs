@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Mgo2Server.Http.Contracts;
 using Mgo2Server.Http.Discord;
 using Mgo2Server.Shared.Domain.Authentication;
@@ -25,6 +26,7 @@ internal static class LoginEndpoints
     private static async Task<IResult> LoginAsync(
         AuthenticationService authenticationService,
         DiscordLoginNotificationService loginNotifications,
+        ILoggerFactory loggerFactory,
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -32,6 +34,13 @@ internal static class LoginEndpoints
         var issues = RequestBodyValidation.Validate(form);
         if (issues.Count > 0)
         {
+            // The rejection body answers the client; the log is how the reason is
+            // read afterwards, because the client only reports that it was refused.
+            loggerFactory.CreateLogger(nameof(LoginEndpoints)).LogWarning(
+                "Login request from {RemoteAddress} rejected: {Issues}",
+                context.Connection.RemoteIpAddress,
+                string.Join("; ", issues));
+
             return RequestBodyValidation.Reject([.. issues]);
         }
 

@@ -26,7 +26,14 @@ public sealed class ServerExceptionHandler(ILogger<ServerExceptionHandler> logge
         if (exception is BadHttpRequestException badRequest)
         {
             // A body that cannot be read is refused before the handler runs,
-            // with the same envelope as a body that fails its field rules.
+            // with the same envelope as a body that fails its field rules. The
+            // reason goes to the log as well, since the client only sees a 400.
+            logger.LogWarning(
+                "Request {Method} {Path} rejected: {Reason}",
+                httpContext.Request.Method,
+                httpContext.Request.Path,
+                badRequest.Message);
+
             httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
             await httpContext.Response.WriteAsJsonAsync(
                 new ValidationFailureResponse(
