@@ -109,9 +109,10 @@ public sealed partial class MatchStartRunService(
     ILogger<MatchStartRunService> logger)
 {
     /// <summary>
-    /// How many players must have joined before the briefing's count moves and its
-    /// deadline is armed: the second player is what ends a room of one's frozen
-    /// briefing.
+    /// The most reports the briefing's count and its deadline wait for: a room of
+    /// one is armed by its own report, and a room of two or more by the second —
+    /// the report that gives a frozen room somebody else to wait for. Which of the
+    /// two it is, is the room's population (<see cref="OnJoinReport"/>).
     /// </summary>
     private const int CountingJoinReportCount = 2;
 

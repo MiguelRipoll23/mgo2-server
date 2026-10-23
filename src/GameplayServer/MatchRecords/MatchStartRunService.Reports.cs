@@ -93,13 +93,20 @@ public sealed partial class MatchStartRunService
                 briefingReportInstant = DateTimeOffset.UtcNow;
             }
 
-            // The briefing's timer is the room's own and runs only once the room
-            // has somebody else in it: a room of one holds its count at the whole
-            // briefing time and never reaches a deadline, so the report that makes
-            // the room a room of two is the one armed here. One briefing arms it
-            // once, whatever the reports after that one say.
+            // The briefing's timer is the room's own, and it belongs to the room
+            // the reports describe: it is armed once every player the room holds
+            // has reported, which for a room of one is its own report and for a
+            // room of two or more is the second one. A room of one that waited for
+            // a second report never reached a deadline at all — its count sat at
+            // the room's whole briefing time, no round ever opened for it, and the
+            // client left 110 s after its report with nothing played
+            // (`docs/analysis/join-stall-after-mode2.md` §54, and the live run of
+            // 2026-10-23 it names). One briefing arms it once, whatever the reports
+            // after that one say.
+            var reportsNeeded = Math.Min(CountingJoinReportCount, briefingStates.PlayerCount);
             startsBriefing = armedDeadlineBriefing != armed
-                && briefingStates.JoinedCount >= CountingJoinReportCount;
+                && briefingStates.PlayerCount > 0
+                && briefingStates.JoinedCount >= reportsNeeded;
             if (startsBriefing)
             {
                 armedDeadlineBriefing = armed;

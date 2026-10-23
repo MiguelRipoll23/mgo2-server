@@ -19,7 +19,7 @@ public sealed partial class MatchStartRunService
 {
     /// <summary>
     /// Begins the room's briefing: the wait for every player to ready, whose
-    /// count and deadline the report that gives the room a second player arms.
+    /// count and deadline the report that completes the room arms.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -43,13 +43,11 @@ public sealed partial class MatchStartRunService
     /// <para>
     /// <b>What is armed where, exactly.</b> The report that opens the briefing arms
     /// the count its peers are sent and nothing else (<see cref="BeginBriefingClock"/>);
-    /// the report that gives the room a second player starts that count moving and
+    /// the report that completes the room's reports starts that count moving and
     /// arms the deadline that ends it (<see cref="ArmBriefingDeadline"/>). A room of
-    /// one therefore has a count held at the room's whole briefing time and no
-    /// deadline at all, which is the state §17 of
-    /// <c>docs/analysis/join-stall-after-mode2.md</c> measures this host getting
-    /// wrong: it started its sole client's round a nominal minute after that
-    /// client's join report.
+    /// one is complete at its own report, and a room of two or more at its second;
+    /// a room no player reported in has neither, which is the one case that is not
+    /// timed at all.
     /// </para>
     /// </remarks>
     private void BeginBriefing()
@@ -93,24 +91,23 @@ public sealed partial class MatchStartRunService
 
         logger.LogDebug(
             "A briefing runs for {BriefingTime} minute(s); its count is armed by the report that reaches "
-            + "it and starts once a second player has joined, so a room of one is not timed at all",
+            + "it and starts once the room's players have reported, so a room of one is timed by its own",
             settings.BriefingTimeMinutes);
     }
 
     /// <summary>
     /// Arms the count a briefing's peers are sent, at the join report that reaches
     /// the briefing: the countdown record its client's briefing screen shows. It is
-    /// held at the room's whole briefing time until the room has a second player.
+    /// held at the room's whole briefing time until the room's reports are complete.
     /// </summary>
     /// <remarks>
     /// <b>The count is shown before the room can be timed.</b> A client that has
     /// reported is reading its briefing screen and is owed the count that screen
     /// shows, which the reference writes as the room's whole briefing time and holds
-    /// there while one player is in the room
+    /// there while the room is still waiting for a player to report
     /// (<see cref="BriefingCountdownService.Remaining"/>). What moves it — and what
-    /// arms the deadline behind it — is the report that gives the room a second
-    /// player (<see cref="ArmBriefingDeadline"/>): a room of one is frozen and is not
-    /// timed at all.
+    /// arms the deadline behind it — is the report that completes the room
+    /// (<see cref="ArmBriefingDeadline"/>): a room of one moves it at its own.
     /// </remarks>
     private void BeginBriefingClock()
     {
@@ -131,28 +128,27 @@ public sealed partial class MatchStartRunService
 
         logger.LogDebug(
             "The room's briefing heard its first join report, so its {BriefingTime}-minute count is "
-            + "armed: it is held at the whole briefing time until a second player has joined",
+            + "armed: it is held at the whole briefing time until the room's reports are complete",
             settings.BriefingTimeMinutes);
     }
 
     /// <summary>
-    /// Arms the deadline that ends a briefing, at the report that gives the room a
-    /// second player: the count that moves from there, and the wait that opens the
-    /// round once the room's own briefing time is out.
+    /// Arms the deadline that ends a briefing, at the report that completes the
+    /// room: the count that moves from there, and the wait that opens the round
+    /// once the room's own briefing time is out.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>A room of one has no briefing to run out.</b> Its timer is the room's own,
-    /// and the second player is what the wait is for, so the reference holds a sole
-    /// client's count at the room's whole briefing time and opens its round only
-    /// after that client has readied — <c>mgo2-started-briefing-then-solo-game</c>
-    /// reads <c>1f 03 01</c> at t+165.780, re-reports at t+173.438 and is playing at
-    /// t+174.371, with no round and no deadline in the 111 s before it. A deadline
-    /// armed on that client's own join report is this host starting a round nobody
-    /// asked it for, which is what §17 of
-    /// <c>docs/analysis/join-stall-after-mode2.md</c> measures: a sole client,
-    /// `myserver17`'s, was handed a round 60.3 s after its report while its own
-    /// briefing count sat held at the room's whole minute.
+    /// <b>A room of one is a room whose reports are complete.</b> Its timer is the
+    /// room's own, and the player the room is waiting for is the one that reported,
+    /// so its report arms the deadline: the count starts moving and the round opens
+    /// when the briefing's time is out. Holding a sole client's count at the room's
+    /// whole briefing time and arming nothing is a room whose briefing never ends —
+    /// the live run of 2026-10-23 read a frozen <c>0b 3c 00 …</c> sixty times over a
+    /// one-minute briefing and then a client with no round to enter
+    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §54). The report that gives a
+    /// room of two its second player arms it there instead, and the room that
+    /// reports no player at all is armed by nothing.
     /// </para>
     /// <para>
     /// <b>The count and the deadline are one briefing time, so they start
@@ -172,7 +168,7 @@ public sealed partial class MatchStartRunService
         if (settings is null)
         {
             logger.LogDebug(
-                "The room has a second reporting player but this host's room is not published, so no "
+                "The room has no player left to report but this host's room is not published, so no "
                 + "briefing time is armed for it");
             return;
         }
@@ -181,8 +177,11 @@ public sealed partial class MatchStartRunService
         _ = OpenWhenBriefingEndsAsync(briefing, settings.BriefingTimeMinutes);
 
         logger.LogInformation(
-            "The room has a second reporting player, so its {BriefingTime}-minute briefing runs from now: "
-            + "the countdown moves and the round opens when the briefing's time is out",
+            "The room's reports are complete at {ReportedCount} of {PlayerCount} player(s), so its "
+            + "{BriefingTime}-minute briefing runs from now: the countdown moves and the round opens "
+            + "when the briefing's time is out",
+            briefingStates.JoinedCount,
+            briefingStates.PlayerCount,
             settings.BriefingTimeMinutes);
     }
 
@@ -196,15 +195,13 @@ public sealed partial class MatchStartRunService
     /// briefing waits for the host's round and stops waiting when its own briefing
     /// time is up, so a room that waited on a player who never readies leaves the
     /// players it did hear from past the end of their timer with nothing to play
-    /// (<c>docs/GAMEPLAY_SERVER.md</c> §4.2). <b>It is armed where the room has a
-    /// second player to be briefed with and not before</b>
-    /// (<see cref="ArmBriefingDeadline"/>), because the briefing's time is the
-    /// room's own: a room of one has no timer to run out, and the deadline that used
-    /// to be armed on its only client's join report started a round that client had
-    /// not asked for (§17 of <c>docs/analysis/join-stall-after-mode2.md</c>). The
-    /// round it opens is the round those reports asked for — same rule, same map,
-    /// same clock — and the player still to ready is served it as a late joiner is,
-    /// which is what §4.1 measures a room doing with a peer that arrives mid-round.
+    /// (<c>docs/GAMEPLAY_SERVER.md</c> §4.2). <b>It is armed where the room's reports
+    /// are complete</b> (<see cref="ArmBriefingDeadline"/>): its time is the room's
+    /// own, and a room of one whose report armed nothing kept its count frozen and
+    /// never opened a round at all. The round it opens is the round those reports
+    /// asked for — same rule, same map, same clock — and the player still to ready is
+    /// served it as a late joiner is, which is what §4.1 measures a room doing with a
+    /// peer that arrives mid-round.
     /// </para>
     /// <para>
     /// A briefing nothing answered opens nothing: a round is still something a
