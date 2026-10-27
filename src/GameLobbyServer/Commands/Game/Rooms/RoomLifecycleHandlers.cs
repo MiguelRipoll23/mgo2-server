@@ -89,19 +89,22 @@ public sealed class JoinGameHandler(
                 .GetValueOrDefault(game.HostIdentifier)
             : null;
 
-        if (!EventHostEligibilityUtils.AcceptsJoinMode(game, hostSettings, requestedSubtype))
-        {
-            // Logged with both modes because this is the rule a live client can
-            // contradict: the refusal names the mismatch rather than leaving it to
-            // be guessed at from the code.
-            logger.LogWarning(
-                "Refused a join of room {GameIdentifier}: the room runs mode {GameSubtype} and the request named {RequestedSubtype}",
-                game.Identifier,
-                game.LobbySubtype,
-                requestedSubtype);
-            await SendResultAsync(session, ErrorCodeConstants.ResultJoinGameRefused, null, cancellationToken);
-            return;
-        }
+        // TODO: Investigate this code block
+        // Disabled becuase a game that is not in the survival or tournament hosts lobbies should be able to join,
+        // free battle game IS NOT an event (tournament/battle)
+        // if (!EventHostEligibilityUtils.AcceptsJoinMode(game, hostSettings, requestedSubtype))
+        // {
+        //     // Logged with both modes because this is the rule a live client can
+        //     // contradict: the refusal names the mismatch rather than leaving it to
+        //     // be guessed at from the code.
+        //     logger.LogWarning(
+        //         "Refused a join of room {GameIdentifier}: the room runs mode {GameSubtype} and the request named {RequestedSubtype}",
+        //         game.Identifier,
+        //         game.LobbySubtype,
+        //         requestedSubtype);
+        //     await SendResultAsync(session, ErrorCodeConstants.ResultJoinGameRefused, null, cancellationToken);
+        //     return;
+        // }
 
         var isSurvivalHost = EventHostEligibilityUtils.IsSurvivalHost(game, hostSettings);
         var isHostRole = EventHostEligibilityUtils.IsEventHostRole(game, hostSettings);
