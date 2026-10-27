@@ -44,7 +44,7 @@ public sealed class HandshakeCapabilityTests
         var body = (byte[])JoinerHandshakeBody.Clone();
         body[12] = 0x06;
 
-        var handshake = FrameBuilderUtility.ParseHandshakeBody(body);
+        var handshake = HandshakeBodyUtils.ParseHandshakeBody(body);
 
         Assert.NotNull(handshake);
         Assert.Equal(0x06, handshake.Capability);
@@ -54,7 +54,7 @@ public sealed class HandshakeCapabilityTests
     [Fact]
     public void CapturedCapabilityIsAccepted()
     {
-        var handshake = FrameBuilderUtility.ParseHandshakeBody(JoinerHandshakeBody);
+        var handshake = HandshakeBodyUtils.ParseHandshakeBody(JoinerHandshakeBody);
 
         Assert.NotNull(handshake);
         Assert.Equal(0x02, handshake.Capability);
@@ -70,14 +70,14 @@ public sealed class HandshakeCapabilityTests
         var body = (byte[])JoinerHandshakeBody.Clone();
         body[8] ^= 0xff;
 
-        Assert.Null(FrameBuilderUtility.ParseHandshakeBody(body));
+        Assert.Null(HandshakeBodyUtils.ParseHandshakeBody(body));
     }
 
     /// <summary>The handshake this host builds carries the captured capability and mode.</summary>
     [Fact]
     public void BuiltHandshakeCarriesCapturedCapabilityAndMode()
     {
-        var body = FrameBuilderUtility.BuildHandshakeBody(0x0000a001, 0x3c8a65d6, "99.66.131.177", 5731);
+        var body = HandshakeBodyUtils.BuildHandshakeBody(0x0000a001, 0x3c8a65d6, "99.66.131.177", 5731);
 
         Assert.Equal(28, body.Length);
         Assert.Equal(0x02, body[12]);
@@ -92,14 +92,14 @@ public sealed class HandshakeCapabilityTests
     [Fact]
     public void BuiltHandshakeAdvertisesPublicThenPrivate()
     {
-        var body = FrameBuilderUtility.BuildHandshakeBody(
+        var body = HandshakeBodyUtils.BuildHandshakeBody(
             0x0000a001,
             0x3c8a65d6,
             "99.66.131.177",
             5731,
             "10.104.10.28");
 
-        var handshake = FrameBuilderUtility.ParseHandshakeBody(body);
+        var handshake = HandshakeBodyUtils.ParseHandshakeBody(body);
 
         Assert.NotNull(handshake);
         Assert.Equal(2, handshake.Pairs.Count);
@@ -116,13 +116,56 @@ public sealed class HandshakeCapabilityTests
     [Fact]
     public void BuiltHandshakeFallsBackToOneAddressForBothPairs()
     {
-        var body = FrameBuilderUtility.BuildHandshakeBody(0x0000a001, 0x3c8a65d6, "127.0.0.1", 5730);
+        var body = HandshakeBodyUtils.BuildHandshakeBody(0x0000a001, 0x3c8a65d6, "127.0.0.1", 5730);
 
-        var handshake = FrameBuilderUtility.ParseHandshakeBody(body);
+        var handshake = HandshakeBodyUtils.ParseHandshakeBody(body);
 
         Assert.NotNull(handshake);
         Assert.Equal("127.0.0.1", handshake.Pairs[0].Address);
         Assert.Equal("127.0.0.1", handshake.Pairs[1].Address);
+    }
+
+    /// <summary>
+    /// The native client's handshake ends at the pair count: it names no
+    /// endpoints and is answered at the address its datagram came from.
+    /// </summary>
+    [Fact]
+    public void NativeBodyWithoutPairsIsAccepted()
+    {
+        byte[] body =
+        [
+            0x02, 0x00, 0x00, 0x00, // peer_id 2
+            0x01, 0xf1, 0xc6, 0x0b, // counter_base 0x0bc6f101
+            0xb7, 0x8a, 0x25, 0x4d, // module_magic
+            0x02,                   // capability
+            0x00, 0x00,             // mode
+            0x00,                   // pair count
+        ];
+
+        var handshake = HandshakeBodyUtils.ParseHandshakeBody(body);
+
+        Assert.NotNull(handshake);
+        Assert.Equal(2u, handshake.PeerIdentifier);
+        Assert.Equal(0x0bc6f101u, handshake.CounterBase);
+        Assert.Empty(handshake.Pairs);
+    }
+
+    /// <summary>A native reply is the same sixteen bytes and advertises no pairs.</summary>
+    [Fact]
+    public void NativeReplyCarriesNoPairs()
+    {
+        var body = HandshakeBodyUtils.BuildHandshakeBody(
+            0x0000a001,
+            0x3c8a65d6,
+            "99.66.131.177",
+            5731,
+            advertisePairs: false);
+
+        var handshake = HandshakeBodyUtils.ParseHandshakeBody(body);
+
+        Assert.Equal(16, body.Length);
+        Assert.NotNull(handshake);
+        Assert.Empty(handshake.Pairs);
     }
 
     /// <summary>
@@ -135,13 +178,20 @@ public sealed class HandshakeCapabilityTests
         var body = (byte[])JoinerHandshakeBody.Clone();
         body[15] = 5;
 
-        Assert.Null(FrameBuilderUtility.ParseHandshakeBody(body));
+        Assert.Null(HandshakeBodyUtils.ParseHandshakeBody(body));
     }
 
     /// <summary>A short body is refused rather than read past its end.</summary>
     [Fact]
     public void TruncatedBodyIsRefused()
     {
-        Assert.Null(FrameBuilderUtility.ParseHandshakeBody(JoinerHandshakeBody[..20]));
+        Assert.Null(HandshakeBodyUtils.ParseHandshakeBody(JoinerHandshakeBody[..20]));
+    }
+
+    /// <summary>The native form is still refused when it ends before its pair count.</summary>
+    [Fact]
+    public void NativeBodyTruncatedBeforePairCountIsRefused()
+    {
+        Assert.Null(HandshakeBodyUtils.ParseHandshakeBody(JoinerHandshakeBody[..15]));
     }
 }

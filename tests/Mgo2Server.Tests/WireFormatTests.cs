@@ -61,16 +61,16 @@ public sealed class FrameCryptoUtilityTests
     [Fact]
     public void ParseHandshake_rejects_a_truncated_body()
     {
-        Assert.Null(FrameBuilderUtility.ParseHandshakeBody(new byte[0x1b]));
-        Assert.Null(FrameBuilderUtility.ParseHandshakeBody([]));
+        Assert.Null(HandshakeBodyUtils.ParseHandshakeBody(new byte[0x1b]));
+        Assert.Null(HandshakeBodyUtils.ParseHandshakeBody([]));
     }
 
     [Fact]
     public void ParseHandshake_reads_a_body_it_built()
     {
-        var body = FrameBuilderUtility.BuildHandshakeBody(42, 9, "127.0.0.1", 5730);
+        var body = HandshakeBodyUtils.BuildHandshakeBody(42, 9, "127.0.0.1", 5730);
 
-        var parsed = FrameBuilderUtility.ParseHandshakeBody(body);
+        var parsed = HandshakeBodyUtils.ParseHandshakeBody(body);
 
         Assert.NotNull(parsed);
         Assert.Equal(42u, parsed.PeerIdentifier);

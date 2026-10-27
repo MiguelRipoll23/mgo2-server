@@ -143,9 +143,9 @@ public sealed partial class GameplayServerService
         // peer starting over is retired here rather than served on a key its
         // client has forgotten (`GameplayServerService.SessionRestart.cs`).
         var isHandshake =
-            decoded.Length == 44 &&
             first is not null &&
-            first.Type == UdpCommandConstants.Handshake;
+            first.Type == UdpCommandConstants.Handshake &&
+            HandshakeShapeUtils.IsHandshakeBody(first.Body);
         var session = sessions.Get(remoteAddress);
         if (isHandshake && first is not null)
         {

@@ -189,6 +189,11 @@ Decoded layout (offsets relative to the datagram start, after §5 unscramble+cha
             host must compute it or the decoder drops the datagram
 ```
 
+- **The endpoint entries are optional.** A peer may send the minimum form: the same
+  header and fields through `count`, with `count = 0` and no entries, giving a
+  **32-byte** datagram and `len = 0x10` (16). The tail digest follows the body
+  exactly as above. The native PC client sends this form and expects its reply at
+  the endpoint the datagram came from **[V]**.
 - **Byte order is mixed**: `peer_id`/`counter_base`/`module_magic`/the u16 at `[19..21)`/`port`
   are **LE** (reversed-copy helpers `FUN_0026cc10`/`FUN_0026cc88`, which walk the cursor
   *backwards* from `src+len-1`), the entry `ip` u32s are

@@ -1,4 +1,3 @@
-using System.Net;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Interfaces;
@@ -31,7 +30,7 @@ public sealed class AcceptHandshakeHandler(
             context.LocalPort,
             context.Remote,
             context.Message.Body.Length);
-        var handshake = FrameBuilderUtility.ParseHandshakeBody(context.Message.Body);
+        var handshake = HandshakeBodyUtils.ParseHandshakeBody(context.Message.Body);
         if (handshake is null)
         {
             logger.LogWarning(
@@ -41,12 +40,14 @@ public sealed class AcceptHandshakeHandler(
             return;
         }
 
+        var shape = HandshakeShapeUtils.ShapeOf(handshake);
+
         context.Session.PeerIdentifier = handshake.PeerIdentifier;
         context.Session.CounterBase = handshake.CounterBase;
         context.Session.SessionKey = handshake.CounterBase ^ hostIdentity.CounterBase;
-        context.Session.PeerAddressData = FrameBuilderUtility.EndpointData(handshake.Pairs);
+        context.Session.PeerAddressData = HandshakeShapeUtils.AddressData(handshake, context.Remote);
 
-        var dialBack = AdvertisedEndpointOf(handshake, context.Remote) ?? context.Remote;
+        var dialBack = HandshakeShapeUtils.DialBackEndpoint(handshake, context.Remote) ?? context.Remote;
         context.Session.DialBack = dialBack;
 
         // The capability byte and the mode are what tell a joiner from a host on
@@ -59,11 +60,12 @@ public sealed class AcceptHandshakeHandler(
         // from a capture afterwards.
         logger.LogDebug(
             "UDP {LocalPort}: configured peer=0x{PeerIdentifier:x8}, counter base=0x{CounterBase:x8}, " +
-            "capability=0x{Capability:x2}, mode={Mode}, advertised endpoint={AdvertisedEndpoint}, " +
-            "dial-back={DialBack}",
+            "shape={Shape}, capability=0x{Capability:x2}, mode={Mode}, " +
+            "advertised endpoint={AdvertisedEndpoint}, dial-back={DialBack}",
             context.LocalPort,
             handshake.PeerIdentifier,
             handshake.CounterBase,
+            shape,
             handshake.Capability,
             handshake.Mode,
             string.Join(", ", handshake.Pairs.Select(pair => $"{pair.Address}:{pair.Port}")),
@@ -83,7 +85,8 @@ public sealed class AcceptHandshakeHandler(
             context.LocalPort,
             dialBack);
 
-        var reply = FrameBuilderUtility.BuildHandshakeBody(
+        var reply = HandshakeShapeUtils.BuildReplyBody(
+            shape,
             hostIdentity.PeerIdentifier,
             hostIdentity.CounterBase,
             hostIdentity.AdvertisedAddress,
@@ -101,51 +104,5 @@ public sealed class AcceptHandshakeHandler(
             "UDP {LocalPort}: session with peer=0x{PeerIdentifier:x8} established; opening exchange pre-keyed",
             context.LocalPort,
             handshake.PeerIdentifier);
-    }
-
-    /// <summary>
-    /// Picks the endpoint to answer a peer at, from the pairs it advertised.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The recorded host answered the joiner's <em>second</em> advertised pair.
-    /// game1's joiner advertised <c>217.138.213.5:5730</c> and then
-    /// <c>10.2.0.2:5730</c>, and all 18 528 datagrams the host sent went to the
-    /// second -- which is also the endpoint the handshake arrived from.
-    /// </para>
-    /// <para>
-    /// So a pair equal to the address the datagram came from is preferred over an
-    /// earlier one. That address is known to reach us, which an earlier pair may
-    /// not be: a peer on our own network advertises its public address first and
-    /// its LAN address second, and answering the public one means sending out
-    /// through the router and back in, which a router without hairpinning
-    /// drops. When no pair matches, the first valid pair is used, which is what
-    /// a peer across the internet needs and what this did before.
-    /// </para>
-    /// </remarks>
-    /// <param name="handshake">The peer's handshake.</param>
-    /// <param name="observed">Endpoint the handshake actually arrived from.</param>
-    /// <returns>The endpoint to answer at, or <c>null</c> when none is usable.</returns>
-    private static IPEndPoint? AdvertisedEndpointOf(HandshakeBody handshake, IPEndPoint observed)
-    {
-        IPEndPoint? first = null;
-
-        foreach (var pair in handshake.Pairs)
-        {
-            if (pair.Port == 0 || !IPAddress.TryParse(pair.Address, out var address))
-            {
-                continue;
-            }
-
-            var endpoint = new IPEndPoint(address, pair.Port);
-            if (endpoint.Equals(observed))
-            {
-                return endpoint;
-            }
-
-            first ??= endpoint;
-        }
-
-        return first;
     }
 }

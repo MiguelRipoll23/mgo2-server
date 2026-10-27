@@ -159,14 +159,14 @@ public sealed class HostIdentityService(IOptions<ServerOptions> options)
     {
         get
         {
-            var handshakeBody = FrameBuilderUtility.BuildHandshakeBody(
+            var handshakeBody = HandshakeBodyUtils.BuildHandshakeBody(
                 PeerIdentifier,
                 CounterBase,
                 AdvertisedAddress,
                 AdvertisedPort,
                 PrivateAddress);
-            var handshake = FrameBuilderUtility.ParseHandshakeBody(handshakeBody);
-            return handshake is null ? [] : FrameBuilderUtility.EndpointData(handshake.Pairs);
+            var handshake = HandshakeBodyUtils.ParseHandshakeBody(handshakeBody);
+            return handshake is null ? [] : EndpointDataUtils.EndpointData(handshake.Pairs);
         }
     }
 

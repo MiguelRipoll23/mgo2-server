@@ -834,7 +834,7 @@ queue-drain at `0x268ba8` and writes the handshake record field by field:
 
 **`AcceptHandshakeHandler` now logs `capability` and `mode`** for every handshake
 it parses, so the next live join records the role the client presented in the
-server's own log rather than in another capture. `FrameBuilderUtility.ParseHandshakeBody`
+server's own log rather than in another capture. `HandshakeBodyUtils.ParseHandshakeBody`
 already read both; only the log line was missing them. **[V]**
 
 #### What the client's own game object decides it from (2026-10-10)
