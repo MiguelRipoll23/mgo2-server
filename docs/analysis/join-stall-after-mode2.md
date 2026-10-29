@@ -4863,3 +4863,32 @@ recording as such.
 still a run-time act of the client's screen (§57). The stage data would name them only if a scenario
 script carried the id, and it does not; the reference host's state table remains the one source that
 can. What this search removes is the assumption that the data was merely missing.
+
+## 60. The briefing's run is bounded by a grace, so a silent echo cannot hold it for ever
+
+**What the live session of 2026-10-29 adds.** A client loaded the round's map (`n008a`
+in its own log, 135.5 s in), sat on a black screen where the briefing's fade belongs, and
+63 ms after the stage started failed two of its own supervisor checks —
+`sv_custom_point.cc` line 94 (*over action 14*) and the script VM's `parse.c` line 301.
+The checks come from the client, but the state they are run against is this host's, and
+the shape of the session is the one the record gate produces: the briefing's run is
+written only for a peer whose lobby-slot echo this host has read
+(`MatchStartRunService.OnRoomEntry`), so a peer whose echo is not read as `82 NN`/`84 NN`
+gets **no run at all** — no room state, no briefing, nothing until the briefing's deadline
+opens a round over it, which is the map load and the black screen.
+
+**The gate was measured on one client's shape and is now bounded.** Both reference clients
+echo 0.39 s and 0.52 s after their report (`started-briefing-then-solo` and
+`started-on-briefing`), so the grace is never reached on that shape and the run's instant
+is unchanged. What it removes is the case where the echo never arrives, or arrives in a
+shape `TeamArrayFramesUtils.IsArrayEcho` does not read: after three seconds
+(`MatchStartRunService.EntryEchoFallbackMilliseconds`) the run is written anyway, opening
+on the recorded empty `0x5001` heads because no entry answer was held, and the room's
+first `85`/`86` pair follows it (`IsEntryAnswerDue` reads the same grace). The failure is
+logged once per peer, so a host that never hears the echo says so instead of going quiet.
+
+**What would confirm it** is the same join: the briefing's run within a few seconds of the
+report even with no echo on the wire, the client's own `1d` rows behind it, and a briefing
+screen instead of the fade. What would falsify it is the same black screen with the run
+already on the wire — that leaves the run's contents, which §33, §34 and §54 have already
+taken as far as the captures go, rather than its gate.

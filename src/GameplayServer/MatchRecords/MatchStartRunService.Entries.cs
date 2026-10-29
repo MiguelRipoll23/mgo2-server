@@ -266,8 +266,8 @@ public sealed partial class MatchStartRunService
     public bool IsEntryAnswerDue(PeerSession session)
     {
         return BriefingGeneration is not null
-            && HasEntered(session)
-            && EntryRunDwellRemaining(session) is null;
+            && EntryRunDwellRemaining(session) is null
+            && (HasEntered(session) || EntryEchoGraceRemaining() is null);
     }
 
     /// <summary>
@@ -325,6 +325,7 @@ public sealed partial class MatchStartRunService
             entrySequences.Remove(session);
             entryAnswers.Remove(session);
             entryInstants.Remove(session);
+            entrylessWarned.Remove(session);
         }
     }
 }
