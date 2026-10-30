@@ -115,8 +115,19 @@ public sealed partial class MatchStartRunService
     /// record behind it for the next 3.5 minutes, and it never wrote its own
     /// operations at all.
     /// </para>
+    /// <para>
+    /// <b>It is the reference's own range and not the client's stream that
+    /// settles the value.</b> The two briefings write their run 2.31 s and 1.90 s
+    /// after the entry, and the client's five <c>1d</c> rows land 1.69 s, 1.71 s
+    /// and 1.99 s after it, so the run must be clear of that window rather than
+    /// level with it: the live join of 2026-10-30 wrote its run 1.99 s after the
+    /// entry and the client never wrote the rows
+    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §67). Half a second of
+    /// margin puts this host past the latest of them without leaving the
+    /// reference's range.
+    /// </para>
     /// </remarks>
-    public const int EntryRunDwellMilliseconds = 2000;
+    public const int EntryRunDwellMilliseconds = 2500;
 
     /// <summary>
     /// Notes that a peer has asked to be placed in the room, which is what a

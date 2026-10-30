@@ -5301,4 +5301,21 @@ after the client's own `82`/`84` pair, followed by the client's `1d` class rows 
 the pair to compare is the run's own bytes against t+572.739 rather than any cadence:
 §33 and §34 take the state block and the close triple field by field, and the client's
 `sv_custom_point.cc` check is a stage-script failure that a differently timed run
-cannot explain on its own.
+cannot explain on its own (§61 has it as a `devcheck` the release client does not even
+print, and explicitly not what leaves the screen black).
+
+**The deployed join after the fix.** The gameplay pod on image `5966e3c` served the
+next join at 12:01 on 30 October: entry 12:01:06.463, report 12:01:06.474, and the run
+at 12:01:08.476 — **1.99 s after the entry and never before it**, which is the fix
+applied. The run is the capture's ten records in the capture's order (`d001`, an empty
+`0x5001`, the ninety-byte operations block, `0f 00`, the pair, the four-byte close, the
+two twenty-byte records and the seven-byte roster close), its state block matches
+t+572.739 at every offset that is read (`v[2]=ff` the round result, `v[38..39]=18`,
+`v[40..43]=ff`, `v[44..48]=18`, `v[53..56]=fe`, `v[57..60]=3c`, `v[86]=ff`, clock low
+and high), and the room-entry answer follows at 12:01:10.762 with the pair, the
+countdown and the settings header. What the client did not do is write its own
+operations stream: the reference client's five `1d` rows and the twenty-two-byte record
+land 1.69 s, 1.71 s and 1.99 s after its entry, and this one wrote none of them while
+the run landed at 1.99 s — level with that window rather than after it, which is the
+`myserver23` shape the dwell exists to avoid. The dwell is now 2.5 s, past the latest
+measured row and still inside the reference's own 1.90–2.31 s.
