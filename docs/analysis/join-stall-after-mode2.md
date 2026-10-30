@@ -5319,3 +5319,170 @@ land 1.69 s, 1.71 s and 1.99 s after its entry, and this one wrote none of them 
 the run landed at 1.99 s — level with that window rather than after it, which is the
 `myserver23` shape the dwell exists to avoid. The dwell is now 2.5 s, past the latest
 measured row and still inside the reference's own 1.90–2.31 s.
+
+## 68. The live join of 30 October after the 2.5 s dwell: the wire matches, and the client stops itself
+
+The pod `mgo2-gameplay-1-6947df958d-hfkv5` (image `674c669`, the 2.5 s dwell and the
+item-box order fix) served one join, `89.129.16.203:5730`, log window 13:20:46–13:22:04.
+The client's `savemgo.log` is the same session, with `t+0 ≈ 13:20:46.4`. Both halves are
+below, in the order they happened.
+
+| clock | host | client |
+| --- | --- | --- |
+| 13:20:58.5 | handshake, session established | — |
+| 13:20:58.7 | profile from character 2 `PhilDunphy23`, slot 0 | — |
+| 13:21:00.6 | profile re-sent; roster answered (`0x9001`/80 B, `0x1001`/81 B, close 7 B), repeat and trailer | — |
+| 13:21:03.2 | settings burst: `0xd001`/1, `0x1001`/10 (the control), `0x9001`/161 (the host's own), **`0x1001`/25 (the join's settings header)**, two `0x1001`/50 loadouts, `0x0002`/22 | — |
+| 13:21:11.09 | entry and report in one datagram: `0x9001`@4 `82 f3`, `0x1001`@5 `84 f3`, `0x1ae4`/`0x1ae3`/`0x1ae2` `00 ff`, `0x1ade` `00 e1 01` | **t+24.7 report** |
+| 13:21:11.09 | answers `0x5ae4`/`0x5ae3`/`0x5ae2`, `0x0a5c`/4 `02 00 00 00`, publication `0x1ade`/8, marker `0x5ade` | — |
+| 13:21:13.60 | **the run**, ten records: `d001`@4, `5001`@5, `1a54`/90 @0, `1a54`/2 @1, `9001`/26 @8, `1001`/26 @9, `0a5c`/4 @6, `1001`/20 @10 and @11, `1001`/7 @12 — plus the item-box group 0/1 | — |
+| 13:21:13.61 | groups **2/3 and 4/5 after the run**, each in its own frame | — |
+| 13:21:15.65 | the entry answered: arrays 15/16, countdown `@3`, header `0x1001`/24 `@17` | — |
+| 13:21:15.96 | the repeat (8 records, no opening) and four climbing groups 6/7…12/13 | — |
+| 13:21:22.8 | item-box continuation ends at ordinal 65 (30 groups) | — |
+| 13:21:23 – 32 | the tick: the rules pair ~1/s, the countdown `0x1a54`/7 every ~2.5 s, the array pair every ~13 s, the `0x0002` blob and `0xd001` every ~5 s | — |
+| 13:21:31.79 | — | **last datagram (t+45.4)** |
+| 13:21:41.1 | the tick continues, all of it acknowledged by nobody | `Stage sm_dd` — map 17 Desert Duel (t+54.7) |
+| 13:21:41.9 | — | `sv_custom_point.cc:94 over action 14` |
+| 13:21:41.9 | — | `sdregion.c:214 not found prop data!!! (region:0)`, `parse.c:301` |
+| 13:21:43.7 | — | `chara.c:192 unknown chara-class 0` |
+| 13:22:04.9 | reaped: 172 records acknowledged, roster acknowledged, 0 players reported | window closed (t+78.2) |
+
+**The host's half is the reference's, family for family, and the item-box order is now the
+reference's too.** The run follows the entry by **2.51 s** (the reference's 1.90–2.31 s plus
+the dwell's margin), carries the ten records §67 measured against t+572.739, and its
+`0x0a5c`/4 and `0xd001`/1 are the join state answer and the control byte. The two groups
+behind it go out at 13:21:13.607, **after** the run frame (13:21:13.603) and not before it,
+which is the change of `674c669` seen on the wire for the first time. The settings burst
+carries the `0x1001`/25 header §33 found missing from every earlier live join. Nothing the
+client sent in its first 20 s went unanswered, and every record listed above was
+acknowledged before the client stopped.
+
+**The client stops its own stream 20.7 s after its report and 9.2 s before its stage
+starts.** Its last datagram is at t+45.4; the map stage begins at t+54.7 and fails its own
+checks in the two seconds after. So the run arrived 18 s before the client went quiet and
+27 s before the stage — the stall is not a record arriving late, missing or out of order,
+and it is not the stage either, because the client was already silent before the stage
+began.
+
+**Two of the four checks are this stage's and are new.** `sv_custom_point.cc:94` is the
+one §61–§64 explain and explicitly withdraw as the cause. `sdregion.c:214 not found prop
+data!!! (region:0)` and `chara.c:192 unknown chara-class 0` fire only on map 17's stage
+(`sm_dd`) and appear in no earlier live log — the earlier joins played maps 9 and 12 and
+printed `unknown chara-class 45A2B8` instead. Both are the stage's own debug assertions at
+initialisation, read from the disc's data, and neither names a record this host writes.
+
+**What that leaves.** §42, §45–§47 read the client's `1d` rows, its ready and the fade as
+state the client builds for itself at session creation (kind `3`, low bit of `0xbcc`),
+with a kind-`2` session built when its own peer slot is torn down at `+4 = 8`. Nothing in
+that path reads the wire, and this join adds no record to the list of things it could
+read. What would answer it is a memory dump taken at this stall rather than a wire
+comparison: `tools/mgo2_dump_read.py` can be asked for the screen objects' step at `+0xb8`
+and the peer slot's `+4` byte, which §55 shows is a read the dump supports.
+
+## 69. The PC port's own binaries: the briefing lives in `system.dll`, and the stage data does not name it
+
+The client that joins this host is not the RPCS3 image every earlier section reads. It is the
+native port in the `pc-client` folder — `mgo2.exe` (a 441 KB launcher), `savemgo.dll` (4.9 MB,
+the port's own layer) and `system.dll` (19.9 MB, the game). This section records what those two
+files say about the briefing, so the addresses of §32, §40 and §61 are not carried across by
+mistake.
+
+**`system.dll` is a 32-bit PE.** `FILE_HEADER.Machine` is `0x14c`, image base `0x10000000`,
+`.text` at `0x10001000` (5.85 MB), `.rdata` at `0x10596000` (11.7 MB), `.data` at `0x110c1000`.
+Every address in the sections above is a 64-bit PS3 address and does not denote the same code
+here; the `system.dll:0x10178570` of §61 is one of the few that are already this file's.
+
+**The briefing is in the game flow and in the HUD, and nowhere in the port's layer.**
+`savemgo.dll` has **no string containing `briefing`** at all (11 977 strings), while
+`system.dll` carries the flow file `..\game_flow\MGA_BattleBefor\MGA_BattleBefor_Briefing.cpp`
+(`0x10fc505c`) and the HUD `..\online\hud_mgo2\h_mgo2_briefing.cc` (`0x10feffb0`). Beside the
+flow's other names sit the transition labels `matching_before`, `Mission_Rule_Loading`,
+`briefing-matching`, `matching`, `briefing` and `matching_after` (`0x10fc55f0`–`0x10fc5660`),
+which is the order a match walks through: matching, the rule's loading screen, the briefing,
+the matching screen again, and the map.
+
+**The flow file is reached only through the check macro.** The two `briefing` pairs are
+referenced from `system.dll`'s `.text` exactly twice each, and no `MGA_BattleBefor_Briefing.cpp`
+reference is a direct one — the file name is the `__FILE__` of that unit's own `devcheck`. So a
+session's log can say whether any check **in that file** fired, and §68's session printed none
+from it: the four that fired are `sv_custom_point.cc`, `sdregion.c`, `parse.c` and `chara.c`.
+That is suggestive of the flow never entering the briefing unit and is not proof of it, because
+a unit whose checks never fire prints nothing either way.
+
+**The stage data does not contain a briefing stage.** The port ships 26 stage directories
+(`game/stage`: `init_n`, `lobby`, `mga_boot`, `n001a`…`n024a`, `nt_mgsetup`, `r_sna01_n`,
+`sm_dd`, `sm_ll`), and `sm_dd` holds `cache.dar`, `cache.dlz`, `cache.qar`, `cache_d.dlz`,
+`cache_nodld.dlz`, `data.cnf`, `n021a.geom`, `n021a.ptl` and `scenerio.gcx` — the geometry of
+`n021a` under the `sm_dd` name, which is the desert map map 17 names. Neither `briefing` nor
+`briefing-matching` nor `matching_before` exists as a directory, so those six names are
+loading-screen labels rather than stages, and the briefing itself is the map stage plus the
+HUD unit.
+
+**The stage scripts do not carry the rule as a literal.** Each playable stage's
+`scenerio.gcx` (1.49 MB, 18 % printable) contains the word `briefing` twice and `custom`
+seventeen times — the seventeen `SetCustomPoint` records of §62 — and no `-rule` literal. The
+`-rule N -score <37 ints>` of `PROTOCOL.md` is the reader's notation for the same records, not
+a string in the file, so the score table cannot be located in this install by searching for it.
+
+**The patcher rewrites two different hosts and they agree with the session.**
+`patcher/mgo2-patcher.ini` sends HTTP `mgo2pc.com` to `altmgo.duckdns.org` and every TCP
+connection to `15.204.239.231` to `100.69.153.69` (a Tailscale address), and the port rewrote
+the sockets of the join of §68 to that address on ports 5731, 5732, 5733 and 5739. The
+*gameplay* host is reached at the public `89.129.16.203:5731` the room advertises, which is
+this server's own hairpinned address, and the UDP session of §68 is that pair. Nothing in the
+rewrite touches the gameplay endpoint.
+
+**What this leaves.** The port has the briefing, the flow that reaches it and the stage it is
+shown on, so the screen is not a missing asset. The three unexplained facts remain the ones §68
+lists — the client's own stream stopping at t+45.4, the stage starting nine seconds later, and
+no `MGA_BattleBefor_Briefing` check ever firing — and none of them is a record this host fails
+to write.
+
+## 70. The port client's own briefing run writes both arrays under `0x1001`, and this host wrote one under `0x9001`
+
+**The capture.** `mgo2-started-on-game-round1.pcapng` is the port client's own session —
+`10.2.0.2:5730` (the PC client) ↔ `143.47.227.126:5725` (a reference host), 08:52:57 to
+09:16:27, 99 332 datagrams — and it holds two briefings, at 09:02:30 and 09:15:24, each after a
+round's end. `tools/pcap_gameplay_log.py` reads it as the host's side, so its `OUT` lines are
+what a host that shows the briefing screen writes.
+
+**The briefing's run, in the port client's own identifier set.** At 09:15:24 the reference host
+writes, in one frame:
+
+```
+0xd001 len  1     the control
+0x5001 len  0     the empty roster head
+0x1a54 len 90     the state block
+0x1a54 len  2     the operations short
+0x1001 len 26     the team array
+0x1001 len 26     the occupancy array
+0x0a5c len  4     the join state answer
+0x1001 len 20     the close pair
+0x1001 len 20
+0x1001 len  7     the roster close
+0x1a54 len  3     the round clock
+```
+
+and at 09:02:30 the same ten records without the trailing clock (which the beat writes instead,
+batching it into that frame at 09:15). **Both arrays travel under `0x1001`.** The live join of
+§68 writes them as `0x9001 len 26` and then `0x1001 len 26`.
+
+**`0x9001` is the joiner's identifier, not the host's.** In those twenty-three minutes the
+reference host writes `0x9001` **never**: every one of the 825 occurrences in the capture's log
+is the client's (`IN`), and the 261 `OUT` ones are the acknowledgement report's warnings —
+*"1 records await an answer (0x9001) and the host answered none"*. `0x9001` is
+`UdpCommandConstants.JoinRequest`, the tag a joiner opens the roster exchange with
+(`RoomRosterService.HostEntryType`), and a host that writes the room's team array under it is
+writing the joiner's own tag back at it: the `0x8000` bit is what a client sets on its own
+records (§4.1 of `briefing-start-comparison.md`), so the array arrives as one the client itself
+is supposed to have sent.
+
+**Fixed** in the two places a 26-byte team array is written — `MatchStartRunFramesUtils.BuildRun`
+and `BriefingRoomPublishService.PublishArraysAsync` — which now both write `0x1001`.
+
+**What is not settled.** Whether this is the whole of the black screen. The run's remaining
+difference is the trailing three-byte clock, and the capture contradicts itself on it: one
+briefing's run carries it and the other does not, so it is the beat's record landing inside the
+frame rather than the run's own, and it is left out. The comparison that would settle the rest
+is the client's own screen state at the stall (§55, §68), not another wire diff.

@@ -34,7 +34,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// 0x5001 len 0
 /// &lt;ops&gt;   len 90           the state block
 /// &lt;ops&gt;   len 2            0f 00
-/// 0x9001  len 26          the team array      (index)
+/// 0x1001  len 26          the team array      (index)
 /// 0x1001  len 26          the occupancy array (index)
 /// 0x1001  len 20          the close pair
 /// 0x1001  len 20
@@ -309,8 +309,13 @@ public static class MatchStartRunFramesUtils
 
         // The lobby-slot pair. Its two index bytes are the next two values of the
         // roster exchange's counter, which is what the replay parser tells a pair
-        // by: consecutive, because one counter handed both out.
-        new(Rooms.RoomRosterService.HostEntryType, teams, runOrdinals[0]),
+        // by: consecutive, because one counter handed both out. Both records travel
+        // under the roster's own identifier and not under the joiner's opening tag:
+        // `mgo2-started-on-game-round1`'s briefings, which are the port client's own,
+        // write `0x1001 len 26` twice and never `0x9001` in twenty-three minutes of
+        // host traffic — the only `0x9001` in that capture is the joiner's own
+        // request, which the host leaves unanswered.
+        new(UdpCommandConstants.PlayerProfile, teams, runOrdinals[0]),
         new(UdpCommandConstants.PlayerProfile, occupancy, runOrdinals[1]),
 
         // The join state record's answer, behind the arrays as
