@@ -231,12 +231,15 @@ briefing.
 The identifiers differ only in the frame's own flag bit (`0x8000`), so all but the
 first are the same operations stream: `0x1254` for the briefing of round 3 and
 `0x1a54` for the one before round 4, which is the set that briefing's run is
-written on (§1). **Settings has no value of its own on this wire.** The three `00`
-records are the three visits, so a client announces the settings screen by dropping
-its ready and its return with `01`; a player the room sees as "in settings" and one
-it sees as "not ready" are the same record, and a host has to treat `00` as the
-ready withdrawn — leaving the bit set would open a round over a player sitting in
-its menus (`Rooms/BriefingStateService.IsReady`, which counts only `01`).
+written on (§1). **The settings state is the screen's third state, and this capture
+does not name its byte.** The three `00` records are the three visits — each written
+after a `01` and followed by a `01` when the player came back — so the only state a
+client has been measured writing on its way into settings is a ready withdrawn, and
+no record of this kind in any of the sixteen captures here carries a byte other than
+`01` or `00`. Until a capture holds the settings record itself, a host reads `01` as
+ready and every other byte as not ready: leaving the bit set would open a round over
+a player sitting in its menus (`Rooms/BriefingStateService.IsReady`, which counts
+only `01`).
 
 **A briefing is answered before its round is.** A client reports twice a round and
 the host answers the two differently. The first report is met by the run under its

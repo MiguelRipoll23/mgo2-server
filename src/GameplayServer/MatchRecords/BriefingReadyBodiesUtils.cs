@@ -33,12 +33,14 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <b>The other measured state is <c>00</c>, and it is the ready taken back.</b>
 /// <c>mgo2-started-on-game-round1</c> holds it: its client writes <c>1f 11 01</c>
 /// and <c>1f 11 00</c> alternately through the briefing of its fourth round, three
-/// cycles of 4.7 s, 5.8 s and 6.0 s, and the room's operator names what happened
-/// between them — three visits to the settings screen. So a client that steps into
-/// its settings writes the same <c>00</c> it writes when it takes a ready back
-/// (<c>docs/protocol/BRIEFING_FLOW.md</c> §2); the two are one state on the wire,
-/// and what the other players are shown is "not ready". No capture in the corpus
-/// holds a third value: every other state record is <c>01</c>.
+/// cycles of 4.7 s, 5.8 s and 6.0 s, between three visits to the settings screen.
+/// The briefing screen has three states — not ready, ready, and in settings — and
+/// what the capture maps is the first two. It does not name the settings byte: only
+/// <c>01</c> and <c>00</c> cross at that slot in the whole session, so the screen the
+/// player sat in between the cycles is written as a ready withdrawn here. The gate
+/// therefore takes <c>01</c> as the only ready and every other byte — measured or
+/// not — as a player the room is still waiting on
+/// (<c>docs/protocol/BRIEFING_FLOW.md</c> §2).
 /// </para>
 /// </remarks>
 public static class BriefingReadyBodiesUtils

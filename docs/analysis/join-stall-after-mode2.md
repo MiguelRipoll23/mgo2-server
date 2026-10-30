@@ -5188,17 +5188,23 @@ records in the whole 1 408 s session: five `01` and three `00`.
 | 1 325.885 | `1f 11 00` | `0x9a54` | not ready — settings |
 | 1 331.838 | `1f 11 01` | `0x9a54` | ready again |
 
-**The three zeros are the three settings visits.** The room's operator reports
-navigating to the settings screen at least three times, and this is the only capture
-with three `00` records from one slot: each is followed by a `01` 4.7 s, 5.8 s and
-6.0 s later, and the first is written 0.7 s after the ready that preceded it, which
-is a player readying and then opening its menus rather than a player that was never
-ready. So the settings screen is announced by *dropping* the ready, and the return
-with `01`; the wire has no third value for it. Every other state record in the
-corpus is `01` (`mgo2-game-joined-when-red-team-then-briefing` slot 5,
-`mgo2-game-started-on-briefing` slot 1, `started-briefing-then-solo` slot 3,
-`joined-on-briefing-then-game` slot 3, `mgo2-game1` slot 20), and no capture holds
-`02` or above.
+**The three zeros are the three settings visits, and the settings byte itself is
+still unmeasured.** The briefing screen has three states — not ready, ready, and in
+the settings screen — and this capture maps the first two: `00` is written when the
+ready is taken back and `01` when it is given. Its three `00` records sit between the
+three settings visits, each 4.7 s, 5.8 s and 6.0 s before the `01` that follows it,
+and the first is written 0.7 s after the ready that preceded it — a player readying
+and then opening its menus, not a player that was never ready. What the capture does
+not hold is a record for the settings state alone: across all sixteen captures here
+the three-byte `1f` body carries nothing but `01` and `00`
+(`joined-when-red-team` slot 5, `started-on-briefing` slot 1,
+`started-briefing-then-solo` slot 3, `joined-on-briefing-then-game` slot 3,
+`mgo2-game1` slot 20, `game2` slot 1, `joined-game-in-progress-last-round` slot 11,
+and this capture's slot 17). So the client drops its ready on the way into the
+screen and gives it back on the way out, and whether it also writes a byte of its own
+for the screen is **open**: a capture of a player entering settings *from* the
+not-ready state, or one whose settings record arrives while the ready bit stays set,
+is what would name it.
 
 **What that means for this host.** Nothing has to be added for settings, and
 nothing has to be removed: `BriefingStateService.IsReady` counts `01` and every
