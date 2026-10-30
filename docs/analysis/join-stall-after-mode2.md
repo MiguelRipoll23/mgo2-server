@@ -5647,3 +5647,52 @@ and `IsEntryAnswerDue` already shares the function, so the room publication wait
 clock), the client's `1d` rows in the first frame behind it, and the `0xf` ready that follows.
 If the rows still do not come with the run that far behind the entry, the remaining difference
 is outside the run's timing and the memory read of §68 is the instrument, not another wire diff.
+
+## 74. A handshake answered on an established session went out keyed, so a rejoin on the same endpoint stalled for ever
+
+**The reproduction, on a local host.** `src/GameplayServer` on UDP 5336 against the compose
+postgres, with `tools/udp_reference_replay.py` replaying `mgo2-game1.pcapng`'s joiner. Three runs,
+back to back, from a socket this side controls:
+
+| run | source endpoint | result before the fix | result after |
+| --- | --- | --- | --- |
+| 1 | `127.0.0.1:5400` | joined, 41 records | joined, 39 records |
+| 2 | `127.0.0.1:5400`, immediately after run 1 | **"the live server did not answer the handshake"** | joined, 31 records |
+| 3 | `127.0.0.1:5401`, with run 1's session still held | joined, 35 records | joined, 33 records |
+
+Run 2 is the reported defect, and it is the endpoint that decides it: a session filed under
+`127.0.0.1:5400` is still held when the next handshake arrives from it, while a handshake from a
+fresh endpoint provisions a new session and is answered normally. Run 3 is the "another player"
+half of the report: a stale session on one endpoint does not block a join on another.
+
+**The cause is the key, not the session lookup.** `AcceptHandshakeHandler` answers with the
+pre-keyed opening keep-alive and the pre-keyed reply, but the frames leave through
+`SendMessages`, which keys on `session.Established` (`GameplayServerService.Outbound.cs`). A
+session that has already been established therefore answers its own new handshake with
+**session-keyed** frames. The client cannot open them: the session key is `peer base ^ host base`,
+and the host's base is a value the client learns *from that reply*. Run 2's session was
+established, its base matched the replayed handshake's, so
+`RestartPeerIfHandshakeStartsOver` read the copy as a re-send and returned the live session — the
+host answered, and answered in a class the peer had no key for.
+
+`Established` is also set by the handshake handler itself, which is why the same shape costs more
+than a rejoin: a client whose first reply is lost re-sends its handshake every two seconds, and
+every copy after the first was answered keyed too. The join had one attempt to succeed and no way
+back from a lost answer.
+
+**The fix.** `RestartPeerIfHandshakeStartsOver` splits the two meanings the base had been carrying:
+
+* a copy on a session that is **not** established is the client waiting for a reply, and the
+  session is reused as it was;
+* a copy on a session that **is** established reopens the transport — `Established = false`,
+  `OutboundCounter = 0`, `LastInboundSequence = 0` — so the answer travels pre-keyed with counters
+  `0` and `1` as a first join's does.
+
+A peer that truly restarted draws a new base and still takes the retire-and-reprovision branch, so
+its stale roster entry and briefing report are dropped. The reopen keeps them, because the player
+is the same one and only the conversation was heard again. No room state is touched.
+
+**What it does not settle.** Everything §68–§73 leave open. This join is answered, which is a
+precondition for the briefing screen rather than a sighting of it; the sign the screen has come
+is still the client writing its own `1d` rows behind the run, and the instrument for a stall that
+survives that is the memory read of §68.

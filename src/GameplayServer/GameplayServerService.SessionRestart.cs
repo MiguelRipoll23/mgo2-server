@@ -21,6 +21,21 @@ namespace Mgo2Server.GameplayServer;
 /// same peer waiting, and a new base is the same peer joining again.
 /// </para>
 /// <para>
+/// <b>A copy of a handshake that has already been answered reopens the
+/// transport instead.</b> Re-sending is what a client does while it is still
+/// waiting for the reply, so a copy on a session that is not yet established is
+/// the same wait and is served as one. Once the session <i>is</i> established,
+/// the same base means the opposite: the peer either never read the answer it
+/// was given or has come back on the same endpoint. That answer cannot be
+/// repeated as it stands, because every frame after the handshake is keyed and
+/// the client derives the key from the reply's own base — a keyed reply is one
+/// the client has no key to open. The session therefore keeps its peer state and
+/// takes its transport back to the opening state, so the answer travels pre-keyed
+/// with counters <c>0</c> and <c>1</c> as a first join's does. Retiring it would
+/// drop a roster entry and a briefing report for a peer that is still the same
+/// player, which is why the two cases are not one.
+/// </para>
+/// <para>
 /// <b>The old session is not repaired, it is retired.</b> Its key, counter and
 /// acknowledgement window belong to a conversation the client has forgotten, and
 /// every worker of this host is watching that object — the run watcher, the
@@ -71,12 +86,24 @@ public sealed partial class GameplayServerService
         var counterBase = BinaryUtility.ReadUInt32LittleEndian(message.Body, 4);
         if (counterBase == session.CounterBase)
         {
-            logger.LogDebug(
-                "[{LogPrefix}] IN {RemoteAddress} re-sent its handshake (base 0x{CounterBase:x8}); "
-                + "the session it belongs to is the one already held",
+            if (!session.Established)
+            {
+                logger.LogDebug(
+                    "[{LogPrefix}] IN {RemoteAddress} re-sent its handshake (base 0x{CounterBase:x8}); "
+                    + "the session it belongs to is the one already held",
+                    LogPrefix,
+                    remoteAddress,
+                    counterBase);
+                return session;
+            }
+
+            logger.LogInformation(
+                "[{LogPrefix}] IN {RemoteAddress} sent its handshake again on an established session "
+                + "(base 0x{CounterBase:x8}); answering it pre-keyed again, with the peer's room state kept",
                 LogPrefix,
                 remoteAddress,
                 counterBase);
+            ReopenHandshake(session);
             return session;
         }
 
@@ -96,5 +123,24 @@ public sealed partial class GameplayServerService
         sessions.Remove(session.RemoteAddress);
         ForgetPeerState(session);
         return null;
+    }
+
+    /// <summary>
+    /// Returns a session's transport to the state its handshake opened it in,
+    /// so the answer goes out pre-keyed.
+    /// </summary>
+    /// <remarks>
+    /// Only the transport is touched. The key, the peer identifier and the pair
+    /// list are what the arriving handshake is about to write again, and the room
+    /// state filed against the session — a roster entry, a briefing report, the
+    /// records the peer has answered — belongs to the player rather than to the
+    /// conversation, so it stays.
+    /// </remarks>
+    /// <param name="session">Session whose handshake is being answered again.</param>
+    private static void ReopenHandshake(PeerSession session)
+    {
+        session.Established = false;
+        session.OutboundCounter = 0;
+        session.LastInboundSequence = 0;
     }
 }
