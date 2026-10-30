@@ -181,6 +181,15 @@ stream with **no** wire message header; the `type | len | flags2 | body` message
 only after decompression. Masked out of the seed by `hdr & 0x7fff`. The joiner's profile frame
 arrives marked (`hdr 0x8001`).
 
+**Measured over the bench: a message-level `0x8000` is not that marker.** It is rare and it
+appears in both kinds of frame — `mgo2-game1` carries 211 of its 70 212 messages in
+compressed frames with the bit set and 305 of its 78 290 in plain ones, `round1` 45 of 653
+and 390 of 237 095, `started-on-briefing` 74 of 14 493 with no compressed frame at all. So
+the bit inside a type word is the class bit the receiver masks
+(`word & 0x7f00fff`), the one that makes `0x9001` of `0x1001` and `0x9a54` of `0x1a54`;
+the frame's own marker is the `hdr` bit above and the two are written independently.
+`PeerAcknowledgementUtils.PayloadClassBit` and `MatchRecordFramesUtils` name it as such.
+
 ### `0x1001` — join profile and player roster record [V]
 
 **The joiner opens the exchange with its own player record.** The host also uses

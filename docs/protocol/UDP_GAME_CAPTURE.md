@@ -2060,7 +2060,7 @@ written reconstruction.
 | --- | --- | --- | --- |
 | `0x0a61` | 6 106 | 64 | the pair is written; its rate is ours, and the reference's beat writes far more in the same window |
 | `0x090c` | 2 297 | 0 | the vitals record never joined inside the window: the round had not opened |
-| `0x9a54` / `0x9a50` | 34 / 3 | 0 / 0 | this capture's own sibling id space, not a family every host writes: 13 of its 18 bodies also appear under `0x1a5x`, and neither of the other two captures writes one |
+| `0x9a54` / `0x9a50` | 34 / 3 | 0 / 0 | **not a missing family**: the same id in the `0x8000` class (`0x1a5x \| 0x8000`), and the receiver masks class bits out before dispatch (`UDP_COMMANDS.md`, "The type word"). These are the operations and world-object commands written in that class; the beat writes the plain `0x1a5x` form, which the receiver reads as the same command |
 | `0x0a5c` | `00 00 10 00`, `40 08 10 00` | `00 00 00 00` | **not a defect**: `mgo2-started-on-game-round1`'s own reference host writes `00 00 00 00` six times, so the word is the room's |
 | `0xd001` | classes 1, 2 here; 0–255 in round1 | classes 0, 1, 2 | **not a defect**: the class is a per-record ordinal, and the round1 reference spans the whole byte |
 | `0x1a58` | 0 | 1 | we tell the peer the room's count where the reference does not, in this window |
