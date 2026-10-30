@@ -270,31 +270,45 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
-    /// How much of the entry's dwell is left, if the peer has entered and it has
-    /// not passed yet.
+    /// How much of the entry's dwell is left, counted from the later of the peer's
+    /// entry and the briefing's first report.
     /// </summary>
     /// <remarks>
-    /// The dwell runs from the later of the peer's entry and the briefing's first
-    /// report: a client that enters before it reports is still loading its map
-    /// when it enters, so the report is the instant its transition ends.
+    /// <para>
+    /// <b>The report is an anchor on its own, which is what a peer that has not
+    /// entered yet waits on.</b> The dwell runs from the later of the peer's entry
+    /// and the briefing's first report: a client that enters before it reports is
+    /// still loading its map when it enters, so the report is the instant its
+    /// transition ends. A peer that has not entered at all is timed by the report
+    /// alone. Reading a missing entry as a spent dwell was the defect the live join
+    /// of 2026-10-30 exposed: the run went out 0.06 s after the report and 0.81 s
+    /// <em>before</em> the client's entry, and a run ahead of the entry is the black
+    /// screen §18 records (<c>docs/analysis/join-stall-after-mode2.md</c> §67).
+    /// </para>
+    /// <para>
+    /// <b>No report yet is not a dwell of zero either.</b> There is then no instant
+    /// to count from, and the run waits for one: <see cref="IsEntryAnswerDue"/>
+    /// already requires a briefing generation, and this is that condition one layer
+    /// down.
+    /// </para>
     /// </remarks>
-    /// <param name="session">Session the entry was heard on.</param>
+    /// <param name="session">Session the peer is reached on.</param>
     /// <returns>The wait still owed, or <c>null</c> when it is already spent.</returns>
     private TimeSpan? EntryRunDwellRemaining(PeerSession session)
     {
-        DateTimeOffset heardAt;
-        DateTimeOffset reportedAt;
+        DateTimeOffset anchor;
         lock (gate)
         {
-            if (!entryInstants.TryGetValue(session, out heardAt))
+            if (briefingReportInstant is not { } reportedAt)
             {
                 return null;
             }
 
-            reportedAt = briefingReportInstant ?? heardAt;
+            anchor = entryInstants.TryGetValue(session, out var heardAt) && heardAt > reportedAt
+                ? heardAt
+                : reportedAt;
         }
 
-        var anchor = reportedAt > heardAt ? reportedAt : heardAt;
         var left = anchor.AddMilliseconds(EntryRunDwellMilliseconds) - DateTimeOffset.UtcNow;
         return left > TimeSpan.Zero ? left : null;
     }

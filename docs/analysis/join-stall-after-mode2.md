@@ -5256,3 +5256,49 @@ it is that `00` is a real record rather than an unread value, which
 according to. The §65 fixes stand: the run is not gated on an entry echo, a room of
 one arms no deadline, the ready opens under the report's own set, the countdown
 rides the briefing's generation, and a played room's briefing holds a zero clock.
+## 67. The live join of 30 October: the run went out before the entry, because a missing entry read as a spent dwell
+
+**The session.** The gameplay pod on the k3s node (`mgo2-gameplay-1-77fdbf7fbc-shlxr`,
+image `8066f5b`) served a join that never reached a briefing screen: the client's log
+(`savemgo.log`) shows the map's stage starting and then the supervisor refusing two of
+its own checks — `online\supervisor\cp\sv_custom_point.cc` line 94, *over action 14*,
+and the script VM's `parse.c` line 301 — the same pair `myserver34` shows
+(§60). What the host wrote before that is measured, and the comparison is with this
+capture's own briefing.
+
+**The host's half of that join.**
+
+| clock | what the log says |
+| --- | --- |
+| 11:36:11.306 | the room's briefing heard its first join report on `0x1ade`; its 1-minute count is armed |
+| 11:36:11.365 | **the run is written**: 10 records, operations `0x1a54`, payload `0x1ade`, 3 360 of 3 360 units, as a fresh briefing with no round state |
+| 11:36:12.174 | the client asked to be placed in the room — **0.81 s after the run** |
+| 11:36:13.720 | the run repeated one tick behind it, without its opening answer |
+| 11:36:14.422 | the room-entry request answered: 4 records, the lobby-slot pair, the briefing's countdown and the player's settings header |
+| 11:37:13.606 | the briefing's countdown ended; the client had left by 11:37:18 |
+
+**The capture's half, for the same instant.** `mgo2-started-on-game-round1` answers the
+pair at t+572.649 (`82 96` on `0x9001`, `84 96` on `0x1001`) and writes the run
+**0.09 s later**, at t+572.739. That run is also ten records — `d001 05`, an empty
+`0x5001`, the ninety-byte operations state block, `0f 00`, the `85 96`/`86 96` pair,
+`025c` with four zeros, the two twenty-byte records and the seven-byte close — and the
+host's ten records and its 3 360 units are that composition and that round's clock. The
+composition was never the difference; the instant was.
+
+**Why the run overtook the entry.** `EntryRunDwellRemaining` returned `null` — "the
+dwell is spent" — whenever the session had no entry recorded, so a peer that had not
+entered yet was treated as a peer whose dwell had passed, and the run was released on
+the report. §18 measured that shape in `myserver19`: a run written ahead of the entry
+is a run for a client that is not in the room, and the client handed one does not report
+again, does not ready and never reaches its briefing screen. The entry's dwell is now
+counted from the later of the entry and the report, and the report alone when no entry
+has been heard, so the run cannot precede the echo that places the peer in the room: the
+same join would write at report + 2 s instead of report + 0.06 s.
+
+**What the next join should show.** The run at least two seconds after the report and
+after the client's own `82`/`84` pair, followed by the client's `1d` class rows and its
+`1f 11 01` ready. If the screen still does not appear with the run behind the entry,
+the pair to compare is the run's own bytes against t+572.739 rather than any cadence:
+§33 and §34 take the state block and the close triple field by field, and the client's
+`sv_custom_point.cc` check is a stage-script failure that a differently timed run
+cannot explain on its own.
