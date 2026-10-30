@@ -48,6 +48,16 @@ public sealed partial class TeamArrayService
     /// sitting in.
     /// </para>
     /// <para>
+    /// <b>And the teams array is type-signed by the phase.</b> The answers a
+    /// briefing receives write both arrays as <c>0x1001</c>
+    /// (`mgo2-game-started-on-briefing` t+93.127 and `mgo2-game2` t+78.987: 68
+    /// and 27 teams arrays of <c>85 NN</c>, none of them <c>0x9001</c>), while
+    /// the one a round receives writes the teams array as <c>0x9001</c> and the
+    /// occupancy as <c>0x1001</c> (`mgo2-game1` t+201.042, whose round phase
+    /// carries the other 26 teams arrays as <c>0x9001</c>). The type follows the
+    /// round being open, as the records behind the pair already do.
+    /// </para>
+    /// <para>
     /// <b>The order is the captures', and so is what the group does not
     /// carry.</b> The pair opens the answer and the close ends it, which is the
     /// reverse of the roster run's own order. Two records this host used to write
@@ -95,6 +105,7 @@ public sealed partial class TeamArrayService
     public async Task EnterRoomAsync(PeerContext context, byte sequence)
     {
         var slots = await lobbySlots.ReadAsync();
+        var roundIsOpen = roundState.IsOpen;
 
         // The pair opens the answer, under the sequence the request named, and
         // everything after it is the phase's: the captures' own order, measured in
@@ -103,7 +114,7 @@ public sealed partial class TeamArrayService
         var pairOrdinals = roster.TakeRunOrdinals(2);
         var run = new List<RosterRecord>(4)
         {
-            new(RoomRosterService.HostEntryType, teams, pairOrdinals[0]),
+            new(TeamsTypeOf(roundIsOpen), teams, pairOrdinals[0]),
             new(UdpCommandConstants.PlayerProfile, occupancy, pairOrdinals[1]),
         };
 
@@ -122,7 +133,7 @@ public sealed partial class TeamArrayService
         // header: the entry and the close that follow them in a round are the
         // round's records, and a peer still being briefed that is handed the entry
         // leaves the briefing for a round that has not opened (the remarks above).
-        if (roundState.IsOpen)
+        if (roundIsOpen)
         {
             if (member is not null)
             {
@@ -178,10 +189,19 @@ public sealed partial class TeamArrayService
             run.Count,
             sequence,
             slots.Count,
-            roundState.IsOpen
+            roundIsOpen
                 ? "with the player's own entry"
                 : "with the briefing's countdown and the player's settings header");
 
         await RosterRunSendUtils.SendAsync(context, run, compressed: true);
     }
+
+    /// <summary>
+    /// The teams array's record type for a phase: the roster's own type while a
+    /// round is playing, the profile type for a briefing's answer.
+    /// </summary>
+    /// <param name="roundIsOpen">Whether a round is playing.</param>
+    /// <returns>The type the teams array is written under.</returns>
+    private static ushort TeamsTypeOf(bool roundIsOpen) =>
+        roundIsOpen ? RoomRosterService.HostEntryType : UdpCommandConstants.PlayerProfile;
 }
