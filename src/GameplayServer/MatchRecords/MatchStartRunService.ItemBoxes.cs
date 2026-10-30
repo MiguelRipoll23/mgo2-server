@@ -14,8 +14,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class MatchStartRunService
 {
     /// <summary>
-    /// Appends the item-box filler group to a fresh briefing's run and writes the
-    /// two that follow it in datagrams of their own.
+    /// The item-box filler groups a fresh briefing writes: the first riding the
+    /// run's own frame and the two behind it in datagrams of their own.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -45,16 +45,59 @@ public sealed partial class MatchStartRunService
     /// captured briefings that follow a round write no item-box group before their
     /// round opens.
     /// </para>
+    /// <para>
+    /// <b>They are built here and written behind the run, and the separation is
+    /// the point.</b> The capture writes the run's frame with the first group at the
+    /// end of it and only then the two others, each in a datagram of its own. A host
+    /// that writes them first hands the client world-object records for a round
+    /// whose run it has not received yet, which is the reverse of every capture.
+    /// </para>
     /// </remarks>
-    /// <param name="context">Context the groups are written through.</param>
     /// <param name="generation">Identifier set of the briefing.</param>
-    /// <param name="run">The run the first group is appended to.</param>
-    private async Task AppendItemBoxGroupsAsync(
-        PeerContext context,
-        MatchRecordGenerationUtils generation,
-        List<MatchRecordFramesUtils.RecordMessage> run)
+    /// <returns>The groups in send order, the first of which the run carries.</returns>
+    private List<List<MatchRecordFramesUtils.RecordMessage>> BuildItemBoxGroups(
+        MatchRecordGenerationUtils generation)
     {
-        await WriteItemBoxGroupsAsync(context, generation, run);
+        var groups = new List<List<MatchRecordFramesUtils.RecordMessage>>(
+            ItemBoxFramesUtils.BriefingGroupCount);
+
+        for (var group = 0; group < ItemBoxFramesUtils.BriefingGroupCount; group++)
+        {
+            // Two values per identifier per group, because the group writes two
+            // records under each and the second takes the value behind the first:
+            // the groups go out on 0/1, 2/3 and 4/5, as the capture numbers them
+            // (`ItemBoxFramesUtils.BriefingGroupCount`).
+            var itemBoxOrdinals = sequences.Take(
+                generation.ItemBox, ItemBoxFramesUtils.ItemBoxRecords);
+            var stateOrdinals = sequences.Take(
+                generation.ItemBoxState, ItemBoxFramesUtils.ItemBoxStateRecords);
+
+            groups.Add(ItemBoxFramesUtils.ItemBoxGroup(
+                generation,
+                ItemBoxFramesUtils.OpeningEventGroups,
+                itemBoxOrdinals[0],
+                stateOrdinals[0]));
+        }
+
+        return groups;
+    }
+
+    /// <summary>
+    /// Writes built groups from <paramref name="firstGroup"/> on, each in a datagram
+    /// of its own.
+    /// </summary>
+    /// <param name="context">Context the groups are written through.</param>
+    /// <param name="groups">The groups, in send order.</param>
+    /// <param name="firstGroup">Group to start writing at, from zero.</param>
+    private static async Task SendItemBoxGroupsAsync(
+        PeerContext context,
+        IReadOnlyList<List<MatchRecordFramesUtils.RecordMessage>> groups,
+        int firstGroup)
+    {
+        for (var group = firstGroup; group < groups.Count; group++)
+        {
+            await MatchRecordSendUtils.SendAsync(context, groups[group]);
+        }
     }
 
     /// <summary>
@@ -75,55 +118,11 @@ public sealed partial class MatchStartRunService
         PeerContext context,
         MatchRecordGenerationUtils generation)
     {
-        await WriteItemBoxGroupsAsync(context, generation, attachTo: null);
-    }
-
-    /// <summary>
-    /// Writes the fresh briefing's item-box groups, optionally riding the first in a
-    /// frame the caller is about to send.
-    /// </summary>
-    /// <remarks>
-    /// Three groups, each two records per identifier, numbered from the streams the
-    /// identifiers own. The run's own group rides in its frame and the two behind it
-    /// go out as datagrams of their own, which is the captured shape; the repeat
-    /// attaches none and sends all three.
-    /// </remarks>
-    /// <param name="context">Context the groups are written through.</param>
-    /// <param name="generation">Identifier set of the briefing.</param>
-    /// <param name="attachTo">
-    /// The frame the first group is appended to, or <c>null</c> to send every group
-    /// in a datagram of its own.
-    /// </param>
-    private async Task WriteItemBoxGroupsAsync(
-        PeerContext context,
-        MatchRecordGenerationUtils generation,
-        List<MatchRecordFramesUtils.RecordMessage>? attachTo)
-    {
-        for (var group = 0; group < ItemBoxFramesUtils.BriefingGroupCount; group++)
-        {
-            // Two values per identifier per group, because the group writes two
-            // records under each and the second takes the value behind the first:
-            // the run's groups go out on 0/1, 2/3 and 4/5, as the capture numbers
-            // them (`ItemBoxFramesUtils.BriefingGroupCount`).
-            var itemBoxOrdinals = sequences.Take(
-                generation.ItemBox, ItemBoxFramesUtils.ItemBoxRecords);
-            var stateOrdinals = sequences.Take(
-                generation.ItemBoxState, ItemBoxFramesUtils.ItemBoxStateRecords);
-
-            var records = ItemBoxFramesUtils.ItemBoxGroup(
-                generation,
-                ItemBoxFramesUtils.OpeningEventGroups,
-                itemBoxOrdinals[0],
-                stateOrdinals[0]);
-
-            if (group == 0 && attachTo is not null)
-            {
-                attachTo.AddRange(records);
-                continue;
-            }
-
-            await MatchRecordSendUtils.SendAsync(context, records);
-        }
+        // The repeat carries none in its frame, so all three go out on their own.
+        await SendItemBoxGroupsAsync(
+            context,
+            BuildItemBoxGroups(generation),
+            firstGroup: 0);
     }
 
     /// <summary>

@@ -295,12 +295,25 @@ public sealed partial class MatchStartRunService
         var roundNumber = roundState.RoundNumber;
         var wasOpen = roundState.IsOpen;
 
-        if (briefing && roundNumber == 0)
+        // The fresh briefing's item-box groups are built before the run goes out,
+        // because the first of them rides the run's own frame, and written only
+        // after it: the capture's run is the frame that opens the pair, and the two
+        // groups behind it follow it (`MatchStartRunService.ItemBoxes`).
+        var itemBoxGroups = briefing && roundNumber == 0
+            ? BuildItemBoxGroups(generation)
+            : null;
+
+        if (itemBoxGroups is not null)
         {
-            await AppendItemBoxGroupsAsync(context, generation, run);
+            run.AddRange(itemBoxGroups[0]);
         }
 
         await MatchRecordSendUtils.SendAsync(context, run);
+
+        if (itemBoxGroups is not null)
+        {
+            await SendItemBoxGroupsAsync(context, itemBoxGroups, firstGroup: 1);
+        }
 
         roundState.NoteRunWritten(context.Session);
 
