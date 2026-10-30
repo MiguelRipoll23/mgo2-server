@@ -100,6 +100,52 @@ public static class MatchSettingsUtils
     }
 
     /// <summary>
+    /// The room's per-rule times, rounds and tickets, in the order the lobby's game
+    /// details reply states them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The seventeen words are SNE time and rounds, CAP, RES, TDM — with its ticket
+    /// count — DM with its ticket count, BASE, BOMB and TSNE
+    /// (<c>docs/proto/outbound/mgo2_cmd_4313_s2c.ksy</c>, <c>rule_timers</c>). They are
+    /// what a client reads a round's own length out of, so a room that states none of
+    /// them is a room whose round is zero minutes long as far as the joiner is told.
+    /// </para>
+    /// <para>
+    /// One round length serves every rule here, which is what a dedicated host is: its
+    /// round's minutes are <see cref="ServerOptions.GameplayServerRoundMinutes"/> for
+    /// whichever rule it runs, and a start plays one round. The two ticket words state
+    /// this instance's kill limit, or zero for a round that ends on its clock alone.
+    /// </para>
+    /// </remarks>
+    /// <param name="options">Options of this instance, which state the round.</param>
+    /// <returns>The seventeen words, in the reply's order.</returns>
+    public static int[] RuleTimers(ServerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var minutes = options.GameplayServerRoundMinutes;
+        var tickets = options.GameplayServerKillLimit ?? 0;
+
+        // A start plays one round, so every rule's round count is one.
+        const int Rounds = 1;
+
+        return
+        [
+            minutes, Rounds,   // SNE
+            minutes, Rounds,   // CAP
+            minutes, Rounds,   // RES
+            minutes, Rounds,   // TDM
+            tickets,
+            minutes,           // DM
+            tickets,
+            minutes, Rounds,   // BASE
+            minutes, Rounds,   // BOMB
+            minutes, Rounds,   // TSNE
+        ];
+    }
+
+    /// <summary>
     /// The map a stored room row played last, or <c>null</c> when it states none.
     /// </summary>
     /// <remarks>

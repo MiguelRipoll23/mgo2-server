@@ -221,9 +221,6 @@ public sealed class GetGameDetailsHandler(
     /// <summary>Number of rotation entries.</summary>
     private const int RotationRounds = 16;
 
-    /// <summary>Number of per-rule timer words.</summary>
-    private const int RuleTimers = 17;
-
     /// <summary>Always-set bit of the first common byte.</summary>
     private const int CommonAlwaysBit = 0b100;
 
@@ -277,7 +274,8 @@ public sealed class GetGameDetailsHandler(
         var averageExperience = roster.Count > 0 ? (int)Math.Round((double)totalExperience / roster.Count) : 0;
         var viewerIsHost = session.CharacterIdentifier == game.HostIdentifier;
         var rotation = ParseRotation(game.Games);
-        var isDedicated = await IsDedicatedAsync(game.HostIdentifier, cancellationToken);
+        var hostSettings = await FindHostSettingsRowAsync(game.HostIdentifier, cancellationToken);
+        var isDedicated = hostSettings?.Dedicated is true;
 
         var writer = new PacketWriter();
         writer.WriteUInt32(ErrorCodeConstants.ResultNone);
@@ -306,15 +304,21 @@ public sealed class GetGameDetailsHandler(
         writer.WritePadding(16);
         writer.WriteUInt8(game.MaximumPlayers);
         writer.WriteUInt8(roster.Count);
-        writer.WriteUInt32(0);
+
+        // 0x0ec is the room's briefing, which is the minutes a client is told its
+        // briefing screen runs for. It is a figure of the room and not a constant:
+        // a room that states none of its own would be telling every browser that
+        // its briefing lasts no time at all.
+        writer.WriteUInt32((uint)GameDetailsSettingsUtils.BriefingMinutes(hostSettings));
         writer.WritePadding(22);
         writer.WriteUInt8(game.Stance);
         writer.WriteUInt8(0);
-        writer.WriteUInt32(0);
+        writer.WriteUInt32((uint)GameDetailsSettingsUtils.LevelLimitBase(hostSettings));
 
-        for (var index = 0; index < RuleTimers; index++)
+        // 0x10c is the per-rule block, and a round's own length is read out of it.
+        foreach (var timer in GameDetailsSettingsUtils.RuleTimers(hostSettings))
         {
-            writer.WriteUInt32(0);
+            writer.WriteUInt32((uint)timer);
         }
 
         writer.WriteUInt8(0);
@@ -355,21 +359,24 @@ public sealed class GetGameDetailsHandler(
     }
 
     /// <summary>
-    /// Whether the room is hosted as a dedicated host, which is the byte the
-    /// client draws as the Create Game toggle's own value.
+    /// The host's current settings row, which is where the room's own figures live:
+    /// the dedicated flag the client draws as the Create Game toggle, the briefing
+    /// time and the per-rule block.
     /// <para>
-    /// The host's current settings row is the source of truth. The gameplay
-    /// server ensures its row exists and carries the dedicated flag at startup.
+    /// The gameplay server ensures its row exists at startup and states them; a
+    /// player-hosted room's row is what its client pushed. It is read once per reply
+    /// rather than once per field, because the three are fields of that one row.
     /// </para>
     /// </summary>
     /// <param name="hostIdentifier">Character hosting the room.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    private async Task<bool> IsDedicatedAsync(
+    /// <returns>The row, or <c>null</c> for a host that has none.</returns>
+    private async Task<CharacterHostSettings?> FindHostSettingsRowAsync(
         int hostIdentifier,
         CancellationToken cancellationToken)
     {
         var settings = await characterService.GetHostSettingsAsync(hostIdentifier, cancellationToken);
-        return settings.FirstOrDefault(row => row.Type == HostSettingsType.Value)?.Dedicated is true;
+        return settings.FirstOrDefault(row => row.Type == HostSettingsType.Value);
     }
 
     private static List<int[]> ParseRotation(string games)

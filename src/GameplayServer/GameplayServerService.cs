@@ -110,7 +110,11 @@ public sealed partial class GameplayServerService : IAsyncDisposable
             {
                 var characterIdentifier = await accountService.GetOrCreateCharacterIdentifierAsync(token);
                 hostIdentity.SetCharacterIdentifier(characterIdentifier);
-                await characterService.EnsureDedicatedHostSettingsAsync(characterIdentifier, token);
+                await characterService.EnsureDedicatedHostSettingsAsync(
+                    characterIdentifier,
+                    options.GameplayServerBriefingMinutes,
+                    MatchSettingsUtils.RuleTimers(options),
+                    token);
             },
             logger,
             cancellationToken);

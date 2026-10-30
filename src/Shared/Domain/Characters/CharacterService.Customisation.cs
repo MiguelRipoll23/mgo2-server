@@ -137,11 +137,20 @@ public sealed partial class CharacterService
 
     /// <summary>Ensures the character's current host settings mark it as dedicated.</summary>
     /// <param name="characterIdentifier">Identifier of the character.</param>
+    /// <param name="briefingMinutes">Minutes the room's briefing lasts.</param>
+    /// <param name="ruleTimers">
+    /// The room's per-rule times, rounds and tickets, in the order the details reply
+    /// states them.
+    /// </param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task EnsureDedicatedHostSettingsAsync(
         int characterIdentifier,
+        int briefingMinutes,
+        IReadOnlyList<int> ruleTimers,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(ruleTimers);
+
         await using var context = await CreateContextAsync(cancellationToken);
         var settings = await context.CharacterHostSettings
             .FirstOrDefaultAsync(
@@ -150,17 +159,22 @@ public sealed partial class CharacterService
 
         if (settings is null)
         {
-            context.CharacterHostSettings.Add(new CharacterHostSettings
+            settings = new CharacterHostSettings
             {
                 CharacterIdentifier = characterIdentifier,
                 Type = HostSettingsType.Value,
-                Dedicated = true,
-            });
+            };
+            context.CharacterHostSettings.Add(settings);
         }
-        else
-        {
-            settings.Dedicated = true;
-        }
+
+        settings.Dedicated = true;
+
+        // A dedicated host states its own briefing and round times, because the
+        // details reply reads them from this row and a dedicated host never receives
+        // the client's push that fills it for a player-hosted room: the row it left
+        // behind told every browser the room briefed for no minutes at all.
+        settings.BriefingTime = briefingMinutes;
+        settings.RuleTimers = [.. ruleTimers];
 
         await context.SaveChangesAsync(cancellationToken);
     }

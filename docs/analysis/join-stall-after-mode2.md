@@ -5547,3 +5547,66 @@ stream stops 20.8 s after its report — before the stage begins — exactly as 
 does not say the reception paths work; it says the host's half of the briefing is the reference's
 and that the stage it was pointed at is the one this log shows failing. The next join on a
 measured stage is what separates the two.
+
+## 72. The lobby's game-details reply states the room briefs for zero minutes, and it is the one channel the seventy-one sections above never read
+
+**Every section before this one read the gameplay channel.** The room's rule, map,
+briefing time and round limits are not on that channel at all: they travel on the lobby's
+`0x4313` reply, the answer to `0x4312` (`docs/protocol/GAME_SETTINGS_WIRE.md` §1). That
+reply is what a client holds before it ever reaches the stage, and the join of
+30 October 13:56 is the first one decoded field for field.
+
+**The live reply, decoded.** From the free-battle lobby pod's own outbound log
+(`mgo2-free-battle-d86757578-jwbcn`, 13:55:59), at the offsets the same document pins:
+
+| field | wire | live | the working room (`mgo2-started-on-game-round1`, 877 B) |
+| --- | --- | --- | --- |
+| game id | `0x004` | **289** | 381733 |
+| name | `0x008` | `server-5731` | `MOUSE ROOM (EU)` |
+| rotation | `0x0a8` | 1 round, `(rule 1, map 17, flags 0)` | 11 rounds |
+| max / current players | `0x0ea` | 8 / 1 | 17 / 6 |
+| **briefing time** | `0x0ec` | **0** | **1** |
+| **level-limit base** | `0x108` | **0** | **22** |
+| **per-rule words** | `0x10c` | **17 × 0** | `5,2,5,2,5,2,5,2,50,5,30,5,2,5,2,5,2` |
+| host ping | `0x160` | 100 | 46 |
+
+Length is right — 400 bytes is `372 + 28 × 1` player — and the ping and the common bytes
+are the values `MatchService` writes on purpose. So the reply is correctly *framed* and
+correctly *populated* everywhere except the three figures that describe what the room runs.
+
+**Why they are zero, and it is not the reply's builder.** `GetGameDetailsHandler` writes
+the briefing time, the level-limit base and all seventeen per-rule words as literal zeros
+for every room, because for a player-hosted room they come from the host's
+`characters_host_settings` row and nobody had wired the dedicated host's row up to them.
+`EnsureDedicatedHostSettingsAsync` wrote `dedicated = true` and nothing else, so the row a
+dedicated room is described by carried `briefing_time = 0` and `rule_timers = NULL`.
+
+**What a client is told, and what it is not.** The word at `0x0ec` is the room's briefing
+length in minutes — the number the briefing screen is told the room briefs for — and the
+seventeen words after `0x10c` are where a client reads a round's own length. A room that
+states zero for both is a room whose briefing and round last no time at all, while the
+gameplay channel behind it writes a 60-second countdown (`0b 3c`) and a 3 360-unit round
+clock. That mismatch is the first defect found since §70 that the UDP comparisons could not
+have seen: the wire they compared is the reference's, family for family, and the record
+that disagrees is the one written before the client connected.
+
+**What was changed.**
+
+| file | change |
+| --- | --- |
+| `GameplayServer/Match/MatchSettingsUtils.cs` | `RuleTimers(options)` — the seventeen words in the reply's order (SNE t/r, CAP, RES, TDM t/r/tickets, DM t/tickets, BASE, BOMB, TSNE), at this instance's round length and kill limit |
+| `Shared/Domain/Characters/CharacterService.Customisation.cs` | `EnsureDedicatedHostSettingsAsync` takes the briefing minutes and the timers and states them on the row, for the new row and the reused one |
+| `GameplayServer/GameplayServerService.cs` | the startup call passes them |
+| `GameLobbyServer/Commands/Game/Rooms/GameDetailsSettingsUtils.cs` | new: the row's briefing time, level-limit base and padded seventeen-word block |
+| `GameLobbyServer/Commands/Game/Rooms/RoomBrowserHandlers.cs` | the reply reads them instead of writing zeros; `IsDedicatedAsync` becomes `FindHostSettingsRowAsync`, one read for the three fields and the dedicated flag |
+
+**What would confirm it, and what would not.** The confirmation is the same join: the
+lobby's `0x4313` should read `briefing = 1` and `per-rule[6] = 7` (this instance's
+`GAMEPLAY_SERVER_ROUND_MINUTES`), and the client that follows it should leave the black
+screen for its briefing. What would falsify it is a join whose reply reads correctly and
+whose screen still does not come: that would put the briefing time back on the list of
+fields a client stores and never reads, which the ksy already does for seven of the
+block's other words — and it would say the stall is where §68 left it, in the client's own
+session, not in anything this host sends. The reply is not the only thing the room states
+badly: its rotation still names map 17 while the round plays map 1, which is a second
+disagreement between the row and the host and is left for the next section.
