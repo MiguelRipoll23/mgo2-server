@@ -4892,3 +4892,361 @@ report even with no echo on the wire, the client's own `1d` rows behind it, and 
 screen instead of the fade. What would falsify it is the same black screen with the run
 already on the wire — that leaves the run's contents, which §33, §34 and §54 have already
 taken as far as the captures go, rather than its gate.
+
+## 61. The `action 14` of the supervisor's check is a literal in the stage's own script
+
+**What the check reads.** `sv_custom_point.cc` line 94 is the function at
+`system.dll:0x10178570`: it takes the GCL globals `0x6bb316` (*action*, default `-1`) and
+`0x39323b` (*custom point*, default `0`) with the engine's `GetGlobal(name, default)`
+(`0x10065f70`), bounds the first at `cmp edi, 0xe` (`0x10178590`), bounds the second at
+`cmp ebx, 0xff`, and writes `byte[action]` of a table at `0x318654a8`. The getter beside it
+(`0x10178540`) and the same file's other writer read the same table under the same bound, so
+the table is **14 entries, `0` to `13`**, and `14` is one past its end. Both globals hold
+values a **script** has set: `GetGlobal` reads the GCL variable registry and returns the
+caller's default only when the name is absent, and the reported value is `14` and not `-1`,
+so the global exists and holds `14`.
+
+**Where the `14` is written.** Every game stage's `scenerio.gcx` carries 17 sets of the pair
+(the game stages `n001a` … `n024a`, `sm_dd` and `sm_ll`; `init_n`, `nt_mgsetup`, `lobby`,
+`mga_boot` and `r_sna01_n` carry none, which is why no check fires at boot). In `n008a` they
+sit at `0x15b7e2` … `0x15b9e6`, and each reads
+
+```
+6d 15  c9 2b 08 04 06 | f0 e7 af | 55 61 16 b3 6b <action> 55 70 3b 32 39 <point> 00
+                 ^ 0xafe7f0 (the setter itself, registered at 0x110de05c)  ^ 0x6bb316  ^ 0x39323b
+```
+
+a 21-byte record with the setter's name id, both argument name ids, and two bytes that are
+the arguments. The pairs, in file order, are `(15,5)`, `(1,13)`, `(1,5)`, `(2,4)`, `(3,2)`,
+`(4,4)`, `(5,5)`, `(6,5)`, `(7,1)`, `(8,16)`, `(11,1)`, `(12,1)`, `(13,1)`, `(11,4)`,
+`(12,3)`, `(13,2)`, `(14,2)`. The last one carries `14`, which is what the client printed,
+and it is one of the same 21 records in every map, so `14` is not map data: it is the disc's
+own table, the same in `n008a` as in `n001a`.
+
+**The records are not applied in file order.** The first record carries `15`, which is past
+the same bound and would report `over action 15` before anything else; the client reported
+`14` once and nothing else. So the client selects among these records — and the four runs
+(`15`; `1` … `8`, with `1` set twice; `11` … `13`; `11`, `12`, `13`, `14`) are the choices it
+selects between.
+
+**Why no record of this host carries the number.** The value is compiled into the script, not
+carried: the gameplay channel has no field that writes a GCL global (§34), and neither the
+port's `savemgo.dll` nor `mgo2.exe` mentions either name id at all — the only writer of
+`0x6bb316` in the whole client is the stage script's own table. The check also fires 63 ms
+after `Stage n008a` starts, during the stage's own init, before the briefing's records are
+read.
+
+**The rule is the one input of this host that can choose a run.** The client does not read the
+stage's rule out of the script: its engine holds a **named dispatch per rule** and calls the
+stage's function for it. The names are in `system.dll` — `Rule_Eng_COOP`, `Rule_Eng_TSNE`,
+`Rule_Eng_BASE`, `Rule_Eng_CAP`, `Rule_Eng_RESCUE`, `Rule_Eng_TDM`, `Rule_Eng_DM`,
+`Rule_Eng_CLANROOM`, `Rule_Eng_SNEAK`, `Rule_Eng_TRA`, `Rule_Eng_OFFICER_TRA` — and each is
+looked up as a script function (`0x10151790`, itself `0x100c35b0(0x654515, name)`) and called
+(`0x101515c0`) from its own dispatch stub (`Rule_Eng_TDM` at `0x102b4430`, `Rule_Eng_RESCUE`
+at `0x102b4467`). A second set — `Rule_TSNE`, `Rule_RESCUE`, `Rule_TDM` at `0xff0554` — is
+read at `0x102c82ea` the same way. **That rule id is ours**: it is the triple's first byte in
+the `0x4313` rotation this host publishes (`GAMEPLAY_SERVER_RULE`), so a round on `TDM` runs
+the client's `Rule_Eng_TDM` path and a round on `SNE` runs another.
+
+**What is still not measurable here.** Whether another rule's path reaches a run that stops
+at `13`. The script names its functions by a hash this session could not recover (the ids in
+the file are 15-bit indices, not the engine's string hashes), so the runs cannot be tied to a
+rule statically. The test is one join on a different `GAMEPLAY_SERVER_RULE`: if the message
+still names `14`, no rule avoids it and only the client's own bound can be changed.
+
+The check is a `devcheck`, not a crash: the process ran on for another 56 s in the session
+of §60 and the stage kept drawing. It is not what leaves the screen black. **The release
+client does not report it at all**: the port's print path (`0x103e6070` → `0x10017390`) is
+unconditional in this build, and the RPCS3 log of a complete working session (`RPCS3.log`,
+168 921 lines, 27 October) contains no `Game check failed`, no `.cc line` and no `parse.c`
+line. The same data shipped and was played without a word of it.
+
+## 62. The custom-point table is the score table, and the script fills it in four runs
+
+**What the table is for.** The 14 bytes at `0x318654a8` are read at thirteen sites, all
+through the getter at `0x10178540`, and the scorer at `0x102bed20` shows what an index means:
+
+```
+score  = table[1]
+if (flag)          score += table[2]
+if (flag)          score += table[3]
+if (match)         score += table[8]
+switch (kind) { 0: += table[10]; 1: += table[11]; 2: += table[12] }
+```
+
+so the table is **the points each score action is worth**, not a spawn point or a slot. The
+other sites read index `0` (`0x101ec17d`), `9` (`0x101edfe5`), `4` (`0x101fe04f`) and a
+computed index (`0x101ebfc9`, `0x101ec116`, `0x101fe1c4`). Nothing in the image reads `13` or
+`14` by constant, so the entry the script overflows is one no scoring code asks for.
+
+**The four runs, with their values.** The 17 records of §61 are not one list but four, each
+opening with the same 21-byte shape:
+
+| run | pairs `(action, points)` |
+| --- | --- |
+| A | `(15,5)` |
+| B | `(1,13)`, `(1,5)`, `(2,4)`, `(3,2)`, `(4,4)`, `(5,5)`, `(6,5)`, `(7,1)`, `(8,16)` |
+| C | `(11,1)`, `(12,1)`, `(13,1)` |
+| D | `(11,4)`, `(12,3)`, `(13,2)`, `(14,2)` |
+
+B is common ground (a kill and its bonuses, which is what the scorer reads 1, 2, 3 and 8 for);
+C and D are **two variants of the same three actions** `11`, `12`, `13`, and D alone adds
+`14`. That is the shape of a rule family split — two rule groups worth `1, 1, 1` and `4, 3, 2`
+respectively — rather than of a per-map table, which is what the byte-identity across all 21
+stages already said.
+
+**Why this is as far as static work goes.** The records are data, not instructions: the
+decoder at `0x100653f0` whose nibble scheme fits `6d 15` belongs to `.\command.c`'s format, not
+the script's, and the script's own instruction encoding is not documented anywhere in the
+image. Tying a run to a rule therefore needs the client's execution, not its bytes.
+
+**The one test that closes it.** A join on another `GAMEPLAY_SERVER_RULE`. If the message
+still names `14`, D runs for that rule too and no rule avoids it; if it disappears, the rule
+selected D and the round can sidestep the client's overflow by running a rule from C's family.
+Either answer is one join's worth of work, and neither changes what the server sends, since
+the number is never on the wire.
+
+## 63. The script names are hashed, and the hash is now known
+
+**The hash.** `system.dll:0x100869d0` turns a name into the 24-bit id the script and the engine
+exchange. It is `h = (((h << 5) | (h >> 19)) + c) & 0xffffff` over the bytes, and a result of
+`0` is stored as `1`:
+
+```python
+def gcl_hash(name):
+    value = 0
+    for character in name.encode():
+        value = ((value << 5) | (value >> 19)) & 0xFFFFFFFF
+        value = (value + character) & 0xFFFFFF
+    return value if value else 1
+```
+
+**It is verified against the client's own check.** The failing setter looks up two ids —
+`0x6bb316` and `0x39323b` — and prints `over action %d` / `over custom point %d` for them.
+`gcl_hash("action") == 0x6bb316` and `gcl_hash("point") == 0x39323b`, both exactly. So the
+intrinsic of §61 is `SetCustomPoint(action, point)` and the stage sets the score points for
+action `14`, with `point` the value. The engine files the same ids as named arguments
+(`0x101958bb` in the host-call dispatcher), which is the second reading of the same pair.
+
+**Names this recovers.** `gcl_hash("Rule_Eng_TDM")` is `0x890dd1`, and it occurs exactly once
+in `n008a` — at `0x1ed43`, inside a table of **497 declarations** that runs `0x1ed11` …
+`0x21f5a`, immediately before the stage's own UI strings (`Deathmatch` at `0x21f88`). Every
+rule name of §61 — `Rule_Eng_DM`, `Rule_Eng_TSNE`, `Rule_Eng_CAP`, `Rule_Eng_BASE`,
+`Rule_Eng_SNEAK`, `Rule_Eng_COOP`, `Rule_Eng_RESCUE`, `Rule_TDM`, `Rule_RESCUE`, `Rule_TSNE` —
+appears there exactly once, so the stage defines a function for each rule and the engine's
+per-rule dispatch of §61 is calling into that table.
+
+**What it does not yet recover.** Which declaration index is which function, and therefore
+where each rule function's body begins: the code section (`0x158a5c` … `0x16b958`, framed by
+`0x12efc` at `0x158a58`) holds the declarations, the strings and the bodies in one stream, and
+the mapping from declaration order to body offset is the loader's function table, which this
+session did not reach. Until that is walked, the run a rule selects stays a matter of running
+the client, not of reading it.
+
+## 64. The measured join of 29 October: the server's half completed, the stage script's did not
+
+**What the deployed host did.** The k3s pod `mgo2-gameplay-1-7f989c764d-drf2x`
+(namespace `mgo2`, image of `0f8d591`) served one join, and every step of it is in its log:
+
+```
+16:33:50  Peer connected from 89.129.16.203:5730 (peer 2); handshake, session established
+16:33:52  profile from character 2 (PhilDunphy23); roster entry under 0x9001, the rest 0x1001
+16:33:54  match 289's rotation written into the settings burst
+16:34:02  the peer reports its map-loaded state: 1 of 1 players have reported
+16:34:02  the briefing hears its first join report on 0x1ade; reports complete, 1 of 1
+16:34:06  opening run: 10 records, payload echoing 1, rule 1, map 9, a fresh briefing
+16:34:12  the peer's request to be placed is answered: 4 records at sequence f3
+16:34:29  the peer's last datagram
+16:34:59  reaped: 177 records acknowledged, roster acknowledged: yes
+```
+
+Nothing in that sequence is unanswered and nothing is left unacknowledged. The join report
+arrived, the briefing was armed, the opening run and the placement went out, and the client
+acknowledged all 177 records including the roster. The stall is not a missing record: it is
+that the peer stopped sending.
+
+**What the client did with it.** The client log of the same join puts the stage start ~27 s
+before its window closed, which is the second in which the first `map-loaded` report reaches
+the host, and it fails twice within two seconds of that start:
+
+```
+[57926 ms] Stage n009a: texture memory 85898/278528 KB free, 0 overflows; textures 2679/16384
+[58020 ms] Game check failed: online\supervisor\cp\sv_custom_point.cc line 94: over action 14
+[60160 ms] Game check failed: parse.c line 301: argno <= ((GCL_ARGS *)(...argstack_p[-1]))->argc
+[85707 ms] Window closed (27 s since the last stage start)
+```
+
+So the failure happens **at stage initialisation**, after the map's textures are up and before
+the briefing can be presented — the two records the host sends afterwards (`16:34:06` and
+`16:34:12`) land in a client whose simulation has already stopped. The 26 seconds between the
+second failure and the closed window are the black screen, and the peer's last datagram
+(`16:34:29`) is an acknowledgement of a record it is no longer able to act on.
+
+**The second failure is beside the first, and probably a consequence of it.** `sv_custom_point`
+writes `byte[action]` of a 14-entry table (§62). The run that carries `(14, 2)` writes one
+byte past it, and two seconds later the GCL VM refuses a call whose argument index exceeds the
+caller's `argc` — the shape of argument state that the out-of-bounds write has clobbered. The
+check build therefore reports the write and then the damage; a release build, which has no
+`assert`, does the same write and goes on with the clobbered word, which is why the disc was
+played for years without anybody seeing either line.
+
+**This makes the write the thing to avoid, and the rule the only lever the host has.** The
+run is selected inside the stage script, from context the client builds out of the room it was
+handed; the number is never on the wire (§34, §62). What is on the wire is the rotation's rule
+byte, and the same table ships in all 21 stages with the `14` in exactly one of the four runs
+(§62). The host publishes that byte from `GAMEPLAY_SERVER_RULE`; this room published `1`
+(TDM), and TDM is the rule the reference session of 27 October played — on RPCS3, where the
+check build of this port's `system.dll` is not the one running. If a rule from the other
+family clears the overflow, the room can sidestep it without touching the client at all; if
+it does not, the write is in the disc data every rule reaches and no rule choice avoids it.
+
+## 65. `mgo2-started-on-game-round1`: the briefing is published without a gate, and a played room holds a zero clock
+
+**What this capture adds.** It is the longest session in the corpus (1 400 s, six
+rounds) and the first that holds a room returning from a played round to its
+briefing. Its shape is measured directly: after a round's clock reaches zero the
+host writes `01 00 00` under the round's own operations identifier every four
+seconds — six times after the first round, from t+191.599 to t+211.596 — until the
+briefing's reports arrive, then one `e0` per reporting player at t+214.231 …
+t+215.445, and the round opens at t+215.632 on its whole 2 400 units. The second
+boundary is the two-set shape `BRIEFING_FLOW.md` §2 describes: the reports and
+their `e0` publications are on `0x12de` (t+566.551 … t+571.145), the briefing's run
+follows under `0x1254` at t+572.739 carrying the whole 2 400 in its state block,
+the `0b 3c …` countdown ticks under `0x1254` from t+574.755 — **the briefing's own
+operations identifier, not the first generation's** — and the round opens at
+t+601.404 under `0x1a54` on the report the client sent on `0x1ade` at t+601.160.
+The third boundary is the same-generation shape: `0x1ade` publications, the run
+under `0x1a54` at t+1 285.939, the countdown under `0x1a54`, and no flip.
+
+**What was wrong here.**
+
+* **The briefing's run was gated on the lobby-slot echo.** §60 bounded that wait at
+  three seconds instead of removing it, so a peer whose echo the host does not read
+  as `82 NN`/`84 NN` still got its run on an artificial timer, and one whose echo
+  arrived later than the timer got the run before it entered — the `myserver19`
+  shape the file already records. The echo is now only the source of the run's
+  opening pair; the run goes out after the entry's dwell from the later of the
+  entry and the report, which is the instant both reference briefings use.
+* **A room of one armed a deadline on its own report.** `OnJoinReport` took
+  `Math.Min(2, PlayerCount)` reports as complete, so a solo client's first report
+  started the briefing's count and opened a round sixty seconds later whether or
+  not the player had readied. That is the `myserver17` failure §17 records, and it
+  contradicts the design the rest of the file states: a solo briefing is frozen and
+  its only exit is the player's own ready. The deadline is now armed by the second
+  player's report alone.
+* **The ready path opened the round under the briefing's sibling.** Every round in
+  this capture plays under the generation its briefing was published on, and
+  `MatchRecordGenerationUtils.OfJoinReport` already reads that from the report. The
+  ready that completes a room now opens under the set the briefing last heard, not
+  under `Sibling`; a client that re-reported on the other generation is on that
+  one, and a round written under the first is one its client never hears.
+* **The countdown was pinned to the first generation.**
+  `BriefingCountdownService` wrote `0x1a54` for every briefing, but the capture
+  writes the countdown on the briefing's own operations stream: `0x1254` through
+  the briefing whose reports and run are on the `0x12` generation (t+574.755), and
+  `0x1a54` through the one on the `0x1a` generation (t+1 289.154). A briefing
+  written on the sibling therefore had its run and its reports on one stream and
+  its count and ready set on another. The stream is now restarted, and the count
+  armed, on the generation the briefing's first report named.
+* **A played room's briefing carried the next round's whole clock.** The beat
+  writes `RemainingUnits` when no round is open, and that returned
+  `BriefingClockUnits`, which `BeginBriefing` set to the whole next round for every
+  briefing. The capture holds zero there and reserves the whole value for the
+  round's open. A fresh room keeps the whole clock — that is
+  `mgo2-started-briefing-then-solo-game`, whose briefing writes `01 60 09` — and
+  the difference is the room's history, which is what `BeginBriefing` now reads.
+
+**What is not changed.** The ready records still gate a round that has heard a
+report on the other generation, the briefing's countdown and its set are still the
+`0x0b` record, and the capture's `e1` stream (2 262 reports over the session) is
+answered by the same `e0` publication the code already writes. Nothing here was
+verified against a live client; what it changes is the wire this host would write
+for the next join, and the check is that join: a briefing screen after a map load
+with no entry echo on the wire, a round that opens on the player's ready alone in a
+room of one, and a zero clock through the result screen that follows a round.
+
+## 66. `mgo2-started-on-game-round1`: the briefing's two states, and the cadence of a room that has played
+
+**What this section adds beyond §65.** §65 read the boundary between a played round
+and the briefing after it. This reads the briefing itself: the states its client
+reports, in the only capture that holds a player changing its mind, and the
+instants a played room's briefing is written at, so that a writer's cadence can be
+compared against it rather than guessed.
+
+**The states, on the client's own slot.** The capture's client is slot `0x11` (17)
+— `e1 11` on its reports and `1f 11 NN` on its states — and it writes eight state
+records in the whole 1 408 s session: five `01` and three `00`.
+
+| t+ | record | identifier | state |
+| --- | --- | --- | --- |
+| 595.319 | `1f 11 01` | `0x9254` | ready; the briefing's closing zero adds slot `0x11` |
+| 1 310.637 | `1f 11 01` | `0x9a54` | ready |
+| 1 311.329 | `1f 11 00` | `0x9a54` | not ready — settings |
+| 1 315.993 | `1f 11 01` | `0x9a54` | ready again |
+| 1 316.727 | `1f 11 00` | `0x1a54` | not ready — settings |
+| 1 322.485 | `1f 11 01` | `0x9a54` | ready again |
+| 1 325.885 | `1f 11 00` | `0x9a54` | not ready — settings |
+| 1 331.838 | `1f 11 01` | `0x9a54` | ready again |
+
+**The three zeros are the three settings visits.** The room's operator reports
+navigating to the settings screen at least three times, and this is the only capture
+with three `00` records from one slot: each is followed by a `01` 4.7 s, 5.8 s and
+6.0 s later, and the first is written 0.7 s after the ready that preceded it, which
+is a player readying and then opening its menus rather than a player that was never
+ready. So the settings screen is announced by *dropping* the ready, and the return
+with `01`; the wire has no third value for it. Every other state record in the
+corpus is `01` (`mgo2-game-joined-when-red-team-then-briefing` slot 5,
+`mgo2-game-started-on-briefing` slot 1, `started-briefing-then-solo` slot 3,
+`joined-on-briefing-then-game` slot 3, `mgo2-game1` slot 20), and no capture holds
+`02` or above.
+
+**What that means for this host.** Nothing has to be added for settings, and
+nothing has to be removed: `BriefingStateService.IsReady` counts `01` and every
+other value takes the player's bit out of `ReadyMask` and out of `AllReady`, which
+is the reading the capture's cycles produce. A host that read `00` as "unknown,
+keep the bit" would open a round over a player in its menus, and a host that read it
+as "left the room" would drop a player who is still there.
+
+**The cadence of a played room, measured.** A round's clock reaches zero and the
+host writes `01 00 00` under the round's own operations identifier — not the
+briefing's — every four seconds for as long as the room waits, and then the
+publications and the open:
+
+| t+ | what | identifier |
+| --- | --- | --- |
+| 191.599 … 211.596 | `01 00 00`, six times, 4.0 s apart | `0x1254` |
+| 214.231 … 215.445 | one `e0` per reporting player | `0x1ade` |
+| 215.632 | `01 60 09` — round 2 opens, 0.19 s after the last publication | `0x1a54` |
+| 522.006 … 562.045 | `01 00 00`, eleven times, 4.0 s apart | `0x1a54` |
+| 566.551 … 571.145 | the reports and their `e0`s | `0x12de` |
+| 572.739 | the briefing's run, whole 2 400 in its state block | `0x1254` |
+| 574.755 | the `0b` countdown starts, on the briefing's own set | `0x1254` |
+| 595.319 | `1f 11 01`, the client's ready | `0x9254` |
+| 601.160 | the round's report | `0x1ade` |
+| 601.404 | `01 60 09` — round 3 opens, 6.1 s after the ready | `0x1a54` |
+| 1 238.176 … 1 278.177 | `01 00 00`, eleven times, 4.0 s apart | `0x1254` |
+| 1 285.939 | the briefing's run, whole 2 400 | `0x1a54` |
+| 1 310.637 … 1 331.838 | the eight state records above | `0x1a54` / `0x9a54` |
+| 1 353.284 | `01 60 09` — round 4 opens, 21.4 s after this client's last ready | `0x1254` |
+
+**Both waits are the room's, not a timer's.** Round 2 opens 0.19 s after the
+publication that completes it, round 3 6.1 s after the ready and 0.24 s after the
+report that follows it, and round 4 21.4 s after *this* client's ready because
+another player had not readied yet — the readiness of the room is what moves, and
+no interval in the capture is a fixed pause. The one interval that looks like one —
+the four seconds of `01 00 00` — is a repeat, written while the room waits and
+replaced by the publication and the open; it is not a gate on anything.
+
+**The open is written twice.** Each round's `01 60 09` is followed by a second copy
+about 6.3 s later (222.027, 607.751, 1 359.361), and then the clock counts down in
+32-unit steps every 2.5 s (`01 60 08` at 254.025). That is the recorded host's own
+cadence, and it is the one a writer has to match; `docs/protocol/BRIEFING_FLOW.md`
+§4 carries the round's clock itself.
+
+**What is not changed by this section.** No host branch is added for the settings
+screen, because the wire does not carry one; the only new fact the code takes from
+it is that `00` is a real record rather than an unread value, which
+`BriefingReadyBodiesUtils` now states and `BriefingStateService` already behaves
+according to. The §65 fixes stand: the run is not gated on an entry echo, a room of
+one arms no deadline, the ready opens under the report's own set, the countdown
+rides the briefing's generation, and a played room's briefing holds a zero clock.

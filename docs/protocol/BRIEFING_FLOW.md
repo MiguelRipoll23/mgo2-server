@@ -209,6 +209,35 @@ different sets — this room reports as `2a` (slots 1, 3 and 5) and readies as
 briefings is the one whose bit the closing zero adds last, which is the note this
 capture ships with: *every player changed their state to ready, me last*.
 
+**The state byte, and the ready taken back.** Every record of this kind is three
+bytes — `1f <slot> <state>` — and the corpus holds two states: `01`, the ready the
+round opens on, and `00`, which takes that player's bit back out of the set. The
+capture `mgo2-started-on-game-round1` is the one with a client changing its mind:
+its slot `0x11` writes the pair three times through the briefing of its fourth
+round, and the room's operator reports three visits to the settings screen in that
+briefing.
+
+| t+ | record | identifier | state |
+| --- | --- | --- | --- |
+| 595.319 | `1f 11 01` | `0x9254` | ready — the closing zero of that briefing adds slot `0x11` |
+| 1 310.637 | `1f 11 01` | `0x9a54` | ready |
+| 1 311.329 | `1f 11 00` | `0x9a54` | not ready — the player entered its settings |
+| 1 315.993 | `1f 11 01` | `0x9a54` | ready again, 4.7 s later |
+| 1 316.727 | `1f 11 00` | `0x1a54` | not ready — settings again |
+| 1 322.485 | `1f 11 01` | `0x9a54` | ready again, 5.8 s later |
+| 1 325.885 | `1f 11 00` | `0x9a54` | not ready — settings a third time |
+| 1 331.838 | `1f 11 01` | `0x9a54` | ready again, 6.0 s later |
+
+The identifiers differ only in the frame's own flag bit (`0x8000`), so all but the
+first are the same operations stream: `0x1254` for the briefing of round 3 and
+`0x1a54` for the one before round 4, which is the set that briefing's run is
+written on (§1). **Settings has no value of its own on this wire.** The three `00`
+records are the three visits, so a client announces the settings screen by dropping
+its ready and its return with `01`; a player the room sees as "in settings" and one
+it sees as "not ready" are the same record, and a host has to treat `00` as the
+ready withdrawn — leaving the bit set would open a round over a player sitting in
+its menus (`Rooms/BriefingStateService.IsReady`, which counts only `01`).
+
 **A briefing is answered before its round is.** A client reports twice a round and
 the host answers the two differently. The first report is met by the run under its
 own set while the room is still briefed: `started-on-briefing`'s first report

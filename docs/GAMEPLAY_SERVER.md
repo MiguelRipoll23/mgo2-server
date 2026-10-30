@@ -170,16 +170,15 @@ player at the slot its own record named (`BriefingStateService.ReadyMask`), so t
 room's readied players and its reported ones are different sets: a bot the host
 adds is ready in the record that adds it and never reports.
 
-**A room of one is briefed and then started.** Its sole player readies like any
-other and the round opens on that ready: `mgo2-started-briefing-then-solo-game` is
-exactly that room, its client readying at t+165.780, its countdown closing on the
-zero at t+167.992 and its round asked for at t+173.438
-([`BRIEFING_FLOW.md`](protocol/BRIEFING_FLOW.md) §2). What a room of one does not
-do is start counting: its countdown is held at the room's whole briefing time until
-a second player reports ([`BRIEFING_FLOW.md`](protocol/BRIEFING_FLOW.md) §1), and
-its briefing still ends on its own deadline when its player never readies — which
-is the client's own contract on the other end of it: a client in a briefing waits
-either until every player is ready or until its own briefing timer runs out.
+**A room of one is briefed and then started, and it has no deadline.** Its sole
+player readies like any other and the round opens on that ready:
+`mgo2-started-briefing-then-solo-game` is exactly that room, its client readying at
+t+165.780, its countdown closing on the zero at t+167.992 and its round asked for
+at t+173.438 ([`BRIEFING_FLOW.md`](protocol/BRIEFING_FLOW.md) §2). Its count is
+held at the room's whole briefing time until a second player reports
+([`BRIEFING_FLOW.md`](protocol/BRIEFING_FLOW.md) §1), and nothing runs out: a
+deadline armed on the sole report is a round the player never asked for
+(`analysis/join-stall-after-mode2.md` §17).
 
 With that gate met, `MatchStartRunService.OnJoinReport` resolves what the room is running
 (`MatchSettingsService`, from this instance's settings), latches the round
@@ -189,11 +188,11 @@ reporting — which is the state a host with nothing to serve should leave it in
 
 **The room does not wait for a report that never comes.** A client in a briefing
 waits for the host's round *either* until every player is ready *or* until its own
-briefing time is up, so the wait is a deadline and not a rule: the first peer's
-join and every round's end arm one for the briefing that follows
-(`MatchStartRunService.BeginBriefing`), and a briefing that runs out opens the
+briefing time is up, so the wait is a deadline and not a rule: the second player's
+report arms one, and a briefing that runs out opens the
 round for the players that did report — under the identifier set the last of their
-reports arrived on (`OpenWhenBriefingEndsAsync`). A briefing no player has answered
+reports arrived on (`MatchStartRunService.ArmBriefingDeadline`,
+`OpenWhenBriefingEndsAsync`). A briefing no player has answered
 opens nothing, and neither does one whose reporters have all since left: a round
 is still something a report asks for, and a room nothing has answered has no set
 to open one under. The player still to report is served the
@@ -297,6 +296,15 @@ A host that writes it on the report hands the room's state to a client that has
 not entered yet, and that client reports again, readies nothing and never shows
 its briefing screen — `myserver19.pcapng`, where the run went out 0.38 s before
 the echo and the client wrote no `1d`, no `1f` and no `22` in 220 s.
+
+**The echo is the run's preferred instant and no longer its gate.** A peer this
+host never reads an echo from used to be answered nothing until the briefing's
+deadline opened a round over it — the live session of 2026-10-29, whose map loaded
+with the client still on the black screen (`analysis/join-stall-after-mode2.md`
+§60). The run is now written after the dwell from the later of the entry and the
+report, and the echo only selects the run's opening pair: heard, the pair is its
+answers; not heard, the run opens on the recorded empty `0x5001` heads and the
+room's state reaches the client either way.
 
 **The 25-byte player entry is a round's record, and the answer to the client's
 room-entry request carries it only while a round is playing.** The request is the

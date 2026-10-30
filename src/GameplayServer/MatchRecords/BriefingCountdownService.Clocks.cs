@@ -35,7 +35,14 @@ public sealed partial class BriefingCountdownService
     /// </remarks>
     /// <param name="begun">When the briefing's count began.</param>
     /// <param name="minutes">How long the briefing runs for, in minutes.</param>
-    public void Begin(DateTimeOffset begun, int minutes)
+    /// <param name="operationsIdentifier">
+    /// The operations stream the briefing is written on: the one the report that
+    /// armed this count named. The countdown and the ready set travel under it, so
+    /// a briefing on the sibling generation is not written on the first one's
+    /// stream (`mgo2-started-on-game-round1` writes `0x1254` through the briefing
+    /// whose run is on `0x1254`, and `0x1a54` through the one on `0x1a54`).
+    /// </param>
+    public void Begin(DateTimeOffset begun, int minutes, ushort operationsIdentifier)
     {
         if (minutes <= 0)
         {
@@ -47,6 +54,7 @@ public sealed partial class BriefingCountdownService
             startedAt = begun;
             countingFrom = null;
             length = TimeSpan.FromMinutes(minutes);
+            countdownIdentifier = operationsIdentifier;
         }
 
         logger.LogDebug(

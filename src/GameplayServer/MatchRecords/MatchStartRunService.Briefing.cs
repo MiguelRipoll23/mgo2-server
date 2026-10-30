@@ -71,23 +71,19 @@ public sealed partial class MatchStartRunService
             armedDeadlineBriefing = null;
         }
 
-        // The briefing writes on the operations stream, which it opens: the
-        // capture's countdown opens the stream and its round's run opens the same
-        // stream again, so the stream is restarted here rather than continued from
-        // the round before it.
-        sequences.Restart(BriefingCountdownService.Identifier);
-
-        // The clock a briefing is held on is the whole time of the round it
-        // precedes, and it is noted where the briefing begins because every writer
-        // of that clock reads it from the room's round: the beat behind the run the
-        // briefing's report asks for carries the round's clock on every one of its
-        // frames, and a room whose briefing noted none writes a zero there — the
-        // reading a client takes for a round that is over, which is a briefing that
-        // is never shown (`MatchRoundStateService.BriefingClockUnits`). The
-        // reference holds its own whole: `mgo2-started-briefing-then-solo-game`
-        // writes `01 60 09` — 2 400 units of its five-minute round — from t+57.626,
-        // its run, to t+170.366, four seconds before the round opens.
-        roundState.NoteBriefingClock(settings.Round(roundState.RoundNumber + 1).TimeLimitUnits);
+        // The clock a briefing is held on: the whole time of the round it precedes
+        // for a room that has not played yet — the reference's fresh room writes
+        // `01 60 09`, its five-minute round, through its briefing
+        // (`mgo2-started-briefing-then-solo-game` t+57.626 to t+170.366) — and zero
+        // once a round has played, because the round that ended is over.
+        // `mgo2-started-on-game-round1` is the measurement: every round end of it
+        // writes `01 00 00` through the briefing that follows, and the next round
+        // opens on its whole 2 400 only when it opens
+        // (`MatchRoundStateService.BriefingClockUnits`).
+        roundState.NoteBriefingClock(
+            roundState.RoundNumber > 0
+                ? 0
+                : settings.Round(roundState.RoundNumber + 1).TimeLimitUnits);
 
         logger.LogDebug(
             "A briefing runs for {BriefingTime} minute(s); its count is armed by the report that reaches "
@@ -109,7 +105,11 @@ public sealed partial class MatchStartRunService
     /// arms the deadline behind it — is the report that completes the room
     /// (<see cref="ArmBriefingDeadline"/>): a room of one moves it at its own.
     /// </remarks>
-    private void BeginBriefingClock()
+    /// <param name="generation">
+    /// The set the briefing's first report arrived on, whose operations stream the
+    /// countdown is written on and restarted.
+    /// </param>
+    private void BeginBriefingClock(MatchRecordGenerationUtils generation)
     {
         var settings = matchSettings.FindPublished();
         if (settings is null)
@@ -120,11 +120,19 @@ public sealed partial class MatchStartRunService
             return;
         }
 
+        // The briefing opens the operations stream of the set its first report
+        // named: the capture's countdown begins the stream and the run behind it
+        // takes the same stream's first values, so the restart belongs to the
+        // report and not to the briefing's preparation, which happens before any
+        // report names a set.
+        sequences.Restart(generation.Operations);
+
         // The countdown goes to the peers the briefing is shown to, so it is armed
         // with it: a client waiting out its own briefing timer is told how much of
         // it is left. It is the seven-byte 0x0b operations record, counting this
-        // same briefing time down in seconds (<see cref="BriefingCountdownBodiesUtils"/>).
-        countdown.Begin(DateTimeOffset.UtcNow, settings.BriefingTimeMinutes);
+        // same briefing time down in seconds (<see cref="BriefingCountdownBodiesUtils"/>),
+        // and it rides the generation this report named rather than a fixed one.
+        countdown.Begin(DateTimeOffset.UtcNow, settings.BriefingTimeMinutes, generation.Operations);
 
         logger.LogDebug(
             "The room's briefing heard its first join report, so its {BriefingTime}-minute count is "
@@ -139,16 +147,16 @@ public sealed partial class MatchStartRunService
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>A room of one is a room whose reports are complete.</b> Its timer is the
-    /// room's own, and the player the room is waiting for is the one that reported,
-    /// so its report arms the deadline: the count starts moving and the round opens
-    /// when the briefing's time is out. Holding a sole client's count at the room's
-    /// whole briefing time and arming nothing is a room whose briefing never ends —
-    /// the live run of 2026-10-23 read a frozen <c>0b 3c 00 …</c> sixty times over a
-    /// one-minute briefing and then a client with no round to enter
-    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §54). The report that gives a
-    /// room of two its second player arms it there instead, and the room that
-    /// reports no player at all is armed by nothing.
+    /// <b>A room of one is not armed at all.</b> Its count is held at the room's
+    /// whole briefing time and nothing runs out, which is what the reference host
+    /// writes for a sole client (<c>mgo2-game-started-on-briefing</c> holds
+    /// <c>0b 3c</c> for tens of seconds), and the only thing that starts a solo
+    /// round is that player's own ready (<c>mgo2-started-briefing-then-solo-game</c>
+    /// readies at t+165.780 and asks for its round at t+173.438). A deadline armed
+    /// on the sole report is a round nobody asked for
+    /// (<c>docs/analysis/join-stall-after-mode2.md</c> §17). The second player's
+    /// report is what gives the room somebody else to wait for, and it is armed
+    /// there; a room that reports no player is armed by nothing.
     /// </para>
     /// <para>
     /// <b>The count and the deadline are one briefing time, so they start

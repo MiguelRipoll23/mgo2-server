@@ -185,27 +185,32 @@ public sealed partial class MatchStartRunService(
     /// would open that round at the first pair of them.
     /// </para>
     /// <para>
-    /// <b>The round plays under the other set.</b> The briefing's own set is the one
-    /// its first report named and the one its run was written under
-    /// (<see cref="BriefingGeneration"/>); the round that follows it plays under
-    /// <see cref="MatchRecordGenerationUtils.Sibling"/>, which is the set its run,
-    /// its beat and its result are written on. A briefing that has heard no report
-    /// has no set of its own and opens nothing.
+    /// <b>The round plays under the set of the report the briefing last heard.</b>
+    /// Every round of the captures opens on the set its own report arrived on
+    /// (<see cref="MatchRecordGenerationUtils.OfJoinReport"/>): <c>mgo2-game1</c>'s
+    /// first round reports on <c>0x1ade</c> and plays on <c>0x1a54</c>, its second
+    /// reports on <c>0x12de</c> and plays on <c>0x1254</c>, and
+    /// <c>mgo2-started-on-game-round1</c> writes a whole briefing under the set its
+    /// next round then opens on. The briefing's first set
+    /// (<see cref="BriefingGeneration"/>) is not used here: a client that
+    /// re-reported on the other one is on that set, and a round written under the
+    /// first would be one its client never hears. A briefing that has heard no
+    /// report has no set and opens nothing.
     /// </para>
     /// </remarks>
     /// <returns><c>true</c> when this call opened the round.</returns>
     public bool OpenWhenEveryPlayerIsReady()
     {
-        MatchRecordGenerationUtils? briefing;
+        ushort? reported;
         lock (gate)
         {
-            briefing = briefingGeneration;
+            reported = lastJoinReportIdentifier;
         }
 
-        if (briefing is null)
+        if (reported is not { } identifier)
         {
             // Only a report names a briefing's set, so a room whose players have
-            // readied without one has no set for a round to follow it on.
+            // readied without one has no set for a round to play on.
             logger.LogDebug(
                 "The room's players are ready but its briefing has heard no report, so it has no set "
                 + "and no round is opened under it");
@@ -222,7 +227,7 @@ public sealed partial class MatchStartRunService(
         }
 
         return OpenRound(
-            briefing.Sibling,
+            MatchRecordGenerationUtils.OfJoinReport(identifier),
             $"every player in the room has readied, {briefingStates.BriefingReadyCount} of them",
             waitForEveryone: false);
     }

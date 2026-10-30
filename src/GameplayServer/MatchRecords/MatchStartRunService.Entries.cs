@@ -260,27 +260,13 @@ public sealed partial class MatchStartRunService
     /// </remarks>
     /// <param name="session">Session the peer is on.</param>
     /// <returns>
-    /// <c>true</c> once the briefing has heard a report, the peer has entered and
-    /// the dwell behind that entry has been spent.
+    /// <c>true</c> once the briefing has heard a report and the dwell behind the
+    /// peer's entry — or behind the report, when no entry was heard — is spent.
     /// </returns>
     public bool IsEntryAnswerDue(PeerSession session)
     {
         return BriefingGeneration is not null
-            && EntryRunDwellRemaining(session) is null
-            && (HasEntered(session) || EntryEchoGraceRemaining() is null);
-    }
-
-    /// <summary>
-    /// Whether a peer has asked to be placed in the room.
-    /// </summary>
-    /// <param name="session">Session the peer is on.</param>
-    /// <returns><c>true</c> once the peer's entry has been heard.</returns>
-    private bool HasEntered(PeerSession session)
-    {
-        lock (gate)
-        {
-            return entered.Contains(session);
-        }
+            && EntryRunDwellRemaining(session) is null;
     }
 
     /// <summary>
@@ -325,7 +311,6 @@ public sealed partial class MatchStartRunService
             entrySequences.Remove(session);
             entryAnswers.Remove(session);
             entryInstants.Remove(session);
-            entrylessWarned.Remove(session);
         }
     }
 }

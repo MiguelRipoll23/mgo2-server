@@ -126,11 +126,11 @@ public sealed partial class BriefingCountdownService(
     public const int PublishPeriodMilliseconds = BriefingCountdownBodiesUtils.PublishPeriodMilliseconds;
 
     /// <summary>
-    /// Operations identifier the countdown travels under before any round is
-    /// open: the first generation's, which is the set a briefing is under before
-    /// a report chooses one.
+    /// Operations identifier the countdown travels under: the briefing's own,
+    /// which the report that armed it named (<see cref="Begin"/>). It starts as the
+    /// first generation's for a briefing no report has chosen a set for yet.
     /// </summary>
-    private static readonly ushort CountdownIdentifier = MatchRecordGenerationUtils.First.Operations;
+    private ushort countdownIdentifier = MatchRecordGenerationUtils.First.Operations;
 
     private readonly Lock gate = new();
     private DateTimeOffset? startedAt;
@@ -184,9 +184,9 @@ public sealed partial class BriefingCountdownService(
             try
             {
                 await context.Send(
-                    CountdownIdentifier,
+                    countdownIdentifier,
                     BriefingCountdownBodiesUtils.CountdownBody(seconds, briefingStates.ReadyMask),
-                    sequences.Take(CountdownIdentifier));
+                    sequences.Take(countdownIdentifier));
 
                 // The room's own stage rides with the countdown, which is the one
                 // thing this host writes through a briefing.
@@ -243,11 +243,11 @@ public sealed partial class BriefingCountdownService(
         try
         {
             await context.Send(
-                CountdownIdentifier,
+                countdownIdentifier,
                 BriefingCountdownBodiesUtils.CountdownBody(
                     seconds: 0,
                     readySet: briefingStates.ReadyMask),
-                sequences.Take(CountdownIdentifier));
+                sequences.Take(countdownIdentifier));
         }
         catch (Exception exception)
         {
@@ -260,7 +260,7 @@ public sealed partial class BriefingCountdownService(
     }
 
     /// <summary>The stream this service writes under, named for the log and the docs.</summary>
-    public static ushort Identifier => CountdownIdentifier;
+    public ushort Identifier => countdownIdentifier;
 
     /// <summary>
     /// The countdown record a room's answer carries, or <c>null</c> when the room
@@ -295,10 +295,10 @@ public sealed partial class BriefingCountdownService(
         }
 
         return new Rooms.RosterRecord(
-            CountdownIdentifier,
+            countdownIdentifier,
             BriefingCountdownBodiesUtils.CountdownBody(
                 BriefingCountdownBodiesUtils.CountdownSeconds(remaining),
                 briefingStates.ReadyMask),
-            sequences.Take(CountdownIdentifier));
+            sequences.Take(countdownIdentifier));
     }
 }

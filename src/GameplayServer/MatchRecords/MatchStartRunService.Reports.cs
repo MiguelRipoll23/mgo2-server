@@ -94,19 +94,17 @@ public sealed partial class MatchStartRunService
             }
 
             // The briefing's timer is the room's own, and it belongs to the room
-            // the reports describe: it is armed once every player the room holds
-            // has reported, which for a room of one is its own report and for a
-            // room of two or more is the second one. A room of one that waited for
-            // a second report never reached a deadline at all — its count sat at
-            // the room's whole briefing time, no round ever opened for it, and the
-            // client left 110 s after its report with nothing played
-            // (`docs/analysis/join-stall-after-mode2.md` §54, and the live run of
-            // 2026-10-23 it names). One briefing arms it once, whatever the reports
-            // after that one say.
-            var reportsNeeded = Math.Min(CountingJoinReportCount, briefingStates.PlayerCount);
+            // the reports describe: it is armed by the second player's report, the
+            // one that gives a frozen room somebody else to wait for. A room of one
+            // is not armed at all — its count is held at the room's whole briefing
+            // time and nothing runs out, so the only thing that starts its round is
+            // that player's own ready. A deadline armed on the sole report started a
+            // round nobody had asked for (`docs/analysis/join-stall-after-mode2.md`
+            // §17). One briefing arms it once, whatever the reports after that one
+            // say.
             startsBriefing = armedDeadlineBriefing != armed
-                && briefingStates.PlayerCount > 0
-                && briefingStates.JoinedCount >= reportsNeeded;
+                && briefingStates.PlayerCount >= CountingJoinReportCount
+                && briefingStates.JoinedCount >= CountingJoinReportCount;
             if (startsBriefing)
             {
                 armedDeadlineBriefing = armed;
@@ -118,7 +116,7 @@ public sealed partial class MatchStartRunService
             // The count a peer is sent starts at its first report: held at the
             // room's whole briefing time until a second player reports, and its own
             // end only once it moves (BriefingCountdownService).
-            BeginBriefingClock();
+            BeginBriefingClock(generation);
 
             logger.LogInformation(
                 "The room's briefing heard its first join report on 0x{Identifier:x4}; the briefing is "

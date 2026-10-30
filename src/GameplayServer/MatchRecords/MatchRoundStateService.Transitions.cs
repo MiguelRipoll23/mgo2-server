@@ -22,17 +22,18 @@ public sealed partial class MatchRoundStateService
     /// briefing precedes, or zero for a room with nothing in front of it.
     /// </summary>
     /// <remarks>
-    /// <b>A briefing's beat writes a whole clock and not a zero.</b> The reference
-    /// stops its briefing records where it starts the beat and goes on writing the
-    /// round's whole clock, unchanged, for as long as the room waits:
-    /// <c>mgo2-started-briefing-then-solo-game</c> writes <c>01 60 09</c> — 2 400
-    /// units of its five-minute round — from t+65.036, 7.4 s after its run, to
-    /// t+170.366, four seconds before the round the report opens at t+174.371
-    /// (<see cref="MatchRoundStateService.RemainingUnits"/>). It is the same value
-    /// the briefing's own run carries, which is what makes the two agree: the run
-    /// hands the client the whole clock and the beat behind it counts nothing
-    /// down until the briefing is over. A room that wrote zero here would tell
-    /// every client whose round has not opened yet that the round is over.
+    /// <b>A fresh room's briefing holds the whole clock; a room between rounds
+    /// holds zero.</b> The reference stops a fresh room's briefing records where it
+    /// starts the beat and goes on writing that round's whole clock, unchanged, for
+    /// as long as the room waits: <c>mgo2-started-briefing-then-solo-game</c> writes
+    /// <c>01 60 09</c> — 2 400 units of its five-minute round — from t+65.036, 7.4 s
+    /// after its run, to t+170.366, four seconds before its round opens at
+    /// t+174.371. A room that has played writes the round that just ended: every
+    /// round end of <c>mgo2-started-on-game-round1</c> writes <c>01 00 00</c>
+    /// through the briefing after it, and only the next round's open writes a whole
+    /// clock again. So the value is the round in front of the room for a room that
+    /// has one, and zero for a room whose round is over
+    /// (<see cref="MatchStartRunService.BeginBriefing"/>).
     /// </remarks>
     private int briefingClockUnits;
 
