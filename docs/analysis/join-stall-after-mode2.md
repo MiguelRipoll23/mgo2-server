@@ -5610,3 +5610,40 @@ block's other words — and it would say the stall is where §68 left it, in the
 session, not in anything this host sends. The reply is not the only thing the room states
 badly: its rotation still names map 17 while the round plays map 1, which is a second
 disagreement between the row and the host and is left for the next section.
+
+## 73. The join of 30 October 15:48: the dwell was read before the entry arrived, so the run still landed on the client's own rows
+
+**The session.** The gameplay pod `mgo2-gameplay-1-648bc87965-6jlck`, image `ff1f52f`,
+served one join from `89.129.16.203:5730`. The client's `savemgo.log` is the same session
+with `t+0 ≈ 15:46:27`. The report and the entry were **not one datagram** here: the map-loaded
+report arrived at 15:48:19.909 and the lobby-slot pair (`0x9001 82 f3`, `0x1001 84 f3`) at
+15:48:20.455, 0.55 s later. The client re-sent the pair at 15:48:22.334, and the run followed at
+15:48:22.425.
+
+**The run was spaced from the report, not from the later entry.** The run left **1.97 s after
+the entry** and 2.52 s after the report. `EntryRunDwellRemaining` names the later of the two as
+its anchor, so the intended instant was 22.955; the watcher had read the remaining dwell once,
+at the report, when no entry existed yet, slept that whole interval and wrote the run without
+re-reading it. The entry that arrived inside the wait therefore never moved the anchor. This is
+the `myserver23` shape the 2.5 s dwell exists to avoid, arriving through the report-first order
+rather than through a missing echo.
+
+**What the reference client does after the run.** `mgo2-started-on-game-round1`, briefing of
+09:02:30: entry at t+572.649, run at t+572.739, and at **t+572.859** — 0.12 s after the run —
+the client writes its own operations stream: `0x9254`/7 body `1d 11 00 01 03 00 00`, then four
+`0x1254`/7 rows and the 22-byte `0x1254` at ordinals 1–5. The host acknowledges them at
+t+572.963 with `0xd254`/1 `07` and the `0x5254` records. The 15:48 client acknowledged every
+record of the run and wrote **none** of those rows; its next frames were acknowledgements only,
+then the nine-second quiet and the closed window. The run frame itself was the capture's ten
+records with both arrays under `0x1001`, so the missing rows are not a tag or an order in the
+run: they are the client's response to it.
+
+**The change.** `WriteBriefingRunAsync` now re-reads `EntryRunDwellRemaining` after every wait
+instead of once before it, so an entry heard inside the dwell extends it to the full 2.5 s
+behind that entry. The condition is a `while`, the wait and the round-open check are unchanged,
+and `IsEntryAnswerDue` already shares the function, so the room publication waits with the run.
+
+**What the next join should show.** The run at entry + 2.5 s (about 22.96 in this session's
+clock), the client's `1d` rows in the first frame behind it, and the `0xf` ready that follows.
+If the rows still do not come with the run that far behind the entry, the remaining difference
+is outside the run's timing and the memory read of §68 is the instrument, not another wire diff.

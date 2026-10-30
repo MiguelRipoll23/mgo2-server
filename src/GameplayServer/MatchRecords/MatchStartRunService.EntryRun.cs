@@ -91,7 +91,14 @@ public sealed partial class MatchStartRunService
                 continue;
             }
 
-            if (EntryRunDwellRemaining(session) is { } owed)
+            // The dwell is re-read after every wait because the entry can be
+            // heard after it was first counted from the report alone. A peer that
+            // reports first and enters half a second later must still get the
+            // whole dwell behind that entry: reading it once before the echo
+            // arrives is what let the run land 1.97 s after the entry, level
+            // with the client's own operations rows, in the join of 30 October
+            // 15:48 (`docs/analysis/join-stall-after-mode2.md` §73).
+            while (EntryRunDwellRemaining(session) is { } owed)
             {
                 await Task.Delay(owed);
                 if (roundState.IsOpen)
