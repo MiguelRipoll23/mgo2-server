@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
@@ -38,6 +39,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// record, running alongside it on the same session's counter.
 /// </para>
 /// </remarks>
+/// <param name="matchSettings">
+/// Resolver of the room's published rotation, whose maps the beat's rules pair
+/// carries.
+/// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class MatchRecordService(
     MatchRoundStateService roundState,
@@ -46,6 +51,7 @@ public sealed partial class MatchRecordService(
     BriefingRoomPublishService roomPublications,
     MatchRecordSequenceService sequences,
     RoomRosterService roster,
+    MatchSettingsService matchSettings,
     ILogger<MatchRecordService> logger)
 {
     /// <summary>

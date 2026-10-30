@@ -119,6 +119,24 @@ public static class PeerAcknowledgementUtils
     public const byte RoundControlByte = 0x04;
 
     /// <summary>
+    /// Whether a record is one of the numbered session records, which are the only
+    /// ones either side answers.
+    /// </summary>
+    /// <remarks>
+    /// <b>The payload bit is masked off before the threshold is tested.</b> A tick
+    /// record can carry it too — a replay sends <c>0x890d</c>, which is
+    /// <c>0x090d</c> with <see cref="PayloadClassBit"/>, and is a record about a
+    /// player's state rather than a numbered session record. Testing the raw type
+    /// reads it as one, and answers it with <c>0xc90d</c>: measured against the
+    /// bench, no capture holds a <c>0xc90d</c> in either direction, and the
+    /// reference hosts leave the record unanswered.
+    /// </remarks>
+    /// <param name="message">Decoded record to test.</param>
+    /// <returns><c>true</c> when the record is one the two sides number.</returns>
+    public static bool IsNumberedRecord(UdpMessage message) =>
+        (ushort)(message.Type & ~PayloadClassBit) >= UdpCommandConstants.TickRecordThreshold;
+
+    /// <summary>
     /// Whether a message is a frame acknowledgement rather than a record that
     /// needs a record-level answer.
     /// </summary>
@@ -156,7 +174,7 @@ public static class PeerAcknowledgementUtils
     /// acknowledgement or a keep-alive.
     /// </returns>
     public static bool IsRecordAcknowledgement(UdpMessage message) =>
-        message.Type >= UdpCommandConstants.TickRecordThreshold &&
+        IsNumberedRecord(message) &&
         (message.Type & AcknowledgementBit) != 0 &&
         message.Type != UdpCommandConstants.KeepAlive &&
         !IsFrameAcknowledgement(message);
@@ -167,7 +185,7 @@ public static class PeerAcknowledgementUtils
     /// <param name="message">Decoded record to test.</param>
     /// <returns><c>true</c> when the record is a session record carrying no answer bit yet.</returns>
     public static bool WaitsForAcknowledgement(UdpMessage message) =>
-        message.Type >= UdpCommandConstants.TickRecordThreshold &&
+        IsNumberedRecord(message) &&
         (message.Type & AcknowledgementBit) == 0 &&
         !IsFrameAcknowledgement(message);
 

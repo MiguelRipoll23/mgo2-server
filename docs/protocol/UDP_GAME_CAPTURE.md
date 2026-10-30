@@ -1885,3 +1885,228 @@ which the console discards, and the head/item/position/tail records of a real sp
 live round's own and are left out, as `MatchRecordFramesUtils` says. That reading also
 answers what our six-byte bodies are: filler, which the client answers regardless. **[V]**
 on the filler reading; **[U]** on whether a client needs a spawn event to draw a box.
+
+---
+
+## 9. The same comparison over the whole bench — what holds and what only looked wrong
+
+A byte comparison of our host against one capture is a comparison against that capture's
+session values, and three of the differences it shows are not defects at all. This section
+is the same comparison repeated over every capture on the bench (fifteen files, thirteen
+with a readable handshake), and the rule that makes it trustworthy is **compare by role,
+not by type and length**.
+
+### 9.1 Two pairs that share a type and a length
+
+`0x1a50/6 B` carries two different records, and so does `0x1001/26 B`. Matching on the
+pair alone puts one map's box event next to another server's filler and calls it a
+difference:
+
+| pair | roles | how they are told apart |
+| --- | --- | --- |
+| `0x1a50` / `0x1250`, 6 B | the filler (`NN 00 00 00 00 00`) and an event's head or item (`00 74 NN …`, `01 8c …`) | bytes 1–5 all zero is filler; the event records sit only on the low ordinals — `[0, 1, 4, 5]` and later standalone events at `[28, 29 …]` on every capture that has them |
+| `0x1001`, 26 B | `0x85` the team array, `0x86` the occupancy array | byte 0; the occupancy byte is `0x07` for a held slot and `0x7f` for a free one, the team byte `0`/`1` and `0xff`/`0xe0` |
+
+With the split applied, our filler matches every capture's filler and our `86 <seq> 7f 07 …`
+occupancy array marks slot 1 exactly the way the one-player captures do (`85 54 fe ff ff 01 …`
+in `mgo2-started-on-solo-game`, `85 61 fe ff ff 01 …` in the blue-team capture, `86 02 7f 07 …`
+in the red-team one). Neither is a gap. **[V]**
+
+### 9.2 The values that were only different from that one host
+
+| record | our body | what the bench shows |
+| --- | --- | --- |
+| `0x0a5c/4` | `02 00 00 00` | `mgo2-game2` writes that body exactly; the bench carries `20 00 00 00`, `2a …`, `22 06 …`, `1e …`, `56 …`, `40 08 10 00`, `08 00 00 00`, `88 …` and one `00 00 00 00` (round 1) — the joined set is per room, not a constant |
+| `0x1a58/2` | `00 01` | the room count: `mgo2-game2` writes `00 01` then `00 02` as a second player joins; others `00 05` … `00 11`, `00 08`; round 1's `22 11` is a different record shape |
+| `0x1a54/90` | `… ff 20 0d` | the round clock in 1/8 s: `20 0d` = 3 360 (7 min) in `mgo2-game1` and `joined-final-round…`, `60 09` = 2 400 (5 min), `00 0f` = 3 840 (8 min), `ef 08` — a settings value, not a constant |
+| `0x1ade` payload | `e0 01 00 00 00 00 00 00` | byte 1 echoes the reporter's lobby slot: `e0 02`, `e0 03`, `e0 0b`, `e0 10`, `e0 15` … across captures; both the 5-byte and the 8-byte tails occur |
+| `0x1001/10` | `… 02` | the trailing byte is the publication's sequence, 0–9 across the bench |
+
+Each of these is the project's own value appearing somewhere on the bench; none needs a
+change. **[V]**
+
+### 9.3 The item-box events, extracted — they are per map, and the map is not recorded
+
+Every capture that opens a round with boxes carries the two events, and the extraction over
+the whole bench separates what is constant from what is not:
+
+| record | bytes | varies? |
+| --- | --- | --- |
+| head | `00 74 01 00 00 00`, `00 74 02 00 00 00` | no — identical in all thirteen |
+| item | `01 8c 00 01 00 00`, `01 71 00 02 00 00` | no |
+| position | `02 <x, y, z as s16> 00 00 00` | **yes** — per match: `b4 fb 08 07 72 06` / `26 02 82 00 5c f9` (game1), `a2 fe 07 ea 20 03` / `cc f7 fa 00 3c f6` (red-team, and the first box again in game2 and failed-memoryviolation), `15 09 fa 00 78 06` (round 1), `00 0f 9c cd 74 1e` (solo), `4b 00 72 ed 1b ef` (started-on-briefing) |
+| tail | `03 00 00 00 21 00 21 00 21` | no |
+
+So the event is **per map**: `a2 fe 07 ea …` recurs for one box across three captures, which
+is one map's placement, and game1's `b4 fb 08 07 …` is another's. The 10-byte record also
+carries two trailing bytes that move per round (`… 20 03` against `… a8 fd` for the same box
+on the same coordinates), so a replay of it is a map's placement plus a round's own state.
+
+The server replays `mgo2-game1`'s two events, positions included, in every room regardless
+of the room's map (`ItemBoxRecordBodiesUtils.OpeningEventBodies`). That is a real difference, and it is
+**left unchanged deliberately**: no capture on
+the bench records which map it was played on — the only map any of them states is
+`mgo2-started-briefing-then-solo-game`'s sidecar, Tomb of Tumbes, and its positions
+(`c5 ff e2 04 46 07`, `bb 09 72 ed f8 08`) are not the ones the code carries. A map-keyed
+table cannot be written from the bench as it stands; it needs the room's map id recorded
+beside each capture. **[V]** on the per-map reading; **[U]** on every capture's map id.
+
+### 9.4 The map does appear on the wire — as the rules-roster list, which we write empty
+
+Following §9.3's dead end (no capture states its map) one step further: the map ids do
+appear on UDP, on the rules-roster identifiers, and the record this server writes there is
+the empty form of a list the captures fill.
+
+`0x0a61` / `0x0261` carry bodies of 1–13 bytes, and their grammar is the replay console’s
+own `rulesRoster()` (`docs/analysis/replay-console/rpdt.js`): the body is the payload type
+byte — which a tick record’s class byte supplies, so an empty list is `fe` alone — then
+**groups of (group id, members…), each group ended by `fe`, the whole list ended by `fe`**:
+`ff 0b 0c 15 fe fe` is group `0xff` with members `0b`, `0c`, `15`. They grow over a session, which is what makes them the room's own data rather than a
+constant: `mgo2-game-started-on-briefing` writes
+
+```
+ff 02 fe fe            ff 02 03 fe fe         ff 02 03 04 fe fe
+```
+
+and `mgo2-started-on-game-round1` walks from
+
+```
+ff 0c fe fe  ->  ff 0c 15 fe fe  ->  ff 0b 0c 15 fe fe  ->  ...  ->  ff 08 0b 0c 11 13 15 fe fe
+```
+
+to the two-group forms `19 08 13 fe 18 0c 11 15 fe fe` and
+`18 08 0b 13 fe 19 0c 15 fe ff 11 fe fe`, and `mgo2-game1` writes `ff 0f fe fe` and
+`ff 0f 14 fe fe` while its sibling round writes `ff 14 fe fe` and `ff 06 14 fe fe`.
+Run through that grammar, **every non-empty list on the bench parses — 0 failures over the
+records read from all thirteen decodable captures**: groups are `1..0x1a` and `0xff`,
+members `2..0x1a`. Those values sit in the map-id range of `rpdt.js`'s `MAPS` and
+`MatchMapUtils` (`1..22`, with the console’s table going higher), and they are not player
+handles: a roster entry’s handle bytes are `0xe2 + index` (or `0x00` for the host), where
+these are single bytes below `0x1b`.
+
+**The list is the round's, and it rides on the beat's pair — not the briefing's.** The
+timing is the part that was got wrong first, so it is stated as measured. Counted per
+capture against that capture's own round run, **not one of the bench's 8 209 non-empty
+lists is written before the run**: `mgo2-game-started-on-briefing` 0 before and 116 after,
+`mgo2-game1` 0 and 6 990, `mgo2-started-on-game-round1` 0 and 1 103. A briefing's whole
+pair is therefore the bare `fe`, and the lists begin with the round. The class split is
+one-sided too: of the 8 395 records under the second class, **none carries a list**; the
+list is the member class's alone.
+
+**This server wrote `fe` under both classes everywhere, and now writes the room's list on
+the beat.** `RulesMapListBodiesUtils.Build` composes `ff <maps> fe fe` from the rotation and
+`RulesPairFramesUtils.RulesPair` puts it under the member class beside the empty list under
+the other; `MatchRecordFramesUtils.BeatFrame` takes the maps and hands them to it, and
+`MatchRecordService.RotationMaps` reads them from the room's published settings once per
+round. `BriefingRoomPublishService` and the plain `MatchRecordFramesUtils.RulesPair` keep the
+empty form, which is what every captured briefing writes. A room with no resolved rotation
+keeps the empty pair throughout.
+
+That closes the gap behind §9.3 as far as the room's maps go: the client is now told the
+room's map list on the channel and in the phase the captures use. What stays open is which
+member of that list is the *current* map — so the item-box positions are still written from
+`mgo2-game1`'s capture rather than selected per map.
+
+**What is still unread is which value is the room’s current map.** A list such as
+`mgo2-started-on-game-round1`’s `19 08 13 fe 18 0c 11 15 fe fe` — group `0x19` with
+`08 13`, group `0x18` with `0c 11 15` — does not say whether a group is a mode whose
+members are its maps, or a map whose members are the rounds that use it, and nothing else
+in the capture names the round’s map. Writing `[0xff, ..our maps.., 0xfe, 0xfe]` would
+therefore be a guessed structure.
+
+**And the pairing that would settle it is not on this bench: no capture here contains a
+`0x4313` reply.** Decrypting the TCP channel of `mgo2-game1`,
+`mgo2-game-started-on-briefing` and `mgo2-started-on-game-round1`
+(`pcap_decrypt.py --type tcp`) yields the lobby’s `0x3003`/`0x4101`/`0x4130`/`0x4131`
+traffic and not one `0x4313` — the reply predates each capture. The rotation it carries at
+`0x0a8` (sixteen `(rule, map, flags)` triples, `GAME_SETTINGS_WIRE.md` §1) is what would
+name the map ids to read these lists against; either a capture that starts before the room
+is browsed, or the Lobby’s own writer in
+`src/GameLobbyServer/Commands/Game/Rooms/RoomBrowserHandlers.cs`, is where to get them.
+
+**The group byte, decoded as far as the bench states it.** The body the record carries is
+`<group> <member>* 0xfe … 0xfe`, and the byte *before* the body — the record's class — is
+the payload type `0x00` the console's `rulesRoster()` reads as `payload[0]`. Counted over
+the three captures whose lists are readable:
+
+| capture | lists | group marker | members |
+| --- | --- | --- | --- |
+| `mgo2-game1` | 6 990 | `0xff` only | `[0x0f]`, `[0x0f, 0x14]`, `[0x14]`, `[0x06, 0x14]` |
+| `mgo2-game-started-on-briefing` | 116 | `0xff` only | `[]`, `[0x03]`, `[0x03, 0x04]` |
+| `mgo2-started-on-game-round1` | 1 103 | `0x18` 656, `0xff` 367, `0x19` 80 | up to two groups per list, e.g. `18 [08 0b 13] 19 [0c 15] ff [11]` |
+
+Members are always `0x02`–`0x1a`, the map table's range, and two of the markers are not:
+`0x18` and `0x19` are 24 and 25, beyond the last map id (22). So the group is a **marker of
+the room's list, not a map**, and `0xff` is the only marker a dedicated host writes — both
+dedicated-host captures, 7 106 lists between them, write nothing else. That is what
+`RulesMapListBodiesUtils.MapListGroup` writes, and it is why the writer is safe for the
+rooms this server publishes. What `0x18` and `0x19` select is **[U]**: they appear only in
+the one player-hosted capture, both exceed every map id, and nothing else in that capture
+pairs a marker with a rule or a round.
+
+### 9.5 The replay against a live host, and how far it is from the reference
+
+`tools/udp_reference_replay.py` takes a capture's client datagrams, re-keys them for a live
+session and sends them at a running host, then decodes both sides the same way and diffs
+them per identifier, class and body. Run against this server on `127.0.0.1:5336` with the
+reference's own settings — `TDM`, map `15` (Outer Outlet, the first member of game1's list),
+seven-minute round, one-minute briefing, a room published in `Survival Hosts` — it is the
+first comparison of the implemented stream against a **live** host rather than against a
+written reconstruction.
+
+`mgo2-game1`, 83 datagrams, 149 s of captured exchange:
+
+| identifier | reference | live | reading |
+| --- | --- | --- | --- |
+| `0x0a61` | 6 106 | 64 | the pair is written; its rate is ours, and the reference's beat writes far more in the same window |
+| `0x090c` | 2 297 | 0 | the vitals record never joined inside the window: the round had not opened |
+| `0x9a54` / `0x9a50` | 34 / 3 | 0 / 0 | this capture's own sibling id space, not a family every host writes: 13 of its 18 bodies also appear under `0x1a5x`, and neither of the other two captures writes one |
+| `0x0a5c` | `00 00 10 00`, `40 08 10 00` | `00 00 00 00` | **not a defect**: `mgo2-started-on-game-round1`'s own reference host writes `00 00 00 00` six times, so the word is the room's |
+| `0xd001` | classes 1, 2 here; 0–255 in round1 | classes 0, 1, 2 | **not a defect**: the class is a per-record ordinal, and the round1 reference spans the whole byte |
+| `0x1a58` | 0 | 1 | we tell the peer the room's count where the reference does not, in this window |
+| `0xc90d` | 0 | 20 before the fix, 0 after | **a real defect, fixed**: it is the answer to the tick record `0x890d` (`0x090d` with the payload bit), and `PeerAcknowledgementUtils.IsNumberedRecord` now masks that bit so tick records are never answered |
+| `0x1001` | 32 | 30 | the settings burst matches in count; its bodies carry this host's own identity, which is expected |
+
+**`mgo2-started-on-game-round1`, the bench's most complete capture** (18 MB, 1 409 s,
+23 990 client datagrams), 1 458 datagrams replayed over 90 s of captured exchange:
+
+| identifier | reference | live | reading |
+| --- | --- | --- | --- |
+| `0x0a61` | the pair throughout | the pair throughout | the room's map list is written under the same class, `0x0a61 class=0` with the lists |
+| `0x1a54` | 200+ | the opening run | the run goes out; its repeated copies do not |
+| `0x9a54` / `0x9a50` | 0 | 0 | nothing to write: this capture's host writes no `0x9a5x` record at all |
+| `0x0a5c` | `00 00 00 00` | `00 00 00 00` | same body |
+| small `0x00xx` ids | hundreds | 0 | client-side records; these are the capture's own traffic and not the host's |
+
+**The phase is not the reference's, and the comparison says so.** This capture is a round
+already in progress while a local host starts at its briefing, so the records a host owes
+only once its round opens are absent by construction in the first minute — the vitals record
+above all, and the beat's own rate. What the replay can compare in that window is the join:
+the handshake answer, the opening run, the rules pair, the settings burst and the
+acknowledgements, and those are what the tables above read.
+
+**What the replay leaves standing is a rate, not a body.** Neither of the two ids first read
+as differences survives a second capture: the `0x0a5c` word is `00 00 00 00` in round1's own
+reference host, and `0xd001`'s class is an ordinal that spans the whole byte there. The one
+record family left unexplained is `0xc90d`, which this host writes and no capture on the bench
+carries under that id.
+
+The capture also settles a claim this file made and got wrong: **the host answers the native
+handshake.** Its joiner sends a 16-byte body (no endpoint pairs, capability `0x2`, mode `0`)
+and the live host parsed it, answered both pre-keyed frames and established the session
+(`UDP 5336: handshake from 127.0.0.1:5401 peer=0x0001232f base=0x30d4745f`). The earlier
+silence on this capture was the replay tool's key derivation, not the host's shape gate;
+`HandshakeBodyUtils.MinimumBodySize` is `0x10` and `HandshakeShapeUtils` answers the source
+endpoint for a native body, which is what the recorded host did too.
+
+### 9.6 The rule for the next comparison
+
+1. Split by role before comparing: filler against filler, event against event, `0x85`
+   against `0x85`, `0x86` against `0x86`.
+2. Treat a difference as a defect only if the value never appears anywhere on the bench —
+   `0x0a5c`, `0x1a58`, the round clock and the payload's slot byte all appear.
+3. For the item-box events, record the capture's map id in its sidecar; without it the
+   positions cannot be keyed, and a guessed table would put a box from one map on another.
+4. The map reaches the client on `0x0a61`/`0x0261`, not on the item boxes (§9.4), and it
+   is written by the beat once the round is playing, never by a briefing: a capture's room
+   maps and its list are read together before either is written.

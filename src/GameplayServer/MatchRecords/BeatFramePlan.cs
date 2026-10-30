@@ -49,6 +49,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// Fourth byte the frame's first item-box state record carries, when the frame
 /// carries the group.
 /// </param>
+/// <param name="Maps">
+/// The room's rotation maps in play order, written in the frame's rules pair. It
+/// is empty on a room with no published rotation, which is the empty pair the
+/// captures' briefing writes.
+/// </param>
 public sealed record BeatFramePlan(
     int FrameIndex,
     MatchRecordGenerationUtils Generation,
@@ -57,7 +62,8 @@ public sealed record BeatFramePlan(
     bool VitalsOnset,
     int BlobsWritten,
     byte ItemBoxSequence,
-    byte ItemBoxStateSequence)
+    byte ItemBoxStateSequence,
+    IReadOnlyList<int> Maps)
 {
     /// <summary>
     /// Which insertion this frame carries, decided from its index alone.
@@ -288,6 +294,7 @@ public sealed record BeatFramePlan(
                 ItemBoxStateSequence)
             : null;
 
-        return MatchRecordFramesUtils.BeatFrame(Generation, insertions, IncludeVitals, itemBoxes);
+        return MatchRecordFramesUtils.BeatFrame(
+            Generation, insertions, IncludeVitals, itemBoxes, Maps);
     }
 }

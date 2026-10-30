@@ -37,12 +37,26 @@ public sealed partial class MatchRecordService
     /// </para>
     /// </remarks>
     /// <param name="context">Context the records are written through.</param>
+    /// <summary>
+    /// The room's rotation maps, in play order: the list the beat's rules pair
+    /// carries.
+    /// </summary>
+    /// <remarks>
+    /// Read per round rather than per frame, because the rotation is the room's and
+    /// moves only between rounds. An unpublished room answers with none, which
+    /// leaves the pair's empty form.
+    /// </remarks>
+    /// <returns>The room's maps, or an empty list.</returns>
+    private IReadOnlyList<int> RotationMaps() =>
+        matchSettings.FindPublished()?.Rotation.Select(entry => entry.Map).Distinct().ToArray() ?? [];
+
     private async Task BeatAsync(PeerContext context)
     {
         var session = context.Session;
         var beat = new BeatCounters { FrameIndex = FirstBeatFrameIndex };
         var round = roundState.RoundNumber;
         var generation = BeatGenerationFor(context);
+        var maps = RotationMaps();
 
         // The period is held by a timer and not by a delay behind the send: a
         // `Task.Delay(33)` costs the send as well, and the measured beat came out
@@ -58,6 +72,7 @@ public sealed partial class MatchRecordService
                 round = roundState.RoundNumber;
                 beat = new BeatCounters { FrameIndex = FirstBeatFrameIndex };
                 generation = BeatGenerationFor(context);
+                maps = RotationMaps();
                 logger.LogDebug(
                     "UDP {LocalPort}: round changed to {RoundNumber}; the beat restarts its frame index "
                     + "and moves to identifier set operations 0x{Operations:x4}",
@@ -84,7 +99,8 @@ public sealed partial class MatchRecordService
                 roundState.VitalsArrived,
                 beat.BlobsWritten,
                 beat.ItemBoxSequence,
-                beat.ItemBoxStateSequence);
+                beat.ItemBoxStateSequence,
+                maps);
 
             // The insertions' fourth bytes are taken inside the plan, from the
             // stream of the identifier each record travels under; what advances

@@ -183,7 +183,6 @@ public static class MatchRecordFramesUtils
     /// </summary>
     public const int VitalsOnsetFrames = 818;
 
-
     /// <summary>
     /// Beat frames between one control-byte insertion and the next: 130, the
     /// capture's mean. Its gaps are not uniform — the solo window alternates
@@ -207,7 +206,7 @@ public static class MatchRecordFramesUtils
     /// body as a compact group/member list; the recorded body is the list-end
     /// byte alone, so the list is empty.
     /// </summary>
-    private const byte RulesRosterMemberListClass = 0x00;
+    internal const byte RulesRosterMemberListClass = 0x00;
 
     /// <summary>
     /// Attribute class of the second rules-roster record of a beat frame. It is
@@ -215,7 +214,7 @@ public static class MatchRecordFramesUtils
     /// byte alone is the empty rules list — the shape the parser names without
     /// inferring anything.
     /// </summary>
-    private const byte RulesRosterEmptyListClass = 0x01;
+    internal const byte RulesRosterEmptyListClass = 0x01;
 
     /// <summary>
     /// Index byte — the record's fourth byte — on the match-start run's team
@@ -275,12 +274,14 @@ public static class MatchRecordFramesUtils
     /// <param name="insertions">Records to place at the head of the frame, or null.</param>
     /// <param name="includeVitals">Whether the vitals record rides in this frame.</param>
     /// <param name="itemBoxes">Item-box group to place behind the rules pair, or null.</param>
+    /// <param name="maps">The room's rotation maps, or null for the empty pair.</param>
     /// <returns>The records of one beat frame.</returns>
     public static List<RecordMessage> BeatFrame(
         MatchRecordGenerationUtils generation,
         IReadOnlyList<RecordMessage>? insertions = null,
         bool includeVitals = true,
-        IReadOnlyList<RecordMessage>? itemBoxes = null)
+        IReadOnlyList<RecordMessage>? itemBoxes = null,
+        IReadOnlyList<int>? maps = null)
     {
         var frame = new List<RecordMessage>(
             (insertions?.Count ?? 0) + (itemBoxes?.Count ?? 0) + (includeVitals ? 3 : 2));
@@ -294,7 +295,7 @@ public static class MatchRecordFramesUtils
             frame.Add(new(generation.Vitals, MatchRecordBodiesUtils.Vitals(), VitalsAttributeClass));
         }
 
-        frame.AddRange(RulesPair(generation));
+        frame.AddRange(RulesPairFramesUtils.RulesPair(generation, maps ?? []));
 
         if (itemBoxes is not null)
         {
