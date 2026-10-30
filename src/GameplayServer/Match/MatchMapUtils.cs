@@ -106,23 +106,35 @@ public static class MatchMapUtils
     }
 
     /// <summary>
-    /// The map a room moves to after this one: the next named entry of the table,
-    /// wrapping at its end.
+    /// The map a room moves to after this one: the next entry of the table that has
+    /// a stage name, wrapping at its end.
     /// </summary>
     /// <remarks>
-    /// <b>It walks the named maps only.</b> Id <c>16</c> is the table's own
-    /// placeholder and has no name, so a rotation that landed on it would publish a
-    /// room nobody can ask for and a spawn nothing measured; the entry is skipped
-    /// rather than written. An id the table does not hold — a row written by an
-    /// older build — starts the walk at the table's first map instead of leaving
-    /// the room without one.
+    /// <para>
+    /// <b>It walks the maps whose stage the table names.</b> Id <c>16</c> is the
+    /// table's own placeholder, so a rotation that landed on it would publish a room
+    /// nobody can ask for and a spawn nothing measured. Id <c>19</c> is the other
+    /// one: Perilous Palace has a name and no stage, which is a stage this server
+    /// can neither state in a record nor place a spawn on — the pair it writes for
+    /// it is Blood Bath's. A room rotated onto it therefore hands its client a stage
+    /// nothing here measured, and the join of 30 October 14:27 is what that costs:
+    /// the client loaded <c>n024a</c> and the stage failed every asset check it
+    /// printed (`dg_texture.cpp:3025` null, thirty-nine texture overflows,
+    /// `brk_light.cc:1017`, `windowpane_mng.cc:297`, `crt_monitor.cc:781` and
+    /// `tree_test_02.cc:1149` prop directories not found), which is the black screen
+    /// that join ended on (`docs/analysis/join-stall-after-mode2.md` §70).
+    /// </para>
+    /// <para>
+    /// An id the table does not hold — a row written by an older build — starts the
+    /// walk at the table's first map instead of leaving the room without one.
+    /// </para>
     /// </remarks>
     /// <param name="map">Map the room played last, or zero when none is known.</param>
     /// <returns>The map the room plays next.</returns>
     public static int Next(int map)
     {
-        var named = Maps.Where(entry => entry.Name is not null).Select(entry => entry.Map).ToArray();
-        return named[(Array.IndexOf(named, map) + 1) % named.Length];
+        var playable = Maps.Where(entry => entry.Stage is not null).Select(entry => entry.Map).ToArray();
+        return playable[(Array.IndexOf(playable, map) + 1) % playable.Length];
     }
 
     /// <summary>The map id a name states.</summary>

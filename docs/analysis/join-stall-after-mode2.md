@@ -5486,3 +5486,64 @@ difference is the trailing three-byte clock, and the capture contradicts itself 
 briefing's run carries it and the other does not, so it is the beat's record landing inside the
 frame rather than the run's own, and it is left out. The comparison that would settle the rest
 is the client's own screen state at the stall (§55, §68), not another wire diff.
+
+## 71. The join of 30 October 14:27: the briefing's wire is the capture's, and the stage that ended black is map 19's `n024a`
+
+**The session.** The gameplay pod `mgo2-gameplay-1-785b95bffb-6plfh`, image `6444a9b` — the first
+build carrying §70's array fix — served one join from `89.129.16.203:5730`, log window
+13:26:16–13:27:54. The client's `savemgo.log` is the same session with `t+0 ≈ 13:26:37.3`.
+
+| clock | host | client |
+| --- | --- | --- |
+| 13:26:47.0 | handshake, session established, transcript trusted | — |
+| 13:26:47.9 | profile from character 2 `PhilDunphy23`, slot 0 | — |
+| 13:26:49.8 | profile re-sent; roster answered (`0x9001`/80 B own entry, `0x1001`/81 B, close), repeat, trailer | — |
+| 13:26:52.3 | settings burst: `0xd001`/1, `0x1001`/10, `0x9001`/161, **`0x1001`/25** header, two `0x1001`/50 loadouts, `0x0002`/22 | — |
+| 13:27:03.53 | entry and report in one datagram; publication `0x1ade`/8, marker, `0x0a5c`/4; briefing armed at the whole 1-minute count | **t+26.2 report** |
+| 13:27:06.04 | **the run**: 10 records + four item-box records, map 19, 3 360 of 3 360 units, as a fresh briefing with no round state | — |
+| 13:27:07.76 | the entry answered: the pair, the countdown `@3`, the 24-byte settings header | — |
+| 13:27:08.39 | the repeat: 8 records, no opening answer | — |
+| 13:27:09.36 → | the tick: the countdown `0x1a54`/7 every ~2.5 s, the rules pair ~1/s, the array pair every ~13 s, the blob and the control every ~5 s | — |
+| ≈ 13:27:24 | — | **last datagram (t+47)** |
+| 13:27:32.4 | ticks continue, unanswered | `Stage n024a` (t+55.1) |
+| 13:27:32.4–34 | — | `dg_texture.cpp:3025` null, twenty *texture memory full*, 39 overflows; `brk_light.cc:1017`, `roll_obj.cc:224`, `windowpane_mng.cc:297`, `chara.c:192 unknown chara-class 0`, `crt_monitor.cc:781`, `tree_test_02.cc:1149`, `sdregion.c:214`, `sdpoint.c:595`, `sv_custom_point.cc:94 over action 14` |
+| 13:27:54.3 | reaped: 170 records acknowledged, roster acknowledged, 0 players reported | window closed (t+76.7) |
+
+**The run is §70's fix on the wire for the first time.** The frame carries the ten records the
+capture's own briefing writes, with **both 26-byte arrays under `0x1001`** and none under the
+joiner's `0x9001`:
+
+```
+0xd001 len 1 · 0x5001 len 0 · 0x1a54 len 90 · 0x1a54 len 2 · 0x1001 len 26 · 0x1001 len 26
+0x0a5c len 4 · 0x1001 len 20 · 0x1001 len 20 · 0x1001 len 7
+0x1a50 len 6 ×2 · 0x1a5a len 6 ×2      the item-box group, behind the run and not ahead of it
+```
+
+**The countdown's family is the sibling's, and that is the whole difference.** The fresh-room
+reference `mgo2-game-started-on-briefing` writes its countdown as `0x1254`/7 — 137 of them, held
+at `0b 3c 00 …` — because its report arrived on `0x12de`; this host's peer reported on `0x1ade`,
+so the same seven-byte record travels on `0x1a54` (19 of them, held at the whole minute, a room
+of one). Counting the two generations together, every family this host writes is the reference's:
+90+2 state, 26+26 arrays, `0x0a5c`/4, 20+20+7 closes, the 7-byte countdown, the 6-byte item-box
+groups. Nothing was missing, late or misordered — the run landed 2.5 s after the report and 3.1 s
+after the entry, inside the reference's 1.90–2.31 s window plus the dwell's margin (§67).
+
+**What went black is the stage, and it is the first join on map 19.** The room rotated onto
+Perilous Palace (`MatchMapUtils` id 19, stage `n024a`), and the client's first load of that stage
+is the first log here that fails its own asset lookups: a null texture list, twenty allocations
+refused, thirty-nine texture overflows, and five prop directories the stage script asks for and
+the stage data does not carry, plus `chara-class 0`. Every earlier join played a stage the map
+table names (9, 12, 14, 17) and printed none of the `brk_light`/`windowpane`/`crt_monitor`/
+`tree_test` family. Id 19 is the one entry the table holds with **no stage name** and no measured
+spawn — `MapSpawnUtils` answers it with Blood Bath's pair because no replay exists — so a room
+rotated onto it is a room whose stage this host can neither state nor place.
+
+**The change.** `MatchMapUtils.Next` now walks the maps whose **stage** the table names rather
+than the ones with a name, so the rotation skips id 19 and a client is never handed `n024a` by
+this host. Everything else in this join matches the capture and is unchanged.
+
+**What is not settled.** Whether the briefing screen follows once the stage loads. The client's
+stream stops 20.8 s after its report — before the stage begins — exactly as in §68, so this join
+does not say the reception paths work; it says the host's half of the briefing is the reference's
+and that the stage it was pointed at is the one this log shows failing. The next join on a
+measured stage is what separates the two.
