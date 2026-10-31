@@ -148,24 +148,29 @@ public sealed class MatchService(
 
         if (existing is not null)
         {
-            // The row is written from the settings and then heartbeated rather than
-            // rebuilt, so a setting that changed since the room was published is
-            // written here: a row that named one map while the round played another
-            // is exactly the disagreement this host no longer keeps a second copy
-            // to have.
+            // The row states this start's rotation, always and before anything is
+            // served: it is the column the lobby's `0x4313` reply reads, so a row
+            // left on a previous start's map is a client told one map while this
+            // host plays another. The advance above already reads that column to
+            // decide which map this start plays, and this write is what makes the
+            // column follow it — a property of the start rather than of a
+            // comparison, so a row rewritten by anything else in between is
+            // corrected here instead of being kept.
+            var previousMap = MatchSettingsUtils.StoredMap(existing.Games);
+            await gameService.UpdateAsync(
+                existing.Identifier,
+                room => room.Games = rotation,
+                cancellationToken);
             if (existing.Games != rotation)
             {
-                await gameService.UpdateAsync(
-                    existing.Identifier,
-                    room => room.Games = rotation,
-                    cancellationToken);
                 logger.LogInformation(
-                    "Room {GameIdentifier} ({GameName}) was published on another rotation; its row now states "
-                    + "this start's own: rule {Rule} on map {Map}",
+                    "Room {GameIdentifier} ({GameName}) states this start's own rotation: rule {Rule} on "
+                    + "map {Map}, from map {PreviousMap}",
                     existing.Identifier,
                     existing.Name,
                     round.Rule,
-                    round.Map);
+                    round.Map,
+                    previousMap);
             }
 
             logger.LogDebug(
