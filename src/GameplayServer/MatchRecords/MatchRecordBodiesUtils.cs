@@ -263,82 +263,63 @@ public static class MatchRecordBodiesUtils
     public static byte[] RoomCount(byte count) => [RoomCountLeadingByte, count];
 
     /// <summary>
-    /// Length of the room-state record that rides beside the close pair: a
+    /// Length of either room-state record that rides beside the close pair: a
     /// twenty-two-byte roster-shaped record, the room's own stage.
     /// </summary>
+    /// <remarks>
+    /// <b>The stage is a pair of these and nothing else.</b> The port client's
+    /// briefing writes two of them — `briefing-then-solo-game` t+9.780 at ordinals
+    /// <c>11</c> and <c>12</c> — where an older reading of `mgo2-game1` took a
+    /// twenty-two-byte record with two fifty-four-byte ones behind it. Both of that
+    /// capture's records are this length, in its briefing and again in the round
+    /// that follows it (t+147.650, ordinals <c>29</c> and <c>30</c>), and no capture
+    /// of a working host holds a roster-shaped fifty-four-byte record at all.
+    /// </remarks>
     public const int RoomStateRecordLength = 22;
 
     /// <summary>
-    /// Length of either room-state entry record: the fifty-four-byte pair the
-    /// room's own stage carries behind the record above.
-    /// </summary>
-    public const int RoomStateEntryLength = 54;
-
-    /// <summary>
-    /// The room-state record's bytes behind its roster header. What it states is
-    /// **[U]**: `mgo2-game1` and `mgo2-started-briefing-then-solo-game` — two
-    /// sessions that share no origin and no client — write these twenty bytes
-    /// byte for byte, and `mgo2-game2` writes another twenty, so the body is a
-    /// fact about the room's own stage rather than about a session.
-    /// </summary>
-    private static ReadOnlySpan<byte> RoomStateRecordRemainder =>
-    [
-        0x00, 0x03, 0x00, 0x00, 0x00, 0x40, 0x7c, 0xfc,
-        0x6c, 0x07, 0xac, 0xf4, 0x7c, 0xfc, 0x6c, 0x07,
-        0xac, 0xf4, 0xfd, 0x00,
-    ];
-
-    /// <summary>The first room-state entry's bytes behind its roster header.</summary>
-    private static ReadOnlySpan<byte> RoomStateEntryFirstRemainder =>
-    [
-        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x26, 0x01,
-        0x00, 0xec, 0x2c, 0x80, 0x38, 0x01, 0x80, 0xb5,
-        0x01, 0x00, 0x00, 0x04, 0xc2, 0xb6, 0x1f, 0xf4,
-        0x01, 0x58, 0x2d, 0x7d, 0xa0, 0x92, 0x7f, 0xf4,
-        0x01, 0x30, 0x87, 0x7d, 0x23, 0x92, 0x1f, 0x77,
-        0x01, 0x30, 0xb1, 0x7d, 0x9a, 0x93, 0xbf, 0x0a,
-        0x02, 0xf8, 0x3c, 0x7d,
-    ];
-
-    /// <summary>The second room-state entry's remainders; its first bytes differ from the first's.</summary>
-    private static ReadOnlySpan<byte> RoomStateEntrySecondRemainder =>
-    [
-        0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x26, 0x01,
-        0x00, 0x98, 0x3a, 0x00, 0x00, 0x00, 0x80, 0xcd,
-        0x7d, 0x00, 0x00, 0x04, 0x3d, 0xe1, 0x1f, 0xfa,
-        0x00, 0x68, 0xbf, 0x00, 0x0b, 0xdf, 0x1f, 0x00,
-        0x00, 0xc0, 0x10, 0x7f, 0x7f, 0x0a, 0x00, 0x83,
-        0xff, 0x9b, 0x40, 0x7f, 0x54, 0xbe, 0x7f, 0xe2,
-        0xff, 0x17, 0x80, 0x7f,
-    ];
-
-    /// <summary>
-    /// The room's own stage as the room-state record states it: the record the
-    /// captures write beside the close pair, in the round's opening run and again
-    /// through a briefing.
+    /// The first room-state record's bytes behind its roster header: the room's
+    /// stage as the port client's host writes it, a six-byte value repeated behind
+    /// the record's own pair of flag bytes.
     /// </summary>
     /// <remarks>
-    /// <b>Its body is the recorded one, and it is the room's stage rather than a
-    /// session's.</b> The two records below and this one are the same in
-    /// `mgo2-game1` and `mgo2-started-briefing-then-solo-game` and differ in
-    /// `mgo2-game2`, so they are written from the recording the way the close pair
-    /// beside them already is (<see cref="MatchStartCloseFirst"/>): a room on
-    /// another stage is served the recorded stage's bytes, which is visible on the
-    /// wire and recorded in `docs/analysis/briefing-room-state.md`.
+    /// What it states is **[U]**, and the values are the recording's: `mgo2-game1`
+    /// and `mgo2-started-briefing-then-solo-game` write one body byte for byte and
+    /// `mgo2-game2` another, so the field is a fact about the room's own stage rather
+    /// than about a session. It is written from the recording the way the close pair
+    /// beside it is (<see cref="MatchStartCloseFirst"/>).
     /// </remarks>
+    private static ReadOnlySpan<byte> RoomStateRecordRemainder =>
+    [
+        0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x84, 0x03,
+        0x84, 0x03, 0x3e, 0xfd, 0x84, 0x03, 0x84, 0x03,
+        0x3e, 0xfd, 0xfd, 0x00,
+    ];
+
+    /// <summary>
+    /// The second room-state record's bytes behind its roster header: the same
+    /// shape with the pair's second flag bytes and its own six-byte value.
+    /// </summary>
+    private static ReadOnlySpan<byte> RoomStateRecordSecondRemainder =>
+    [
+        0x00, 0x03, 0x01, 0x00, 0x00, 0x01, 0x3e, 0xfd,
+        0x7d, 0x03, 0x07, 0x03, 0x3e, 0xfd, 0x7d, 0x03,
+        0x07, 0x03, 0xfd, 0x00,
+    ];
+
+    /// <summary>
+    /// The room's own stage as the first of its two room-state records states it:
+    /// the record the captures write behind the close pair, in the round's opening
+    /// run and again through a briefing.
+    /// </summary>
     /// <returns>The record body.</returns>
     public static byte[] RoomStateRecord() =>
         RosterShapedRecord(RoomStateRecordLength, RoomStateRecordRemainder);
 
-    /// <summary>The first room-state entry record.</summary>
+    /// <summary>The second record of the room's stage.</summary>
     /// <returns>The record body.</returns>
-    public static byte[] RoomStateEntryFirst() =>
-        RosterShapedRecord(RoomStateEntryLength, RoomStateEntryFirstRemainder);
-
-    /// <summary>The second room-state entry record.</summary>
-    /// <returns>The record body.</returns>
-    public static byte[] RoomStateEntrySecond() =>
-        RosterShapedRecord(RoomStateEntryLength, RoomStateEntrySecondRemainder);
+    public static byte[] RoomStateRecordSecond() =>
+        RosterShapedRecord(RoomStateRecordLength, RoomStateRecordSecondRemainder);
 
     /// <summary>The first record of the match-start run's close pair.</summary>
     /// <returns>The record body.</returns>

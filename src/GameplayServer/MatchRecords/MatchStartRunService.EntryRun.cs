@@ -78,10 +78,9 @@ public sealed partial class MatchStartRunService
             // loaded has no briefing over it, which is the live session of
             // 2026-10-29 (`docs/analysis/join-stall-after-mode2.md` §60). So the
             // dwell below is what releases the run, counted from the later of the
-            // entry and the report, and the entry only decides which opening pair
-            // the run carries (EntryAnswersOf): a peer whose echo was heard gets
-            // its answer back and one whose echo was not opens on the recorded
-            // empty heads.
+            // entry and the report, and the entry decides nothing of the run's
+            // shape: every capture opens it on the pair of empty 0x5001 heads
+            // (`MatchStartRunFramesUtils.BuildRun`).
 
             if (ReadBriefingRound() is not { } round)
             {

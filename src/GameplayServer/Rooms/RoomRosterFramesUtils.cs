@@ -51,10 +51,21 @@ public static class RoomRosterFramesUtils
 
     /// <summary>
     /// Builds the roster run as it goes on the wire: empty head, the host's own
-    /// entry under <see cref="RoomRosterService.HostEntryType"/>, every joining
-    /// player under <see cref="UdpCommandConstants.PlayerProfile"/>, and the close
-    /// record last.
+    /// entry, every joining player, the close record and the room's count, all
+    /// under <see cref="UdpCommandConstants.PlayerProfile"/>.
     /// </summary>
+    /// <remarks>
+    /// <b>The host writes its own entry under the room's identifier, not under the
+    /// joiner's tag.</b> <c>0x9001</c> is `JoinRequest` — the tag a client opens the
+    /// exchange with — and a host that answers with it under its own entry is
+    /// writing a record the peer reads as one of its own. The two newest captures
+    /// write the host's entry as <c>0x1001</c> beside the players':
+    /// `briefing-then-solo-game` t+1.662 carries `1001` for the host, the joiner
+    /// and the close, and `mgo2-game-started-on-briefing` t+5.996 the same (its
+    /// whole twenty minutes hold no host-written `0x9001` at all). What remains
+    /// under `JoinRequest` is the pair a round's open writes, which is measured in
+    /// `mgo2-game1` (<see cref="TeamArrayService"/>) and is a different record.
+    /// </remarks>
     /// <param name="members">The room's joining players, as a snapshot.</param>
     /// <param name="hostIdentity">Identity this host presents to its peers.</param>
     /// <returns>The records in send order, each with the type it travels as.</returns>
@@ -63,10 +74,10 @@ public static class RoomRosterFramesUtils
         HostIdentityService hostIdentity)
     {
         var entries = BuildRecords(members, hostIdentity);
-        var run = new List<RosterRecord>(entries.Count + 2)
+        var run = new List<RosterRecord>(entries.Count + 3)
         {
             new(UdpCommandConstants.RosterHead, [], 0),
-            new(RoomRosterService.HostEntryType, entries[0], 0),
+            new(UdpCommandConstants.PlayerProfile, entries[0], 0),
         };
 
         // Each joining player carries its slot: the first reads one, so the
@@ -80,42 +91,21 @@ public static class RoomRosterFramesUtils
             UdpCommandConstants.PlayerProfile,
             PlayerProfileRecordUtility.BuildRosterClose(),
             (byte)entries.Count));
+
+        // The room's count closes the run, one state transfer carrying the
+        // population: `mgo2-game-started-on-briefing` t+5.996 writes the host's
+        // entry, the joiner's, the close at ordinal 2 and then `1001`/10 bytes
+        // `0b 00 00 04 00 00 00 00 00 02` at ordinal 3 — the host counted in, the
+        // joiner counted in. Behind the close rather than inside the settings
+        // burst, which is where this host used to write it. The port client's own
+        // join puts its own loadout at that value instead
+        // (`briefing-then-solo-game` t+1.662); the value is the peer's either way,
+        // and the loadout follows it in the burst 3.0 s later.
+        run.Add(new(
+            UdpCommandConstants.PlayerProfile,
+            RoundStateBodiesUtils.JoinPlayerCountBody((byte)(members.Count + 1)),
+            (byte)(entries.Count + 1)));
         return run;
     }
 
-    /// <summary>
-    /// Builds the copy of a roster run that the recorded host sends immediately
-    /// after the run itself: the same records in the same order, with the empty
-    /// head record left off.
-    /// </summary>
-    /// <remarks>
-    /// The live host sends every roster run twice. The second copy opens on the
-    /// host's own entry rather than on <see cref="UdpCommandConstants.RosterHead"/>,
-    /// and reaches the peer 0.7 to 0.9 ms after the first — 117 µs after it at the
-    /// join itself.
-    ///
-    /// What the capture settles is the shape and the fact of the second copy, and
-    /// not what schedules it. It is not a retransmission of a lost frame: the two
-    /// go out on consecutive outbound sequences 56 to 68 frames apart, with the
-    /// tick stream filling the gap, so the second is a new datagram rather than
-    /// the same frame sent again. It is not acknowledgement-driven either — the
-    /// joiner acknowledged sequence 1 twenty-seven times over the round and
-    /// sequence 2, which is what the run travels as, never once — and the first
-    /// acknowledgement of any kind arrives some 66 ms after the run this method
-    /// repeats.
-    ///
-    /// So it is sent unconditionally, and nothing here waits for a peer to
-    /// confirm it. What ends the repetition is **[U]**: no inbound record marks
-    /// the end of a run's second copy in the capture, and the host's own
-    /// acknowledgements never cover these sequences.
-    /// </remarks>
-    /// <param name="members">The room's joining players, as a snapshot.</param>
-    /// <param name="hostIdentity">Identity this host presents to its peers.</param>
-    /// <returns>The records of the run without its head, ready to be sent.</returns>
-    public static List<RosterRecord> BuildRunRepeat(
-        IReadOnlyList<RosterMember> members,
-        HostIdentityService hostIdentity) =>
-    [
-        .. BuildRun(members, hostIdentity).Where(record => record.Type != UdpCommandConstants.RosterHead),
-    ];
 }

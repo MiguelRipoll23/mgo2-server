@@ -171,11 +171,7 @@ public sealed class PlayerProfileHandler(
         // copy (`RosterAnswerService`). The first copy is therefore held, and a
         // client that does not re-send is answered when the hold's deadline
         // passes rather than never.
-        var answer = () => SendRosterAsync(
-            context,
-            roster.BuildRosterRun(),
-            roster.BuildRosterRunRepeat(),
-            RoomRosterService.BuildRosterTrailer());
+        var answer = () => SendRosterAsync(context, roster.BuildRosterRun());
 
         if (rosterAnswers.AnswerNowOrHold(context.Remote.ToString(), context, answer))
         {
@@ -219,62 +215,42 @@ public sealed class PlayerProfileHandler(
     }
 
     /// <summary>
-    /// Writes the roster run, its repeat and its trailing record, and announces
-    /// the run to the room's other peers.
+    /// Writes the roster run and announces it to the room's other peers.
     /// </summary>
+    /// <remarks>
+    /// <b>One frame, and not three.</b> This wrote the run and then a second copy
+    /// of it 0.1 ms later and a bare <c>0x5001</c> head behind that, on the reading
+    /// that the recorded host repeats a roster run. `briefing-then-solo-game` — the
+    /// port client's own join — writes the run once, in one frame, and nothing
+    /// between it and the settings burst 3.0 s later: no second copy, no trailing
+    /// head. A repeat of the same records inside one pass is not the measured
+    /// repeat either, which is a whole set written again seconds later on the
+    /// tick (`MatchStartRunService.RepeatRunAsync`); the two extra frames only put
+    /// three copies of one roster in front of a client that has not answered yet.
+    /// </remarks>
     /// <param name="context">Context of the profile this roster answers.</param>
     /// <param name="run">Roster records to write, in order.</param>
-    /// <param name="repeat">The same records without the opening answer.</param>
-    /// <param name="trailer">Record that closes the exchange.</param>
-    private async Task SendRosterAsync(
-        PeerContext context,
-        IReadOnlyList<RosterRecord> run,
-        IReadOnlyList<RosterRecord> repeat,
-        RosterRecord trailer)
+    private async Task SendRosterAsync(PeerContext context, IReadOnlyList<RosterRecord> run)
     {
         logger.LogDebug(
             "UDP {LocalPort}: built roster response for {RemoteAddress}: {RecordCount} records, "
-            + "{JoinerCount} joiners, {FrameCount} outbound roster frames including repeat and trailer",
+            + "{JoinerCount} joiners, one outbound roster frame",
             context.LocalPort,
             context.Remote,
             run.Count,
-            roster.JoinerCount,
-            3);
-        foreach (var record in run.Where(record => record.Type == RoomRosterService.HostEntryType))
-        {
-            logger.LogInformation(
-                "UDP {LocalPort}: sending this host's own roster entry to {RemoteAddress} under "
-                + "0x{MsgType:x4}, the tag a joiner opens the exchange with; the rest of the roster "
-                + "travels as 0x{RosterType:x4}",
-                context.LocalPort,
-                context.Remote,
-                record.Type,
-                UdpCommandConstants.PlayerProfile);
-        }
+            roster.JoinerCount);
 
-        // Both runs go out compressed, as the recorded host sends them. The same
-        // two runs sent in the clear were the experiment that separated our LZSS
-        // stream from the records in it - the peer answered those and answered
-        // nothing against our marked frames - and the difference was the encoder,
-        // not the marker: it wrote no end-of-stream marker, which is the peer
-        // reader's only clean exit, so both frames were dropped on arrival.
+        // The run goes out compressed, as the recorded host sends it. The same run
+        // sent in the clear was the experiment that separated our LZSS stream from
+        // the records in it - the peer answered those and answered nothing against
+        // our marked frames - and the difference was the encoder, not the marker: it
+        // wrote no end-of-stream marker, which is the peer reader's only clean exit,
+        // so the frame was dropped on arrival.
         logger.LogDebug(
             "UDP {LocalPort}: sending roster response ({RecordCount} records, compressed)",
             context.LocalPort,
             run.Count);
         await RosterRunSendUtils.SendAsync(context, run, compressed: true);
-        logger.LogDebug(
-            "UDP {LocalPort}: sending roster repeat ({RecordCount} records, compressed)",
-            context.LocalPort,
-            repeat.Count);
-        await RosterRunSendUtils.SendAsync(context, repeat, compressed: true);
-
-        logger.LogDebug(
-            "UDP {LocalPort}: sending roster trailer 0x{MessageType:x4} to {RemoteAddress}",
-            context.LocalPort,
-            trailer.Type,
-            context.Remote);
-        await context.Send(trailer.Type, trailer.Body, trailer.Ordinal);
 
         // The recorded host does not stop at the roster. 2.52 s later it writes
         // the one burst of the round - the room's rotation, the joiner's loadout,

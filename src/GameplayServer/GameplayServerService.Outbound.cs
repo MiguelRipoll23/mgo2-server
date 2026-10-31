@@ -144,7 +144,8 @@ public sealed partial class GameplayServerService
                 compressed ? "compressed" : "uncompressed",
                 session.Established,
                 string.Join(", ", messages.Select(message =>
-                    $"0x{message.Type:x4}/{message.Body.Length}B/ordinal={message.Flags}")));
+                    $"0x{message.Type:x4}/{message.Body.Length}B/ordinal={message.Flags} "
+                    + $"body={Convert.ToHexString(message.Body).ToLowerInvariant()}")));
             Send(wire, session.DialBack);
             TrafficLogger.LogUdpOutboundPacket(
                 logger,

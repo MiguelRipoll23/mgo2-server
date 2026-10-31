@@ -1,5 +1,4 @@
 using Mgo2Server.Shared.Constants;
-using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameplayServer.MatchRecords;
@@ -82,20 +81,26 @@ public static class MatchStartRunFramesUtils
 
     /// <summary>
     /// Values the run's own <c>0x1001</c>-family records take from the roster
-    /// exchange's counter, in send order: the two lobby-slot arrays, the room's
-    /// own stage (the record and its two entries) and the close triple behind
-    /// them.
+    /// exchange's counter, in send order: the two lobby-slot arrays, the close pair
+    /// behind them, the room's own stage and the roster close that ends the tail.
     /// </summary>
     /// <remarks>
-    /// Eight and not five, because the room's stage rides between the arrays and
-    /// the closes: `mgo2-started-briefing-then-solo-game`'s run numbers its family
-    /// <c>0x16</c>…<c>0x1d</c> — the arrays at <c>0x16</c> and <c>0x17</c>, the
-    /// twenty-two-byte record at <c>0x18</c>, the two fifty-four-byte ones at
-    /// <c>0x19</c> and <c>0x1a</c>, the close pair at <c>0x1b</c> and <c>0x1c</c>
-    /// and the roster close at <c>0x1d</c> — and the ordinal bytes are what put
-    /// the records in that order, not the order this file happens to send them in.
+    /// <para>
+    /// Seven, and the values are consecutive because one counter hands them out:
+    /// `briefing-then-solo-game`'s run numbers its family <c>07</c>…<c>0d</c> — the
+    /// arrays at <c>07</c> and <c>08</c>, the close pair at <c>09</c> and <c>0a</c>,
+    /// the two twenty-two-byte stage records at <c>0b</c> and <c>0c</c> and the
+    /// roster close at <c>0d</c> — and its round's run, behind the burst and the
+    /// entry, numbers the same seven from <c>19</c>.
+    /// </para>
+    /// <para>
+    /// A fresh briefing's run is the same run for these records. The room's stage
+    /// is not the round's: the reference writes it in the briefing's run before the
+    /// round exists (`briefing-then-solo-game` t+9.780), so nothing here is dropped
+    /// for a room that has not played.
+    /// </para>
     /// </remarks>
-    public const int RosterOrdinalCount = 8;
+    public const int RosterOrdinalCount = 7;
 
     /// <summary>
     /// Operations records a fresh room's briefing run writes: its state block and
@@ -105,12 +110,11 @@ public static class MatchStartRunFramesUtils
     public const int BriefingOperationsRecordCount = 2;
 
     /// <summary>
-    /// Values a fresh room's briefing run takes from the roster exchange's
-    /// counter: the two lobby-slot arrays and the close triple behind them, which
-    /// are the next three values because the room's stage does not ride between
-    /// them.
+    /// Values a fresh room's briefing run takes from the roster exchange's counter.
+    /// It is <see cref="RosterOrdinalCount"/>: the stage and the close pair are the
+    /// run's in a briefing as much as in a round.
     /// </summary>
-    public const int BriefingRosterOrdinalCount = 5;
+    public const int BriefingRosterOrdinalCount = RosterOrdinalCount;
 
     /// <summary>
     /// Records a run that answers the report opens on and its repeat leaves out:
@@ -227,18 +231,14 @@ public static class MatchStartRunFramesUtils
     /// host that wrote its own default here would run a round neither the client
     /// nor the host could agree on.
     /// </param>
-    /// <param name="entryAnswers">
-    /// The answers the peer's entry echo draws, which are the run's opening pair
-    /// (<see cref="MatchStartRunService.NoteEntryAnswers"/>). Empty for a peer
-    /// whose entry this host never heard, which falls back to the recorded empty
-    /// <c>0x5001</c> heads.
-    /// </param>
     /// <param name="carriesRoundState">
-    /// Whether the run carries the round's own records — its stage, its clock, the
-    /// report's answer and the rules pair. A briefing that precedes a room's first
-    /// round carries none of them, which is the reference's fresh-room run: the
-    /// records tell a client a round exists, and a client told that while it is
-    /// still being briefed enters the game instead of showing the briefing screen.
+    /// Whether the run carries the round's own records — its clock, the report's
+    /// answer and the rules pair. A briefing that precedes a room's first round
+    /// carries none of them, which is the reference's fresh-room run: the records
+    /// tell a client a round exists, and a client told that while it is still being
+    /// briefed enters the game instead of showing the briefing screen. The room's
+    /// stage and its close pair are not among them: the reference's fresh briefing
+    /// writes both (`briefing-then-solo-game` t+9.780).
     /// </param>
     /// <param name="answersReport">
     /// Whether this run is the report's answer and so opens on the round's marker.
@@ -257,7 +257,6 @@ public static class MatchStartRunFramesUtils
         IReadOnlyList<byte> operationsOrdinals,
         byte reportingSet,
         int timeLimitUnits,
-        IReadOnlyList<UdpMessage> entryAnswers,
         bool carriesRoundState = true,
         bool answersReport = true)
     {
@@ -270,16 +269,15 @@ public static class MatchStartRunFramesUtils
         // (`docs/analysis/join-stall-after-mode2.md` §27.5).
         var (teams, occupancy) = Rooms.TeamArrayFramesUtils.BuildPair(teamArraySequence, []);
 
-        // The run's opening pair answers the peer's entry echo when this host
-        // heard one: the echo's own record answered, carrying the same fourth
-        // byte, which is what the captures' runs open with. A peer that never
-        // echoed is written the recorded empty heads the captures hold.
-        IEnumerable<MatchRecordFramesUtils.RecordMessage> heads = entryAnswers.Count > 0
-            ? entryAnswers.Select(answer => new MatchRecordFramesUtils.RecordMessage(
-                answer.Type,
-                answer.Body,
-                answer.Flags))
-            : [new(UdpCommandConstants.RosterHead, []), new(UdpCommandConstants.RosterHead, [])];
+        // The run opens on the pair of empty roster heads every capture writes,
+        // whether or not the peer's own entry was heard: `briefing-then-solo-game`
+        // writes <c>0x5001</c> twice at t+9.780 — its briefing's run — and twice
+        // again at t+147.650, and the client's echo of the lobby-slot pair is
+        // answered by the arrays below rather than by them. A run that answered the
+        // echo here wrote a single head when one echo had been heard and none when
+        // two had, which is a pair on no capture's wire.
+        IEnumerable<MatchRecordFramesUtils.RecordMessage> heads =
+        [new(UdpCommandConstants.RosterHead, []), new(UdpCommandConstants.RosterHead, [])];
 
         return
         [
@@ -328,38 +326,32 @@ public static class MatchStartRunFramesUtils
             MatchStartBodiesUtils.JoinStateAnswer(reportingSet),
             MatchStartBodiesUtils.JoinStateAnswerClass),
 
-        // The room's own stage, between the arrays and the closes: the 22-byte
-        // record and the two 54-byte entries every capture writes there. Their
-        // ordinal bytes are the run's own counter, which is what puts them
-        // between the arrays and the close pair on the wire. A room that has not
-        // played a round writes none of the three: its briefing carries no round
-        // for them to describe, and `mgo2-game-started-on-briefing`'s first run
-        // (t+58.255) holds the arrays straight against the closes.
-        .. (carriesRoundState
-            ? new MatchRecordFramesUtils.RecordMessage[]
-            {
-                new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.RoomStateRecord(), runOrdinals[2]),
-                new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.RoomStateEntryFirst(), runOrdinals[3]),
-                new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.RoomStateEntrySecond(), runOrdinals[4]),
-            }
-            : []),
-
-        // The close triple: two twenty-byte records whose remaining bytes are the
-        // recorded ones, because nothing names them, and the seven-byte roster
-        // close that ends a 0x1001 tail. The values follow the arrays when the
-        // stage does not ride between them, which is the fresh briefing's run.
+        // The close pair, then the room's own stage, then the seven-byte roster
+        // close that ends a 0x1001 tail: the order `briefing-then-solo-game`
+        // writes at t+9.780, where the twenty-byte pair takes ordinals 09 and 0a
+        // and the two twenty-two-byte stage records take 0b and 0c. The stage is
+        // written whether or not a round has played — the reference's fresh
+        // briefing carries it — so the values follow the close pair in both cases.
         new(
             UdpCommandConstants.PlayerProfile,
             MatchRecordBodiesUtils.MatchStartCloseFirst(),
-            runOrdinals[carriesRoundState ? 5 : 2]),
+            runOrdinals[2]),
         new(
             UdpCommandConstants.PlayerProfile,
             MatchRecordBodiesUtils.MatchStartCloseSecond(),
-            runOrdinals[carriesRoundState ? 6 : 3]),
+            runOrdinals[3]),
+        new(
+            UdpCommandConstants.PlayerProfile,
+            MatchRecordBodiesUtils.RoomStateRecord(),
+            runOrdinals[4]),
+        new(
+            UdpCommandConstants.PlayerProfile,
+            MatchRecordBodiesUtils.RoomStateRecordSecond(),
+            runOrdinals[5]),
         new(
             UdpCommandConstants.PlayerProfile,
             PlayerProfileRecordUtility.BuildRosterClose(),
-            runOrdinals[carriesRoundState ? 7 : 4]),
+            runOrdinals[6]),
 
         // The round's clock, the answer to the report and the rules pair belong
         // to a round. A fresh room's briefing carries none of them: the reference

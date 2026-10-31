@@ -192,11 +192,11 @@ public sealed class RoomRosterService(
 
             // The run this join is answered with consumes the counter's values
             // from zero: the head and the host's own entry read zero, the joining
-            // players one upwards, and the close members.Count + 1. What follows
-            // the run — the burst, the round's lobby-slot pair, the scoreboard —
-            // therefore starts here, and the seed is left alone where the room's
-            // exchange has already counted past it.
-            SeedRunOrdinal((byte)(members.Count + 2));
+            // players one upwards, the close members.Count + 1 and the room's count
+            // members.Count + 2. What follows the run — the burst, the round's
+            // lobby-slot pair, the scoreboard — therefore starts here, and the seed
+            // is left alone where the room's exchange has already counted past it.
+            SeedRunOrdinal((byte)(members.Count + 3));
 
             logger.LogDebug(
                 "Added roster member {RemoteAddress}: character {CharacterId}, slot {RosterIndex}; {JoinerCount} joiners",
@@ -292,34 +292,6 @@ public sealed class RoomRosterService(
     /// <returns>The records in send order, each with the type it travels as.</returns>
     public List<RosterRecord> BuildRosterRun() =>
         RoomRosterFramesUtils.BuildRun(Snapshot(), hostIdentity);
-
-    /// <summary>
-    /// Builds the copy of a roster run that the recorded host sends immediately
-    /// after the run itself: the same records in the same order, with the empty
-    /// head record left off.
-    /// </summary>
-    /// <returns>The records of the run without its head, ready to be sent.</returns>
-    public List<RosterRecord> BuildRosterRunRepeat() =>
-        RoomRosterFramesUtils.BuildRunRepeat(Snapshot(), hostIdentity);
-
-    /// <summary>
-    /// Builds the bare head record the recorded host sends after the run and its
-    /// second copy: one empty <c>0x5001</c> and nothing else.
-    /// </summary>
-    /// <remarks>
-    /// The live host closes a roster exchange with a third frame carrying the
-    /// same empty <c>0x5001</c> that opens the run, 158 µs after the repeat in
-    /// the capture (t+2.4758, outbound counter 4). It repeats the type that
-    /// opened the run rather than closing it, and what it says is **[U]** — the
-    /// type is the one §3 of <c>UDP_GAME_CAPTURE.md</c> shows is not the
-    /// acknowledgement despite the resemblance.
-    ///
-    /// It is sent because the host sends it, on the same grounds as the rest of
-    /// the run: a record a peer wrote and a host answers with is not a record
-    /// this server should decline to write. Nothing waits on it.
-    /// </remarks>
-    /// <returns>The trailing record, ready to be sent.</returns>
-    public static RosterRecord BuildRosterTrailer() => new(UdpCommandConstants.RosterHead, []);
 
     private sbyte NextFreeIndex()
     {

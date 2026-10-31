@@ -19,11 +19,15 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </para>
 /// <para>
 /// It opens with a one-byte <see cref="UdpCommandConstants.InGameControl"/>
-/// record, carries the room's own settings under
-/// <see cref="RoomRosterService.HostEntryType"/>, then the payloads under
+/// record, carries the room's own settings and the payloads under
 /// <see cref="UdpCommandConstants.PlayerProfile"/> and closes with a
 /// <see cref="UdpCommandConstants.GameStateBlob"/>. A seventh record, a second
 /// one-byte control record, follows 300 µs later on its own counter.
+///
+/// The room's population is not in it: that state transfer closes the roster run
+/// (<see cref="RoomRosterFramesUtils.BuildRun"/>), which is where the reference
+/// host writes it, and a burst that repeated it gave a joiner two counts before
+/// it had reported anything.
 /// </para>
 /// <para>
 /// <b>What the payload bodies mean is settled by the replay parser.</b> Every
@@ -185,39 +189,28 @@ public sealed partial class PlayerSettingsBurstService(
             .. JoinPreamble(rotation),
         ];
 
+        // One loadout, and it is the answering peer's. The reference burst
+        // carries a single fifty-four-byte body — `briefing-then-solo-game`
+        // t+4.712, slot `0b`, the key of the peer it answers plus one — and the
+        // same body is the one its roster run wrote at the join. A burst that
+        // wrote the host's own loadout beside it and two byte-identical records
+        // behind those put three records on a wire that holds one.
         if (loadouts is { Count: > 0 })
         {
-            // The room's own players, the host first because its key is zero:
-            // the captured burst names the host's own entry and the players', and
-            // the slot a record carries is the key the roster handed out.
-            foreach (var loadout in loadouts.OrderBy(loadout => loadout.Slot))
-            {
-                burst.Add(new(
-                    UdpCommandConstants.PlayerProfile,
-                    LoadoutBody(loadout),
-                    roster.TakeRunOrdinal()));
-            }
+            var answering = loadouts.FirstOrDefault(
+                    loadout => (byte)(loadout.Slot + 1) == answeringSlot)
+                ?? loadouts.OrderBy(loadout => loadout.Slot).First();
+            burst.Add(new(
+                UdpCommandConstants.PlayerProfile,
+                LoadoutBody(answering),
+                roster.TakeRunOrdinal()));
         }
         else
         {
-            // The recorded host's own loadout, for a room whose players could not
-            // be read: one body per joining player, and the two byte-identical
-            // records behind them that the capture writes once.
-            for (var joiner = 0; joiner < roster.JoinerCount; joiner++)
-            {
-                burst.Add(new(
-                    LoadoutBodiesUtils.LoadoutRecordType,
-                    LoadoutBodiesUtils.PlayerLoadout(),
-                    roster.TakeRunOrdinal()));
-            }
-
+            // The recorded loadout, for a room whose players could not be read.
             burst.Add(new(
                 LoadoutBodiesUtils.LoadoutRecordType,
-                LoadoutBodiesUtils.SecondLoadout(),
-                roster.TakeRunOrdinal()));
-            burst.Add(new(
-                LoadoutBodiesUtils.LoadoutRecordType,
-                LoadoutBodiesUtils.SecondLoadout(),
+                LoadoutBodiesUtils.PlayerLoadout(),
                 roster.TakeRunOrdinal()));
         }
 
