@@ -107,22 +107,36 @@ public static class MatchMapUtils
 
     /// <summary>
     /// The map a room moves to after this one: the next entry of the table that has
-    /// a stage name, wrapping at its end.
+    /// both a stage name and a measured spawn, wrapping at its end.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>It walks the maps whose stage the table names.</b> Id <c>16</c> is the
-    /// table's own placeholder, so a rotation that landed on it would publish a room
-    /// nobody can ask for and a spawn nothing measured. Id <c>19</c> is the other
-    /// one: Perilous Palace has a name and no stage, which is a stage this server
-    /// can neither state in a record nor place a spawn on — the pair it writes for
-    /// it is Blood Bath's. A room rotated onto it therefore hands its client a stage
-    /// nothing here measured, and the join of 30 October 14:27 is what that costs:
-    /// the client loaded <c>n024a</c> and the stage failed every asset check it
-    /// printed (`dg_texture.cpp:3025` null, thirty-nine texture overflows,
-    /// `brk_light.cc:1017`, `windowpane_mng.cc:297`, `crt_monitor.cc:781` and
-    /// `tree_test_02.cc:1149` prop directories not found), which is the black screen
-    /// that join ended on (`docs/analysis/join-stall-after-mode2.md` §70).
+    /// <b>It walks the maps whose stage and spawn are both measured.</b> Id <c>16</c>
+    /// is the table's own placeholder, so a rotation that landed on it would publish
+    /// a room nobody can ask for and a spawn nothing measured. Id <c>19</c> is the
+    /// other one: Perilous Palace has a name and no stage, which is a stage this
+    /// server can neither state in a record nor place a spawn on — the pair it
+    /// writes for it is Blood Bath's. A room rotated onto it therefore hands its
+    /// client a stage nothing here measured, and the join of 30 October 14:27 is
+    /// what that costs: the client loaded <c>n024a</c> and the stage failed every
+    /// asset check it printed (`dg_texture.cpp:3025` null, thirty-nine texture
+    /// overflows, `brk_light.cc:1017`, `windowpane_mng.cc:297`,
+    /// `crt_monitor.cc:781` and `tree_test_02.cc:1149` prop directories not found),
+    /// which is the black screen that join ended on
+    /// (`docs/analysis/join-stall-after-mode2.md` §71).
+    /// </para>
+    /// <para>
+    /// <b>Id <c>20</c> is skipped for the same reason and not for a missing stage.</b>
+    /// Quaint Quarrel has a stage name, <c>n022a</c>, and no completed match in the
+    /// Survival list, so <see cref="MapSpawnUtils"/> places it with Blood Bath's pair.
+    /// The join of 30 October 13:46 landed on it: the client loaded <c>n022a</c>, the
+    /// stage script ran, and the collision unit then reported a <c>NAN ERROR</c> for
+    /// every trace it took — five `unknown chara-class 0` checks and seventeen
+    /// thousand collision failures before the window closed — which is the same black
+    /// screen in a stage this server states but cannot place a player in. So the
+    /// rotation now requires a measured spawn rather than a name alone, and 19 and 20
+    /// are both out of it until a replay of each is read
+    /// (`docs/analysis/join-stall-after-mode2.md` §75).
     /// </para>
     /// <para>
     /// An id the table does not hold — a row written by an older build — starts the
@@ -133,7 +147,10 @@ public static class MatchMapUtils
     /// <returns>The map the room plays next.</returns>
     public static int Next(int map)
     {
-        var playable = Maps.Where(entry => entry.Stage is not null).Select(entry => entry.Map).ToArray();
+        var playable = Maps
+            .Where(entry => entry.Stage is not null && MapSpawnUtils.IsMeasured(entry.Map))
+            .Select(entry => entry.Map)
+            .ToArray();
         return playable[(Array.IndexOf(playable, map) + 1) % playable.Length];
     }
 
