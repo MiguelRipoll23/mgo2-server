@@ -378,3 +378,19 @@ Whether the missing payload is what the client's flow reads before it builds the
 `MGA_BattleBefor` unit is **not** measured. It is the one record of the join that
 was demonstrably absent, and the fix puts it where the only host that shows a
 briefing puts it.
+
+**And it was not the trigger.** The join that ran on the build carrying this fix
+was answered with the five-record run — the live pod log's frame 2 reads
+`5001/0, 1001/80, 1001/81, 1001/7, 1001/10, 1001/50` at ordinals 0…4, and its
+burst opens on the rotation at ordinal 5 — and the client's own log from that
+same run still says `the battle-before flow has stepped 0 time(s) and started 0`
+beside a running `n006a` script. So the record was genuinely missing and is now
+written where the reference writes it, and the screen is still built by nothing.
+
+What that leaves is measured too: during a briefing a reference client receives
+only record families this host also writes — the keep-alives, the `0x1001`
+payloads, the room's count, the seven-byte countdown, the `1250`/`125a` state
+pairs, the join report and its publication, the `0x0002` blobs and the `d001`
+controls. The `0x08xx` tick family does not start until the round plays
+(t+290.649 in `mgo2-game-started-on-briefing`), so it is not a briefing input.
+Nothing in the briefing window is missing on the wire any more.
