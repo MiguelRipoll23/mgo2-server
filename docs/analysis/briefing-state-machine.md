@@ -233,12 +233,40 @@ is drawn over a loaded stage: the stage supplies the briefing's own UI, and the
   flow never instantiates the unit (its registry entry is name-driven), or the
   unit is instantiated and case 12 takes the `select_game_mode == 9` branch.
 
-## 9. The next measurement
+## 9. What the rebuilt probe measured
 
-The rebuilt patcher answers the two remaining cases apart in one run. It needs
-one join in a Free Battle room whose game has been started, with the client
-launched through `patcher\mgo2-patcher.exe` as usual; the lines to read are the
-`battle-before` ones and `the briefing screen was built`.
+With the masks in place both flow hooks install and the builder is probed, and
+the answer did not change:
+
+```
+game: hooked the battle-before flow's step at 101D1380, 7 bytes into trampoline 060E0000
+game: hooked the battle-before flow's start at 101D0B00, 8 bytes into trampoline 060F0000
+game: hooked the briefing screen's builder at 10189720, 6 bytes into trampoline 06250000
+…
+state: 6 stage(s) loaded, the last "n004a"; a stage script is running …
+  the briefing loader has run 0 time(s); the room asked 0 time(s) and the one-block ask 0;
+  the data set is 0 (installed 0, dropped 0); the flow's last screen was "none" (0 label(s));
+  the battle-before flow has stepped 0 time(s) and started 0, its unit is 00000000 at state -1
+```
+
+No `battle-before step`, no `the battle-before unit was started`, no `the briefing
+screen was built`, and no `the flow asked for screen` — with every one of those
+hooks confirmed installed. The client walked `init_n` → `nt_mgsetup` →
+`r_sna01_n` → `mga_boot` → `lobby` → `n004a` and ran the map's script, and the
+whole briefing module stayed untouched.
+
+**The missing trigger is therefore upstream of the unit**: the client's room flow
+never instantiates the `MGA_BattleBefor` screen at all. Whether it asks for a
+different screen by name, or never reaches the flow that asks, is what the two
+screen-label registrars (`0x100222a0`, `0x10022370`) now record — every label
+either of them is handed is logged as `screen label "…"`.
+
+## 10. The next measurement
+
+One more join in a started Free Battle room, with the client launched through
+`patcher\mgo2-patcher.exe`. The lines that matter are the `screen label` ones:
+they are the client's own list of the screens it entered, and the absent one says
+where the flow turns off.
 
 The rebuilt patcher (masks on the two flow patterns, plus a probe on
 `0x10119720`) answers the two remaining cases apart in one run:
