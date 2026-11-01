@@ -192,11 +192,12 @@ public sealed class RoomRosterService(
 
             // The run this join is answered with consumes the counter's values
             // from zero: the head and the host's own entry read zero, the joining
-            // players one upwards, the close members.Count + 1 and the room's count
-            // members.Count + 2. What follows the run — the burst, the round's
+            // players one upwards, the close members.Count + 1, the room's count
+            // members.Count + 2 and the answered peer's own settings payload
+            // members.Count + 3. What follows the run — the burst, the round's
             // lobby-slot pair, the scoreboard — therefore starts here, and the seed
             // is left alone where the room's exchange has already counted past it.
-            SeedRunOrdinal((byte)(members.Count + 3));
+            SeedRunOrdinal((byte)(members.Count + 4));
 
             logger.LogDebug(
                 "Added roster member {RemoteAddress}: character {CharacterId}, slot {RosterIndex}; {JoinerCount} joiners",
@@ -287,11 +288,16 @@ public sealed class RoomRosterService(
     /// <summary>
     /// Builds the roster run as it goes on the wire: empty head, the host's own
     /// entry under <see cref="HostEntryType"/>, every joining player under
-    /// <see cref="UdpCommandConstants.PlayerProfile"/>, and the close record last.
+    /// <see cref="UdpCommandConstants.PlayerProfile"/>, the close record, the
+    /// room's count and the answered peer's own settings payload last.
     /// </summary>
+    /// <param name="answeringLoadout">
+    /// The answered peer's settings payload, or <c>null</c> to close the run on
+    /// the room's count.
+    /// </param>
     /// <returns>The records in send order, each with the type it travels as.</returns>
-    public List<RosterRecord> BuildRosterRun() =>
-        RoomRosterFramesUtils.BuildRun(Snapshot(), hostIdentity);
+    public List<RosterRecord> BuildRosterRun(byte[]? answeringLoadout = null) =>
+        RoomRosterFramesUtils.BuildRun(Snapshot(), hostIdentity, answeringLoadout);
 
     private sbyte NextFreeIndex()
     {

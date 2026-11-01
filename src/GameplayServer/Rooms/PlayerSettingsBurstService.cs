@@ -195,60 +195,13 @@ public sealed partial class PlayerSettingsBurstService(
         // same body is the one its roster run wrote at the join. A burst that
         // wrote the host's own loadout beside it and two byte-identical records
         // behind those put three records on a wire that holds one.
-        if (loadouts is { Count: > 0 })
-        {
-            var answering = loadouts.FirstOrDefault(
-                    loadout => (byte)(loadout.Slot + 1) == answeringSlot)
-                ?? loadouts.OrderBy(loadout => loadout.Slot).First();
-            burst.Add(new(
-                UdpCommandConstants.PlayerProfile,
-                LoadoutBody(answering),
-                roster.TakeRunOrdinal()));
-        }
-        else
-        {
-            // The recorded loadout, for a room whose players could not be read.
-            burst.Add(new(
-                LoadoutBodiesUtils.LoadoutRecordType,
-                LoadoutBodiesUtils.PlayerLoadout(),
-                roster.TakeRunOrdinal()));
-        }
+        burst.Add(new(
+            UdpCommandConstants.PlayerProfile,
+            AnsweringLoadoutBody(loadouts, answeringSlot),
+            roster.TakeRunOrdinal()));
 
         burst.Add(new(UdpCommandConstants.GameStateBlob, BuildClosingStateBlob(), answeringSlot));
         return burst;
-    }
-
-    /// <summary>
-    /// One player's loadout body: its own character's fields written into the
-    /// recorded body of the shape its skills have.
-    /// </summary>
-    /// <param name="loadout">The player as the room reads it.</param>
-    /// <returns>The record body.</returns>
-    private byte[] LoadoutBody(LobbyLoadout loadout)
-    {
-        var template = LoadoutBodiesUtils.RecordedLoadoutFor(loadout.Skills.Count);
-        if (template is not null && LoadoutFramesUtils.TryWrite(loadout, template, out var body))
-        {
-            return body;
-        }
-
-        // A skill count no shape is written for. Every count from none to three
-        // has one — the captured bodies for none, two and three, and the built
-        // one for a single pair, which the captures never held — so this is a
-        // player with four equipped skills, whose length the rule gives and no
-        // capture confirms. A body written at the wrong length is one the peer
-        // reads as nothing, and the decoder's own skill reader stops at three
-        // pairs, so the player is still named, in its own slot, with the recorded
-        // no-pairs body behind that one byte.
-        logger.LogWarning(
-            "Player in slot {Slot} has {SkillCount} equipped skill(s), which no loadout body is written for; "
-            + "the recorded no-pairs body is written behind its own slot byte instead",
-            loadout.Slot,
-            loadout.Skills.Count);
-
-        var fallback = LoadoutBodiesUtils.PlayerLoadout();
-        fallback[LoadoutFramesUtils.SlotByteOffset] = (byte)(loadout.Slot + 1);
-        return fallback;
     }
 
     /// <summary>

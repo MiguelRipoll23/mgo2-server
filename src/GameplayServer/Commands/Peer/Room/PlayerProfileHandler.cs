@@ -47,6 +47,11 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// Decider of which copy of a peer's profile is answered: the re-sent one in the
 /// pass it arrives in, or the first one when the client never re-sends.
 /// </param>
+/// <param name="burst">
+/// Builder of the answered peer's settings payload, which closes the roster run
+/// (<see cref="SendRosterAsync"/>).
+/// </param>
+/// <param name="loadoutReader">Reader of the room's own players and their loadouts.</param>
 /// <param name="burstScheduler">Scheduler of the one-shot settings burst after roster exchange.</param>
 /// <param name="matchRecords">Records the recorded host keeps writing after the burst.</param>
 /// <param name="matchStart">Writer of the run the room's next round opens with.</param>
@@ -60,6 +65,8 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 public sealed class PlayerProfileHandler(
     RoomRosterService roster,
     RosterAnswerService rosterAnswers,
+    PlayerSettingsBurstService burst,
+    LobbyLoadoutService loadoutReader,
     PlayerSettingsBurstSchedulerService burstScheduler,
     MatchRecordService matchRecords,
     MatchStartRunService matchStart,
@@ -171,7 +178,7 @@ public sealed class PlayerProfileHandler(
         // copy (`RosterAnswerService`). The first copy is therefore held, and a
         // client that does not re-send is answered when the hold's deadline
         // passes rather than never.
-        var answer = () => SendRosterAsync(context, roster.BuildRosterRun());
+        var answer = () => SendRosterAsync(context);
 
         if (rosterAnswers.AnswerNowOrHold(context.Remote.ToString(), context, answer))
         {
@@ -228,10 +235,45 @@ public sealed class PlayerProfileHandler(
     /// tick (`MatchStartRunService.RepeatRunAsync`); the two extra frames only put
     /// three copies of one roster in front of a client that has not answered yet.
     /// </remarks>
+    /// <remarks>
+    /// <b>The run closes on the answered peer's own settings payload.</b> The
+    /// reference host's roster answer carries it at ordinal 4, ahead of the burst
+    /// that writes the same body again 2.1 s later
+    /// (<see cref="PlayerSettingsBurstService.AnsweringLoadoutBody"/>), so the
+    /// loadouts are read here — in the pass that answers, as the burst's own read
+    /// is — and the run is built with the peer the answer is addressed to.
+    /// </remarks>
     /// <param name="context">Context of the profile this roster answers.</param>
-    /// <param name="run">Roster records to write, in order.</param>
-    private async Task SendRosterAsync(PeerContext context, IReadOnlyList<RosterRecord> run)
+    private async Task SendRosterAsync(PeerContext context)
     {
+        var answeringSlot = roster.Find(context.Session.RemoteAddress) is { } answered
+            ? (byte)(answered.SessionSlot + 1)
+            : (byte)0;
+
+        // The room's rows are read here, and a read that fails must not cost the
+        // join its answer: the roster run is the one message a joiner cannot be
+        // left without, so a failure leaves the payload out and the run closes on
+        // the room's count, which is what this host wrote before the payload was
+        // moved into the run at all.
+        byte[]? answeringLoadout = null;
+        try
+        {
+            answeringLoadout = burst.AnsweringLoadoutBody(
+                await loadoutReader.ReadAsync(),
+                answeringSlot);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "UDP {LocalPort}: the room's loadouts could not be read, so the roster answer to "
+                + "{RemoteAddress} closes on the room's count without the peer's settings payload",
+                context.LocalPort,
+                context.Remote);
+        }
+
+        var run = roster.BuildRosterRun(answeringLoadout);
+
         logger.LogDebug(
             "UDP {LocalPort}: built roster response for {RemoteAddress}: {RecordCount} records, "
             + "{JoinerCount} joiners, one outbound roster frame",
@@ -247,9 +289,11 @@ public sealed class PlayerProfileHandler(
         // wrote no end-of-stream marker, which is the peer reader's only clean exit,
         // so the frame was dropped on arrival.
         logger.LogDebug(
-            "UDP {LocalPort}: sending roster response ({RecordCount} records, compressed)",
+            "UDP {LocalPort}: sending roster response ({RecordCount} records, compressed), closing on "
+            + "the answered peer's settings payload for slot byte {SlotByte}",
             context.LocalPort,
-            run.Count);
+            run.Count,
+            answeringSlot);
         await RosterRunSendUtils.SendAsync(context, run, compressed: true);
 
         // The recorded host does not stop at the roster. 2.52 s later it writes

@@ -68,10 +68,16 @@ public static class RoomRosterFramesUtils
     /// </remarks>
     /// <param name="members">The room's joining players, as a snapshot.</param>
     /// <param name="hostIdentity">Identity this host presents to its peers.</param>
+    /// <param name="answeringLoadout">
+    /// The answered peer's own settings payload, or <c>null</c> for a room that
+    /// could not name it. It closes the run, which is where the reference writes
+    /// it (<see cref="BuildRun"/>).
+    /// </param>
     /// <returns>The records in send order, each with the type it travels as.</returns>
     public static List<RosterRecord> BuildRun(
         IReadOnlyList<RosterMember> members,
-        HostIdentityService hostIdentity)
+        HostIdentityService hostIdentity,
+        byte[]? answeringLoadout = null)
     {
         var entries = BuildRecords(members, hostIdentity);
         var run = new List<RosterRecord>(entries.Count + 3)
@@ -105,6 +111,22 @@ public static class RoomRosterFramesUtils
             UdpCommandConstants.PlayerProfile,
             RoundStateBodiesUtils.JoinPlayerCountBody((byte)(members.Count + 1)),
             (byte)(entries.Count + 1)));
+
+        // The answered peer's own settings payload closes the run, and it is not
+        // the burst's job: `mgo2-game-started-on-briefing` t+6.004 writes five
+        // records under `1001` — the host's entry, the joiner's, the close at 2,
+        // the count at 3 and a fifty-four-byte `0b 02` body at 4 — and writes the
+        // same body again in the burst 2.1 s later. This host wrote it only in the
+        // burst, so the join's answer named the room's population and never the
+        // peer itself, and the burst's ordinals started one value early.
+        if (answeringLoadout is not null)
+        {
+            run.Add(new(
+                UdpCommandConstants.PlayerProfile,
+                answeringLoadout,
+                (byte)(entries.Count + 2)));
+        }
+
         return run;
     }
 

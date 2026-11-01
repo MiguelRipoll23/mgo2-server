@@ -333,3 +333,48 @@ The rebuilt patcher (masks on the two flow patterns, plus a probe on
 | `the battle-before unit was started` | the unit exists; the step lines then say whether state 12 is reached |
 | step lines reaching state 12 | the case runs; `the briefing screen was built` says the gate passed, and a `select_game_mode` of `9` says it did not |
 | no `started` line at all | the unit is never instantiated: the flow that looks the screen up by name never asks for it, and the missing trigger is in that flow — not in anything the gameplay host writes |
+
+## 11. What the join's own frame was missing
+
+Re-reading `mgo2-game-started-on-briefing` from its handshake (the whole join,
+rather than the briefing that follows it) settles one thing the gameplay wire was
+doing differently, and it is a record the answer never carried.
+
+**The reference host's roster answer is five records, not four.** At t+6.004 it
+writes, in one frame under `0x1001`:
+
+```
+ord 0   host's own entry        57 B
+ord 1   the joiner's entry      67 B
+ord 2   the roster close         7 B   07 00 00 00 00 00 03
+ord 3   the room's count        10 B   0b 00 00 04 00 00 00 00 00 02
+ord 4   the peer's settings     54 B   0b 02 02 00 …
+```
+
+and it writes **the same 54-byte body again** in the burst 2.1 s later
+(t+8.125, `0x1001`/54 B with the host's `0xd001` control ahead of it). This host
+wrote the first four and left the fifth to the burst alone, so the join's answer
+described the room — its population, its close — and never the client it was
+addressed to. The burst's ordinals followed from the same gap: it started at 4
+where the reference starts at 5, and its own records read 4, 5, 6 against the
+reference's 5, 6, 7.
+
+That is now written where the reference writes it
+(`RoomRosterFramesUtils.BuildRun`, `PlayerSettingsBurstService.AnsweringLoadoutBody`),
+and the exchange's counter is seeded one value further on so the burst continues
+the run rather than repeating a value it already used.
+
+Two neighbouring differences were checked and left alone, because both are
+ordinary and neither is a gap:
+
+* **The keep-alives.** The reference's frame opens on an empty `0x5000` and two
+  `0x0261` one-byte records before the head; ours writes the head first. The same
+  capture's other frames interleave those at random, and they carry no state.
+* **Compression.** This capture's host compresses nothing and `mgo2-game1`'s
+  compresses most of what it writes, so the mode is the host's choice and the
+  peer answers both.
+
+Whether the missing payload is what the client's flow reads before it builds the
+`MGA_BattleBefor` unit is **not** measured. It is the one record of the join that
+was demonstrably absent, and the fix puts it where the only host that shows a
+briefing puts it.
