@@ -238,11 +238,13 @@ is drawn over a loaded stage: the stage supplies the briefing's own UI, and the
 ## 8. What this means for the server
 
 * The briefing screen is created **inside the client, by the client's own
-  battle-before unit**, before or as it opens the game's UDP session. The
-  gameplay channel's records (the run, the publication, the countdown, the item
-  boxes) cannot create it; they only fill it once it exists. Every wire
-  comparison in `briefing-run-byte-comparison.md` was therefore measuring the
-  contents of a screen that has never been on screen.
+  battle-before unit**, *before* the game's UDP session exists. That is measured,
+  not inferred: in `mgo2-game-started-on-briefing` the client's entry echo at
+  t+55.312 is the session's first datagram, the host answers it with **nothing at
+  all** until its run at t+58.255, and the client is on the briefing throughout.
+  So no gameplay record can be the screen's trigger, and every wire comparison in
+  `briefing-run-byte-comparison.md` was measuring the contents of a screen that
+  has never been on screen.
 * A client that is on the briefing when it joins the host — the shape every
   reference capture shows, the report arriving 0.2–0.5 s after the handshake —
   has already created the screen. Ours joins, reports 17 s later, runs the stage,
@@ -284,29 +286,44 @@ not to the screen flow (§6). The same run also flooded `h_mgo2_collision`'s
 placement was never captured — a second, independent fault, not the briefing's.
 
 **The missing trigger is therefore upstream of the unit**: the client's room flow
-never instantiates the `MGA_BattleBefor` screen at all. Two things could still
-account for that, and one session each settles them:
+never instantiates the `MGA_BattleBefor` screen at all.
 
-1. **The kind of room.** Every reference capture that shows a briefing is a room
-   whose host is a player's own client (`129.153.74.111`, `143.47.227.126`), and
-   every session here is a join of the *dedicated* room the gameplay server
-   publishes. A player-hosted room runs the host's own room screen and its
-   clients enter the flow that builds the battle-before unit; a dedicated host
-   has no such client. Creating a room in the Free Battle lobby and starting it
-   from the client tests this in one run.
-2. **The room channel.** If a player-hosted room shows the briefing too, then
-   what differs is the lobby's TCP room channel (`0x4313` details, the join
-   answer, and whatever a hosting client broadcasts when it starts a game), and a
-   capture of that channel from a working join is what is missing.
+**A dedicated host is not the difference.** An earlier revision of this file
+suggested it was, on the reading that every briefing capture came from a room
+hosted by a player's client. The endpoints say otherwise: the two captures the
+briefing is measured from are hosted at `143.47.227.126:5720` and
+`64.181.216.250:5720`, both cloud addresses (Azure and AWS), and
+`mgo2-game-started-on-briefing.pcapng` — six players reporting into a briefing —
+is one of them. A dedicated host shows the briefing.
+
+What is left, measured rather than guessed:
+
+* **The session's shape differs at its start.** In that capture the client sends
+  its join report **0.4 s** after the handshake, because the map and the briefing
+  are already up; here the report comes **17 s** after the handshake, after the
+  map stage has loaded, and no briefing is built. The reference client therefore
+  opens the game's socket *from* the briefing screen, while this one opens it from
+  the room and loads the map afterwards.
+* **What decides that is the room channel, and it has never been captured.** The
+  lobby's TCP answers (`0x4313` details, the `0x4321` join answer, and whatever a
+  host broadcasts when a game starts) are what the client holds when it decides
+  between "go to the briefing" and "go to the map". Every capture in this
+  repository is the gameplay UDP channel alone; not one holds the room channel of
+  a join that showed a briefing.
 
 ## 10. The next measurement
 
-A room created and started **by the client itself** in the Free Battle lobby,
-with the patcher attached as usual. If the briefing appears there and not in the
-dedicated room, the difference is the kind of room and the fix is on the
-dedicated host's side; if it does not appear either, the missing edge is in the
-client's flow for both kinds of room and a capture of the lobby's TCP room
-channel from a working join is the next thing to take.
+**A capture of the room channel.** The gameplay channel has been compared to
+exhaustion and cannot create the screen; the client's decision is made with the
+lobby's answers in hand, and those have never been recorded. What is wanted is
+the TCP session on the lobby's game port (`5730`/`5733` in every capture here)
+covering one join of a room whose host is about to start a round, from a client
+that then shows a briefing — one file, both directions, the same ten seconds our
+own sessions are logged for.
+
+Two things it would settle at a glance: whether the client is told the room's
+phase before it opens the game socket, and whether the free-battle room we
+publish states a phase of its own at all.
 
 The rebuilt patcher (masks on the two flow patterns, plus a probe on
 `0x10119720`) answers the two remaining cases apart in one run:
