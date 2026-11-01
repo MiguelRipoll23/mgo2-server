@@ -125,12 +125,21 @@ either way through case 12.
 
 ## 4. What creates the unit, and what it does first
 
-The unit's factory is `0x101614e0`. **Nothing calls it directly**: its address
-appears once in the image, as a function pointer in a table in `.data`
-(`0x110de174`, an 8-byte `{function, hash}` record among neighbours
-`0x101615c0`, `0x1014b300`, `0x1010f420` …). The unit is therefore instantiated
-**by name** through that registry, which is the shape of a data-driven screen
-list rather than of a call somebody wrote.
+The unit's factory is `0x101614e0`, and **nothing in the image calls it**: a
+scan of every section finds its address exactly once, in a 327-record table at
+`0x110dda4c` (`0x110de174` is its record, index 229). That table is *not* a
+factory registry, which an earlier reading of this file claimed: it is a
+**function → name-hash** map used for debug text only. `0x10097670` binary-
+searches it by the function pointer (`cmp [ebx+eax*8], edi` … `mov eax, [eax+4]`)
+and `0x100976b0` returns the record's second word, which is what an assert at
+`0x105c08c8` prints when a function has no name. The value at `0x110de174+4`,
+`0xc53fa0`, is therefore the hash of the factory's own name, not a lookup key.
+
+So the factory has no static caller at all: it is reached either through a
+pointer the client builds at run time, or from code that this scan does not see.
+**That is the open question of this file** — the step, the start and the builder
+are all identified, and everything that would run after them is understood, but
+the one edge into the unit is still missing.
 
 Its start (`0x10160b00`) refuses a second unit while `[0x31864eb0]` is set,
 allocates `0x2c988` bytes, stores the unit and a 64-bit token in
@@ -189,12 +198,22 @@ The six labels sit together in `.rdata`:
 | `matching` | `0x10fc562c` |
 | `briefing` | `0x10fc5638` |
 
-Two functions register them: `0x10022370(label)` and `0x100222a0(label, number)`.
-The briefing screen's builder uses both — `0x10118c20` pushes `briefing` into
-`0x10022370`, and `0x10118c39` pushes `matching` and a count into `0x100222a0`.
-The patcher's label probe watches `0x100222a0` **only**, so a zero count from it
-means "the screens that register a *pair* never ran", not "no screen was
-entered". `0x10022370` is not probed at all.
+Two functions are used for them: `0x10022370(label)` and `0x100222a0(label,
+number)`. The briefing screen's builder uses both — `0x10118c20` pushes
+`briefing` into `0x10022370`, and `0x10118c39` pushes `matching` and a count into
+`0x100222a0`.
+
+**Neither is a screen registrar.** The patcher was extended to probe both and
+log every string they are handed; a whole session produced exactly one line:
+
+```
+game: screen label "COMcsl" by 0x22370 (call 1)
+```
+
+`COMcsl` is a script command name, so `0x10022370` belongs to the script engine's
+name table, and `0x100222a0` was not called at all. What the two do with a match
+label is therefore unmeasured, and the "0 label(s)" the patcher reports is not
+evidence about which screens ran.
 
 The same builder is where the two branches the captures hinted at live:
 
@@ -229,9 +248,10 @@ is drawn over a loaded stage: the stage supplies the briefing's own UI, and the
   has already created the screen. Ours joins, reports 17 s later, runs the stage,
   and never creates it, which is exactly the black screen between the fade and
   the briefing.
-* The trigger, therefore, is upstream of the UDP port: either the client's own
-  flow never instantiates the unit (its registry entry is name-driven), or the
-  unit is instantiated and case 12 takes the `select_game_mode == 9` branch.
+* The trigger, therefore, is upstream of the UDP port: the client's own flow
+  never instantiates the unit, and the one edge into the unit is not yet located
+  (§4). Nothing the gameplay host writes can supply that edge, and nothing it
+  writes can be blamed for the screen's absence until it is.
 
 ## 9. What the rebuilt probe measured
 
@@ -255,18 +275,38 @@ hooks confirmed installed. The client walked `init_n` → `nt_mgsetup` →
 `r_sna01_n` → `mga_boot` → `lobby` → `n004a` and ran the map's script, and the
 whole briefing module stayed untouched.
 
+The next session (map `n005a`) repeated it, and it is the session that retires
+the label probe: the only `screen label` line the whole run produced was
+`"COMcsl"` from `0x10022370`, so that function belongs to the script engine and
+not to the screen flow (§6). The same run also flooded `h_mgo2_collision`'s
+`NAN ERROR: FROM … TO …` on line 402, which is the unmeasured-spawn symptom
+`docs/analysis/join-stall-after-mode2.md` §71 already records for a map whose
+placement was never captured — a second, independent fault, not the briefing's.
+
 **The missing trigger is therefore upstream of the unit**: the client's room flow
-never instantiates the `MGA_BattleBefor` screen at all. Whether it asks for a
-different screen by name, or never reaches the flow that asks, is what the two
-screen-label registrars (`0x100222a0`, `0x10022370`) now record — every label
-either of them is handed is logged as `screen label "…"`.
+never instantiates the `MGA_BattleBefor` screen at all. Two things could still
+account for that, and one session each settles them:
+
+1. **The kind of room.** Every reference capture that shows a briefing is a room
+   whose host is a player's own client (`129.153.74.111`, `143.47.227.126`), and
+   every session here is a join of the *dedicated* room the gameplay server
+   publishes. A player-hosted room runs the host's own room screen and its
+   clients enter the flow that builds the battle-before unit; a dedicated host
+   has no such client. Creating a room in the Free Battle lobby and starting it
+   from the client tests this in one run.
+2. **The room channel.** If a player-hosted room shows the briefing too, then
+   what differs is the lobby's TCP room channel (`0x4313` details, the join
+   answer, and whatever a hosting client broadcasts when it starts a game), and a
+   capture of that channel from a working join is what is missing.
 
 ## 10. The next measurement
 
-One more join in a started Free Battle room, with the client launched through
-`patcher\mgo2-patcher.exe`. The lines that matter are the `screen label` ones:
-they are the client's own list of the screens it entered, and the absent one says
-where the flow turns off.
+A room created and started **by the client itself** in the Free Battle lobby,
+with the patcher attached as usual. If the briefing appears there and not in the
+dedicated room, the difference is the kind of room and the fix is on the
+dedicated host's side; if it does not appear either, the missing edge is in the
+client's flow for both kinds of room and a capture of the lobby's TCP room
+channel from a working join is the next thing to take.
 
 The rebuilt patcher (masks on the two flow patterns, plus a probe on
 `0x10119720`) answers the two remaining cases apart in one run:
