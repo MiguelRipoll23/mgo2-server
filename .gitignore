@@ -10,11 +10,16 @@ affected.txt
 # Python bytecode left behind by the analysis scripts in tools/.
 __pycache__/
 
-# Packet captures. These are recordings of real sessions and are never
-# committed; docs/protocol/UDP_GAME_CAPTURE.md holds what was measured out of
-# them, with the identifying parts redacted.
-*.pcap
-*.pcapng
+# The local compose stack's TLS pair; see certs/README.md. A private key never
+# belongs in git, and the deployment's copy lives in a Kubernetes Secret.
+certs/*
+!certs/README.md
+
+# Game binaries
+.game/
+
+# Packet captures
+.pcapngs/
 
 # Session output: decoded record dumps, emulator minidumps and one-off scripts
 # written while reading a capture. The findings belong in docs/analysis/.
