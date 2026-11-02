@@ -50,6 +50,7 @@ public enum OperationsOpcode : byte
     /// </summary>
     StateWrite = 0x02,
 
+
     /// <summary>
     /// The objective feed: a two-byte body naming the slot that took or lost an
     /// objective. The parser reads it; this host does not write it.
@@ -64,7 +65,7 @@ public enum OperationsOpcode : byte
 
     /// <summary>
     /// A host record of four bytes, <c>07 05 0b 00</c>: three one-byte arguments behind the
-    /// opcode, built at <c>0x7557CC</c>.
+    /// opcode, built at <c>0x7557CC</c> in the PS3 image and at <c>0x101efc20</c> in the native port, whose builder takes three byte arguments and asserts that the caller is the host.
     /// </summary>
     /// <remarks>
     /// <b>The shape is the image's and the fields are [U].</b> The builder appends the opcode
@@ -79,7 +80,7 @@ public enum OperationsOpcode : byte
 
     /// <summary>
     /// A host record of three bytes, <c>08 04 02</c>: two one-byte arguments, each clamped
-    /// into <c>0…255</c> on the way in, built at <c>0x7556FC</c>.
+    /// into <c>0…255</c> on the way in, built at <c>0x7556FC</c>, and at <c>0x101efd00</c> in the native port, which packs the same pair into one byte as <c>(a &lt;&lt; 4) | (b &amp; 0x0f)</c> — so both values are four-bit quantities, while the captured revision writes them as two plain bytes.
     /// </summary>
     /// <remarks>
     /// The sample is <c>mgo2-started-on-game-round1</c> (t+1 368.348) — the instant its
