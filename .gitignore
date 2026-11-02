@@ -18,6 +18,9 @@ certs/*
 # Game binaries
 .game/
 
+# Game tools
+.gametools/
+
 # Packet captures
 .pcapngs/
 
