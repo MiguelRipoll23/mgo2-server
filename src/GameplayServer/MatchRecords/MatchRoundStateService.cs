@@ -1,6 +1,8 @@
 using Mgo2Server.GameplayServer.Match;
+using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
@@ -30,7 +32,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </para>
 /// </remarks>
 /// <param name="logger">Logger of this service.</param>
-public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateService> logger)
+/// <param name="options">Options of this instance, which state the round the room starts on.</param>
+public sealed partial class MatchRoundStateService(
+    ILogger<MatchRoundStateService> logger,
+    IOptions<ServerOptions> options)
 {
     /// <summary>
     /// How long a peer's beat waits for the round to open before it starts
@@ -76,7 +81,10 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
     private readonly Lock gate = new();
     private bool isOpen;
     private bool vitalsArrived;
-    private int roundNumber;
+
+    // Seeded from the configured start round, so the first round this room opens is
+    // the one it was staged on rather than entry zero (StartRoundIndex).
+    private int roundNumber = StartRoundIndex(options.Value.GameplayServerStartRound);
     private MatchRecordGenerationUtils generation = MatchRecordGenerationUtils.First;
     private MatchRotationEntry? roundSettings;
     private byte? lastRoundResult;
@@ -332,6 +340,7 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
             }
 
             isOpen = false;
+            hasRoundEnded = true;
             lastRoundResult = roundResult;
             roundSettings = null;
             openedAt = null;

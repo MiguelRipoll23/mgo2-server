@@ -38,6 +38,45 @@ public sealed partial class MatchRoundStateService
     private int briefingClockUnits;
 
     /// <summary>
+    /// The rotation index of the round the room returns to when it starts or
+    /// empties: <c>GAMEPLAY_SERVER_START_ROUND</c>, counted from zero.
+    /// </summary>
+    /// <remarks>
+    /// It is the room's place in its rotation and not a round of it, so the rotation
+    /// a client is handed is untouched (<see cref="ServerOptions.GameplayServerStartRound"/>).
+    /// </remarks>
+    private readonly int firstRoundIndex = StartRoundIndex(options.Value.GameplayServerStartRound);
+
+    /// <summary>Whether a round has ended in this process, which a briefing's clock reads.</summary>
+    /// <remarks>
+    /// It is "a round ended here" and not "the count is above zero": a room staged
+    /// four rounds into its rotation has played none of them here, so its first
+    /// briefing holds the whole clock of the round it precedes
+    /// (<see cref="MatchStartRunService.BeginBriefing"/>).
+    /// </remarks>
+    private bool hasRoundEnded;
+
+    /// <summary>
+    /// The rotation index a configured round number names: <c>GAMEPLAY_SERVER_START_ROUND</c>
+    /// is the round counted from one, and a rotation is read from zero.
+    /// </summary>
+    /// <param name="startRound">The configured round, counted from one.</param>
+    /// <returns>The rotation index it names.</returns>
+    public static int StartRoundIndex(int startRound) => Math.Max(1, startRound) - 1;
+
+    /// <summary>Whether a round has ended in this process.</summary>
+    public bool HasRoundEnded
+    {
+        get
+        {
+            lock (gate)
+            {
+                return hasRoundEnded;
+            }
+        }
+    }
+
+    /// <summary>
     /// The round clock a briefing is held on, or zero while no briefing is running
     /// and no round plays.
     /// </summary>
@@ -66,9 +105,9 @@ public sealed partial class MatchRoundStateService
     }
 
     /// <summary>
-    /// Returns an emptied room to its first round: the round now playing is
-    /// dropped without a result and the count, the clock and the settings start
-    /// over.
+    /// Returns an emptied room to its first round — the configured one — with the
+    /// round now playing dropped without a result and the count, the clock and the
+    /// settings started over.
     /// </summary>
     /// <remarks>
     /// <b>A room nobody is in has no round.</b> The count, the clock and the
@@ -90,7 +129,11 @@ public sealed partial class MatchRoundStateService
             roundSettings = null;
             openedAt = null;
             clockStartsAt = 0;
-            roundNumber = 0;
+            // Back to the round this room starts on rather than to zero: a room
+            // staged mid-rotation returns to the round it was staged on, which is
+            // the round its clients were told about (GameplayServerStartRound).
+            roundNumber = firstRoundIndex;
+            hasRoundEnded = false;
             vitalsArrived = false;
             briefingClockUnits = 0;
             writtenRuns.Clear();

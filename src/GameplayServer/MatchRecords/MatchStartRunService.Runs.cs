@@ -213,7 +213,7 @@ public sealed partial class MatchStartRunService
         // (`mgo2-game-started-on-briefing` t+58.255) holds no clock, and a run with
         // no round carries no payload or rules pair either. The room's stage and its
         // close pair are the briefing's too (`briefing-then-solo-game` t+9.780).
-        var carriesRoundState = !briefing || roundState.RoundNumber > 0;
+        var carriesRoundState = !briefing || roundState.HasRoundEnded;
 
         var reported = briefingStates.TryGetReported(context.Session.RemoteAddress, out var value)
             ? value

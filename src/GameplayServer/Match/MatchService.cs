@@ -238,7 +238,14 @@ public sealed class MatchService(
                     room.Ping = ReportedPingMilliseconds;
                     room.Stance = 0;
                     room.Status = 0;
-                    room.CurrentGame = 0;
+
+                    // The row's current round is the round this instance is on, and
+                    // the room's current rule and map are the triple it names: the
+                    // lobby reads the stored rotation at this index to answer a
+                    // browse and to fill a join, so a row left at zero told every
+                    // client the rotation's first round while this host played
+                    // another (GameplayServerStartRound).
+                    room.CurrentGame = roundState.RoundNumber % rounds.Count;
                 },
                 cancellationToken);
 
@@ -291,6 +298,10 @@ public sealed class MatchService(
             // it is published in. Neither the name nor the lobby decides the
             // role on its own.
             room.Ping = ReportedPingMilliseconds;
+
+            // The same staged round the restated branch writes, so a room created
+            // now and a room restated after a restart state one current round.
+            room.CurrentGame = roundState.RoundNumber % rounds.Count;
         }, cancellationToken);
 
         await gameService.AddPlayerAsync(game.Identifier, hostIdentifier, cancellationToken);

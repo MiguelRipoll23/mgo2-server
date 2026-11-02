@@ -81,7 +81,7 @@ public sealed partial class MatchStartRunService
         // opens on its whole 2 400 only when it opens
         // (`MatchRoundStateService.BriefingClockUnits`).
         roundState.NoteBriefingClock(
-            roundState.RoundNumber > 0
+            roundState.HasRoundEnded
                 ? 0
                 : settings.Round(roundState.RoundNumber + 1).TimeLimitUnits);
 

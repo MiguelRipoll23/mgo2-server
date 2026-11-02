@@ -47,6 +47,13 @@ spec:
           value: Free Battle
         - name: GAMEPLAY_SERVER_ACCOUNT_NAME
           value: server
+        # The round of the rotation this host is on. Leaves the rotation itself
+        # alone: it only moves the room's place in it, so the fifth entry of
+        # `GAMEPLAY_SERVER_ROTATION` -- CAP on Blood Bath -- is the round the room
+        # reports as current and the round it opens. Set it to 1 for a room that
+        # starts at the top of its rotation.
+        - name: GAMEPLAY_SERVER_START_ROUND
+          value: '5'
         # DEDICATED_ADVERTISED_ADDRESS overrides the address this host announces
         # as the rendezvous point, independently of ADVERTISED_ADDRESS. It exists
         # for a node whose clients bind their socket somewhere ADVERTISED_ADDRESS

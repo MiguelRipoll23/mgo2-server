@@ -146,6 +146,27 @@ public sealed class ServerOptions
     public string GameplayServerRuleTimers { get; set; } = DefaultRuleTimers;
 
     /// <summary>
+    /// The round of the rotation the room's first round after a start is: one, so
+    /// entry zero plays first, or any later round of that same rotation.
+    /// <para>
+    /// <b>It moves the room's place in its rotation and changes no round of it.</b>
+    /// A room that is joined in the middle of a match is four rounds into a rotation
+    /// of nine, and the recording this host is measured against is exactly that: its
+    /// current round is the rotation's fifth entry, <c>CAP@Blood Bath</c>, while its
+    /// not-yet-played rotation is untouched. Staging entry zero for that room
+    /// advertises a round the recording never played, so the starting place is a
+    /// setting of its own rather than an edit of the rotation.
+    /// </para>
+    /// <para>
+    /// It counts from one, the way a round is spoken of, and it is taken modulo the
+    /// rotation, so a number past its end wraps the same way a round does. Both the
+    /// round this host opens and the row it publishes are read from it, so a client
+    /// browsing the room is told the round the host is actually on.
+    /// </para>
+    /// </summary>
+    public int GameplayServerStartRound { get; set; } = 1;
+
+    /// <summary>
     /// Players the gameplay server's room admits. It is the figure the room row and
     /// the host's settings row both state, and the one a browsing client draws as
     /// the room's capacity; the recorded room played seventeen.

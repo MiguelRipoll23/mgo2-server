@@ -25,10 +25,12 @@ namespace Mgo2Server.GameplayServer.Match;
 /// </para>
 /// </remarks>
 /// <param name="match">Publisher of this host's room, which names the room to serve.</param>
+/// <param name="roundState">The room's round, which names the map the room stands on.</param>
 /// <param name="options">Options of this instance, which state what the room runs.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class MatchSettingsService(
     MatchService match,
+    MatchRecords.MatchRoundStateService roundState,
     IOptions<ServerOptions> options,
     ILogger<MatchSettingsService> logger)
 {
@@ -40,18 +42,27 @@ public sealed class MatchSettingsService(
     private readonly IReadOnlyList<MatchRotationEntry> rotation = MatchSettingsUtils.Rotation(options.Value);
 
     /// <summary>
-    /// The map the room's own records are written on: the rotation's first entry
-    /// while no round is playing.
+    /// The map the room's own records are written on: the map of the round the room
+    /// is on, which is the round it would open next.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// A round's records take the map of the round itself
     /// (<see cref="MatchRotationEntry.Map"/> from <see cref="MatchSettings.Round"/>);
     /// this answers for the room's own stage, which is what the briefing and the
-    /// lobby-slot pair are drawn on before a round exists. It is validated at
-    /// startup (<see cref="MatchSettingsUtils.Validate"/>), so it is known before
-    /// the room is published and does not wait on <see cref="FindPublished"/>.
+    /// lobby-slot pair are drawn on before a round exists.
+    /// </para>
+    /// <para>
+    /// <b>It is the round in front of the room and not entry zero.</b> A room staged
+    /// mid-rotation briefs on the map it is about to play — the recording whose
+    /// current round is <c>CAP@Blood Bath</c> writes its briefing on Blood Bath — so
+    /// a stage read off entry zero would draw the briefing on a map the round that
+    /// follows it is not played on. It is validated at startup
+    /// (<see cref="MatchSettingsUtils.Validate"/>), so it is known before the room
+    /// is published and does not wait on <see cref="FindPublished"/>.
+    /// </para>
     /// </remarks>
-    public int Map => rotation[0].Map;
+    public int Map => rotation[roundState.RoundNumber % rotation.Count].Map;
 
     /// <summary>
     /// The settings of the room this host publishes, which is the room every writer
