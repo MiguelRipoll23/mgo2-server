@@ -110,25 +110,32 @@ counterpart is the operations clock: opcode `0x01`, a little-endian u16 of
 clock units = the round's rule time in minutes × 480
 ```
 
-The bank's own order is what a room's time comes from, and a dedicated host states
-its own bank instead of receiving the client's push: `GAMEPLAY_SERVER_RULE_TIMERS`
-is the same seventeen words, so a round's rule names its own time and its own kill
-limit exactly as it does for a player-hosted room. A round's time is never zero,
-because zero is a round that ends as it opens. The crosswalk between the two orders
-is that the rotation names the rule (`0` DM, `1` TDM, `2` RES, `3` CAP, `4` SNE,
-`5` BASE, `6` BOMB, `7` TSNE, `15` SCAP) and the bank states its time at that
-rule's own index in the seventeen words above: SNE 0, CAP 2, RES 4, TDM 6, DM 9,
-BASE 11, BOMB 13, TSNE 15, with SCAP reading the capture time it is played as. A
-rule the bank states no pair for — SDM, INTERVAL, SCAP and RACE — runs the bank's
-first time and ends on its clock alone.
+For the eight standard rules, the bank's own order is what a room's time comes
+from, and a dedicated host states its own bank instead of receiving the client's
+push: `GAMEPLAY_SERVER_RULE_TIMERS` is the same seventeen words. The crosswalk
+between the rotation's rule IDs and the bank's time entries is SNE 0, CAP 2,
+RES 4, TDM 6, DM 9, BASE 11, BOMB 13 and TSNE 15. A round's time is never zero,
+because zero is a round that ends as it opens.
+
+The bank supplies no named time/round pair for SDM, INTERVAL, ANEST, SCAP or
+RACE. The earlier claim that those rules fall back to the bank's first time is
+not established and is withdrawn: the separate gameplay `0b 00` state record
+appears to carry per-rule seconds for IDs 12–16, including SDM, INTERVAL, SCAP
+and RACE, but no direct client reader of that field has been found. See
+[`UDP_SETTINGS_PAYLOAD.md`](UDP_SETTINGS_PAYLOAD.md) for the evidence and
+confidence limits; the timer source and effect for these rules remain open.
 
 **[U]** what the flags byte of a rotation triple means: `0x02` on every round of
 `Best TDM [EU]`, `0x00` on most of `MAFIA TSNE`'s and `0x20` on its last two (the
 two stages it repeats). No record on either channel repeats it.
 
-**[U]** the u8 timer bank at `0x166` (SDM, INT, DM, SCAP, RACE), the only place
-the rarer rules' times appear. Its SCAP value reads `0x63` = 99, which no unit
-makes a round length, so the bank is not read here.
+**[U]** the meaning of the raw 14-byte tail at `0x166`–`0x173`. The native
+`0x4313` parser does not expose fields within it, and no field-level consumer
+has been found. In matched captures, bytes `0x166`, `0x168` and `0x16a`
+correlate with state-field-29 entries 12, 13 and 15 multiplied by 60; that
+does not establish the old claim that the tail is a five-byte timer bank.
+See [`UDP_SETTINGS_PAYLOAD.md`](UDP_SETTINGS_PAYLOAD.md) for the likely
+per-rule interpretation of those state entries.
 
 ## 3. Which limits a round ends on — and why a relay cannot end one
 

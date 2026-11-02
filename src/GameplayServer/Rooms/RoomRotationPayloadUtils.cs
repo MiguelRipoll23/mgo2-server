@@ -10,6 +10,10 @@ internal static class RoomRotationPayloadUtils
     private const int ReferenceRotationIndex = 4;
     private const byte ReferencePlayerCount = 2;
     private const int ReferenceTimerSeconds = 300;
+    private const byte NoReferencedSlot = byte.MaxValue;
+    private const byte ReferenceStateField51 = 0x8c;
+    private const ushort ReferenceStateField52 = 0x0128;
+    private const byte ReferenceField53Selector = 0;
 
     private static readonly int[] RuleTimerBankIndexes =
     [
@@ -151,7 +155,7 @@ internal static class RoomRotationPayloadUtils
 
         WriteRuleTimerField(body, ruleTimers);
 
-        // State fields 30-53 are still unnamed; these are their working-capture values.
+        // Most of these fields remain unnamed; keep their working-capture values.
         body.Add(0x02);
         body.Add(0x02);
         body.Add(0x02);
@@ -172,10 +176,7 @@ internal static class RoomRotationPayloadUtils
         body.Add(0x00);
         body.Add(0x00);
         WriteUInt16LittleEndian(body, 0x7f7f);
-        body.Add(0xff);
-        body.Add(0x8c);
-        WriteUInt16LittleEndian(body, 0x0128);
-        body.Add(0x00);
+        WriteNativeStateTail(body);
 
         if (body.Count != PayloadLength)
         {
@@ -184,6 +185,19 @@ internal static class RoomRotationPayloadUtils
         }
 
         return body.ToArray();
+    }
+
+    private static void WriteNativeStateTail(List<byte> body)
+    {
+        // Native code uses 0xff as the unassigned value for this slot reference.
+        body.Add(NoReferencedSlot);
+
+        // The sources of fields 51-52 are known, but their meanings are not.
+        body.Add(ReferenceStateField51);
+        WriteUInt16LittleEndian(body, ReferenceStateField52);
+
+        // Native readers use bit 0 to select between two entries in a global table.
+        body.Add(ReferenceField53Selector);
     }
 
     private static void WriteRuleTimerField(List<byte> body, IReadOnlyList<int>? ruleTimers)

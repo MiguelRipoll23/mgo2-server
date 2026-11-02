@@ -130,12 +130,12 @@ are not established retain their values from
 | 0 | `0x09` | `u8` | `02` | Round-phase value, matching standalone field-0 updates. **[I]** |
 | 1 | `0x0a` | 16 bytes | all zero | Meaning unresolved. |
 | 2 | `0x1a` | 48 bytes | 16 rotation triples | Map, rule, third byte as above. |
-| 3–8 | `0x4a`–`0x54` | `u8`, `u16`, `u8`, `u8`, `u32`, `u16` | `11 b4 00 02 03 22 40 27 00 00 00` | Meanings unresolved; field 7 is a flag word. |
+| 3–8 | `0x4a`–`0x54` | `u8`, `u16`, `u8`, `u8`, `u32`, `u16` | `11 b4 00 02 03 22 40 27 00 00 00` | Meanings unresolved; native readers test bits `0x20` and `0x40` of field 7. |
 | 9 | `0x55` | `u8` | `04` | Current rotation-slot index; native readers use it to select a triple. **[V]** |
 | 10 | `0x56` | `u8` | `02` | Room population, host included, inferred from matched joins. **[I]** |
 | 13, 17–23, 25–27 | `0x57`–`0x64` | `u8` / `u16` | `00 00 00 05 00 00 00 05 00 00 01 00 00 00` | Meanings unresolved. |
-| 29 | `0x65`–`0x86` | 17 little-endian `u16`s | See below. | Partial timer mapping; remaining entries unresolved. |
-| 30–53 | `0x87`–`0xa0` | `u8` / `u16` | `02 02 02 02 02 02 02 02 01 02 02 02 32 1e 05 03 00 00 00 7f 7f ff 8c 28 01 00` | Meanings unresolved. |
+| 29 | `0x65`–`0x86` | 17 little-endian `u16`s | See below. | Eight standard timers verified; higher rule-index entries partly identified. |
+| 30–53 | `0x87`–`0xa0` | `u8` / `u16` | `02 02 02 02 02 02 02 02 01 02 02 02 32 1e 05 03 00 00 00 7f 7f ff 8c 28 01 00` | Fields 50 and 53 have limited native-use evidence; fields 51–52 remain opaque. |
 
 Field 29 is not a copy of the lobby timer bank: its widths and units differ.
 Across ten pairs matched by the full rotation, elements 0–7 equal the eight
@@ -145,11 +145,55 @@ respectively, multiplied by 60. The working capture's values are eight `300`s.
 The builder computes these eight elements from the room's configured timer bank.
 
 Elements 8–11 are zero in that capture and remain unmapped. Elements 12–16 are
-`300` there. Across matched captures, elements 12, 13 and 15 correlate with
-bytes 0, 2 and 4 of the five-byte `0x4313` reply region at offsets
-`0x166`–`0x16a`, multiplied by 60; the other elements and their meanings are
-not established. The builder therefore keeps the five reference values rather
-than guessing a mapping.
+`300` there. They now appear to be per-rule times, indexed by rule ID:
+
+| field 29 index | likely rule | evidence |
+| ---: | --- | --- |
+| 12 | SDM (12) | PC code maps ID 12 to `Rule_Eng_SDM`; matched replies correlate this value with byte `0x166` × 60. |
+| 13 | INTERVAL (13) | PC code maps ID 13 to `Rule_Eng_INTERVAL`; matched replies correlate this value with byte `0x168` × 60. |
+| 14 | ANEST (14) | The PC binary's adjacent rule-name pointers place `Rule_Eng_ANEST` here; the server does not currently accept rule 14 and no captured rotation uses it, so this is the least certain mapping. |
+| 15 | SCAP (15) | PC code maps ID 15 to `Rule_Eng_SCAP`; SCAP captures carry this value as seconds, and it correlates with byte `0x16a` × 60. |
+| 16 | RACE (16) | `Rule_Eng_RACE` follows SCAP in the PC binary's rule-name table; RACE captures carry changing values here (300 and 1,200 seconds). |
+
+The PC evidence is from `.game/pc/savemgo.dll`: code at VA `0x1020fd59` compares
+the current rule ID and selects the SDM, INTERVAL and SCAP names for IDs 12, 13
+and 15. The five adjacent name pointers at file offset `0x441b24` are ordered
+SDM, INTERVAL, ANEST, SCAP, RACE, consistent with indices 12–16. Across
+matched captures, field 29 indices 12, 13 and 15 also equal 60 times bytes 0, 2
+and 4 of the `0x4313` reply tail at `0x166`–`0x16a`; for example, the SCAP value
+is 1,800 seconds when that byte is 30 and 5,940 seconds when it is 99. The
+`0x4313` spec still describes the whole `0x166`–`0x173` region as opaque and
+unconsumed, so this correlation does not establish a five-byte timer-bank
+layout.
+
+The likely per-rule mapping is strong for 12, 13 and 15, and supported by
+rotation/value pairs for 16. Index 14 is only a name-table inference. No direct
+ELF reader of field 29's state offset `+0x68` has been found, so the complete
+vector's use by the client remains unproven. The builder continues to preserve
+the reference values for these entries rather than inventing a source mapping.
+
+Other native consumers narrow, but do not fully resolve, a few fields:
+
+* Field 1 is copied as a 16-byte indexed array; a native accessor returns the
+  selected byte, but its meaning is unknown.
+* Field 7 is a four-byte word. Native readers test masks `0x20` and `0x40`;
+  those bits' meanings are not established.
+* Field 15 is an eight-byte container. Accessors expose bytes at container
+  offsets `+1` and `+5`; their meanings are unknown.
+* Field 50 (state-block offset `+160`, body offset `0x9c`) is compared with
+  room-slot numbers and set to `0xff` when a matching slot is cleared. This
+  supports a slot-reference interpretation, with `0xff` as the unassigned
+  value; what it refers to remains unknown.
+* Field 51 (`+161`) is initialized from an instance byte, and field 52 (`+162`,
+  `u16`) from a global word. Their values vary between captures; neither source
+  has a resolved semantic name.
+* Field 53 (`+164`, body offset `0xa0`) is read as a truth value, and three
+  native readers use its low bit to select between two entries in a global
+  table whose purpose is unknown. The state initializer copies it from a local
+  stack byte that is not initialized in the visible routine, so the captured
+  zero does not establish the intended selector or its higher-level meaning.
+  Field 54 (`+165`) is written natively but is not selected by this payload's
+  presence map.
 
 The sender now writes the header, presence map, each typed field, the sixteen
 rotation slots, and the 17 timer words individually. It no longer starts from
