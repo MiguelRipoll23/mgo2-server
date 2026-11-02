@@ -83,6 +83,9 @@ public sealed class PlayerSettingsBurstSchedulerService(
         _ = SendAsync(context);
     }
 
+    /// <summary>Allows the next room to send its one settings burst.</summary>
+    public void Reset() => Interlocked.Exchange(ref scheduled, 0);
+
     private async Task SendAsync(PeerContext context)
     {
         await Task.Delay(Delay);

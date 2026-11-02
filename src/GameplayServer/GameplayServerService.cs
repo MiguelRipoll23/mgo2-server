@@ -37,6 +37,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly BriefingStateService briefingStates;
     private readonly PeerControlByteService controlBytes;
     private readonly TeamArrayService teamArrays;
+    private readonly PlayerSettingsBurstSchedulerService settingsBurstScheduler;
     private readonly PlayerVitalsService vitals;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
@@ -83,6 +84,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         briefingStates = serviceProvider.GetRequiredService<BriefingStateService>();
         controlBytes = serviceProvider.GetRequiredService<PeerControlByteService>();
         teamArrays = serviceProvider.GetRequiredService<TeamArrayService>();
+        settingsBurstScheduler = serviceProvider.GetRequiredService<PlayerSettingsBurstSchedulerService>();
         vitals = serviceProvider.GetRequiredService<PlayerVitalsService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
@@ -349,6 +351,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         // the room's own rule in `docs/analysis/empty-and-solo-room-clocks.md`).
         if (matchStart.ResetWhenEmpty())
         {
+            settingsBurstScheduler.Reset();
             logger.LogInformation(
                 "[{LogPrefix}] {RemoteAddress} was the room's last client; the room's round, clock and tickets "
                 + "start over for the next player to join",
