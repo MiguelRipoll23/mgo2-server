@@ -67,8 +67,20 @@ function itemName(id) {
   var n = R.meta.itemNames[id];
   return (!n || n === 'EMPTY' || n === 'NONE') ? null : n;
 }
+// HIT KINDS WHOSE NAME IN THE FILE'S TABLE IS NOT WHAT THEY ARE (2026-10-11, owner: "Knockouts from traps and drum barrel also. I
+// tend to get a lot of drum stuns myself"). The table is the single-player game's; from about id 99 on this game's hit kinds sit
+// nine rows further down (its 104 reads ROLLING DRUM, 98 + 9 = 107 falls on a row this game added). MEASURED over 370 matches:
+//   113 ("CRITICAL KNIFE", always 60 % of the stamina bar): the nearest other player is rolling in the drum can (state 169)
+//       in 17 of 18 hits, and all 4 knock-outs by it are counted for a player inside the drum = the DRUM CAN hit;
+//   107 ("DRUMCAN", 50 %): 6 hits, the nearest player a shield carrier in his strike state (31) in 5, each one 2.4 - 2.8 s
+//       after a SHIELD hit on the same victim = the shield's second blow. Shown as SHIELD.
+// NOT renamed, but almost certainly mislabelled the same way: 111 ("SLEEP C4 TRIGGER", 12 % each, 63 hits, nobody placing
+// anything - by the nine-row slip it would be ROLLING, a roll into someone) and 110 ("C4 TRIGGER", nearest player in state 18).
+var HIT_FIX = { 113: 'DRUM CAN', 107: 'SHIELD' };
 function feedWeapon(e) {
   if (e._knife) return e._knife;
+  if (e._label) return e._label;
+  if ((e.type === 'stun' || e.type === 'kill') && HIT_FIX[e.weapon]) return HIT_FIX[e.weapon];
   if (NOT_A_WEAPON[e.weapon]) return e.cause === 'bleedout' ? 'bled out' : null;
   return itemName(e.weapon) || e.weaponName ||
          (typeof e.weapon === 'number' ? 'wpn ' + e.weapon : null);
@@ -131,6 +143,7 @@ var speed = 1;
 var camMode = 'orbit';
 var showTrails = true;
 var follow = -1;     // selected player index
+var CUR_KEY = null; // key of the replay on screen (a hosted file's name, or a local / fetched one)
 // Screen rects for every drawn nametag, refreshed each frame, so a tap on the
 // 3D view can hit a player directly. On a phone the roster is a pane you have
 // to open, tap and close again just to change who you are watching.
@@ -317,6 +330,19 @@ function initGL() {
                   : new THREE.DirectionalLight(0xffe2c4, 1.25);
   d.position.set(0.42, 0.9, 0.25);
   scene.add(d);
+  sunLight = d;
+  if (SHADOWS_ON) {
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    d.castShadow = true;
+    d.shadow.mapSize.set(2048, 2048);
+    var sc_ = d.shadow.camera; sc_.left = -SHADOW_HALF; sc_.right = SHADOW_HALF; sc_.top = SHADOW_HALF; sc_.bottom = -SHADOW_HALF;
+    sc_.near = 1; sc_.far = SUN_DIST * 2.5;
+    d.shadow.bias = -0.0004; d.shadow.normalBias = 0.4;
+    scene.add(d.target);
+  }
+  if (LOC_ON) for (var lp_ = 0; lp_ < LOC_N; lp_++) { var pl_ = new THREE.PointLight(0xffffff, 0, 1, 0); pl_.visible = false; scene.add(pl_); LOC_POOL.push(pl_); }
+  loadStageLights();
   resize();
   addEventListener('resize', resize);
 }
@@ -396,7 +422,140 @@ function applyHD() {
   if (b) { b.dataset.on = HD.on ? '1' : '0'; b.style.opacity = HD.on && !HD.mesh ? 0.5 : 1; }
   applyXray();        // a pack that finishes loading must pick up the current X-ray state
 }
+// ---- THE STAGE'S OWN LIGHT (2026-10-14; user: "Could we resolve lighting? ... Missing shadows or something") ----------------------
+// The scenery already carries the game's lighting (baked into its vertex colours, drawn unlit). The PLAYERS were lit by one fixed
+// "overcast day" for every map. Each stage's .lt3 (D:\mgo2work\lt3_parse.py) has its global sun - direction, colour x scale x intensity -
+// and ambient colour x scale; replay/stage_lights.py reads them from the stock client into lights.json. Players get that sun and that
+// ambient, scaled so an average stage keeps today's brightness (n015a: sun 0.59, ambient 0.72 -> 2.2 / 2.3), clamped so a near-sunless
+// interior (n006a) still shows its players. They also CAST A SHADOW from that sun onto the ground: a shadow-only layer over the
+// scenery, as dark as the sun's share of the light (none indoors). ?shadows=0 = off; off by default on small screens.
+var sunLight = null, STAGE_LIGHTS = null, SUN_TO = new THREE.Vector3(0.42, 0.9, 0.25).normalize(), SUN_DIST = 600, SHADOW_HALF = 260;
+var SHADOWS_ON = (function () {
+  var q = /[?&]shadows=([01])/.exec(location.search);
+  if (q) return q[1] === '1';
+  return Math.min(screen.width, screen.height) >= 820;
+})();
+var SHADOW_MAT = new THREE.ShadowMaterial({ opacity: 0.35, depthWrite: false, side: THREE.DoubleSide,
+                                            polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+function loadStageLights() {
+  fetch('lights.json').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    STAGE_LIGHTS = j || {};
+    if (M && M.stage) applyStageLight(M.stage);
+  }).catch(function () { STAGE_LIGHTS = {}; });
+}
+function applyStageLight(stage) {
+  if (!sunLight || !hemiLight || !SURF_ON) return;
+  var L = STAGE_LIGHTS && STAGE_LIGHTS[stage];
+  if (!L || /[?&]stagelight=0/.test(location.search)) {
+    hemiLight.color.set(0xdfe6ee); hemiLight.groundColor.set(0x4a4d45); hemiLight.intensity = 2.3;
+    sunLight.color.set(0xfff1dc); sunLight.intensity = 2.2; SUN_TO.set(0.42, 0.9, 0.25).normalize(); SHADOW_MAT.opacity = 0.35;
+    return;
+  }
+  var su = L.sun_rgb.map(function (c) { return c / 255 * L.sun_scale * L.sun_i; });
+  var am = L.amb_rgb.map(function (c) { return c / 255 * L.amb_scale; });
+  var lum = function (c) { return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  var sl = lum(su), al = lum(am), smx = Math.max(su[0], su[1], su[2], 1e-3), amx = Math.max(am[0], am[1], am[2], 1e-3);
+  sunLight.color.setRGB(su[0] / smx, su[1] / smx, su[2] / smx);
+  sunLight.intensity = Math.min(4.5, 3.7 * sl);
+  hemiLight.color.setRGB(am[0] / amx, am[1] / amx, am[2] / amx);
+  hemiLight.groundColor.setRGB(am[0] / amx * 0.45, am[1] / amx * 0.45, am[2] / amx * 0.45);
+  hemiLight.intensity = Math.max(1.4, Math.min(3.4, 3.2 * al));
+  SUN_TO.set(-L.sun_dir[0], -L.sun_dir[1], -L.sun_dir[2]).normalize();
+  SHADOW_MAT.opacity = Math.max(0, Math.min(0.55, 0.62 * sl / (sl + al + 1e-6)));
+}
+// THE STAGE'S LOCAL LIGHTS (lamps, spotlights, tube lights - the .lt3 cells; replay/stage_lights.py -> lights.json 'loc'). The scenery
+// has them baked in; for the PLAYERS a pool of LOC_N real-time point lights takes, every frame, the stage lights that reach the
+// player on screen hardest: colour x intensity, a spotlight only inside its cone (cos inner -> outer), smooth fall-off to the radius.
+// Brightness 3.7 x that, the same scale the sun gets (an ESTIMATE: the game's units are not measured). ?loclights=0 = off.
+var LOC_N = 4, LOC_POOL = [], LOC_ON = !/[?&]loclights=0/.test(location.search), _locScore = [];
+function updateLocalLights() {
+  if (!LOC_ON || !LOC_POOL.length) return;
+  var L = SURF_ON && STAGE_LIGHTS && M && STAGE_LIGHTS[M.stage], rows = L && L.loc;
+  var f = (typeof follow === 'number' && follow >= 0 && live[follow]) ? live[follow] : null;
+  if (!rows || !rows.length) { LOC_POOL.forEach(function (l) { l.visible = false; }); return; }
+  // the point being looked at, in world units: the followed player's chest, else the orbit target
+  var fx, fy, fz;
+  if (f) { fx = f.x; fy = f.y + 1100; fz = f.z; }
+  else { fx = (orbit.tx || 0) / S + ctr[0]; fy = (orbit.ty || 0) / S; fz = (orbit.tz || 0) / S + ctr[2]; }
+  _locScore.length = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i], dx = fx - r[1], dy = fy - r[2], dz = fz - r[3], d = Math.sqrt(dx * dx + dy * dy + dz * dz), rad = r[8];
+    if (!(rad > 0) || d >= rad) continue;
+    var k = 1 - Math.pow(d / rad, 4); k = k * k;
+    var cone = 1;
+    if (r[0] === 2 && d > 1) {                                   // spotlight: only inside the cone (its direction points away from the lamp)
+      var c = (dx * r[9] + dy * r[10] + dz * r[11]) / d;
+      if (c <= r[13]) continue;
+      cone = Math.min(1, (c - r[13]) / Math.max(1e-3, r[12] - r[13]));
+    }
+    var lum = 0.2126 * r[4] + 0.7152 * r[5] + 0.0722 * r[6], sc = lum * r[7] * k * cone;
+    if (sc > 0.01) _locScore.push([sc, i, cone]);
+  }
+  _locScore.sort(function (a, b) { return b[0] - a[0]; });
+  for (var j = 0; j < LOC_POOL.length; j++) {
+    var l = LOC_POOL[j], e = _locScore[j];
+    if (!e) { l.visible = false; continue; }
+    var q = rows[e[1]], mx = Math.max(q[4], q[5], q[6], 1e-3);
+    l.visible = true;
+    l.color.setRGB(q[4] / mx, q[5] / mx, q[6] / mx);
+    l.intensity = Math.min(4.5, 3.7 * mx * q[7] * e[2]);
+    l.distance = q[8] * S;
+    l.position.set((q[1] - ctr[0]) * S, q[2] * S, (q[3] - ctr[2]) * S);
+  }
+}
+function followSun() {
+  if (!sunLight) return;
+  var tx = orbit.tx || 0, ty = orbit.ty || 0, tz = orbit.tz || 0;
+  sunLight.target.position.set(tx, ty, tz);
+  sunLight.position.set(tx + SUN_TO.x * SUN_DIST, ty + SUN_TO.y * SUN_DIST, tz + SUN_TO.z * SUN_DIST);
+  sunLight.target.updateMatrixWorld();
+}
+// ---- THE SKY (2026-10-14; user: "replay viewer looks a little different from the game missing something") ---------------------------
+// The viewer had NO sky - a near-black background the fog also faded into. Every stage but n008a has a sky dome model that the scenery
+// packer leaves out (stage_pack.py SKIP '_sky'); replay/sky_pack.py writes it as maps_hd/<stage>.sky.json + textures, with the horizon
+// colour (texture x vertex colour x 2, lowest quarter of the dome). Drawn first, centred on the camera and scaled inside the far plane,
+// so it is always behind everything and never fogged or clipped; the fog then fades to the horizon colour instead of black. ?sky=0 off.
+var SKY = { mesh: null, stage: null, on: !/[?&]sky=0/.test(location.search) };
+var FOG_DEFAULT = 0x0b0d0c;
+function loadSky(stage) {
+  if (SKY.mesh) { scene.remove(SKY.mesh); SKY.mesh.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); SKY.mesh = null; }
+  scene.fog.color.set(FOG_DEFAULT); renderer.setClearColor(FOG_DEFAULT, 1);
+  SKY.stage = stage;
+  if (!SKY.on || !SURF_ON || !stage) return;
+  fetch(avHD('maps_hd/' + stage + '.sky.json')).then(function (r) { return r.ok ? r.json() : null; }).then(function (h) {
+    if (!h || SKY.stage !== stage || !h.positions || !h.positions.length) return;
+    var n = h.positions.length / 3, rmax = 1;
+    for (var i = 0; i < n; i++) rmax = Math.max(rmax, Math.hypot(h.positions[i * 3], h.positions[i * 3 + 2]));
+    var k = (cam.far * 0.8) / rmax, v = new Float32Array(n * 3), c = new Float32Array(n * 3), uv = new Float32Array(n * 2), sc = h.uvScale || 4096;
+    for (i = 0; i < n; i++) {
+      v[i * 3] = h.positions[i * 3] * k; v[i * 3 + 1] = h.positions[i * 3 + 1] * k; v[i * 3 + 2] = h.positions[i * 3 + 2] * k;
+      c[i * 3] = h.colors[i * 3] / 127.5; c[i * 3 + 1] = h.colors[i * 3 + 1] / 127.5; c[i * 3 + 2] = h.colors[i * 3 + 2] / 127.5;
+      uv[i * 2] = h.uv[i * 2] / sc; uv[i * 2 + 1] = h.uv[i * 2 + 1] / sc;
+    }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(v, 3)); g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(new THREE.Uint32BufferAttribute(h.indices, 1));
+    var loader = new THREE.TextureLoader(), mats = [];
+    (h.groups || []).forEach(function (gr) {
+      var mt = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false, depthWrite: false, depthTest: false });
+      if (gr.tex && h.tex && h.tex[gr.tex]) {
+        var t = loader.load(avHD('maps_hd/tex/' + stage + '/' + gr.tex + '.webp'));
+        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; mt.map = t;
+      }
+      g.addGroup(gr.start, gr.count, mats.length); mats.push(mt);
+    });
+    var mesh = new THREE.Mesh(g, mats);
+    mesh.renderOrder = -100; mesh.frustumCulled = false;
+    SKY.mesh = mesh; scene.add(mesh);
+    if (h.horizon) {
+      var hz = new THREE.Color().setRGB(h.horizon[0] * 0.9, h.horizon[1] * 0.9, h.horizon[2] * 0.9, THREE.SRGBColorSpace);
+      scene.fog.color.copy(hz); renderer.setClearColor(hz, 1);
+    }
+  }).catch(function () {});
+}
 function loadHD(stage) {
+  applyStageLight(stage);
+  if (SKY.stage !== stage) loadSky(stage);
   disposeHD();
   var ba0 = document.getElementById('b-alt');
   if (ba0) ba0.style.display = 'none';
@@ -459,7 +618,10 @@ function hdTextured(stage, h, g, n) {
       g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
       // a second colour set at full strength for the textured (unlit) groups
       var lit = new Float32Array(n * 3);
-      for (var k = 0; k < n * 3; k++) lit[k] = h.colors[k] / 127.5;
+      // MGO1 (2006) maps (stage keys mgo1_*, explore only): ?gain=<x> scales the baked light. Stock maps ignore it.
+      var MG1 = /^mgo1_/.test(stage);
+      var gainM = MG1 && /[?&]gain=([0-9.]+)/.exec(location.search), gain = gainM ? parseFloat(gainM[1]) : 1;
+      for (var k = 0; k < n * 3; k++) lit[k] = h.colors[k] / 127.5 * gain;
       var loader = new THREE.TextureLoader(), mats = [plain], plainUsed = false;
       // textured groups read `color` at full strength; the grey fallback wants
       // the dim copy, so it gets its own geometry sharing everything else
@@ -486,20 +648,34 @@ function hdTextured(stage, h, g, n) {
           plainUsed = true;
           return;
         }
-        var t = loader.load(avHD('maps_hd/tex/' + stage + '/' + gr.tex + '.webp'));
+        if (MG1) {
+          // MGO1: flag 8 = solid-black "void" shroud skin, hidden unless ?void=1;
+          // flag 16 = white light/fog volume shells, hidden unless ?glow=1; opacity 0 = not drawn
+          if ((fl & 8) && !/[?&]void=1/.test(location.search)) return;
+          if ((fl & 16) && !/[?&]glow=1/.test(location.search)) return;
+          if (gr.opacity === 0) return;
+        }
+        // the texture file type comes from the pack (MGO1 packs ship PNG); stock packs = webp
+        var t = loader.load(avHD('maps_hd/tex/' + stage + '/' + gr.tex + '.' + (ix._ext || 'webp')));
         t.wrapS = t.wrapT = THREE.RepeatWrapping;
         t.flipY = false;
         t.colorSpace = THREE.SRGBColorSpace;
         var mt = new THREE.MeshBasicMaterial({ map: t, vertexColors: true, side: THREE.DoubleSide });
         if (fl & 2) { mt.alphaTest = 0.5; }
+        // MGO1: flag 4 = soft alpha (PS2 blended decals / shadow strips): blend, no depth write
+        else if (MG1 && (fl & 4)) { mt.transparent = true; mt.depthWrite = false; mt.alphaTest = 0.02; }
+        // MGO1: group opacity = the mesh's PS2 vertex alpha (fog / light volumes, fading decals)
+        if (MG1 && gr.opacity != null && gr.opacity < 1) { mt.transparent = true; mt.depthWrite = false; mt.opacity = gr.opacity; if (!(fl & 2)) mt.alphaTest = 0; }
         gT.addGroup(gr.start, gr.count, matsT.length);
         matsT.push(mt);
       });
       var root = new THREE.Group();
       root.add(new THREE.Mesh(gT, matsT));
+      if (SHADOWS_ON) { var shT_ = new THREE.Mesh(gT, SHADOW_MAT); shT_.receiveShadow = true; shT_.renderOrder = 2; root.add(shT_); }
       if (plainUsed) {
         gP.setIndex(new THREE.Uint32BufferAttribute(idxP, 1));
         root.add(new THREE.Mesh(gP, plain));
+        if (SHADOWS_ON) { var shP_ = new THREE.Mesh(gP, SHADOW_MAT); shP_.receiveShadow = true; shP_.renderOrder = 2; root.add(shP_); }
       }
       // disposeHD() expects .geometry on HD.mesh
       root.geometry = { dispose: function () { gT.dispose(); gP.dispose(); matsT.forEach(function (m) { if (m.map) m.map.dispose(); m.dispose(); }); } };
@@ -804,7 +980,7 @@ function addCutaway(mat) {
 function applyCutaway() {
   if (mapMesh) addCutaway(mapMesh.material);
   if (HD.mesh) HD.mesh.traverse(function (o) {
-    if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(addCutaway);
+    if (o.isMesh && o.material !== SHADOW_MAT) (Array.isArray(o.material) ? o.material : [o.material]).forEach(addCutaway);
   });
 }
 // once a frame, just before drawing: where the selected player is on screen and how far away
@@ -852,6 +1028,8 @@ function applyXray() {
     var hx = xray;
     HD.mesh.traverse(function (o) {
       if (!o.isMesh) return;
+      // the shadow layer is transparent by nature: forcing it opaque (as below) painted the whole map black (2026-10-14)
+      if (o.material === SHADOW_MAT) { o.visible = !hx; return; }
       (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (mt) {
         mt.transparent = hx;
         mt.opacity = hx ? 0.35 : 1.0;
@@ -1444,13 +1622,74 @@ var BOX_ITEMS = { 0x8c: { label: 'ENVG', color: 0x58C4DD, css: '#58C4DD', size: 
                   // SOP DESTABILIZER as placed (item 0x44; emin_put_def_mid.mdn, model confirmed by the user 2026-10-08).
                   // It uses the magazine's two device codes: 0x65 set down, 0xa5 taken away. One case on record
                   // (52613): set down 156.7 s, credited 161.5 s, taken away 166.9 s. Drawn 3x life size (it is 40 cm).
-                  0x44: { label: 'DESTABILIZER', color: 0x9CCB6B, css: '#9CCB6B', size: [0.4, 0.8, 0.4], prop: 'destab', scale: 3 } };
+                  0x44: { label: 'DESTABILIZER', color: 0x9CCB6B, css: '#9CCB6B', size: [0.4, 0.8, 0.4], prop: 'destab', scale: 3 },
+                  // PLACED TRAPS (see TRAP_ITEM): no model in the prop pack yet, so a small block; the label carries the owner
+                  0x40: { label: 'CLAYMORE', color: 0xE2574C, css: '#E2574C', size: [0.5, 0.35, 0.2], prop: null, scale: 1 },
+                  0x41: { label: 'SLEEP CLAYMORE', color: 0x7FD4F0, css: '#7FD4F0', size: [0.5, 0.35, 0.2], prop: null, scale: 1 },
+                  0x42: { label: 'C4', color: 0xE2574C, css: '#E2574C', size: [0.4, 0.15, 0.3], prop: null, scale: 1 },
+                  0x43: { label: 'SLEEP C4', color: 0x7FD4F0, css: '#7FD4F0', size: [0.4, 0.15, 0.3], prop: null, scale: 1 } };
+// PLACED TRAPS HAVE AN OWNER AND AN END (2026-10-11, owner: "who owns the trap ... jotei picked up someone else's trap and replaced it.
+// There should also be some function for traps being shot out"). They are records of the placed-device object, like the
+// magazine. MEASURED over 395 matches, 123 traps in 25 of them (replaydiff/stun69641/traps: devall.js, dev3.js, credit.js):
+//   SET DOWN (code 0x65, with its position): the object id is the placer's lobby slot << 3 - 279 of 282 placements name the
+//     player who is in the placing action there; ITEM[2] is the device's number in the round.
+//   GONE (code 0xa5, same id and number): ITEM[4] says why -
+//     1 = it WENT OFF (33; a hit by that trap in the same second in 15, and the knock-out is counted for the owner 10 of 10);
+//     3 = DESTROYED (42; in 26 a player is firing with his aim point on it at that instant - 1 of the 60 others; 3 a grenade);
+//     0 = TAKEN AWAY with no effect (27): picked up by a player lying on it and crawling (5: the owner twice, his count of
+//         that item going up by one, and three times somebody else), or cleared - 8.0 - 9.2 s after the owner's death, i.e.
+//         when he comes back (15), at a round end, or all of one player's at once.
+//   21 were never removed (they last to the end of the round).
+// The record does NOT say who picked a trap up or who destroyed it; the viewer names the crawler lying on it / the one
+// player firing at it, and says nothing when that is not clear. A trap set down again after a pick-up is a new record in
+// the new placer's name (that this is what a re-placed trap looks like is INFERRED - no pick-up followed by a placement
+// is in the files to hand).
+var TRAP_ITEM = { 0x40: 1, 0x41: 1, 0x42: 1, 0x43: 1 };
 var boxMarks = [];
 function buildItemBoxes() {
   if (!R || R.boxes) return;
   var out = R.boxes = { lie: [], carry: [] };
-  var ops = ((R.meta && R.meta.worldOps) || []).filter(function (o) { return o.o === 0 || o.item === 0x45 || o.item === 0x44; });
+  var ops = ((R.meta && R.meta.worldOps) || []).filter(function (o) { return o.o === 0 || o.item === 0x45 || o.item === 0x44 || (o.o === 1 && TRAP_ITEM[o.item]); });
+  out.traps = [];
   if (!ops.length) return;
+  var slotIdx = {};
+  (R.players || []).forEach(function (pl, pi) { if (pl.slot != null) slotIdx[pl.slot] = pi; (pl.slots || []).forEach(function (sl) { if (sl && sl.slot != null && slotIdx[sl.slot] == null) slotIdx[sl.slot] = pi; }); });
+  function trapCell(pi, t, back, fwd) {
+    var fr = R.frames, k = frameIndexAtIn(R, t + fwd), c;
+    for (; k >= 0 && t - fr[k].t < back; k--) { c = fr[k].p && fr[k].p[pi]; if (c && c[0] != null) return c; }
+    return null;
+  }
+  // how a trap ended, and - where the players' own records make it plain - who did it
+  function trapEnd(tc, why) {
+    tc.why = why; tc.how = why === 1 ? 'went off' : why === 3 ? 'destroyed' : 'cleared'; tc.by = null;
+    var n = R.players.length, i, c, best = null, bd = 900, fr = R.frames, k;
+    if (why === 0) {
+      for (i = 0; i < n; i++) {
+        c = trapCell(i, tc.t1, 1.2, 0.3);
+        if (!c || !c[4] || c[7] == null || ((c[7] >> 5) !== 3 && (c[7] >> 5) !== 4) || Math.abs(c[1] - tc.y) > 1500) continue;
+        var d = Math.sqrt((c[0] - tc.x) * (c[0] - tc.x) + (c[2] - tc.z) * (c[2] - tc.z));
+        if (d < bd) { bd = d; best = i; }
+      }
+      if (best != null) { tc.by = best; tc.how = 'picked up'; }
+    } else if (why === 3) {
+      var who = [];
+      for (i = 0; i < n; i++) {
+        var hit = false;
+        for (k = frameIndexAtIn(R, tc.t1 + 0.15); k >= 0 && tc.t1 - fr[k].t < 0.6 && !hit; k--) {
+          c = fr[k].p && fr[k].p[i];
+          if (!c || c[0] == null || !c[4] || c.length < 15 || (c[14] !== 6 && c[14] !== 7)) continue;
+          for (var ax = 9; ax <= 17 && !hit; ax += 8) {
+            if (c.length > ax + 2 && c[ax] != null && c[ax + 2] != null) {
+              var dx = c[ax] - tc.x, dy = (c[ax + 1] == null ? tc.y : c[ax + 1]) - tc.y, dz = c[ax + 2] - tc.z;
+              if (dx * dx + dy * dy + dz * dz < 1600 * 1600) hit = true;
+            }
+          }
+        }
+        if (hit) who.push(i);
+      }
+      if (who.length === 1) { tc.by = who[0]; tc.how = 'shot out'; }
+    }
+  }
   // Round boundaries come from the game's own round-over records, NOT from
   // roundStarts(): in Bomb the clock jumps back up when a bomb is defused,
   // which roundStarts() reads as a new round (Finsletown: 149 s and 484 s).
@@ -1466,6 +1705,18 @@ function buildItemBoxes() {
   });
   ops.forEach(function (o) {
     var key = o.n + ':' + o.id, cur = open[key];
+    if (o.o === 1 && TRAP_ITEM[o.item]) {
+      var tk = 't' + o.item + ':' + (o.id >> 3) + ':' + (o.it ? o.it[2] : o.n), tc = open[tk];
+      if (o.code === 0x65 && o.p) {
+        tc = open[tk] = { item: o.item, t0: o.t, t1: clipToRound(o.t), x: o.p[0], y: o.p[1], z: o.p[2], trap: true,
+                          own: slotIdx[o.id >> 3] == null ? null : slotIdx[o.id >> 3], why: null, how: null, by: null };
+        out.lie.push(tc); out.traps.push(tc);
+      } else if (o.code === 0xa5 && tc && tc.t1 > o.t) {
+        tc.t1 = o.t; delete open[tk];
+        try { trapEnd(tc, o.it ? o.it[4] : null); } catch (errT) { tc.how = null; }
+      }
+      return;
+    }
     if (o.o === 1) {
       // A MAGAZINE set down as a trap (device object, item 0x45). MEASURED on
       // 20 placements in 6 replays: the nearest player is 0.6-0.8 m away with
@@ -1700,6 +1951,9 @@ function statsBetween(a, b) {
       if (e.killer != null && s[e.killer] != null) s[e.killer]++;
     }
   });
+  // knock-outs as the game counts them, where the file has that stream (see buildStuns)
+  var g1 = gameStuns(b - 1e-6), g0 = g1 ? gameStuns(a - 1e-6) : null;
+  if (g1 && g0) s = g1.map(function (x, i) { return Math.max(0, x - g0[i]); });
   return { k: k, d: d, s: s };
 }
 var rfShown = null;
@@ -2124,6 +2378,7 @@ function justThrew(pi, t) {
   return false;
 }
 var SHIELD_ROT = [0, 0, 0], SHIELD_POS = [0, 0, 0], _shq = null, _shb = null, _she = null, _shf = null;
+var KNIFE_POS = [0, 0, 0], KNIFE_ROT = [0, 0, 0];          // seat of the knife in the fist, set by eye (not measured)
 function updateProp(m, p, aiming) {
   loadWeapons();
   // THE SHIELD (item 73; the game's own model shid_shd_def_mgo, 62 x 109 cm). It is carried on the LEFT arm, so it hangs on
@@ -2160,6 +2415,11 @@ function updateProp(m, p, aiming) {
   // is still in the fist.
   if (kind === 'nade' && justThrew(marks.indexOf(m), T)) kind = null;
   var real = kind ? weaponGeo(p.item) : null;
+  // THE STUN KNIFE (item 1; the name table calls it NONE, so it never had a model). Drawn while he strikes with it and in
+  // its ready stance. The model is the pack's only knife (cqck_knf) - that it is the stun knife's own model is INFERRED.
+  var knifeOn_ = !!(p && p.alive && p.item === 1 && !p.subForm && WEAPONS && WEAPONS.cqck && !window.__noSlam &&
+                    (p.act === 0x17 || p.act === 0x18 || p.act === 0x19 || p.act === 0x1A || m.lastClip === 'knifeIdle' || m.lastClip === 'knifeStrike'));
+  if (knifeOn_) { kind = 'knife'; real = WEAPONS.cqck; }
 
   // SKINNED: the model hangs on the hand bone, so the pose puts it where the
   // player's hand actually is and none of the old offsets apply.
@@ -2168,7 +2428,7 @@ function updateProp(m, p, aiming) {
       // small held objects are seated in the palm; a rifle keeps its own grip
       // origin, which is already correct
       var seat = (kind === 'nade' || kind === 'knife');
-      var geo = seat ? centredGeo(real) : real;
+      var geo = (seat && !knifeOn_) ? centredGeo(real) : real;
       if (m.handProp.geometry !== geo) m.handProp.geometry = geo;
       // A grenade in the near-black gun colour disappears against a glove, so
       // thrown items get their own olive. Shown whenever one is equipped and
@@ -2177,15 +2437,17 @@ function updateProp(m, p, aiming) {
       if (!m.handPropFlat) m.handPropFlat = m.handProp.material;
       var skin = weaponMats(geo);
       if (skin) {
-        if (m.handProp.material !== skin) m.handProp.material = skin;
+        if (m.handProp.material !== skin && !(m.handProp.__fadeMat === m.handProp.material && m.handProp.__baseMat === skin)) m.handProp.material = skin;
       } else {
-        if (m.handProp.material !== m.handPropFlat) m.handProp.material = m.handPropFlat;
+        if (m.handProp.material !== m.handPropFlat && !(m.handProp.__fadeMat === m.handProp.material && m.handProp.__baseMat === m.handPropFlat)) m.handProp.material = m.handPropFlat;
         if (m.handPropFlat.color.getHex() !== wantCol) m.handPropFlat.color.setHex(wantCol);
       }
       // a pistol's grip also belongs in the palm, not on the wrist; it keeps
       // its own origin (assumed to be the grip, like the rifles -- not measured)
-      if (seat || SECONDARY[p.item]) m.handProp.position.set(PALM_MM.x, PALM_MM.y, PALM_MM.z);
+      if (knifeOn_) m.handProp.position.set(PALM_MM.x + KNIFE_POS[0], PALM_MM.y + KNIFE_POS[1], PALM_MM.z + KNIFE_POS[2]);
+      else if (seat || SECONDARY[p.item]) m.handProp.position.set(PALM_MM.x, PALM_MM.y, PALM_MM.z);
       else m.handProp.position.set(0, 0, 0);
+      m.handProp.rotation.set(knifeOn_ ? KNIFE_ROT[0] : 0, knifeOn_ ? KNIFE_ROT[1] : 0, knifeOn_ ? KNIFE_ROT[2] : 0);
       m.handProp.visible = true;
       if (m.prop) m.prop.visible = false;
       if (window.__PROPDIAG) {
@@ -2739,10 +3001,10 @@ function loadRig(sex) {
     // grab / hold / throw for both sides and a carry / prone / aim / reload set
     // per weapon. Optional and late -- every use goes through an
     // ANIM.clips[name] check, so until this lands the captured clips play.
-    fetch(av('anims_extra_' + sex + '.json') + (ASSET_V ? '&' : '?') + 'x=23').then(function (r) { return r.ok ? r.json() : null; }).then(function (X) {
+    fetch(av('anims_extra_' + sex + '.json') + (ASSET_V ? '&' : '?') + 'x=37').then(function (r) { return r.ok ? r.json() : null; }).then(function (X) {
       if (!X || !X.clips || X.bones.length !== A.bones.length) return;
       X.clips.forEach(function (c) {
-        clips[c.name] = { frames: c.frames, dur: c.dur, speed: 0, loop: c.loop !== false, fps: c.fps || 0,
+        clips[c.name] = { frames: c.frames, dur: c.dur, speed: c.speed || 0, loop: c.loop !== false, fps: c.fps || 0,
                           liftF: c.liftF || null, q: Int16Array.from(c.q), t: Int16Array.from(c.t) };
       });
       measureLifts(F, { bones: A.bones, rest: A.rest, clips: X.clips }, clips);
@@ -2767,7 +3029,7 @@ function loadRig(sex) {
     // their own right across the replays anyways"). Falls SIMULATED from scratch (replaydiff/physbake.py: point masses at the
     // big joints, rigid bones, the game's own measured knee / elbow limits, gravity, the ground, the measured push), baked
     // to clips. Only with ?phys=1 until the look is agreed.
-    if (PHYS_ON) fetch(av('anims_phys_' + sex + '.json') + (ASSET_V ? '&' : '?') + 'x=1').then(function (r) { return r.ok ? r.json() : null; }).then(function (X) {
+    if (PHYS_ON) fetch(av('anims_phys_' + sex + '.json') + (ASSET_V ? '&' : '?') + 'x=2').then(function (r) { return r.ok ? r.json() : null; }).then(function (X) {
       if (!X || !X.clips || !X.clips.length || X.bones.length !== A.bones.length) return;
       X.clips.forEach(function (c) {
         clips[c.name] = { frames: c.frames, dur: c.dur, speed: 0, loop: false, fps: c.fps || 0, liftF: null,
@@ -2858,6 +3120,7 @@ function attachSkinned(m) {
     : new THREE.SkinnedMesh(SKIN.geo, new THREE.MeshLambertMaterial({ color: m.col }));
   m.gearMats = gear ? gear.mats : null;
   m.gearFlats = gear ? gear.flats : null;
+  mesh.castShadow = SHADOWS_ON;
   mesh.add(root);
   // The identity bindMatrix is REQUIRED, not cosmetic. bind(skeleton) with no
   // second argument calls skeleton.calculateInverses(), which overwrites
@@ -2943,7 +3206,9 @@ var CLIP_FOR = {
   // no fall capture yet, a neutral upright pose is the least wrong thing to
   // show while someone drops; a ladder ascent is actively wrong.
   'airborne':                 ['fall', 'idle'],
-  'climbing up':              ['climb', 'idle'],
+  // state 0x11 = climbing onto a 1 m ledge (main 175, 0.88 s; the state lasts 0.86 s - doos's program tables, 2026-10-14).
+  // Ladders have their own path (p.ladder / ladderUp); the ladder capture stays only as a fallback.
+  'climbing up':              ['ledgeClimb', 'climb', 'idle'],
   // MEASURED 2026-10-09 on the real game: the descend state plays main 178, a short drop (15 of 23 episodes, ~30 mm).
   'descending':               ['drop', 'fall', 'idle'],
   // A ledge hang is NOT a ladder ascent. Captured separately: both grabs in
@@ -3008,7 +3273,7 @@ function rollRuns(rep) {
     if (v.len !== 39 || v.player == null) return;
     var c = cur[v.player];
     if (c && v.t - c[1] < 0.25 && c[2] === v.motionState) { c[1] = v.t; return; }
-    cur[v.player] = c = [v.t, v.t, v.motionState];
+    cur[v.player] = c = [v.t, v.t, v.motionState, v.rollDir == null ? 0 : v.rollDir];   // 4th = the direction byte of the run's first row
     (out[v.player] || (out[v.player] = [])).push(c);
   });
   return out;
@@ -3076,8 +3341,11 @@ function rollWindows(frames, i) {
     while (a_ >= 0 && !cell(a_) && q[0] - frames[a_].t < 1.5) a_--;
     while (b_ < n && (frames[b_].t <= q[1] || !cell(b_)) && frames[b_].t - q[1] < 1.5) b_++;
     if (a_ < 0 || b_ >= n || !cell(a_) || !cell(b_) || !cell(a_)[4] || !cell(b_)[4]) return;
-    if (out.some(function (w) { return w[0] <= b_ && w[1] >= a_; })) return;
-    out.push(q[2] === 3 ? [a_, b_, 3] : [a_, b_]);                              // third number 3 = a SIDE roll
+    // A forward dive while aiming (3.3 m in 0.6 s) also passes the gap rule above, which knows no state: name it here, or it
+    // would play the ordinary forward roll.
+    var hit_ = out.filter(function (w) { return w[0] <= b_ && w[1] >= a_; });
+    if (hit_.length) { if (q[2] === 3 && (q[3] === 1 || q[3] === 3)) hit_.forEach(function (w) { if (w[2] == null) { w[2] = 3; w[3] = q[3]; } }); return; }
+    out.push(q[2] === 3 ? [a_, b_, 3, q[3] || 0] : [a_, b_]);                   // third number 3 = a roll WHILE AIMING, fourth = its direction byte
   });
   out.sort(function (x, y) { return x[0] - y[0]; });
   return out;
@@ -3140,6 +3408,9 @@ function buildDistance(r) {
 
 // Distance travelled at a fractional frame, so the stride is smooth.
 function distAt(pi, fi) {
+  // a player in the after-knock-down rows has his own distance clock (see the row reader)
+  var lp_ = live && live[pi];
+  if (lp_ && lp_.rowForm && lp_.rowDist != null) return lp_.rowDist;
   if (!R || !R.cumDist || !R.cumDist[pi]) return null;
   var a = R.cumDist[pi];
   var i0 = Math.floor(fi);
@@ -3305,6 +3576,7 @@ function buildProne(r) {
 // so close short holes and drop short runs. Both bounds are in TIME, because
 // frames are change-triggered and their spacing is not uniform.
 var POSTURE_GAP_S = 0.60, POSTURE_MIN_S = 0.15;
+var ONEHAND_CROUCH_IDLE = !/[?&]c1idle=0/.test(location.search);       // ?c1idle=0 = the old crouch + grenade-arms layering when still
 function closePostureGaps(flag, frames) {
   var n = flag.length, i, j;
   // fill holes shorter than POSTURE_GAP_S that have the posture on both sides
@@ -3372,10 +3644,10 @@ function smoothRolls(r) {
         var rowq = frames[q] && frames[q].p;
         if (rowq && rowq[i] && rowq[i][0] != null) { gapRoll = false; break; }
       }
-      if (gapRoll) { (r.rollSpans || (r.rollSpans = [])).push([i, a, b, ws[w][2] || 2]); continue; }
+      if (gapRoll) { (r.rollSpans || (r.rollSpans = [])).push([i, a, b, ws[w][2] || 2, ws[w][3] || 0]); continue; }
       // Keep the window: motionGroup reports "walking" through a roll, so this
       // is the ONLY way playback can know a roll is happening.
-      (r.rollSpans || (r.rollSpans = [])).push([i, a, b, ws[w][2] || 2]);
+      (r.rollSpans || (r.rollSpans = [])).push([i, a, b, ws[w][2] || 2, ws[w][3] || 0]);
       // entry: the step INTO the first roll frame
       var prev = null, cur = null, rowP, rowC;
       rowP = frames[a - 1] && frames[a - 1].p; prev = rowP ? rowP[i] : null;
@@ -3404,7 +3676,7 @@ function smoothRolls(r) {
   r.rollByPlayer = [];
   var sp = r.rollSpans || [];
   for (var q = 0; q < sp.length; q++) {
-    (r.rollByPlayer[sp[q][0]] || (r.rollByPlayer[sp[q][0]] = [])).push([sp[q][1], sp[q][2], sp[q][3] || 2]);
+    (r.rollByPlayer[sp[q][0]] || (r.rollByPlayer[sp[q][0]] = [])).push([sp[q][1], sp[q][2], sp[q][3] || 2, sp[q][4] || 0]);
   }
   for (q = 0; q < r.rollByPlayer.length; q++) {
     if (r.rollByPlayer[q]) r.rollByPlayer[q].sort(function (x, y) { return x[0] - y[0]; });
@@ -3456,6 +3728,11 @@ function withWeapon(name, p) {
   // not drawn. The model stays hidden at 0 (updateProp); only the pose changed.
   var map = kind_ === 'nade' ? NADE_CLIP
           : (SECONDARY[p.item] ? PISTOL_CLIP : null);
+  // EMPTY HANDS / THE KNIFE SLOT (item 0 / 1) RUN AND WALK WITH FREE ARMS, NOT CRADLING A RIFLE. MEASURED 2026-10-11 against the
+  // skeleton recordings (coverage catalogue, 12.3 h of play): the real empty-handed run is main clip 10 (31 mm) = the same
+  // clip as the grenade run, the walk main 9 (45 mm) = the grenade walk; the rifle run sat 77 mm off (arms 143). Standing
+  // still is untouched (idleUnarmed / knifeIdle are picked in clipNameFor).
+  if (!map && (p.item === 0 || p.item === 1) && (name === 'run' || name === 'walk')) map = NADE_CLIP;
   if (map) {
     var v = map[name];
     if (v && ANIM.clips[v]) return v;
@@ -3496,12 +3773,77 @@ function sprayClip(p) {
   var c = ANIM.clips.spray;
   return { n: 'spray', t: T % (c.frames / (c.fps || ANIM.fps)) };
 }
+// RELOAD TIMING TEST (2026-10-14): the reload clip (the weapon set's clip 3, 3.5 s) is the right one - 29 mm on the arms against the real
+// game's skeletons standing - but the replay's reload action lasts a median 2.0 s and the layer stopped with it (60 mm in playback).
+// ?rl=tail keeps the clip playing after the action ends; ?rl=fit plays it faster so it fits the action; default = as before.
+// RESULT (5 matches): fit = running reload 93 -> 86 mm, standing 60 -> 59, the rest within 1 mm; tail changed nothing -> fit is the default
+// (?rl=off = the old way, ?rl=tail kept for tests)
+var RL_MODE = (/[?&]rl=(tail|fit|off)/.exec(location.search) || [])[1] || 'fit';
+function actRunEndT(pi, fi, code) {
+  if (!R || !R.frames) return null;
+  var fr = R.frames, i = Math.max(0, Math.min(Math.round(fi), fr.length - 1)), end = fr[i].t;
+  for (var j = i; j < fr.length && fr[j].t - fr[i].t < 6; j++) { var e = fr[j].p ? fr[j].p[pi] : null; if (!e) continue; if (!(e.length > 14 && e[14] === code)) break; end = fr[j].t; }
+  return end;
+}
+var RELOAD_FULL_S = 2.6;
+// did the reload that ran from st to en refill the magazine? (ammo just before st < ammo at the first sample after en; same item)
+function reloadDone(pi, st, en) {
+  if (st == null || en == null || !R || !R.frames) return false;
+  var key = pi + ':' + st, memo = R.__rl || (R.__rl = {});
+  if (memo[key] !== undefined) return memo[key];
+  var fr = R.frames, i0 = Math.round(frameIndexAt(st)), i1 = Math.round(frameIndexAt(en)), a0 = null, it0 = null, a1 = null, it1 = null, k, e;
+  for (k = i0; k >= 0 && st - fr[k].t < 3; k--) { e = fr[k].p ? fr[k].p[pi] : null; if (e && e.length > 13 && e[13] != null) { a0 = e[13]; it0 = e[12]; if (!(e.length > 14 && e[14] === 0x0B)) break; } }
+  for (k = i1 + 1; k < fr.length && fr[k].t - en < 3; k++) { e = fr[k].p ? fr[k].p[pi] : null; if (e && e.length > 13 && e[13] != null) { a1 = e[13]; it1 = e[12]; break; } }
+  return (memo[key] = (a0 != null && a1 != null && it0 === it1 && a1 > a0));
+}
 function reloadClip(p, pi) {
-  if (!p || !p.alive || p.act !== 0x0B || pi == null) return null;
+  if (!p || !p.alive || pi == null) return null;
   var n = wpnClip('wr', p);
   if (!n) return null;
-  var st = entryRunStartT(pi, frameIndexAt(T), function (e) { return e.length > 14 && e[14] === 0x0B; });
-  return { n: n, t: st != null ? Math.max(0, T - st) : 0 };
+  var c = ANIM.clips[n], dur = c ? c.frames / (c.fps || ANIM.fps) : 3.5, fi = frameIndexAt(T);
+  if (p.act !== 0x0B) {
+    if (RL_MODE !== 'tail') return null;
+    // the reload that ended most recently, if its clip is still playing
+    var fr = R.frames, k = Math.round(fi), last = null;
+    for (; k >= 0 && T - fr[k].t < dur; k--) { var e0 = fr[k].p ? fr[k].p[pi] : null; if (e0 && e0.length > 14 && e0[14] === 0x0B) { last = k; break; } }
+    if (last == null) return null;
+    var st0 = entryRunStartT(pi, last, function (e) { return e.length > 14 && e[14] === 0x0B; });
+    if (st0 == null || T - st0 >= dur - 0.04) return null;
+    return { n: n, t: T - st0 };
+  }
+  var st = entryRunStartT(pi, fi, function (e) { return e.length > 14 && e[14] === 0x0B; });
+  var t = st != null ? Math.max(0, T - st) : 0;
+  if (RL_MODE === 'fit' && st != null) {
+    // COMPLETED OR CANCELLED (user, 2026-10-14: "The reload ending abruptly is reload animations cancel"). Over the hosted replays a
+    // completed reload (the magazine count is higher after the action) lasts a median 2.61 s (p10 1.67, p90 2.71; M4 2.65), a
+    // cancelled one anything from 0.33 s up. A completed reload is played to fit its own length; a cancelled one at the pace of a
+    // completed one (2.6 s), so it stops where the player broke it off, as in the game.
+    var en = actRunEndT(pi, fi, 0x0B), ad = en != null ? en - st : 0, ri = reloadDone(pi, st, en);
+    if (ri && ad > 0.5) t = t * Math.min(2.5, dur / ad);
+    else t = t * (dur / RELOAD_FULL_S);
+  }
+  return { n: n, t: Math.min(t, dur - 0.04) };
+}
+// WEAPON ACTION 37 (0x25) = THE RAISED-ARM GESTURE ON THE MOVE (owner, 2026-10-11: a salute; the gun stays in the other
+// hand - "it stays in the hand that isnt pointing"). It was first labelled here as the "link" reach, from the name of the
+// animation set that holds the clip; what the move is in the game's terms is the owner's word against that file name, the
+// clip itself is measured. While the layer plays, a long gun is seated in the hand that is NOT raised (see gripFromHands):
+// before, it stayed parented to the raised hand and rode up to his face. One-handed items (pistol, grenade, knife) are
+// already drawn in that other hand and are left as they are. MEASURED 2026-10-11 on the skeleton recordings (4,560 spells, 76 matches): the
+// right arm comes up beside the head in 0.2 s, reaches straight out ahead at 0.45-0.6 s and is back in the run by 0.8 s;
+// the spell lasts a fixed 1.27 s, nothing is thrown and no ammunition is used (0 of 379 spells), and he keeps running. The
+// game's own "link" animation set holds the move: clip 0 fits the upper body at 63 mm (plain run 156 mm, best clip of the
+// 706 main ones 121 mm), started 0.05 s in; with a long gun in hand, clip 2 (57 mm). It is an ARMS layer: the legs keep
+// their gait. (That it is the SOP-link tap done with nobody in reach is INFERRED from the set's name: a team-mate is
+// within 2 m in only 15-20 % of spells.) Not inside the long after-knock-down rows: their action has no run start to read.
+function linkClip(p, pi) {
+  if (!p || !p.alive || p.act !== 0x25 || pi == null || p.rowForm || p.subForm) return null;
+  var n = (WPN_BANK[p.item] && !SECONDARY[p.item] && ANIM.clips.linkTapRifle) ? 'linkTapRifle' : 'linkTap', c = ANIM.clips[n];
+  if (!c) return null;
+  var st = entryRunStartT(pi, frameIndexAt(T), function (e) { return e.length > 14 && e[14] === 0x25; });
+  var t = (st != null ? Math.max(0, T - st) : 0) + 0.05;
+  if (t > (c.frames - 1) / (c.fps || ANIM.fps)) return null;                  // the reach is over: the rest of the spell is the plain run
+  return { n: n, t: t };
 }
 // CQC, read off the replay:
 //   action 0x17  the reach (always first, 0.13 s, empty hands)
@@ -3518,6 +3860,91 @@ var CQC_ACT = { 0x17: 1, 0x18: 1, 0x19: 1 };
 // So each throw is paired once, at load, and the attacker runs on the victim's
 // clock: the attacker is whoever starts a reach 0.8-2.4 s after the victim's
 // state begins, nearest within 3 m; failing that, whoever stood within 1.5 m.
+// THE ORDINARY CQC THROW IS ONE PAIRED MOVE (2026-10-11, user on match 69641 at 1:20: "The cqc for Mixfish slam to stun knife
+// was bad" - the two bodies did not meet). MEASURED on the real game playing recordings (replaydiff/stun69641, 13 throws with
+// both skeletons captured):
+//   the thrower plays main 200 (24 mm; the old 189 was 112 mm), the thrown man sna_captured 0 (38 mm; the old 14 was 638 mm);
+//   both clips start on the same instant (0.000 s apart, p10 -0.02, p90 +0.05);
+//   the thrown man's clip faces along HIS record heading (0 deg, spread 4) and the thrower's exactly the other way (180.0);
+//   the thrower's own record heading is NOT that direction (16 deg off, spread 31), and his record position is loose too;
+//   hip to hip the pair keeps one track, to 5 - 8 cm: the victim 0.49 m straight in front at the grip, swung round to
+//   0.72 m to the thrower's side, and he ends lying 0.65 m beside him - on the spot of his own last thrown sample (7 cm).
+// So both bodies are placed from the thrown man's last thrown-state position and his heading with the two tracks below
+// (per stored clip frame, 30 a second: [to his right, ahead of him] in mm), not from their separate rows.
+var SLAM_ATT_IN_S = 0.183, SLAM_VIC_IN_S = 0.30;
+// the stun-knife strike: the recorded torso leans 26 - 37 deg forward (median by tenth of a second, 16 standing + 7 crouched
+// episodes) where the arm clip's own body leans 15 - 20 -> the layer is bent a further 15 deg about the hips
+var KNIFE_LEAN = 15 * Math.PI / 180;
+var SLAM_V = [[81,-1306],[189,-1167],[355,-1035],[446,-979],[450,-985],[439,-995],[437,-999],[446,-1004],[451,-1012],[451,-1020],[453,-1024],[455,-1026],[456,-1025],[451,-1025],[436,-1027],[405,-1027],[352,-1007],[279,-955],[196,-877],[121,-787],[60,-698],[17,-615],[-5,-539],[-9,-473],[-7,-421],[-4,-382],[-1,-356],[2,-335],[4,-314],[4,-293],[4,-277],[3,-262],[2,-248],[1,-232],[0,-215],[-1,-195],[-1,-170],[0,-146],[0,-125],[0,-103],[1,-76],[2,-52],[3,-34],[4,-28],[5,-30],[6,-26],[6,-19],[6,-12],[6,-6],[6,0],[7,4],[7,8]];
+var SLAM_A = [[411,155],[381,-12],[423,-109],[422,-220],[377,-348],[354,-439],[365,-488],[389,-511],[401,-524],[404,-535],[408,-538],[414,-534],[425,-519],[444,-486],[474,-434],[511,-374],[553,-316],[590,-258],[626,-198],[670,-126],[707,-51],[723,5],[719,39],[708,73],[698,107],[691,134],[687,148],[685,155],[684,162],[681,170],[678,174],[676,178],[674,180],[672,181],[670,180],[666,182],[661,185],[654,184],[651,177],[653,170],[656,170],[656,171],[656,165],[657,154],[658,143],[659,146],[659,156],[660,159],[660,158],[652,157],[635,154],[626,149]];
+function slamAt(tr, ct) {
+  var f = Math.max(6, Math.min(tr.length - 1, ct * 30)), i = Math.floor(f), u = f - i, a = tr[i], b = tr[Math.min(tr.length - 1, i + 1)];
+  return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
+}
+function applyThrowPairs(t) {
+  var ths = R && R.cqcThrows;
+  if (!ths || !ths.length || window.__noSlam) return;
+  for (var q = 0; q < ths.length; q++) {
+    var ev = ths[q];
+    if (!ev.slam || ev.c0 == null || ev.h == null) continue;
+    // lying after it: his rows are now 400 below the floor (the format's "lying"), and nothing else lifts him in these states
+    if (t > ev.t1 && t < ev.t1 + 8) {
+      var w = live[ev.v], wf = frameIndexAt(t);
+      if (w && w.alive && !w.subForm && !w.rowForm && (w.ms === 3 || w.ms === 4 || w.ms === 30 || w.ms === 26) && ev.y0 != null && w.y < ev.y0 - 250 && w.y > ev.y0 - 550 &&
+          !proneAt(ev.v, wf) && !crouchAt(ev.v, wf) && slamShocked(ev.v, wf, w.ms)) w.y += 400;
+    }
+    if (t > ev.t1 + 0.6) continue;
+    if (t < Math.min(ev.c0, ev.ta0 != null ? ev.ta0 : ev.c0)) continue;
+    var ct = Math.max(0, t - ev.c0), hr = ev.h * headScale, fx = Math.sin(hr), fz = Math.cos(hr), rx = Math.cos(hr), rz = -Math.sin(hr), pv, k;
+    var v = live[ev.v];
+    if (v && v.alive && !v.subForm && v.ms === 0x33) {
+      pv = slamAt(SLAM_V, ct); k = Math.min(1, Math.max(0, (t - ev.t0) / 0.12 + 0.25));
+      v.x = lerp(v.x, ev.x1 + rx * pv[0] + fx * pv[1], k); v.z = lerp(v.z, ev.z1 + rz * pv[0] + fz * pv[1], k);
+      if (ev.y0 != null && v.y < ev.y0 && v.y > ev.y0 - 550) v.y = ev.y0;          // (the slide of his height into that "lying" offset)
+      v.h = hr; v.spd = 0; v.slamT = ct;
+    }
+    var a = ev.a >= 0 ? live[ev.a] : null;
+    if (a && a.alive && a.subForm && a.ms === 35) {
+      pv = slamAt(SLAM_A, ct); k = Math.min(1, Math.max(0, ct / 0.3));
+      a.x = lerp(a.x, ev.x1 + rx * pv[0] + fx * pv[1], k); a.z = lerp(a.z, ev.z1 + rz * pv[0] + fz * pv[1], k);
+      if (k > 0) a.h = hr + Math.PI;
+      a.spd = 0; a.slamT = ct;
+    }
+  }
+}
+// Has this player been lying since a throw put him down? Walks back through his samples: lying / shocked states only,
+// then the thrown state. (After the 1.65 s throw the recordings show state 3 or 4 with the hips at 7 - 18 cm, then - when the
+// thrower follows with the stun knife - state 30 for 0.30 s and state 26: hips 7 - 16 cm all the way, 14 of 14.)
+function slamDownAt(pi, fi) {
+  if (!R || !R.frames || pi == null || window.__noSlam) return false;
+  var fr = R.frames, k = Math.max(0, Math.min(Math.round(fi), fr.length - 1)), t1 = fr[k].t;
+  for (; k >= 0 && t1 - fr[k].t < 8; k--) {
+    var e = fr[k].p ? fr[k].p[pi] : null;
+    if (!e) continue;
+    if (e[4] === false || e[4] === 0) return false;
+    if (e[8] === 0x33) return true;
+    if (e[8] !== 3 && e[8] !== 4 && e[8] !== 6 && e[8] !== 30 && e[8] !== 26) return false;
+  }
+  return false;
+}
+// ... and is the stun-knife shock (state 30) what ends this lying spell? Walks forward through his samples.
+function shockAhead(pi, fi) {
+  if (!R || !R.frames || pi == null) return false;
+  var fr = R.frames, k = Math.max(0, Math.min(Math.round(fi), fr.length - 1)), t0 = fr[k].t;
+  for (; k < fr.length && fr[k].t - t0 < 4; k++) {
+    var e = fr[k].p ? fr[k].p[pi] : null;
+    if (!e) continue;
+    if (e[8] === 30) return true;
+    if (e[8] !== 3 && e[8] !== 4) return false;
+  }
+  return false;
+}
+// The thrown man who is shocked where he lies: states 30 / 26 after the throw, and the states 3 / 4 that lead into them.
+function slamShocked(pi, fi, ms) {
+  if (ms !== 3 && ms !== 4 && ms !== 30 && ms !== 26) return false;
+  if (!slamDownAt(pi, fi)) return false;
+  return ms === 30 || ms === 26 || shockAhead(pi, fi);
+}
 function buildCqc(r) {
   var out = r.cqcThrows = [];
   var fr = r.frames || [], open = {}, reach = [], pa = {}, i, k, e, thrA = [], koS = [], pst = {};
@@ -3528,8 +3955,8 @@ function buildCqc(r) {
       e = row[i];
       if (!e) continue;
       if (e[8] === 0x33) {
-        if (!open[i]) open[i] = { v: i, a: -1, t0: fr[k].t, t1: fr[k].t, x: e[0], z: e[2], k: k };
-        else open[i].t1 = fr[k].t;
+        if (!open[i]) open[i] = { v: i, a: -1, t0: fr[k].t, t1: fr[k].t, x: e[0], z: e[2], k: k, h: e[3], x1: e[0], z1: e[2], y0: e[1] };
+        else { open[i].t1 = fr[k].t; open[i].x1 = e[0]; open[i].z1 = e[2]; }
       } else if (open[i]) { out.push(open[i]); open[i] = null; }
       var a = (e.length > 14 && e[4]) ? e[14] : null;
       if (a === 0x17 && pa[i] !== 0x17) reach.push({ p: i, t: fr[k].t, x: e[0], z: e[2] });
@@ -3573,6 +4000,20 @@ function buildCqc(r) {
     for (var pq = 0; pq < po.length; pq++) {
       if (po[pq].on === ev.v && po[pq].t1 > ev.t0 - 2.5 && po[pq].t0 < ev.t1 + 1.5) { ev.a = po[pq].player; ev.fromFile = true; break; }
     }
+    // THE CLOCK OF THE PAIR (see applyThrowPairs). The thrower's clip is 0.18 s in at his first state-35 row and the thrown
+    // man's is 0.30 s in at his first thrown sample (medians of 23 / 21 recorded episodes; the two clips start together).
+    // When the thrown man's samples run clearly late against the thrower's (match 69641 at 1:20: 0.28 s), his clock is
+    // used for both - his rows are what carry where the bodies are.
+    var ta0 = null, tl = null, pv = r.positionVariants || [];
+    if (ev.a >= 0) for (var vq = 0; vq < pv.length; vq++) {
+      var vr = pv[vq];
+      if (vr.player !== ev.a || vr.motionState !== 35 || vr.x == null || (vr.len !== 15 && vr.len !== 18 && vr.len !== 19)) continue;
+      if (vr.t < ev.t0 - 1.2 || vr.t > ev.t0 + 0.4) continue;
+      if (tl == null || vr.t - tl > 0.4) ta0 = vr.t;
+      tl = vr.t;
+    }
+    var ca = ta0 != null ? ta0 - SLAM_ATT_IN_S : null, cv = ev.t0 - SLAM_VIC_IN_S;
+    ev.ta0 = ta0; ev.c0 = (ca != null && cv - ca < 0.12 && cv - ca > -0.25) ? ca : cv; ev.slam = true;
   });
   // A THROW WHOSE VICTIM NEVER SHOWS THE THROWN STATE. A destabilized player is frozen in his own state, so when he is
   // thrown the file has only the thrower's side (empty hands, action 0x17 then 0x19) and, about half a second later, the
@@ -3615,11 +4056,23 @@ function buildCqc(r) {
 // (the item reads empty), while the short ones hold a grenade (2,426), an M4 (609) and so on. So a box spell is a run of a
 // second or more in which most samples have nothing in hand (empty / the box item 176; item 1 only for runs of 3 s and up,
 // because the stun knife shares that number).
-var BOX_MIN_S = 1.0;
+// THE HANDS RULE WAS WRONG (2026-10-11, coverage catalogue: ~1.7 h of sitting in the box drawn as plain standing, 410 mm off).
+// Against the skeleton recordings (76 matches) the LENGTH of the spell is what separates them, whatever the item cell says -
+// in a spell of a second or more the body is in the box with a grenade (4,126 sitting poses), a rifle (1,706) or a handgun
+// (344) "in hand" just as with nothing: state 168 = pelvis 742 mm, hands 621 mm apart = the box run (48-51 mm), state 40 with
+// posture bits 4 = sitting, pelvis 184 mm, one fixed pose. Spells under half a second are the quick crouch (hands 490 mm).
+// A spell with no 168 in it counts when it is mostly state 40 + posture bits 4 (3,453 poses of 3 s and more, all sitting:
+// the box put on without running); state 40 with other bits and no 168 is not the box (shield carriers, upright).
+// Flags absent (old files): the old hands rule.
+var BOX_MIN_S = (function () { try { var v = parseFloat(new URLSearchParams(location.search).get('boxmin')); return v > 0 ? v : 0.5; } catch (e) { return 0.5; } })();
+// (0.5 s, not 1.0: re-measured 2026-10-14 on 5 matches - box run 112 -> 107 mm, sitting with bits 6 82 -> 46, nothing worse; under 0.5 s
+// is the quick crouch out of a run)
 function buildBox(r) {
   var out = r.boxRuns = [], fr = r.frames || [];
   function keep(c) {
-    if (!c || !c[2] || c[1] - c[0] < BOX_MIN_S || !c[3]) return false;
+    if (!c || c[1] - c[0] < BOX_MIN_S || !c[3]) return false;
+    if (c[7]) return !!c[2] || c[6] / c[3] >= 0.6;
+    if (!c[2]) return false;
     if (c[4] / c[3] >= 0.6) return true;
     return (c[4] + c[5]) / c[3] >= 0.6 && c[1] - c[0] >= 3.0;
   }
@@ -3630,10 +4083,11 @@ function buildBox(r) {
       if (!e) continue;
       var alive = !(e[4] === 0 || e[4] === false), inb = alive && (e[8] === 40 || e[8] === 168);
       var it = e.length > 12 ? e[12] : null, empty = (it == null || it === 0 || it === 176) ? 1 : 0, one = it === 1 ? 1 : 0;
-      if (inb && cur && fr[k].t - cur[1] < 1.0) { cur[1] = fr[k].t; if (e[8] === 168) cur[2] = 1; cur[3]++; cur[4] += empty; cur[5] += one; }
+      var sit4 = (e[8] === 40 && e[7] != null && (e[7] >> 5) === 4) ? 1 : 0, hasF = e[7] != null ? 1 : 0;
+      if (inb && cur && fr[k].t - cur[1] < 1.0) { cur[1] = fr[k].t; if (e[8] === 168) cur[2] = 1; cur[3]++; cur[4] += empty; cur[5] += one; cur[6] += sit4; if (hasF) cur[7] = 1; }
       else {
         if (keep(cur)) a.push([cur[0], cur[1]]);
-        cur = inb ? [fr[k].t, fr[k].t, e[8] === 168 ? 1 : 0, 1, empty, one] : null;
+        cur = inb ? [fr[k].t, fr[k].t, e[8] === 168 ? 1 : 0, 1, empty, one, sit4, hasF] : null;
       }
     }
     if (keep(cur)) a.push([cur[0], cur[1]]);
@@ -3718,17 +4172,94 @@ function getUpName(C, pi, t) {
   if (pi != null && headingFlip(pi, t - 2.5, t)) return 'getUpFront';           // he turned onto his front before rising
   return (C.getUpBack && pi != null && fellOnBack(pi, t)) ? 'getUpBack' : 'getUpFront';
 }
+// Was this player in a CQC hold (ordinary state 0x36 / 0x37) in the 0.7 s before time t?
+function heldJustBefore(pi, t) {
+  if (!R || !R.frames || pi == null) return false;
+  var fr = R.frames, k = Math.max(0, Math.min(Math.round(frameIndexAt(t)), fr.length - 1));
+  for (; k >= 0 && t - fr[k].t < 0.7; k--) {
+    var e = fr[k].p ? fr[k].p[pi] : null;
+    if (e && fr[k].t <= t + 0.05 && (e[8] === 0x36 || e[8] === 0x37)) return true;
+  }
+  return false;
+}
+// When did the man this holder is choking go limp, if that happened between t0 and t1? (the knock-outs buildStuns found)
+function chokeKoT(pi, t0, t1) {
+  var L = R && R.__stuns && R.__stuns.list;
+  if (!L) return null;
+  for (var q = 0; q < L.length; q++) { if (L[q].killer === pi && L[q].how === 'choke' && L[q].t >= t0 - 0.2 && L[q].t <= t1) return L[q].t; }
+  return null;
+}
 function cqcClip(p, pi) {
   var C = ANIM.clips, fi = frameIndexAt(T), st;
+  // THE CQC THROW PAIR (see applyThrowPairs, which also places the two bodies): main 200 against sna_captured 0, one clock.
+  if (p.slamT != null && p.subForm && p.ms === 35 && C.cqcSlam) return { n: 'cqcSlam', t: Math.min(p.slamT, C.cqcSlam.frames / (C.cqcSlam.fps || ANIM.fps) - 0.04) };
+  if (p.slamT != null && !p.subForm && p.ms === 0x33 && C.cqcVictimSlam) return { n: 'cqcVictimSlam', t: Math.min(p.slamT, C.cqcVictimSlam.frames / (C.cqcVictimSlam.fps || ANIM.fps) - 0.04) };
+  // THE THROWN MAN STAYS DOWN, ON HIS BACK (user, same moment: "he stands up" - state 30 was drawn as the standing idle and
+  // state 4 face down). The recordings: after the throw the hips are at 7 - 18 cm through states 3 / 4; a stun-knife hit on
+  // him then shows state 30 for 0.30 s (25 episodes, followed by state 26 in 23) - 21 of the 25 are lying, hips never above
+  // 31 cm, and the pose is the game's jolt on the back, main 112 (36 mm; lying on the back, main 98, 42 mm; face down 430 mm),
+  // starting 0.1 s after state 30 does. The states 3 / 4 that lead into the shock (11 of 21 throws) fit that clip's first
+  // frame best (87 mm; lying still on the back 122, face down 394 - 431). With NO shock coming he is turning over to get up
+  // and no clip fits in time order (7 spells) - those are left to the rules below.
+  if (pi != null && !p.subForm && !p.rowForm && p.alive && C.sleepBack && slamShocked(pi, fi, p.ms)) {
+    if (C.shockBack) {
+      if (p.ms === 3 || p.ms === 4) return { n: 'shockBack', t: 0 };
+      st = entryRunStartT(pi, fi, function (e) { return e[8] === 30 || e[8] === 26; });
+      var skt_ = st != null ? Math.max(0, T - st - 0.1) : 99;
+      if (skt_ < C.shockBack.frames / (C.shockBack.fps || ANIM.fps) - 0.04) return { n: 'shockBack', t: skt_ };
+    }
+    return { n: 'sleepBack', t: 0 };
+  }
   // kneeling to place a device: the game's own clip, held on its last pose until he is done (see applySubTrack)
   // THE CQC HOLD, both sides, from the game's own states (measured 2026-10-08 over 53 files, scratch loop/actstates.js and
   // vicstates.js). The holder is in the action form: state 37 = taking hold (1.2 s), then 36 = holding (2.5 s), and his record
   // names the victim 0.4 m away. The victim is in ordinary state 0x37 / 0x36 for the same span, named by a holder in 16 of 17
   // episodes. The old test below (state 0x1c next to an action-0x18 player) is really GAS: only 8 of 71 such episodes have a holder.
-  if (p.subForm && (p.ms === 37 || p.ms === 36) && (C.cqcGrab || C.cqcHold)) {
-    return (p.ms === 37 && C.cqcGrab) ? { n: 'cqcGrab', t: Math.max(0, T - p.subT0) } : { n: C.cqcHold ? 'cqcHold' : 'cqcGrab', t: Math.max(0, T - p.subT0) };
+  // THE HOLD IS ON THE GROUND, AND THESE ARE ITS CLIPS (2026-10-11, user on match 69641 at 2:40: "Its a cqc choke"). MEASURED
+  // against the skeleton recordings of two holds (matches 69072 and 69187; replaydiff/stun69641/cqcstun/cmh.py, every clip of
+  // the main and the captured set scored in time order):
+  //   the grab (holder state 35, 1.2 - 1.7 s, the held man in 0x36): main 211 = 29 mm against sna_captured 22 = 58 mm, both
+  //     1.38 s and 0.1 - 0.2 s in when the state starts. Half a second in, the held man is pulled DOWN: he ends sitting on the
+  //     ground (hips 20 cm) with the holder kneeling behind him (hips 65 cm), and the whole hold stays there;
+  //   holder state 37 / held state 0x37 (1.5 s): main 231 = 18 mm against captured 31 = 21 mm (0.85 s; followed here by 233 /
+  //     33, 0.83 s, because the two lengths add up to the state's - that second half is INFERRED);
+  //   holding (state 36 / 0x36 again): main 212 = 70 mm, captured 23 = 70 mm (the old clips 199 / 201 and captured 6 / 7,
+  //     a standing hold, were 280 - 460 mm off).
+  //   The rows place the pair by themselves: both pelvises sit within 1 cm of their own row positions, the holder 42 cm
+  //     straight behind the held man, both facing the same way (2 deg apart).
+  // A CHOKE is this hold with the held man's stamina draining; when it reaches zero he goes to state 26, stays up for
+  // 1.97 - 1.99 s and is then lying (4 of 4 chokes). No skeleton recording covers that, so the clips for it are INFERRED:
+  // captured 24 (2.17 s, sitting -> slumped on the ground) against main 215 (same length, the holder letting him down).
+  if (p.subForm && (p.ms === 37 || p.ms === 36) && (C.cqcHoldLoop || C.cqcGrab || C.cqcHold)) {
+    if (!C.cqcHoldLoop) return (p.ms === 37 && C.cqcGrab) ? { n: 'cqcGrab', t: Math.max(0, T - p.subT0) } : { n: C.cqcHold ? 'cqcHold' : 'cqcGrab', t: Math.max(0, T - p.subT0) };
+    var he_ = Math.max(0, T - p.subT0);
+    if (p.ms === 37 && C.cqcHoldMid) {
+      var hm_ = C.cqcHoldMid.frames / (C.cqcHoldMid.fps || ANIM.fps);
+      if (he_ + 0.2 < hm_ - 0.02) return { n: 'cqcHoldMid', t: he_ + 0.2 };
+      if (C.cqcHoldMidOut) return { n: 'cqcHoldMidOut', t: Math.min(he_ + 0.2 - hm_ + 0.02, C.cqcHoldMidOut.frames / (C.cqcHoldMidOut.fps || ANIM.fps) - 0.04) };
+    }
+    // the choke went through during this hold: he lets the limp man down
+    var hk_ = pi != null ? chokeKoT(pi, p.subT0, T) : null;
+    if (hk_ != null && C.cqcHoldRelease) return { n: 'cqcHoldRelease', t: Math.min(T - hk_, C.cqcHoldRelease.frames / (C.cqcHoldRelease.fps || ANIM.fps) - 0.04) };
+    return { n: 'cqcHoldLoop', t: he_ };
   }
-  if (!p.subForm && (p.ms === 0x36 || p.ms === 0x37) && C.cqcVictimHeld) return { n: 'cqcVictimHeld', t: T };
+  if (!p.subForm && (p.ms === 0x36 || p.ms === 0x37) && (C.cqcHeldLoop || C.cqcVictimHeld)) {
+    if (!C.cqcHeldLoop || pi == null) return { n: 'cqcVictimHeld', t: T };
+    var hs_ = entryRunStartT(pi, fi, function (e) { return e[8] === 0x36 || e[8] === 0x37; });
+    var hc_ = entryRunStartT(pi, fi, function (e) { return e[8] === p.ms; });
+    if (p.ms === 0x37 && C.cqcHeldMid) {
+      var hv_ = Math.max(0, T - (hc_ != null ? hc_ : T)) + 0.3, hd_ = C.cqcHeldMid.frames / (C.cqcHeldMid.fps || ANIM.fps);
+      if (hv_ < hd_ - 0.02) return { n: 'cqcHeldMid', t: hv_ };
+      if (C.cqcHeldMidOut) return { n: 'cqcHeldMidOut', t: Math.min(hv_ - hd_ + 0.02, C.cqcHeldMidOut.frames / (C.cqcHeldMidOut.fps || ANIM.fps) - 0.04) };
+    }
+    // the first spell of state 0x36 is the grab that takes him down; after it he sits held
+    if (p.ms === 0x36 && C.cqcHeldGrab && hs_ != null && hc_ != null && Math.abs(hs_ - hc_) < 0.01) {
+      var hg_ = T - hs_ + 0.1, hgd_ = C.cqcHeldGrab.frames / (C.cqcHeldGrab.fps || ANIM.fps);
+      if (hg_ < hgd_ - 0.04) return { n: 'cqcHeldGrab', t: Math.max(0, hg_) };
+      return { n: 'cqcHeldLoop', t: hg_ - hgd_ };
+    }
+    return { n: 'cqcHeldLoop', t: T };
+  }
   // SCAN EX ON A KNOCKED-OUT ENEMY (2026-10-09, match 68780 at 2:07, user: "he scans them with scan ex but it's not showing").
   // Action-form state 65 = going in, a fixed 0.70 s, his record naming the enemy; then ordinary state 66 = coming back up,
   // 0.65 s. 30 episodes over 370 matches: 29 of the actors carry Scanning EX and every target is lying knocked out about
@@ -3736,14 +4267,24 @@ function cqcClip(p, pi) {
   if (p.subForm && p.ms === 65 && C.scanDown) return { n: 'scanDown', t: Math.max(0, T - p.subT0) };
   // in the cardboard box (see buildBox): running with it / sitting in it
   if (!p.subForm && p.alive && pi != null && (p.ms === 168 || p.ms === 40) && C.boxRun && C.boxHide && inBox(pi, T)) {
-    var bx_ = p.ms === 168 ? 'boxRun' : 'boxHide';
-    return { n: bx_, t: T % (C[bx_].frames / (C[bx_].fps || ANIM.fps)) };
+    // state 40 inside a box spell: posture bits 4 / 6 = sitting (pelvis 184 mm); bits 5 = half-way up, where the run pose fits
+    // (68-72 mm against 440-490 for the sit). SITTING = the sit clip's legs with the climb-in clip's final upper body: the
+    // recorded pose is one fixed pose, legs = box set 0 to 1 mm, spine and head = box set 15's last frame to 0-1 mm (arms
+    // 20-85 mm); clip 0's own upper body leans back, 158-438 mm away from the real one (measured 2026-10-11).
+    var bt3_ = p.sf != null ? (p.sf >> 5) : 4;
+    var bx_ = (p.ms === 168 || bt3_ === 5) ? 'boxRun' : 'boxHide';
+    return { n: bx_, t: T % (C[bx_].frames / (C[bx_].fps || ANIM.fps)), up: (bx_ === 'boxHide' && C.boxSitUp) ? 'boxSitUp' : null };
   }
   // BACK TO THE WALL. States 10 / 11 were read as "holding a ledge" and drawn HANGING; on the real game state 11 is the
   // cover pose against a wall (main 138 standing at 2 mm, 161 crouched at 5 mm - measured 2026-10-09 over three matches,
   // replaydiff). The real ledge hang is state 21 (main 234 = arms straight up, 6 mm).
   if (!p.subForm && p.alive && (p.ms === 11 || p.ms === 10) && C.coverStand) {
     var cv_ = (pi != null && (crouchAt(pi, fi) || proneAt(pi, fi)) && C.coverCrouch) ? 'coverCrouch' : 'coverStand';
+    // posture bits 1 = crouched against the wall: main 158 (female, 0.2 mm) / 147 (male, 3.4 mm) over 600 + 381 recorded poses
+    // (2026-10-14); coverStand had sat 253-344 mm off there
+    if (p.ms === 11 && p.sf != null && (p.sf >> 5) === 1 && C.coverLow) cv_ = 'coverLow';
+    // state 10 with posture bits 7 = stepping onto the wall: main 137 (3.9 / 6.2 mm over 600 recorded poses a sex, 2026-10-14)
+    if (p.ms === 10 && p.sf != null && (p.sf >> 5) === 7 && C.coverIn) cv_ = 'coverIn';
     return { n: cv_, t: T % (C[cv_].frames / (C[cv_].fps || ANIM.fps)) };
   }
   if (!p.subForm && p.alive && p.ms === 21 && C.ledge) return { n: 'ledge', t: 99 };
@@ -3782,6 +4323,14 @@ function cqcClip(p, pi) {
   // ON A LADDER: action-form states 19 / 20 / 147 / 148 arrive in the same longer row form as the boost helper, so these players
   // were not drawn at all until 2026-10-10. Measured on the real game they are the ladder family (main 264 / 272 / 265); the
   // viewer's own ladder clip stands in for all four.
+  // LADDER STATES IN THE ACTION FORM (doos's tables + the real game's skeletons, 2026-10-14): 147 = getting off at the top, a fixed 2.08 s =
+  // main 267 (50 / 7 mm male / female vs 184-207 for the old ladder capture), stretched over the state's 2.08 s; 148 (climbing fast) and
+  // (re-run: 147 205 -> 42 mm, 148 33 -> 21) = main 266, one rung up, looped. 19 and 20 keep the capture (20 measured 8 -> 10 with 266).
+  if (p.subForm && p.ms === 147 && C.ladderOff) {
+    var lod_ = C.ladderOff.frames / (C.ladderOff.fps || ANIM.fps);
+    return { n: 'ladderOff', t: Math.min(Math.max(0, T - p.subT0) * lod_ / 2.08, lod_ - 0.04) };
+  }
+  if (p.subForm && p.ms === 148 && C.ladderUp) return { n: 'ladderUp', t: Math.max(0, T - p.subT0) % (C.ladderUp.frames / (C.ladderUp.fps || ANIM.fps)) };
   if (p.subForm && (p.ms === 19 || p.ms === 20 || p.ms === 147 || p.ms === 148) && C.climb) return { n: 'climb', t: Math.max(0, T - p.subT0) % (C.climb.frames / (C.climb.fps || ANIM.fps)) };
   var bOnce_ = function (n, t0) { return { n: n, t: Math.min(Math.max(0, T - t0), C[n].frames / (C[n].fps || ANIM.fps) - 0.04) }; };
   if (p.subForm && p.ms === 51 && C.boostPulled) return bOnce_('boostPulled', p.subT0);
@@ -3810,7 +4359,10 @@ function cqcClip(p, pi) {
     return { n: 'goProne', t: Math.min(st != null ? Math.max(0, T - st) : 0, C.goProne.frames / (C.goProne.fps || ANIM.fps) - 0.04) };
   }
   if (!p.subForm && p.alive && (p.ms === 3 || p.ms === 19) && C[p.ms === 3 ? 'proneRoll' : 'vault']) {
-    var pv_ = p.ms === 3 ? 'proneRoll' : (C.ladderOn && p.sf != null && (p.sf >> 5) === 2) ? 'ladderOn' : 'vault', pm_ = p.ms;
+    // ORDINARY STATE 3 WITH THE FLAG BYTE'S TOP BITS = 1 IS THE GET-UP FROM A DIVE WHILE AIMING (2026-10-11: it follows every full
+    // forward dive of the roll records, 0.70-0.72 s, flag byte 0x21, 4 of 4 in two matches; the prone flips carry 0x61 / 0x81 /
+    // 0xa1) = main 440 against the live skeleton. It was drawn as the prone flip.
+    var pv_ = p.ms === 3 ? ((C.aimDiveUp && p.sf != null && (p.sf >> 5) === 1) ? 'aimDiveUp' : 'proneRoll') : (C.ladderOn && p.sf != null && (p.sf >> 5) === 2) ? 'ladderOn' : 'vault', pm_ = p.ms;
     st = pi == null ? null : entryRunStartT(pi, fi, function (e) { return e[8] === pm_; });
     return { n: pv_, t: Math.min(st != null ? Math.max(0, T - st) : 0, C[pv_].frames / (C[pv_].fps || ANIM.fps) - 0.04) };
   }
@@ -3835,7 +4387,7 @@ function cqcClip(p, pi) {
     }
   }
   if (p.rollT0 != null && p.alive && C.roll) {
-    var rl_ = (p.rollSide && C.sideRollR) ? 'sideRollR' : 'roll', rld_ = C[rl_].frames / (C[rl_].fps || ANIM.fps);
+    var rl_ = (p.rollSide && C.sideRollR) ? 'sideRollR' : fwdRollName(p), rld_ = C[rl_].frames / (C[rl_].fps || ANIM.fps);
     return { n: rl_, t: Math.min(Math.max(0, T - p.rollT0), rld_ - 0.04) };
   }
   // COMING OUT OF A ROLL: state 2 with the flag byte's top bits = 4 is the roll recovery (doos's table: 8,345 rows, 0.73 s), and
@@ -3845,9 +4397,43 @@ function cqcClip(p, pi) {
     var rrd_ = C.rollRecover.frames / (C.rollRecover.fps || ANIM.fps);
     if (st != null && T - st < rrd_) return { n: 'rollRecover', t: Math.max(0, T - st) };
   }
+  // STATE 2 IN ITS OTHER TWO FORMS (scored against the real game's skeleton recordings 2026-10-14, 600 + 300 poses a sex):
+  // posture bits 5 = rolling INTO PRONE = main 58 (22 / 27 mm; doos: the dive to prone out of a roll), bits 3 = the FORWARD
+  // ROLL = main 56 (male 31 mm; female weaker, 84-99 mm). The viewer drew walks / crouches there (341 / 635 mm).
+  if (!p.subForm && p.alive && p.ms === 2 && pi != null && p.sf != null && ((p.sf >> 5) === 5 || (p.sf >> 5) === 3)) {
+    // (bits 3 by what is held, as in the roll records - scored 2026-10-14: long gun = the rifle dive 439 at 61 / 31 mm, else 56 at 22-47)
+    var rb_ = p.sf >> 5, rk_ = rb_ === 5 ? 'rollProne' : (fwdRollName(p) === 'aimDive' ? 'aimDive' : 'rollFwd');
+    if (C[rk_]) {
+      st = entryRunStartT(pi, fi, function (e) { return e[8] === 2 && e[7] != null && (e[7] >> 5) === rb_; });
+      return { n: rk_, t: Math.min(st != null ? Math.max(0, T - st) : 0, C[rk_].frames / (C[rk_].fps || ANIM.fps) - 0.04) };
+    }
+  }
   // LYING AFTER A KNOCK-DOWN (ordinary states 6 "down" and 4 "settling"): on his back until the turn-over, face down after it
   // or when there is none. One still pose each - state 4 used to flicker between the lying and the crawling clip with his speed.
-  if (!p.subForm && !p.rowForm && p.alive && pi != null && (p.ms === 6 || p.ms === 4)) {
+  // (state 30 = the 0.30 s stun-knife jolt: on a man who was lying just before it, he is still lying - see above)
+  var ly30_ = false;
+  if (!p.subForm && !p.rowForm && p.alive && pi != null && p.ms === 30 && !window.__noSlam) {
+    var l30_ = entryRunStartT(pi, fi, function (e) { return e[8] === 30; });
+    if (l30_ != null) for (var lk_ = Math.max(0, Math.floor(frameIndexAt(l30_)) - 1); lk_ >= 0 && l30_ - R.frames[lk_].t < 0.5; lk_--) {
+      var le_ = R.frames[lk_].p ? R.frames[lk_].p[pi] : null;
+      if (le_) { ly30_ = le_[8] === 3 || le_[8] === 4 || le_[8] === 6; break; }
+    }
+  }
+  // TURNING OVER ON THE GROUND: state 4 with posture bits 0 = main 55, a belly-to-back flip (26 mm male / 50 mm female over
+  // 362 + 600 recorded poses, 2026-10-14; doos: 53-56 are the flips). It was held as one lying pose (170-180 mm off).
+  if (!p.subForm && !p.rowForm && p.alive && pi != null && p.ms === 4 && p.sf != null && (p.sf >> 5) === 0 && C.proneFlip) {
+    st = entryRunStartT(pi, fi, function (e) { return e[8] === 4 && e[7] != null && (e[7] >> 5) === 0; });
+    // the state lasts 0.50-0.56 s in the hosted replays (38 episodes) against the clip's 0.75 s: played at the state's pace so it finishes
+    var pfd_ = C.proneFlip.frames / (C.proneFlip.fps || ANIM.fps);
+    return { n: 'proneFlip', t: Math.min((st != null ? Math.max(0, T - st) : 0) * pfd_ / 0.53, pfd_ - 0.04) };
+  }
+  // DOWN ON THE GROUND (state 6) by posture bits: 0 = main 690, 1 = main 89 "hit flinch lying" (doos) - voted against the real game's
+  // skeletons 2026-10-14 (78-88 / 118-145 mm vs 217 / 334-387 for the prone / on-the-back poses drawn before)
+  if (!p.subForm && !p.rowForm && p.alive && pi != null && p.ms === 6 && p.sf != null && ((p.sf >> 5) === 0 || (p.sf >> 5) === 1)) {
+    var dn_ = (p.sf >> 5) === 0 ? 'down0' : 'down1';
+    if (C[dn_]) return { n: dn_, t: T % (C[dn_].frames / (C[dn_].fps || ANIM.fps)) };
+  }
+  if (!p.subForm && !p.rowForm && p.alive && pi != null && (p.ms === 6 || p.ms === 4 || ly30_)) {
     var lyb_ = C.sleepBack && headingFlip(pi, T, T + 2.0);
     var lyn_ = lyb_ ? 'sleepBack' : (C.prone ? 'prone' : null);
     if (lyn_) return { n: lyn_, t: 0 };
@@ -3882,7 +4468,9 @@ function cqcClip(p, pi) {
     }
   }
   // state 35 opens every CQC move. If it is not one of the paired throws (handled below), it is the reach into a hold.
-  if (p.subForm && p.ms === 35 && C.cqcGrab && !(R.cqcThrows || []).some(function (e) { return e.a === pi && T >= e.t0 - 2.5 && T <= e.t1 + 1.6; })) {
+  if (p.subForm && p.ms === 35 && (C.cqcHoldGrab || C.cqcGrab) && !(R.cqcThrows || []).some(function (e) { return e.a === pi && T >= e.t0 - 2.5 && T <= e.t1 + 1.6; })) {
+    // main 211, 0.2 s in at his first row, held on its last pose (kneeling behind the seated man) - see the hold above
+    if (C.cqcHoldGrab) return { n: 'cqcHoldGrab', t: Math.min(Math.max(0, T - p.subT0) + 0.2, C.cqcHoldGrab.frames / (C.cqcHoldGrab.fps || ANIM.fps) - 0.04) };
     return { n: 'cqcGrab', t: Math.max(0, T - p.subT0) };
   }
   // BEHIND THE SHIELD: action 0x1B with the shield out (2,842 of 5,019 shield samples in match 69195). Crouched behind it
@@ -3987,6 +4575,22 @@ function cqcClip(p, pi) {
   //   0x18 -> a LETHAL hit, type 17, 34 of 36 victims dead, on a held or downed enemy = the STAB (kill)
   //   0x1A -> a lethal 62-point hit, type 145, on a running enemy 1.4 m away (8)       = the SLICE
   // All three draw the one provisional knife clip until the right three are picked out.
+  // THE STRIKE ITSELF, MEASURED 2026-10-11 (replaydiff/stun69641): with item 1 in hand the reach (0x17) and what follows it
+  // (0x19 the stun stab, 0x18 the kill stab) show ONE arm motion on the real skeleton, main 302 - a thrust of the right hand
+  // from the ready stance, 1.25 s, starting with the reach (arms 45 / 44 / 45 mm over 32 + 101 + 66 episodes, the next clip
+  // 63 - 69 mm; the provisional 359 was 150 - 200 mm on the whole body). The legs fit no clip: he stays up, or drops to a
+  // crouch over a downed man (state 5, hips to 51 cm) and rises again - so the thrust is laid over the posture the record
+  // gives. This is also what follows a CQC throw in 14 of 21 recorded throws (the "slam to stun knife").
+  if (pi != null && !p.subForm && p.alive && C.knifeStrike && p.item === 1 && (p.act === 0x17 || p.act === 0x18 || p.act === 0x19) && !window.__noSlam) {
+    var kn_ = entryRunStartT(pi, fi, function (e) { return e.length > 14 && e[12] === 1 && (e[14] === 0x17 || e[14] === 0x18 || e[14] === 0x19); });
+    if (kn_ != null) {
+      var knd_ = C.knifeStrike.frames / (C.knifeStrike.fps || ANIM.fps), knt_ = Math.max(0, T - kn_);
+      var knb_ = ((p.ms === 5 || crouchAt(pi, fi)) && C.crouch) ? 'crouch' : (p.spd != null && p.spd > 1.5 && C.runNade) ? 'runNade' : (C.knifeIdle ? 'knifeIdle' : (C.idleUnarmed ? 'idleUnarmed' : 'idle'));
+      var knbt_ = 0;
+      if (knb_ === 'runNade') { var knd2_ = distAt(pi, fi); knbt_ = (knd2_ != null && C.runNade.speed > 0.2) ? knd2_ / C.runNade.speed : T; }
+      if (C[knb_]) return { n: knb_, t: knbt_, up: 'knifeStrike', upT: Math.min(knt_, knd_ - 0.04), label: 'knifeStrike', lean: KNIFE_LEAN * Math.min(1, knt_ / 0.2) };
+    }
+  }
   if (pi != null && !p.subForm && p.alive && C.knifeStab && p.item === 1 && (p.act === 0x19 || p.act === 0x1A) &&
       !(R.cqcThrows || []).some(function (e) { return !e.synth && e.a === pi && T >= e.t0 - 0.5 && T <= e.t1 + 2.5; })) {
     var ks_ = entryRunStartT(pi, fi, function (e) { return e.length > 14 && (e[14] === 0x19 || e[14] === 0x1A || e[14] === 0x17); });
@@ -4005,6 +4609,10 @@ function cqcClip(p, pi) {
     for (var kk_ = 0; kk_ < ka_.length; kk_++) { if (ka_[kk_][0] > T) break; if (T <= ka_[kk_][1]) kr_ = ka_[kk_]; }
     if (C.sleep && kr_) {
       var ke2_ = T - kr_[0], kf0_ = Math.max(0, frameIndexAt(kr_[0]) - 1);
+      // CHOKED OUT IN A HOLD: he is already sitting on the ground in the holder's arms, so no collapse from standing - he
+      // slumps over where he sits and stays down (see the hold in cqcClip; clip INFERRED, timing measured: lying 2.0 s later).
+      if (kr_.__held === undefined) kr_.__held = heldJustBefore(pi, kr_[0]);
+      if (kr_.__held && C.cqcHeldSlump) return { n: 'cqcHeldSlump', t: Math.min(Math.max(0, ke2_), C.cqcHeldSlump.frames / (C.cqcHeldSlump.fps || ANIM.fps) - 0.04) };
       var thrown_ = (R.cqcThrows || []).some(function (e) { return !e.stab && e.v === pi && kr_[0] > e.t0 - 0.5 && kr_[0] < e.t1 + 1.2; });
       if (thrown_) return { n: C.sleepBack ? 'sleepBack' : 'sleep', t: ke2_ % 3.3 };
       if (!proneAt(pi, kf0_) && kr_.__fall === undefined) {
@@ -4031,6 +4639,10 @@ function cqcClip(p, pi) {
     var kon_ = C.down ? 'down' : 'dead';
     return { n: kon_, t: Math.max(0, C[kon_].frames / (C[kon_].fps || ANIM.fps) - 0.04) };
   }
+  // STATE 26 WITH POSTURE BITS 7 outside a known knock-out = lying face down, still: main 97 = `sleep` (0.1 / 0.9 mm over 600 + 529
+  // recorded poses, 2026-10-14). The prone rule had laid him out aiming a rifle (230 mm off on the male set).
+  if (pi != null && !p.subForm && p.alive && p.ms === 26 && p.sf != null && (p.sf >> 5) === 7 && C.sleep && !slamShocked(pi, fi, 26)) return { n: 'sleep', t: T % 3.3 };
+
   // DESTABILIZED: the thrashing loop for the posture the game's state gives (59 standing, 60 crouched, 61 lying - the
   // pairing of state to posture is INFERRED, see bake_extra.py). Looped by hand because the ground offset is per frame.
   if (pi != null && C.destabStand && destabHit(pi, T)) {
@@ -4048,6 +4660,7 @@ function cqcClip(p, pi) {
       var ev = ths[q];
       if (ev.a !== pi || T < ev.t0 || T > ev.t1 + 1.6) continue;
       if (ev.synth && T > ev.aEnd) continue;
+      if (!ev.synth && ev.slam && C.cqcSlam && !window.__noSlam) { paired = true; continue; }
       // A throw the file shows only from the thrower's side is SHORT (his action lasts under a second), so it gets the
       // 0.73 s lunging throw (main set 693), not the long move. Seen frame by frame in the catalogue 2026-10-08: the long
       // pair used until now (189 against sna_captured 14) is an arm sweep and a stagger that ends back on the feet - the
@@ -4070,6 +4683,10 @@ function cqcClip(p, pi) {
       return { n: 'cqcGrab', t: el };
     }
   }
+  if (p.ms === 0x33 && C.cqcVictimSlam && !window.__noSlam) {
+    st = entryRunStartT(pi, fi, function (e) { return e[8] === 0x33; });
+    return { n: 'cqcVictimSlam', t: Math.min((st != null ? Math.max(0, T - st) : 0) + SLAM_VIC_IN_S, C.cqcVictimSlam.frames / (C.cqcVictimSlam.fps || ANIM.fps) - 0.04) };
+  }
   if (p.ms === 0x33 && C.cqcVictimThrown) {
     st = entryRunStartT(pi, fi, function (e) { return e[8] === 0x33; });
     return { n: 'cqcVictimThrown', t: st != null ? Math.max(0, T - st) : 0 };
@@ -4083,6 +4700,41 @@ function cqcClip(p, pi) {
     }
   }
   return null;
+}
+
+// AIM-WALK IN ANY DIRECTION (2026-10-14). The replay's state 0x29, long read as "walking backwards", is the aimed walk: the
+// game's program asks for one of four clips by the stick (doos's tables, joined to our files by name hash): rifle set
+// main 422 forward / 423 back / 424 left / 425 right, the bare-hand set 22-25 for a thrown item, empty hands or the knife.
+// The side is the travel between samples in the body's own frame: forward (sin h, cos h), left = the model's +X = (cos h, -sin h).
+// Under 60 mm over that half second (an aim-walk covers ~550 mm) there is no direction to read and the old back-pedal stays.
+// Per-sample counts over the 11 hosted replays: 885 state-0x29 samples = 179 back, 77 forward, 49 right, 15 left,
+// 565 not moving (64 %: the state is mostly held still - what the body should do then is NOT settled).
+// Which way the body travels in its own frame (F / B / L / R), from the half-second travel above; null when it barely moves.
+function moveSide(p) {
+  if (p.h == null || p.vx == null) return null;
+  var d = Math.hypot(p.vx, p.vz);
+  if (d < 60) return null;
+  var f = (p.vx * Math.sin(p.h) + p.vz * Math.cos(p.h)) / d, l = (p.vx * Math.cos(p.h) - p.vz * Math.sin(p.h)) / d;
+  return Math.abs(f) >= Math.abs(l) ? (f > 0 ? 'F' : 'B') : (l > 0 ? 'L' : 'R');
+}
+// MOVING WHILE AIMING (state 129 with posture bits 6, flag 0xc1 - doos: "move while aiming (L1 + stick)", 2.7 m/s). Scored against the
+// real game's skeleton recordings 2026-10-14: the legs are main 18-21 (forward / back / left / right, ~2.15 m/s) for both sexes - 50-59
+// mm as a set, against 129-134 mm for the run the viewer drew. The weapon's aim pose goes on top (applyPose).
+function aimRunClip(p) {
+  if (p.ms !== 129 || p.sf == null || (p.sf >> 5) !== 6) return null;
+  var sd = moveSide(p), n = sd ? 'aimRun' + sd : null;
+  return n && ANIM.clips[n] ? n : null;
+}
+
+function aimWalkClip(p) {
+  if (p.h == null || p.vx == null) return null;
+  var d = Math.hypot(p.vx, p.vz);
+  if (d < 60) return null;
+  var f = (p.vx * Math.sin(p.h) + p.vz * Math.cos(p.h)) / d, l = (p.vx * Math.cos(p.h) - p.vz * Math.sin(p.h)) / d;
+  var side = Math.abs(f) >= Math.abs(l) ? (f > 0 ? 'F' : 'B') : (l > 0 ? 'L' : 'R');
+  var oneHand = p.item != null && (THROWN[p.item] || p.item === 0 || p.item === 1);
+  var n = 'aimWalk' + side + (oneHand ? 'Nade' : '');
+  return ANIM.clips[n] ? n : null;
 }
 
 function clipNameFor(p) {
@@ -4102,6 +4754,11 @@ function clipNameFor(p) {
     return wpnClip('wa', p) || 'aim';
   }
   else if (p && p.mg && CLIP_FOR[p.mg]) chain = CLIP_FOR[p.mg];
+  if (p && p.alive && !FORCE_CLIP) { var ar_ = aimRunClip(p); if (ar_) return ar_; }
+  if (chain && p.alive && p.mg === 'walking backwards' && !FORCE_CLIP) {
+    var aw_ = aimWalkClip(p);
+    if (aw_) return aw_;
+  }
   if (chain) {
     for (var i = 0; i < chain.length; i++) {
       if (ANIM.clips[chain[i]]) {
@@ -4181,16 +4838,30 @@ function groupRunStartT(pi, fi) {
   if (!frames) return null;
   var i = Math.max(0, Math.min(Math.round(fi), frames.length - 1));
   var row = frames[i] && frames[i].p, cur = row && row[pi];
-  if (!cur || cur.length <= 15) return null;
-  var want = cur[15];
+  // frames are change-triggered: no entry for him in this frame is not a break - use his latest entry (2026-10-14: the bare lookup
+  // returned null on most frames, so a one-shot sat on its FIRST frame for most of its run - seen on a ledge climb in match 69238)
+  for (var bk = i - 1; !cur && bk >= 0 && frames[i].t - frames[bk].t < 1.0; bk--) { row = frames[bk].p; cur = row && row[pi]; if (cur) i = bk; }
+  // The group sits at slot 15 (an index into R.motionGroups) in the site's prebuilt replays, but at slot 21 (the name) in a replay
+  // parsed in the page - a SaveMGO zip or a dropped .dat. Reading slot 15 there found no run start, so every one-shot clip on this
+  // path (ledge climb, drop, fall ...) stood frozen on one frame: the ledge climb measured 171 mm off the real game in playback
+  // against 23 mm for the clip itself (2026-10-14).
+  var gs = (R.motionGroups && cur && cur.length > 15 && cur[15] != null) ? 15 : 21;
+  if (!cur || cur.length <= gs) return null;
+  var want = cur[gs];
   return entryRunStartT(pi, fi, function (e) {
-    return e.length > 15 && e[15] === want;
+    return e.length > gs && e[gs] === want;
   });
 }
 // Clip-local time for `name`, or null when the clip loops and absolute time is
 // the right thing to use. Non-looping clips get NO per-player phase offset --
 // that offset exists to desynchronise idling bodies and would only push a
 // one-shot further into its clamp.
+// SECONDS A ONE-SHOT IS ALREADY UNDER WAY WHEN ITS STATE FIRST SHOWS in the recording (measured per clip; ?lead=name:s overrides for tests)
+var CLIP_LEAD = (function () {
+  var o = {};
+  try { var q = new URLSearchParams(location.search).get('lead'); if (q) q.split(',').forEach(function (kv) { var p = kv.split(':'); o[p[0]] = parseFloat(p[1]) || 0; }); } catch (e) {}
+  return o;
+})();
 function clipLocalT(m, pi, name, startT) {
   var cl = ANIM && ANIM.clips[name];
   if (!cl || cl.loop !== false) return null;
@@ -4208,7 +4879,9 @@ function clipLocalT(m, pi, name, startT) {
 // The clips do not all release at that moment (the male live capture swings at
 // 1.0 s, the female .mtar clip at 0.59 s), so the clip is slid until its own
 // release -- the frame where the throwing hand moves fastest -- lands on it.
-var THROW_RELEASE = 0.50;
+var THROW_RELEASE = (function () { var v = parseFloat((/[?&]threl=([0-9.]+)/.exec(location.search) || [])[1]); return v > 0 ? v : 0.35; })();
+// (0.35, not 0.50: swept in playback 2026-10-14 over 5 matches, 0.05 / 0.2 / 0.35 / 0.5 / 0.65 s -> standing throw 104 / 91 / 84 / 87 / 89 mm,
+// running 132 / 130 / 129 / 132 / 135; ?threl= overrides)
 function throwRelease(cl) {
   if (cl.__rel != null) return cl.__rel;
   var nb = ANIM.bones.length, h = SKIN && SKIN.hand, r = SKIN && SKIN.root;
@@ -4228,7 +4901,7 @@ function throwRelease(cl) {
 // spine, the upper body carried from its own clip's pelvis onto the base
 // clip's pelvis (same construction as throwOverGait below).
 var _uq = [], _up = [];
-function poseLayered(m, p, baseName, baseT, upName, upT) {
+function poseLayered(m, p, baseName, baseT, upName, upT, lean) {
   if (!SKIN || !SKIN.spineKin || SKIN.root === undefined || !m.bones) { poseSkin(m, p, baseName, baseT); return; }
   var kin = SKIN.spineKin, root = m.bones[SKIN.root], i, b;
   poseSkin(m, p, upName, upT);
@@ -4245,13 +4918,33 @@ function poseLayered(m, p, baseName, baseT, upName, upT) {
     b.quaternion.copy(_uq[i]).premultiply(rel);
     b.position.copy(_up[i]).sub(rp).applyQuaternion(rel).add(root.position);
   }
+  // an extra forward bend of the whole upper body about the hips (radians), for layers whose real body leans further in
+  if (lean) {
+    var lq = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0).applyQuaternion(root.quaternion).normalize(), lean);
+    for (i = 0; i < kin.length; i++) {
+      b = m.bones[kin[i]];
+      b.quaternion.premultiply(lq);
+      b.position.sub(root.position).applyQuaternion(lq).add(root.position);
+    }
+  }
 }
+// NO SPEED ON THIS SAMPLE IS NOT "STANDING STILL". Frames are change-triggered, and whenever the next frame carries no entry
+// for a player his speed comes out null - which every gait test below read as "not moving". MEASURED 2026-10-11 (coverage
+// catalogue): 35-43 % of the time a RUNNING player (movement state 129) spent winding up a throw or crouched was drawn
+// with planted feet / the still crouch for this reason. With no speed the movement state decides: 129 = running,
+// 1 = walking. A speed that IS known is used exactly as before. Used by the crouch and by the grenade WIND-UP only
+// (wind-up 104 -> 96 mm; under the held arm and the throw itself it did not help, so those are unchanged).
+function movingByState(p) { return !!p && !p.subForm && p.spd == null && (p.ms === 129 || p.ms === 1); }
 var _lq = [], _lp = [];
 function throwOverGait(m, p, pi) {
   if (!SKIN || !SKIN.spineKin || SKIN.root === undefined || !m.bones) return null;
+  // (the THROW keeps its speed-only test: with the state fallback the legs fitted better, 141 -> 122 mm, but the arms worse,
+  // 123 -> 131, and the whole body not at all - measured 2026-10-11, so it was not kept)
   if (p.spd == null || p.spd < 0.6) return null;
   var gn = p.spd > 3 ? (ANIM.clips.runNade ? 'runNade' : 'run')
                      : (ANIM.clips.walkNade ? 'walkNade' : 'walk');
+  // moving while aiming (state 129 bits 6): the aimed-move legs by direction, as without a throw (2026-10-14)
+  var arg_ = aimRunClip(p); if (arg_) gn = arg_;
   var gc = ANIM.clips[gn];
   if (!gc) return null;
   var kin = SKIN.spineKin, root = m.bones[SKIN.root], i, b;
@@ -4552,6 +5245,7 @@ function shotIndex() {
   for (var i = 0; i < ev.length; i++) {
     var e = ev[i];
     if ((e.type !== 'kill' && e.type !== 'stun') || e.killer == null || e.victim == null) continue;
+    if (e.derived && e.how !== 'shot') continue;
     (_shotIdx[e.killer] || (_shotIdx[e.killer] = [])).push(e);
   }
   return _shotIdx;
@@ -5092,7 +5786,20 @@ function gripFromHands(m, p) {
   // within 3-13 mm, on both guns, in every clip.
   var twoHand = !pistol && GUN_BACK_MM == null && gcls === 'two' &&
                 gap >= TWO_HAND_GAP_MIN && gap <= TWO_HAND_GAP_MAX;
-  if (twoHand) {
+  // THE RAISED-ARM GESTURE ON THE MOVE (weapon action 37, see linkClip): the arm that comes up is the support arm, the one
+  // this prop hangs off, so the rifle went up to his face with it (owner, 2026-10-11, match 69641 at 3:04: the gun "stays
+  // in the hand that isnt pointing"). For the length of the layer the gun is held rigidly in the TRIGGER hand instead - the
+  // same hand-to-gun angle as in the aim clip, grip point on that hand - and goes back to the two-hand carry when it ends.
+  var oneRigid_ = !pistol && !twoHand && p.act === 0x25 && (m.__layer === 'linkTapRifle' || m.__layer === 'linkTap') && GUN_BACK_MM == null ? rigidGunQ() : null;
+  if (oneRigid_) {
+    var gp1_ = gripProfile(m.handProp.geometry);
+    if (!_gtq) { _gtq = new THREE.Quaternion(); _gtv = new THREE.Vector3(); _gtx = new THREE.Vector3(1, 0, 0); }
+    _gb.q.copy(b.quaternion).multiply(oneRigid_);
+    m.handProp.quaternion.copy(_gq).multiply(_gb.q);
+    _gtv.set(0, gp1_.gy, gp1_.gz).applyQuaternion(_gb.q);
+    m.handProp.position.copy(_pb).sub(_gtv).sub(a.position).applyQuaternion(_gq);
+    curlHand(m, 12, 1.0);
+  } else if (twoHand) {
     var gp = gripProfile(m.handProp.geometry);
     var th = Math.atan2(gp.under(gp.gz + gap) + HANDGUARD_HALF - gp.gy, gap);
     if (!_gtq) { _gtq = new THREE.Quaternion(); _gtv = new THREE.Vector3(); _gtx = new THREE.Vector3(1, 0, 0); }
@@ -5394,8 +6101,20 @@ function frameIndexAt(t) {
   return lo;
 }
 
+// THE AIM-WALK'S DIRECTION, READ OVER HALF A SECOND. Sample to sample the position jitters (at 30 Hz an aim-walk moves
+// ~39 mm a sample, and consecutive samples flip forward / back in Yonkos_45490 at 16.0-16.4 s), which would flip the legs
+// every frame. So: first and last state-0x29 sample of this player within 0.25 s either side.
+function awTravel(i, fi, t, ms, bits) {
+  var fr = R.frames, a = null, b = null, same = function (e) { return e[8] === ms && (bits == null || (e[7] != null && (e[7] >> 5) === bits)); };
+  for (var q = fi; q >= 0 && t - fr[q].t <= 0.25; q--) { var e = fr[q].p ? fr[q].p[i] : null; if (e && same(e)) a = e; else if (e) break; }
+  for (q = fi + 1; q < fr.length && fr[q].t - t <= 0.25; q++) { e = fr[q].p ? fr[q].p[i] : null; if (e && same(e)) b = e; else if (e) break; }
+  if (!a || !b || a === b) return null;
+  return [b[0] - a[0], b[2] - a[2]];
+}
+
 function sample(t) {
   live = [];
+  var aw_ = null;
   if (!R || !R.frames.length) return;
   var fi = frameIndexAt(t);
   var f0 = R.frames[fi], f1 = R.frames[Math.min(fi + 1, R.frames.length - 1)];
@@ -5510,6 +6229,10 @@ function sample(t) {
       item: a.length > 12 ? a[12] : null,
       ammo: a.length > 13 ? a[13] : null,
       spd:  spd_,
+      // travel over the surrounding aim-walk samples (world mm), for picking the aim-walk's side (only read in state 0x29)
+      vx:   (aw_ = a.length > 8 && a[8] === 0x29 ? awTravel(i, fi, t, 0x29)
+                 : (a.length > 8 && a[8] === 129 && a[7] != null && ((a[7] >> 5) === 6 || (a[7] >> 5) === 7)) ? awTravel(i, fi, t, 129, a[7] >> 5) : null) ? aw_[0] : 0,
+      vz:   aw_ ? aw_[1] : 0,
       ms:   a.length > 8  ? a[8]  : null,
       // The coarse motion group -- what the format documentation says to
       // drive animation from. The hosted build re-encodes it as an index into
@@ -5542,10 +6265,23 @@ function sample(t) {
 function ladderPlace(p, sp, pi, t) {
   var A = R.frames[sp[0]].p[pi], B = R.frames[sp[1]].p[pi], ta = R.frames[sp[0]].t, tb = R.frames[sp[1]].t;
   if (!A || !B || tb <= ta) return;
-  var up = !!sp[2], lo = up ? A : B, hi = up ? B : A, off = Math.min(1.6, 0.3 * (tb - ta));
-  var k, v;                                       // k: 0 over the ladder foot .. 1 on the landing; v: 0 bottom .. 1 top
-  if (up) { k = clamp((t - (tb - off)) / off, 0, 1); v = clamp((t - ta) / Math.max(0.01, tb - ta - off * 0.5), 0, 1); }
-  else { k = 1 - clamp((t - ta) / off, 0, 1); v = 1 - clamp((t - ta - off * 0.5) / Math.max(0.01, tb - ta - off * 0.5), 0, 1); }
+  // TIMINGS MEASURED 2026-10-11 on a live climb (our own server, Urban Ultimatum 4 m ladder, read-only position log): getting
+  // on at the foot 0.75 s (feet end 0.5 m up); rungs at 1.45 m/s both ways; off at the top 1.2 s (the last 0.5 m up and
+  // 1.2 m forward onto the landing); getting on FROM THE TOP 1.87 s (walk to the hatch, turn round, step down: feet end
+  // 2 m below the landing); off at the foot 0.85 s. A gap shorter than these is squeezed to fit.
+  var up = !!sp[2], lo = up ? A : B, hi = up ? B : A, T = tb - ta, H = Math.max(1, hi[1] - lo[1]);
+  var on = up ? 0.75 : 1.87, off = up ? 1.2 : 0.85, sq = Math.min(1, T * 0.8 / (on + off)); on *= sq; off *= sq;
+  var k, v, e = t - ta;                           // k: 0 over the ladder foot .. 1 on the landing; v: 0 bottom .. 1 top
+  if (up) {
+    var y0 = Math.min(500, H * 0.2), y1 = H - Math.min(500, H * 0.2);
+    v = (e < on ? y0 * e / on : e < T - off ? lerp(y0, y1, (e - on) / Math.max(0.01, T - off - on)) : lerp(y1, H, clamp((e - (T - off)) / off, 0, 1))) / H;
+    k = clamp((e - (T - off)) / off, 0, 1);
+  } else {
+    var yt = H - Math.min(2000, H * 0.5), yb = Math.min(300, H * 0.1), wk = on * 0.55;   // first part of getting on = the walk and turn
+    v = (e < wk ? H : e < on ? lerp(H, yt, (e - wk) / (on - wk)) : e < T - off ? lerp(yt, yb, (e - on) / Math.max(0.01, T - off - on)) : lerp(yb, 0, clamp((e - (T - off)) / off, 0, 1))) / H;
+    k = 1 - clamp(e / Math.max(0.01, wk * 1.3), 0, 1);
+  }
+  v = clamp(v, 0, 1);
   k = k * k * (3 - 2 * k);
   p.x = lerp(lo[0], hi[0], k); p.z = lerp(lo[2], hi[2], k); p.y = lerp(lo[1], hi[1], v);
   var dx = hi[0] - lo[0], dz = hi[2] - lo[2];
@@ -5592,6 +6328,10 @@ function subTrack() {
   return out;
 }
 function applySubTrack(t) {
+  applySubTrack0(t);
+  applyThrowPairs(t);
+}
+function applySubTrack0(t) {
   var sub = subTrack();
   if (!sub.length) return;
   var fi = frameIndexAt(t);
@@ -5671,6 +6411,18 @@ function applyRagdolls(t) {
     p.x = lerp(r0[1], r1[1], u); p.y = lerp(r0[2], r1[2], u); p.z = lerp(r0[3], r1[3], u);
     if (r0[4] != null) p.h = r0[4] * headScale;
     p.spd = 0;
+    // A DISTANCE CLOCK FOR THESE ROWS (2026-10-14). Gait clips are played by metres travelled (distAt), counted along the ordinary
+    // position stream - which stands still while the game sends this form, so a player running in it ran with FROZEN LEGS (the
+    // real game's skeleton sat 139 mm off the viewer's legs there; the same run clip fits at 49 mm). Metres along the rows instead.
+    if (!a.__cum) {
+      a.__cum = new Float64Array(a.length);
+      for (var ck_ = 1; ck_ < a.length; ck_++) {
+        var cs_ = Math.hypot(a[ck_][1] - a[ck_ - 1][1], a[ck_][3] - a[ck_ - 1][3]) / 1000;
+        a.__cum[ck_] = a.__cum[ck_ - 1] + (cs_ < 3 ? cs_ : 0);
+      }
+    }
+    var hi_ = r1 === r0 ? lo : Math.min(lo + 1, a.length - 1);
+    p.rowDist = a.__cum[lo] + (a.__cum[hi_] - a.__cum[lo]) * u;
     // A DEAD BODY FALLS WHERE IT STOOD (user, 2026-10-09: "people are sliding all over they kinda just need to fall in
     // place"). The game's ragdoll really does carry a body ~0.8 m (measured), but drawn with one lying pose that reads as
     // a corpse skating across the floor. So the ground position is held at the first row of this death; the height still
@@ -5733,6 +6485,7 @@ function applyRagdolls(t) {
         p.getUpFast = a[g1_][0] > a[g0_][0] && Math.hypot(a[g1_][1] - a[g0_][1], a[g1_][3] - a[g0_][3]) / 1000 / (a[g1_][0] - a[g0_][0]) > 1.0;
       }
       p.spd = (r1 !== r0 && r1[0] > r0[0]) ? Math.hypot(r1[1] - r0[1], r1[3] - r0[3]) / (r1[0] - r0[0]) / 1000 : 0;
+      p.vx = r1 !== r0 ? r1[1] - r0[1] : 0; p.vz = r1 !== r0 ? r1[3] - r0[3] : 0;
     } else if (p.alive) p.mg = 'down on the ground';
   }
 }
@@ -5976,7 +6729,10 @@ function drawBaseHUD(x, w, h, v) {
       x.fillText(text, bx_, by_);
     };
     R.boxes.lie.forEach(function (bs) {
-      if (T >= bs.t0 && T < bs.t1) boxTag(bs.x, bs.y, bs.z, 14, BOX_ITEMS[bs.item], BOX_ITEMS[bs.item].label);
+      if (T < bs.t0 || T >= bs.t1) return;
+      var bo_ = bs.trap && bs.own != null ? R.players[bs.own] : null;
+      if (bs.trap) boxTag(bs.x, bs.y, bs.z, 6, bo_ ? { css: teamColor(bo_.team) } : BOX_ITEMS[bs.item], BOX_ITEMS[bs.item].label + (bo_ ? ' \u00b7 ' + bo_.name : ''));
+      else boxTag(bs.x, bs.y, bs.z, 14, BOX_ITEMS[bs.item], BOX_ITEMS[bs.item].label);
     });
     bombSites().forEach(function (st_) { boxTag(st_.x, st_.y, st_.z, 4, { css: '#E8C547' }, st_.label); });
     var lse = bombLooseAt(T);
@@ -7638,7 +8394,7 @@ function renderFeed(fresh) {
   // reach the feed, and they are labelled by what was measured.
   function feedable(e) {
     if (e.type === 'kill' || e.type === 'stun' || e.type === 'objective') return true;
-    if (e.type === 'cqc' || e.type === 'join' || e.type === 'leave' || e.type === 'goal' || e.type === 'scan') return true;
+    if (e.type === 'cqc' || e.type === 'join' || e.type === 'leave' || e.type === 'goal' || e.type === 'scan' || e.type === 'trap') return true;
     // The parser renamed `wake` to `staminaRestore` mid-flight. Accept both, or
     // replays built before the rename lose their rows -- two here are confirmed
     // by the player who was there (1:59 and 2:04 on replay_351754_9). The
@@ -7694,6 +8450,13 @@ function renderFeed(fresh) {
         '<span>' + (e.type === 'join' ? 'joined' : 'left') + '</span></span>' +
         '<span class="ts">' + fmt(e.t) + '</span></div>';
     }
+    if (e.type === 'trap') {
+      return '<div class="kill wake' + (fresh && n === 0 ? ' fresh' : '') + '" title="The file records that this trap was ' + (e.how === 'picked up' ? 'taken away' : 'destroyed') + ', not by whom: ' + (e.how === 'picked up' ? 'this player was lying on it' : 'this player was the one firing at it') + '">' +
+        '<span class="who"><span class="t' + (k ? k.team : 0) + '">' + esc(k ? k.name : '?') + '</span>' +
+        '<span class="arr">&#9670;</span>' +
+        '<span class="t' + (v ? v.team : 1) + '">' + esc(v ? v.name : '?') + '</span></span>' +
+        '<span class="ts">' + fmt(e.t) + '</span><span class="wp">' + esc((BOX_ITEMS[e.item] ? BOX_ITEMS[e.item].label : 'TRAP') + ' ' + e.how) + '</span></div>';
+    }
     if (e.type === 'scan') {
       return '<div class="kill stun' + (fresh && n === 0 ? ' fresh' : '') + '">' +
         '<span class="who"><span class="t' + (k ? k.team : 0) + '">' + esc(k ? k.name : '?') + '</span>' +
@@ -7725,8 +8488,8 @@ function renderFeed(fresh) {
       '<span class="t' + (v ? v.team : 1) + '">' + esc(v ? v.name : '?') + '</span></span>' +
       '<span class="ts">' + fmt(e.t) + '</span>' +
       (feedWeapon(e)
-        ? '<span class="wp">' + esc(feedWeapon(e)) +
-          (stun ? ' · ' + feedIcon('stun', true) + 'stun' + (e.hitZone ? ' ' + e.hitZone : '')
+        ? '<span class="wp"' + (e.derived ? ' title="No hit record in the file for this one: the knock-out is taken from ' + (e.by === 'game counter' ? 'the stun counter the game keeps for the scoreboard' : 'his stamina reaching zero next to an enemy in a CQC move') + '"' : '') + '>' + esc(feedWeapon(e)) +
+          (stun ? ' · ' + feedIcon('stun', true) + 'stun' + (e.hitZone ? ' ' + e.hitZone : '') + (e._skill ? ' · ' + esc(e._skill) : '')
                 : ((e._ghs != null ? e._ghs : e.hitZone === 'head') ? hsTag() : '')) +
           (e.suicide ? ' · self' : '') +
           (e._assist && e._assist.length ? ' · assist ' + e._assist.map(function (q) {
@@ -8218,6 +8981,9 @@ function renderScore() {
     if ((e.type === 'wake' || e.type === 'staminaRestore')
         && e.sincePlayerDeathSec == null && e.victim != null) woken[e.victim]++;
   });
+  // STUN COLUMN = knock-outs as the GAME counts them (scoreboard counter 9) where the file carries that stream; the count of
+  // recorded hits with a named attacker otherwise (that one also counts hits that did not knock anyone out).
+  var gst_ = gameStuns(LIM);
   // Damage dealt to ENEMIES and damage taken, in points where 100 = one full
   // health bar. Hits the file could not attribute count only as damage taken.
   var showDmg = !!(R.dmg && R.dmg.length);
@@ -8323,7 +9089,7 @@ function renderScore() {
   var rows = R.players.map(function (p, i) {
     return { p: p, i: i, a: insO ? insO[i].ast : 0, k: scoreLive ? liveK[i] : p.kills, d: scoreLive ? liveD[i] : p.deaths,
              m: dist[i] / 1000, alive: aliveT[i],
-             st: stuns[i], wk: woken[i], cm: carry[i] / 1000,
+             st: gst_ ? gst_[i] : stuns[i], wk: woken[i], cm: carry[i] / 1000,
              ob: hasBase ? bcaps[i] : puts[i], df: defs[i],
              dOut: dmgOut[i], dIn: dmgIn[i],
              sh: showDmg ? shotStats(LIM).shots[i] : 0, ht: showDmg ? shotStats(LIM).hits[i] : 0 };
@@ -8371,7 +9137,7 @@ function renderScore() {
     (showDmg ? '<th title="Damage dealt to enemies. 100 = one full health bar">Dmg</th>' +
                '<th title="Damage taken. 100 = one full health bar">Taken</th>' +
                '<th title="Bullets that hit someone out of shots fired with guns. Approximate: shots are counted from the firing action and may run up to 10% high">Acc</th>' : '') +
-    '<th>Stun</th><th>Woken</th>' +
+    '<th title="' + (gst_ ? 'Knock-outs, as the game counts them' : 'Stun hits with a named attacker') + '">Stun</th><th>Woken</th>' +
     '<th>Carry</th><th>Dist</th><th>Alive</th></tr></thead><tbody>';
   Object.keys(teams).sort().forEach(function (t) {
     var list = teams[t].sort(function (a, b) {
@@ -8449,7 +9215,7 @@ function renderScore() {
            (byb.length ? ' <span style="color:var(--ink-faint)">(base ' +
             byb.join(', ') + ')</span>' : '') + '</div>';
   }
-  var stuns = (R.events || []).filter(function (e) { return e.type === 'stun' && e.t <= LIM; }).length;
+  var stuns = gst_ ? gst_.reduce(function (s9, x) { return s9 + x; }, 0) : (R.events || []).filter(function (e) { return e.type === 'stun' && e.t <= LIM; }).length;
   var objNote = !showObj ? ''
     : hasBase ? 'Cap = bases taken for the team (ownership changed) while this player stood on the point (within 6 m). '
     : mode === 6 ? (R.bombExact ? 'Plant = bombs this player planted. Defuse = bombs the game records this player as defusing. '
@@ -8460,7 +9226,7 @@ function renderScore() {
   $('s-foot').innerHTML = bcap + objNote +
     'K / D are read from the game’s own kill feed. ' +
     'Dist and Alive are computed here from the position stream, not recorded in the file. ' +
-    stuns + ' stun' + (stuns === 1 ? '' : 's') + (scoreLive ? ' so far.' : ' this match.');
+    stuns + (gst_ ? ' knock-out' : ' stun') + (stuns === 1 ? '' : 's') + (scoreLive ? ' so far.' : ' this match.');
 }
 
 // ---- MATCH INSIGHTS -------------------------------------------------------
@@ -8541,7 +9307,13 @@ function buildInsights(r) {
       if (!a[k][5]) { k++; continue; }
       var e2 = k;
       while (e2 + 1 < a.length && a[e2 + 1][5] && a[e2 + 1][0] - a[e2][0] < 1.2) e2++;
-      var t0 = a[k][0] - 2.0, t1 = a[e2][0] + 0.2;
+      // KILLED IN THE AIR (found by the coverage catalogue, 2026-10-11; match 69233, Zek: killed at 292.7 s while a blast was
+      // throwing him, flight rows until 294.8 s, 'dead' rows only from there = 2.1 s after the kill, so the 2 s window missed
+      // it and he stood there alive with his rifle for the rest of the round). The window now also reaches back over the
+      // blast flight that leads straight into these rows.
+      var kf_ = k;
+      while (kf_ > 0 && a[kf_ - 1][7] === 1 && a[kf_][0] - a[kf_ - 1][0] < 0.6) kf_--;
+      var t0 = Math.min(a[k][0] - 2.0, a[kf_][0] - 0.5), t1 = a[e2][0] + 0.2;
       var tds = (deathsBy[pi] || []).filter(function (td) { return td >= t0 && td <= t1; });
       if (!tds.length) { for (var q = k; q <= e2; q++) a[q][5] = 0; ins.ragFalse++; }
       // killed part-way through a knock-down: the rows before the kill are still only the knock-down
@@ -8790,6 +9562,13 @@ function feedList() {
   var out = (R.events || []).slice();
   if (R.ins) out = out.concat(R.ins.cqc, R.ins.lobby);
   (R.scans || []).forEach(function (sc) { out.push({ t: sc.t0, type: 'scan', killer: sc.a, victim: sc.v }); });
+  // a trap picked up by somebody other than its owner, or shot out (see TRAP_ITEM: who did it is read off the players' own
+  // records, and there is no row when that is not plain)
+  try { buildItemBoxes(); } catch (errB) { /* no world records */ }
+  ((R.boxes && R.boxes.traps) || []).forEach(function (tc) {
+    if (tc.by == null || tc.by === tc.own || (tc.how !== 'picked up' && tc.how !== 'shot out')) return;
+    out.push({ t: tc.t1, type: 'trap', killer: tc.by, victim: tc.own, item: tc.item, how: tc.how });
+  });
   ((R.meta && R.meta.raceOps) || []).forEach(function (o_) {
     if (o_.score) out.push({ t: o_.t, type: 'goal', victim: o_.scorer, bit: o_.team });
   });
@@ -8837,6 +9616,14 @@ function feedList() {
       if (cr.type !== 'cqc' || cr.victim !== e.victim || Math.abs(cr.t - e.t) > 1.6) continue;
       if (e.killer == null) { e.killer = cr.killer; e._credited = 'melee row'; }
       if (e.killer === cr.killer) cr._dup = true;
+    }
+  });
+  // a knock-out taken from the game's counter (buildStuns) is the outcome of the same pair's 'melee' row: one line, not two
+  out.forEach(function (e) {
+    if (e.type !== 'stun' || !e.derived) return;
+    for (var cq2 = 0; cq2 < out.length; cq2++) {
+      var cr2 = out[cq2];
+      if (cr2.type === 'cqc' && cr2.victim === e.victim && cr2.killer === e.killer && cr2.t > e.t - 4.5 && cr2.t < e.t + 1) cr2._dup = true;
     }
   });
   out = out.filter(function (e) { return !e._dup; });
@@ -8981,13 +9768,71 @@ function setHeat(mode) { HEAT.mode = mode % 4; buildHeat(); }
 // The second scoreboard table and the match facts under it. Every number is
 // cut off at LIM, like the table above it.
 var MULTI_NAME = { 2: 'double', 3: 'triple', 4: 'quad' };
+// ---- THE CARDBOARD-BOX DIALOG (user, 2026-10-11: "it can have the sprite otacon next to the url box and the box can be more
+// metal gear themed? Like maybe make it look like a cbox?"). Replaces the browser's own grey "eovsstone.com says" prompt. The
+// figure is the sprite picture the user supplied (cbox_sprite.png, 31 x 65); the grid of squares is only the fallback. opts: title, say, value, readOnly,
+// placeholder, ok (button text), onOk(value) -> a string = show it as an error and stay open; false = stay open; else close.
+function cboxDialog(opts) {
+  var old = document.getElementById('cboxdlg'); if (old) old.remove();
+  if (!document.getElementById('cboxcss')) {
+    var st = document.createElement('style'); st.id = 'cboxcss';
+    st.textContent = '#cboxdlg{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px}' +
+      '#cboxdlg .bx{position:relative;width:min(560px,100%);box-sizing:border-box;padding:26px 18px 16px;color:#2a1c0c;font-family:inherit;' +
+      'background:repeating-linear-gradient(90deg,rgba(0,0,0,.035) 0 3px,rgba(255,255,255,.03) 3px 6px),linear-gradient(180deg,#c9a26a,#b88d55 60%,#a87c47);' +
+      'border:2px solid #6e4f28;box-shadow:0 14px 40px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.12),inset 0 -18px 30px rgba(0,0,0,.14)}' +
+      '#cboxdlg .tape{position:absolute;left:0;right:0;top:0;height:16px;background:linear-gradient(180deg,rgba(226,205,160,.9),rgba(200,176,128,.9));border-bottom:1px solid rgba(90,62,26,.5)}' +
+      '#cboxdlg .tape:after{content:"";position:absolute;left:50%;top:0;width:2px;height:16px;background:rgba(60,40,16,.45)}' +
+      '#cboxdlg .ttl{font-weight:800;letter-spacing:.14em;font-size:15px;text-transform:uppercase;color:#3a2710;opacity:.9;margin:2px 0 10px;display:flex;align-items:center;gap:10px}' +
+      '#cboxdlg .ttl small{font-weight:700;font-size:10px;letter-spacing:.2em;border:2px solid #3a2710;padding:2px 6px;transform:rotate(-3deg);opacity:.75;white-space:nowrap}' +
+      '#cboxdlg .row{display:flex;gap:12px;align-items:flex-end}' +
+      '#cboxdlg svg{flex:0 0 auto;width:64px;height:auto;image-rendering:pixelated;filter:drop-shadow(0 2px 0 rgba(0,0,0,.25))}' +
+      '#cboxdlg img.spr{flex:0 0 auto;width:62px;height:130px;image-rendering:pixelated;image-rendering:crisp-edges;filter:drop-shadow(0 2px 0 rgba(0,0,0,.25));margin-bottom:-4px}' +
+      '#cboxdlg .talk{flex:1;min-width:0}' +
+      '#cboxdlg .say{position:relative;background:#f3ead6;border:2px solid #3a2710;padding:8px 10px;font-size:13px;line-height:1.35;margin-bottom:8px}' +
+      '#cboxdlg .say:before{content:"";position:absolute;left:-10px;bottom:8px;border:5px solid transparent;border-right-color:#3a2710}' +
+      '#cboxdlg .err{color:#8a1c12;font-weight:700}' +
+      '#cboxdlg input{width:100%;box-sizing:border-box;background:#14110c;color:#ffb347;border:2px solid #3a2710;padding:9px 10px;font:13px ui-monospace,Consolas,monospace;outline:none}' +
+      '#cboxdlg input:focus{border-color:#ff7a18}' +
+      '#cboxdlg .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}' +
+      '#cboxdlg button{font:inherit;font-weight:800;letter-spacing:.1em;text-transform:uppercase;font-size:12px;padding:8px 14px;cursor:pointer;border:2px solid #3a2710;background:#e6d3a8;color:#2a1c0c}' +
+      '#cboxdlg button.go{background:#3a2710;color:#ffcf8a}' +
+      '#cboxdlg button:hover{filter:brightness(1.08)}' +
+      '@media (max-width:420px){#cboxdlg svg{width:48px}#cboxdlg img.spr{width:46px;height:97px}#cboxdlg .ttl small{display:none}}';
+    document.head.appendChild(st);
+  }
+  // 12 x 15 squares: . empty, h hair, s skin, g glasses, w coat, b shirt, d dark, t trousers
+  var PX = ['...hhhhhh...', '..hhhhhhhh..', '.hhhhhhhhhh.', '.hhsssssshh.', '.hgggssgggh.', '.hgdgssgdgh.', '..ssssssss..', '...ssddss...', '..wwbbbbww..', '.wwwwbbwwww.', '.wwwwbbwwww.', 'swwwwbbwwwws', '.wwwwbbwwww.', '..tttt.ttt..', '..ddd..ddd..'];
+  var COL = { h: '#6b5a48', s: '#e7b98f', g: '#dfe9f2', w: '#f2f2ee', b: '#5d7fa6', d: '#2a2420', t: '#4a4f58' }, rects = '';
+  for (var y = 0; y < PX.length; y++) for (var x = 0; x < PX[y].length; x++) { var c = COL[PX[y].charAt(x)]; if (c) rects += '<rect x="' + x + '" y="' + y + '" width="1.02" height="1.02" fill="' + c + '"/>'; }
+  var d = document.createElement('div'); d.id = 'cboxdlg'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true');
+  d.innerHTML = '<div class="bx"><div class="tape"></div><div class="ttl"><span class="tt"></span><small>THIS SIDE UP</small></div>' +
+    '<div class="row"><img class="spr" alt="" src="cbox_sprite.png?v=3" onerror="this.outerHTML=this.dataset.fb"><div class="talk"><div class="say"></div><input type="text" spellcheck="false" autocomplete="off"></div></div>' +
+    '<div class="btns"><button type="button" class="no">Close</button><button type="button" class="go"></button></div></div>';
+  d.querySelector('.spr').dataset.fb = '<svg viewBox="0 0 12 15" aria-hidden="true">' + rects + '</svg>';   // the grid figure, only if the sprite picture fails to load
+  document.body.appendChild(d);
+  var say = d.querySelector('.say'), inp = d.querySelector('input'), go = d.querySelector('.go');
+  d.querySelector('.tt').textContent = opts.title || '';
+  say.textContent = opts.say || ''; inp.value = opts.value || ''; inp.readOnly = !!opts.readOnly; if (opts.placeholder) inp.placeholder = opts.placeholder; go.textContent = opts.ok || 'OK';
+  function close() { d.remove(); document.removeEventListener('keydown', key, true); }
+  function ok() {
+    var r = opts.onOk ? opts.onOk(inp.value.trim()) : null;
+    if (typeof r === 'string') { say.textContent = r; say.className = 'say err'; inp.focus(); return; }
+    if (r === false) { say.textContent = 'Copied.'; inp.select(); return; }
+    close();
+  }
+  function key(e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } else if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); ok(); } else e.stopPropagation(); }
+  document.addEventListener('keydown', key, true);
+  d.addEventListener('mousedown', function (e) { if (e.target === d) close(); });
+  d.querySelector('.no').addEventListener('click', close); go.addEventListener('click', ok);
+  setTimeout(function () { inp.focus(); if (opts.readOnly) inp.select(); }, 30);
+}
 function seekLink(t) { return '<a href="#" data-seek="' + t.toFixed(2) + '" style="color:var(--amber);text-decoration:none">' + fmt(t) + '</a>'; }
 function insightRows(LIM) {
   var n = R.players.length, ins = R.ins, i;
   var o = R.players.map(function () {
     return { hsK: 0, hd: 0, zn: 0, best: 0, fb: 0, trade: 0, cqc: 0, koN: 0, koS: 0, aimN: 0, aimS: 0,
              rgS: 0, rgN: 0, rgMax: 0, crouch: 0, prone: 0, alive: 0, rolls: 0, snaps: 0, gas: 0, top: null,
-             streak: 0, run: 0, ast: 0, shN: 0, shS: 0, coN: 0, coS: 0, objS: 0, bxN: 0, bxS: 0, nvN: 0, nvS: 0 };
+             streak: 0, run: 0, ast: 0, shN: 0, shS: 0, coN: 0, coS: 0, objS: 0, bxN: 0, bxS: 0, nvN: 0, nvS: 0, gunHit: 0, lockHit: 0 };
   });
   (R.events || []).forEach(function (e) {
     if (e.type !== 'kill' || e.t > LIM) return;
@@ -9002,6 +9847,15 @@ function insightRows(LIM) {
     if (e._trade) k.trade++;
     if (e._multi > k.best) k.best = e._multi;
     if (e._range != null) { k.rgS += e._range; k.rgN++; if (e._range > k.rgMax) k.rgMax = e._range; }
+  });
+  // AUTO-AIM (user, 2026-10-10): a bullet hit's kind byte has its top bit set when the shot was a LOCK-ON (doos: 244 such
+  // hits in nine matches, all within 6.5 m, never a head shot - which fits the game: head shots only come from manual aim).
+  // Counted on the hits the file credits to a shooter (about one hit in eight has no shooter and is in neither number).
+  (R.dmg || []).forEach(function (h) {
+    if (h[0] > LIM || h[1] < 0 || h[1] === h[2] || !o[h[1]] || h.length < 9 || h[8] == null) return;
+    var kb_ = h[8] & 0x7f;
+    if (kb_ !== 0x11 && kb_ !== 0x12) return;
+    o[h[1]].gunHit++; if (h[8] & 0x80) o[h[1]].lockHit++;
   });
   (R.dmg || []).forEach(function (h) {
     if (h[0] > LIM || h[1] < 0 || h[1] === h[2] || !o[h[1]] || h.length < 9 || !ZONE_KNOWN[h[8]]) return;
@@ -9119,7 +9973,7 @@ function renderInsights(LIM, teams, objName, o) {
     return '<button class="tbtn wide" data-tab="' + tb[0] + '" data-on="' + (scoreTab === tb[0] ? 1 : 0) + '">' + tb[1] + '</button>';
   }).join('') + '</div>';
   var body = scoreTab === 'grid' ? renderGrid(LIM, teams)
-           : scoreTab === 'weapons' ? renderWeapons(LIM, teams)
+           : scoreTab === 'weapons' ? renderWeaponTiming() + renderWeapons(LIM, teams)
            : scoreTab === 'per10' ? renderPer10(LIM, teams, o, objName)
            : renderDetail(LIM, teams, o);
   return tabs + body + renderStars(LIM, teams, o, objName) + scoreGraph(LIM);
@@ -9329,10 +10183,59 @@ function weaponRows(LIM) {
   hcW.extra.forEach(function (x) { if (x[0] <= LIM && W[x[1]] && x[3] != null && isGun(x[3])) w(x[1], x[3]).hits++; });
   (R.events || []).forEach(function (e) {
     if (e.t > LIM || e.killer == null || e.killer === e.victim || !W[e.killer] || e.weapon == null) return;
-    if (e.type === 'stun') w(e.killer, e.weapon).hits++;
+    if (e.type === 'stun') w(e.killer, e.weapon === 107 ? 73 : e.weapon).hits++;
     if (e.type === 'kill') { var k = w(e.killer, e.weapon); k.kills++; if (e.hitZone === 'head') k.hd++; }
   });
   return W;
+}
+// FIRE RATE AND RELOAD TIME PER WEAPON, measured from this match (user, 2026-10-10: "fire rate per weapon and reload").
+// A shot = the held gun's round count dropping by one (doos: 97 % of drops fall on a shot frame). Fire rate = shots per
+// minute inside bursts of 4 or more shots no more than 0.25 s apart, all bursts pooled ((shots - 1) / time), so the 30-a-
+// second sampling averages out. Reload = the reload action (11) held from start to finish; runs under a second are
+// reloads that were cut short and are left out. -> R.__wt[item] = { rpm, shots, reload, reloads }
+function weaponTiming() {
+  if (R.__wt) return R.__wt;
+  var out = R.__wt = {}, fr = R.frames || [], st = {};
+  function W(id) { return out[id] || (out[id] = { n: 0, dur: 0, shots: 0, rl: [] }); }
+  function endBurst(q) { if (q.bn >= 4 && q.bt1 > q.bt0) { var w = W(q.item); w.n += q.bn - 1; w.dur += q.bt1 - q.bt0; } q.bn = 0; }
+  for (var k = 0; k < fr.length; k++) {
+    var row = fr[k].p || [], t = fr[k].t;
+    for (var i = 0; i < row.length; i++) {
+      var e = row[i]; if (!e || e.length < 15) continue;
+      var q = st[i] || (st[i] = { item: null, ammo: null, bn: 0, bt0: 0, bt1: 0, r0: null, rItem: null, tPrev: 0 });
+      var item = e[12], ammo = e[13], act = e[14], alive = e[4];
+      if (!alive || item !== q.item || t - q.tPrev > 0.5) { endBurst(q); q.ammo = null; }
+      if (alive && isGun(item) && q.ammo != null && ammo != null && ammo === q.ammo - 1) {
+        W(item).shots++;
+        if (q.bn && t - q.bt1 <= 0.25) { q.bn++; q.bt1 = t; } else { endBurst(q); q.bn = 1; q.bt0 = q.bt1 = t; }
+      }
+      // the reload action, start to finish
+      if (alive && act === 11 && isGun(item)) { if (q.r0 == null || q.rItem !== item) { q.r0 = t; q.rItem = item; } q.r1 = t; }
+      else if (q.r0 != null) { var d_ = q.r1 - q.r0; if (d_ >= 1.0 && d_ <= 5.0 && alive) W(q.rItem).rl.push(d_ + 1 / 30); q.r0 = null; }
+      q.item = item; q.ammo = ammo; q.tPrev = t;
+    }
+  }
+  Object.keys(out).forEach(function (id) {
+    var w = out[id]; w.rpm = (w.n >= 8 && w.dur > 0) ? 60 * w.n / w.dur : null;
+    w.rl.sort(function (a, b) { return a - b; }); w.reloads = w.rl.length; w.reload = w.rl.length >= 2 ? w.rl[w.rl.length >> 1] : null;
+  });
+  return out;
+}
+function renderWeaponTiming() {
+  var wt = weaponTiming(), ids = Object.keys(wt).filter(function (id) { return wt[id].rpm != null || wt[id].reload != null; })
+    .sort(function (a, b) { return wt[b].shots - wt[a].shots; });
+  if (!ids.length) return '';
+  var th = function (label, tip) { return '<th title="' + esc(tip) + '">' + label + '</th>'; };
+  var html = '<table style="margin-top:8px"><thead><tr><th></th><th>Weapon, measured in this match</th>' +
+    th('Fire rate', 'Rounds a minute while the trigger is held: shots inside bursts of four or more, from the round count dropping') +
+    th('Reload', 'Seconds the reload action lasts, start to finish (cut-short reloads left out)') +
+    th('Shots', 'Shots counted for the fire rate') + th('Reloads', 'Complete reloads timed') + '</tr></thead><tbody>';
+  ids.forEach(function (id) {
+    var w = wt[id];
+    html += '<tr><td class="bar"></td><td class="nm">' + esc(itemName(+id) || ('item ' + id)) + '</td><td>' + (w.rpm != null ? Math.round(w.rpm / 10) * 10 + ' <span style="color:var(--ink-faint)">/min</span>' : '—') + '</td>' +
+      '<td>' + (w.reload != null ? w.reload.toFixed(2) + ' <span style="color:var(--ink-faint)">s</span>' : '—') + '</td><td>' + w.shots + '</td><td>' + (w.reloads || '—') + '</td></tr>';
+  });
+  return html + '</tbody></table>';
 }
 function renderWeapons(LIM, teams) {
   var W = weaponRows(LIM);
@@ -9350,7 +10253,7 @@ function renderWeapons(LIM, teams) {
       '<td>' + (e.kills ? e.kills + (e.hd ? ' <span style="color:var(--ink-faint)">(' + e.hd + ')</span>' : '') : '—') + '</td>';
   }
   function pick(map, n) {
-    return Object.keys(map).map(function (id) { var e = map[id]; e.id = +id; e.name = itemName(+id); return e; })
+    return Object.keys(map).map(function (id) { var e = map[id]; e.id = +id; e.name = HIT_FIX[+id] || itemName(+id); return e; })
       .filter(function (e) { return e.name && (e.kills || e.hits || e.shots >= 3 || e.held >= 20); })
       .sort(function (x, y) { return (y.kills - x.kills) || (y.dmg - x.dmg) || (y.held - x.held); }).slice(0, n);
   }
@@ -9388,12 +10291,14 @@ function renderDetail(LIM, teams, o) {
   var anySh = o.some(function (s) { return s.shN > 0; }), anyCo = o.some(function (s) { return s.coN > 0; });
   var anyObj = o.some(function (s) { return s.objS >= 1; });
   var anyBx = o.some(function (s) { return s.bxN > 0; }), anyNv = o.some(function (s) { return s.nvS >= 0.5; });
+  var anyLk = o.some(function (s) { return s.gunHit >= 5; });
   function dash(v) { return v ? v : '—'; }
   function pct(a, b) { return b > 0 ? Math.round(100 * a / b) + '%' : '—'; }
   var th = function (label, tip) { return '<th title="' + esc(tip) + '">' + label + '</th>'; };
   var html = '<table style="margin-top:8px"><thead><tr><th></th><th>Player</th>' +
     th('HS', 'Kills by a head shot') +
     th('Head %', 'Share of this player\'s bullets that landed on the head, out of hits whose zone the file records') +
+    (anyLk ? th('Auto-aim', 'Bullet hits landed with the lock-on (auto-aim), and their share of this player\'s bullet hits. The rest were aimed by hand. Only hits the file credits to a shooter are counted') : '') +
     th('Streak', 'Longest kill streak: most kills in a row without dying') +
     th('Multi', 'Longest run of kills with no more than ' + MULTI_S + ' s between them') +
     th('Trade', 'Kills that avenged a team-mate inside ' + TRADE_S + ' s') +
@@ -9417,6 +10322,7 @@ function renderDetail(LIM, teams, o) {
       html += '<tr data-team="' + (r.p.team == null ? '' : r.p.team) + '"><td class="bar"></td>' +
         '<td class="nm">' + esc(r.p.name || '(unidentified)') + '</td>' +
         '<td>' + dash(s.hsK) + '</td><td>' + (s.zn >= 5 ? pct(s.hd, s.zn) : '—') + '</td>' +
+        (anyLk ? '<td>' + (s.gunHit >= 5 ? s.lockHit + ' <span style="color:var(--ink-faint)">' + pct(s.lockHit, s.gunHit) + '</span>' : '—') + '</td>' : '') +
         '<td>' + (s.streak >= 2 ? s.streak : '—') + '</td>' +
         '<td>' + (s.best >= 2 ? '×' + s.best : '—') + '</td>' +
         '<td>' + dash(s.trade) + '</td><td>' + dash(s.cqc) + '</td>' +
@@ -10608,6 +11514,9 @@ function tick(now) {
     drawTimeline();
   }
   updateCutaway();
+  if (SHADOWS_ON) followSun();
+  updateLocalLights();
+  if (SKY.mesh) SKY.mesh.position.copy(cam.position);
   renderer.render(scene, cam);
   drawHUD();
 }
@@ -10652,6 +11561,7 @@ function muzzleOf(pi) {
 }
 function spawnTracer(ev) {
   if (ev.killer == null || ev.victim == null) return;
+  if (ev.derived && ev.how !== 'shot') return;      // a choke or a stab has no bullet line
   var a = posAt(ev.killer, ev.t), b = posAt(ev.victim, ev.t);
   if (!a || !b) return;
   var stun = ev.type === 'stun';
@@ -10721,7 +11631,7 @@ var NADE_EST = !/[?&]nadeest=0/.test(location.search);
 // off. So a throw that hurt nobody now flies on its own recorded velocity.
 // Still a model past the first bounce: no walls, no slopes.
 // Launch and blast points sit one body offset (800 mm) low in the event frame.
-var NADE_FUSE = 2.0, NADE_LIFT = 800, NADE_ROLL = 0.25;
+var NADE_FUSE = 2.0, NADE_LIFT = 800, NADE_ROLL = 0.25, NADE_BLAST_Y = 0;
 function buildNades(r) {
   if (!r || !r.events) return;
   var out = [], dm = r.dmg || [], claimed = {};
@@ -10883,14 +11793,11 @@ function nadeHit(G, px, py, pz, dx, dy, dz) {
 }
 // Fly grenade n through the map once; n.path = Float32Array of points, one per
 // 1/60 s, in world mm. An estimated throw takes its end point from the path.
-function nadeSim(n) {
-  n.simmed = true;
-  var G = NADE_WALLS ? nadeGridGet() : null;
-  if (!G || !n.v) return;
+function nadeFly(n, G, bounce, slide, freeT) {
   var tf = n.f || 2.0, steps = Math.max(1, Math.round(tf * 60)), dt = tf / steps, gS = NADE_G * S;
   var px = (n.a[0] - ctr[0]) * S, py = n.a[1] * S, pz = (n.a[2] - ctr[2]) * S;
   var vx = n.v[0] * S, vy = n.v[1] * S, vz = n.v[2] * S;
-  var path = new Float32Array((steps + 1) * 3), bounces = 0;
+  var path = new Float32Array((steps + 1) * 3), bounces = 0, first = -1;
   function put(i) { path[i * 3] = px / S + ctr[0]; path[i * 3 + 1] = py / S; path[i * 3 + 2] = pz / S + ctr[2]; }
   put(0);
   for (var i = 1; i <= steps; i++) {
@@ -10898,20 +11805,75 @@ function nadeSim(n) {
     var left = 1, guard = 0;
     while (left > 1e-4 && guard++ < 4) {
       var dx = vx * dt * left, dy = vy * dt * left, dz = vz * dt * left;
-      var h = nadeHit(G, px, py, pz, dx, dy, dz);
+      var h = (freeT && i * dt < freeT) ? null : nadeHit(G, px, py, pz, dx, dy, dz);
       if (!h) { px += dx; py += dy; pz += dz; break; }
       px += dx * h.f + h.nx * 0.02; py += dy * h.f + h.ny * 0.02; pz += dz * h.f + h.nz * 0.02;
       var vn = vx * h.nx + vy * h.ny + vz * h.nz;
       var tx = vx - vn * h.nx, ty = vy - vn * h.ny, tz = vz - vn * h.nz;
-      vx = tx * NADE_SLIDE - vn * NADE_BOUNCE * h.nx;
-      vy = ty * NADE_SLIDE - vn * NADE_BOUNCE * h.ny;
-      vz = tz * NADE_SLIDE - vn * NADE_BOUNCE * h.nz;
-      left *= 1 - h.f; bounces++;
+      vx = tx * slide - vn * bounce * h.nx;
+      vy = ty * slide - vn * bounce * h.ny;
+      vz = tz * slide - vn * bounce * h.nz;
+      left *= 1 - h.f; bounces++; if (first < 0) first = i;
     }
     put(i);
   }
-  n.path = path; n.steps = steps; n.bounces = bounces;
-  if (n.est) n.d = [path[steps * 3], path[steps * 3 + 1], path[steps * 3 + 2]];
+  return { path: path, steps: steps, bounces: bounces, first: first };
+}
+// EACH GRENADE FITTED TO ITS OWN BLAST (user, 2026-10-10: "can we drill down nade location / arch follow?"). The launch point
+// and velocity are recorded, and so is the blast point of every grenade that hurt someone - what is NOT recorded is how
+// it bounced. One pair of bounce / slide numbers for the whole match left a median 0.7 - 1.5 m between the drawn path's
+// end and the real blast. Now a grenade whose blast is known is flown with a spread of bounce / slide pairs and keeps the
+// flight that ends nearest its own blast; what is left of the miss is taken up evenly from the first bounce on (in the
+// air before it, the recorded launch is exact and is not touched). A throw with no known blast flies on the pair that
+// fitted the match's other grenades best (the median of their winners).
+var NADE_FIT = !/[?&]nadefit=0/.test(location.search);
+var NADE_GRID_B = [0.15, 0.28, 0.4, 0.52, 0.65], NADE_GRID_S = [0.2, 0.35, 0.45, 0.6, 0.75, 0.9];
+function nadeSim(n) {
+  n.simmed = true;
+  var G = NADE_WALLS ? nadeGridGet() : null;
+  if (!G || !n.v) return;
+  var known = !n.est && n.d, best = null, bb = NADE_BOUNCE, bs = NADE_SLIDE;
+  if (NADE_FIT && !known && R && R.__nadeFit && R.__nadeFit.n >= 4) { bb = R.__nadeFit.b; bs = R.__nadeFit.s; }
+  var base = nadeFly(n, G, bb, bs);
+  function miss(f) { var k = f.steps * 3; return Math.hypot(f.path[k] - n.d[0], f.path[k + 2] - n.d[2], (f.path[k + 1] - n.d[1]) * 0.5); }
+  if (known) {
+    best = base; n.miss0 = miss(base); var bm = n.miss0, wb = bb, ws = bs;
+    if (NADE_FIT && bm > 250) {
+      for (var gi = 0; gi < NADE_GRID_B.length; gi++) for (var gj = 0; gj < NADE_GRID_S.length; gj++) {
+        var f = nadeFly(n, G, NADE_GRID_B[gi], NADE_GRID_S[gj]), m_ = miss(f);
+        if (m_ < bm - 1) { bm = m_; best = f; wb = NADE_GRID_B[gi]; ws = NADE_GRID_S[gj]; }
+      }
+    }
+    // STILL METRES OFF: the throw was probably made over or through something the simplified map has solid (measured on Groznyj
+    // Grad: one grenade "bounced" 46 times within 1.4 m of the hand while the real one flew 29 m). The same spread is tried
+    // again with the first 0.2 s, then 0.4 s, of flight passing through the map.
+    if (NADE_FIT && bm > 3000) {
+      [0.2, 0.4].forEach(function (ft_) {
+        if (bm <= 3000) return;
+        for (var gi2 = 0; gi2 < NADE_GRID_B.length; gi2 += 2) for (var gj2 = 0; gj2 < NADE_GRID_S.length; gj2 += 2) {
+          var f2 = nadeFly(n, G, NADE_GRID_B[gi2], NADE_GRID_S[gj2], ft_), m2 = miss(f2);
+          if (m2 < bm - 1) { bm = m2; best = f2; wb = NADE_GRID_B[gi2]; ws = NADE_GRID_S[gj2]; n.fitFree = ft_; }
+        }
+      });
+    }
+    n.miss = bm; n.fitB = wb; n.fitS = ws;
+    if (NADE_FIT) {
+      // the remainder: eased in from the first bounce (or the last 40% of an unbroken flight) to the blast point
+      var st = best.steps, i0_ = best.first >= 0 ? Math.max(1, best.first) : Math.floor(st * 0.6), k_ = st * 3;
+      var ex = n.d[0] - best.path[k_], ey = n.d[1] - best.path[k_ + 1], ez = n.d[2] - best.path[k_ + 2];
+      if (Math.hypot(ex, ez) < 6000) for (var q = i0_; q <= st; q++) {
+        var u_ = st > i0_ ? (q - i0_) / (st - i0_) : 1; u_ = u_ * u_ * (3 - 2 * u_);
+        best.path[q * 3] += ex * u_; best.path[q * 3 + 1] += ey * u_; best.path[q * 3 + 2] += ez * u_;
+      }
+      // remember what fitted, for the throws whose blast is unknown
+      var F_ = R.__nadeFitAll || (R.__nadeFitAll = []);
+      if (best.bounces > 0 && n.miss < 1500) { F_.push([wb, ws]);
+        var sb_ = F_.map(function (x) { return x[0]; }).sort(function (a, b) { return a - b; }), ss_ = F_.map(function (x) { return x[1]; }).sort(function (a, b) { return a - b; });
+        R.__nadeFit = { n: F_.length, b: sb_[sb_.length >> 1], s: ss_[ss_.length >> 1] }; }
+    }
+  } else best = base;
+  n.path = best.path; n.steps = best.steps; n.bounces = best.bounces;
+  if (n.est) n.d = [best.path[best.steps * 3], best.path[best.steps * 3 + 1], best.path[best.steps * 3 + 2]];
 }
 var nadeEndTmp = [0, 0, 0];
 function nadePoint(n, sT, o) {
@@ -11632,6 +12594,7 @@ function updateMarks() {
     m.g.traverse(function (o) {
       var ms = o.material;
       if (!ms) return;
+      if (o === m.handProp || o === m.shieldProp || o === m.boxProp) return;          // shared weapon / shield / box materials: handled just below
       if (!Array.isArray(ms)) ms = [ms];
       for (var mi_ = 0; mi_ < ms.length; mi_++) {
         if (ms[mi_].opacity === undefined) continue;
@@ -11639,6 +12602,27 @@ function updateMarks() {
         ms[mi_].transparent = a < 1;
       }
     });
+    // THE GUN IN HIS HANDS FADED TO 22 % WHEN SOMEBODY ELSE WAS DEAD (found 2026-10-11 on match 69641, Jotei 183.9 - 185.1 s,
+    // after the owner's "it shouldnt ever go invisible like that"; measured: his M4's material at opacity 0.22 while he was
+    // alive and solid). The textured weapon materials are ONE set per weapon model, shared by every player holding that
+    // model, and the fade above was written into them - so the last player in the list who had ever held an M4 decided how
+    // everyone's M4 looked: dead (0.22) or cloaked (0.28) for him meant a see-through rifle for all of them. The shared set
+    // now always stays solid; a player who really is faded gets his own faded copy of it.
+    for (var hq_ = 0; hq_ < 3; hq_++) {
+      var hp_ = hq_ === 0 ? m.handProp : hq_ === 1 ? m.shieldProp : m.boxProp;
+      if (!hp_ || !hp_.material) continue;
+      var bm_ = (hp_.__fadeMat && hp_.material === hp_.__fadeMat) ? hp_.__baseMat : hp_.material;
+      var bl_ = Array.isArray(bm_) ? bm_ : [bm_];
+      for (var bq_ = 0; bq_ < bl_.length; bq_++) { if (bl_[bq_].opacity !== 1) bl_[bq_].opacity = 1; if (bl_[bq_].transparent) bl_[bq_].transparent = false; }
+      if (a >= 1 || !hp_.visible) { if (hp_.material !== bm_) hp_.material = bm_; continue; }
+      if (hp_.__baseMat !== bm_ || !hp_.__fadeMat) {
+        hp_.__baseMat = bm_;
+        hp_.__fadeMat = Array.isArray(bm_) ? bm_.map(function (x) { return x.clone(); }) : bm_.clone();
+      }
+      var fl_ = Array.isArray(hp_.__fadeMat) ? hp_.__fadeMat : [hp_.__fadeMat];
+      for (var fq_ = 0; fq_ < fl_.length; fq_++) { fl_[fq_].opacity = a; fl_[fq_].transparent = true; if (fl_[fq_].color && bl_[fq_] && bl_[fq_].color) fl_[fq_].color.copy(bl_[fq_].color); }
+      hp_.material = hp_.__fadeMat;
+    }
     // the traverse above touched the rings too; restore their own opacities
     m.disc.material.opacity = p.alive ? 0.16 : 0.06;
     m.stTrk.material.opacity = p.alive ? 0.16 : 0.06;
@@ -11828,18 +12812,38 @@ function inRollSpan(pi, fi) {
   for (var k = 0; k < sp.length; k++) { if (fi < sp[k][0] - 1) break; if (fi <= sp[k][1] + 1) return true; }
   return false;
 }
-// A SIDE ROLL (the game's roll records, state 3) and which way it goes: 'sideRollL' / 'sideRollR', or null for a forward roll.
-// Left or right = which side of the way he faced at the start the roll carried him.
+// A ROLL WHILE AIMING (the game's roll records, state 3) and which of its four moves it is: 'sideRollL' / 'sideRollR',
+// 'aimHopBack' (an upright hop backwards) or 'aimDive' (a dive forwards); null for an ordinary forward roll (state 2).
+// MEASURED 2026-10-11: the byte after the state byte in those rows is the direction, 1 forward, 2 left, 3 back, 4 right (70
+// replays + live rolls on our own server); the two clips are main 444 / 439, matched against the live skeleton. A file parsed
+// before the byte was read has none: then the travel against the way he faced at the start decides, as it always did for the
+// side (left = (+cos h, -sin h) for forward = (sin h, cos h)).
+// THE FORWARD ROLL, by what is in the hands (scored against the real game's skeletons over the roll records, 2026-10-14): a long gun =
+// the rifle dive (main 439, 69 / 57 mm male / female), anything else = main 56 (32-50 mm); the old live-captured `roll` sat 76-109 mm off.
+function fwdRollName(p) {
+  var C = ANIM.clips, it = p ? p.item : null;
+  var longGun = it != null && it > 1 && !THROWN[it] && !SECONDARY[it];
+  if (longGun && C.aimDive) return 'aimDive';
+  return C.rollRec ? 'rollRec' : 'roll';
+}
+var ROLL_K = parseFloat((/[?&]rollk=([0-9.]+)/.exec(location.search) || [])[1]) || 1, ROLL_L = parseFloat((/[?&]rolll=(-?[0-9.]+)/.exec(location.search) || [])[1]) || 0;
 function sideRollAt(pi, fi) {
   var sp = R && R.rollByPlayer && R.rollByPlayer[pi];
   if (!sp) return null;
   for (var k = 0; k < sp.length; k++) {
     if (fi < sp[k][0] - 1) break;
     if (fi <= sp[k][1] + 1 && sp[k][2] === 3) {
-      var a = R.frames[sp[k][0]].p[pi], b = R.frames[sp[k][1]].p[pi];
-      if (!a || !b || a[3] == null) return 'sideRollL';
-      var h = a[3] * headScale, dx = b[0] - a[0], dz = b[2] - a[2];
-      return (Math.cos(h) * dx - Math.sin(h) * dz) >= 0 ? 'sideRollR' : 'sideRollL';
+      var dir = sp[k][3] || 0;
+      if (!dir) {
+        var a = R.frames[sp[k][0]].p[pi], b = R.frames[sp[k][1]].p[pi];
+        if (!a || !b || a[3] == null) return 'sideRollL';
+        var h = a[3] * headScale, dx = b[0] - a[0], dz = b[2] - a[2];
+        var lf = Math.cos(h) * dx - Math.sin(h) * dz, fw = Math.sin(h) * dx + Math.cos(h) * dz;
+        dir = Math.abs(fw) > Math.abs(lf) ? (fw > 0 ? 1 : 3) : (lf >= 0 ? 2 : 4);
+      }
+      if (dir === 3) return ANIM.clips.aimHopBack ? 'aimHopBack' : null;
+      if (dir === 1) return ANIM.clips.aimDive ? 'aimDive' : null;
+      return dir === 4 ? 'sideRollR' : 'sideRollL';
     }
   }
   return null;
@@ -11882,7 +12886,9 @@ function clipBlend(m, p) {
   else if (!same && clip !== m.__bc) {
     m.__fq.set(m.__bq); m.__fp.set(m.__bp); m.__fy = m.__by; m.__bs = m.__bT;
     var c_ = ANIM && ANIM.clips && ANIM.clips[clip];
-    m.__bd = (c_ && c_.speed > 0.2) ? BLEND_GO : BLEND_STILL;
+    m.__bd = (c_ && (c_.speed > 0.2 || c_.loop === false)) ? BLEND_GO : BLEND_STILL;
+    // (a ONE-SHOT move - climb, drop, roll, get-up - gets the quick ease too: the 0.35 s one ate 40 % of the 0.88 s ledge climb, whose
+    // drawn poses then sat 56-67 mm off the clip itself; doos: the game's own blend marks are 6-8 frames = 0.10-0.13 s. 2026-10-14)
     // BRINGING THE GUN UP IS QUICK (user, 2026-10-10: a player who crouched and fired for 0.8 s before dying "doesn't look
     // like he gets his gun up"): the 0.35 s ease into a still clip ate half of it. Into an aim / fire clip it is 0.12 s.
     if (/aim|fire|^wa_/i.test(clip || '')) m.__bd = Math.min(m.__bd, 0.08);
@@ -12076,6 +13082,8 @@ function applyPose(m, p, pi) {
         bh1_.add(bh2_).multiplyScalar(0.5); m.dir.worldToLocal(bh1_);
         m.boxProp.position.set(bh1_.x, cq_.n === 'boxHide' ? 0 : Math.max(0, bh1_.y - 5.0), bh1_.z);     // running: 13 cm higher than the sitting grip implies, or the head shows over the rim (seen 2026-10-09)
       }
+      // (the box was placed from the sit clip's own hands above; the real upper body goes on afterwards)
+      if (cq_.up) poseLayered(m, p, cq_.n, cq_.t, cq_.up, cq_.upT || 0, cq_.lean || 0);
       // A thrown body goes from standing to lying inside one clip, so it has a
       // ground offset per frame rather than one for the clip.
       if (cqc_.liftF) {
@@ -12083,7 +13091,7 @@ function applyPose(m, p, pi) {
       }
       if (m.skin && cql_ != null) m.skin.position.y = cql_ * MM;
       m.skin.visible = true;
-      m.lastClip = cq_.n;
+      m.lastClip = cq_.label || cq_.n;
       m.dir.rotation.x = 0;
       m.dir.position.y = 0;
       if (m.cone) m.cone.visible = false;
@@ -12091,12 +13099,18 @@ function applyPose(m, p, pi) {
     }
     // THE WIND-UP (action 0x14) and the HELD ARM (0x15) before a throw: the game's own clips for the upper body, on the
     // legs of whatever gait he is moving at (he is running in 6,609 of 7,082 wind-ups), the same layering the throw uses.
-    if (!FORCE_CLIP && ANIM.clips.throwWind && p && p.alive && (p.act === 0x14 || p.act === 0x15) && pi != null) {
+    // (not inside a back hop / forward dive while aiming: the roll rows carry no action of their own, so a throw or a held
+    // grenade arm from just before one stayed "on" and hid the whole move - match 69275 0:30, Groznyj Grad Base 7:27)
+    var aimRoll_ = (pi != null && !FORCE_CLIP && p && p.alive && (p.act === 0x14 || p.act === 0x15 || p.act === 0x16)) ? sideRollAt(pi, frameIndexAt(T)) : null;
+    // (2026-10-14: ANY roll - the side rolls and forward rolls too: 97 of 400 recorded side-roll poses were drawn as a grenade wind-up)
+    if (!aimRoll_ && pi != null && !FORCE_CLIP && p && p.alive && (p.act === 0x14 || p.act === 0x15 || p.act === 0x16) && rollProgress(pi, frameIndexAt(T)) >= 0) aimRoll_ = 'roll';
+    if (!aimRoll_ && !FORCE_CLIP && ANIM.clips.throwWind && p && p.alive && (p.act === 0x14 || p.act === 0x15) && pi != null) {
       var twA = p.act, twN = (twA === 0x15 && ANIM.clips.throwHold) ? 'throwHold' : 'throwWind', twC = ANIM.clips[twN];
       var twS = entryRunStartT(pi, frameIndexAt(T), function (e) { return e.length > 14 && e[14] === twA; });
       var twD = ANIM.clips.throwWind.frames / (ANIM.clips.throwWind.fps || ANIM.fps);
       var twT = twN === 'throwHold' ? 0 : (twA === 0x15 ? twD - 0.04 : Math.min(twS != null ? Math.max(0, T - twS) : 0, twD - 0.04));
-      var twB = (p.spd != null && p.spd > 0.6) ? (ANIM.clips.runNade ? 'runNade' : (ANIM.clips.run ? 'run' : null)) : null;
+      var twB = ((p.spd != null && p.spd > 0.6) || (twA === 0x14 && movingByState(p))) ? (ANIM.clips.runNade ? 'runNade' : (ANIM.clips.run ? 'run' : null)) : null;
+      if (twB) { var twAr_ = aimRunClip(p); if (twAr_) twB = twAr_; }      // aimed move: its own legs under the wind-up (2026-10-14)
       if (twB) {
         var twBc = ANIM.clips[twB], twBt = T + (m.phase || 0), twDi = distAt(pi, frameIndexAt(T));
         if (twBc.speed > 0.2 && twDi != null) twBt = twDi / twBc.speed + (m.phase || 0);
@@ -12112,7 +13126,7 @@ function applyPose(m, p, pi) {
       if (m.cone) m.cone.visible = false;
       return pose;
     }
-    if (!FORCE_CLIP && ANIM.clips.throw && p && p.alive && p.act === 0x16) {
+    if (!aimRoll_ && !FORCE_CLIP && ANIM.clips.throw && p && p.alive && p.act === 0x16) {
       var thT = clipLocalT(m, pi, 'throw',
         entryRunStartT(pi, frameIndexAt(T), function (e) {
           return e.length > 14 && e[14] === 0x16;
@@ -12138,10 +13152,19 @@ function applyPose(m, p, pi) {
     // prone in buildProne by the motionState the player holds while low.
     // Without this a crouching player was drawn standing at a height 400 below
     // the floor, which is exactly the reported feet-through-the-ground.
-    if (!FORCE_CLIP && pi != null && p && p.alive && crouchAt(pi, frameIndexAt(T))) {
+    // state 0 with posture bits 2 IS crouched-still (the real game's skeleton = main 6 at 2-9 mm, 2026-10-14), whatever the height
+    // test says: 40-168 of 400 such poses were being drawn lying prone
+    var stCr_ = !!(p && p.ms === 0 && p.sf != null && (p.sf >> 5) === 2);
+    // ... and the crouched MOVES (states 129 / 1 with posture bits 3 = crouched run, 7 = crouched aimed move; doos's flag table): the height
+    // test drew 10-30 % of them prone or crawling (2026-10-14)
+    if (p && (p.ms === 129 || p.ms === 1) && p.sf != null && ((p.sf >> 5) === 3 || (p.sf >> 5) === 7)) stCr_ = true;
+    if (!FORCE_CLIP && pi != null && p && p.alive && (stCr_ || crouchAt(pi, frameIndexAt(T)))) {
       var firing_ = p.act != null && FIRING[p.act];
       // settling into a crouched shot: the last half-step of the run must not keep the crouch-run clip under a firing gun
-      var cmoving = p.spd != null ? p.spd > (firing_ ? 1.2 : 0.25) : false;
+      var cmoving = p.spd != null ? p.spd > (firing_ ? 1.2 : 0.25) : (!firing_ && movingByState(p));
+      // the crouched AIMED MOVE (state 129, posture bits 7) is a move by the game's own state, firing or not (doos: 1.73 m/s, p10 0.75):
+      // the 1.2 m/s firing threshold held most of it as a still crouch (136 mm off the real skeletons, 2026-10-14)
+      if (p.ms === 129 && p.sf != null && (p.sf >> 5) === 7 && p.spd != null && p.spd > 0.25) cmoving = true;
       var cn = cmoving
         ? (ANIM.clips.crouchRun ? 'crouchRun' : (ANIM.clips.crouch ? 'crouch' : null))
         : (firing_ && ANIM.clips.crouchAim ? 'crouchAim'
@@ -12152,6 +13175,26 @@ function applyPose(m, p, pi) {
       // The weapon's own aim pose goes on top anyway, so underneath it the settled end of the plain crouch is held still.
       var chold_ = firing_ && !cmoving && ANIM.clips.crouch && !THROWN[p.item] && ANIM.clips[wpnClip('wa', p) || ''];
       if (chold_) cn = 'crouch';
+      // CROUCHED WITH ONE HAND FREE (a grenade or other thrown item, empty hands, a handgun), not firing. MEASURED 2026-10-11
+      // against the skeleton recordings (coverage catalogue): the real crouched run is main clip 28 for all three (46 mm;
+      // the rifle-captured crouch run with the grenade run's arms laid over it sat 181 mm off, 88-96 mm for the other two),
+      // and crouched and still is main 6 (23 mm with a grenade against 132 mm for the still crouch + standing grenade arms).
+      // Whole-body clips: nothing is layered on them.
+      var c1h_ = !firing_ && p.act !== 0x25 && p.item != null && (THROWN[p.item] || p.item === 0 || p.item === 1 || SECONDARY[p.item]);
+      // still: main 6 for EVERY one-hand case (2026-10-14: empty hands 2 mm, handgun 5-9 mm against 58-133 mm for the rifle crouch)
+      var c1n_ = c1h_ ? (cmoving ? 'crouchRunNade' : (ONEHAND_CROUCH_IDLE ? 'crouchIdleNade' : null)) : null;
+      if (c1n_ && ANIM.clips[c1n_]) cn = c1n_; else c1n_ = null;
+      // TEST (2026-10-14): crouch-running with a long gun - per-pose vote = main 32 / 28 (the game's crouched run), viewer = the old
+      // rifle capture (77-81 mm). ?crr=whole draws main 28 whole; ?crr=legs puts the capture's upper body on its legs.
+      var crr_ = (/[?&]crr=(whole|legs)/.exec(location.search) || [])[1], crrUp_ = null;
+      if (crr_ && cn === 'crouchRun' && cmoving && !firing_ && ANIM.clips.crouchRunNade) {
+        if (crr_ === 'legs') crrUp_ = 'crouchRun';
+        cn = 'crouchRunNade';
+      }
+      // CROUCHED, MOVING WHILE AIMING (state 129, posture bits 7, flag 0xe1): main 28-31 by direction (legs 49-54 mm over the recorded
+      // poses vs 158-168 for the crouch-run the viewer drew; 2026-10-14), with the weapon's aim pose on top for a gun
+      var caSd_ = (cmoving && p.ms === 129 && p.sf != null && (p.sf >> 5) === 7) ? moveSide(p) : null, caOn_ = false;
+      if (caSd_ && ANIM.clips['crouchAim' + caSd_]) { cn = 'crouchAim' + caSd_; c1n_ = 'crouchAim' + caSd_; caOn_ = true; chold_ = false; }
       if (cn) {
         var cc = ANIM.clips[cn];
         var ct = T + (m.phase || 0);
@@ -12169,12 +13212,12 @@ function applyPose(m, p, pi) {
         // screenshot, 2026-10-04). Keep the crouch clip's legs and pelvis and
         // put the grenade clips' upper body on them: runNade when moving,
         // idleNade when still.
-        var cup = THROWN[p.item] ? (cmoving ? 'runNade' : 'idleNade') : null;
+        var cup = (THROWN[p.item] && !c1n_) ? (cmoving ? 'runNade' : 'idleNade') : (crrUp_ || null);
         // CROUCHED AND FIRING: the captured crouch-aim holds the rifle at the chest (user, 2026-10-10: "doesn't look like he
         // gets his gun up"). The weapon's own aiming pose - the one a standing shooter already gets - goes on the crouched legs.
         // (moving too: the gun comes up over the last steps of the crouch-run, legs keep running under it)
         var cwaOn_ = false;
-        if (!cup && firing_) { var cwa_ = wpnClip('wa', p); if (cwa_ && ANIM.clips[cwa_]) { cup = cwa_; cwaOn_ = true; } }
+        if (!cup && (firing_ || (caOn_ && p.item != null && !THROWN[p.item] && p.item !== 0 && p.item !== 1))) { var cwa_ = wpnClip('wa', p); if (cwa_ && ANIM.clips[cwa_]) { cup = cwa_; cwaOn_ = true; } }
         if (cup && ANIM.clips[cup]) {
           var cut_ = T + (m.phase || 0), cuc = ANIM.clips[cup];
           if (cuc.speed > 0.2) {
@@ -12201,7 +13244,7 @@ function applyPose(m, p, pi) {
     }
     // Prone overrides motionGroup entirely: the state byte reads "stand idle"
     // throughout, which is why prone players stood up in the viewer.
-    if (!FORCE_CLIP && pi != null && p && p.alive && proneAt(pi, frameIndexAt(T))) {
+    if (!FORCE_CLIP && pi != null && p && p.alive && !stCr_ && proneAt(pi, frameIndexAt(T))) {
       var moving = p.spd != null ? p.spd > 0.25 : false;
       var pn = (moving && ANIM.clips.crawl) ? 'crawl'
              : (ANIM.clips.prone ? 'prone' : null);
@@ -12210,6 +13253,13 @@ function applyPose(m, p, pi) {
       if (!moving && aiming && pn === 'prone') {
         var pst_ = flagRunStartT(pi, frameIndexAt(T), R.prone && R.prone[pi]);
         if (pst_ != null && T - pst_ > ANIM.clips.prone.frames / ANIM.fps) pn = wpnClip('wp', p) || pn;
+      }
+      // LYING STILL, not shooting: main 39 (1.2 / 0.2 mm over 600 recorded poses a sex, 2026-10-14; the captured `prone` sat
+      // 186 mm off), once the drop to the ground has played out
+      // (only for posture bits 4 = lying: re-measured 2026-10-14, bits 3 drawn this way went 88 -> 143 mm)
+      if (!moving && pn === 'prone' && ANIM.clips.proneIdle && (p.sf == null || (p.sf >> 5) === 4)) {
+        var pst2_ = flagRunStartT(pi, frameIndexAt(T), R.prone && R.prone[pi]);
+        if (pst2_ == null || T - pst2_ > ANIM.clips.prone.frames / ANIM.fps) pn = 'proneIdle';
       }
       if (pn) {
         var pc = ANIM.clips[pn];
@@ -12238,10 +13288,16 @@ function applyPose(m, p, pi) {
                ? rollProgress(pi, frameIndexAt(T)) : -1;
     if (rp >= 0) {
       var rn = sideRollAt(pi, frameIndexAt(T));
-      if (!rn || !ANIM.clips[rn]) rn = 'roll';
+      if (!rn || !ANIM.clips[rn]) rn = fwdRollName(p);
       var rc = ANIM.clips[rn];
-      poseSkin(m, p, rn, rp * (rc.frames - 1) / (rc.fps || ANIM.fps));
+      // (2026-10-14 test: ?rollk=<stretch>&rolll=<lead s> remap the record's window onto the clip, side rolls only)
+      var rdur_ = (rc.frames - 1) / (rc.fps || ANIM.fps), rtt_ = rp * rdur_;
+      if ((rn === 'sideRollL' || rn === 'sideRollR') && (ROLL_K !== 1 || ROLL_L)) rtt_ = Math.max(0, Math.min(rdur_, rp * rdur_ * ROLL_K + ROLL_L));
+      poseSkin(m, p, rn, rtt_);
       if (m.skin && rc.lift != null) m.skin.position.y = rc.lift * MM;
+      // the back hop and the dive have a hip height per frame (measured on the live game), not one for the clip: the dive
+      // flies at 1.2 m and ends rolled up on the floor
+      if (m.skin && rc.liftF && (rn === 'aimHopBack' || rn === 'aimDive' || rn === 'rollRec' || rn === 'sideRollL' || rn === 'sideRollR')) m.skin.position.y = rc.liftF[Math.max(0, Math.min(rc.liftF.length - 1, Math.round(rp * (rc.frames - 1))))] * MM;
       applyTorsoAim(m, p, pi);
       applyHeadLook(m, p);
       applyWeaponAim(m, p, pi);
@@ -12259,13 +13315,39 @@ function applyPose(m, p, pi) {
       var cl_ = ANIM.clips[name];
       var tm_ = T + (m.phase || 0);
       var tml_ = clipLocalT(m, pi, name, groupRunStartT(pi, frameIndexAt(T)));
-      if (tml_ != null) tm_ = tml_;                      // fall / ledge / climb / down
+      if (tml_ != null) tm_ = tml_ + (CLIP_LEAD[name] || 0);   // fall / ledge / climb / down (+ how far the move is under way when the state shows)
+      // the drop clip (main 178) fits only the posture-1 drop when played through (51 mm vs 103 frozen); bits 0 / 7 fit its first frame
+      // better (103 / 109 mm held vs 135 / 118 played) - measured 2026-10-14, so those keep the held pose
+      if (name === 'drop' && tml_ != null && p && p.sf != null && (p.sf >> 5) !== 1) tm_ = 0;
       else if (cl_ && cl_.speed > 0.2 && pi != null) {
         var dm_ = distAt(pi, frameIndexAt(T));
         if (dm_ != null) tm_ = dm_ / cl_.speed + (m.phase || 0);
       }
-      var rl_ = FORCE_CLIP ? null : (reloadClip(p, pi) || sprayClip(p));
-      if (rl_) poseLayered(m, p, name, tm_, rl_.n, rl_.t); else poseSkin(m, p, name, tm_);
+      var rl_ = FORCE_CLIP ? null : (reloadClip(p, pi) || sprayClip(p) || linkClip(p, pi));
+      // the aimed move: the held weapon's own aim pose on the bare-hand legs (one still frame; nothing for a grenade / empty hands)
+      if (!rl_ && /^aimRun[FBLR]$/.test(name) && p && p.item != null && !THROWN[p.item] && p.item !== 0 && p.item !== 1) {
+        var arw_ = wpnClip('wa', p); if (arw_ && ANIM.clips[arw_]) rl_ = { n: arw_, t: 0 };
+      }
+      // THE STOP STEP OUT OF A RUN (state 2, posture bits 1 / 2; doos: "stop step out of a run, gun coming up"): the LEGS of the game's
+      // run stop (main 26; 70-81 mm against the real game's skeletons vs 114-122 for the clip drawn whole), under the upper body the
+      // viewer already chose. Played from the start of the stop at its own pace (2026-10-14).
+      var rs_ = null;
+      if (!FORCE_CLIP && p && p.alive && pi != null && p.ms === 2 && p.sf != null && ((p.sf >> 5) === 1 || (p.sf >> 5) === 2) && ANIM.clips.runStop) {
+        var rss_ = entryRunStartT(pi, frameIndexAt(T), function (e) { return e[8] === 2 && e[7] != null && ((e[7] >> 5) === 1 || (e[7] >> 5) === 2); });
+        rs_ = Math.min(rss_ != null ? Math.max(0, T - rss_) : 0, ANIM.clips.runStop.frames / (ANIM.clips.runStop.fps || ANIM.fps) - 0.04);
+      }
+      // STANDING STILL WITH A LONG GUN AIMED / FIRING (2026-10-14): the per-pose vote over the main set picks main 486 (`standFire`), and
+      // drawn WHOLE it beats the weapon's own aim pose in playback (5 matches): action 4 65 -> 48 mm, 6 73 -> 59, 7 69 -> 57; action 2
+      // went 97 -> 102 and keeps the aim pose; the aim pose on 486's legs was worse. ?sf=off / legs for comparison. STATE 0 ONLY: the full
+      // re-measure showed scoped aiming (state 5) 39 -> 45 mm when it got this pose too.
+      var sfm_ = (/[?&]sf=(whole|legs|off)/.exec(location.search) || [])[1] || 'whole';
+      if (rs_ == null && !rl_ && sfm_ !== 'off' && /^wa_/.test(name) && ANIM.clips.standFire && p && p.ms === 0 && p.act !== 2 && !SECONDARY[p.item] && (p.spd == null || p.spd < 0.3)) {
+        if (sfm_ === 'whole') poseSkin(m, p, 'standFire', T + (m.phase || 0));
+        else poseLayered(m, p, 'standFire', T + (m.phase || 0), name, 0);
+      }
+      else if (rs_ != null) poseLayered(m, p, 'runStop', rs_, rl_ ? rl_.n : name, rl_ ? rl_.t : tm_);
+      else if (rl_) poseLayered(m, p, name, tm_, rl_.n, rl_.t); else poseSkin(m, p, name, tm_);
+      m.__layer = rl_ ? rl_.n : null;                    // which arms layer is on (gripFromHands seats the gun by it)
       if (m.skin && cl_ && cl_.lift != null) m.skin.position.y = cl_.lift * MM;
       // bare hands have nothing to point: pitching the torso down an aim ray
       // folded an unarmed player in half over whoever he had just put down
@@ -12555,6 +13637,36 @@ function wireControls() {
   $('b-play').addEventListener('click', function () { playing = !playing; syncPlay(); });
   $('b-back').addEventListener('click', function () { seek(T - 10); });
   $('b-fwd').addEventListener('click', function () { seek(T + 10); });
+  // COPY A LINK TO THIS MOMENT (user, 2026-10-11). The page already opens ?t=<seconds> and ?follow=<name> (see applyReplay);
+  // this just writes that link for whatever is on screen: the SaveMGO match (?match=) or the hosted replay (?replay=), the
+  // playhead to a tenth of a second, and the followed player if there is one. A replay opened from a file on this device
+  // has no address anyone else could open, so the button says so instead of copying a link that would show something else.
+  var lb_ = $('b-copylink');   // its own id: it first shared 'b-link' with the open-a-match button and stole its click
+  if (lb_) lb_.addEventListener('click', function () {
+    function flash(txt) { var o = 'Copy link'; lb_.textContent = txt; lb_.dataset.on = '1'; setTimeout(function () { lb_.textContent = o; lb_.dataset.on = '0'; }, 1600); }
+    var u, q, mid = null, hosted = false;
+    try { u = new URL(location.href); q = u.searchParams; mid = q.get('match'); } catch (e) { flash('No link'); return; }
+    var pick = $('pick');
+    if (pick && CUR_KEY != null) for (var i = 0; i < pick.options.length; i++) if (pick.options[i].value === CUR_KEY) hosted = true;
+    var out = new URL(u.origin + u.pathname);
+    // a match fetched from SaveMGO sits in the picker too, under a name like 'match 69641': that name is only known in THIS
+    // browser, so such a replay must be linked by its match number (user's link 2026-10-11 came out as ?replay=match+69641)
+    var km_ = /(?:^|\s)match (\d+)$/.exec(String(CUR_KEY == null ? '' : CUR_KEY));
+    if (km_) out.searchParams.set('match', km_[1]);
+    else if (mid && !hosted) out.searchParams.set('match', mid);
+    else if (hosted) out.searchParams.set('replay', CUR_KEY);
+    else { flash('Local file: no link'); return; }
+    out.searchParams.set('t', (Math.round(T * 10) / 10).toString());
+    if (follow >= 0 && R && R.players && R.players[follow]) out.searchParams.set('follow', String(R.players[follow].name != null ? R.players[follow].name : follow));
+    var txt = out.toString();
+    function fallback() {
+      try { var ta = document.createElement('textarea'); ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+        var ok = document.execCommand('copy'); document.body.removeChild(ta); flash(ok ? 'Copied' : 'Copy failed'); } catch (e) { flash('Copy failed'); }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function () { flash('Copied'); }, fallback); else fallback();
+    cboxDialog({ title: 'LINK TO THIS MOMENT', say: 'Copied. Anyone who opens it lands right here.', value: txt, readOnly: true, ok: 'Copy again', onOk: function (v) { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).catch(function () {}); return false; } });
+    try { window.__lastLink = txt; } catch (e) {}
+  });
   document.querySelectorAll('[data-spd]').forEach(function (b) {
     b.addEventListener('click', function () {
       speed = +b.dataset.spd;
@@ -12910,10 +14022,11 @@ function wireControls() {
   // ---- open a SaveMGO survival match by link ----------------------------
   var bl = $('b-link');
   if (bl) bl.addEventListener('click', function () {
-    var s = prompt('Paste a SaveMGO survival match link (or its number):', '');
-    if (s == null) return;
-    if (matchId(s) == null && !isReplayUrl(s)) { warn('that does not look like a survival match link'); return; }
-    openMatch(s);
+    cboxDialog({ title: 'OPEN A MATCH', say: 'Paste a SaveMGO survival match link, or just its number.', value: '', ok: 'Open', placeholder: 'https://mgo2pc.com/... or 69641',
+      onOk: function (s) {
+        if (matchId(s) == null && !isReplayUrl(s)) return 'That does not look like a survival match link.';
+        openMatch(s);
+      } });
   });
   // pasting a match link anywhere on the page opens it too
   addEventListener('paste', function (e) {
@@ -13197,7 +14310,7 @@ function warn(msg) {
 // so when the declared stage is missing or its box does not contain the
 // tracks, score every stage's bounding box and take the winner. Bounds ship in
 // the manifest (a couple of KB), so this costs no mesh downloads.
-var CUSTOM_STAGE = /^n09\da$/;
+var CUSTOM_STAGE = /^(n09\da|mgo1_.*)$/;  // + MGO1 (2006) explore maps: never auto-picked by position
 function noScenery(rep) {
   return !!(rep && !rep.stage && rep.stageGuess && rep.stageGuess !== '(unknown)');
 }
@@ -13265,6 +14378,185 @@ function buildDamage(r) {
   if (had) { r.events = keep; if (!r.dmg) r.dmg = rows; }
 }
 
+// KNOCK-OUTS THE FILE HAS NO HIT RECORD FOR (2026-10-11, user on match 69641 at 2:40: "Jotei got a stun here via cqc" - the
+// feed and his stats showed nothing). The file's hit records ('stun' events) cover knives, tranquilliser rounds, grenades and
+// the like, but a CQC choke writes none. The game's own scoreboard stream does count it: counter 9 = knock-outs GIVEN,
+// counter 10 = times knocked out, both written in one record about 0.3 s after the victim's stamina reaches zero.
+// MEASURED over 370 matches (replaydiff/stun69641/cqcstun: survey2.js, agg2.js, survey3.js, evalrule.js):
+//   399 steps of counter 9 in 344 files that carry the stream, every one with a step of counter 10 for an enemy at the same
+//   instant (3 moments had two pairs; those go by distance); 387 of them sit on a stamina-zero moment of that victim.
+//   347 have a recorded hit on that victim - 191 of those hits name NO attacker (stun knife 149, shield, sleep mines ...),
+//   which the counter now supplies; 52 have no record at all: a choke (5), a throw followed by a stun stab the file
+//   skipped (7), tranquilliser shots in files that lost their hit rows (17), shield bashes, 13 short 0.4-stamina knocks
+//   from 0.3 - 2.6 m (cause not identified) and so on.
+//   WHAT A GRAB BECOMES: the grabber's action-form state 35 (1.5 - 1.7 s either way) with the victim in ordinary state 51
+//   = the throw (149 episodes, every thrower carries NO CQC skill; a throw alone never knocks out - 80 of its 81 knock-outs
+//   are the stun knife that follows), or with the victim in state 54 / 55 and the grabber going on to states 37 / 36 = the
+//   hold (16 episodes, 15 by players with a CQC skill). A choke is that hold draining the victim's stamina to zero:
+//   2.6 - 2.8 s from the start of state 36 with CQC 2 (4 episodes), 0.4 s with CQC EX (1 episode, this one).
+// So: every counted knock-out with no hit record becomes a 'stun' event marked `derived: true` (how it was done is told
+// from what the stunner was doing, and left unsaid when that is not clear); a recorded hit without an attacker takes the
+// counter's. Files without the stream (26 of 370) fall back to the stamina rule: a stamina-zero moment with no hit record and
+// exactly ONE enemy in a CQC action-form state (35 / 36 / 37) who names the victim or stands within 2.5 m (10 of 10 unique,
+// 9 agree with the counter, 1 the game did not count), and attacker-less stun-knife hits go to the one enemy in a knife /
+// CQC action within reach (143 of 143 unique ones agree with the counter; 8 ambiguous are left blank).
+function buildStuns(r) {
+  if (!r || r.__stuns || !r.players || !r.frames) return;
+  var S = r.__stuns = { counted: 0, derived: 0, credited: 0, fallback: false, list: [] };
+  var P = r.players, n = P.length, fr = r.frames, evs = r.events || (r.events = []);
+  var so = (r.meta && r.meta.statOps) || [], po = (r.meta && r.meta.partnerOps) || [], i, k;
+  var IFLAG = (r.meta && r.meta.positionCell) ? r.meta.positionCell.indexOf('itemFlag') : -1;
+  function enemy(a, b) { return a !== b && !!P[a] && !!P[b] && (P[a].team == null || P[b].team == null || P[a].team !== P[b].team); }
+  // each player's stamina-zero moments [t, x, z, frame index] and action-form rows [t, state, x, z]
+  var zero = [], prevS = [], prevT = [], act = [];
+  for (i = 0; i < n; i++) { zero.push([]); act.push([]); }
+  for (k = 0; k < fr.length; k++) {
+    var row = fr[k].p;
+    if (!row) continue;
+    for (i = 0; i < n; i++) {
+      var c = row[i];
+      if (!c || c[0] == null || c[6] == null) continue;
+      if (c[4] && c[6] <= 0.004 && prevS[i] > 0.004 && fr[k].t - prevT[i] < 3) zero[i].push([fr[k].t, c[0], c[2], k]);
+      prevS[i] = c[6]; prevT[i] = fr[k].t;
+    }
+  }
+  (r.positionVariants || []).forEach(function (v) {
+    if (v.player == null || v.x == null || !act[v.player] || (v.len !== 15 && v.len !== 18 && v.len !== 19 && v.len !== 16)) return;
+    act[v.player].push([v.t, v.motionState, v.x, v.z]);
+  });
+  function cellNear(pi, t, lim) {
+    var k0 = frameIndexAtIn(r, t), best = null, bd = lim, q, c2;
+    for (q = k0; q >= 0 && t - fr[q].t < lim; q--) { c2 = fr[q].p && fr[q].p[pi]; if (c2 && c2[0] != null) { bd = t - fr[q].t; best = c2; break; } }
+    for (q = k0 + 1; q < fr.length && fr[q].t - t < bd; q++) { c2 = fr[q].p && fr[q].p[pi]; if (c2 && c2[0] != null) { best = c2; break; } }
+    return best;
+  }
+  function xzNear(pi, t, lim) {
+    var c2 = cellNear(pi, t, lim), a = act[pi], bd = c2 ? 0.5 : lim, out = c2 ? [c2[0], c2[2]] : null;
+    for (var q = 0; q < a.length; q++) { if (a[q][0] > t + bd) break; if (Math.abs(a[q][0] - t) < bd) { bd = Math.abs(a[q][0] - t); out = [a[q][2], a[q][3]]; } }
+    return out;
+  }
+  function dist(a, b, t) {
+    var pa = xzNear(a, t, 3), pb = xzNear(b, t, 3);
+    return pa && pb ? Math.sqrt((pa[0] - pb[0]) * (pa[0] - pb[0]) + (pa[1] - pb[1]) * (pa[1] - pb[1])) : null;
+  }
+  function inActState(pi, t0, t1, st) { var a = act[pi]; for (var q = 0; q < a.length; q++) { if (a[q][0] > t1) break; if (a[q][0] >= t0 && st[a[q][1]]) return true; } return false; }
+  // ordinary samples of one player from t0 to t1 -> fn(cell, t)
+  function eachCell(pi, t0, t1, fn) {
+    for (var q = Math.max(0, frameIndexAtIn(r, t0)); q < fr.length && fr[q].t <= t1; q++) { var c2 = fr[q].p && fr[q].p[pi]; if (c2 && fr[q].t >= t0) fn(c2, fr[q].t); }
+  }
+  function names(a, v, t0, t1) { for (var q = 0; q < po.length; q++) { if (po[q].player === a && po[q].on === v && po[q].t1 > t0 && po[q].t0 < t1) return true; } return false; }
+  // HOW it was done, from what the stunner was doing in the seconds before the stamina reached zero (tz)
+  function how(a, v, tz) {
+    var held = false, thrown = false, stab = false, shot = null, bash = false;
+    eachCell(v, tz - 1.2, tz + 0.05, function (c2) { if (c2[8] === 0x36 || c2[8] === 0x37) held = true; });
+    eachCell(v, tz - 4.5, tz + 0.05, function (c2) { if (c2[8] === 0x33) thrown = true; });
+    eachCell(a, tz - 1.6, tz + 0.4, function (c2) {
+      var ac = c2.length > 14 ? c2[14] : null, it = c2.length > 12 ? c2[12] : null;
+      if (ac === 0x19 && (it === 1 || it == null)) stab = true;
+      if ((ac === 6 || ac === 7) && it != null && it !== 1 && isGun(it)) shot = it;
+      if (ac === 0x1b) bash = true;
+    });
+    if (held && inActState(a, tz - 1.5, tz + 0.3, { 36: 1, 37: 1 })) return { how: 'choke', label: 'CQC CHOKE' };
+    // ROLLED OVER BY THE DRUM CAN: the stunner is inside it (item flag 10) or in its rolling state (169) in the second and a
+    // half before. 17 of the 20 knock-outs that had no cause were this (he rolls at a median 4.3 m/s; each hit takes 60 %
+    // of the bar, so the victim reads 1.0 -> 0.4 -> 0); with the hit record present it is hit kind 113, see HIT_FIX.
+    var drum = false;
+    eachCell(a, tz - 1.5, tz + 0.15, function (c2) { if (c2[8] === 169 || (IFLAG >= 0 && c2.length > IFLAG && c2[IFLAG] === 10)) drum = true; });
+    if (drum) return { how: 'drum', weapon: 113 };
+    if (stab) return { how: thrown ? 'throw+stab' : 'stab', weapon: 1, subtype: 45 };
+    if (shot != null) return { how: 'shot', weapon: shot };
+    if (bash) return { how: 'shield', label: 'SHIELD' };
+    if (inActState(a, tz - 4.5, tz + 0.3, { 35: 1, 36: 1, 37: 1 }) && (held || thrown)) return { how: 'cqc', label: 'CQC' };
+    return { how: null, label: 'KNOCK-OUT' };
+  }
+  function addDerived(a, v, tz, by) {
+    var h = how(a, v, tz), sk = null;
+    // nothing he was doing explains it: the last hit recorded on that victim in the 8 s before (a stun grenade that left him
+    // on a sliver of stamina, say) lends its name - 2 of the 3 that were still unexplained
+    if (!h.how) for (var hq = evs.length - 1; hq >= 0; hq--) {
+      var he = evs[hq];
+      if (he.type !== 'stun' || he.derived || he.victim !== v || he.t > tz + 0.3 || he.t < tz - 8 || he.weapon == null) continue;
+      if (he.killer == null || he.killer === a) { h = { how: 'after-hit', weapon: he.weapon, subtype: he.subtype }; break; }
+    }
+    (P[a].skills || []).forEach(function (s) { if (/CQC/.test(s.name || '')) sk = s; });
+    var e = { t: Math.round(tz * 1000) / 1000, type: 'stun', killer: a, victim: v, weapon: h.weapon == null ? null : h.weapon, weaponName: null,
+              subtype: h.subtype == null ? null : h.subtype, hitZone: null, derived: true, by: by, how: h.how, ko: true };
+    if (h.label) e._label = h.label;
+    if (h.how === 'choke' && sk) e._skill = String(sk.name).replace(/_/g, ' ') + (sk.name === 'CQC_EX' ? '' : ' ' + sk.level);
+    evs.push(e); S.derived++; S.list.push(e);
+  }
+  var has9 = false;
+  for (k = 0; k < so.length; k++) if (so[k][2] === 9 || so[k][2] === 10) { has9 = true; break; }
+  if (so.length) {
+    // ---- the game's own count ----
+    var last = {}, inc9 = [], inc10 = [];
+    for (k = 0; has9 && k < so.length; k++) {
+      var o = so[k];
+      if (o[2] !== 9 && o[2] !== 10) continue;
+      var key = o[4] + ':' + o[1] + ':' + o[2], was = last[key] || 0;
+      last[key] = o[3];
+      for (var q9 = was; q9 < o[3]; q9++) (o[2] === 9 ? inc9 : inc10).push({ t: o[0], p: o[1], used: false });
+    }
+    inc9.forEach(function (a9) {
+      var best = null, bd = Infinity;
+      inc10.forEach(function (b) {
+        if (b.used || Math.abs(b.t - a9.t) > 0.15 || !enemy(a9.p, b.p)) return;
+        var d = dist(a9.p, b.p, a9.t); if (d == null) d = 9e8;
+        if (d < bd) { bd = d; best = b; }
+      });
+      if (!best) return;
+      best.used = true; S.counted++;
+      var a = a9.p, v = best.p, t = a9.t, tz = null, q;
+      for (q = 0; q < zero[v].length; q++) { var z = zero[v][q][0]; if (z > t - 3.5 && z < t + 1.0 && (tz == null || Math.abs(z - t) < Math.abs(tz - t))) tz = z; }
+      // the recorded hit this count belongs to: the last one on that victim in the 4 s before the count
+      var mine = null, other = false;
+      for (q = 0; q < evs.length; q++) {
+        var e = evs[q];
+        if (e.type !== 'stun' || e.derived || e.victim !== v || e.t <= t - 4 || e.t >= t + 0.6) continue;
+        if (e.killer == null || e.killer === a) { if (!e.ko) mine = e; } else other = true;
+      }
+      if (mine) {
+        mine.ko = true;
+        if (mine.killer == null) { mine.killer = a; mine._credited = 'game counter'; S.credited++; }
+      } else if (!other) addDerived(a, v, tz != null ? tz : t - 0.25, 'game counter');
+    });
+  } else {
+    // ---- no scoreboard stream in this file: the stamina rule ----
+    S.fallback = true;
+    var CQS = { 35: 1, 36: 1, 37: 1 };
+    for (i = 0; i < n; i++) zero[i].forEach(function (z) {
+      var tz = z[0], v = i;
+      if (evs.some(function (e) { return (e.type === 'stun' && e.victim === v && e.t > tz - 2.5 && e.t < tz + 1.5) || (e.type === 'kill' && e.victim === v && Math.abs(e.t - tz) < 0.4); })) return;
+      var cands = [];
+      for (var j = 0; j < n; j++) {
+        if (!enemy(v, j) || !inActState(j, tz - 4, tz + 0.5, CQS)) continue;
+        var d = dist(j, v, tz);
+        if (names(j, v, tz - 4, tz + 1) || (d != null && d <= 2500)) cands.push(j);
+      }
+      if (cands.length === 1) addDerived(cands[0], v, tz, 'stamina rule');
+    });
+    evs.forEach(function (e) {
+      if (e.type !== 'stun' || e.derived || e.killer != null || e.victim == null || e.weapon !== 1) return;
+      var cands = [];
+      for (var j = 0; j < n; j++) {
+        if (!enemy(e.victim, j)) continue;
+        var reach = false;
+        eachCell(j, e.t - 1.6, e.t + 0.4, function (c2) { var ac = c2.length > 14 ? c2[14] : null; if (ac >= 0x17 && ac <= 0x1a) reach = true; });
+        var d = dist(j, e.victim, e.t);
+        if (names(j, e.victim, e.t - 4, e.t + 1) || (reach && d != null && d <= 2500)) cands.push(j);
+      }
+      if (cands.length === 1) { e.killer = cands[0]; e._credited = 'nearest knife / CQC action'; S.credited++; }
+    });
+  }
+  if (S.derived) evs.sort(function (x, y) { return x.t - y.t; });
+}
+// knock-outs given per player up to `lim` as the GAME counts them (counter 9), or null when the file has no scoreboard stream
+function gameStuns(lim) {
+  var st = R && R.meta && R.meta.statOps;
+  if (!st || !st.length) return null;
+  return gameStat(STAT.stuns, lim) || new Array(R.players.length).fill(0);
+}
+
 function loadReplay(key) {
   if (!REPLAYS[key] && REPURL[key]) {
     warn('loading ' + key + '…');
@@ -13294,7 +14586,7 @@ function loadReplay(key) {
 function applyReplay(key) {
   var r = REPLAYS[key];
   if (!r) return;
-  R = r;
+  R = r; CUR_KEY = key;
   try {
     if (typeof location !== 'undefined' &&
         new URLSearchParams(location.search).get('rolls') === 'raw') {
@@ -13310,6 +14602,7 @@ function applyReplay(key) {
   try { buildLadders(R); } catch (errL) { R.ladderBy = []; }
   buildExtras(R);          // before buildDamage: it reads the gas damage rows
   buildDamage(R);
+  try { buildStuns(R); } catch (errK) { console.warn('stuns off:', errK); }
   buildNades(R);
   try { buildInsights(R); } catch (e) { console.warn('insights off:', e); }
   try { window.__PRONESTATS = R.proneStats; } catch (e) {}
@@ -13398,14 +14691,17 @@ function applyReplay(key) {
     var i = kv.indexOf('=');
     if (i > 0) q[kv.slice(0, i)] = kv.slice(i + 1);
   });
-  setCam(q.cam === 'top' || q.cam === 'follow' || q.cam === 'free' ? q.cam : 'orbit');
+  // a ?follow= link (applyReplay) has already picked a player and the follow camera: keep that unless the #cam part says otherwise
+  setCam(q.cam === 'top' || q.cam === 'follow' || q.cam === 'free' ? q.cam : (follow >= 0 && camMode === 'follow' ? 'follow' : 'orbit'));
   if (q.p != null && R.players[+q.p]) selectPlayerSilent(+q.p);
   // camera in the link too: d = distance, az / el = angles in degrees (a close
   // look at one player's pose can then be linked, and checked by screenshot)
   if (q.d && isFinite(+q.d)) orbit.dist = +q.d;
   if (q.az && isFinite(+q.az)) orbit.az = +q.az * Math.PI / 180;
   if (q.el && isFinite(+q.el)) orbit.el = +q.el * Math.PI / 180;
-  seek(q.t ? parseFloat(q.t) : 0);
+  // FOUND 2026-10-11 (testing the Link button in a real browser): this used to seek to 0 whenever the #t part was missing,
+  // which threw away the ?t= time applyReplay had just set, so a ?t= link always opened at 0:00.
+  seek(q.t ? parseFloat(q.t) : T);
   if (q.dock === 'min' || q.dock === 'full') setDockMin(q.dock === 'min');
   if (q.panel && $('mtabs')) { var pb_ = $('mtabs').querySelector('[data-panel="' + q.panel + '"]'); if (pb_) pb_.click(); }
   if (q.floor) { floorMode = q.floor === 'auto' || q.floor === 'all' ? q.floor : Math.max(0, (+q.floor || 1) - 1); roofSig = ''; }
@@ -13457,9 +14753,15 @@ function start(data) {
     return;
   }
   var sel = $('pick');
+  // entries with a `group` (explore.json: the MGO1 maps) sit in their own <optgroup>; others are unchanged
+  var groups = {};
+  if (Array.isArray(data.replays)) data.replays.forEach(function (m) { if (m.group) groups[m.key] = String(m.group); });
+  var curG = null;
   sel.innerHTML = keys.map(function (k) {
-    return '<option value="' + esc(k) + '">' + esc(labels[k]) + '</option>';
-  }).join('');
+    var g = groups[k] || null, pre = '';
+    if (g !== curG) { pre = (curG ? '</optgroup>' : '') + (g ? '<optgroup label="' + esc(g) + '">' : ''); curG = g; }
+    return pre + '<option value="' + esc(k) + '">' + esc(labels[k]) + '</option>';
+  }).join('') + (curG ? '</optgroup>' : '');
   initGL();
   loadFigure();
   hudCtx = $('hud').getContext('2d');
@@ -13484,6 +14786,9 @@ function start(data) {
   // match that will not load falls back to the first hosted one.
   var match0 = null;
   try { match0 = new URLSearchParams(location.search).get('match'); } catch (e) {}
+  // links copied by the first Copy-link build named a fetched match as ?replay=match+69641: open those as the match they mean
+  var wm0_ = want0 ? /(?:^|\s)match (\d+)$/i.exec(String(want0).trim()) : null;
+  if (!match0 && wm0_) match0 = wm0_[1];
   if (match0 && (matchId(match0) != null || isReplayUrl(match0))) {
     openMatch(match0).then(function (ok) {
       if (ok) return;
@@ -13531,6 +14836,13 @@ function main() {
         return fetch('data/explore.json?v=' + Date.now()).then(function (r) { return r.ok ? r.json() : null; })
           .then(function (ex) {
             if (ex && ex.replays) ix.replays = ex.replays.concat(ix.replays || []);
+            // explore-only stages (MGO1 maps) carry their own map URLs / bounds here, so a
+            // normal (non-explore) page never even knows they exist; stock keys are never overwritten
+            ['mapUrls', 'mapUrlsLite', 'mapBounds'].forEach(function (f) {
+              if (!ex || !ex[f]) return;
+              ix[f] = ix[f] || {};
+              for (var s in ex[f]) if (!(s in ix[f])) ix[f][s] = ex[f][s];
+            });
             return ix;
           }).catch(function () { return ix; });
       })
