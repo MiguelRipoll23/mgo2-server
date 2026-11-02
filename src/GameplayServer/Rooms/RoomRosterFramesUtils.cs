@@ -28,7 +28,8 @@ public static class RoomRosterFramesUtils
     /// <returns>One record body per entry, in send order.</returns>
     public static List<byte[]> BuildRecords(
         IReadOnlyList<RosterMember> members,
-        HostIdentityService hostIdentity)
+        HostIdentityService hostIdentity,
+        bool includeEndpointPairs = true)
     {
         var records = new List<byte[]>
         {
@@ -40,12 +41,13 @@ public static class RoomRosterFramesUtils
                 hostIdentity.ClanName,
                 RoomRosterService.HostSessionSlot,
                 addressData: hostIdentity.AddressData,
-                unresolvedByte: PlayerProfileRecordUtility.HostEntryUnresolvedByte),
+                unresolvedByte: PlayerProfileRecordUtility.HostEntryUnresolvedByte,
+                includeEndpointPairs: includeEndpointPairs),
         };
         records.AddRange(
             members
                 .OrderBy(member => member.RosterIndex)
-                .Select(member => member.BuildRecord()));
+                .Select(member => member.BuildRecord(includeEndpointPairs)));
         return records;
     }
 
@@ -77,9 +79,10 @@ public static class RoomRosterFramesUtils
     public static List<RosterRecord> BuildRun(
         IReadOnlyList<RosterMember> members,
         HostIdentityService hostIdentity,
-        byte[]? answeringLoadout = null)
+        byte[]? answeringLoadout = null,
+        bool includeEndpointPairs = true)
     {
-        var entries = BuildRecords(members, hostIdentity);
+        var entries = BuildRecords(members, hostIdentity, includeEndpointPairs);
         var run = new List<RosterRecord>(entries.Count + 3)
         {
             new(UdpCommandConstants.RosterHead, [], 0),

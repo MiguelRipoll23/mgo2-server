@@ -1,5 +1,6 @@
 using System.Net;
 using Mgo2Server.Shared.Constants;
+using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.Shared.Types;
 
@@ -31,6 +32,9 @@ public sealed class PeerSession
 
     /// <summary>Public and private IPv4 endpoint pairs the peer announced in its handshake, in roster wire format.</summary>
     public byte[] PeerAddressData { get; set; } = [];
+
+    /// <summary>Handshake shape the peer used when establishing this session.</summary>
+    public HandshakeShape PeerHandshakeShape { get; set; } = HandshakeShape.Native;
 
     /// <summary>Peer identifier the host announced to this peer (its own character identifier).</summary>
     public required uint HostPeerIdentifier { get; init; }

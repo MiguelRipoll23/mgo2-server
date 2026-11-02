@@ -272,7 +272,9 @@ public sealed class PlayerProfileHandler(
                 context.Remote);
         }
 
-        var run = roster.BuildRosterRun(answeringLoadout);
+        var run = roster.BuildRosterRun(
+            answeringLoadout,
+            includeEndpointPairs: context.Session.PeerHandshakeShape != HandshakeShape.Native);
 
         logger.LogDebug(
             "UDP {LocalPort}: built roster response for {RemoteAddress}: {RecordCount} records, "

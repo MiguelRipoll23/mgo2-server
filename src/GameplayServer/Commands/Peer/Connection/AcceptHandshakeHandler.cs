@@ -45,6 +45,7 @@ public sealed class AcceptHandshakeHandler(
         context.Session.PeerIdentifier = handshake.PeerIdentifier;
         context.Session.CounterBase = handshake.CounterBase;
         context.Session.SessionKey = handshake.CounterBase ^ hostIdentity.CounterBase;
+        context.Session.PeerHandshakeShape = shape;
         context.Session.PeerAddressData = HandshakeShapeUtils.AddressData(handshake, context.Remote);
 
         var dialBack = HandshakeShapeUtils.DialBackEndpoint(handshake, context.Remote) ?? context.Remote;

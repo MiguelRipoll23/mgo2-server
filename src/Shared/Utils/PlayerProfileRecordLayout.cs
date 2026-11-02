@@ -79,9 +79,9 @@ namespace Mgo2Server.Shared.Utils;
 /// <c>rpdt.js</c> tells them apart by walking back from the end of the record to
 /// the nick's NUL, and <see cref="PlayerProfileRecordParseUtils"/> ports that
 /// rule. Of the three captures, game1's roster is the long layout and game2's and
-/// game3's the short. <see cref="PlayerProfileRecordUtility.Build"/> writes the
-/// long layout only. **[V]** on the offsets and the rule; what a short record
-/// means at <c>0x04</c> is **[U]** — game2's host writes <c>0x01</c>/<c>0x02</c>
+/// game3's the short. The server selects short for native handshakes and long
+/// when the peer advertises endpoint pairs. **[V]** on the offsets and rule;
+/// short-layout <c>0x04</c> semantics remain **[U]** — game2's host writes <c>0x01</c>/<c>0x02</c>
 /// there, where game1's writes <c>0xe2</c> plus the index, so the base is a
 /// property of the host and not of the layout.
 /// </para>

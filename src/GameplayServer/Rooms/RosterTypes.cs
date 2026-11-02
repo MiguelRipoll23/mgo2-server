@@ -99,7 +99,7 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
 
     /// <summary>Builds the player-profile record that puts this player on a peer's roster.</summary>
     /// <returns>The record body.</returns>
-    public byte[] BuildRecord() =>
+    public byte[] BuildRecord(bool includeEndpointPairs = true) =>
         PlayerProfileRecordUtility.Build(
             isHostEntry: false,
             RosterIndex,
@@ -108,5 +108,6 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
             ClanName,
             SessionSlot,
             addressData: AddressData,
-            unresolvedByte: PlayerProfileRecordUtility.PlayerRecordUnresolvedByte);
+            unresolvedByte: PlayerProfileRecordUtility.PlayerRecordUnresolvedByte,
+            includeEndpointPairs: includeEndpointPairs);
 }

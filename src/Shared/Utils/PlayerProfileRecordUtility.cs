@@ -232,39 +232,15 @@ public static class PlayerProfileRecordUtility
     /// <summary>
     /// Builds a profile record body.
     /// </summary>
-    /// <param name="isHostEntry">
-    /// Whether this is the host's own entry rather than a joining player's: the
-    /// head of a roster run, carrying the host's own character id and name. It
-    /// selects the pair at <c>0x0c</c>/<c>0x0d</c> — not what <c>0x01</c>
-    /// carries, which is the length, and not the endpoint field, which is the
-    /// endpoints the peer announced rather than anything this flag chooses.
-    /// </param>
-    /// <param name="rosterIndex">
-    /// Position of the player in the room roster, counted from
-    /// <see cref="HostRosterIndex"/>. It is signed because the host's own slot
-    /// is the one below zero.
-    /// </param>
+    /// <param name="isHostEntry">Whether this is the host's own roster entry.</param>
+    /// <param name="rosterIndex">Position in the roster; negative for the host entry.</param>
     /// <param name="characterId">Character id written at offset 8.</param>
         /// <param name="name">Character name.</param>
     /// <param name="clanName">Clan name, which may be empty.</param>
-    /// <param name="addressData">
-    /// The two IPv4 endpoint pairs, copied from the peer handshake. Null or empty
-    /// leaves the measured structural bytes in place.
-    /// </param>
-    /// <param name="unresolvedByte">
-    /// Value written at offset <c>0x10</c>. The captured roster reads
-    /// <c>0x01</c> on the host's own entry and <c>0x02</c> on a player's, and the
-    /// value does not follow the wire type, so it is passed in rather than
-    /// derived here. What it means is **[U]**.
-    /// </param>
-    /// <param name="sessionSlot">
-    /// The player's slot in the host's 24-entry network player table, written at
-    /// offsets <c>0x05</c> and <c>0x07</c>. It is required, because the
-    /// captures leave no room for a default: zero is the host's own slot
-    /// (<see cref="HostSessionSlot"/>) and no joined player's entry carries it,
-    /// so a record built without one would put the player on the host's slot of
-    /// the client's table.
-    /// </param>
+    /// <param name="addressData">Two IPv4 endpoint pairs from the peer handshake.</param>
+    /// <param name="unresolvedByte">Value written at offset <c>0x10</c>.</param>
+    /// <param name="sessionSlot">Slot in the host's network player table.</param>
+    /// <param name="includeEndpointPairs">Whether to emit the twelve-byte endpoint field.</param>
     public static byte[] Build(
         bool isHostEntry,
         sbyte rosterIndex,
@@ -273,15 +249,18 @@ public static class PlayerProfileRecordUtility
         string clanName,
         byte sessionSlot,
         byte[]? addressData = null,
-        byte unresolvedByte = PlayerRecordUnresolvedByte)
+        byte unresolvedByte = PlayerRecordUnresolvedByte,
+        bool includeEndpointPairs = true)
     {
         var nameBytes = Truncate(Encoding.ASCII.GetBytes(name ?? string.Empty), MaximumNameLength);
         var clanBytes = Truncate(Encoding.ASCII.GetBytes(clanName ?? string.Empty), MaximumClanLength);
+        var nameOffset = includeEndpointPairs ? NameOffset : ShortNameOffset;
+        var nameMarkerOffset = nameOffset - 1;
 
         // The name's NUL terminator is written explicitly; the clan name runs to
         // the end of the record and carries none, which is what the recorded
         // records do.
-        var body = new byte[NameOffset + 1 + nameBytes.Length + clanBytes.Length];
+        var body = new byte[nameOffset + 1 + nameBytes.Length + clanBytes.Length];
         body[0] = RecordVersion;
         body[RecordLengthOffset] = (byte)(body.Length - FixedPrefixLength);
         body[4] = rosterIndex == HostRosterIndex
@@ -290,7 +269,7 @@ public static class PlayerProfileRecordUtility
         body[5] = sessionSlot;
         body[7] = sessionSlot;
         BinaryUtility.WriteUInt32LittleEndian(body, CharacterIdOffset, (uint)characterId);
-        body[BlockConstantOffset] = BlockConstant;
+        body[BlockConstantOffset] = includeEndpointPairs ? BlockConstant : (byte)0;
         body[HostEntryBlockFlagOffset] = isHostEntry ? HostEntryBlockFlag : PlayerBlockFlag;
         body[HostEntryBlockFlagOffset + 1] = isHostEntry ? HostEntryBlockFlagSecond : PlayerBlockFlag;
         body[UnresolvedByteOffset] = unresolvedByte;
@@ -298,12 +277,15 @@ public static class PlayerProfileRecordUtility
         // The endpoint field is the peer's two announced endpoints and nothing
         // else; a body built with none leaves it zero rather than inventing an
         // address and port for the peer it belongs to.
-        WriteAddressData(body, addressData);
+        if (includeEndpointPairs)
+        {
+            WriteAddressData(body, addressData);
+        }
 
-        body[NameMarkerOffset] = clanBytes.Length > 0 ? ClanNameMarker : (byte)0x00;
-        nameBytes.CopyTo(body, NameOffset);
-        body[NameOffset + nameBytes.Length] = 0x00;
-        clanBytes.CopyTo(body, NameOffset + nameBytes.Length + 1);
+        body[nameMarkerOffset] = clanBytes.Length > 0 ? ClanNameMarker : (byte)0x00;
+        nameBytes.CopyTo(body, nameOffset);
+        body[nameOffset + nameBytes.Length] = 0x00;
+        clanBytes.CopyTo(body, nameOffset + nameBytes.Length + 1);
         return body;
     }
 

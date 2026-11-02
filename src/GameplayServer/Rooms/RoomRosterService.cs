@@ -296,8 +296,10 @@ public sealed class RoomRosterService(
     /// the room's count.
     /// </param>
     /// <returns>The records in send order, each with the type it travels as.</returns>
-    public List<RosterRecord> BuildRosterRun(byte[]? answeringLoadout = null) =>
-        RoomRosterFramesUtils.BuildRun(Snapshot(), hostIdentity, answeringLoadout);
+    public List<RosterRecord> BuildRosterRun(
+        byte[]? answeringLoadout = null,
+        bool includeEndpointPairs = true) =>
+        RoomRosterFramesUtils.BuildRun(Snapshot(), hostIdentity, answeringLoadout, includeEndpointPairs);
 
     private sbyte NextFreeIndex()
     {
@@ -333,4 +335,3 @@ public sealed class RoomRosterService(
         throw new InvalidOperationException("The room's player table is full; no key is left for another player.");
     }
 }
-
