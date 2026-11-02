@@ -9,22 +9,22 @@ The layout is **ported, not re-derived**, from `rpdt.js` (`?v=ins236`, the
 decoder the SaveMGO replay console loads, fetched 2026-10-11). The record is
 that decoder's `TYPE_SETTINGS` (`0x0b`), and every offset, length and alignment
 rule below comes from its `appearanceRecord` and `skillRecord` functions rather
-than from a reading of our captures. What the port buys is that a capture and
-the replay console agree on what a body says instead of merely looking alike;
-what the captures add is the sample values `docs/protocol/UDP_SETTINGS_PAYLOAD.md`
-lists as evidence that the port is right.
+than from a reading of our captures. The replay decoder iterates fifteen
+rotation entries; the native client layout has sixteen slots, as confirmed by
+the 48-byte field in the 161-byte settings body. This tool exposes all sixteen
+wire slots while retaining the replay decoder's other naming rules.
 
 Two shapes share the leading byte, told apart by the second byte and the length:
 
-* **Settings / rotation** — second byte `0x00` and length `>= 71`. Fifteen
+* **Settings / rotation** — second byte `0x00` and length `>= 74`. Sixteen
   three-byte entries at offset `0x1a`: `(map id, mode/rule, unresolved)`. This is
   the host's own payload, the 161-byte `0b 00`.
 * **Loadout** — second byte `>= 1` and a length in :data:`LOADOUT_LENGTHS`. The
   slot is the second byte minus one, the team byte follows it, the trailing 23
   bytes are the character's appearance, and the skill pairs sit before it.
 
-Nothing here sends anything; it decodes a capture. The server must not write
-these bodies, and does not.
+Nothing here sends anything; it decodes a capture. The server builds the
+rotation slots from the room and loadouts from player data.
 """
 
 from __future__ import annotations
@@ -39,12 +39,12 @@ SKILL_APPEARANCE = 23
 SKILL_LIST_END = 0xFF
 SKILL_REGION_SUFFIX = 0x10
 
-# rpdt.js: the rotation shape. Slot 0 with a body this long carries fifteen
-# three-byte entries from offset 0x1a.
-MINIMUM_ROTATION_LENGTH = 71
-ROTATION_COUNT = 15
+# Native layout: slot 0 with a body this long carries sixteen three-byte
+# entries from offset 0x1a.
 ROTATION_OFFSET = 0x1A
+ROTATION_COUNT = 16
 ROTATION_ENTRY = 3
+MINIMUM_ROTATION_LENGTH = ROTATION_OFFSET + ROTATION_COUNT * ROTATION_ENTRY
 
 # rpdt.js: skill ids are base 1, measured, and the names are its list. The pair
 # a record carries is (id, level) with the level in 1..3.
@@ -114,7 +114,7 @@ def is_settings_payload(body: bytes) -> bool:
 def is_rotation_record(body: bytes) -> bool:
     """Whether a body is the host's own settings/rotation record.
 
-    Slot byte zero with a body long enough to hold the fifteen entries. The
+    Slot byte zero with a body long enough to hold the sixteen entries. The
     slot zero is what makes it the host's: the loadout shape starts at slot one.
     """
     return (
@@ -139,7 +139,7 @@ def is_loadout_record(body: bytes) -> bool:
 
 
 def parse_rotation(body: bytes) -> list[tuple[int, int, int]] | None:
-    """The fifteen `(map id, mode, unresolved)` entries, or `None`.
+    """The sixteen `(map id, mode, unresolved)` entries, or `None`.
 
     The first two are named by the replay decoder — it picks the entry whose
     map equals the header map and reads that as the round's mode — and the third

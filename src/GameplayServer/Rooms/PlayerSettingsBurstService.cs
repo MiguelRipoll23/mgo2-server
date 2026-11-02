@@ -30,25 +30,25 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// it had reported anything.
 /// </para>
 /// <para>
-/// <b>What the payload bodies mean is settled by the replay parser.</b> Every
+/// <b>The payload bodies share the replay parser's settings discriminator.</b> Every
 /// one of them opens on <c>0x0b</c>, which is the replay's
 /// <c>TYPE_SETTINGS</c> discriminator, and its byte <c>+1</c> is the slot the
-/// record belongs to: slot <c>0x00</c> with a body of 71 bytes or more is the
-/// room's settings block, from which the parser reads fifteen rotation triples
-/// at body <c>+26</c> — map id, mode, and an unresolved byte; a slot of
+/// record belongs to: slot <c>0x00</c> with at least 74 bytes carries the
+/// room's settings block, whose native layout has sixteen rotation triples at
+/// body <c>+26</c> — map id, mode, and an unresolved byte; a slot of
 /// <c>0x01</c> or more with a length in 50…62 is a player's loadout, carrying
 /// its team byte, its appearance and its skills (<c>docs/analysis/replay-console/rpdt.js</c>,
 /// laid out in <c>docs/protocol/UDP_SETTINGS_PAYLOAD.md</c> and mapped in
 /// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>). The recorded room's 161-byte body
 /// reads as maps 5, 7, 10, 6, 14, 15, 3, 17, 2, 9, 12, 4, 1, 8, 13 in modes 1, 5,
-/// 3, 7, 1, 4, 1, 2, 16, 1, 5, 4, 1, 6, 5 — a fifteen-round rotation — and the
+/// 3, 7, 1, 4, 1, 2, 16, 1, 5, 4, 1, 6, 5 — fifteen configured rounds — and the
 /// joiner's 50-byte body as its appearance.
 /// </para>
 /// <para>
 /// <b>The rotation and the loadouts are the room's.</b> The room row and the host
 /// character's saved settings say which rounds the room plays, so the triples are
 /// written from the room's own rotation (<see cref="RoomRotationBody"/>) and not
-/// from the recorded host's fifteen: a dedicated host whose room names one map was
+/// from the recorded host's rotation: a dedicated host whose room names one map was
 /// telling every joiner the maps the capture's room played. The loadouts are read
 /// the same way (<see cref="LobbyLoadoutService"/>): each player's record is
 /// written from its own character's appearance and equipped skills, so a joiner is
@@ -104,8 +104,8 @@ public sealed partial class PlayerSettingsBurstService(
     public const byte ClosingControlByte = 0x02;
 
     /// <summary>
-    /// Offset of the rotation's first triple in the room's settings body, which
-    /// is where the replay parser reads it (<c>0x1a</c>).
+    /// Offset of the rotation's first triple in the room's settings body
+    /// (<c>0x1a</c>).
     /// </summary>
     public const int RotationOffset = 0x1a;
 
@@ -113,19 +113,19 @@ public sealed partial class PlayerSettingsBurstService(
     public const int RotationEntryLength = 3;
 
     /// <summary>
-    /// Triples the body carries. It is fifteen in both captures, and the field is
-    /// a fixed stride rather than a count the body states.
+    /// Triples the body carries. The native field and room-details response both
+    /// have sixteen slots, and this is a fixed stride rather than a count in the body.
     /// </summary>
-    public const int RotationEntryCount = 15;
+    public const int RotationEntryCount = 16;
 
     /// <summary>
     /// The room's settings block as the capture at t+4.9929 wrote it: the fields
-    /// around the rotation, and that room's own fifteen triples at body
+    /// around the rotation, and that room's own sixteen slots at body
     /// <c>+26</c>.
     /// </summary>
     /// <remarks>
     /// It is the base the built body starts from, because the 26 bytes a triple
-    /// sits behind and the 90 after them are **[U]**
+    /// sits behind and the 87 after them are **[U]**
     /// (<c>docs/protocol/UDP_SETTINGS_PAYLOAD.md</c>): the recorded bytes are kept
     /// and only the triples the parser names are written over. It is also the last
     /// resort when the room cannot be read — a joiner still needs a body, and the
@@ -217,7 +217,7 @@ public sealed partial class PlayerSettingsBurstService(
     public static byte[] RecordedRotationBody() => Convert.FromHexString(RoomRotationPayloadHex);
 
     /// <summary>
-    /// The room's own settings body: the recorded body with its fifteen rotation
+    /// The room's own settings body: the recorded body with its sixteen rotation
     /// triples written from this room's rotation.
     /// </summary>
     /// <remarks>
@@ -237,10 +237,10 @@ public sealed partial class PlayerSettingsBurstService(
     /// writing zero would put a value there that no row states.
     /// </para>
     /// <para>
-    /// <b>Unused entries are zeroed, not repeated.</b> The field has fifteen
+    /// <b>Unused entries are zeroed, not repeated.</b> The field has sixteen
     /// slots, but a shorter room rotation only names its configured rounds. The
     /// remaining triples are zero, as they are in the lobby's rotation field and
-    /// the working capture. A longer rotation contributes its first fifteen,
+    /// the working capture. A longer rotation contributes its first sixteen,
     /// because that is all this field holds.
     /// </para>
     /// </remarks>

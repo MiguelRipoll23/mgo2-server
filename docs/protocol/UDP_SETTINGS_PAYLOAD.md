@@ -36,7 +36,8 @@ entry on one datagram and a `0b` payload on the next (`UDP_GAME_CAPTURE.md` §4)
 
 The slot byte picks the shape:
 
-* `0x00` with `L >= 71` — the host's own settings/rotation record.
+* `0x00` with `L >= 71` — the replay decoder's host settings/rotation shape.
+  The complete native 16-slot field requires at least 74 bytes.
 * `>= 1` with `L` `24` or `25` — the player's settings header, a slot-state
   transfer of one or two fields (below).
 * `>= 1` with `L` in `{50..62}` — a player loadout, whose slot is the byte minus
@@ -78,16 +79,18 @@ sent, and it is the host's own; an earlier reading of this file called it a
 sixth joining player. **[V]** for the keys and the pairing; that the slot-0 body's
 appearance is the host character's own **[I]** — in the capture it is identical to
 the joiner's, both being default appearances.
-The host also sends a rotation record, and its 90 bytes after the 15 triples
-(`0x47..0xa0`) are **[U]**, not an appearance block: read as one, they give gear
-ids `02 02 02 04 00 02 04` where the observed characters' gear is items like
+The host also sends a rotation record. Its 16 triples occupy `0x1a..0x49`;
+the remaining 87 bytes (`0x4a..0xa0`) are not an appearance block. The body
+matches the native state-field layout, but the gameplay meanings of those
+post-rotation fields remain **[U]**. Reading the bytes as a single appearance
+would give gear ids `02 02 02 04 00 02 04`, unlike observed character gear such as
 `1e 45 2f 57 39 67 68`. The host's own appearance is therefore the slot-0 loadout
 body above and not a section of the rotation — which is what the live host writes,
 from its own character's row.
 
 ## The rotation record — `0b 00`, `L >= 71`
 
-Fifteen three-byte entries beginning at offset `0x1a`:
+Sixteen three-byte entries beginning at offset `0x1a`:
 
 | bytes | field |
 | --- | --- |
@@ -95,9 +98,11 @@ Fifteen three-byte entries beginning at offset `0x1a`:
 | `0x1a + 3i + 1` | mode / game rule |
 | `0x1a + 3i + 2` | unresolved |
 
-`rpdt.js` picks the entry whose map equals the file header's map and reads that
-entry's `[1]` as the round's mode, which names the first two. **[V]** for the
-offsets and the count; the third byte is `0x00` in `game1` and `0x00` for all
+`rpdt.js` picks an entry among its fifteen iterations whose map equals the file
+header's map and reads that entry's `[1]` as the round's mode. The full 48-byte
+field has sixteen slots and is read as such by the native client; a body needs
+`L >= 74` to contain all of them. **[V]** for the offsets and native count; the
+third byte is `0x00` in `game1` and `0x00` for all
 but one entry in `game2`, and is **[U]**. The live server writes it from the
 room's own flags byte — the only non-zero value this position was ever seen to
 hold — and what the peer does with it is still **[U]**.
@@ -107,6 +112,8 @@ hold — and what the peer does with it is still **[U]**.
 * `mgo2-game2.pcapng` (`0b 00`, 161 B) — `7/15, 5/7, 15/7, 2/7, 10/7, 6/7, 7/7,
   9/7, 12/7, 3/7, 17/7, 4/7, 8/7, 1/7, 13/7` — one mode repeated, a single-rule
   rotation (`rpdt.js`'s `TSNE_RULE` is `7`). **[V]**
+
+Both captures have fifteen populated slots; slot 16 is zeroed.
 
 ## The settings header — `0b <slot + 1>`, `L` 24 or 25
 
@@ -296,12 +303,11 @@ The host's payload `0b 00` and each player's loadout now decode; the rectangle
 `UDP_COMMANDS.md` filed as "[U]" is named. **The server writes the rotation and
 writes the loadouts.** The room's rotation is this instance's own setting
 (`MatchSettings.Rotation`, `GAME_SETTINGS_WIRE.md` — the same rotation the host
-plays and the same one it writes into the room row), so the burst's fifteen
-triples are written from it — entry *i* is the rotation's entry *i* modulo its
-count, so a room naming fewer rounds than the field holds repeats its own rounds
-rather than naming map `0` — and the third byte is zero, which is what fifteen of
-the sixteen recorded triples carry and what a room that states no flags byte is
-published with. The writer is `PlayerSettingsBurstService.RoomRotationBody`.
+plays and the same one it writes into the room row), so the burst's sixteen
+slots are written from it — configured rounds retain their order, unused slots
+are zeroed, and a longer rotation is limited to the sixteen slots the field
+holds. The third byte is written from the room's flags byte. The writer is
+`PlayerSettingsBurstService.RoomRotationBody`.
 
 The loadouts are written from the room's own players. A player's own fields are
 rows this server holds — the appearance block from `characters_appearance`

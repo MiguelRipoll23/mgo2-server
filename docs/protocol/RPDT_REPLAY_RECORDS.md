@@ -150,7 +150,7 @@ container contexts:
 
 | Context | Conditions | Mapped fields |
 |---|---|---|
-| Extended settings chunk (`kind=0x0a`) | `L >= 3`, type byte `0x0b` | Slot 0 with `L >= 71`: 15 rotation triples beginning at payload `+26` (three bytes each). Slot byte `+1 >= 1`: team byte `+2`; qualifying loadout forms additionally supply appearance and skills. |
+| Extended settings chunk (`kind=0x0a`) | `L >= 3`, type byte `0x0b` | Slot 0 with `L >= 71`: replay decoder iterates 15 triples at payload `+26`; the native 48-byte field has 16 slots and requires `L >= 74` to be complete. Slot byte `+1 >= 1`: team byte `+2`; qualifying loadout forms additionally supply appearance and skills. |
 | Indexed ordinary record, low `vid=0x001` | `23 <= L <= 45`, slot marker `+1` from 1 through 23 | Scoreboard delta: slot marker minus one, 21-byte LSB-first bit mask at `+2`, then changed values. Bits 5/6/8/11 are named kills/deaths/score/headshots; bit 152 is a last-result code, bit 153 a streak. Bits 131–136 carry three skill ID/level pairs. Unnamed bits remain unnamed. |
 
 For recognized loadout lengths 50–62, the parser maps the final 23 payload

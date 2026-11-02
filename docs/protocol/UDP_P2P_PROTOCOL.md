@@ -1067,7 +1067,7 @@ they start, how many there are and what they look like. **[V]**
   **The names are the room's, and the bytes nothing names are the capture's**: the
   *contents* are one character's equipment, skills and settings — the replay
   console's `TYPE_SETTINGS` record, laid out in `UDP_SETTINGS_PAYLOAD.md` — and
-  this server holds them per character, so the rotation's fifteen triples, each
+  this server holds them per character, so the rotation's sixteen triples, each
   loadout's slot byte, side, appearance block and skill pairs are written from the
   room's own rows and the recorded body supplies only what nothing names
   (`UDP_SETTINGS_PAYLOAD.md`, "What this changes"). The one burst the capture
