@@ -13,4 +13,4 @@ resources:
 
 images:
   - name: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres
-    newTag: c9040e9e2798ef9a7053e658dce68d67ec83b44b
+    newTag: 92b709d116fc79cb4296f4bbe1d9fb0adcf02e93
