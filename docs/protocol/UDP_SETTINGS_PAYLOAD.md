@@ -79,14 +79,13 @@ sent, and it is the host's own; an earlier reading of this file called it a
 sixth joining player. **[V]** for the keys and the pairing; that the slot-0 body's
 appearance is the host character's own **[I]** — in the capture it is identical to
 the joiner's, both being default appearances.
+
 The host also sends a rotation record. Its 16 triples occupy `0x1a..0x49`;
-the remaining 87 bytes (`0x4a..0xa0`) are not an appearance block. The body
-matches the native state-field layout, but the gameplay meanings of those
-post-rotation fields remain **[U]**. Reading the bytes as a single appearance
-would give gear ids `02 02 02 04 00 02 04`, unlike observed character gear such as
-`1e 45 2f 57 39 67 68`. The host's own appearance is therefore the slot-0 loadout
-body above and not a section of the rotation — which is what the live host writes,
-from its own character's row.
+the remaining 87 bytes (`0x4a..0xa0`) are selected fields from native state
+`0x00`, not an appearance block. Reading them as a single appearance would give
+gear ids `02 02 02 04 00 02 04`, unlike observed character gear such as
+`1e 45 2f 57 39 67 68`. The host's own appearance is therefore the slot-0
+loadout body above and not a section of the rotation.
 
 ## The rotation record — `0b 00`, `L >= 71`
 
@@ -114,6 +113,49 @@ hold — and what the peer does with it is still **[U]**.
   rotation (`rpdt.js`'s `TSNE_RULE` is `7`). **[V]**
 
 Both captures have fifteen populated slots; slot 16 is zeroed.
+
+### State fields outside the rotation
+
+The body begins with the seven-byte state-`0x00` presence map
+`ff 27 fe ee ff ff 3f`. The descriptor has 55 fields; selected field values
+follow in field-index order, with the descriptor's declared widths. Standalone phase updates establish field 0 as the room's round-phase value; the
+native reader at `0x8EB0C0`/`0x8EB148` uses field 9 to select a triple, and
+matched room-state captures identify field 10 as the room population. These
+three are written from the live room by this server. Other fields whose meanings
+are not established retain their values from
+`.pcapngs/briefing/working-server/briefing-then-solo-game.pcapng` at t+4.712.
+
+| state field | body offset | wire type | working-capture value | finding |
+| ---: | ---: | --- | --- | --- |
+| 0 | `0x09` | `u8` | `02` | Round-phase value, matching standalone field-0 updates. **[I]** |
+| 1 | `0x0a` | 16 bytes | all zero | Meaning unresolved. |
+| 2 | `0x1a` | 48 bytes | 16 rotation triples | Map, rule, third byte as above. |
+| 3–8 | `0x4a`–`0x54` | `u8`, `u16`, `u8`, `u8`, `u32`, `u16` | `11 b4 00 02 03 22 40 27 00 00 00` | Meanings unresolved; field 7 is a flag word. |
+| 9 | `0x55` | `u8` | `04` | Current rotation-slot index; native readers use it to select a triple. **[V]** |
+| 10 | `0x56` | `u8` | `02` | Room population, host included, inferred from matched joins. **[I]** |
+| 13, 17–23, 25–27 | `0x57`–`0x64` | `u8` / `u16` | `00 00 00 05 00 00 00 05 00 00 01 00 00 00` | Meanings unresolved. |
+| 29 | `0x65`–`0x86` | 17 little-endian `u16`s | See below. | Partial timer mapping; remaining entries unresolved. |
+| 30–53 | `0x87`–`0xa0` | `u8` / `u16` | `02 02 02 02 02 02 02 02 01 02 02 02 32 1e 05 03 00 00 00 7f 7f ff 8c 28 01 00` | Meanings unresolved. |
+
+Field 29 is not a copy of the lobby timer bank: its widths and units differ.
+Across ten pairs matched by the full rotation, elements 0–7 equal the eight
+standard rule times in seconds. Their rule order is DM, TDM, RES, CAP, SNE,
+BASE, BOMB, TSNE, using timer-bank positions `9, 6, 4, 2, 0, 11, 13, 15`
+respectively, multiplied by 60. The working capture's values are eight `300`s.
+The builder computes these eight elements from the room's configured timer bank.
+
+Elements 8–11 are zero in that capture and remain unmapped. Elements 12–16 are
+`300` there. Across matched captures, elements 12, 13 and 15 correlate with
+bytes 0, 2 and 4 of the five-byte `0x4313` reply region at offsets
+`0x166`–`0x16a`, multiplied by 60; the other elements and their meanings are
+not established. The builder therefore keeps the five reference values rather
+than guessing a mapping.
+
+The sender now writes the header, presence map, each typed field, the sixteen
+rotation slots, and the 17 timer words individually. It no longer starts from
+an opaque captured byte array. This reproduces the working capture's
+unresolved values while deriving the current slot, player count and verified
+timer entries from the room.
 
 ## The settings header — `0b <slot + 1>`, `L` 24 or 25
 

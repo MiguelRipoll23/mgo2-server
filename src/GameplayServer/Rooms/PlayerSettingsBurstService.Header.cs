@@ -52,16 +52,16 @@ public sealed partial class PlayerSettingsBurstService
     /// it reads as a record the peer itself sent.
     /// </remarks>
     /// <param name="rotation">
-    /// The room's rotation, or <c>null</c> to write the recorded room's own body.
+    /// The room's rotation body, already built from the room and its current state.
     /// </param>
     /// <returns>The records, in the order a reference host sends them.</returns>
-    private List<RosterRecord> JoinPreamble(IReadOnlyList<MatchRotationEntry>? rotation)
+    private List<RosterRecord> JoinPreamble(byte[] rotationBody)
     {
         List<RosterRecord> preamble =
         [
             new(
                 UdpCommandConstants.PlayerProfile,
-                rotation is null ? RecordedRotationBody() : RoomRotationBody(rotation),
+                rotationBody,
                 roster.TakeRunOrdinal()),
             new(
                 UdpCommandConstants.PlayerProfile,

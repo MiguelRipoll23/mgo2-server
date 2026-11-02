@@ -113,9 +113,17 @@ public sealed class PlayerSettingsBurstSchedulerService(
             ? (byte)(member.SessionSlot + 1)
             : (byte)0;
 
-        await RosterRunSendUtils.SendAsync(
-            context,
-            burst.BuildSettingsBurst(rotation, loadouts, answeringSlot));
+        var settingsBurst = rotation is null
+            ? burst.BuildSettingsBurst(rotation, loadouts, answeringSlot)
+            : burst.BuildSettingsBurst(
+                rotation,
+                loadouts,
+                matchSettings.CurrentRoundNumber,
+                matchSettings.CurrentRotationIndex,
+                checked((byte)(roster.JoinerCount + 1)),
+                matchSettings.RuleTimers,
+                answeringSlot);
+        await RosterRunSendUtils.SendAsync(context, settingsBurst);
         logger.LogDebug(
             "UDP {LocalPort}: settings burst sent to {RemoteAddress}; sending its closing control",
             context.LocalPort,

@@ -95,7 +95,7 @@ public sealed partial class PlayerSettingsBurstService(
     public const byte RoomRotationSlot = 0x00;
 
     /// <summary>Body length of the room's rotation record, as measured.</summary>
-    public const int RoomRotationPayloadLength = 161;
+    public const int RoomRotationPayloadLength = RoomRotationPayloadUtils.PayloadLength;
 
     /// <summary>Control byte the burst opens with.</summary>
     public const byte OpeningControlByte = 0x24;
@@ -117,26 +117,6 @@ public sealed partial class PlayerSettingsBurstService(
     /// have sixteen slots, and this is a fixed stride rather than a count in the body.
     /// </summary>
     public const int RotationEntryCount = 16;
-
-    /// <summary>
-    /// The room's settings block as the capture at t+4.9929 wrote it: the fields
-    /// around the rotation, and that room's own sixteen slots at body
-    /// <c>+26</c>.
-    /// </summary>
-    /// <remarks>
-    /// It is the base the built body starts from, because the 26 bytes a triple
-    /// sits behind and the 87 after them are **[U]**
-    /// (<c>docs/protocol/UDP_SETTINGS_PAYLOAD.md</c>): the recorded bytes are kept
-    /// and only the triples the parser names are written over. It is also the last
-    /// resort when the room cannot be read — a joiner still needs a body, and the
-    /// caller logs which of the two it sent.
-    /// </remarks>
-    private const string RoomRotationPayloadHex =
-        "0b00ff27feeeffff3f03000000000000000000000000000000000501000705000a0300060700"
-        + "0e01000f04000301001102000210000901000c05000404000101000806000d05000000000fb4"
-        + "0002032a620700b4000c02010000280000002800020100020a2c01a401b4002c011c022c012c"
-        + "01f00003d0a0ac00242200b400341700002c012c010202040202020400020402022863000300"
-        + "01017f7ffff3e50e01";
 
     /// <summary>
     /// Builds the burst in the order the recorded host sends it: the opening
@@ -174,6 +154,44 @@ public sealed partial class PlayerSettingsBurstService(
         IReadOnlyList<LobbyLoadout>? loadouts,
         byte answeringSlot = 0)
     {
+        var rotationBody = rotation is null ? RecordedRotationBody() : RoomRotationBody(rotation);
+        return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
+    }
+
+    /// <summary>
+    /// Builds a settings burst with the current room state and configured rule timers.
+    /// </summary>
+    /// <param name="rotation">The room's rotation.</param>
+    /// <param name="loadouts">The room's player loadouts.</param>
+    /// <param name="roundNumber">The round-phase byte.</param>
+    /// <param name="currentRotationIndex">The slot the native state selects.</param>
+    /// <param name="playerCount">The room population, including the host.</param>
+    /// <param name="ruleTimers">The configured seventeen-word timer bank.</param>
+    /// <param name="answeringSlot">The answering peer's slot byte.</param>
+    /// <returns>The records in send order, each with the type it travels as.</returns>
+    public List<RosterRecord> BuildSettingsBurst(
+        IReadOnlyList<MatchRotationEntry> rotation,
+        IReadOnlyList<LobbyLoadout>? loadouts,
+        byte roundNumber,
+        int currentRotationIndex,
+        byte playerCount,
+        IReadOnlyList<int> ruleTimers,
+        byte answeringSlot = 0)
+    {
+        var rotationBody = RoomRotationPayloadUtils.Build(
+            rotation,
+            roundNumber,
+            currentRotationIndex,
+            playerCount,
+            ruleTimers);
+        return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
+    }
+
+    private List<RosterRecord> BuildSettingsBurst(
+        byte[] rotationBody,
+        IReadOnlyList<LobbyLoadout>? loadouts,
+        byte answeringSlot)
+    {
         // The fourth byte continues the roster run's numbering instead of
         // restarting it, and it comes from the one counter every record of the
         // roster identifier consumes: at the join the run reads 0 for its head
@@ -186,7 +204,7 @@ public sealed partial class PlayerSettingsBurstService(
         List<RosterRecord> burst =
         [
             new(UdpCommandConstants.InGameControl, [OpeningControlByte]),
-            .. JoinPreamble(rotation),
+            .. JoinPreamble(rotationBody),
         ];
 
         // One loadout, and it is the answering peer's. The reference burst
@@ -212,13 +230,13 @@ public sealed partial class PlayerSettingsBurstService(
     public static RosterRecord BuildClosingControl() =>
         new(UdpCommandConstants.InGameControl, [ClosingControlByte]);
 
-    /// <summary>The recorded room's settings body, as the capture wrote it.</summary>
-    /// <returns>The recorded bytes.</returns>
-    public static byte[] RecordedRotationBody() => Convert.FromHexString(RoomRotationPayloadHex);
+    /// <summary>The working capture's settings body, built field by field.</summary>
+    /// <returns>The captured reference values.</returns>
+    public static byte[] RecordedRotationBody() => RoomRotationPayloadUtils.BuildReferenceBody();
 
     /// <summary>
-    /// The room's own settings body: the recorded body with its sixteen rotation
-    /// triples written from this room's rotation.
+    /// A settings body with this room's rotation and reference values for state
+    /// fields not supplied by this overload. The send path supplies live state.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -248,46 +266,8 @@ public sealed partial class PlayerSettingsBurstService(
     /// <returns>The body.</returns>
     public static byte[] RoomRotationBody(IReadOnlyList<MatchRotationEntry> rotation)
     {
-        ArgumentNullException.ThrowIfNull(rotation);
-        if (rotation.Count == 0)
-        {
-            throw new ArgumentException(
-                "A room's rotation states at least one round, so an empty one has no map or rule to write.",
-                nameof(rotation));
-        }
-
-        var body = RecordedRotationBody();
-        for (var slot = 0; slot < RotationEntryCount; slot++)
-        {
-            var offset = RotationOffset + (slot * RotationEntryLength);
-            if (slot >= rotation.Count)
-            {
-                body.AsSpan(offset, RotationEntryLength).Clear();
-                continue;
-            }
-
-            var entry = rotation[slot];
-            body[offset] = Component(nameof(entry.Map), entry.Map);
-            body[offset + 1] = Component(nameof(entry.Rule), entry.Rule);
-            body[offset + 2] = Component(nameof(entry.Flags), entry.Flags);
-        }
-
-        return body;
+        return RoomRotationPayloadUtils.BuildReferenceBody(rotation);
     }
-
-    /// <summary>
-    /// One byte of a rotation triple, refused when the room's row does not state
-    /// one: a map, a rule and a flags byte are one byte each on the wire, so a
-    /// value outside that is a row this server cannot express rather than a value
-    /// to truncate onto the wrong map.
-    /// </summary>
-    /// <param name="field">Component being written, for the exception.</param>
-    /// <param name="value">The row's value.</param>
-    /// <returns>The value as a byte.</returns>
-    private static byte Component(string field, int value) =>
-        value is >= byte.MinValue and <= byte.MaxValue
-            ? (byte)value
-            : throw new ArgumentOutOfRangeException(field, value, "A rotation component is one byte.");
 
     /// <summary>
     /// Builds a settings-record body: the type byte, the slot, and zeros for the

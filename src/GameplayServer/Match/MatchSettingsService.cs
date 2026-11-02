@@ -41,6 +41,17 @@ public sealed class MatchSettingsService(
     /// </summary>
     private readonly IReadOnlyList<MatchRotationEntry> rotation = MatchSettingsUtils.Rotation(options.Value);
 
+    private readonly IReadOnlyList<int> ruleTimers = MatchSettingsUtils.RuleTimers(options.Value);
+
+    /// <summary>The round-phase byte carried by the room's state transfer.</summary>
+    public byte CurrentRoundNumber => unchecked((byte)roundState.RoundNumber);
+
+    /// <summary>The active rotation slot carried by the room's state transfer.</summary>
+    public int CurrentRotationIndex => roundState.RoundNumber % rotation.Count;
+
+    /// <summary>The room's configured seventeen-word rule timer bank.</summary>
+    public IReadOnlyList<int> RuleTimers => ruleTimers;
+
     /// <summary>
     /// The map the room's own records are written on: the map of the round the room
     /// is on, which is the round it would open next.
