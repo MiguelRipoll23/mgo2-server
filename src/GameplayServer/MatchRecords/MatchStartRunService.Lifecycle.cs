@@ -50,6 +50,7 @@ public sealed partial class MatchStartRunService
         var dropped = roundState.Reset();
         score.Reset();
         briefingStates.BeginNextBriefing();
+        sequences.Restart(Rooms.RoomRosterService.ExchangeIdentifier);
         BeginBriefing();
 
         logger.LogInformation(

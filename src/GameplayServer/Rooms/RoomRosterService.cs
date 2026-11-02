@@ -111,7 +111,8 @@ public sealed class RoomRosterService(
     /// <summary>
     /// Opens the exchange's counter at a value, for a room whose join has just
     /// taken the values it carries. A stream already counting is left alone
-    /// (<see cref="MatchRecords.MatchRecordSequenceService.Seed"/>).
+    /// (<see cref="MatchRecords.MatchRecordSequenceService.Seed"/>); an empty
+    /// room restarts it before the next join.
     /// </summary>
     /// <param name="value">Value the exchange's next record should take.</param>
     public void SeedRunOrdinal(byte value) => sequences.Seed(ExchangeIdentifier, value);

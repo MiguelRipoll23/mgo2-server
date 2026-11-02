@@ -1568,6 +1568,17 @@ behind it or one is open; a fresh room waits for `WaitForOpenAsync` and a peer
 that leaves before a round is written no beat. A room between rounds keeps the
 beat through its briefing, which is `started-briefing-then-solo`'s 34 a second.
 
+**The live deployment exposed a bad test for that distinction.** The beat gate
+and the briefing's room-state publisher tested `RoundNumber == 0`, but that value
+is a zero-based rotation index seeded from `GAMEPLAY_SERVER_START_ROUND`, not a
+count of rounds played. This deployment starts at round 5, so an untouched room
+starts at index 4 and bypassed both guards. Its logs show the fresh briefing
+continuing to receive `0x0a61` rules records after the sparse phase, while the
+working `briefing-then-solo-game` capture first sends them 1.4 s after the
+client's `1f` ready, just before the round-open generation flip. Both guards now
+use `HasRoundEnded` (and `IsOpen` for the beat), which distinguishes an unplayed
+room from a nonzero rotation index.
+
 The beat's period is also held by a `PeriodicTimer` rather than a delay behind the
 send: `Task.Delay(33)` cost the send as well and the live beat measured 28 frames
 a second against the recording's `tickRate` of 30.303 (33 ms). The timer holds the

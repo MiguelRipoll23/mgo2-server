@@ -178,7 +178,9 @@ public sealed partial class MatchRecordService(
             // briefed, and paid for it in the frame rate it could hold. A room that
             // has already played a round keeps its beat through the briefing that
             // follows it, which is `mgo2-started-briefing-then-solo-game`'s shape.
-            if (roundState.RoundNumber == 0)
+            // RoundNumber is the configured rotation index, not a count of
+            // rounds played; it can be nonzero before the first round opens.
+            if (!roundState.IsOpen && !roundState.HasRoundEnded)
             {
                 await roundState.WaitForOpenAsync(session, MatchRoundStateService.WaitWhilePeerIsThere);
                 if (!roundState.IsOpen)

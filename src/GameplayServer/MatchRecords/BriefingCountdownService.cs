@@ -92,12 +92,13 @@ public sealed partial class BriefingCountdownService(
     /// 48 s briefing, while this host wrote them from the join onward — telling
     /// the client a round exists while it is still being briefed
     /// (<c>docs/analysis/join-stall-after-mode2.md</c> §10). The condition is the
-    /// room's own round count, which is zero only before the first round opens.
+    /// room's completed-round flag: its rotation index may already be nonzero
+    /// before the first round opens.
     /// </para>
     /// </remarks>
     private async Task PublishRoomStateAsync(PeerContext context)
     {
-        if (roundState.RoundNumber == 0)
+        if (!roundState.HasRoundEnded)
         {
             return;
         }

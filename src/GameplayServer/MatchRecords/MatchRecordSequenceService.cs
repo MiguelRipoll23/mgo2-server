@@ -35,12 +35,13 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <para>
 /// <b>What is keyed, and for how long.</b> A stream is keyed by the identifier's
 /// low twelve bits. The room's own exchange (id <c>0x001</c>) counts for the
-/// room's whole life: the join's records, its burst, the round's arrays and the
-/// controls the beat and the sparse phase insert are one ascending sequence in
-/// every capture that holds them. A round's operations stream is keyed by its own
-/// generation's id and is restarted where the round opens, because the recorded
-/// host's run opens the operations stream on <c>00 01 02</c> and its beat's clocks
-/// go on from <c>03</c> (game1's round-1 run and beat, in
+/// current room: the join's records, its burst, the round's arrays and the
+/// controls the beat and the sparse phase insert are one ascending sequence.
+/// When the last client leaves, the room is reset and this exchange restarts for
+/// its next join. A round's operations stream is keyed by its own generation's
+/// id and is restarted where the round opens, because the recorded host's run
+/// opens the operations stream on <c>00 01 02</c> and its beat's clocks go on
+/// from <c>03</c> (game1's round-1 run and beat, in
 /// <c>docs/analysis/replay-findings.md</c> §5.7).
 /// </para>
 /// <para>
@@ -118,8 +119,8 @@ public sealed class MatchRecordSequenceService(ILogger<MatchRecordSequenceServic
     /// <remarks>
     /// Called where the recorded host opens a stream of its own rather than
     /// continuing one — a round opening its operations stream on the values its
-    /// run takes, and a briefing opening the clock its peers are sent. The room's
-    /// exchange is never restarted: it is one sequence from the join on.
+    /// run takes, a briefing opening the clock its peers are sent, or an empty
+    /// room starting a fresh roster exchange for its next join.
     /// </remarks>
     /// <param name="identifier">Identifier whose stream restarts.</param>
     public void Restart(ushort identifier)
