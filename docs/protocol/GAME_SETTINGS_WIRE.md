@@ -204,6 +204,19 @@ payload as hex, which is what the field offsets above are read against.
   needs it (its round length is its own setting), and a player-hosted room's use of
   it is the lobby's.
 * **[U]** whether the first round a client plays is always the rotation's round
-  0 — no capture joins a room early enough to see a rotation advance.
+  0 — no capture joins a room early enough to see a rotation advance, and the join
+  result does not say: its last two bytes are the current round's *rule and map*
+  (`docs/PROTOCOL.md` §`0x4321`; `briefing-then-solo-game` answers `00 03 07`, which
+  is its rotation's entry four, `CAP @ Blood Bath`), so the recorded room was four
+  rounds in when the client joined and the pair is a round and not an index.
+* **[V]** what this host does with the column, since nothing maintained it before:
+  `MatchService` keeps `games.current_game` on the entry it is about to open — the
+  count of rounds opened, modulo the rotation, written when it changes. That entry
+  is the one the room list and the join result name — the join answer states its
+  rule and map, the list entry the same pair — and the one the host's own records
+  are written on, so a browse screen and the map a joiner loads are one round. Left
+  at zero it named the rotation's first entry for the life of the container, which
+  from the second round on is a room naming one map and a client standing on
+  another.
 * **[I]** that a rule's `tickets` ends a round on its own; no capture holds a
   round that ended on kills.

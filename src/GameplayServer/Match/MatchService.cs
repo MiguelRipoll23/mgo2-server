@@ -1,4 +1,5 @@
 using Mgo2Server.GameplayServer.Identity;
+using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.Shared.Domain.Events;
 using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Domain.Lobbies;
@@ -24,6 +25,7 @@ public sealed class MatchService(
     GameService gameService,
     LobbyService lobbyService,
     HostIdentityService hostIdentity,
+    MatchRoundStateService roundState,
     IOptions<ServerOptions> options,
     ILogger<MatchService> logger)
     : PeriodicWorker(
@@ -59,6 +61,8 @@ public sealed class MatchService(
 
     private readonly ServerOptions options = options.Value;
     private int matchIdentifier;
+    private int rotationRoundCount;
+    private int publishedCurrentGame = -1;
 
     /// <summary>Identifier of the match this host published, or zero until it exists.</summary>
     public int MatchIdentifier => matchIdentifier;
@@ -93,6 +97,56 @@ public sealed class MatchService(
         }
 
         await gameService.HeartbeatAsync(matchIdentifier, cancellationToken);
+        await PublishCurrentGameAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Keeps the row's staged rotation entry on the round this host is about to
+    /// open, advancing it as rounds do.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It is the entry a joining client stages, so it must be the one the host is
+    /// playing next.</b> A room screen draws that entry's rule and map, the join
+    /// result hands the index to the client, and the client loads the map it names
+    /// while the room's own records are written on the map of the round the host
+    /// will open (<see cref="MatchSettingsService"/>). Left at zero it named the
+    /// rotation's first entry for the life of the container, so from the second round
+    /// on the details screen and the map the joiner loaded were different rounds —
+    /// the room said one map and the client stood on another.
+    /// </para>
+    /// <para>
+    /// The index is the count of rounds opened, taken modulo the rotation: round one
+    /// is entry zero and a rotation that runs out starts again, which is the walk
+    /// <see cref="MatchSettings.Round"/> plays. It is written only when it changes,
+    /// because the beat runs every few seconds and the column is not what keeps the
+    /// row alive.
+    /// </para>
+    /// </remarks>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task PublishCurrentGameAsync(CancellationToken cancellationToken)
+    {
+        if (rotationRoundCount == 0)
+        {
+            return;
+        }
+
+        var index = roundState.RoundNumber % rotationRoundCount;
+        if (index == publishedCurrentGame)
+        {
+            return;
+        }
+
+        await gameService.UpdateAsync(
+            matchIdentifier,
+            room => room.CurrentGame = index,
+            cancellationToken);
+        publishedCurrentGame = index;
+        logger.LogDebug(
+            "Room {GameIdentifier} stages rotation entry {RoundIndex} for round {RoundNumber}",
+            matchIdentifier,
+            index,
+            roundState.RoundNumber + 1);
     }
 
     /// <summary>
@@ -121,8 +175,33 @@ public sealed class MatchService(
 
         var name = options.GameplayServerRoomName;
         var hostIdentifier = (int)hostIdentity.PeerIdentifier;
-        var existing = (await gameService.FindByLobbyAsync(lobby.Identifier, cancellationToken))
-            .FirstOrDefault(game => game.HostIdentifier == hostIdentifier && game.Name == name);
+
+        // The size is the role's size, decided once: every start states it, so the
+        // row below and a fresh one cannot disagree.
+        var maximumPlayers = EventHostEligibilityUtils.IsHostRoleMode(lobby.SubtypeIdentifier)
+            ? EventHostEligibilityUtils.MatchPlayerCapacity
+            : FreeBattleRoomCapacity;
+
+        // A name is this instance's own, so a second room under it is a row left by
+        // an earlier process. Two of them are two rooms a client can tell apart only
+        // by identifier: it reads one room's details and binds to the other, which
+        // is a map the room it looked at never named. The newest row is kept and the
+        // rest are deleted before anything is served from them.
+        var matches = (await gameService.FindByLobbyAsync(lobby.Identifier, cancellationToken))
+            .Where(game => game.HostIdentifier == hostIdentifier && game.Name == name)
+            .OrderBy(game => game.Identifier)
+            .ToList();
+        foreach (var stale in matches.Take(Math.Max(0, matches.Count - 1)))
+        {
+            await gameService.DeleteAsync(stale.Identifier, cancellationToken);
+            logger.LogInformation(
+                "Deleted room {GameIdentifier} ({GameName}): a second room under this host's name, left "
+                + "by an earlier process",
+                stale.Identifier,
+                stale.Name);
+        }
+
+        var existing = matches.Count == 0 ? null : matches[^1];
 
         // The room plays the rotation this instance states, round for round, and
         // the row stores that same list in the form the lobby's `0x4313` reply
@@ -133,30 +212,49 @@ public sealed class MatchService(
         var rounds = MatchSettingsUtils.Rotation(options);
         var rotation = MatchSettingsUtils.StoredRotationJson(rounds);
         var first = rounds[0];
+        rotationRoundCount = rounds.Count;
 
         if (existing is not null)
         {
-            // The row states this instance's rotation, always and before anything
-            // is served: it is the column the lobby's `0x4313` reply reads, so a
-            // row left on a previous build's rotation is a client told one set of
-            // rounds while this host plays another. It is a property of the start
-            // rather than of a comparison, so a row rewritten by anything else in
-            // between is corrected here instead of being kept.
+            // The row is restated whole, the way the create branch below writes a
+            // fresh one, and not just its rotation: the row is what the lobby's
+            // `0x4313` reply hands a browser and what a joining client reads its map
+            // off, so a comment, a size, a mode or a staged round kept from an
+            // earlier build is a room this instance does not run. It is a property
+            // of the start rather than of a comparison, so a row rewritten by
+            // anything else in between is corrected here instead of being kept.
             await gameService.UpdateAsync(
                 existing.Identifier,
-                room => room.Games = rotation,
+                room =>
+                {
+                    room.HostIdentifier = hostIdentifier;
+                    room.LobbyIdentifier = lobby.Identifier;
+                    room.Name = name;
+                    room.LobbySubtype = lobby.SubtypeIdentifier;
+                    room.Password = string.Empty;
+                    room.Comment = "Gameplay server";
+                    room.MaximumPlayers = maximumPlayers;
+                    room.Games = rotation;
+                    room.Ping = ReportedPingMilliseconds;
+                    room.Stance = 0;
+                    room.Status = 0;
+                    room.CurrentGame = 0;
+                },
                 cancellationToken);
-            if (existing.Games != rotation)
-            {
-                logger.LogInformation(
-                    "Room {GameIdentifier} ({GameName}) states this instance's own rotation: "
-                    + "{RoundCount} round(s), starting with rule {Rule} on map {Map}",
-                    existing.Identifier,
-                    existing.Name,
-                    rounds.Count,
-                    first.Rule,
-                    first.Map);
-            }
+
+            // The row's own staged round is written from the round this process is
+            // on rather than left as it was, so a restart does not keep pointing a
+            // joiner at a round that is over.
+            publishedCurrentGame = -1;
+            logger.LogInformation(
+                "Room {GameIdentifier} ({GameName}) restated from this instance's settings: {RoundCount} "
+                + "round(s), starting with rule {Rule} on map {Map}, {MaximumPlayers} player(s)",
+                existing.Identifier,
+                name,
+                rounds.Count,
+                first.Rule,
+                first.Map,
+                maximumPlayers);
 
             logger.LogDebug(
                 "Reusing existing gameplay match {GameIdentifier} ({GameName}) in lobby {LobbyIdentifier}",
@@ -184,9 +282,7 @@ public sealed class MatchService(
             // capacity. Sizing a Survival host at the Free Battle cap made the
             // host ineligible for every match bigger than seven players, so a
             // team that found an opponent was never assigned one.
-            room.MaximumPlayers = EventHostEligibilityUtils.IsHostRoleMode(lobby.SubtypeIdentifier)
-                ? EventHostEligibilityUtils.MatchPlayerCapacity
-                : FreeBattleRoomCapacity;
+            room.MaximumPlayers = maximumPlayers;
             room.Games = rotation;
 
             // A gameplay server hosts rather than plays, so its room is a

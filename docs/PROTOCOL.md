@@ -1619,11 +1619,22 @@ that never registered an endpoint. On success:
 | `0x14` | 2 | u16 | host public port |
 | `0x16` | 16 | ISO-8859-1 | host private IP |
 | `0x26` | 2 | u16 | host private port |
-| `0x28` | 1 | u8 | one byte the parser reads; echo writes `0` |
+| `0x28` | 1 | u8 | the host-rating gate; `1` lets the joiner rate the host |
+| `0x29` | 1 | u8 | **current rule** of the round the room is on |
+| `0x2a` | 1 | u8 | **current map** of that same round |
 
-The parser stops at offset `0x29` (41 bytes). Echo writes two further bytes (current rule, current
-map) for a 43-byte (`0x2b`) reply; **this client reads neither** — they are reproduced only because
-echo is known-good and trailing bytes are harmless. We write the same 43.
+The parser stops at offset `0x29` (41 bytes): **this client reads neither trailing byte**, so both
+are inert to it — but they are not arbitrary. Every captured answer writes a pair, and its first
+byte is only ever a rule id the room's rotation holds while its second is only ever a map id:
+
+| capture | wire `0x28..` | the room's round |
+| --- | --- | --- |
+| `briefing-then-solo-game` | `00 03 07` | `CAP` on `7` — its rotation's entry four, `CAP @ Blood Bath` |
+| `mgo2-joined-game-in-progress-last-round` | `00 05 0d` | `BASE` on `13` |
+| `joined-on-game-solo` | `00 01 04` | `TDM` on `4` |
+
+They are the round the joiner is about to meet, written the way the room's own list entry writes
+it, so they are stated from the room's staged rotation entry and not as zeros.
 
 **Verified against a live client 2026-07-21:** the client accepts the reply and proceeds to
 attempt the peer connection. It does *not* mean the peer connection succeeds — see `0x4322`.

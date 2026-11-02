@@ -119,10 +119,24 @@ public sealed partial class GameplayServerService : IAsyncDisposable
             {
                 var characterIdentifier = await accountService.GetOrCreateCharacterIdentifierAsync(token);
                 hostIdentity.SetCharacterIdentifier(characterIdentifier);
+
+                // The row is written whole, as a host with no earlier row would be: it
+                // is what a browsing client's details name and where a joining client
+                // reads the rotation it loads, so the values it is given are logged
+                // here rather than left to be compared by eye later.
+                var settings = MatchSettingsUtils.HostSettings(options);
                 await characterService.EnsureDedicatedHostSettingsAsync(
                     characterIdentifier,
-                    MatchSettingsUtils.HostSettings(options),
+                    settings,
                     token);
+                logger.LogInformation(
+                    "[{LogPrefix}] Host settings row restated for character {CharacterIdentifier}: a "
+                    + "{BriefingTime}-minute briefing, {RoundCount} round(s), maps {Maps}",
+                    LogPrefix,
+                    characterIdentifier,
+                    settings.BriefingTime,
+                    settings.RotationMaps?.Length ?? 0,
+                    string.Join(",", settings.RotationMaps ?? []));
             },
             logger,
             cancellationToken);

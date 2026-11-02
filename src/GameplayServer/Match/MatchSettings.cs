@@ -78,13 +78,13 @@ public sealed record MatchSettings(
     /// round plays entry zero and a rotation that runs out starts again.
     /// </summary>
     /// <remarks>
-    /// The walk is the round number rather than the room row's <c>current_game</c>
-    /// because that column is the host's own selection in the client's room
-    /// screen; the dedicated host never moves it, and a rotation that never
-    /// advanced would play one rule for the life of the container. No capture
-    /// joins a room early enough to see which of the two the client follows
-    /// (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §6), so this follows the
-    /// rotation the room published.
+    /// The walk is the round number rather than the room row's <c>current_game</c>:
+    /// that column is what a joining client stages, and <see cref="MatchService"/>
+    /// keeps it on the very entry this walk is about to play, so the two name one
+    /// round instead of one of them being the rule. It is still the round number that
+    /// is read here, because a column can be written by anything between two rounds
+    /// and a round that played a rule its own clock was not set for is a round the
+    /// client is not in (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §6).
     /// </remarks>
     /// <param name="roundNumber">Round counting from one, as the room counts them.</param>
     /// <returns>The round's rule, map and length.</returns>

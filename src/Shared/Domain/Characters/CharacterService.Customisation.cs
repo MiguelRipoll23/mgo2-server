@@ -166,10 +166,12 @@ public sealed partial class CharacterService
         settings.Type = HostSettingsType.Value;
         settings.Dedicated = true;
 
+        // Every row the character holds goes, whatever its type: the host is written
+        // as one with no earlier row, so a preset or a pushed block kept from an
+        // earlier build cannot be the row a browsing client reads its rotation off.
         await using var context = await CreateContextAsync(cancellationToken);
         await context.CharacterHostSettings
-            .Where(row => row.CharacterIdentifier == characterIdentifier
-                && row.Type == HostSettingsType.Value)
+            .Where(row => row.CharacterIdentifier == characterIdentifier)
             .ExecuteDeleteAsync(cancellationToken);
 
         context.CharacterHostSettings.Add(settings);

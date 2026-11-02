@@ -17,7 +17,11 @@ doc: |
 
   PROTOCOL.md's note that echo appends two further bytes (current rule, current map) for a
   43-byte reply is confirmed as **not read**: the parser's last read is the u8 at `0x28`.
-  Those bytes are inert.
+  Those bytes are inert to the client, and their content is measured: **`0x29` is the room's
+  current rule id and `0x2a` its current map id**, never an index. `briefing-then-solo-game`
+  answers `00 03 07` — `CAP` on `7`, its rotation's entry four — `mgo2-joined-game-in-progress-last-round`
+  `00 05 0d` and `joined-on-game-solo` `00 01 04`, so the first byte takes only rule ids (`1`, `3`,
+  `5`) and the second only map ids (`4`, `7`, `13`). A server states its staged entry here.
 
   **Verified against a live client 2026-07-21** — the client accepts the reply and proceeds to
   attempt the peer connection. That is not the same as the peer connection succeeding; see

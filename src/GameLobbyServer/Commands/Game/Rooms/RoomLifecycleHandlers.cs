@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Mgo2Server.GameLobbyServer.Coordination;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Domain.Characters;
@@ -166,7 +167,46 @@ public sealed class JoinGameHandler(
         var canRate = session.CharacterIdentifier != game.HostIdentifier &&
             !await gameService.HasRatedHostOfAsync(game.Identifier, session.CharacterIdentifier ?? 0, cancellationToken);
 
-        await SendResultAsync(session, ErrorCodeConstants.ResultNone, endpoint, cancellationToken, canRate, game.CurrentGame);
+        // The reply's last two bytes are the round the room is on — its rule and its
+        // map, in that order — and not an index of it: every captured answer writes a
+        // pair whose first byte is only ever a rule the rotation holds (`1` TDM, `3`
+        // CAP, `5` BASE) and whose second is only ever a map (`4`, `7` Blood Bath,
+        // `13`). `briefing-then-solo-game` answers `00 03 07`, which is exactly its
+        // rotation's entry four, `CAP @ Blood Bath`. The client reads neither byte —
+        // the traced parser stops at `0x28` — but they are the room's own round and
+        // not a zero.
+        var round = ReadCurrentRound(game.Games, game.CurrentGame);
+        await SendResultAsync(
+            session,
+            ErrorCodeConstants.ResultNone,
+            endpoint,
+            cancellationToken,
+            canRate,
+            round.Rule,
+            round.Map);
+    }
+
+    /// <summary>Reads the rule and map of the rotation entry the room is on.</summary>
+    /// <param name="games">The room's stored rotation.</param>
+    /// <param name="currentGame">Index of the entry the room staged.</param>
+    /// <returns>The entry's rule and map, or two zeros for a room with no such entry.</returns>
+    private static (int Rule, int Map) ReadCurrentRound(string games, int currentGame)
+    {
+        try
+        {
+            var rotation = JsonSerializer.Deserialize<List<int[]>>(games) ?? [];
+            if (currentGame < 0 || currentGame >= rotation.Count)
+            {
+                return (0, 0);
+            }
+
+            var entry = rotation[currentGame];
+            return (entry.Length > 0 ? entry[0] : 0, entry.Length > 1 ? entry[1] : 0);
+        }
+        catch (JsonException)
+        {
+            return (0, 0);
+        }
     }
 
     private Task SendResultAsync(
@@ -175,7 +215,8 @@ public sealed class JoinGameHandler(
         ConnectionInformation? endpoint,
         CancellationToken cancellationToken,
         bool canRateHost = false,
-        int currentGame = 0)
+        int currentRule = 0,
+        int currentMap = 0)
     {
         if (result != ErrorCodeConstants.ResultNone || endpoint is null)
         {
@@ -191,8 +232,8 @@ public sealed class JoinGameHandler(
         writer.WriteFixedString(endpoint.PrivateIpAddress, IpLength);
         writer.WriteUInt16(endpoint.PrivatePort);
         writer.WriteUInt8(canRateHost ? 1 : 0);
-        writer.WriteUInt8(currentGame);
-        writer.WriteUInt8(0);
+        writer.WriteUInt8(currentRule);
+        writer.WriteUInt8(currentMap);
         writer.WritePadding(Math.Max(0, SuccessSize - writer.Size));
         return sessionHelper.SendPacketAsync(session, CommandConstants.JoinGameResult, writer.Build(), cancellationToken);
     }
