@@ -346,6 +346,14 @@ documents name are these:
 | `0x0b` | `0x79F594` | `0b` + the slot byte (`0x79F544`, `0x79F5A0`) | not the 7-byte countdown |
 | `0x0b` | `0x811D40` | `0b` + `u32 obj + 0x64` + `u16 obj + 0x70` + `u32 obj + 0xD4` + `u32 obj + 0xD8` (`0x811D4C`–`0x811DE4`), sent to the handle at `obj + 0x36C` | not the 7-byte countdown |
 
+**The same module holds a builder per opcode, and the newer reading is `supervisor-opcode-builders.md`.**
+A run of routines at `0x754570`–`0x7558xx` builds one body each out of the same cursor and
+append pair (`0x26CC10` append, `0x2784B0` send): `0x01` the clock, `0x0f`/`0x24` one byte,
+`0x26` a slot and a signed byte, `0x03`/`0x17` and `0x1b`/`0x1c` the writer's own slot,
+`0x1a` three bytes around that slot, `0x11` two bytes, and `0x07`/`0x08` three and two byte
+arguments. That file lists them with the callers that set their gates, and corrects the
+fifteen-byte `11 …` bodies this document's low-byte filters would count as opcodes.
+
 Two of the residue's three items are answered by this table, and the third is bounded:
 `0x1f` and `0x22` **are** written literally, by the match code's own record builders, and
 `0x26D588()` — `byte(instance + 0xC8)` — is the slot byte they lead with. `0x1d` has **no

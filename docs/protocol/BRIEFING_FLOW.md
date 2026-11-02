@@ -144,6 +144,16 @@ of both of this capture's briefings. A ready moves the set while the seconds kee
 ticking, which is what makes the record the briefing's whole state and not a count
 alone.
 
+**The two bytes behind the set are not both constant.** Every body in the tables
+above ends `… 00 00`, which is why this host writes the pair as constants
+(`BriefingCountdownBodiesUtils.CountdownBody`). `mgo2-started-on-game-round1` is
+the one capture whose sixth byte moves: a second after its client's `1f 11 01` it
+writes `0b 22 00 00 08 02 00` (t+1 333.853), and at t+1 352.993 two records of one
+instant carry `02` and then `03` (`0b 0f 00 00 00 02 00`, `0b 0f 00 00 00 03 00`),
+returning to zero on the ticks between. What it counts is **[U]** — readied
+players, or readies since the last tick — and it is the second open byte of the
+record beside the zero between the count and the set.
+
 **Its last word is a zero carrying the whole set, and that is the round
 opening.** The instant the room is fully ready the host writes
 `0b 00 00 ea 01 00 00` (t+113.758), and the ticking records at that same moment

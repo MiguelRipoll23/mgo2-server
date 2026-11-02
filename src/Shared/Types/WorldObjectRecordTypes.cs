@@ -176,14 +176,66 @@ public enum WorldObjectRemovalReason : byte
 /// (<c>itemname</c>, <c>second_itemname</c>), both named in the native port's
 /// strings — the table these bytes belong to.
 /// </para>
+/// <para>
+/// <b>The four traps are the device stream's, and the port names them.</b> A claymore,
+/// a sleeping claymore and the two C4 charges are set down and taken away by the same
+/// two events the magazine uses (<see cref="WorldObjectEvent.SetDown"/> and
+/// <see cref="WorldObjectEvent.DeviceRemoved"/>), measured over 395 replays with 123
+/// traps in 25 of them by the replay console's <c>app.js</c> (<c>TRAP_ITEM</c>). The
+/// native port carries the engine's own names for the four in <c>system.dll</c> —
+/// <c>WP_BulClaymore</c>, <c>WP_BulSleepClaymore</c>, <c>WP_BulSleepC4</c> and
+/// <c>bullet/claymore.cc</c>'s <c>BulletClaymoreGetPlaceNum</c> — which is a naming of
+/// the item these bytes select rather than of the byte itself.
+/// </para>
+/// <para>
+/// <b>A dropped weapon states the pool's own id.</b> <see cref="P90"/> is read from three
+/// directions at once — the pool names <c>0x14</c> the P90, a player's weapon record carries
+/// the same byte, and the drop's item record carries fifty rounds, the P90's magazine —
+/// which is why a dropped object's item byte is the item's id where the two boxes' are not.
+/// </para>
+/// <para>
+/// <b>One item of the object stream is carried and not named.</b>
+/// <c>mgo2-started-on-game-round1</c> — the bench's largest capture — writes <c>0x7c</c> as
+/// the item record of the client's own <c>0xc3</c>/<c>0xc2</c> head, and none of its four
+/// trailing bytes fits a field the grammar reads. It stays out of this enum, because nothing
+/// measured says what it is; the shape is in
+/// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>.
+/// </para>
 /// </remarks>
 public enum WorldObjectItem : byte
 {
+    /// <summary>
+    /// A P90 dropped by its carrier: <c>0x14</c>, the id the pool table and the player's own
+    /// weapon record both give the weapon.
+    /// </summary>
+    /// <remarks>
+    /// <b>Three readings agree.</b> The replay console's item table names <c>0x14</c> the P90;
+    /// a player's weapon record carries the same byte (<c>00 14 00 00 0f</c> — item <c>0x14</c>,
+    /// fifteen rounds); and the item record of the drop carries fifty in its fifth byte
+    /// (<c>01 14 13 09 00 32</c>, then <c>01 14 13 00 00 32</c>), which is the P90's magazine,
+    /// with the dropper's slot <c>0x13</c> in its second. <c>mgo2-started-on-game-round1</c>
+    /// writes the whole family: the drop at t+1 205.906, the take at t+1 238.192 and the removal
+    /// 0.13 s later. No other capture in the repository carries a dropped weapon.
+    /// </remarks>
+    P90 = 0x14,
+
     /// <summary>The bomb a Bomb round plays around; <c>0x2e</c>, and the pool agrees.</summary>
     TimeBomb = 0x2e,
 
     /// <summary>The SOP destabilizer Base's attackers plant; <c>0x44</c>, the pool's Base Buster.</summary>
     BaseBuster = 0x44,
+
+    /// <summary>A claymore set down as a trap; measured over 395 replays by the console.</summary>
+    Claymore = 0x40,
+
+    /// <summary>The non-lethal claymore, a trap like <see cref="Claymore"/>.</summary>
+    SleepClaymore = 0x41,
+
+    /// <summary>A C4 charge set down as a trap; the console's <c>TRAP_ITEM</c>.</summary>
+    C4 = 0x42,
+
+    /// <summary>The non-lethal C4, set down and removed like the other three.</summary>
+    SleepC4 = 0x43,
 
     /// <summary>The magazine set down as a trap; the pool's <c>BOOK</c> slot.</summary>
     Magazine = 0x45,

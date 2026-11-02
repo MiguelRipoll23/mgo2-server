@@ -242,6 +242,38 @@ the client's own module for them is `object/itembox_mng.cc` with
 port's strings. Resolving a world-object item through the pool table gives the
 wrong item.
 
+**Four more device items are measured by the console and named by the port.** A
+claymore (`0x40`), a sleeping claymore (`0x41`), a C4 (`0x42`) and a sleeping C4
+(`0x43`) are placed and removed by the magazine's own two codes — `0x65` with a
+position, `0xa5` with a reason — over 123 traps in 25 of the console's 395
+matches (`app.js`, `TRAP_ITEM`), and the engine's own names for them survive in
+`system.dll` (`WP_BulClaymore`, `WP_BulSleepClaymore`, `WP_BulSleepC4`, and
+`bullet/claymore.cc`'s `BulletClaymoreGetPlaceNum`). None of the repository's
+captures holds one: every device stream they carry is the magazine, `0x45`.
+
+**Three events of the largest capture are carried and not named.**
+`mgo2-started-on-game-round1` writes, client → host, `00 82 02 40 11 00` on the
+device stream three times and `00 c3 02 98 91 1b` / `00 c2 02 98 91 1b` on the
+object stream once each, the last two 0.16 s apart; the six-byte heads read as
+the table above reads them (the `0x82` names object number 2, id `0x40` and slot
+`0x11`, the `0xc2`/`0xc3` number 2 and id `0x98`), but no measured meaning goes
+behind the three codes. The `0xc2`/`0xc3` arm also carries the object stream's
+`0x7c`, read below.
+
+**A dropped weapon states the pool's id, and one drop is read.** `0x14` is the **P90**:
+the console's item table names P90 at `0x14`, a player's weapon record carries the same
+byte (`00 14 00 00 0f` — item `0x14`, fifteen rounds), and the item record of the drop
+carries fifty rounds (`01 14 13 09 00 32`, then `01 14 13 00 00 32` — item, the
+dropper's slot `0x13`, fifty in the fifth byte), which is the P90's magazine. It is a
+whole family: slot 19's `0x64` drop at t+1 205.906, the `0x83` take at t+1 238.192 and
+the `0xa0` removal 0.13 s later. That is `WorldObjectItem.P90`.
+
+**`0x7c` is not named.** It is the item record of the client's own `0xc3` head
+(`01 7c 23 e0 51 a2` beside `00 c3 02 98 91 1b`), and none of its four trailing bytes
+fits a field the grammar reads — the pool's `0x7c` is `RAY VULCAN`, which no player can
+carry — so the byte stays out of `WorldObjectItem` rather than being resolved through a
+table that has already been wrong for three of the boxes' items.
+
 ### Operation opcodes
 
 For the operation stream (`low vid=0x254`), the parser retains payload type
@@ -258,10 +290,17 @@ the `0x0f` record the parser has no entry for).
 | `0x02` | State write: payload `[opcode, startOffset, byteCount, bytes...]`; writes the indicated bytes into the state vector. The Team Sneaking pair above arrives this way, as `02 57 02 05 <slot>`. |
 | `0x04` | Objective feed: `[opcode, kind, lobbySlot]`. Kinds are mode-dependent; the parser emits timestamped objective-feed records. |
 | `0x05` | `[opcode, lobbySlot]`; the slot is captured, but the operation's meaning is explicitly unresolved. |
+| `0x07` | Four bytes, `07 a b c`: three one-byte arguments, built at `0x7557CC` in `MGO2.ELF`. The host of `mgo2-started-on-game-round1` writes one at t+1 353.344; the three values are **[U]** (`docs/analysis/supervisor-opcode-builders.md` §2). |
+| `0x08` | Three bytes, `08 a b`: two one-byte arguments, each clamped into `0…255` by the builder at `0x7556FC`. The same host writes one at t+1 368.348, its countdown at zero and 0.4 s before the round's boxes; **[U]**. |
 | `0x09` | Kill feed: `[opcode, killerSlot, victimSlot]`. The feed is joined to health/position-derived deaths by victim slot. |
 | `0x0e` | Round-over record; payload byte `+1` is emitted as a reason/result code. |
 | `0x12` | Race goal update: flags at `+1` (bit 7 indicates a score, bit 0 team), goal at `+2`, spawn point at `+3`; scorer slot is correlated with the `0x04` objective feed. |
 | `0x13` | Per-player signed `i16` LE rating array beginning at `+5`; output is a list of values. The parser labels this mapping probable. |
+| `0x11` | Three bytes, `11 a b`, built at `0x754570`; **no capture carries one**. The fifteen-byte `11 …` bodies a low-byte filter reports are another player's damage record on its `0x0854` slot, not an operation (`docs/analysis/supervisor-opcode-builders.md` §3). |
+| `0x1b` | Two bytes, `1b <ownSlot>` — `1b 11` for slot `0x11`: the writer's own slot, which its builder (`0x754A90`) appends from `0x26D588()`. The argument `1` selects `0x1b` over its `0x1c` sibling. **[U]** what it announces. |
+| `0x1d` | Seven bytes ×5, `1d <slot> <index> a b 00 00` with the index running `0`–`4`: the joiner's own block (`OperationsOpcode.JoinerRecord`). Its bodies are the same in all eleven captures that carry it — `01 03` at index 0, `02 01` at index 1, zeros behind — so it states the client's own record set, not the match. What each index says is **[U]**. |
+| `0x22` | Twenty-two bytes, `22 <slot> 00 0b 16 00 0e 0e 1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00` (`OperationsOpcode.JoinerTail`): the joiner's tail, byte-identical wherever it appears. **[U]**. |
+| `0x26` | Three bytes, `26 02 06`: the host's, in every round of the corpus (`OperationsOpcode.HostMark`). One writer of it is read in the image and builds two bytes where the capture carries three. **[U]**. |
 
 The capture's match-start run carries one more operations body, `0f 00`. It is the only
 opcode in the stream this table does not name — every other one the capture carries is
