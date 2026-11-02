@@ -286,6 +286,19 @@ over the fourteen captures on this repository's bench, on `0x1001` and `0x9001` 
 | `0x06` | 1 | `0x00` on the entry and on kinds `0x01`–`0x03`, `0x01` on the nine-byte shape, `0x03` on the close |
 | `0x07`– | | the payload, which is what every offset table below indexes |
 
+**What the client does with those six bytes.** The key-`07` dispatcher consumes `+0` (it is
+the key itself) and the handler `0x282D80` then reads the rest with the cursor reader in the
+order `2, 1, 2, 1`, stopping at `+0x07`: **`+3` (the kind) indexes a node table** on the
+stream's own stage object, `+4`–`+5` is the word it passes on, and **`+6` is the branch
+key** — `0` calls that node's first virtual slot with the cursor now standing on the payload
+at `0x07`, `1` sets a flag and walks a list at `0x80` of the object matching `(+3, u16)` of
+that list's nodes, `2` walks it alone, and `3` clears a flag and consumes nothing. That is
+why `+6` reads `0x00` on the entry and on kinds `0x01`–`0x03`, `0x01` on the nine-byte
+shape and `0x03` on the roster close. The roster entry is the shape that carries a name and
+is read by the replay console as well; the kinds below reach the client only through their
+node. The trace, the registry entry and the branch byte are in
+`docs/analysis/roster-record-kinds.md`.
+
 **A roster entry, long layout — 61 records here, and the 79/83-byte form §4 measured.**
 Little-endian, and `L` is the body's length:
 
@@ -371,7 +384,16 @@ eight of them, never two naming the same slot), and the payload reads:
 spawn lines a round apart, the height tracking the ground under each of the three points.
 How many units a count is, the captures do not say; the three are read as a point **[I]**,
 and that they are three signed thirty-twos, that the fourth byte is the slot and that each
-slot appears once are **[V]**.
+slot appears once are **[V]**. **That point is the respawn point, and `0x09`/`0x0a` its team
+and direction — [V].** The client's setter in the native port, `PL_NetSetRespawn`
+(`0x1026eaa0`), stores exactly this pair: it copies the 16 bytes at its position pointer
+into `player+0x830` (`movups`/`movaps`) and its `u16` argument into `player+0x840`, then
+sets a presence byte at `+0x842`. Called without a position it asks the supervisor for one
+with the team at `player+0x1` (`0x101abab0(team, &u16, &position)`), which is the sibling of
+the routine `SV_GetInitialPosDir` calls — and that one adds **800.0** to the `y` before it
+publishes (`addsd` of `0x10a53f0`). So the `u16` here is the direction, the three integers
+the position, and `y` carries the floor plus that lift
+(`docs/analysis/roster-record-kinds.md` §7).
 
 **Kind `0x03` — a tag, a triple written twice, and a sixteen-bit tail.** 41 records of 22
 bytes and 2 of 29. `[0x07]` is a tag nibble and the record's index (`0x40`, `0x50`, `0x60`,
@@ -381,6 +403,13 @@ sixteen-bit value closes the record (`0x00fd`, `0x0012`, `0x0002`). The two reco
 `2500, 900, -1800` — reading the six as three signed sixteen-bit values with x and z
 negated and y the ground height, **[I]**. The 29-byte form is the same tag and the same
 triple with seven more bytes behind it, and only two of those exist.
+
+**The kind is a custom point with an action.** The native port's supervisor keeps custom
+points and, for each, a list of actions — `sv_custom_point.cc` bounds-checks both
+(`over custom point %d`, `over action %d`) and prints `action %d` — which is the shape of
+this record: one point, one action, the point stated twice. That the two triples are the
+same point for the two sides of the action, and not a rotation, is the reading those names
+support (`docs/analysis/roster-record-kinds.md` §7); the values stay **[I]**.
 
 **Kind `0x02` — a box.** 134 records of 20 bytes and 28 of 52, and the two lengths are the
 same record with a count of nought and of four:

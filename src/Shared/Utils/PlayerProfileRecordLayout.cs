@@ -156,7 +156,9 @@ namespace Mgo2Server.Shared.Utils;
 /// no roster index, no name, no close — so nothing reads them; the offset is a
 /// field rather than padding, and <c>UDP_COMMANDS.md</c> lists the lengths each
 /// kind was measured at and how far its body is read: kind <c>0x04</c> is a
-/// spawn point per slot, written by the host beside its roster.
+/// respawn point per slot, written by the host beside its roster — the client's
+/// own setter stores its three coordinates and its 16-bit direction beside each
+/// other (<c>PL_NetSetRespawn</c>; <c>docs/analysis/roster-record-kinds.md</c> §7).
 /// </para>
 /// <para>
 /// <b>The three [U] bytes, measured over all 152 entries on the bench.</b>

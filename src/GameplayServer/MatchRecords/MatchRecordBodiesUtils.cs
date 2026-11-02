@@ -174,19 +174,22 @@ public static class MatchRecordBodiesUtils
 
     /// <summary>
     /// The eighteen bytes behind the pair's roster header: what the two records
-    /// differ by and what nothing names.
+    /// differ by, measured from `briefing-then-solo-game`'s run at t+9.780. The
+    /// header's kind is <c>0x02</c>, and the client dispatches the record by
+    /// <c>(0, kind | index &lt;&lt; 8)</c> and reads the two bytes behind the header
+    /// on one of its branches (<c>docs/analysis/roster-record-kinds.md</c>).
     /// </summary>
     private static ReadOnlySpan<byte> CloseRecordFirstRemainder =>
     [
-        0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x02, 0x42,
-        0xf5, 0x9f, 0xda, 0xff, 0xc3, 0xec, 0x7d, 0x00, 0x00, 0x00,
+        0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x02, 0xd2,
+        0x5a, 0x00, 0x00, 0x00, 0xe0, 0x8f, 0x7e, 0x00, 0x00, 0x00,
     ];
 
     /// <summary>The second record's remainder, which differs from the first's.</summary>
     private static ReadOnlySpan<byte> CloseRecordSecondRemainder =>
     [
-        0x00, 0x02, 0x01, 0x00, 0x00, 0x00, 0x02, 0xf4,
-        0x01, 0xc0, 0xea, 0xff, 0x83, 0xaf, 0x02, 0x00, 0x00, 0x00,
+        0x00, 0x02, 0x01, 0x00, 0x00, 0x01, 0x02, 0x34,
+        0xa4, 0x1f, 0x00, 0x00, 0x18, 0x6e, 0x01, 0x00, 0x00, 0x00,
     ];
 
     /// <summary>
@@ -283,17 +286,19 @@ public static class MatchRecordBodiesUtils
     /// the record's own pair of flag bytes.
     /// </summary>
     /// <remarks>
-    /// What it states is **[U]**, and the values are the recording's: `mgo2-game1`
-    /// and `mgo2-started-briefing-then-solo-game` write one body byte for byte and
-    /// `mgo2-game2` another, so the field is a fact about the room's own stage rather
-    /// than about a session. It is written from the recording the way the close pair
-    /// beside it is (<see cref="MatchStartCloseFirst"/>).
+    /// The values are the recording's: two captures that share no session write one body
+    /// byte for byte and a third another, so the field is the room's stage rather than the
+    /// session. The client hands this payload to its stage object's kind-<c>0x03</c> node and
+    /// does not read it here, and the port names that module <c>sv_custom_point</c> — one
+    /// point, one action (<c>docs/analysis/roster-record-kinds.md</c> §4 and §7). What the
+    /// triples state is still **[U]**, so they are written as recorded.
     /// </remarks>
     private static ReadOnlySpan<byte> RoomStateRecordRemainder =>
     [
-        0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x84, 0x03,
-        0x84, 0x03, 0x3e, 0xfd, 0x84, 0x03, 0x84, 0x03,
-        0x3e, 0xfd, 0xfd, 0x00,
+        0x00, 0x03, 0x00, 0x00, 0x00, 0x00, // +0x02..+0x07: zero, kind, index, slot, branch, tag
+        0x84, 0x03, 0x84, 0x03, 0x3e, 0xfd, // the point (900, 900, -706), signed sixteens
+        0x84, 0x03, 0x84, 0x03, 0x3e, 0xfd, // the same point again: the action's second side
+        0xfd, 0x00,                         // the sixteen-bit tail
     ];
 
     /// <summary>
@@ -302,9 +307,10 @@ public static class MatchRecordBodiesUtils
     /// </summary>
     private static ReadOnlySpan<byte> RoomStateRecordSecondRemainder =>
     [
-        0x00, 0x03, 0x01, 0x00, 0x00, 0x01, 0x3e, 0xfd,
-        0x7d, 0x03, 0x07, 0x03, 0x3e, 0xfd, 0x7d, 0x03,
-        0x07, 0x03, 0xfd, 0x00,
+        0x00, 0x03, 0x01, 0x00, 0x00, 0x01, // +0x02..+0x07: zero, kind, index 1, slot, branch, tag 1
+        0x3e, 0xfd, 0x7d, 0x03, 0x07, 0x03, // the point (-706, 893, 775), signed sixteens
+        0x3e, 0xfd, 0x7d, 0x03, 0x07, 0x03, // the same point again: the action's second side
+        0xfd, 0x00,                         // the sixteen-bit tail
     ];
 
     /// <summary>
