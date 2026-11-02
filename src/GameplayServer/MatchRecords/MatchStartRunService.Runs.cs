@@ -260,6 +260,7 @@ public sealed partial class MatchStartRunService
             operationsOrdinals,
             briefingStates.JoinedMask,
             clockUnits,
+            EntryAnswersOf(context.Session),
             carriesRoundState,
 
             // A briefing's run does not answer the report: the report was

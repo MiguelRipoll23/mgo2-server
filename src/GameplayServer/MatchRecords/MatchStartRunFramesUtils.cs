@@ -1,4 +1,5 @@
 using Mgo2Server.Shared.Constants;
+using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameplayServer.MatchRecords;
@@ -29,7 +30,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// captures write the same thirteen, in the same order:
 /// </para>
 /// <code>
-/// 0x5001 len 0            the roster head, twice
+/// 0x5001 len 0            the peer's entry answered, twice
 /// 0x5001 len 0
 /// &lt;ops&gt;   len 90           the state block
 /// &lt;ops&gt;   len 2            0f 00
@@ -44,12 +45,22 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// 0x0a61  len 1
 /// </code>
 /// <para>
-/// Two things in that shape were missing here before it was measured: the two
-/// empty roster heads the run opens on, and the roster close that ends its
+/// Two things in that shape were missing here before it was measured: the pair
+/// the run opens on, and the roster close that ends its
 /// <c>0x1001</c> tail (<c>PlayerProfileRecordUtility.BuildRosterClose()</c>, the
 /// same seven-byte record a join's roster run closes on). The close pair is
 /// therefore a close <em>triple</em>, and the run is not the twelve records this
 /// file used to write.
+/// </para>
+/// <para>
+/// <b>The opening pair is the peer's entry answered, not a recorded head.</b>
+/// The two <c>0x5001</c> records carry the fourth bytes of the client's own
+/// echo — <c>0x5001</c> ordinals <c>3</c> and <c>4</c> answering the
+/// <c>0x1001</c> pair of the same ordinals in
+/// <c>briefing-then-solo-game</c> — so a run written here opens on
+/// <see cref="MatchStartRunService.EntryAnswersOf"/>. A peer whose echo this
+/// host never heard falls back to the recorded empty heads, which carry
+/// ordinal <c>0</c>.
 /// </para>
 /// <para>
 /// The companion's answer is not in either capture's run — both write it beside
@@ -169,7 +180,11 @@ public static class MatchStartRunFramesUtils
     {
         // A briefing's run opens on the entry's pair alone, so the marker is not
         // there to drop: the opening count is the one that run was built with.
-        var answersReport = run.Count > 0 && run[0].Type == generation.MatchStartMarker;
+        // The marker, where a run carries one, sits directly behind that pair,
+        // which is the place BuildRun writes it in — not its first record, because
+        // the pair is the peer's entry answered and every run carries it.
+        var answersReport = run.Count > BriefingRunOpeningCount
+            && run[BriefingRunOpeningCount].Type == generation.MatchStartMarker;
 
         // The item-box group is left behind as well, because its bytes are
         // sequence numbers: a repeat would hand the client a second record with a
@@ -237,6 +252,12 @@ public static class MatchStartRunFramesUtils
     /// host that wrote its own default here would run a round neither the client
     /// nor the host could agree on.
     /// </param>
+    /// <param name="entryAnswers">
+    /// The answers the peer's entry echo draws, which are the run's opening pair
+    /// (<see cref="MatchStartRunService.NoteEntryAnswers"/>). Empty for a peer
+    /// whose entry this host never heard, which falls back to the recorded empty
+    /// <c>0x5001</c> heads.
+    /// </param>
     /// <param name="carriesRoundState">
     /// Whether the run carries the round's own records — its clock, the report's
     /// answer and the rules pair. A briefing that precedes a room's first round
@@ -266,6 +287,7 @@ public static class MatchStartRunFramesUtils
         IReadOnlyList<byte> operationsOrdinals,
         byte reportingSet,
         int timeLimitUnits,
+        IReadOnlyList<UdpMessage> entryAnswers,
         bool carriesRoundState = true,
         bool answersReport = true)
     {
@@ -278,21 +300,21 @@ public static class MatchStartRunFramesUtils
             teamArraySequence,
             carriesRoundState ? slots : Array.Empty<Rooms.LobbyTeamSlot>());
 
-        // The run opens on the pair of empty roster heads every capture writes,
-        // whether or not the peer's own entry was heard: `briefing-then-solo-game`
-        // writes <c>0x5001</c> twice at t+9.780 — its briefing's run — and twice
-        // again at t+147.650, and the client's echo of the lobby-slot pair is
-        // answered by the arrays below rather than by them. A run that answered the
-        // echo here wrote a single head when one echo had been heard and none when
-        // two had, which is a pair on no capture's wire.
-        IEnumerable<MatchRecordFramesUtils.RecordMessage> heads =
-        [new(UdpCommandConstants.RosterHead, []), new(UdpCommandConstants.RosterHead, [])];
+        // The run's opening pair is the peer's entry echo answered: the two
+        // records <c>82 NN</c>/<c>84 NN</c> draw, carrying the echo's own fourth
+        // bytes. `briefing-then-solo-game` writes them at t+9.780 as
+        // <c>0x5001</c> ordinals 3 and 4 — the echo it took a second earlier — and
+        // its round's run at t+147.650 as the answers to the second echo
+        // (ordinals 0x22/0x23). A peer whose echo this host never heard is
+        // written the recorded empty heads instead. The pair is always two
+        // records, because the repeat behind the run drops exactly that many by
+        // their place (RepeatOf).
+        var heads = OpeningPair(entryAnswers);
 
         return
         [
-        // The run's opening pair: the answer to the peer's entry echo, which is
-        // the empty 0x5001 record a join's roster run opens on when nothing was
-        // echoed.
+        // The run's opening pair: the answers to the peer's entry echo, or the
+        // recorded empty 0x5001 heads when this host heard no echo.
         .. heads,
 
         // The marker the round is opened with, for the run that is the report's
@@ -394,5 +416,34 @@ public static class MatchStartRunFramesUtils
             }
             : []),
         ];
+    }
+
+    /// <summary>
+    /// The pair a run opens on: the peer's entry echo answered, or the recorded
+    /// empty heads for a peer whose echo this host never heard.
+    /// </summary>
+    /// <remarks>
+    /// <b>Two records, always.</b> The repeat behind the run drops its opening by
+    /// their place and not by their identifier (<see cref="RepeatOf"/>), so a
+    /// frame that carried only one of the echo's records cannot leave the run a
+    /// head short and the repeat dropping a record of the run's own.
+    /// </remarks>
+    /// <param name="entryAnswers">Answers the echo drew, in echo order.</param>
+    /// <returns>The two records the run opens on.</returns>
+    private static MatchRecordFramesUtils.RecordMessage[] OpeningPair(
+        IReadOnlyList<UdpMessage> entryAnswers)
+    {
+        var pair = new MatchRecordFramesUtils.RecordMessage[BriefingRunOpeningCount];
+        for (var index = 0; index < pair.Length; index++)
+        {
+            pair[index] = index < entryAnswers.Count
+                ? new MatchRecordFramesUtils.RecordMessage(
+                    entryAnswers[index].Type,
+                    entryAnswers[index].Body,
+                    entryAnswers[index].Flags)
+                : new MatchRecordFramesUtils.RecordMessage(UdpCommandConstants.RosterHead, []);
+        }
+
+        return pair;
     }
 }
