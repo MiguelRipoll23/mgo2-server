@@ -93,12 +93,6 @@ public sealed partial class GameplayServerService
     /// </remarks>
     /// <param name="session">Session to write through.</param>
     /// <param name="messages">Messages to write, in order.</param>
-    /// <param name="compressed">
-    /// Whether the run goes out LZSS-compressed with the compression marker
-    /// set. The recorded host compresses the roster run, the roster repeat
-    /// and the post-join burst, and sends the short records that close them
-    /// plain, so the flag belongs to the run rather than to the peer.
-    /// </param>
     /// <param name="ofThisHost">
     /// Whether this host built the records. Everything it writes is its own but
     /// the relay, which is a peer's record passed on — a distinction a caller
@@ -107,7 +101,6 @@ public sealed partial class GameplayServerService
     private void SendMessages(
         PeerSession session,
         IReadOnlyList<UdpMessage> messages,
-        bool compressed = false,
         bool ofThisHost = true)
     {
         if (messages.Count == 0)
@@ -120,7 +113,7 @@ public sealed partial class GameplayServerService
             var counter = session.OutboundCounter;
             session.OutboundCounter = FrameCounterUtility.Next(counter);
 
-            var plain = FrameBuilderUtility.BuildMessageFrame(counter, messages, compressed);
+            var plain = FrameBuilderUtility.BuildMessageFrame(counter, messages);
             var key = session.Established ? session.SessionKey : UdpCryptoKeyConstants.PreHandshakeKey;
             var digestKey = session.Established
                 ? session.SessionKey ^ UdpCryptoKeyConstants.TailDigestKey
@@ -136,12 +129,11 @@ public sealed partial class GameplayServerService
                 session.NoteSent(message.Type, message.Flags);
             }
             logger.LogDebug(
-                "[{LogPrefix}] OUT {RemoteAddress} building frame counter={Counter}, compression={Compression}, " +
+                "[{LogPrefix}] OUT {RemoteAddress} building frame counter={Counter}, compression=uncompressed, " +
                 "keyed={Keyed}, records=[{Records}]",
                 LogPrefix,
                 session.DialBack,
                 counter,
-                compressed ? "compressed" : "uncompressed",
                 session.Established,
                 string.Join(", ", messages.Select(message =>
                     $"0x{message.Type:x4}/{message.Body.Length}B/ordinal={message.Flags} "
@@ -152,7 +144,7 @@ public sealed partial class GameplayServerService
                 LogPrefix,
                 $"frame counter={counter} messages={messages.Count}" +
                 $"{(session.Established ? string.Empty : " pre-keyed")} " +
-                $"compression={(compressed ? "compressed" : "uncompressed")} to {session.DialBack}",
+                $"compression=uncompressed to {session.DialBack}",
                 wire);
         }
     }

@@ -106,7 +106,7 @@ public sealed partial class MatchRecordService
             // stream of the identifier each record travels under; what advances
             // here is the blob alternation, once per state blob, and the item-box
             // counters, once per record the group wrote.
-            await SendAsync(context, plan.Records(sequences), plan.Compressed);
+            await SendAsync(context, plan.Records(sequences));
 
             if (plan.CarriesStateBlob)
             {

@@ -18,9 +18,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
     /// <para>
     /// <b>A step is not a frame.</b> A frame of the capture is a datagram and the
     /// phase is sparse: 4.9 s of nothing follows the first record, and the steps that
-    /// carry no wait are the records the capture put in one datagram. The marker that
-    /// says a datagram is compressed is per step, because the recorded host marks the
-    /// state blobs and leaves the one-byte controls plain.
+    /// carry no wait are the records the capture put in one datagram.
     /// </para>
     /// </remarks>
 public static class SparsePhaseFramesUtils
@@ -40,16 +38,9 @@ public static class SparsePhaseFramesUtils
     /// <summary>One step of the stream: records to write together, then the wait before the next.</summary>
     /// <param name="DelayMilliseconds">Delay before this step, in milliseconds.</param>
     /// <param name="Records">Records written together as one datagram.</param>
-    /// <param name="Compressed">
-    /// Whether the datagram goes out LZSS-compressed. The recorded host marks the
-    /// state blobs and the match-start run and leaves the one-byte control records
-    /// and the beat frames plain, so the marker follows the frame rather than the
-    /// peer — the same rule the roster run follows.
-    /// </param>
     public sealed record RecordStep(
         int DelayMilliseconds,
-        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> Records,
-        bool Compressed = false);
+        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> Records);
 
     /// <summary>
     /// The sparse phase, counted from the roster answer. Each delay is measured
@@ -80,21 +71,21 @@ public static class SparsePhaseFramesUtils
     public static List<RecordStep> SparseSteps() =>
     [
         new(4930, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x02)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)], Compressed: true),
+        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
         new(0, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x02)]),
         new(4800, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x03)]),
         new(2400, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x03)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)], Compressed: true),
+        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
         new(2370, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x04)]),
-        new(2750, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)], Compressed: true),
+        new(2750, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
         new(2370, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x05)]),
-        new(4750, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)], Compressed: true),
+        new(4750, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
         new(0, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x06)]),
         new(4770, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x07)]),
-        new(110, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)], Compressed: true),
+        new(110, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
         new(4250, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x08)]),
-        new(2490, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)], Compressed: true),
+        new(2490, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
         new(6250, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x09)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)], Compressed: true),
+        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
     ];
 }

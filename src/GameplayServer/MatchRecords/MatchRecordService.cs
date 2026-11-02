@@ -150,7 +150,7 @@ public sealed partial class MatchRecordService(
                     await Task.Delay(step.DelayMilliseconds);
                 }
 
-                await SendAsync(context, step.Records, step.Compressed);
+                await SendAsync(context, step.Records);
             }
 
             // The beat is the round's, not the sparse phase's, and what it is
@@ -223,19 +223,9 @@ public sealed partial class MatchRecordService(
 
     private static async Task SendAsync(
         PeerContext context,
-        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> records,
-        bool compressed)
+        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> records)
     {
-        // The recorded host marks the state blobs and leaves the one-byte
-        // controls and the beat frames plain, so where the context can batch, the
-        // blobs go out under the marker the capture shows. A single record cannot
-        // be batched compressed without changing what it means, so the compressed
-        // path falls back to plain there.
-        var batch = compressed
-            ? context.SendRecordsCompressed ?? context.SendRecords
-            : context.SendRecords;
-
-        if (batch is { } sendRecords)
+        if (context.SendRecords is { } sendRecords)
         {
             await sendRecords([.. records.Select(MatchRecordFramesUtils.ToUdpMessage)]);
             return;

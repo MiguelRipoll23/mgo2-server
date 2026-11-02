@@ -3,9 +3,8 @@ using Mgo2Server.Shared.Constants;
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// Assembles one beat frame: which insertion rides at its head, whether the
-/// item-box group does, whether the frame goes out compressed, and whether the
-/// vitals record has joined yet.
+/// Assembles one beat frame: which insertion and item-box group it carries, and
+/// whether the vitals record has joined yet.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -180,7 +179,7 @@ public sealed record BeatFramePlan(
 
     /// <summary>
     /// Whether the item-box group rides in this frame, behind the rules pair. It
-    /// rides in one frame in every eight, the same frame the capture compresses,
+    /// rides in one frame in every eight, the same frame the capture groups,
     /// and only inside the round's own opening
     /// (<see cref="ItemBoxOpeningFrames"/>).
     /// </summary>
@@ -212,21 +211,6 @@ public sealed record BeatFramePlan(
     public byte ItemBoxStateSequenceAfter => CarriesItemBoxes
         ? (byte)(ItemBoxStateSequence + ItemBoxFramesUtils.ItemBoxStateRecords)
         : ItemBoxStateSequence;
-
-    /// <summary>
-    /// Whether this frame goes out compressed.
-    /// </summary>
-    /// <remarks>
-    /// The marker follows the frame's content, not the phase: the recorded host
-    /// compresses a beat frame when a state blob rides in it (hdr 0x8648) or an
-    /// item-box group does (hdr 0x801f) and leaves the clock-only and
-    /// control-only ones uncompressed (hdr 0x0626, 0x062d, 0x0682), because
-    /// those two are the only insertions that pay for the compression. Sending
-    /// them all plain writes bytes the capture does not, and sending them all
-    /// compressed would mark frames the peer saw unmarked.
-    /// </remarks>
-    public bool Compressed =>
-        InsertionKind == BeatInsertion.StateBlob || CarriesItemBoxes;
 
     /// <summary>
     /// Whether the vitals record rides in this frame.

@@ -109,7 +109,7 @@ public sealed partial class BriefingCountdownService(
             new(UdpCommandConstants.PlayerProfile, RoomStateRecordBodiesUtils.RoomStateRecordSecond(), ordinals[1]),
         };
 
-        await Rooms.RosterRunSendUtils.SendAsync(context, state, compressed: true);
+        await Rooms.RosterRunSendUtils.SendAsync(context, state);
     }
 
     /// <summary>

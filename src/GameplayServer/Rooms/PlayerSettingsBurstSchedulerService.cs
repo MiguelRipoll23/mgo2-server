@@ -112,8 +112,7 @@ public sealed class PlayerSettingsBurstSchedulerService(
 
         await RosterRunSendUtils.SendAsync(
             context,
-            burst.BuildSettingsBurst(rotation, loadouts, answeringSlot),
-            compressed: true);
+            burst.BuildSettingsBurst(rotation, loadouts, answeringSlot));
         logger.LogDebug(
             "UDP {LocalPort}: settings burst sent to {RemoteAddress}; sending its closing control",
             context.LocalPort,

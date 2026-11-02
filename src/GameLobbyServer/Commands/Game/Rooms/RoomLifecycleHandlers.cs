@@ -7,7 +7,6 @@ using Mgo2Server.Shared.Domain.Games;
 using Mgo2Server.Shared.Interfaces;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
-using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameLobbyServer.Commands.Game.Rooms;
 
@@ -39,8 +38,7 @@ public sealed class JoinGameHandler(
     CharacterService characterService,
     EventAssignmentService assignmentService,
     SessionHelper sessionHelper,
-    LobbyCoordinationClientService coordination,
-    ILogger<JoinGameHandler> logger) : ICommandHandler
+    LobbyCoordinationClientService coordination) : ICommandHandler
 {
 
     /// <summary>Size of the success reply, including the two unread trailing bytes.</summary>

@@ -112,8 +112,7 @@ public sealed partial class TeamArrayService(
             [
                 new(RoomRosterService.HostEntryType, answeredTeams, answeredOrdinals[0]),
                 new(UdpCommandConstants.PlayerProfile, answeredOccupancy, answeredOrdinals[1]),
-            ],
-            compressed: true);
+            ]);
 
         var next = TeamArrayFramesUtils.NextSequence(answered);
         var run = TakeConfirmationRun(context, answered, next);
@@ -129,7 +128,7 @@ public sealed partial class TeamArrayService(
             run.Confirmation.Body,
             run.Confirmation.Ordinal);
 
-        await RosterRunSendUtils.SendAsync(context, run.Group, compressed: true);
+        await RosterRunSendUtils.SendAsync(context, run.Group);
 
         var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(next, await lobbySlots.ReadAsync());
 
@@ -151,7 +150,7 @@ public sealed partial class TeamArrayService(
             next,
             context.Remote);
 
-        await RosterRunSendUtils.SendAsync(context, pair, compressed: true);
+        await RosterRunSendUtils.SendAsync(context, pair);
     }
 
     /// <summary>

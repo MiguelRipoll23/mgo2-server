@@ -119,11 +119,6 @@ public sealed partial class GameplayServerService
                 SendMessages(session, records);
                 return Task.CompletedTask;
             },
-            records =>
-            {
-                SendMessages(session, records, compressed: true);
-                return Task.CompletedTask;
-            },
             (type, body, ordinal) =>
             {
                 SendToOthers(session, type, body, ordinal, ofThisHost: false);

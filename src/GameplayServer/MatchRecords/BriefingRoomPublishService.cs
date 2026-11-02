@@ -290,8 +290,7 @@ public sealed partial class BriefingRoomPublishService(
                 // is not an identifier the host writes.
                 new(UdpCommandConstants.PlayerProfile, teams, ordinals[0]),
                 new(UdpCommandConstants.PlayerProfile, occupancy, ordinals[1]),
-            ],
-            compressed: true);
+            ]);
     }
 
     /// <summary>

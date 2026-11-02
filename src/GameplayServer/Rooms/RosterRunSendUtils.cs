@@ -21,23 +21,11 @@ public static class RosterRunSendUtils
     /// </summary>
     /// <param name="context">Context of the message being answered.</param>
     /// <param name="run">Records to write, in order.</param>
-    /// <param name="compressed">
-    /// Whether the run goes out LZSS-compressed with the header's compression
-    /// marker set. The recorded host sends the roster run and its repeat
-    /// compressed and the one-byte record that closes the exchange plain; where
-    /// the context cannot batch, the fallback is the uncompressed path because a
-    /// plain record cannot be made compressed without changing what it means.
-    /// </param>
     public static async Task SendAsync(
         PeerContext context,
-        IReadOnlyList<RosterRecord> run,
-        bool compressed = false)
+        IReadOnlyList<RosterRecord> run)
     {
-        var batch = compressed
-            ? context.SendRecordsCompressed ?? context.SendRecords
-            : context.SendRecords;
-
-        if (batch is not { } sendRecords)
+        if (context.SendRecords is not { } sendRecords)
         {
             foreach (var record in run)
             {

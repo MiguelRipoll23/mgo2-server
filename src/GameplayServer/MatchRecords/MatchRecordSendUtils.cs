@@ -19,21 +19,12 @@ public static class MatchRecordSendUtils
     /// </summary>
     /// <param name="context">Context the records are written through.</param>
     /// <param name="records">Records to write, in order.</param>
-    /// <param name="compressed">
-    /// Whether the records go out LZSS-compressed with the header's compression
-    /// marker set. The recorded host writes a whole run compressed and the
-    /// one-byte records plain, so the flag belongs to the caller.
-    /// </param>
     public static async Task SendAsync(
         PeerContext context,
-        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> records,
-        bool compressed = false)
+        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> records)
     {
         var messages = records.Select(MatchRecordFramesUtils.ToUdpMessage).ToList();
-        var batch = compressed
-            ? context.SendRecordsCompressed ?? context.SendRecords
-            : context.SendRecords;
-        if (batch is { } sendRecords)
+        if (context.SendRecords is { } sendRecords)
         {
             await sendRecords(messages);
             return;

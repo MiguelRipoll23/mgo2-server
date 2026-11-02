@@ -282,19 +282,13 @@ public sealed class PlayerProfileHandler(
             run.Count,
             roster.JoinerCount);
 
-        // The run goes out compressed, as the recorded host sends it. The same run
-        // sent in the clear was the experiment that separated our LZSS stream from
-        // the records in it - the peer answered those and answered nothing against
-        // our marked frames - and the difference was the encoder, not the marker: it
-        // wrote no end-of-stream marker, which is the peer reader's only clean exit,
-        // so the frame was dropped on arrival.
         logger.LogDebug(
-            "UDP {LocalPort}: sending roster response ({RecordCount} records, compressed), closing on "
+            "UDP {LocalPort}: sending roster response ({RecordCount} records), closing on "
             + "the answered peer's settings payload for slot byte {SlotByte}",
             context.LocalPort,
             run.Count,
             answeringSlot);
-        await RosterRunSendUtils.SendAsync(context, run, compressed: true);
+        await RosterRunSendUtils.SendAsync(context, run);
 
         // The recorded host does not stop at the roster. 2.52 s later it writes
         // the one burst of the round - the room's rotation, the joiner's loadout,

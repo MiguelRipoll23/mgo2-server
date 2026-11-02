@@ -197,7 +197,7 @@ public sealed partial class TeamArrayService
                 ? "with the player's own entry"
                 : "with the briefing's countdown and the player's settings header");
 
-        await RosterRunSendUtils.SendAsync(context, run, compressed: true);
+        await RosterRunSendUtils.SendAsync(context, run);
     }
 
     /// <summary>
