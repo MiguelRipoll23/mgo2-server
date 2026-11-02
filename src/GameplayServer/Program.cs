@@ -29,10 +29,10 @@ builder.Services.AddServerTelemetry(builder.Configuration, "mgo2-gameplay");
 builder.Services.AddSingleton<HostIdentityService>();
 builder.Services.AddSingleton<AccountService>();
 builder.Services.AddSingleton<MatchService>();
-builder.Services.AddSingleton<MatchMapRotationService>();
 builder.Services.AddSingleton<MatchSettingsService>();
 builder.Services.AddSingleton<RoomRosterService>();
 builder.Services.AddSingleton<LobbySlotService>();
+builder.Services.AddSingleton<PeerControlByteService>();
 builder.Services.AddSingleton<LobbyLoadoutService>();
 builder.Services.AddSingleton<PlayerSettingsBurstService>();
 builder.Services.AddSingleton<PlayerSettingsBurstSchedulerService>();
@@ -60,22 +60,24 @@ var host = builder.Build();
 var options = host.Services.GetRequiredService<IOptions<ServerOptions>>().Value;
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("GameplayServer");
 
-// The room's rule and map are named in this instance's configuration and nowhere
+// The room's rotation is named in this instance's configuration and nowhere
 // else, so a name that is no rule or no map is a round the client cannot play,
-// and a zero-length briefing or round is one that ends as it opens. Both are
-// refused here, before a peer is answered, rather than by a round that never
-// opens: a named fault, in a process that has served nothing yet.
+// and a zero-length briefing or an empty rotation is a room nothing can start.
+// Both are refused here, before a peer is answered, rather than by a round that
+// never opens: a named fault, in a process that has served nothing yet.
 MatchSettingsUtils.Validate(options);
 
-var round = MatchSettingsUtils.Round(options);
+var rotation = MatchSettingsUtils.Rotation(options);
 logger.LogInformation(
-    "The room runs {Rule} on {Map} for {RoundMinutes}-minute round(s) with a {BriefingMinutes}-minute "
-    + "briefing{VerboseKillLimit}",
-    MatchRuleUtils.Name(round.Rule),
-    MatchMapUtils.Name(round.Map),
-    round.TimeLimitMinutes,
+    "The room plays {RoundCount} round(s) for {BriefingMinutes}-minute briefings: {Rotation}",
+    rotation.Count,
     options.GameplayServerBriefingMinutes,
-    round.Tickets is { } limit ? $", ending a round at {limit} kills" : ", ending a round on its clock alone");
+    string.Join(
+        ", ",
+        rotation.Select(
+            round => $"{MatchRuleUtils.Name(round.Rule)} on {MatchMapUtils.Name(round.Map)} for "
+                + $"{round.TimeLimitMinutes} min"
+                + (round.Tickets is { } limit ? $" to {limit} kills" : string.Empty))));
 
 var registry = host.Services.GetRequiredService<PeerCommandRegistry>();
 PeerCommandHandlerRegistration.RegisterCommandHandlers(registry);

@@ -25,30 +25,33 @@ namespace Mgo2Server.GameplayServer.Match;
 /// </para>
 /// </remarks>
 /// <param name="match">Publisher of this host's room, which names the room to serve.</param>
-/// <param name="mapRotation">
-/// The map this start's room plays, which is the one the rotation advanced to.
-/// </param>
 /// <param name="options">Options of this instance, which state what the room runs.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class MatchSettingsService(
     MatchService match,
-    MatchMapRotationService mapRotation,
     IOptions<ServerOptions> options,
     ILogger<MatchSettingsService> logger)
 {
     private readonly ServerOptions options = options.Value;
 
     /// <summary>
-    /// The map this host's room plays: the one the rotation advanced to at startup,
-    /// which is what the room's own entry resolves its spawn and facing against.
+    /// The rotation this instance's room plays, resolved once per process.
+    /// </summary>
+    private readonly IReadOnlyList<MatchRotationEntry> rotation = MatchSettingsUtils.Rotation(options.Value);
+
+    /// <summary>
+    /// The map the room's own records are written on: the rotation's first entry
+    /// while no round is playing.
     /// </summary>
     /// <remarks>
-    /// The map is this process's own (<see cref="MatchMapRotationService"/>) and is
-    /// validated at startup (<see cref="MatchSettingsUtils.Validate"/>), so it is
-    /// known before the room is published and does not wait on
-    /// <see cref="FindPublished"/>.
+    /// A round's records take the map of the round itself
+    /// (<see cref="MatchRotationEntry.Map"/> from <see cref="MatchSettings.Round"/>);
+    /// this answers for the room's own stage, which is what the briefing and the
+    /// lobby-slot pair are drawn on before a round exists. It is validated at
+    /// startup (<see cref="MatchSettingsUtils.Validate"/>), so it is known before
+    /// the room is published and does not wait on <see cref="FindPublished"/>.
     /// </remarks>
-    public int Map => mapRotation.Map;
+    public int Map => rotation[0].Map;
 
     /// <summary>
     /// The settings of the room this host publishes, which is the room every writer
@@ -65,18 +68,18 @@ public sealed class MatchSettingsService(
             return null;
         }
 
-        var settings = MatchSettingsUtils.From(
-            options,
+        var settings = new MatchSettings(
             matchIdentifier,
             options.GameplayServerRoomName,
-            mapRotation.Map);
+            options.GameplayServerBriefingMinutes,
+            rotation);
         logger.LogDebug(
-            "Room {GameIdentifier} ({GameName}) runs {RoundCount} round(s) on map {Map} with a "
+            "Room {GameIdentifier} ({GameName}) runs {RoundCount} round(s) on maps {Maps} with a "
             + "{BriefingTime}-minute briefing, from this instance's own settings",
             settings.GameIdentifier,
             settings.Name,
             settings.Rotation.Count,
-            mapRotation.Map,
+            string.Join(", ", rotation.Select(entry => MatchMapUtils.Name(entry.Map) ?? $"map {entry.Map}")),
             settings.BriefingTimeMinutes);
         return settings;
     }

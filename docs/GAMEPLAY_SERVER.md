@@ -22,29 +22,34 @@ The room is a row in `games`, published inside a gameplay lobby
 then heartbeats it, so the row survives a restart of the container and a client
 only ever joins a room whose heartbeat is inside `GameStaleSeconds`.
 
-The room runs the rule this instance is configured with (`GameplayServerRule`)
-and a map that **advances one map at every start** (`GameplayServerMap` names the
-first), each named the way the replay console names it — `TDM`, `Blood Bath`,
-`n007a` — and mapped to the id a rotation carries by `MatchRuleUtils` and
-`MatchMapUtils` (`GAME_SETTINGS_WIRE.md`). A name neither table holds stops the
-process at startup rather than opening a round no client can play.
+The room plays a **rotation** — `GameplayServerRotation`, one `RULE@Map` pair per
+round, written the way the client's own room screen writes it — each half named
+the way the replay console names it (`TDM`, `BASE`, `Blood Bath`, `n007a`) and
+mapped to the id a rotation carries by `MatchRuleUtils` and `MatchMapUtils`
+(`GAME_SETTINGS_WIRE.md`). A name neither table holds stops the process at startup
+rather than opening a round no client can play. The default is the recording's own
+nine rounds, across five rules and seven maps.
 
-**The map rotation is one object and the room row is its record.**
-`MatchMapRotationService` states the map this process plays; `MatchService` reads
-the rotation stored in the room row it found — the map the previous start wrote
-there — advances it one along `MatchMapUtils.Next`, and writes the new rotation
-back, and `MatchSettingsService` builds every record of the channel from that same
-map, so the room a client is listed and the round it plays cannot disagree. The
-walk covers the table's named maps and skips its placeholder (id `16`), wrapping at
-the end; a row with no readable rotation, which is a room that has never started,
-plays the configured map. A restart of the container is therefore the advance: the
-row survives it, the process's own filesystem does not.
+**The rotation is one list and every reader takes it from there.**
+`MatchSettingsUtils.Rotation` resolves the configured list once, `MatchService`
+writes it into the room row — the column the lobby's `0x4313` reply hands a
+browsing client — and `MatchSettingsService` answers each round out of the same
+list, walking it one entry per round and starting again at the top
+(`MatchSettings.Round`), so the rooms a client is listed and the round it plays
+cannot disagree. Each entry's own length and kill limit come from
+`GameplayServerRuleTimers`, the seventeen-word per-rule bank the reply states, so a
+rotation that mixes rules plays each for its own time.
 
 The host plays as a character of its own (`GameplayServerCharacterName`, derived
 from the port when unset) whose identifier is the character id in the room and in
-every roster record, and the character is flagged `dedicated` at startup
-(`CharacterService.EnsureDedicatedHostSettingsAsync`) — that flag is what makes
-the room a *dedicated host* rather than a player's room, and the event subsystem
+every roster record, and at startup its `characters_host_settings` row is written
+whole (`CharacterService.EnsureDedicatedHostSettingsAsync`) — the dedicated flag,
+the room name, its capacity, its briefing time, its level-limit base, its rotation
+and its per-rule bank. That row is what the lobby answers a browsing client's game
+details from, and it is written **after** the character exists and **before** the
+room is published, so no browser is ever told of a room whose rows are not there
+yet. The dedicated flag is also what makes the room a *dedicated host* rather than
+a player's room, and the event subsystem
 leases exactly these rooms when it needs a host for a match
 (`src/Shared/Domain/Events/EventHostRoomPoolService.cs`), which is why a
 host-role room is sized to the event's player capacity rather than a room's own.
@@ -57,8 +62,9 @@ own join reports, and keep the channel moving underneath them.
 
 ### 2.1 Startup
 
-1. The account and its character are published and the dedicated flag written
-   (`GameplayServerService.RunAsync`).
+1. The account and its character are published, and the host settings row is
+   written from this instance's own settings
+   (`GameplayServerService.RunAsync`, `MatchSettingsUtils.HostSettings`).
 2. The host's endpoint pair is registered against the character
    (`GameService.SaveConnectionInformationAsync`), which is what a lobby hands a
    joining client over TCP.
@@ -209,8 +215,13 @@ state block and the two-byte record behind it, the two lobby-slot arrays — whi
 name the room's own players, each in the slot it holds and on the side the room's
 rows put it — the join state answer, the close **triple** (the two twenty-byte
 records and the seven-byte roster close), the round's clock, the payload echoing
-that peer's own reported byte, and the rules pair
-(`MatchStartRunFramesUtils`). Everything in it that is measured as an offset
+that peer's own reported byte, the lobby-slot pair once more behind it, and the
+head and item of the box the round spawned with the state pair at its tail
+(`MatchStartRunFramesUtils`, `ItemBoxFramesUtils.RunOpeningGroup`). The room's
+phase record goes out **before** the run, and the `0xd001` the reference's run
+frame opens on is not part of it: that is the answer to the peer's own `0x9001`
+lobby-slot request, with the same ordinal
+(`PeerAcknowledgementUtils.AcknowledgementOf`). Everything in it that is measured as an offset
 is an offset **from this run**, which is why the beat waits for it. **The clock it
 carries is what is left of the round**, not its whole length
 (`MatchStartRunService.WriteRunAsync` → `MatchRoundStateService.RemainingUnits`),
@@ -342,13 +353,14 @@ countdown (`analysis/join-stall-after-mode2.md` §25).
 
 A round ends on whichever of its two limits comes first. The clock is the first:
 `MatchStartRunService` waits the round's own time —
-`MatchRotationEntry.TimeLimitMinutes`, this instance's `GAMEPLAY_SERVER_ROUND_MINUTES`
-for every rule — and then ends it. The other is the round's **kill limit**: with
-every kill and death counted (`MatchScoreService`), a side that reaches
-`MatchRotationEntry.Tickets` ends the round itself (`TicketsReachedAsync`), which is
-`GAMEPLAY_SERVER_KILL_LIMIT` and unset by default, because nothing on this channel
-counts kills for a host (§3.3) and a clock-only round is what a room with no limit
-to state plays.
+`MatchRotationEntry.TimeLimitMinutes`, which is the round's rule's own word in
+`GAMEPLAY_SERVER_RULE_TIMERS` — and then ends it. The other is the round's **kill
+limit**: with every kill and death counted (`MatchScoreService`), a side that
+reaches `MatchRotationEntry.Tickets` ends the round itself (`TicketsReachedAsync`).
+That figure is the rule's own ticket word in the same bank — the fifty-ticket TDM
+and thirty-ticket DM of the default — and is absent for every rule the bank states
+none for, because nothing on this channel counts kills for a host (§3.3) and a
+clock-only round is what a room with no limit to state plays.
 
 Whichever ends it, the round now carries a **result**: `state[2]` of the
 operations state block is written behind it as the `0x02` state write

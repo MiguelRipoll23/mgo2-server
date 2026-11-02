@@ -135,47 +135,44 @@ public sealed partial class CharacterService
             .ToListAsync(cancellationToken);
     }
 
-    /// <summary>Ensures the character's current host settings mark it as dedicated.</summary>
+    /// <summary>Creates or replaces the host settings of a dedicated host.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It is the row a browsing client's game details are answered from.</b> The
+    /// lobby's <c>0x4313</c> reply reads the host character's row for the room's
+    /// briefing time, its level-limit base, its per-rule bank and its rotation
+    /// (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §1), and a dedicated host never
+    /// receives the client's <c>0x4310</c> push that fills the row for a
+    /// player-hosted room. A host that wrote only its dedicated flag told every
+    /// browser its room briefed for no minutes and played rounds of no length.
+    /// </para>
+    /// <para>
+    /// The row is replaced rather than merged: a dedicated host states every field
+    /// it serves, so a value left from an earlier build is a setting nothing here
+    /// chose.
+    /// </para>
+    /// </remarks>
     /// <param name="characterIdentifier">Identifier of the character.</param>
-    /// <param name="briefingMinutes">Minutes the room's briefing lasts.</param>
-    /// <param name="ruleTimers">
-    /// The room's per-rule times, rounds and tickets, in the order the details reply
-    /// states them.
-    /// </param>
+    /// <param name="settings">The whole row to store, as the host's own settings state it.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     public async Task EnsureDedicatedHostSettingsAsync(
         int characterIdentifier,
-        int briefingMinutes,
-        IReadOnlyList<int> ruleTimers,
+        CharacterHostSettings settings,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(ruleTimers);
+        ArgumentNullException.ThrowIfNull(settings);
 
-        await using var context = await CreateContextAsync(cancellationToken);
-        var settings = await context.CharacterHostSettings
-            .FirstOrDefaultAsync(
-                row => row.CharacterIdentifier == characterIdentifier && row.Type == HostSettingsType.Value,
-                cancellationToken);
-
-        if (settings is null)
-        {
-            settings = new CharacterHostSettings
-            {
-                CharacterIdentifier = characterIdentifier,
-                Type = HostSettingsType.Value,
-            };
-            context.CharacterHostSettings.Add(settings);
-        }
-
+        settings.CharacterIdentifier = characterIdentifier;
+        settings.Type = HostSettingsType.Value;
         settings.Dedicated = true;
 
-        // A dedicated host states its own briefing and round times, because the
-        // details reply reads them from this row and a dedicated host never receives
-        // the client's push that fills it for a player-hosted room: the row it left
-        // behind told every browser the room briefed for no minutes at all.
-        settings.BriefingTime = briefingMinutes;
-        settings.RuleTimers = [.. ruleTimers];
+        await using var context = await CreateContextAsync(cancellationToken);
+        await context.CharacterHostSettings
+            .Where(row => row.CharacterIdentifier == characterIdentifier
+                && row.Type == HostSettingsType.Value)
+            .ExecuteDeleteAsync(cancellationToken);
 
+        context.CharacterHostSettings.Add(settings);
         await context.SaveChangesAsync(cancellationToken);
     }
 

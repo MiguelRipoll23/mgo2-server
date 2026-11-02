@@ -18,14 +18,12 @@ namespace Mgo2Server.GameplayServer.Match;
 /// <param name="gameService">Service that owns the rooms.</param>
 /// <param name="lobbyService">Service that owns the lobby rows.</param>
 /// <param name="hostIdentity">Identity the gameplay server presents.</param>
-/// <param name="mapRotation">The map this start's room plays.</param>
 /// <param name="options">Options of this instance.</param>
 /// <param name="logger">Logger of the service.</param>
 public sealed class MatchService(
     GameService gameService,
     LobbyService lobbyService,
     HostIdentityService hostIdentity,
-    MatchMapRotationService mapRotation,
     IOptions<ServerOptions> options,
     ILogger<MatchService> logger)
     : PeriodicWorker(
@@ -126,37 +124,24 @@ public sealed class MatchService(
         var existing = (await gameService.FindByLobbyAsync(lobby.Identifier, cancellationToken))
             .FirstOrDefault(game => game.HostIdentifier == hostIdentifier && game.Name == name);
 
-        // The map advances at every start, and the row found above is what says
-        // where the last one left it: its stored rotation names the map that run
-        // played, so this run plays the next. A room with no row behind it — the
-        // first start on a fresh database — plays the configured map instead, and
-        // `MatchMapRotationService` is where the answer is kept, because
-        // `MatchSettingsService` builds every gameplay record from it and the two
-        // must be the same map.
-        var map = MatchSettingsUtils.StoredMap(existing?.Games) is { } played
-            ? MatchMapUtils.Next(played)
-            : MatchMapUtils.Parse(options.GameplayServerMap);
-        mapRotation.Select(map);
-
-        // The rotation is this start's map beside this instance's rule, in the form
-        // the room row stores and the lobby's `0x4313` reply hands a client, and it
-        // is resolved once so the same value is written to either branch below. It
-        // is the one `MatchSettingsService` answers a round with, so what a client
-        // is handed and what this host plays are one rotation.
-        var round = MatchSettingsUtils.Round(options, map);
-        var rotation = MatchSettingsUtils.StoredRotationJson([round]);
+        // The room plays the rotation this instance states, round for round, and
+        // the row stores that same list in the form the lobby's `0x4313` reply
+        // hands a client. It is resolved once so the same value is written to
+        // either branch below, and `MatchSettingsService` answers a round out of
+        // the same setting, so what a client is handed and what this host plays
+        // are one rotation.
+        var rounds = MatchSettingsUtils.Rotation(options);
+        var rotation = MatchSettingsUtils.StoredRotationJson(rounds);
+        var first = rounds[0];
 
         if (existing is not null)
         {
-            // The row states this start's rotation, always and before anything is
-            // served: it is the column the lobby's `0x4313` reply reads, so a row
-            // left on a previous start's map is a client told one map while this
-            // host plays another. The advance above already reads that column to
-            // decide which map this start plays, and this write is what makes the
-            // column follow it — a property of the start rather than of a
-            // comparison, so a row rewritten by anything else in between is
-            // corrected here instead of being kept.
-            var previousMap = MatchSettingsUtils.StoredMap(existing.Games);
+            // The row states this instance's rotation, always and before anything
+            // is served: it is the column the lobby's `0x4313` reply reads, so a
+            // row left on a previous build's rotation is a client told one set of
+            // rounds while this host plays another. It is a property of the start
+            // rather than of a comparison, so a row rewritten by anything else in
+            // between is corrected here instead of being kept.
             await gameService.UpdateAsync(
                 existing.Identifier,
                 room => room.Games = rotation,
@@ -164,13 +149,13 @@ public sealed class MatchService(
             if (existing.Games != rotation)
             {
                 logger.LogInformation(
-                    "Room {GameIdentifier} ({GameName}) states this start's own rotation: rule {Rule} on "
-                    + "map {Map}, from map {PreviousMap}",
+                    "Room {GameIdentifier} ({GameName}) states this instance's own rotation: "
+                    + "{RoundCount} round(s), starting with rule {Rule} on map {Map}",
                     existing.Identifier,
                     existing.Name,
-                    round.Rule,
-                    round.Map,
-                    previousMap);
+                    rounds.Count,
+                    first.Rule,
+                    first.Map);
             }
 
             logger.LogDebug(
@@ -214,13 +199,14 @@ public sealed class MatchService(
 
         await gameService.AddPlayerAsync(game.Identifier, hostIdentifier, cancellationToken);
         logger.LogInformation(
-            "Created match {GameIdentifier} ({Name}) in lobby {LobbyIdentifier} on rule {Rule}, map {Map}, "
-            + "reporting {Ping} ms",
+            "Created match {GameIdentifier} ({Name}) in lobby {LobbyIdentifier} with {RoundCount} "
+            + "round(s), starting with rule {Rule} on map {Map}, reporting {Ping} ms",
             game.Identifier,
             name,
             lobby.Identifier,
-            round.Rule,
-            round.Map,
+            rounds.Count,
+            first.Rule,
+            first.Map,
             ReportedPingMilliseconds);
 
         return game.Identifier;

@@ -35,6 +35,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly MatchRecords.MatchStartRunService matchStart;
     private readonly MatchRecords.MatchRoundStateService roundStates;
     private readonly BriefingStateService briefingStates;
+    private readonly PeerControlByteService controlBytes;
     private readonly TeamArrayService teamArrays;
     private readonly PlayerVitalsService vitals;
     private readonly HostIdentityService hostIdentity;
@@ -80,6 +81,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         matchStart = serviceProvider.GetRequiredService<MatchRecords.MatchStartRunService>();
         roundStates = serviceProvider.GetRequiredService<MatchRecords.MatchRoundStateService>();
         briefingStates = serviceProvider.GetRequiredService<BriefingStateService>();
+        controlBytes = serviceProvider.GetRequiredService<PeerControlByteService>();
         teamArrays = serviceProvider.GetRequiredService<TeamArrayService>();
         vitals = serviceProvider.GetRequiredService<PlayerVitalsService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
@@ -104,6 +106,13 @@ public sealed partial class GameplayServerService : IAsyncDisposable
 
         // The account owns the character the host plays as, and the registered
         // endpoint references it, so it has to exist before anything is written.
+        //
+        // The order below is the room's own: the character, then its host settings
+        // row, then — behind RegisterConnection and MatchService — the room itself.
+        // The row is written in between because it is what the lobby answers a
+        // browsing client's game details from, so a room published before its rows
+        // is a room whose first browsers are told it briefs for no minutes and
+        // plays rounds of no length.
         await StartupUtils.RetryAsync(
             "publish the host account and character settings",
             async token =>
@@ -112,8 +121,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
                 hostIdentity.SetCharacterIdentifier(characterIdentifier);
                 await characterService.EnsureDedicatedHostSettingsAsync(
                     characterIdentifier,
-                    options.GameplayServerBriefingMinutes,
-                    MatchSettingsUtils.RuleTimers(options),
+                    MatchSettingsUtils.HostSettings(options),
                     token);
             },
             logger,

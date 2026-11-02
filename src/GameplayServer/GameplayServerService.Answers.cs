@@ -77,9 +77,11 @@ public sealed partial class GameplayServerService
         // The control byte an answer carries is the phase this host is in, which
         // is what the reference hosts write: their joining pass carries one value,
         // a waiting briefing another and a playing round a third
-        // (PeerAcknowledgementUtils). It is computed once per pass so two answers
-        // written together cannot disagree.
-        var controlByte = ControlByteForAnswers();
+        // (PeerControlByteService). It is read once per pass so two answers
+        // written together cannot disagree, and the read is the one that counts
+        // the round's answers: a round's first pass answers its code and every
+        // pass after it answers that code flagged.
+        var controlByte = controlBytes.Next();
 
         // The lobby-slot echo's answer is the briefing's run and not a record
         // written into this pass: the run opens on the pair, carrying the echo's
@@ -123,31 +125,4 @@ public sealed partial class GameplayServerService
         SendMessages(session, answers);
     }
 
-    /// <summary>
-    /// Control byte the answers of this pass carry, as the phase this host is in.
-    /// </summary>
-    /// <remarks>
-    /// <b>Three phases, and the round is the outer one.</b> A round that is playing
-    /// answers in <see cref="PeerAcknowledgementUtils.RoundControlByte"/>; a room
-    /// that has briefed — its briefing heard a report and named a set
-    /// (<see cref="MatchRecords.MatchStartRunService.BriefingGeneration"/>) —
-    /// answers in <see cref="PeerAcknowledgementUtils.BriefingControlByte"/>; and a
-    /// room that has not briefed yet answers in
-    /// <see cref="PeerAcknowledgementUtils.HostControlByte"/>, which is the value
-    /// the reference hosts write on their joining pass. The byte is a leaf the
-    /// client hands to a script event, so any value but <c>0xff</c> moves the same
-    /// screen; what changes here is what the script is told.
-    /// </remarks>
-    /// <returns>The control byte this pass's answers carry.</returns>
-    private byte ControlByteForAnswers()
-    {
-        if (roundStates.IsOpen)
-        {
-            return PeerAcknowledgementUtils.RoundControlByte;
-        }
-
-        return matchStart.BriefingGeneration is null
-            ? PeerAcknowledgementUtils.HostControlByte
-            : PeerAcknowledgementUtils.BriefingControlByte;
-    }
 }

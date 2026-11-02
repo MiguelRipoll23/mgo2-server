@@ -36,12 +36,41 @@ namespace Mgo2Server.GameplayServer;
 /// what a malformed answer buys.
 /// </para>
 /// <para>
-/// The body <em>value</em> is not derivable. Every sample in every round is a
-/// different byte, they do not track the record being answered (the joiner's
-/// <c>0x9001</c> byte 1 with body <c>0x0a</c> is answered by <c>0x24</c> in one
-/// round and <c>0x0b</c> in another), and the shape is the acker's own control
-/// byte. The measured join-time value is used here and nothing is claimed to
-/// read it.
+/// <b><c>0xd001</c> is the answer form itself.</b> <c>0x9001 | 0x4000</c> and
+/// <c>0x5001 | 0x8000</c> are both <c>0xd001</c>, which is why a host's answer to
+/// either family arrives under one identifier: `briefing-then-solo-game`'s round
+/// opens on <c>0xd001</c> because the peer had just sent
+/// <c>0x9001 len 1 ordinal 0x21</c> and the answer carries the same ordinal.
+/// </para>
+/// <para>
+/// <b>What the one byte <em>does</em> is measured in the image.</b> The record's
+/// handler (<c>0x26DB78</c>) writes it to state <c>0x00</c>, byte <c>99</c> —
+/// field 24 of that state's 55 (<c>docs/analysis/join-stall-after-mode2.md</c>
+/// §30.5, §30.7). Two functions in the image read that field, and both do the
+/// same thing with it: at <c>0x77E6A0</c> and <c>0x77F878</c> the screen copies
+/// it to its own <c>+0xd0</c>, returns if it is <c>0xff</c>, returns if its step
+/// (<c>+0xb8</c>) is already <c>12</c>, and otherwise sets the step to <c>12</c>,
+/// sets <c>+0xc4 = 1</c> and emits script event <c>0x16002C</c> with the byte
+/// (<c>0x7770F0</c>, which walks the runtime listener list). So the byte is a
+/// **one-shot token that moves a screen at step nine or below to step twelve** —
+/// the "advance to the next screen" argument the client's own screens consume —
+/// and <c>0xff</c> is the declared no-value.
+/// </para>
+/// <para>
+/// <b>The value is the acker's own, and functions ignore it.</b> It does not track
+/// the record being answered — a peer's <c>0x9001</c> byte 1 with body <c>0x0a</c>
+/// is answered <c>0x24</c> in one round and <c>0x0b</c> in another — and the two
+/// readers above hand it to a listener nothing binds at compile time, so no value
+/// is <em>required</em>: it names no sequence and answers no question. What the
+/// corpus does show is that a host picks it per phase, and the alphabet is wide
+/// (`tools/udp_control_value_inventory.py` prints it, and its ladder mode prints
+/// the screen step each value leaves behind).
+/// </para>
+/// <para>
+/// <b>The byte itself is chosen in one place.</b> Which value a pass carries is
+/// the room's phase — <see cref="Rooms.PeerControlByteService"/> owns that
+/// ladder, with the measurements behind each rung — and this utility only writes
+/// the byte it is given into the answer's body.
 /// </para>
 /// </remarks>
 public static class PeerAcknowledgementUtils
@@ -66,57 +95,6 @@ public static class PeerAcknowledgementUtils
     /// answer's body length follows it is what the captures show.
     /// </remarks>
     public const ushort PayloadClassBit = 0x8000;
-
-    /// <summary>
-    /// Control byte an answer carries while the room has not briefed yet — the
-    /// join pass, and the pass that writes a run.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The value the reference hosts write in their joining passes. Measured on
-    /// host side, one byte, over the three captures that carry the answer:
-    /// <c>mgo2-game3</c> writes <c>24</c> on both answers of its join pass at
-    /// t+8.595 and again on the single answer issued in the pass that writes its
-    /// briefing's run (t+59.596, beside the <c>0x5ade</c> marker);
-    /// <c>mgo2-game1</c> writes <c>24</c> at t+6.687 and <c>25</c> and <c>24</c>
-    /// beside its two <c>0x52de</c> runs; <c>mgo2-game-started-on-briefing</c>
-    /// writes <c>0c</c> and <c>0a</c> there, so the value itself is the host's own
-    /// and only its <em>place</em> is general — the pass a run is written in.
-    /// </para>
-    /// <para>
-    /// The byte is a leaf of the client's session state (state <c>0x00</c>, byte
-    /// <c>99</c>, one byte, no flags), and the only C++ reader of it raises the
-    /// script event <c>0x16002C</c> with it, so what a value <em>means</em> is not
-    /// in the image (<c>docs/analysis/join-stall-after-mode2.md</c> §30.7, §56).
-    /// The three constants here are the phases the captures separate and nothing
-    /// finer.
-    /// </para>
-    /// </remarks>
-    public const byte HostControlByte = 0x24;
-
-    /// <summary>
-    /// Control byte an answer carries while a briefing is waiting on its players.
-    /// </summary>
-    /// <remarks>
-    /// <b>Measured, and it is not the joining value.</b> <c>mgo2-game3</c> holds
-    /// <c>03</c> for the whole of its briefing — from t+10.967, the answer behind
-    /// its join, to t+118.218, the pass its round opens in — and
-    /// <c>mgo2-game1</c> alternates <c>02</c> and <c>03</c> over the same stretch,
-    /// so a host that wrote its joining byte through a briefing would be telling
-    /// the client it is still on the screen the join was answered on.
-    /// </remarks>
-    public const byte BriefingControlByte = 0x03;
-
-    /// <summary>
-    /// Control byte an answer carries while a round is playing.
-    /// </summary>
-    /// <remarks>
-    /// Both hosts that hold a briefing step to <c>04</c> when their round opens
-    /// (<c>mgo2-game3</c> at t+118.218, where its run precedes the answer,
-    /// <c>mgo2-game1</c> at t+88.035) and stay in <c>04</c>–<c>07</c> for the rest
-    /// of the capture.
-    /// </remarks>
-    public const byte RoundControlByte = 0x04;
 
     /// <summary>
     /// Whether a record is one of the numbered session records, which are the only
@@ -194,13 +172,13 @@ public static class PeerAcknowledgementUtils
     /// </summary>
     /// <param name="message">Record being answered.</param>
     /// <param name="controlByte">
-    /// Control byte the answer carries, which is the phase the answering host is
-    /// in: <see cref="HostControlByte"/> on the join pass,
-    /// <see cref="BriefingControlByte"/> while a briefing waits and
-    /// <see cref="RoundControlByte"/> while a round plays.
+    /// Control byte the answer carries, which is the phase the room is in
+    /// (<see cref="Rooms.PeerControlByteService"/>). It reaches the wire only for a
+    /// record that carries <see cref="PayloadClassBit"/>: the other family's
+    /// answer has no body at all, so the value is read for nothing there.
     /// </param>
     /// <returns>The answer to send.</returns>
-    public static UdpMessage AcknowledgementOf(UdpMessage message, byte controlByte = HostControlByte)
+    public static UdpMessage AcknowledgementOf(UdpMessage message, byte controlByte)
     {
         byte[] body = (message.Type & PayloadClassBit) != 0 ? [controlByte] : [];
 

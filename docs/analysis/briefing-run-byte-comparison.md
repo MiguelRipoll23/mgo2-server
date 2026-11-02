@@ -78,7 +78,7 @@ Live, 12:01:08.482 (frame 53) — fourteen records:
 
 | # | identifier | fourth byte | length | body |
 | --- | --- | --- | --- | --- |
-| 1 | `0xd001` | 4 | 1 | **derived**: `BriefingControlByte` `03` |
+| 1 | `0xd001` | 4 | 1 | **derived**: `PeerControlByteService.BriefingByte` `03` |
 | 2 | `0x5001` | 5 | 0 | — |
 | 3 | `0x1a54` | 0 | 90 | state block, tail `… ff 20 0d` (derived) |
 | 4 | `0x1a54` | 1 | 2 | `0f 00` |
@@ -116,7 +116,7 @@ the sibling set (`1254`, `1250`, `125a`, `025c`), this round writes the first se
 the set are `24` and `25` (`mgo2-game1`), `24` (`mgo2-game3`), `0c` and `0a`
 (`started-on-briefing`), `05` here. Only its *place* is general: one byte, first
 record, in the pass a run is written. Ours writes the measured briefing value
-because the briefing generation existed by 12:01:06.474 (`ControlByteForAnswers`).
+because the briefing generation existed by 12:01:06.474 (`PeerControlByteService`).
 
 **The fourth byte is a real divergence, and is the only one in this record.**
 Both reference runs number the opening pair from the answering host's own counter

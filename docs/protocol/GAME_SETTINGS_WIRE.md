@@ -18,21 +18,22 @@ row (`games`) and the hosting character's `characters_host_settings`. A dedicate
 host — the gameplay server — receives no such push, so the settings it serves are
 its own configuration and the room row is written *from* them rather than read
 back. `MatchSettingsService` resolves this instance's options,
-`MatchSettingsUtils` turns a rule name into a rule id and a map name into a map
-id (`MatchRuleUtils`, `MatchMapUtils`), and `MatchService` writes that rotation
-into `games.games` — which is the column the lobby's `0x4313` reply hands a joining
-client, so the room a client sees and the round this host plays are one rotation
+`MatchRotationUtils` parses the round list and the per-rule bank and turns each
+round's rule name into a rule id and its map name into a map id
+(`MatchRuleUtils`, `MatchMapUtils`), and `MatchService` writes that rotation into
+`games.games` — which is the column the lobby's `0x4313` reply hands a joining
+client, so the room a client sees and the rounds this host plays are one rotation
 from one source.
 
 | field | where it is read | setting |
 | --- | --- | --- |
 | game id | `games.id`, the row this host publishes | none: the row is the room |
 | game name | this instance's own, and `server-<port>` when unset | `GAMEPLAY_SERVER_GAME_NAME` |
-| rule | this instance's own, by the decoder's name | `GAMEPLAY_SERVER_RULE` — `TDM`, `TSNE`, … |
-| map | this instance's own, by name or by stage; advanced one map per start | `GAMEPLAY_SERVER_MAP` — `Blood Bath`, `n007a` (the first start's map) |
+| rotation (rule and map, one pair per round) | this instance's own, by the decoder's rule names and the room's map names | `GAMEPLAY_SERVER_ROTATION` — `TDM@Blood Bath, CAP@Coppertown, …` |
 | briefing time | this instance's own | `GAMEPLAY_SERVER_BRIEFING_MINUTES` |
-| round length | this instance's own, for every rule | `GAMEPLAY_SERVER_ROUND_MINUTES` |
-| the round's kill limit | this instance's own | `GAMEPLAY_SERVER_KILL_LIMIT`, unset for a clock-only round |
+| max players | this instance's own | `GAMEPLAY_SERVER_MAX_PLAYERS` |
+| level-limit base | this instance's own | `GAMEPLAY_SERVER_LEVEL_LIMIT_BASE` |
+| round length and kill limit, per rule | this instance's own bank, at the round's rule's own index | `GAMEPLAY_SERVER_RULE_TIMERS` — the reply's seventeen words |
 
 Both names are mapped through the replay console's own tables — `MODE_NAMES` and
 `MAPS` of `docs/analysis/replay-console/rpdt.js` — rather than through a second
@@ -109,17 +110,17 @@ counterpart is the operations clock: opcode `0x01`, a little-endian u16 of
 clock units = the round's rule time in minutes × 480
 ```
 
-The bank's own order is what a *player-hosted* room's time comes from: the client
-pushes its timers and the lobby reads the round's rule's word out of them. A
-dedicated host has no push and so no bank to read, and its round's length is
-`GAMEPLAY_SERVER_ROUND_MINUTES` for every rule; its kill limit is
-`GAMEPLAY_SERVER_KILL_LIMIT`. Neither is ever zero, because zero is a round that
-ends as it opens. The crosswalk between the two orders is still a fact about this
-reply — the rotation names the rule (`0` DM, `1` TDM, `2` RES, `3` CAP, `4` SNE,
+The bank's own order is what a room's time comes from, and a dedicated host states
+its own bank instead of receiving the client's push: `GAMEPLAY_SERVER_RULE_TIMERS`
+is the same seventeen words, so a round's rule names its own time and its own kill
+limit exactly as it does for a player-hosted room. A round's time is never zero,
+because zero is a round that ends as it opens. The crosswalk between the two orders
+is that the rotation names the rule (`0` DM, `1` TDM, `2` RES, `3` CAP, `4` SNE,
 `5` BASE, `6` BOMB, `7` TSNE, `15` SCAP) and the bank states its time at that
 rule's own index in the seventeen words above: SNE 0, CAP 2, RES 4, TDM 6, DM 9,
-BASE 11, BOMB 13, TSNE 15, with SCAP reading the capture time it is played as —
-and the reader that uses it is the lobby that receives the push.
+BASE 11, BOMB 13, TSNE 15, with SCAP reading the capture time it is played as. A
+rule the bank states no pair for — SDM, INTERVAL, SCAP and RACE — runs the bank's
+first time and ends on its clock alone.
 
 **[U]** what the flags byte of a rotation triple means: `0x02` on every round of
 `Best TDM [EU]`, `0x00` on most of `MAFIA TSNE`'s and `0x20` on its last two (the

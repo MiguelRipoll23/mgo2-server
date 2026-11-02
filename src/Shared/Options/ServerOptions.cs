@@ -8,6 +8,23 @@ namespace Mgo2Server.Shared.Options;
 /// </summary>
 public sealed class ServerOptions
 {
+    /// <summary>
+    /// The recording's own rotation, round for round: nine rounds over five rules
+    /// and seven maps, as <c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §1 reads the
+    /// <c>0x4313</c> reply's sixteen triples.
+    /// </summary>
+    private const string DefaultRotation =
+        "BASE@Midtown, BOMB@Gronznyj Grad, CAP@Coppertown, RACE@Ambush Alley, "
+        + "CAP@Blood Bath, TDM@Urban Ultimatum, RES@Virtuous Vista, TDM@Forest Firefight, "
+        + "BASE@Hazard House";
+
+    /// <summary>
+    /// The recording's own seventeen per-rule words: five minutes and two rounds for
+    /// every rule the reply states a pair for, a fifty-ticket TDM and a thirty-ticket
+    /// DM.
+    /// </summary>
+    private const string DefaultRuleTimers = "5,2,5,2,5,2,5,2,50,5,30,5,2,5,2,5,2";
+
     /// <summary>Backing field for <see cref="GameplayServerCharacterName"/>.</summary>
     private string? gameplayServerCharacterName;
 
@@ -73,43 +90,73 @@ public sealed class ServerOptions
     public string GameplayLobbyName { get; set; } = "Free Battle";
 
     /// <summary>
-    /// Optional name of the room the gameplay server publishes. When unset,
-    /// the room name is derived from the gameplay server port.
+    /// Name of the room the gameplay server publishes. It is the name a client
+    /// sees in its room list and the one the host's own settings row states.
+    /// <para>
+    /// <b>Unset is <c>server-&lt;port&gt;</c>, not a recording's name.</b> The port is
+    /// unique and stable for a deployment, so a host that is told nothing still
+    /// publishes a room no other host can collide with, and the name says which
+    /// room it is — the same shape the character name takes
+    /// (<see cref="GameplayServerCharacterName"/>, against
+    /// <see cref="GameplayServerRoomName"/>). A blank name reads as none for the
+    /// same reason: a room is never published under a name no client can show.
+    /// </para>
     /// </summary>
     public string? GameplayServerGameName { get; set; }
 
     /// <summary>
-    /// Rule the gameplay server's room runs, named the way the replay console and
-    /// <c>docs/protocol/GAME_SETTINGS_WIRE.md</c> name rules: <c>TDM</c>,
-    /// <c>TSNE</c>, <c>CAP</c>, <c>SCAP</c>. The name is what a person writes; the
-    /// id a rotation carries is the mapping's own
-    /// (<c>MatchRuleUtils.Parse</c>, from <c>rpdt.js</c>'s <c>MODE_NAMES</c>).
+    /// The rounds the gameplay server's room plays, in order, written as the
+    /// rotation the client's own room screen writes: one <c>RULE@Map</c> pair per
+    /// round, separated by commas.
     /// <para>
-    /// The dedicated host <i>is</i> its room's host, so its rule is its own
-    /// setting and not a row's to be read back: nothing else can state one, and
-    /// the room row is written from this. The name is matched without case, and a
-    /// name that is no rule stops the process at startup — a host that ran a rule
-    /// no client was told about would open a round the client is not in.
+    /// The rule is named the way the replay console and
+    /// <c>docs/protocol/GAME_SETTINGS_WIRE.md</c> name rules (<c>TDM</c>,
+    /// <c>TSNE</c>, <c>CAP</c>, <c>SCAP</c>, <c>BASE</c>, <c>BOMB</c>, <c>RACE</c>…) and the map
+    /// the way a player knows it (<c>Blood Bath</c>) or the stage the disc ships it
+    /// as (<c>n007a</c>). Both tables are ported in <see cref="MatchRuleUtils"/> and
+    /// <see cref="MatchMapUtils"/>.
+    /// </para>
+    /// <para>
+    /// <b>It is a rotation and not one rule on one map.</b> The room plays one
+    /// entry per round, entry zero first, and starts again at the top once it runs
+    /// out (<c>MatchSettings.Round</c>), which is what the recorded rooms do: the
+    /// briefing this host follows files nine rounds across five rules and seven
+    /// maps. The row the lobby hands a browsing client is this same list, so the
+    /// rotation a player sees and the rounds this host opens are one setting.
+    /// A name that is no rule or no map stops the process at startup, because the
+    /// round it would open is one the client is not in.
     /// </para>
     /// </summary>
-    public string GameplayServerRule { get; set; } = "TDM";
+    public string GameplayServerRotation { get; set; } = DefaultRotation;
 
     /// <summary>
-    /// The map the gameplay server's room plays on its first start, by the name a
-    /// player knows it by (<c>Blood Bath</c>) or by the stage the disc ships it as
-    /// (<c>n007a</c>). Both are the replay console's table, ported in
-    /// <c>MatchMapUtils</c>.
+    /// The room's seventeen per-rule words — times, round counts and tickets — in
+    /// the order the lobby's game-details reply states them: SNE time and rounds,
+    /// CAP, RES, TDM with its ticket count, DM with its ticket count, BASE, BOMB
+    /// and TSNE (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §2), comma separated.
     /// <para>
-    /// <b>It is the first start's map and not every start's.</b> The room advances
-    /// one map along at each start — the map the previous start wrote into the
-    /// room's own rotation is the one it reads to advance from — so a host that is
-    /// restarted plays the next map rather than the same one. A room with no row
-    /// behind it, which is the first start on a fresh database, plays this map. The
-    /// default is the map of the recorded briefing this host follows, and a name
-    /// that is no map stops the process at startup.
+    /// <b>It is where a round's length and its kill limit come from.</b> A round's
+    /// rule names its own word in this bank, so a rotation that mixes rules plays
+    /// each one for its own time instead of for one host-wide number — which is
+    /// what the recorded rooms do, and what the client reads the round's length out
+    /// of. The same bank is written to the host's settings row, so a client
+    /// browsing the room and the host playing it are told one round length.
     /// </para>
     /// </summary>
-    public string GameplayServerMap { get; set; } = "Blood Bath";
+    public string GameplayServerRuleTimers { get; set; } = DefaultRuleTimers;
+
+    /// <summary>
+    /// Players the gameplay server's room admits. It is the figure the room row and
+    /// the host's settings row both state, and the one a browsing client draws as
+    /// the room's capacity; the recorded room played seventeen.
+    /// </summary>
+    public int GameplayServerMaxPlayers { get; set; } = 17;
+
+    /// <summary>
+    /// Level-limit base the host's settings row states: the level the room's limit
+    /// is centred on, which the recorded room stated as 22.
+    /// </summary>
+    public int GameplayServerLevelLimitBase { get; set; } = 22;
 
     /// <summary>
     /// Briefing time of the gameplay server's room, in minutes: how long the room
@@ -125,37 +172,6 @@ public sealed class ServerOptions
     /// </summary>
     public int GameplayServerBriefingMinutes { get; set; } = 1;
 
-    /// <summary>
-    /// Minutes a round of the gameplay server's room lasts. The round's clock is
-    /// this times 480, the relation measured over three captures
-    /// (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §2).
-    /// <para>
-    /// A player-hosted room's time per rule is in the bank the client pushes
-    /// (<c>characters_host_settings.rule_timers</c>), and a dedicated host, again,
-    /// has never pushed one: the round's length is this setting, for every rule.
-    /// The default is seven minutes, which is the clock of the recorded room this
-    /// host replays. Minutes of zero or less stop the process at startup, because
-    /// zero is a round that ends the moment it opens.
-    /// </para>
-    /// </summary>
-    public int GameplayServerRoundMinutes { get; set; } = 7;
-
-    /// <summary>
-    /// Kill limit the gameplay server's room's round ends on, or <c>null</c> for a
-    /// round that ends on its clock alone.
-    /// <para>
-    /// The reply calls this word a rule's <c>tickets</c>
-    /// (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §2, §3) — the recorded rooms
-    /// play 50- and 55-ticket team deathmatches — and nothing on the gameplay
-    /// channel counts kills for a host, so a limit here is only ever reached by
-    /// the score this host keeps itself. Its default is unset, which is what a
-    /// room with no stored bank plays: a round that runs its full time. A limit of
-    /// zero or less stops the process at startup, because such a round ends before
-    /// it opens.
-    /// </para>
-    /// </summary>
-    public int? GameplayServerKillLimit { get; set; }
-
     /// <summary>Display name of the account the gameplay server logs in with.</summary>
     public string GameplayServerAccountName { get; set; } = "server";
 
@@ -167,11 +183,13 @@ public sealed class ServerOptions
     public string? GameplayServerAccountPassword { get; set; }
 
     /// <summary>
-    /// Name of the character the gameplay server plays as. It is the host prefix
-    /// and this host's own port when it is not configured, which keeps every
+    /// Name of the character the gameplay server plays as. It is
+    /// <c>server-&lt;port&gt;</c> when it is not configured, which keeps every
     /// dedicated host on a character of its own without an index being handed
     /// out: the port is already unique and stable, and the registered
-    /// peer-to-peer endpoint is filed per character.
+    /// peer-to-peer endpoint is filed per character. It is the same shape and the
+    /// same value as <see cref="GameplayServerRoomName"/>'s fallback, so a host
+    /// told nothing plays as the character its room is named after.
     /// </summary>
     public string GameplayServerCharacterName
     {

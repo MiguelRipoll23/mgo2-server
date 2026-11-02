@@ -120,6 +120,61 @@ public static class ItemBoxFramesUtils
             : ItemBoxRecords;
 
     /// <summary>
+    /// The item-box records a round's opening run carries at its tail.
+    /// </summary>
+    /// <remarks>
+    /// <b>Four, and they are the first box's event head and item.</b>
+    /// `briefing-then-solo-game`'s round ends its run with
+    /// <c>0x1a50 00 74 01 00 00 00</c>, <c>0x1a50 01 8c 00 01 00 00</c> and the
+    /// two six-byte state bodies (t+147.650), which are the first two records of
+    /// <see cref="ItemBoxRecordBodiesUtils.ItemBoxEvent"/>'s first event and the
+    /// filler pair — the event's other two records went out 2 s earlier, and the
+    /// second box's event is the next group's. A run that carried none told the
+    /// client nothing about the boxes the round had spawned, and a run that carried
+    /// the whole six-record group is not what the capture writes.
+    /// </remarks>
+    /// <param name="generation">Identifier set of the round being opened.</param>
+    /// <param name="itemBoxSequence">
+    /// Fourth byte of the first record under <see cref="MatchRecordGenerationUtils.ItemBox"/>;
+    /// each later record of the pair carries the next value.
+    /// </param>
+    /// <param name="itemBoxStateSequence">
+    /// Fourth byte of the first record under <see cref="MatchRecordGenerationUtils.ItemBoxState"/>.
+    /// </param>
+    /// <returns>The records of the run's tail, in the captured order.</returns>
+    public static List<MatchRecordFramesUtils.RecordMessage> RunOpeningGroup(
+        MatchRecordGenerationUtils generation,
+        byte itemBoxSequence,
+        byte itemBoxStateSequence)
+    {
+        var records = new List<MatchRecordFramesUtils.RecordMessage>(4);
+
+        for (var index = 0; index < OpeningEventRunRecords; index++)
+        {
+            records.Add(new(
+                generation.ItemBox,
+                ItemBoxRecordBodiesUtils.ItemBoxEvent(0, index),
+                (byte)(itemBoxSequence + index)));
+        }
+
+        for (var index = 0; index < ItemBoxStateRecords; index++)
+        {
+            records.Add(new(
+                generation.ItemBoxState,
+                ItemBoxRecordBodiesUtils.ItemBoxState((byte)index),
+                (byte)(itemBoxStateSequence + index)));
+        }
+
+        return records;
+    }
+
+    /// <summary>
+    /// Records of the opening event a round's run carries: the head and the item,
+    /// the event's other two following in the group behind it.
+    /// </summary>
+    public const int OpeningEventRunRecords = 2;
+
+    /// <summary>
     /// The item-box group: the round's boxes under its first item-box identifier
     /// and the filler pair under its second.
     /// </summary>

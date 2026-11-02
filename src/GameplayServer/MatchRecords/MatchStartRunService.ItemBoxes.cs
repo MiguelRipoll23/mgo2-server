@@ -83,6 +83,45 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
+    /// Adds the item boxes a run carries to the run itself and returns the groups
+    /// that follow it.
+    /// </summary>
+    /// <remarks>
+    /// <b>The two shapes are the two states of the room.</b> A fresh briefing's run
+    /// opens the filler pair and leaves two groups to be written behind it, because
+    /// the room has spawned no box; a round's run carries the head and the item of
+    /// the box the round spawned, and nothing follows it, because the beat takes the
+    /// group over once the round is open
+    /// (<see cref="MatchStartRunFramesUtils.BuildRun"/>, `ItemBoxFramesUtils.RunOpeningGroup`).
+    /// </remarks>
+    /// <param name="generation">Identifier set of the run.</param>
+    /// <param name="run">The run being built.</param>
+    /// <param name="briefing">Whether this is a briefing's run.</param>
+    /// <param name="roundNumber">Round number the run was written for.</param>
+    /// <returns>The groups to write behind the run, or <c>null</c> when none do.</returns>
+    private List<List<MatchRecordFramesUtils.RecordMessage>>? AddRunItemBoxes(
+        MatchRecordGenerationUtils generation,
+        List<MatchRecordFramesUtils.RecordMessage> run,
+        bool briefing,
+        int roundNumber)
+    {
+        if (briefing && roundNumber == 0)
+        {
+            var groups = BuildItemBoxGroups(generation);
+            run.AddRange(groups[0]);
+            return groups;
+        }
+
+        var boxOrdinals = sequences.Take(
+            generation.ItemBox, ItemBoxFramesUtils.OpeningEventRunRecords);
+        var stateOrdinals = sequences.Take(
+            generation.ItemBoxState, ItemBoxFramesUtils.ItemBoxStateRecords);
+        run.AddRange(ItemBoxFramesUtils.RunOpeningGroup(
+            generation, boxOrdinals[0], stateOrdinals[0]));
+        return null;
+    }
+
+    /// <summary>
     /// Writes built groups from <paramref name="firstGroup"/> on, each in a datagram
     /// of its own.
     /// </summary>

@@ -60,22 +60,27 @@ public static class ServerServiceCollectionExtensions
             options.GameplayServerGameName = configuration.ReadText("GAMEPLAY_SERVER_GAME_NAME")
                 ?? options.GameplayServerGameName;
 
-            // The room's own rule, map and round are this host's settings rather
-            // than a row's, so they are read here beside its name: a dedicated host
-            // receives no client push of host settings, so nothing else states them.
-            options.GameplayServerRule = configuration.ReadText("GAMEPLAY_SERVER_RULE")
-                ?? options.GameplayServerRule;
-            options.GameplayServerMap = configuration.ReadText("GAMEPLAY_SERVER_MAP")
-                ?? options.GameplayServerMap;
+            // The room's own rotation and per-rule bank are this host's settings
+            // rather than a row's, so they are read here beside its name: a
+            // dedicated host receives no client push of host settings, so nothing
+            // else states them. A rotation is a list and not one rule on one map —
+            // the recorded rooms play nine rounds across several rules and maps —
+            // and the bank is where each round's own length and kill limit come
+            // from.
+            options.GameplayServerRotation = configuration.ReadText("GAMEPLAY_SERVER_ROTATION")
+                ?? options.GameplayServerRotation;
+            options.GameplayServerRuleTimers =
+                configuration.ReadText("GAMEPLAY_SERVER_RULE_TIMERS")
+                ?? options.GameplayServerRuleTimers;
+            options.GameplayServerMaxPlayers = configuration.ReadNumber(
+                "GAMEPLAY_SERVER_MAX_PLAYERS",
+                options.GameplayServerMaxPlayers);
+            options.GameplayServerLevelLimitBase = configuration.ReadNumber(
+                "GAMEPLAY_SERVER_LEVEL_LIMIT_BASE",
+                options.GameplayServerLevelLimitBase);
             options.GameplayServerBriefingMinutes = configuration.ReadNumber(
                 "GAMEPLAY_SERVER_BRIEFING_MINUTES",
                 options.GameplayServerBriefingMinutes);
-            options.GameplayServerRoundMinutes = configuration.ReadNumber(
-                "GAMEPLAY_SERVER_ROUND_MINUTES",
-                options.GameplayServerRoundMinutes);
-            options.GameplayServerKillLimit = configuration.ReadOptionalNumber(
-                "GAMEPLAY_SERVER_KILL_LIMIT",
-                options.GameplayServerKillLimit);
             options.GameplayServerAccountName = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_NAME")
                 ?? options.GameplayServerAccountName;
             options.GameplayServerAccountPassword = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_PASSWORD")

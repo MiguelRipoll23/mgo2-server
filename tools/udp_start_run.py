@@ -63,9 +63,9 @@ CODE_SHAPE = [
     ("close", 0x1001, 20),
     ("roster close", 0x1001, 7),
     ("round clock", 0x1A54, 3),
-    ("payload", 0x1ADE, 6),
-    ("rules", 0x0A61, 1),
-    ("rules", 0x0A61, 1),
+    ("payload", 0x1ADE, 5),
+    ("team array", 0x1001, 26),
+    ("occupancy array", 0x1001, 26),
 ]
 
 # Roles this host writes inside the run that the run's *shape* does not count:

@@ -68,6 +68,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 public sealed class JoinReportHandler(
     BriefingStateService briefingStates,
     MatchStartRunService matchStart,
+    PeerControlByteService controlBytes,
     ILogger<JoinReportHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
@@ -143,7 +144,14 @@ public sealed class JoinReportHandler(
             // `0x8000` stops as soon as this one is heard.
             if ((context.Message.Type & PeerAcknowledgementUtils.PayloadClassBit) == 0)
             {
-                var answer = PeerAcknowledgementUtils.AcknowledgementOf(context.Message);
+                // The byte is read for the phase and never written: the record
+                // answered here is the one without the payload-class bit, whose
+                // answer carries no body at all. It is still the ladder's value
+                // rather than a literal, so a body that ever starts being
+                // written here carries this pass's phase and not a stale one.
+                var answer = PeerAcknowledgementUtils.AcknowledgementOf(
+                    context.Message,
+                    controlBytes.Current());
                 await context.Send(answer.Type, answer.Body, answer.Flags);
             }
 

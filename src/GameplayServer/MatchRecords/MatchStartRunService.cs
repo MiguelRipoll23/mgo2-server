@@ -102,6 +102,7 @@ public sealed partial class MatchStartRunService(
     MatchSettingsService matchSettings,
     Rooms.RoomRosterService roster,
     Rooms.TeamArrayService teamArrays,
+    Rooms.LobbySlotService lobbySlots,
     MatchScoreService score,
     MatchResultService results,
     BriefingCountdownService countdown,

@@ -98,6 +98,10 @@ public sealed partial class MatchStartRunService
 
                 var round = roundState.RoundNumber;
                 var generation = roundState.Generation;
+
+                // The phase goes out before the run: `briefing-then-solo-game`
+                // publishes field 0 at t+146.007 and its run at t+147.650.
+                await WriteRoundPhaseAsync(context, (byte)round);
                 await WriteRunAsync(context, generation);
 
                 // The room's phase, which a joining client's own state machine
@@ -241,10 +245,15 @@ public sealed partial class MatchStartRunService
                 ? MatchStartRunFramesUtils.OperationsRecordCount
                 : MatchStartRunFramesUtils.BriefingOperationsRecordCount);
 
+        // The lobby-slot pair names the room's own players, read from the two places
+        // that own them rather than published as a table of free slots.
+        var slots = await lobbySlots.ReadAsync();
+
         var run = MatchStartRunFramesUtils.BuildRun(
             generation,
             reported,
             Rooms.TeamArrayFramesUtils.OpeningSequence,
+            slots,
             runOrdinals,
             operationsOrdinals,
             briefingStates.JoinedMask,
@@ -294,18 +303,9 @@ public sealed partial class MatchStartRunService
         var roundNumber = roundState.RoundNumber;
         var wasOpen = roundState.IsOpen;
 
-        // The fresh briefing's item-box groups are built before the run goes out,
-        // because the first of them rides the run's own frame, and written only
-        // after it: the capture's run is the frame that opens the pair, and the two
-        // groups behind it follow it (`MatchStartRunService.ItemBoxes`).
-        var itemBoxGroups = briefing && roundNumber == 0
-            ? BuildItemBoxGroups(generation)
-            : null;
-
-        if (itemBoxGroups is not null)
-        {
-            run.AddRange(itemBoxGroups[0]);
-        }
+        // The item boxes are the run's own: a fresh briefing's opener and the two
+        // groups behind it, or a round's spawned box (`AddRunItemBoxes`).
+        var itemBoxGroups = AddRunItemBoxes(generation, run, briefing, roundNumber);
 
         await MatchRecordSendUtils.SendAsync(context, run);
 

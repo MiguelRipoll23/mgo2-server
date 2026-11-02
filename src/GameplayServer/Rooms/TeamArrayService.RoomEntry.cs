@@ -144,7 +144,11 @@ public sealed partial class TeamArrayService
                             0,
                             member.SessionSlot,
                             RoomPlayerEntryBodiesUtils.TeamByteOf(side?.Team),
-                            matchSettings.Map),
+                            // The round's own map, which is the stage the entry
+                            // is drawn on: a rotation plays a different one each
+                            // round, so the room's first map is only right before
+                            // a round has opened.
+                            roundState.RoundSettings?.Map ?? matchSettings.Map),
                         roster.TakeRunOrdinal()));
             }
             else
