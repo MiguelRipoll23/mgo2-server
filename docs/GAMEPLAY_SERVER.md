@@ -232,14 +232,18 @@ are one, nothing having been spent in the first 125 ms tick.
 **The run has two shapes, and the room's history picks one.** The one above is
 the round's. A room that has **not played a round** is answered with the
 briefing's own: the two heads, the state block and the two-byte record behind it,
-the arrays, the join state answer and the close triple — no room stage, no round
+the arrays, the join state answer, the close pair and the room's stage — no round
 clock, no payload and no rules pair, and the closes take the counter values
-directly behind the arrays (`MatchStartRunFramesUtils.BriefingRosterOrdinalCount`).
-That is `mgo2-game-started-on-briefing`'s run at t+58.255, record for record; the
-between-rounds run that carries the stage is `mgo2-started-briefing-then-solo-game`
-at t+57.626, a room with a played round behind it. The stage records are what tell
-a client a round exists, so a fresh room sent them enters the game instead of
-showing the briefing screen (`analysis/join-stall-after-mode2.md` §24).
+directly behind the stage (`MatchStartRunFramesUtils.BriefingRosterOrdinalCount`).
+`briefing-then-solo-game`'s first briefing is that run at t+9.780 — the close pair
+at `09`/`0a`, the stage at `0b`/`0c` and the roster close at `0d` — and it is the
+shape this host writes. `mgo2-game-started-on-briefing` t+58.255 is the other
+reference briefing: it leaves the stage pair out and puts its roster close where
+the stage's first value would be, and this host does not follow it there. What
+tells a client a round exists is the clock and the payload, and a fresh room sent
+those enters the game instead of showing the briefing screen
+(`analysis/join-stall-after-mode2.md` §24); dropping the stage from the briefing
+run is what stopped a live join drawing the room's rule instructions.
 
 **The marker is the report's answer, and whichever record carries it carries it
 once.** This host answers every report beside it — the marker, the publication

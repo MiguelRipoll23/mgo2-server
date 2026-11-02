@@ -194,10 +194,10 @@ public sealed partial class MatchStartRunService
     /// </param>
     /// <param name="briefing">
     /// Whether this is the run a briefing is answered with. A room that has not
-    /// played a round writes the briefing's own shape, without the round's stage,
-    /// its clock, its payload or its rules pair; a room whose round has played
-    /// keeps the full run, which is what the reference writes between one round
-    /// and the next.
+    /// played a round writes the briefing's own shape, without the round's clock,
+    /// its payload or its rules pair; a room whose round has played keeps the full
+    /// run, which is what the reference writes between one round and the next. The
+    /// room's stage and its close pair are written in both.
     /// </param>
     private async Task WriteRunCoreAsync(
         PeerContext context,
@@ -207,10 +207,12 @@ public sealed partial class MatchStartRunService
         bool briefing)
     {
         // A room's first briefing has no round behind it, so the run that answers
-        // it carries no round state. Writing the stage and the clock there is what
-        // told the client a round already existed and started it in the game
-        // instead of on the briefing screen; the reference host's fresh-room run
-        // (`mgo2-game-started-on-briefing` t+58.255) holds neither.
+        // it carries no round state. Writing the clock there is what told the client
+        // a round already existed and started it in the game instead of on the
+        // briefing screen; the reference host's fresh-room run
+        // (`mgo2-game-started-on-briefing` t+58.255) holds no clock, and a run with
+        // no round carries no payload or rules pair either. The room's stage and its
+        // close pair are the briefing's too (`briefing-then-solo-game` t+9.780).
         var carriesRoundState = !briefing || roundState.RoundNumber > 0;
 
         var reported = briefingStates.TryGetReported(context.Session.RemoteAddress, out var value)
@@ -283,7 +285,7 @@ public sealed partial class MatchStartRunService
             clockUnits,
             round.TimeLimitUnits,
             round.TimeLimitMinutes,
-            carriesRoundState ? "with the round's stage and clock" : "as a fresh briefing, with no round state");
+            carriesRoundState ? "with the round's clock and payload" : "as a fresh briefing, with no round state");
 
         // Written once, in one frame, as every capture writes it — and written
         // again whole on the tick behind it, which is the other half of the same

@@ -92,10 +92,10 @@ public static class MatchStartRunFramesUtils
     /// </para>
     /// <para>
     /// A fresh briefing's run takes seven of them and not nine: its counter runs
-    /// <c>07</c>, <c>08</c>, <c>09</c>, <c>0a</c> and then the roster close at
-    /// <c>0d</c>, the two values <c>0b</c> and <c>0c</c> going unused because that
-    /// run carries no room stage and no payload
-    /// (<see cref="BriefingRosterOrdinalCount"/>).
+    /// <c>07</c>, <c>08</c>, <c>09</c>, <c>0a</c>, then the room's stage at
+    /// <c>0b</c> and <c>0c</c> and the roster close at <c>0d</c>; the two a
+    /// payload's second array pair would take go unused because that run has no
+    /// payload (<see cref="BriefingRosterOrdinalCount"/>).
     /// </para>
     /// </remarks>
     public const int RosterOrdinalCount = 9;
@@ -109,10 +109,10 @@ public static class MatchStartRunFramesUtils
 
     /// <summary>
     /// Values a fresh room's briefing run takes from the roster exchange's counter:
-    /// the two arrays, the close pair and the roster close, with the two values the
-    /// round's room stage would take left unused behind them — which is what puts
-    /// the reference's roster close on <c>0d</c> rather than on <c>0b</c>
-    /// (`briefing-then-solo-game` t+9.780).
+    /// the two arrays, the close pair, the room's stage and the roster close. It is
+    /// two fewer than <see cref="RosterOrdinalCount"/> because the run carries no
+    /// payload and so no second array pair, which is what puts the reference's
+    /// roster close on <c>0d</c> (`briefing-then-solo-game` t+9.780).
     /// </summary>
     public const int BriefingRosterOrdinalCount = 7;
 
@@ -241,7 +241,9 @@ public static class MatchStartRunFramesUtils
     /// tell a client a round exists, and a client told that while it is still being
     /// briefed enters the game instead of showing the briefing screen. The room's
     /// stage and its close pair are not among them: the reference's fresh briefing
-    /// writes both (`briefing-then-solo-game` t+9.780).
+    /// writes both, the close pair at <c>09</c>/<c>0a</c>, the stage at
+    /// <c>0b</c>/<c>0c</c> and the roster close at <c>0d</c>
+    /// (`briefing-then-solo-game` t+9.780).
     /// </param>
     /// <param name="answersReport">
     /// Whether this run is the report's answer and so opens on the round's marker.
@@ -344,24 +346,20 @@ public static class MatchStartRunFramesUtils
             UdpCommandConstants.PlayerProfile,
             MatchRecordBodiesUtils.MatchStartCloseSecond(),
             runOrdinals[3]),
-        // The room's own stage: the two twenty-two-byte records the round's run
-        // puts behind the close pair. A briefing's run carries neither — the
-        // reference's fresh briefing writes five records under the family and puts
-        // its roster close where the stage's first value would be — so a room that
-        // has not played is not told its stage.
-        .. (carriesRoundState
-            ? new MatchRecordFramesUtils.RecordMessage[]
-            {
-                new(
-                    UdpCommandConstants.PlayerProfile,
-                    MatchRecordBodiesUtils.RoomStateRecord(),
-                    runOrdinals[4]),
-                new(
-                    UdpCommandConstants.PlayerProfile,
-                    MatchRecordBodiesUtils.RoomStateRecordSecond(),
-                    runOrdinals[5]),
-            }
-            : []),
+        // The room's own stage: the two twenty-two-byte records behind the close
+        // pair, written in a round's run and in a briefing's alike. The recording
+        // writes them before its first round exists — `briefing-then-solo-game`
+        // t+9.780 carries the close pair at 09/0a, the stage at 0b/0c and the
+        // roster close at 0d — and a fresh-briefing run that dropped them is the
+        // join whose client stopped drawing the room's rule instructions.
+        new(
+            UdpCommandConstants.PlayerProfile,
+            MatchRecordBodiesUtils.RoomStateRecord(),
+            runOrdinals[4]),
+        new(
+            UdpCommandConstants.PlayerProfile,
+            MatchRecordBodiesUtils.RoomStateRecordSecond(),
+            runOrdinals[5]),
         new(
             UdpCommandConstants.PlayerProfile,
             PlayerProfileRecordUtility.BuildRosterClose(),

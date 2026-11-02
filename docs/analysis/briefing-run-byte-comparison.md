@@ -195,7 +195,7 @@ is draining, so the item-box stream is not what left the screen black.
 
 | finding | status |
 | --- | --- |
-| run composition and fourth bytes | match started-on-briefing's fourteen |
+| run composition and fourth bytes | the fourteen plus the room's stage pair: `briefing-then-solo-game`'s first briefing, not `started-on-briefing`'s, which omits the stage |
 | run instant after the entry | fixed (2.01 s); capture's range 1.90–2.31 s, but its mid-briefing join answers in 0.09 s |
 | `0x025c` body | matches |
 | state-block tail | matches the rule; each room's own clock |
