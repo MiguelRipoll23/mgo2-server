@@ -61,10 +61,13 @@ namespace Mgo2Server.GameplayServer;
 /// the record being answered — a peer's <c>0x9001</c> byte 1 with body <c>0x0a</c>
 /// is answered <c>0x24</c> in one round and <c>0x0b</c> in another — and the two
 /// readers above hand it to a listener nothing binds at compile time, so no value
-/// is <em>required</em>: it names no sequence and answers no question. What the
-/// corpus does show is that a host picks it per phase, and the alphabet is wide
-/// (`tools/udp_control_value_inventory.py` prints it, and its ladder mode prints
-/// the screen step each value leaves behind).
+/// is <em>required</em>: it names no sequence and answers no question, and only a
+/// screen that has not advanced can observe it. What the corpus does show is that a
+/// host picks it by a habit of its own — per phase in some sessions, per answer in
+/// others — over a wide alphabet (`tools/udp_control_value_inventory.py` prints it,
+/// and its ladder mode prints the screen step each value leaves behind;
+/// `docs/analysis/control-byte-findings.md` reads the three habits out of the
+/// sixteen sessions).
 /// </para>
 /// <para>
 /// <b>The byte itself is chosen in one place.</b> Which value a pass carries is

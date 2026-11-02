@@ -15,9 +15,12 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// returns on <c>0xff</c>, returns at step <c>12</c>, and otherwise moves the screen
 /// to step <c>12</c> and raises script event <c>0x16002C</c> with the byte
 /// (<see cref="PeerAcknowledgementUtils"/> carries the addresses). So the byte is a
-/// one-shot "advance" token and which value a host writes is its own choice — but
-/// the reference hosts do not choose freely, they choose by phase, and this is that
-/// choice in one place instead of three constants read at three call sites:
+/// one-shot "advance" token and which value a host writes is its own choice. The
+/// sixteen captured sessions make that choice three different ways — a phase
+/// ladder, a ring of eight indices walked per answer, and a value that changes with
+/// every answer of a five-second beat (`docs/analysis/control-byte-findings.md`) —
+/// and this host writes the ladder, in one place instead of three constants read at
+/// three call sites:
 /// </para>
 /// <list type="bullet">
 /// <item><b>a briefing that has heard a report</b> answers <c>0x03</c>
@@ -44,12 +47,23 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// make, rather than inventing a third.
 /// </para>
 /// <para>
+/// <b>Only a screen that has not advanced can see the value at all.</b> Both readers
+/// return at step <c>12</c> without raising the event, and no host in the corpus ever
+/// writes <c>0xff</c>, so a screen is moved by the first answer it receives and every
+/// answer after that on the same screen changes nothing. What the ladder is for is
+/// the sequence of screens: each opens below step 9 and is advanced once, and which
+/// byte advances it is the habit above. That is also why the rungs are the only thing
+/// worth getting right, and why the flag is on the round's later answers rather than
+/// on all of them: it costs nothing either way, and it is what the two hosts that
+/// show a whole session write.
+/// </para>
+/// <para>
 /// <b>What is deliberately not reproduced: the low nibble's climb.</b> `game1`
 /// answers <c>0x25</c>, <c>0x26</c>, <c>0x27</c> and <c>0x28</c> through one round,
 /// which reads as a counter inside the code rather than four more phases. This host
-/// writes one flagged value for every later answer of a round, because a client
-/// nothing in the image requires a particular value from (<c>0xff</c> is the only
-/// value it tests), and a counter would be a value made up here instead of measured.
+/// writes one flagged value for every later answer of a round, because the client
+/// requires no particular value (<c>0xff</c> is the only one it tests), and a counter
+/// would be a value made up here instead of measured.
 /// </para>
 /// </remarks>
 /// <param name="roundStates">The room's round, which says whether one is playing.</param>
