@@ -174,10 +174,12 @@ public static class MatchStateBodiesUtils
     public const int StateClockHighIndex = 88;
 
     /// <summary>
-    /// Value an objective-holder byte carries while nobody holds the objective:
-    /// the parser's <c>HOLDER_NONE</c>.
+    /// Value the two objective holders and the two capture clocks carry while
+    /// nothing has claimed them: <c>0x1e</c> at <c>state[40..43]</c> in all three
+    /// blocks `briefing-then-solo-game` writes. The parser's <c>HOLDER_NONE</c> is
+    /// <c>0xff</c>, which is its own reading rather than the recording's.
     /// </summary>
-    public const byte StateObjectiveHolderNone = 0xff;
+    public const byte StateUnclaimed = 0x1e;
 
     /// <summary>
     /// Value a state field carries before the host writes it, which the parser
@@ -337,10 +339,10 @@ public static class MatchStateBodiesUtils
         }
 
         vector[StateRoundResultIndex] = StateUnwritten;
-        vector[StateObjectiveHolderFirstIndex] = StateObjectiveHolderNone;
-        vector[StateObjectiveHolderSecondIndex] = StateObjectiveHolderNone;
-        vector[StateCaptureClockFirstIndex] = StateUnwritten;
-        vector[StateCaptureClockSecondIndex] = StateUnwritten;
+        vector[StateObjectiveHolderFirstIndex] = StateUnclaimed;
+        vector[StateObjectiveHolderSecondIndex] = StateUnclaimed;
+        vector[StateCaptureClockFirstIndex] = StateUnclaimed;
+        vector[StateCaptureClockSecondIndex] = StateUnclaimed;
         vector[StateSecondCountdownIndex] = StateTwentyFour;
         for (var index = StateCountdownSeedIndex; index <= StateCountdownSeedLastIndex; index++)
         {

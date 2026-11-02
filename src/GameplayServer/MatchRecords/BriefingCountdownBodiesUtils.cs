@@ -1,3 +1,5 @@
+using Mgo2Server.Shared.Types;
+
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
@@ -53,7 +55,7 @@ public static class BriefingCountdownBodiesUtils
     /// <summary>
     /// Opcode of the briefing countdown record, in its first body byte.
     /// </summary>
-    public const byte CountdownOpcode = 0x0b;
+    public const byte CountdownOpcode = (byte)OperationsOpcode.BriefingCountdown;
 
     /// <summary>Length of the countdown body: the opcode and six bytes.</summary>
     public const int RecordLength = 7;

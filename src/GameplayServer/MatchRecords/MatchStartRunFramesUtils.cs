@@ -197,7 +197,8 @@ public static class MatchStartRunFramesUtils
     /// <see cref="Rooms.TeamArrayService"/> confirms it and moves the pair on.
     /// </param>
     /// <param name="slots">
-    /// The room's own players, by the slot each holds in its player table.
+    /// The room's own players, by the slot each holds in its player table; a fresh
+    /// briefing's run names none of them.
     /// </param>
     /// <param name="runOrdinals">
     /// The values the run's own <c>0x1001</c> identifiers take, in send order and
@@ -224,7 +225,9 @@ public static class MatchStartRunFramesUtils
     /// player in the order it reported (<see cref="Rooms.BriefingStateService.JoinedMask"/>).
     /// It is the room's own set and not a constant: a room of one writes the bit
     /// of its only reporter, and a room of four the run of bits the briefing
-    /// capture writes as its players arrive.
+    /// capture writes as its players arrive. A fresh briefing's run writes zeros
+    /// instead: nobody is placed in the room yet at `briefing-then-solo-game`'s
+    /// t+9.780.
     /// </param>
     /// <param name="timeLimitUnits">
     /// Units of the round clock, in the stream's own 125 ms ticks: the round's own
@@ -266,13 +269,14 @@ public static class MatchStartRunFramesUtils
         bool carriesRoundState = true,
         bool answersReport = true)
     {
-        // The arrays name the room's own players: the slot each holds is marked
-        // taken and its side is named. `briefing-then-solo-game`'s round publishes
-        // `85 8d fe ff … 00 ff …` and `86 8d 7f … 07 7f …` at t+147.650, the one
-        // `00` and the one `07` standing in the same slot — the recording's own
-        // player, on raw team 0. A run published with every slot free told the
-        // client nothing about who was in the room it was opening.
-        var (teams, occupancy) = Rooms.TeamArrayFramesUtils.BuildPair(teamArraySequence, slots);
+        // The arrays name the room's own players once a round exists: the slot each
+        // holds is marked taken and its side is named, which is what
+        // `briefing-then-solo-game` publishes at t+147.650. A fresh briefing's run is
+        // all free there and the mark arrives in the pair three seconds later
+        // (t+12.887), so it belongs to the publications and not to this run.
+        var (teams, occupancy) = Rooms.TeamArrayFramesUtils.BuildPair(
+            teamArraySequence,
+            carriesRoundState ? slots : Array.Empty<Rooms.LobbyTeamSlot>());
 
         // The run opens on the pair of empty roster heads every capture writes,
         // whether or not the peer's own entry was heard: `briefing-then-solo-game`
@@ -322,14 +326,13 @@ public static class MatchStartRunFramesUtils
         new(UdpCommandConstants.PlayerProfile, teams, runOrdinals[0]),
         new(UdpCommandConstants.PlayerProfile, occupancy, runOrdinals[1]),
 
-        // The join state record's answer, behind the arrays as
-        // DATA_PHASE_DELIVERY.md measures it: the room's reporting players as a
-        // bit set, whose first reporter is bit one. Neither capture carries it
-        // inside its run — both write it beside the report — and
-        // mgo2-game-started-on-briefing writes it in this position as well.
+        // The join state record's answer, behind the arrays: the room's reporting
+        // players as a bit set. A fresh briefing's run carries the four zero bytes
+        // `briefing-then-solo-game` writes — nobody is placed yet — and this host
+        // writes the same; the set rides the answer a report draws beside it.
         new(
             generation.JoinState,
-            MatchStartBodiesUtils.JoinStateAnswer(reportingSet),
+            MatchStartBodiesUtils.JoinStateAnswer(carriesRoundState ? reportingSet : (byte)0),
             MatchStartBodiesUtils.JoinStateAnswerClass),
 
         // The close pair, then the room's own stage, then the seven-byte roster
@@ -354,11 +357,11 @@ public static class MatchStartRunFramesUtils
         // join whose client stopped drawing the room's rule instructions.
         new(
             UdpCommandConstants.PlayerProfile,
-            MatchRecordBodiesUtils.RoomStateRecord(),
+            RoomStateRecordBodiesUtils.RoomStateRecord(),
             runOrdinals[4]),
         new(
             UdpCommandConstants.PlayerProfile,
-            MatchRecordBodiesUtils.RoomStateRecordSecond(),
+            RoomStateRecordBodiesUtils.RoomStateRecordSecond(),
             runOrdinals[5]),
         new(
             UdpCommandConstants.PlayerProfile,

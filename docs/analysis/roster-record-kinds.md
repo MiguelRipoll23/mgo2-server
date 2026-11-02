@@ -160,6 +160,11 @@ own consumer at the object's own index:
 | stage pair, 22 B | `0x03` | `0`, `0` | `0x00` | node `3`, slot 1, cursor at `+7` — the tag, the two triples, `fd 00` |
 | spawn point, 25 B | `0x04` | index, slot | `0x00` | node `4`, slot 1, cursor at `+7` |
 
+The kinds are `RoomRecordKind` in `src/Shared/Types/RoomRecordKind.cs` —
+`RosterEntry`, `QuadAndItems`, `Box`, `CustomPoint` and `RespawnPoint` — so a
+record's consumer is named at the place the byte is written rather than only in
+these tables.
+
 That is the stage/geometry subsystem the triples belong to: the object the key
 `07` registry entry carries (`0x50103340`), which keeps a node per kind and hands
 each record's payload to that node's slot 1, with `index | slot << 8`. The

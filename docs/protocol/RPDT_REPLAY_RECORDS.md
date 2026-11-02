@@ -192,10 +192,64 @@ record streams, not separate UDP command IDs.
 | Indexed payload types `0x85` / `0x86`, length 26 | A team/occupancy array. The indexed record's fourth framing byte is retained as its index; the page does not decode a complete set of named fields from the 26-byte array. |
 | `vid=0x261` / `0xa61`, payload type `0x00` | Special rules-roster records; parsed by a separate compact roster grammar when recognized. |
 
+### World-object events, as the code names them
+
+The two object streams carry *events*, not just records: one event is up to four
+records in the same tick, in type order. The codes below are what `rpdt.js`
+measured over twelve replays, and the replay console's drawing reads the same
+bytes over further replays (`docs/analysis/replay-console/app.js`,
+`buildItemBoxes`). They are `WorldObjectStream`, `WorldObjectRecordType`,
+`WorldObjectEvent`, `WorldObjectRemovalReason` and `WorldObjectItem` in
+`src/Shared/Types/WorldObjectRecordTypes.cs`.
+
+| stream | low `vid` | what it carries |
+| --- | ---: | --- |
+| `WorldObjectStream.Object` | `0x250` | the two item boxes and whatever a player drops |
+| `WorldObjectStream.Device` | `0x25a` | devices a player puts down: the bomb, the magazine trap, the SOP destabilizer |
+
+| record type | byte | length | fields |
+| --- | ---: | ---: | --- |
+| `Head` | `0x00` | 6 | event code, object number (`n`), object id, slot, fourth byte |
+| `Item` | `0x01` | 6 | item byte, then four bytes — the fifth is the removal reason on `Removed` |
+| `Position` | `0x02` | 10 | x, y, z as signed `i16` LE at `+1,+3,+5`; x/z tenths, y millimetres; three zero bytes |
+| `Tail` | `0x03` | 9 | three zeros and the family's repeated values |
+
+| event | byte | what happened, and where the player is named |
+| --- | ---: | --- |
+| `Placed` | `0x74` | a box set out afresh; `n` is 1 or 2, the item the stream's own |
+| `Taken` | `0x83` | picked up; the head's **slot** byte names the taker |
+| `Dropped` | `0x64` | let go at the carrier's stand; **object id = slot << 3**, position is his hip |
+| `SetDown` | `0x65` | a device put down: magazine trap, bomb plant, placed destabilizer |
+| `Removed` | `0xa0` | gone; the item record's **fifth byte** is the reason (`0x01` detonated, `0x03` defused), and its second byte the defuser's slot |
+| `DeviceRemoved` | `0xa5` | a placed device gone; the item record's **fifth byte** is the reason (`0x00` taken away, `0x01` went off, `0x03` destroyed). Measured over 395 replays, 123 traps in 25 of them |
+
+**A removal names its player, and a placed device names its placer.** On `SetDown` the
+object id is the placer's lobby slot `<< 3` (279 of 282 placements name the player in the
+placing action) and `ITEM[2]` is the device's number in the round; the `DeviceRemoved`
+that ends it keeps both. The record says *how* a device ended but not *who* ended it — for
+a destroyed trap the console names the player firing with his aim point on it (26 of 42
+cases), and for a collected one the crawler lying on it. 21 of the 123 measured traps were
+never removed at all.
+
+**The item byte is not an item-pool index.** Two agree with the pool table the
+console carries — `0x2e` TIME BOMB and `0x44` BASE BUSTER — and the rest do not:
+the pool names `BOOK` at `0x45`, `CRITICAL KNIFE` at `0x71` and `KARAMBIT` at
+`0x8c`, where the world objects carry the magazine, the drum can and the ENVG.
+The names are measured from what the carriers do over 17 replays (drum-can
+carriers sit in the drum's own motion states; ENVG carriers fight normally), and
+the client's own module for them is `object/itembox_mng.cc` with
+`online/other/online_itembox.cc` (`itemname`, `second_itemname`) in the native
+port's strings. Resolving a world-object item through the pool table gives the
+wrong item.
+
 ### Operation opcodes
 
 For the operation stream (`low vid=0x254`), the parser retains payload type
-as the opcode and interprets only the listed shapes:
+as the opcode and interprets only the listed shapes. The opcodes are
+`OperationsOpcode` in `src/Shared/Types/OperationsOpcode.cs`; the writers use it
+rather than repeating the byte (`0x00` state block, `0x01` clock, `0x02` state
+write, `0x0b` briefing countdown, `0x1f` briefing ready, `0x09` kill feed, and
+the `0x0f` record the parser has no entry for).
 
 | Opcode | Payload mapping |
 |---:|---|

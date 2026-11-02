@@ -68,7 +68,7 @@ public sealed class OperationsStreamHandler(
     ILogger<OperationsStreamHandler> logger) : IPeerCommandHandler
 {
     /// <summary>Opcode the operations stream uses for its kill feed.</summary>
-    public const byte KillFeedOpcode = 0x09;
+    public const byte KillFeedOpcode = (byte)OperationsOpcode.KillFeed;
 
     /// <summary>Length of a kill-feed body: the opcode and the two slots.</summary>
     public const int KillFeedLength = 3;

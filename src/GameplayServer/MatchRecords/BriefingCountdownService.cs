@@ -79,8 +79,8 @@ public sealed partial class BriefingCountdownService(
     /// `mgo2-started-briefing-then-solo-game` t+57.6, 60.0 — which is the cadence
     /// of this tick (<see cref="BriefingCountdownBodiesUtils.PublishPeriodMilliseconds"/>).
     /// The records themselves are the pair the run writes
-    /// (<see cref="MatchRecordBodiesUtils.RoomStateRecord"/> and
-    /// <see cref="MatchRecordBodiesUtils.RoomStateRecordSecond"/>), so a peer is told
+    /// (<see cref="RoomStateRecordBodiesUtils.RoomStateRecord"/> and
+    /// <see cref="RoomStateRecordBodiesUtils.RoomStateRecordSecond"/>), so a peer is told
     /// the room's stage both when a round opens and for as long as a briefing runs.
     /// </para>
     /// <para>
@@ -105,8 +105,8 @@ public sealed partial class BriefingCountdownService(
         var ordinals = roster.TakeRunOrdinals(2);
         var state = new List<Rooms.RosterRecord>
         {
-            new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.RoomStateRecord(), ordinals[0]),
-            new(UdpCommandConstants.PlayerProfile, MatchRecordBodiesUtils.RoomStateRecordSecond(), ordinals[1]),
+            new(UdpCommandConstants.PlayerProfile, RoomStateRecordBodiesUtils.RoomStateRecord(), ordinals[0]),
+            new(UdpCommandConstants.PlayerProfile, RoomStateRecordBodiesUtils.RoomStateRecordSecond(), ordinals[1]),
         };
 
         await Rooms.RosterRunSendUtils.SendAsync(context, state, compressed: true);

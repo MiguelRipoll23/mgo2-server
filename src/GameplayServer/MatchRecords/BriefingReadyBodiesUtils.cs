@@ -1,3 +1,5 @@
+using Mgo2Server.Shared.Types;
+
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
@@ -46,7 +48,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public static class BriefingReadyBodiesUtils
 {
     /// <summary>Opcode of the briefing ready record, in its first body byte.</summary>
-    public const byte ReadyOpcode = 0x1f;
+    public const byte ReadyOpcode = (byte)OperationsOpcode.BriefingReady;
 
     /// <summary>Length of the ready body: the opcode, the slot and the state.</summary>
     public const int RecordLength = 3;

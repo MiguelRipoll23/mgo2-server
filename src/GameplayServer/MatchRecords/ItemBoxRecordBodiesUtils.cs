@@ -1,3 +1,5 @@
+using Mgo2Server.Shared.Types;
+
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
@@ -9,9 +11,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public static class ItemBoxRecordBodiesUtils
 {
     /// <summary>
-    /// Measured identifier of an item box's state record — one of the
-    /// world-object group the recorded host carries in every eighth beat frame
-    /// from 0.2 s after the match-start run on.
+    /// Measured identifier of the object stream — the item boxes and dropped
+    /// things (<see cref="WorldObjectStream.Object"/>) — one of the world-object
+    /// group the recorded host carries in every eighth beat frame from 0.2 s
+    /// after the match-start run on.
     /// </summary>
     /// <remarks>
     /// The replay console's parser does not dispatch this identifier, so the
@@ -25,7 +28,12 @@ public static class ItemBoxRecordBodiesUtils
     /// </remarks>
     public const ushort ItemBoxIdentifier = 0x1a50;
 
-    /// <summary>Measured identifier of the item box's second state record.</summary>
+    /// <summary>
+    /// Measured identifier of the group's second stream, the devices. In the recorded
+    /// round it carries the same six-byte filler as the first, because that round placed
+    /// no device; a bomb's or a trap's own event would travel under it
+    /// (<see cref="WorldObjectStream.Device"/>).
+    /// </summary>
     public const ushort ItemBoxStateIdentifier = 0x1a5a;
 
     /// <summary>Length of an item box's recurring state body.</summary>
@@ -33,10 +41,14 @@ public static class ItemBoxRecordBodiesUtils
 
     /// <summary>
     /// Records one item-box event writes under the group's own identifier, in
-    /// sub-type order: <c>00</c> the box's head, <c>01</c> its item, <c>02</c>
-    /// its position and <c>03</c> the event's tail.
+    /// record-type order: <c>00</c> the box's head, <c>01</c> its item, <c>02</c>
+    /// its position and <c>03</c> the event's tail
+    /// (<see cref="WorldObjectRecordType"/>).
     /// </summary>
     public const int ItemBoxEventRecords = 4;
+
+    /// <summary>The tail's three bytes behind the event's index, repeated: <c>21 00</c> and a final <c>21</c>.</summary>
+    private const byte TailValue = 0x21;
 
     /// <summary>
     /// The complete bodies of the two events the recorded round opens with, box
@@ -44,52 +56,38 @@ public static class ItemBoxRecordBodiesUtils
     /// </summary>
     /// <remarks>
     /// <para>
-    /// These are the item-box group's real content, and the six-byte pair below
-    /// is the replay console's "filler" that rides beside it: a box is created,
-    /// moved or emptied by one event of up to four records, and the all-zero pair
-    /// that follows every eight frames is what says the box is still there. The
-    /// recorded host writes the two events of its own round's boxes in the first
-    /// two groups — 0.2 s and 0.46 s after the match-start run — and then the
-    /// filler pair alone, so a host that replays the filler and not the event
-    /// never tells the client its boxes exist.
+    /// These are the item-box group's real content, and the six-byte pair of
+    /// <see cref="ItemBoxState"/> is the replay console's "filler" that rides
+    /// beside it: a box is created, moved or emptied by one event of up to four
+    /// records, and the all-zero pair that follows every eight frames is what says
+    /// the box is still there. The recorded host writes the two events of its own
+    /// round's boxes in the first two groups — 0.2 s and 0.46 s after the
+    /// match-start run — and then the filler pair alone, so a host that replays the
+    /// filler and not the event never tells the client its boxes exist.
     /// </para>
     /// <para>
-    /// The bytes are the capture's own, not derived: the round's boxes stand
-    /// where that round put them, and reproducing them is the same kind of replay
-    /// as the rest of the recorded host's stream. The events the capture writes
-    /// later in the round (a box taken and dropped again, which moves it) are not
-    /// here — they are the live round's own play, and they arrive irregularly.
+    /// Each record is built from the field it states rather than written as a run
+    /// of bytes: the head bytes, the item ids and the two positions are the
+    /// capture's own, and the position reads as <c>x</c>, <c>y</c> and <c>z</c>
+    /// signed sixteens in the same tenths the position records use. The events the
+    /// capture writes later in the round (a box taken and dropped again, which
+    /// moves it) are not here — they are the live round's own play, and they
+    /// arrive irregularly.
     /// </para>
     /// </remarks>
     private static readonly byte[][] OpeningEventBodies =
     [
-        // The first box: index 0 at head 0x74, its item, its position, the tail.
-        [
-            0x00, 0x74, 0x01, 0x00, 0x00, 0x00,
-        ],
-        [
-            0x01, 0x8c, 0x00, 0x01, 0x00, 0x00,
-        ],
-        [
-            0x02, 0xb4, 0xfb, 0x08, 0x07, 0x72, 0x06, 0x00, 0x00, 0x00,
-        ],
-        [
-            0x03, 0x00, 0x00, 0x00, 0x21, 0x00, 0x21, 0x00, 0x21,
-        ],
+        // Box 1: the ENVG, a small box, at (-1092, 1800, 1650).
+        HeadRecord(WorldObjectEvent.Placed, boxNumber: 1),
+        ItemRecord(WorldObjectItem.Envg, boxNumber: 1),
+        PositionRecord(x: -1092, y: 1800, z: 1650),
+        TailRecord(),
 
-        // The second box: index 0 at head 0x74 as well, and its own placement.
-        [
-            0x00, 0x74, 0x02, 0x00, 0x00, 0x00,
-        ],
-        [
-            0x01, 0x71, 0x00, 0x02, 0x00, 0x00,
-        ],
-        [
-            0x02, 0x26, 0x02, 0x82, 0x00, 0x5c, 0xf9, 0x00, 0x00, 0x00,
-        ],
-        [
-            0x03, 0x00, 0x00, 0x00, 0x21, 0x00, 0x21, 0x00, 0x21,
-        ],
+        // Box 2: the drum can, a large one, at (550, 130, -1700).
+        HeadRecord(WorldObjectEvent.Placed, boxNumber: 2),
+        ItemRecord(WorldObjectItem.DrumCan, boxNumber: 2),
+        PositionRecord(x: 550, y: 130, z: -1700),
+        TailRecord(),
     ];
 
     /// <summary>
@@ -113,8 +111,65 @@ public static class ItemBoxRecordBodiesUtils
     /// The body of one record of one opening event.
     /// </summary>
     /// <param name="eventIndex">Event to read, from zero.</param>
-    /// <param name="recordIndex">Sub-type within the event, 0 to 3.</param>
+    /// <param name="recordIndex">Record type within the event, 0 to 3.</param>
     /// <returns>The record's body, as the capture carries it.</returns>
     public static byte[] ItemBoxEvent(int eventIndex, int recordIndex) =>
         OpeningEventBodies[(eventIndex * ItemBoxEventRecords) + recordIndex];
+
+    /// <summary>
+    /// The event's head record: the record type, the event code, the box's number, and the
+    /// object id, slot and fourth byte the measured events leave at nought.
+    /// </summary>
+    /// <param name="placed">What happened, <see cref="WorldObjectEvent.Placed"/> in both measured events.</param>
+    /// <param name="boxNumber">Which box of the round's two, 1 then 2.</param>
+    /// <returns>The record body.</returns>
+    private static byte[] HeadRecord(WorldObjectEvent placed, byte boxNumber) =>
+    [
+        (byte)WorldObjectRecordType.Head,
+        (byte)placed,
+        boxNumber,
+        0x00, 0x00, 0x00,
+    ];
+
+    /// <summary>
+    /// The event's item record: the record type, the item's id and the box it belongs to,
+    /// then the three bytes the measured events leave at nought.
+    /// </summary>
+    /// <param name="item">Item the box holds.</param>
+    /// <param name="boxNumber">Which box of the round's two, 1 then 2.</param>
+    /// <returns>The record body.</returns>
+    private static byte[] ItemRecord(WorldObjectItem item, byte boxNumber) =>
+    [
+        (byte)WorldObjectRecordType.Item,
+        (byte)item,
+        0x00,
+        boxNumber,
+        0x00, 0x00,
+    ];
+
+    /// <summary>
+    /// The event's position record: its record type, the box's point as three
+    /// signed sixteens in wire tenths, and three zero bytes.
+    /// </summary>
+    /// <param name="x">Coordinate along the axis the spawns separate on.</param>
+    /// <param name="y">Height above the stage's floor.</param>
+    /// <param name="z">The remaining horizontal coordinate.</param>
+    /// <returns>The record body.</returns>
+    private static byte[] PositionRecord(short x, short y, short z) =>
+    [
+        (byte)WorldObjectRecordType.Position,
+        (byte)x, (byte)(x >> 8),
+        (byte)y, (byte)(y >> 8),
+        (byte)z, (byte)(z >> 8),
+        0x00, 0x00, 0x00,
+    ];
+
+    /// <summary>The event's tail record: its record type, three zeros and the repeated <c>21</c> values.</summary>
+    /// <returns>The record body.</returns>
+    private static byte[] TailRecord() =>
+    [
+        (byte)WorldObjectRecordType.Tail,
+        0x00, 0x00, 0x00,
+        TailValue, 0x00, TailValue, 0x00, TailValue,
+    ];
 }

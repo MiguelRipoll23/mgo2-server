@@ -1,3 +1,4 @@
+using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameplayServer.MatchRecords;
@@ -51,7 +52,7 @@ public static class MatchRecordBodiesUtils
     /// one whose time is 5. A briefing's countdown is a record of its own,
     /// <c>0x0b</c> (<see cref="BriefingCountdownBodiesUtils"/>), and not this one.
     /// </remarks>
-    public const byte OperationsClockOpcode = 0x01;
+    public const byte OperationsClockOpcode = (byte)OperationsOpcode.RoundClock;
 
     /// <summary>
     /// Opcode of the operations stream's state block, in the payload's first
@@ -66,7 +67,7 @@ public static class MatchRecordBodiesUtils
     /// later changes as slices of it, under opcode <c>0x02</c>: an offset, a
     /// count, then the values, so <c>02 02 01 02</c> is "state[2] = 2".
     /// </remarks>
-    public const byte OperationsStateOpcode = 0x00;
+    public const byte OperationsStateOpcode = (byte)OperationsOpcode.StateBlock;
 
     /// <summary>
     /// Opcode of the operations stream's state write, in the payload's first
@@ -75,7 +76,7 @@ public static class MatchRecordBodiesUtils
     /// this way — <c>02 02 01 02</c> is "state[2] = 2" — and the state block
     /// itself was written whole before it.
     /// </summary>
-    public const byte OperationsStateWriteOpcode = 0x02;
+    public const byte OperationsStateWriteOpcode = (byte)OperationsOpcode.StateWrite;
 
     /// <summary>
     /// Result code of a round raw team <c>0</c> took. The coding is the replay
@@ -155,7 +156,7 @@ public static class MatchRecordBodiesUtils
     /// round-over, <c>0x12</c> race goal and <c>0x13</c> rating, and has no entry
     /// for this one, so the byte stays the recorded one.
     /// </summary>
-    private const byte OperationsShortOpcode = 0x0f;
+    private const byte OperationsShortOpcode = (byte)OperationsOpcode.UnnamedShort;
 
     /// <summary>Control byte of an early sparse-phase record.</summary>
     private static ReadOnlySpan<byte> ControlBodyEarly => [0x02];
@@ -169,28 +170,48 @@ public static class MatchRecordBodiesUtils
     /// <summary>One-byte control body seen once in the steady phase.</summary>
     private static ReadOnlySpan<byte> ControlBodyRare => [0x25];
 
+    /// <summary>
+    /// The zero byte every record of this family carries between its length and
+    /// its kind, and the two header bytes that follow the kind.
+    /// </summary>
+    private const byte HeaderZero = 0x00;
+
+    /// <summary>The header's slot byte: nought, these records name no player.</summary>
+    private const byte NoPlayerSlot = 0x00;
+
+    /// <summary>The header's branch byte: nought hands the payload to the kind's node.</summary>
+    private const byte PayloadBranch = 0x00;
+
+    /// <summary>The header's index of a pair's first record, which its payload tag repeats.</summary>
+    internal const byte FirstRecordIndex = 0x00;
+
+    /// <summary>Index of a pair's second record: one, and its payload tag with it.</summary>
+    internal const byte SecondRecordIndex = 0x01;
+
+    /// <summary>
+    /// Kind of the close pair: a region with a count of no corners, which is the host
+    /// closing one rather than describing it.
+    /// </summary>
+    private const byte CloseKind = (byte)RoomRecordKind.Box;
+
     /// <summary>Length of either record of the match-start run's close pair.</summary>
     public const int CloseRecordLength = 20;
 
     /// <summary>
-    /// The eighteen bytes behind the pair's roster header: what the two records
-    /// differ by, measured from `briefing-then-solo-game`'s run at t+9.780. The
-    /// header's kind is <c>0x02</c>, and the client dispatches the record by
-    /// <c>(0, kind | index &lt;&lt; 8)</c> and reads the two bytes behind the header
-    /// on one of its branches (<c>docs/analysis/roster-record-kinds.md</c>).
+    /// The first close record's twelve bytes behind its tag: the box the pair
+    /// closes, whose fields are **[U]**.
     /// </summary>
-    private static ReadOnlySpan<byte> CloseRecordFirstRemainder =>
-    [
-        0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x02, 0xd2,
-        0x5a, 0x00, 0x00, 0x00, 0xe0, 0x8f, 0x7e, 0x00, 0x00, 0x00,
-    ];
+    /// <remarks>
+    /// Kind <c>0x02</c> is the box shape and its corner count is nought, so what
+    /// these bytes state is the box itself rather than a corner of it
+    /// (<c>docs/analysis/roster-record-kinds.md</c> §6). They are the recording's.
+    /// </remarks>
+    private static ReadOnlySpan<byte> CloseFirstPayload =>
+        [0x02, 0xd2, 0x5a, 0x00, 0x00, 0x00, 0xe0, 0x8f, 0x7e, 0x00, 0x00, 0x00];
 
-    /// <summary>The second record's remainder, which differs from the first's.</summary>
-    private static ReadOnlySpan<byte> CloseRecordSecondRemainder =>
-    [
-        0x00, 0x02, 0x01, 0x00, 0x00, 0x01, 0x02, 0x34,
-        0xa4, 0x1f, 0x00, 0x00, 0x18, 0x6e, 0x01, 0x00, 0x00, 0x00,
-    ];
+    /// <summary>The second close record's twelve bytes behind its tag.</summary>
+    private static ReadOnlySpan<byte> CloseSecondPayload =>
+        [0x02, 0x34, 0xa4, 0x1f, 0x00, 0x00, 0x18, 0x6e, 0x01, 0x00, 0x00, 0x00];
 
     /// <summary>
     /// The two-byte operations body the match-start run carries. The replay
@@ -265,100 +286,54 @@ public static class MatchRecordBodiesUtils
     /// <returns>The record body.</returns>
     public static byte[] RoomCount(byte count) => [RoomCountLeadingByte, count];
 
-    /// <summary>
-    /// Length of either room-state record that rides beside the close pair: a
-    /// twenty-two-byte roster-shaped record, the room's own stage.
-    /// </summary>
-    /// <remarks>
-    /// <b>The stage is a pair of these and nothing else.</b> The port client's
-    /// briefing writes two of them — `briefing-then-solo-game` t+9.780 at ordinals
-    /// <c>11</c> and <c>12</c> — where an older reading of `mgo2-game1` took a
-    /// twenty-two-byte record with two fifty-four-byte ones behind it. Both of that
-    /// capture's records are this length, in its briefing and again in the round
-    /// that follows it (t+147.650, ordinals <c>29</c> and <c>30</c>), and no capture
-    /// of a working host holds a roster-shaped fifty-four-byte record at all.
-    /// </remarks>
-    public const int RoomStateRecordLength = 22;
-
-    /// <summary>
-    /// The first room-state record's bytes behind its roster header: the room's
-    /// stage as the port client's host writes it, a six-byte value repeated behind
-    /// the record's own pair of flag bytes.
-    /// </summary>
-    /// <remarks>
-    /// The values are the recording's: two captures that share no session write one body
-    /// byte for byte and a third another, so the field is the room's stage rather than the
-    /// session. The client hands this payload to its stage object's kind-<c>0x03</c> node and
-    /// does not read it here, and the port names that module <c>sv_custom_point</c> — one
-    /// point, one action (<c>docs/analysis/roster-record-kinds.md</c> §4 and §7). What the
-    /// triples state is still **[U]**, so they are written as recorded.
-    /// </remarks>
-    private static ReadOnlySpan<byte> RoomStateRecordRemainder =>
-    [
-        0x00, 0x03, 0x00, 0x00, 0x00, 0x00, // +0x02..+0x07: zero, kind, index, slot, branch, tag
-        0x84, 0x03, 0x84, 0x03, 0x3e, 0xfd, // the point (900, 900, -706), signed sixteens
-        0x84, 0x03, 0x84, 0x03, 0x3e, 0xfd, // the same point again: the action's second side
-        0xfd, 0x00,                         // the sixteen-bit tail
-    ];
-
-    /// <summary>
-    /// The second room-state record's bytes behind its roster header: the same
-    /// shape with the pair's second flag bytes and its own six-byte value.
-    /// </summary>
-    private static ReadOnlySpan<byte> RoomStateRecordSecondRemainder =>
-    [
-        0x00, 0x03, 0x01, 0x00, 0x00, 0x01, // +0x02..+0x07: zero, kind, index 1, slot, branch, tag 1
-        0x3e, 0xfd, 0x7d, 0x03, 0x07, 0x03, // the point (-706, 893, 775), signed sixteens
-        0x3e, 0xfd, 0x7d, 0x03, 0x07, 0x03, // the same point again: the action's second side
-        0xfd, 0x00,                         // the sixteen-bit tail
-    ];
-
-    /// <summary>
-    /// The room's own stage as the first of its two room-state records states it:
-    /// the record the captures write behind the close pair, in the round's opening
-    /// run and again through a briefing.
-    /// </summary>
-    /// <returns>The record body.</returns>
-    public static byte[] RoomStateRecord() =>
-        RosterShapedRecord(RoomStateRecordLength, RoomStateRecordRemainder);
-
-    /// <summary>The second record of the room's stage.</summary>
-    /// <returns>The record body.</returns>
-    public static byte[] RoomStateRecordSecond() =>
-        RosterShapedRecord(RoomStateRecordLength, RoomStateRecordSecondRemainder);
-
     /// <summary>The first record of the match-start run's close pair.</summary>
     /// <returns>The record body.</returns>
-    public static byte[] MatchStartCloseFirst() => CloseRecord(CloseRecordFirstRemainder);
+    public static byte[] MatchStartCloseFirst() =>
+        RosterShapedRecord(
+            CloseRecordLength,
+            CloseKind,
+            FirstRecordIndex,
+            FirstRecordIndex,
+            CloseFirstPayload);
 
     /// <summary>The second record of the match-start run's close pair.</summary>
     /// <returns>The record body.</returns>
-    public static byte[] MatchStartCloseSecond() => CloseRecord(CloseRecordSecondRemainder);
+    public static byte[] MatchStartCloseSecond() =>
+        RosterShapedRecord(
+            CloseRecordLength,
+            CloseKind,
+            SecondRecordIndex,
+            SecondRecordIndex,
+            CloseSecondPayload);
 
     /// <summary>
-    /// Builds one record of the close pair from its two mapped bytes and the 18
-    /// recorded ones behind them. The pair opens the way every roster record
-    /// does — the record version, then the record's own length less seven — so
-    /// those two are written rather than copied; the parser reads a roster record
-    /// only from 58 bytes up, so it decodes nothing further here.
-    /// </summary>
-    /// <param name="remainder">The recorded bytes after the two mapped ones.</param>
-    /// <returns>The record body.</returns>
-    private static byte[] CloseRecord(ReadOnlySpan<byte> remainder) =>
-        RosterShapedRecord(CloseRecordLength, remainder);
-
-    /// <summary>
-    /// Builds a roster-shaped body from its version, its own length less the
-    /// fixed prefix, and the recorded bytes behind them.
+    /// Builds one record of the family from its header fields and the payload
+    /// behind them: the version, the record's own length less the fixed prefix,
+    /// the zero, the kind, the index, the slot, the branch byte, the payload's tag
+    /// and then the payload.
     /// </summary>
     /// <param name="length">Length of the body on the wire.</param>
-    /// <param name="remainder">The recorded bytes after the two mapped ones.</param>
+    /// <param name="kind">Kind that indexes the client's stage object.</param>
+    /// <param name="index">The record's index within its pair.</param>
+    /// <param name="tag">The payload's own first byte, which the index repeats.</param>
+    /// <param name="payload">The bytes behind the tag.</param>
     /// <returns>The record body.</returns>
-    private static byte[] RosterShapedRecord(int length, ReadOnlySpan<byte> remainder) =>
+    internal static byte[] RosterShapedRecord(
+        int length,
+        byte kind,
+        byte index,
+        byte tag,
+        ReadOnlySpan<byte> payload) =>
     [
         PlayerProfileRecordUtility.RecordVersion,
         (byte)(length - PlayerProfileRecordUtility.FixedPrefixLength),
-        .. remainder,
+        HeaderZero,
+        kind,
+        index,
+        NoPlayerSlot,
+        PayloadBranch,
+        tag,
+        .. payload,
     ];
 
     /// <summary>Body of the early sparse-phase control record.</summary>

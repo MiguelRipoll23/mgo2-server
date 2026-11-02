@@ -208,8 +208,8 @@ reporting. The earlier reading as a set of the room's own objectives is cleared.
 | offset | what the captures do |
 | --- | --- |
 | `state[11..13]` | `01 01 04` in one capture, zero in the other five — the one round-specific triple |
-| `state[40..41]` | the two objective holders; `0xff` for nobody, `0x3f` for a dropped objective, otherwise `value & 0x3f` is the slot and `& 0x40` a flag |
-| `state[42..43]` | the two capture clocks, `0xff` in every non-Capture room |
+| `state[40..41]` | the two objective holders; `0x3f` for a dropped objective, otherwise `value & 0x3f` is the slot and `& 0x40` a flag. `briefing-then-solo-game` writes `0x1e` in all three of its blocks, which is the value this host writes; the parser's own table reads `0xff` as "nobody" |
+| `state[42..43]` | the two capture clocks, `0xff` in every non-Capture room and `0x1e` in `briefing-then-solo-game` — the same four bytes as the holders above, which is why this host writes one value at `state[40..43]` |
 | `state[44]` | `0x18` in five captures, `1` in the sixth — moves with the seed at `state[57..60]` |
 | `state[57..84]` | seeded `0x3c` in five captures and `0x28` in the sixth; 4 bytes in five, 28 in the 30-minute room |
 | `state[87..88]` | the round clock, little-endian, 125 ms units |

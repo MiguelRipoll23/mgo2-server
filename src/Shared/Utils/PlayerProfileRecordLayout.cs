@@ -1,3 +1,5 @@
+using Mgo2Server.Shared.Types;
+
 namespace Mgo2Server.Shared.Utils;
 
 /// <summary>
@@ -220,8 +222,8 @@ public static class PlayerProfileRecordLayout
     /// </summary>
     public const int KindOffset = 0x03;
 
-    /// <summary>The kind a roster entry carries.</summary>
-    public const byte RosterKind = 0x00;
+    /// <summary>The kind a roster entry carries, and the only kind of the five that is one.</summary>
+    public const byte RosterKind = (byte)RoomRecordKind.RosterEntry;
 
     /// <summary>Offset of the unresolved per-record value that reads 0x00, 0x01 or 0x02.</summary>
     public const int UnresolvedByteOffset = PlayerProfileRecordUtility.UnresolvedByteOffset;
