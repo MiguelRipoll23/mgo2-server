@@ -237,11 +237,11 @@ public sealed partial class PlayerSettingsBurstService(
     /// writing zero would put a value there that no row states.
     /// </para>
     /// <para>
-    /// <b>A rotation shorter than the field is walked round.</b> Entry <c>i</c> is
-    /// the room's entry <c>i</c> modulo its count, so all fifteen name a real map
-    /// and rule rather than the map <c>0</c> the client reads as None; a room whose
-    /// rotation is longer contributes its first fifteen, because that is all the
-    /// field holds.
+    /// <b>Unused entries are zeroed, not repeated.</b> The field has fifteen
+    /// slots, but a shorter room rotation only names its configured rounds. The
+    /// remaining triples are zero, as they are in the lobby's rotation field and
+    /// the working capture. A longer rotation contributes its first fifteen,
+    /// because that is all this field holds.
     /// </para>
     /// </remarks>
     /// <param name="rotation">The room's rotation, in play order.</param>
@@ -259,8 +259,14 @@ public sealed partial class PlayerSettingsBurstService(
         var body = RecordedRotationBody();
         for (var slot = 0; slot < RotationEntryCount; slot++)
         {
-            var entry = rotation[slot % rotation.Count];
             var offset = RotationOffset + (slot * RotationEntryLength);
+            if (slot >= rotation.Count)
+            {
+                body.AsSpan(offset, RotationEntryLength).Clear();
+                continue;
+            }
+
+            var entry = rotation[slot];
             body[offset] = Component(nameof(entry.Map), entry.Map);
             body[offset + 1] = Component(nameof(entry.Rule), entry.Rule);
             body[offset + 2] = Component(nameof(entry.Flags), entry.Flags);
