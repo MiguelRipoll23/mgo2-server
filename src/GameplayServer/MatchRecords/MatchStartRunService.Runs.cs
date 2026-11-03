@@ -254,7 +254,7 @@ public sealed partial class MatchStartRunService
         var run = MatchStartRunFramesUtils.BuildRun(
             generation,
             reported,
-            Rooms.TeamArrayFramesUtils.OpeningSequence,
+            roster.PairSequenceOf(context.Remote.ToString()),
             slots,
             runOrdinals,
             operationsOrdinals,

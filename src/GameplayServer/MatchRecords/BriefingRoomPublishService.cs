@@ -258,10 +258,11 @@ public sealed partial class BriefingRoomPublishService(
     /// writes it inside.
     /// </para>
     /// <para>
-    /// <b>It is published at the room's constant sequence and never confirmed
-    /// here.</b> <see cref="TeamArrayFramesUtils.OpeningSequence"/> is the room's
-    /// sequence and the one its client echoes, so a pair published under it is the
-    /// answer to every echo the room draws; the confirmation belongs to the
+    /// <b>It is published at the peer's own sequence and never confirmed
+    /// here.</b> The byte is the one that peer's exchange named
+    /// (<see cref="RoomRosterService.PairSequenceOf"/>), which is the sequence its
+    /// own echoes carry, so a pair published under it is the answer to the echo it
+    /// draws; the confirmation belongs to the
     /// round's open, which is where the captures put it
     /// (<see cref="MatchStartRunService.ConfirmEntryAsync"/>). A confirmation
     /// beside the echo is what stopped `myserver20`'s client where it stood.
@@ -276,8 +277,12 @@ public sealed partial class BriefingRoomPublishService(
     /// <param name="context">Context the pair is written through.</param>
     private async Task PublishArraysAsync(PeerContext context)
     {
+        // The pair is published under the sequence the peer's own exchange named,
+        // which is what every reference host does: the client answers `82 NN` and
+        // is shown `85 NN` again, so a captured constant would name a pair in an
+        // exchange this peer never opened.
         var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(
-            TeamArrayFramesUtils.OpeningSequence,
+            roster.PairSequenceOf(context.Remote.ToString()),
             await lobbySlots.ReadAsync());
         var ordinals = roster.TakeRunOrdinals(2);
 

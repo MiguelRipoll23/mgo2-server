@@ -71,6 +71,13 @@ public sealed class RoomRosterService(
     private readonly List<RosterMember> members = [];
 
     /// <summary>
+    /// The lobby-slot sequence each peer's own exchange is on, by endpoint
+    /// (<see cref="NotePairSequence"/>). It belongs to the peer and not to the
+    /// room, so it is dropped with the member (<see cref="Remove"/>).
+    /// </summary>
+    private readonly Dictionary<string, byte> pairSequences = [];
+
+    /// <summary>
     /// Takes the fourth byte the next record of the roster exchange carries, and
     /// advances the exchange's counter past it.
     /// </summary>
@@ -256,6 +263,52 @@ public sealed class RoomRosterService(
         }
     }
 
+    /// <summary>
+    /// Notes the lobby-slot sequence a peer's own exchange named.
+    /// </summary>
+    /// <remarks>
+    /// <b>The sequence is the peer's and not the room's.</b> A client answers the
+    /// arrays under a sequence of its own — <c>82 NN</c>/<c>84 NN</c>, the same
+    /// byte its <c>83 NN</c> request names — and every reference host hands that
+    /// byte back in the arrays it publishes: `started-briefing-then-solo-game`
+    /// answers <c>82 8c</c> and its run carries <c>85 8c</c>/<c>86 8c</c>, while
+    /// `mgo2-game1`'s carries <c>85 f3</c> for a client that answered
+    /// <c>f3</c>. A host that publishes one captured client's byte to every
+    /// client names a pair in an exchange the new client never opened, which is
+    /// what leaves it unplaced in the room.
+    /// </remarks>
+    /// <param name="remoteAddress">Endpoint the peer is filed under.</param>
+    /// <param name="sequence">Sequence byte the peer's own records named.</param>
+    public void NotePairSequence(string remoteAddress, byte sequence)
+    {
+        lock (gate)
+        {
+            pairSequences[remoteAddress] = sequence;
+        }
+    }
+
+    /// <summary>
+    /// The lobby-slot sequence a peer's own exchange is on, or the captured room's
+    /// sequence for a peer that has not named one yet.
+    /// </summary>
+    /// <remarks>
+    /// The fallback is what a peer is published before its first answer arrives —
+    /// the run answers its entry, which can precede the answer to the pair — and
+    /// it is the value <see cref="TeamArrayFramesUtils.OpeningSequence"/> already
+    /// carries.
+    /// </remarks>
+    /// <param name="remoteAddress">Endpoint the peer is filed under.</param>
+    /// <returns>The sequence the peer's arrays are published under.</returns>
+    public byte PairSequenceOf(string remoteAddress)
+    {
+        lock (gate)
+        {
+            return pairSequences.TryGetValue(remoteAddress, out var sequence)
+                ? sequence
+                : TeamArrayFramesUtils.OpeningSequence;
+        }
+    }
+
     /// <summary>Removes a peer from the roster. Called by the session reaper.</summary>
     /// <param name="remoteAddress">Endpoint the peer was filed under.</param>
     /// <returns>True when the peer was on the roster.</returns>
@@ -264,6 +317,7 @@ public sealed class RoomRosterService(
         lock (gate)
         {
             var removed = members.RemoveAll(member => member.RemoteAddress == remoteAddress) > 0;
+            pairSequences.Remove(remoteAddress);
             logger.LogDebug(
                 "Roster removal for {RemoteAddress}: removed={Removed}, remaining joiners={JoinerCount}",
                 remoteAddress,

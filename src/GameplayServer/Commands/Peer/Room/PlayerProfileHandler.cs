@@ -97,6 +97,13 @@ public sealed class PlayerProfileHandler(
             // but its heartbeat). The entry is noted with its sequence, and the
             // confirmation is written when the room's round opens
             // (<see cref="MatchStartRunService.ConfirmEntryAsync"/>).
+            // The byte the client answers under is its own sequence, and the
+            // arrays this host publishes are owed back under it: every reference
+            // host answers `82 8c` with `85 8c`, and a host that answers with a
+            // captured client's byte leaves the peer's exchange unconfirmed.
+            roster.NotePairSequence(
+                context.Remote.ToString(),
+                TeamArrayFramesUtils.SequenceOf(context.Message.Body));
             matchStart.OnRoomEntry(context);
             return;
         }
@@ -110,6 +117,11 @@ public sealed class PlayerProfileHandler(
         // path drops it as "no profile".
         if (TeamArrayFramesUtils.IsRoomEntryRequest(context.Message.Body))
         {
+            // The request names the same sequence the answers do, and it can be
+            // the first record of the exchange a peer sends.
+            roster.NotePairSequence(
+                context.Remote.ToString(),
+                TeamArrayFramesUtils.RequestSequenceOf(context.Message.Body));
             await teamArrays.EnterRoomAsync(
                 context,
                 TeamArrayFramesUtils.RequestSequenceOf(context.Message.Body));
