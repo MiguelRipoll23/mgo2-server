@@ -27,19 +27,45 @@ internal static class RoomStateRegionUtils
     private const int RotationTripleLength = 3;
 
     /// <summary>
-    /// Body <c>0x4a</c>: field 3. The captured rooms write <c>0x0d</c>, <c>0x0f</c> or
-    /// <c>0x11</c> here and nothing in the corpus says which room gets which.
+    /// Body <c>0x4a</c>: field 3, <c>13</c>, <c>15</c> or <c>17</c> in every captured
+    /// room and nothing in the corpus says which room gets which.
     /// </summary>
+    /// <remarks>
+    /// It is the room's and not its host's: <c>129.153.74.111:5720</c> writes
+    /// <c>0x11</c> for its thirteen-player room and <c>0x0f</c> for the six-player
+    /// one. The screen offers two settings this could be and the corpus excludes
+    /// neither: <c>Level-Limit</c>, whose 0-22 range holds 13 to 17, and
+    /// <c>Max Number of Characters</c>, which is the only cap the population never
+    /// exceeds — though 17 players is one past the sixteen the game allows.
+    /// </remarks>
     private const byte Field3 = 0x0f;
 
     /// <summary>Body <c>0x4b</c>: field 4, the same <c>0x00b4</c> in every captured room.</summary>
     private const ushort Field4 = 0x00b4;
 
-    /// <summary>Body <c>0x4d</c>: field 5, <c>3</c> in twelve captured rooms and <c>2</c> in the two six-slot ones.</summary>
+    /// <summary>
+    /// Body <c>0x4d</c>: field 5, <c>0x02</c> in twenty-one of the twenty-two captured
+    /// bodies.
+    /// </summary>
+    /// <remarks>
+    /// The exception is a room held at its briefing, which writes <c>0x14</c>
+    /// (<c>20</c>) while the same host's other bodies write <c>0x02</c>, so the byte
+    /// is the room's state rather than one of its settings. The <c>3</c>/<c>2</c>/
+    /// <c>6</c> this comment used to give belongs to field 6 at <c>0x4e</c>.
+    /// </remarks>
     private const byte Field5 = 0x02;
 
-    /// <summary>Body <c>0x4e</c>: field 6, <c>3</c> in twelve captured rooms and <c>6</c> in the TSNE one.</summary>
-    private const byte Field6 = 0x03;
+    /// <summary>
+    /// Body <c>0x4e</c>: field 6, the room's <c>Number of Rounds</c> — <c>3</c> in
+    /// nineteen captured bodies, <c>2</c> in the two six-slot rooms of one host, and
+    /// <c>6</c> in the TSNE room.
+    /// </summary>
+    /// <remarks>
+    /// Read, not measured: the screen's own label is <c>Number of Rounds</c> at
+    /// <c>scenerio.gcx:0x0ccf8f</c>, and a room holds one value across all of its
+    /// bodies. Nothing on the gameplay wire counts rounds against it.
+    /// </remarks>
+    private const byte NumberOfRounds = 0x03;
 
     /// <summary>
     /// Body <c>0x4f</c>–<c>0x52</c>: field 7, a word of flags rather than a number.
@@ -47,13 +73,26 @@ internal static class RoomStateRegionUtils
     /// <remarks>
     /// The client tests three bits of it: <c>0x20</c> at five call sites, <c>0x04</c> at
     /// one, and <c>0x40</c> in a getter that returns it as a boolean
-    /// (<c>docs/analysis/rotation-payload-corpus.md</c> §5). Which room condition each
-    /// bit carries is still unnamed, so the working capture's word is written.
+    /// (<c>docs/analysis/rotation-payload-corpus.md</c> §5). The two bits with a reading
+    /// are members of <see cref="RoomCommonSettingsFlag"/> — <c>0x02</c> Drebin Points,
+    /// which the captured word sets, and <c>0x40</c> asking a joiner which team to join,
+    /// which it leaves clear. The rest stay unnamed and the working capture's word is
+    /// written.
     /// </remarks>
-    private const uint StateFlagsWord = 0x0007622a;
+    private const RoomCommonSettingsFlag CommonSettingsSwitches = (RoomCommonSettingsFlag)0x0007622a;
 
-    /// <summary>Body <c>0x53</c>–<c>0x54</c>: field 8, the room's own and unnamed.</summary>
-    private const ushort Field8 = 0x00b4;
+    /// <summary>
+    /// Body <c>0x53</c>–<c>0x54</c>: field 8, a whole number of minutes held as seconds.
+    /// </summary>
+    /// <remarks>
+    /// Every captured room writes one of <c>0</c>, <c>180</c>, <c>240</c> or <c>300</c>
+    /// and holds it across all of that room's own bodies
+    /// (<see cref="RoomMinuteLimit"/>), so it is a limit the room set on something the
+    /// wire does not name. The screen's minutes are <c>Round Time</c> and
+    /// <c>Briefing Time</c>, and the gameplay bytes cannot separate the two. Field 4 is
+    /// the only other offset here that never leaves a minute boundary.
+    /// </remarks>
+    private const RoomMinuteLimit MinuteLimitSeconds = RoomMinuteLimit.ThreeMinutes;
 
     /// <summary>
     /// The selector field 13 and field 53 both carry.
@@ -67,58 +106,33 @@ internal static class RoomStateRegionUtils
     private const byte SelectorFlag = 0x00;
 
     /// <summary>
-    /// Body <c>0x57</c>–<c>0x64</c>: state fields 13 and 17 to 27, the room's own.
-    /// </summary>
-    /// <remarks>
-    /// The first byte is <see cref="SelectorFlag"/>, which field 53 repeats. The rest
-    /// move with the room — <c>0x60</c> is <c>2</c> in most rooms and <c>0</c> in the
-    /// all-default ones, <c>0x63</c> is <c>2</c>, <c>3</c>, <c>6</c> or <c>0</c>,
-    /// <c>0x64</c> is <c>10</c> or <c>0</c> — and keep the working capture's bytes.
-    /// </remarks>
-    private static readonly byte[] ReferenceStateFields17To27 =
-    [
-        0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x28,
-        0x00, 0x02, 0x01, 0x00, 0x02, 0x0a,
-    ];
-
-    /// <summary>
-    /// Body <c>0x65</c>–<c>0x86</c>: state field 29, seventeen rule times in seconds.
-    /// </summary>
-    /// <remarks>
-    /// Elements 0 to 7 are the eight standard rules out of the room's timer bank;
-    /// elements 8 to 11 are the room family's own four words (here
-    /// <c>0xd003</c>, <c>0xaca0</c>, <c>0x2400</c> and <c>0x0022</c>) whose meaning is
-    /// open; elements 12 to 16 are the times of rules 12 to 16 by rule id (SDM,
-    /// INTERVAL, ANEST, SCAP, RACE), which the lobby states in a reply this server
-    /// never receives. The working capture's vector is below, and a live room's first
-    /// eight elements come from its bank instead.
-    /// </remarks>
-    private static readonly ushort[] ReferenceTimerVector =
-    [
-        300, 420, 180, 300, 540, 300, 300, 240,
-        53251, 44192, 9216, 34,
-        180, 5940, 0, 300, 300,
-    ];
-
-    /// <summary>Body <c>0x87</c>–<c>0x9b</c>: state fields 30 to 49.</summary>
-    /// <remarks>
-    /// The last two bytes are slot references with <c>0x7f</c> as their unassigned
-    /// value; the other nineteen move with the room.
-    /// </remarks>
-    private static readonly byte[] ReferenceStateFields30To49 =
-    [
-        0x02, 0x02, 0x04, 0x02, 0x02, 0x02, 0x04, 0x00, 0x02, 0x04, 0x02,
-        0x02, 0x28, 0x63, 0x00, 0x03, 0x00, 0x01, 0x01, 0x7f, 0x7f,
-    ];
-
+    /// The timer-bank position each of the eight standard rules owns.
     /// <summary>Body <c>0x9c</c>: field 50, the unassigned slot reference.</summary>
     private const byte UnassignedSlotReference = 0xff;
 
-    /// <summary>Body <c>0x9d</c>: field 51, the working capture's byte; its meaning is open.</summary>
-    private const byte Field51 = 0x7e;
+    /// <summary>
+    /// Body <c>0x9d</c>: the tail byte that belongs to the capture rather than the room.
+    /// </summary>
+    /// <remarks>
+    /// It moves between bodies of one room — <c>64.181.216.250:5720</c> writes
+    /// <c>140</c>, <c>232</c> and <c>233</c> — where the word beside it does not, so the
+    /// pair is two fields. It is not a checksum of the body: a byte sum, a negated sum,
+    /// a <c>u16</c> sum, a byte XOR and a CRC16 over every prefix ending at <c>0x9d</c>
+    /// or later match it in none of the twenty-two bodies, so the working capture's
+    /// byte is what is written.
+    /// </remarks>
+    private const byte CaptureTailByte = 0x7e;
 
-    /// <summary>Body <c>0x9e</c>–<c>0x9f</c>: field 52, the working capture's word; its meaning is open.</summary>
-    private const ushort Field52 = 0x0ee5;
+    /// <summary>
+    /// Body <c>0x9e</c>–<c>0x9f</c>: the tail word that belongs to the room.
+    /// </summary>
+    /// <remarks>
+    /// It holds across a room's own bodies — <c>277</c> for all three of
+    /// <c>143.47.227.126:5725</c>, <c>296</c> for the three of
+    /// <c>64.181.216.250:5720</c>, <c>3813</c> for the five of
+    /// <c>99.66.131.177:5731</c> — and which counter it names is **[U]**.
+    /// </remarks>
+    private const ushort RoomTailWord = 0x0ee5;
 
     /// <summary>
     /// The timer-bank position each of the eight standard rules owns.
@@ -201,9 +215,9 @@ internal static class RoomStateRegionUtils
         body.Add(Field3);
         WriteUInt16LittleEndian(body, Field4);
         body.Add(Field5);
-        body.Add(Field6);
-        WriteUInt32LittleEndian(body, StateFlagsWord);
-        WriteUInt16LittleEndian(body, Field8);
+        body.Add(NumberOfRounds);
+        WriteUInt32LittleEndian(body, (uint)CommonSettingsSwitches);
+        WriteUInt16LittleEndian(body, (ushort)MinuteLimitSeconds);
     }
 
     /// <summary>Body <c>0x55</c>–<c>0x56</c>: the slot the client reads, and the population.</summary>
@@ -228,7 +242,7 @@ internal static class RoomStateRegionUtils
     internal static void WriteStateFields17To27(List<byte> body)
     {
         body.Add(SelectorFlag);
-        foreach (var value in ReferenceStateFields17To27)
+        foreach (var value in RoomStateReferenceBodyUtils.StateFields17To27)
         {
             body.Add(value);
         }
@@ -241,7 +255,7 @@ internal static class RoomStateRegionUtils
     {
         if (ruleTimers is null)
         {
-            foreach (var seconds in ReferenceTimerVector)
+            foreach (var seconds in RoomStateReferenceBodyUtils.TimerVector)
             {
                 WriteUInt16LittleEndian(body, seconds);
             }
@@ -281,7 +295,7 @@ internal static class RoomStateRegionUtils
     /// <param name="body">The body being built.</param>
     internal static void WriteSlotReferencesAndFlags(List<byte> body)
     {
-        foreach (var value in ReferenceStateFields30To49)
+        foreach (var value in RoomStateReferenceBodyUtils.StateFields30To49)
         {
             body.Add(value);
         }
@@ -289,14 +303,15 @@ internal static class RoomStateRegionUtils
 
     /// <summary>
     /// Body <c>0x9c</c>–<c>0xa0</c>: the unassigned slot reference (field 50), the
-    /// opaque field 51 and 52 pair, and field 53, which repeats field 13's selector.
+    /// capture's tail byte, the room's tail word, and field 53, which repeats field
+    /// 13's selector.
     /// </summary>
     /// <param name="body">The body being built.</param>
     internal static void WriteTailSelector(List<byte> body)
     {
         body.Add(UnassignedSlotReference);
-        body.Add(Field51);
-        WriteUInt16LittleEndian(body, Field52);
+        body.Add(CaptureTailByte);
+        WriteUInt16LittleEndian(body, RoomTailWord);
 
         // Native readers use bit 0 to select between two entries in a global table,
         // and field 13 repeats this byte at the head of the block.

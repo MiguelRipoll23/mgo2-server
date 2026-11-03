@@ -73,14 +73,16 @@ per-room-family constant and not a clock.
 
 | body offset | builder value | corpus | verdict |
 | --- | --- | --- | --- |
-| `0x4a` (field 3) | `0x11` | `0x0d` (1), `0x0f` (7), `0x11` (7) | per-room, and which room gets which is **[U]**: `0x0d` appears only in `joined-on-game-solo`, while `0x0f` and `0x11` both appear in fifteen-slot rooms, so it is neither the slot count nor the population |
-| `0x4e` (field 5) | `0x02` | `3` (12), `2` (2), `6` (1) | per-room: `2` only in the two six-slot rooms, `6` only in `mgo2-game2` (a TSNE rotation), `3` in the other twelve |
-| `0x4f`–`0x52` (field 7) | `0x00274022` | `0x0007622a`, `0x00126073`, `0x0007603a`, `0x00274022`, `0x00074022`, `0x00034033` | per-room 32-bit word; the native readers test bits `0x20` and `0x40`, and every captured value but `0x00034033` has both set, so the two flags are a room's own state and not a constant |
-| `0x53`–`0x54` (field 8) | `0x0000` | `0x00b4`, `0x002c`, `0x00f0`, `0x0000` | per-room; **[U]** |
-| `0x57`–`0x64` (fields 13, 17–27) | `00 00 00 05 00 00 00 05 00 00 01 00 00 00` | identical in the builder's own rooms, `00` in the all-default rooms, other values in the rest | partly a room's own: `0x60` is `2` in most rooms and `0` in the all-default ones, `0x63` is `2`, `3`, `6` or `0`, `0x64` is `10` or `0`; **`0x57` carries the same byte as `0xa0` in all fifteen** (below) |
+| `0x4a` (field 3) | `0x11` | `0x0d` (1), `0x0f` (8), `0x11` (13) | per-room, and which room gets which is **[U]**: `0x0d` appears only in `joined-on-game-solo`, while `0x0f` and `0x11` both appear in fifteen-slot rooms, so it is neither the slot count nor the population. It is the room's and not its host's: `129.153.74.111:5720` writes `0x11` for its thirteen-player room and `0x0f` for the six-player one (§7) |
+| `0x4d` (field 5) | `0x02` | `02` in 21 of 22, `14` in one | **a state byte, not a setting**: `02` in every body of a room's game phase and `14` (`20`) in the body written while that room was held at its briefing, so it moves with the room rather than being pinned by it |
+| `0x4e` (field 6) | `0x03` | `3` (19), `2` (2), `6` (1) | per-room: `2` only in the two six-slot rooms of `202.215.217.164`, `6` only in `mgo2-game2` (a TSNE/SCAP rotation), `3` in the other nineteen. **This is the byte an earlier row here called field 5** |
+| `0x4f`–`0x52` (field 7) | `0x00274022` | `0x0007622a`, `0x00126073`, `0x0007603a`, `0x00274022`, `0x00076022`, `0x00074022`, `0x00034033` | per-room 32-bit word; the native readers test bits `0x20` and `0x40`. Bit `0x20` is set in **all twenty-two** bodies; bit `0x40` only in `0x00126073`, and only for the one host whose join showed the client a team-selection screen (§7). An earlier reading claimed both bits were set in every value but `0x00034033`, which is wrong: six of the seven carry `0x20` alone. The rule reading — "set in the rooms that rotate SNE and SCAP" — is refuted by `mgo2-game2`, which rotates rule 15 and writes `0x00034033` |
+| `0x53`–`0x54` (field 8) | `0x0000` | `0x0000`, `0x00b4`, `0x00f0`, `0x012c` | per-room, and constant across that room's own captures; every value is a whole number of minutes held as seconds (`0`, `180`, `240`, `300`), which no other offset here but field 4 is. The `0x002c` an earlier row recorded is the low byte of `0x012c`. What the time limits is **[U]** |
+| `0x57`–`0x64` (fields 13, 17–27) | `00 00 00 05 00 00 00 05 00 00 01 00 00 00` | identical in the builder's own rooms, `00` in the all-default rooms, other values in the rest | partly a room's own: `0x60` is `2` in most rooms and `0` in the all-default ones, `0x63` is `2`, `3`, `6` or `0`, `0x64` is `10` or `0`; **`0x57` carries the same byte as `0xa0` in all fifteen** (below); the two words at `0x5a` and `0x5e` are a per-round pair (§7) |
 | `0x87`–`0x9b` (fields 30–49) | `02`×8 `01 02 02 02 32 1e 05 03 00 00 00 7f 7f` | `0x89`, `0x8d`, `0x90` take `2`, `4` or `6`; `0x91` takes `2` or `20`; `0x93`/`0x94` take `20/30`, `40/99`, `50/30`, `51/30`, `55/30`; `0x9a`/`0x9b` are `7f 7f` except `03 06` and `04 09` | nine per-room bytes, and two slot references (`0x7f` = none) in the two captures that set them |
 | `0x9c` (field 50) | `0xff` | `0xff` in all fifteen | **constant**; the unassigned slot reference, confirmed beyond the one capture it came from |
-| `0x9d`–`0x9f` (fields 51–52) | `0x8c`, `0x0128` | a byte and a `u16`, and no two captures share the pair | per-room; it is not a timer — the values are in the thousands of seconds and no captured rotation owns those minutes — and its source is **[U]** |
+| `0x9d` (field 51) | `0x8c` | changes between bodies of one room (`140`, `232`, `233` for `64.181.216.250:5720`) | the capture's byte and not the room's; it is not a checksum of the body — byte sum, negated sum, `u16` sum, byte XOR and CRC16 over every prefix ending at `0x9d` or later match it in none of the twenty-two bodies |
+| `0x9e`–`0x9f` (field 52) | `0x0128` | constant per room across its own bodies (`277`, `296`, `3813`) | the room's own word, so the pair an earlier row called opaque is two fields; which counter it names is **[U]** |
 | `0xa0` (field 53) | `0` | `0` or `1` | a truth value whose selector is **[U]**; offset `0x57` (field 13) carries the **same byte** in all fifteen captures, so the payload states it twice |
 
 **What the builder now writes.** Every field this server does not derive is the
@@ -270,6 +272,14 @@ exactly the two rooms whose rotation is rule 4/15 (`joined-on-briefing-then-game
 is the reading that field 7 is a plain number — two bits of it are decisions the
 client makes.
 
+**The rule reading of bit `0x40` is refuted, and a better candidate exists.**
+`mgo2-game2` rotates rule 15 and writes `0x00034033`, so the bit does not follow the
+rules. What the two rooms have in common is their host: both are
+`69.213.233.238:5731`, and `briefing/working server/working-server-4-sessions.txt`
+records that this room is the one that *asked which team to join* before the round —
+blue, auto or red. The bit is therefore the room's "choose your side" condition,
+**[I]** on one host and one note, and it is the best-named unresolved bit in the body.
+
 One earlier reading is corrected here: the `rlwinm r0, r9, 0, 0x1d, 0x1d` at
 `0xa3c74` tests `r31+0x2c0`, not the word the accessor fetched, so it is not a third
 bit of field 7.
@@ -369,12 +379,16 @@ the PPC client.
 
 ## 6. Open
 
-* field 3 (`0x4a`) and field 5 (`0x4e`), which are per-room and correlate with
+* field 3 (`0x4a`) and field 6 (`0x4e`), which are per-room and correlate with
   nothing in the corpus;
 * field 7's two flag bits and field 8, which the native readers test but do not
-  name;
-* fields 51–52, which vary per room and match no timer, slot or count measured
-  here;
+  name — field 8 is now measured to be whole minutes of some unidentified time;
+* field 5 (`0x4d`), which is state rather than a setting and whose two measured
+  values (`02`, `14`) name nothing;
+* the capture's tail byte at `0x9d` and the room's tail word at `0x9e`, which are
+  two fields and not one, and match no timer, slot, count or checksum measured
+  here; the two per-team words at `0x5a` and `0x5e`, which are per-round state and
+  are not Drebin points;
 * fields 30–49, of which nine bytes are per-room and two are slot references;
 * elements 8–11 of field 29, which are a per-room-family constant but carry no
   reading as time;
@@ -383,3 +397,176 @@ the PPC client.
   packing order there is not yet traced through the writer;
 * the object-to-wire step itself: the setter fills the object, and no code was
   found that lays that object out as the 161-byte body.
+
+## 7. The wider corpus of 3 November, and what it corrects
+
+Three more captures — the `briefing/` set — add five rooms to the fifteen above:
+`briefing-then-solo-game` (`64.181.216.250:5720`), `working-server-log` and
+`working-server-4-sessions`, which between them hold that host's second room on
+`:5722`, a second room on `69.213.233.238:5731`, and the eleven-slot room on
+`143.47.227.126:5725`. Recounted over the whole set, **twenty-two distinct bodies
+from eleven rooms and nine hosts**:
+
+| room | slots | pop | rot | phase | rules | max map |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| `briefing-then-solo-game` (`64.181.216.250:5720`) | 9 | 2 | 4 | 2 | 1,2,3,5,6,16 | 14 |
+| `working-server-log` (`64.181.216.250:5722`) | 15 | 3 | 1 | 3 | 1–7,16 | 17 |
+| `working-server-log` (`69.213.233.238:5731`, second room) | 15 | 2 | 8 | 3 | 4,15 | 19 |
+| `working-server-log` (`143.47.227.126:5725`) | 11 | 14 | 6 | 4 | 1,5,7,12 | 17 |
+
+**`myserver`'s body is not evidence.** It is the reference's, field for field
+(`7e e5 0e` at the tail, as in `mgo2-started-briefing-then-solo-game`), because
+`BuildCore` pins that capture; counting it as a second measurement of a pinned
+offset confirms the pin and not the wire.
+
+What the recount settles, and where the tables above are corrected:
+
+* **Field 5 (`0x4d`) is state.** `0x02` in twenty-one bodies and `0x14` (`20`) in
+  the body `joined-on-briefing-then-game` wrote while its room was held at the
+  briefing — the same host and rotation as bodies reading `0x02` in another phase.
+* **Field 6 (`0x4e`) is the per-room `3`/`2`/`6` byte**, not field 5. Its `2` is the
+  two six-slot rooms of one host.
+* **Field 3 (`0x4a`) is the room's, not the host's**: two rooms of one host differ.
+  It only ever holds `13`, `15` or `17`.
+* **Field 8 (`0x53`) is whole minutes**: `0`, `180`, `240`, `300`, constant across a
+  room's own bodies. The `0x002c` recorded above is the low byte of `0x012c`.
+* **Field 7's bit `0x40`** is set in the four bodies of `69.213.233.238:5731` and in
+  no other body; bit `0x20` is set in all twenty-two. The bit does not follow the
+  rules — `mgo2-game2` rotates rule 15 without it — and the room it does follow is
+  the one whose joins asked the client which team to join, per
+  `briefing/working server/working-server-4-sessions.txt`: so it reads as the room's
+  team-selection condition, **[I]**.
+* **The tail is two fields**: `0x9e` holds across a room's bodies (`277` for all
+  three of `143.47.227.126:5725`, `296` for the three of `64.181.216.250:5720`,
+  `3813` for the five of `99.66.131.177:5731`) while `0x9d` does not.
+* **The words at `0x5a` and `0x5e` are a per-round pair**: one room's bodies hold
+  them equal (`5/5`, `40/40`, `50/50`, `55/55`, `0/0`), another's hold them apart
+  (`15/33`, `27/18`, `30/32`, `38/44`, `47/35`, `48/47`). **Within one capture the pair
+  does not move** — every room re-reads it identical one to two seconds later
+  (`40/40`, `55/55`, `0/0`, `5/5`, `47/35`, `50/50`) — so it is a room's standing total
+  and not a clock. Two per-team values, equal at some moments and apart at others, is
+  what a *remaining ticket count* looks like, and the client's own TDM panel uses that
+  word for it: "reducing the other team's tickets to zero"
+  (`docs/analysis/rule-instruction-texts.md`). That reading is **[I]**, not **[V]**: it
+  fits the shape and the vocabulary and nothing here observes a ticket spent. They are
+  not Drebin points — the capture's Drebin values sit in a 54-byte `0x1001` record of
+  their own (`docs/analysis/drebin-point-records.md`) and no 161-byte body carries
+  `1000` or `5000`.
+
+The files still cannot name these fields. Every one of them is a room-creation
+setting, and the gameplay wire only ever shows the value its host already decided:
+their source is the lobby's room-settings reply, which none of these captures hold.
+The client log in the `briefing/` set does not hold them either — its only room fact
+is stage order, and it confirms nothing beyond `0x55` selecting `triple[slot][0]`.
+
+## 8. What the client's own Create Game screen calls them
+
+The PC client downloaded on 3 November carries the Create Game menus in
+`game/stage/lobby/scenerio.gcx`, so the list of settings these fields can be is now
+read rather than guessed. The common settings block, with its offsets in that file:
+
+| setting | offset |
+| --- | --- |
+| `Round Time`, `TIME(min.)` | `0x0cce91`, `0x0ccdcf` |
+| `Number of Rounds` | `0x0ccf8f` |
+| `Extra Time` | `0x0ccfe8` |
+| `Starting Number of Tickets` | `0x0cceed` |
+| `Number of Snake Eliminations to Win` | `0x0cd02c` |
+| `Checkpoints` | `0x0cd0f8` |
+| `Max Number of Characters` | `0x0cfd9c` |
+| `Briefing Time` | `0x0cfe3b` |
+| `Headshots`, `Lock On (AUTO AIM)`, `Enemy Nametag Display` | `0x0cfeb5`, `0x0cfefb`, `0x0cff6c` |
+| `Silent Mode`, `Auto Assign Teams`, `Teams Switch Positions` | `0x0cffff`, `0x0d0066`, `0x0d00fc` |
+| `Ghost Pranks`, `Allow Quick-Join` | `0x0d0193`, `0x0d0200` |
+| `Level-Limit` | `0x0d0289`, `0x0d02a5` |
+| `Team Kill Kick`, `Idle Kick`, `Auto Balance Teams` | `0x0d02dd`, `0x0d0366`, `0x0d03ef` |
+| `Weapon Restriction`, `Clan Members Only`, `Allow Solo Players` | `0x0d04b1`, `0x0d0564`, `0x0d0632` |
+| `Log Personal Stats`, `Dedicated Host Settings` | `0x0d06d3`, `0x0cfb21` |
+
+That list is the whole candidate set: the body's unresolved bytes are these settings,
+not conditions the game invents. It also explains a shape that did not have one —
+**field 7 is four bytes because the common settings are a dozen and a half switches**,
+and the client's reader at `0x8eb008` returns one bit of it as a boolean.
+
+### What the values now single out
+
+| body field | measured values | the candidates, and how far each is supported |
+| --- | --- | --- |
+| `0x4a` field 3 | `13`, `15`, `17`, per room | `Level-Limit` or `Max Number of Characters`: `level >= population` holds for all sixteen room configurations, and 13–17 is squarely inside the 0–22 level range while 17 sits *above* the sixteen-player maximum. Neither is excluded by the corpus, so it stays **one of the two** until the lobby's room reply is read |
+| `0x4d` field 5 | `02`, and `14` in one body | a **state** byte: it moves between bodies of one host while the settings around it do not. `14` = 20 is the shape of a countdown or a count remaining **[U]** |
+| `0x4e` field 6 | `2`, `3`, `6`, per room | `Number of Rounds`: the two rooms that state `2` are the one-rule six-slot rooms, and `6` appears only in the TSNE/SCAP room. **[I]** |
+| `0x53` field 8 | `0`, `180`, `240`, `300` | `Briefing Time` or `Round Time`, both of which the screen sets in minutes — every value is a whole number of minutes and a room holds its own. **[I]**; the two cannot be told apart from the gameplay wire |
+| `0x4f` field 7 | 4 bytes, bits `0x02` in all 34 bodies | the **common-settings switch word**. Bit `0x02` is Drebin Points (`docs/GATES.md` §2) and is set in every captured room, which is why every room played DP rounds; bit `0x40` is set only in the room whose joins asked which team to join, which is `Auto Assign Teams` showing up as a role-selection screen **[I]** |
+| `0x5a`, `0x5e` | `5/5`, `40/40`, `47/35`, `15/33`, … | each team's **remaining tickets**. `0x93` is the room's *starting* count and this pair never exceeds it, so direction is now measured rather than assumed: the pair equals `0x93` in the rooms whose round has not been spent (`40/40` with `0x28`, `50/50` with `0x32`, `55/55` with `0x37`) and sits below it once players have respawned (`30/32` and `5/5` against `50`; `5/5` against `20`). The TDM panel states the mechanic — "Each team starts with a set number of tickets… steal tickets" — and the tooltip at `0x0cee5e` says a ticket is spent on each respawn |
+| `0x93` | `20`, `40`, `50`, `51`, `55` | the round's **ticket allotment** — `Starting Number of Tickets` (`0x0cceed`) — in the rooms that play a ticketed rule: never below the pair at `0x5a`/`0x5e` in any of the 34 bodies, and equal to it in the thirteen whose round is untouched. The SNE/SCAP room carries `51` where no tickets are played, so the reading is a ticket count *where tickets apply* **[I]** and open there **[U]** |
+| `0x9a`, `0x9b` | `7f 7f` in most, `03/02`, `03/06`, `04/09` in one room | the **Sneaking role slots** — the players holding Snake and Metal Gear Mk.II. All fourteen bodies whose rotation holds neither SNE nor TSNE read `0x7f 0x7f`; a real pair appears only in the SNE/SCAP room, while sixteen of the twenty bodies that *do* hold SNE or TSNE still read `0x7f 0x7f`. So the pair is the assignment for the round being played, not a room setting, and it moves between bodies of that one room (`03/02` → `03/06` → `04/09`) |
+| `0x87`–`0x9b` | `… 32 1e 05 03`, `… 06 00 01 06 14 02` | the remaining per-rule counts — `Number of Snake Eliminations to Win` (`0x0cd02c`), `Checkpoints` (`0x0cd0f8`) — whose per-room values are still not tied to a rule **[U]**. `0x93` and `0x9a`/`0x9b` in this run are the two exceptions, above |
+| `0x91` | `2` everywhere, `20` in the one SNE room | a candidate for Snake's **dog-tag count** — the panel's "Snake wins if he collects a set number of dog tags" — on one room's evidence **[U]** |
+
+### What the stage script adds beyond the labels
+
+Three things, and one of them reopens a question rather than closing it.
+
+**The unit words confirm the ticket pair.** The screen prints a value's unit as its own
+string, immediately before the labels that use it: `ROUND` and `ROUNDS` at `0x0cce0e`
+and `0x0cce14`, `TICKET` and `TICKETS` at `0x0cce28` and `0x0cce2f`, then `tickets`,
+`Tickets` and `ticket` at `0x0cd162`–`0x0cd172`, sitting beside `Round Time`
+(`0x0cce91`), `Number of Rounds` (`0x0ccf8f`) and `Starting Number of Tickets`
+(`0x0cceed`). So a team's number on this screen is denominated in tickets and not in
+points or score, which is why the `0x5a`/`0x5e` pair is read as tickets and the two
+`0x1001` Drebin words are not.
+
+**The level limit is a pair, not a number.** The only numeric format string the settings
+screens use is `%d ± %d` (`0x0d09fd`), and it follows the `Allow`/`Disallow` labels that
+begin the level block, so the client presents `Level-Limit` as a base with a spread.
+That reopens field 3: `13`, `15` and `17` are plausible *bases* for such a range, and
+the byte at `0x64` — `10` in five rooms and `0` in the rest — is the shape of a spread
+half. It is not a resolution: `0x64` is ten bytes away from `0x4a`, and `Idle Kick`
+and `Team Kill Kick` are also small counts. It does add a second, independent test:
+if the lobby's reply carries a level range, it should carry two numbers, and field 3
+should match the larger of the two.
+
+**The room list has no status words at all.** The list screen's column headers are in
+the file — `STATUS` at `0x0b0cdf`, `HOST SCORE` at `0x0b04fb`, `HOST NAME` at
+`0x0b04b9`, `LEVEL` at `0x0b0ae2`, `AVG.LEVEL` at `0x0b026e`, `PLAY TIME` at
+`0x0b094e`, `GAME TYPE` at `0x0b042d`, `RULE` at `0x0b0c57`, `MAP` at `0x0b06b2` — but
+no value it can print in that status cell. The whole file's short upper-case strings are
+`LOCKED ON`, `OPEN`, `NOW LOADING`, `NEXT`, `STATUS`, `ENDZIEL`, `LOCKED`, `WAITING ROOM`,
+`NEXT PAGE` and `FULL SCREEN`; none of them is a room state. So the status cell is drawn
+from something other than these strings — a number, or an image — and the state bytes
+(`0x4d`, and the phase at `0x09` that the client compares with `0`, `3` and `7`) cannot
+be named from this file at all. A lobby packet capture remains the only route to them.
+
+### What the rule panels add
+
+Grouping the corpus by which rules a room's rotation holds separates two fields out of
+the `0x87`–`0x9b` run that nothing else did, and gives a third a direction.
+
+**The Sneaking role slots.** All fourteen bodies whose rotation holds neither SNE nor
+TSNE read `0x7f 0x7f` at `0x9a`, and the four bodies that carry a real slot pair all
+belong to one room — `69.213.233.238:5731`, which plays SNE and SCAP — where the pair
+moves between bodies (`03/02` → `03/06` → `04/09`). The other sixteen bodies that do
+hold SNE or TSNE read `0x7f 0x7f` as well, so the reading is not "this room has Snake" but
+"which slots hold the roles for the round being played": an unassigned pair is a round
+that is not a Sneaking round. The panels name the roles: "One player controls Snake…
+If many players join, one player becomes Metal Gear Mk.II and can support Snake."
+
+**The ticket pair's direction.** `0x93` holds `20`, `40`, `50`, `51` or `55`, and the
+pair at `0x5a`/`0x5e` is at or below it in all 34 bodies: equal where the round is
+untouched (`40/40`, `50/50`, `55/55` against `0x28`, `0x32`, `0x37`) and below where it
+has been spent (`30/32` against `50`, `5/5` against `50`, `5/5` against `20`, `15/33`
+and `48/47` against `50`). So in a ticketed room `0x93` is the starting count and the
+pair is what is left of it — the two labels the screen gives are `Starting Number of
+Tickets` (`0x0cceed`) and `TICKETS` (`0x0cce2f`), and the tooltip at `0x0cee5e` states
+the rule: "One ticket is used each time a player respawns on the field." The SNE/SCAP
+room holds `51` with no ticketed rule in its rotation, which is why the reading is
+scoped to rooms that play one.
+
+**Snake's dog-tag count.** `0x91` is `2` in every body but the SNE room, which carries
+`0x14` = `20`. The SNE panel's win condition is "Snake wins if he collects a set number
+of dog tags", so 20 is a candidate for that number — one room, one value, **[U]**.
+
+**What would close it.** The room-details reply (`0x4313`) for one room carries the
+same settings as values, so one capture of a join alongside its gameplay wire turns
+every **[I]** in that table into a **[V]** — and the two candidates for field 3 into
+one.

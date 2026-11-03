@@ -202,3 +202,127 @@ good.
   (§3). What is still open is what its two trailing words state: all eleven
   measured copies carry `06 00` and `c4 09`, and nothing in this session moves
   them.
+
+## 7. What the client's binaries and its stage script add
+
+The loader, the game DLL and the lobby stage script were all read for joining or
+briefing log text. None of them has any; what they have is structure, and it is worth
+having because it says which exchange the screen is waiting on.
+
+**The loader logs transport, not games.** `mgo2.exe` carries `connection refused`,
+`not connected`, `already connected`, `Check your internet connection and retry.`
+(`0x00452B24`, `0x00452B14`, `0x00452B00`, `0x00451BBE`) and `WinHttpConnect`
+(`0x00455E68`) — it is the HTTP front end. The only net log the PS3 client states is
+`mgo_connect_server_by_index() index=%d, type=%d` (`0x00FF9008`) and
+`mgonet_connect_timeo` (`0x00FF8FC8`), both about reaching the server.
+
+**`system.dll` says what the briefing is fed.** Its key names, not its logs:
+
+| key | offset |
+| --- | --- |
+| `root/matching/briefing/player_data/team_data%d/player_data%d/user_name` | `0x10FC4798` |
+| `…/user_type`, `…/user_class`, `…/user_act` | `0x10FC4708`, `0x10FC4750`, `0x10FC47E0` |
+| `…/shop`, `…/areacode`, `…/medal_data%d`, `…/shikan_pp` | `0x10FC4678`, `0x10FC46C0`, `0x10FC45E0`, `0x10FC4630` |
+| `…/team_pp`, `…/team_pp_rate` | `0x10FC4864`, `0x10FC4828` |
+| `root/matching/briefing/player_data/shikan_pp_max`, `…/ivent_btl`, `…/shikan_btl` | `0x10FC489C`, `0x10FC48D0`, `0x10FC4900` |
+
+So the briefing is populated from a **matching-phase roster keyed per team and per
+player** — two teams, each player's name, class, shop, area and medals, plus per-team
+PP — and the flow units that own it are named as well:
+`..\game_flow\MGA_BattleBefor\MGA_BattleBefor_Briefing.cpp` (`0x10FC505C`),
+`.\online\hud_mgo2\h_mgo2_briefing.cc` (`0x10FEFFB0`), with the state keys `briefing`
+and `briefing-matching` at `0x10FC5638` and `0x10FC5618`. Joining has its own units and
+asserts: `.\online\lobby\ac_lb_host_join.cc` (`0x1108E128`),
+`mgo_lobby_get_joined_editteamdetail()` (`0x11083250`) and
+`SVSlotMan::ssJoin( %d ) no member` (`0x10FD9BC0`) — a slot read before the member is
+written. The gameplay body never carries any of this, which is the point: the
+161-byte room record is not what a briefing reads.
+
+**The stage script has no log lines, and that is now a measurement rather than an
+assumption.** `game/stage/lobby/scenerio.gcx` decompiles with the bundled tool —
+`node .gametools/gcl-vscode/bin/gcx.js decompile <file.gcx> <outdir>` — in half a
+second, giving 26 procs, 2 821 lines of GCL and 33 000 resources (`script.gcl`,
+`resources.gcl`). Its whole command vocabulary is `ComGetCurrentRule` (four calls),
+`ComGetCurrentStage`, `NewBGColorSet`, `NewSystemLightSet`, `NewFogSet`,
+`COM_SetCamera`, `COM_SoundTuneRegist`, `COM_SoundSpeechRegist` and
+`NewGclVariableMove`. Of the three debug commands the dictionary knows —
+`NewGclAssert` (`0x6B237D`), `CR_AddDebugNet` (`0xFEBFBD`) and
+`NewDebugPutStageSet` (`0xCCF220`) — it calls **none**, so the lobby's script cannot
+log anything, and the strings it does hold are the resource table the HUD draws from.
+
+**What this settles.** The briefing screen is a matching-phase roster render whose text
+is already in hand (`docs/analysis/rule-instruction-texts.md`) and whose inputs are team
+and player records. Nothing in the client writes a log line that would say why a screen
+did not appear, so the diagnostic in §5 stands unchanged: compare the two servers'
+room-details replies and join answers, because the roster the briefing reads arrives
+with the join, not with the gameplay body.
+
+## 8. The second pair, 3 November 23:47: the ready record is confirmed, the client still writes nothing
+
+Two files arrived after §1–§7 were written: `.pcapngs/briefing/myserver/myserver.pcapng`
+(6 956 088 B) and its `mgo2-patcher.log` beside it. Both were read against
+`working server/briefing-then-solo-game.pcapng` with `tools/udp_session_records.py`
+and `tools/udp_briefing_flow.py`, which agree family for family.
+
+| marker | this host | the working host |
+| --- | --- | --- |
+| session | `192.168.1.20:5730` ↔ `89.129.16.203:5731` | `10.2.0.2:5730` ↔ `64.181.216.250:5720` |
+| span, records | 38.4 s, 243 (41 in, 120 out) | 199.5 s, 5 547 (1 076 in, 528 out) |
+| client report `e1 <slot>` | **1** | **157** |
+| client briefing rows `1d` | **0** | **9** |
+| client ready `1f <slot> <state>` | **0** | 1 |
+| host publication `e0 <slot>` | 4 | 2 |
+| `0x1b06`-family ready record, 9 B | **4** | 0 |
+| its acknowledgement `0x5306` | 4, from the client | 0 |
+| round opens | 0 | 1, at t+146.007 |
+| last client datagram | t+32.904 | t+199.472 |
+
+**The ready record is confirmed on the wire for the first time.** Every copy is the
+nine bytes `00 01 02 60 09 06 00 c4 09` — byte-identical to the eleven §2 counts in
+the log capture — under `0x1306`, which is `0x1b06` with the generation bit clear,
+as §3 derived. It is written at t+9.959, 12.080, 14.545 and 17.005 (2.12, 2.47 and
+2.46 s apart), immediately ahead of that peer's `e0 01 00 00 00` publication at the
+same ordinal, and the client answers each with an empty `0x5306`. So the record goes
+out where and how the reference writes it, and its two unread words `06 00` and
+`c4 09` are accepted by the client rather than refused — which is as far as §6's
+second bullet can be closed without a capture where the words move. `60 09` is
+2 400, this room's one-minute briefing in 125 ms units.
+
+**Every remaining difference is on the client's side.** In 38 s the client reports
+once and never again, never readies, and writes no briefing row: the opposite of
+§1's shape, where a client on the screen writes its five `1d` rows 0.3–0.9 s after
+the report and repeats `e1 <slot>` about once a second. The four publications are
+this host's own repeat, and the join's ending is not a fault in itself — a
+one-minute briefing that nobody readies opens at its deadline, and this capture
+stops before it.
+
+**The stage script names the branch it took.** The patcher log holds six stages,
+the last `n007a`; the script runs and sets the score table (13 writes, the 14th past
+the table, one check at line 94), and the labels it registers are
+`battle_loading`, `battle-start` (518 calls), `btst-EVENT01`/`02`, `COCtimescore`
+(211), `COMcsl` and `dmg_count`. The working log registers those seven **plus**
+`wp_select`, `LmenuWeapon`, `LmenuItem`, `bat_eff`, `battle_end_main`, `hit_eff`,
+`result_game` and `option-game` — the round it played — so the label sets do not
+separate the two clients; what they do say is that this map went into its battle
+labels on our join, with `the flow's screen request` still at 0 and the briefing
+loader at 0 (never), as §7 measured it must.
+
+**What the pair settles and what it leaves.** It confirms the `0x1b06` write end to
+end and adds a second live session in which nothing the host sends is refused. It
+changes nothing about the screen: the client is not on it, its own rows are absent,
+and the map's script reached battle. The open item stands exactly where §7 left it —
+the briefing proc of `stage/<map>/scenerio.gcx` — with `n007a` now the stage whose
+script is known to have run without it.
+
+**Where that script can be read.** It is not in this tree: the extracted client
+carries five stage scripts only (`init_n`, `lobby`, `mga_boot`, `nt_mgsetup`,
+`r_sna01_n`), the 129 MB `pc-client.zip` holds the same five, and no file matching
+`n007a` exists anywhere under the project. The session to be read from ran on an
+install at `C:\Users\migue\Desktop\pc-client` (its patcher's own `config:` line),
+so `game/stage/n007a/scenerio.gcx` is one copy away; the download manifest pins it
+at 1 480 825 bytes, HMAC `938a71f3 6f872af2 b8c6d604 bd2bd8f7`. Dropped into
+`game/stage/n007a/`, it decompiles with `node .gametools/gcl-vscode/bin/gcx.js
+decompile <file> <outdir>` (`--key stage/n007a` if the copy is still in its encrypted
+container), exactly as the lobby script was. Any playable map stage answers the same
+question: `PROTOCOL.md` records `proc23`'s score table as byte-identical across
+`n002a`, `n003a` and `n004a`, and the briefing procs are shared the same way.
