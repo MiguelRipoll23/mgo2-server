@@ -97,11 +97,22 @@ public sealed partial class PlayerSettingsBurstService(
     /// <summary>Body length of the room's rotation record, as measured.</summary>
     public const int RoomRotationPayloadLength = RoomRotationPayloadUtils.PayloadLength;
 
-    /// <summary>Control byte the burst opens with.</summary>
-    public const byte OpeningControlByte = 0x24;
+    /// <summary>
+    /// Control byte the burst opens with: <c>0x06</c>, the value the capture whose
+    /// briefing appears writes on the control record ahead of its settings burst
+    /// (`briefing-then-solo-game` t+4.71), and the value the joining pass answers
+    /// with. It was <c>0x28</c>'s neighbour <c>0x24</c> — the byte two other
+    /// captures use for a joining pass — and the capture that came back with no
+    /// briefing at all (`myserver.pcapng`, 2026-11-03) carried <c>24</c>, <c>02</c>
+    /// and <c>03</c> where this one carries <c>06</c> and <c>08</c>.
+    /// </summary>
+    public const byte OpeningControlByte = 0x06;
 
-    /// <summary>Control byte of the record that follows the burst.</summary>
-    public const byte ClosingControlByte = 0x02;
+    /// <summary>
+    /// Control byte of the record that follows the burst: the second value
+    /// `briefing-then-solo-game` writes in its briefing phase, <c>0x08</c>.
+    /// </summary>
+    public const byte ClosingControlByte = 0x08;
 
     /// <summary>
     /// Offset of the rotation's first triple in the room's settings body

@@ -169,7 +169,7 @@ public sealed partial class BriefingRoomPublishService(
                 // The rules pair goes out on the first pass as well and not only
                 // on a tick: the captures write it in the roster run itself, so a
                 // peer answered its roster is told the room's stream at once.
-                foreach (var record in MatchRecordFramesUtils.RulesPair(roundState.Generation))
+                foreach (var record in MatchRecordFramesUtils.RulesPair(BriefingGeneration))
                 {
                     await context.Send(record.Type, record.Body, record.FourthByte);
                 }
@@ -213,6 +213,25 @@ public sealed partial class BriefingRoomPublishService(
             context.LocalPort,
             session.RemoteAddress);
     }
+
+    /// <summary>
+    /// The identifier set the briefing's own stream is written under: the set the
+    /// peer's last report arrived on, which is the one its client is reading.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not the round's set.</b> While no round is open the room's own set is the
+    /// first one (<see cref="MatchRoundStateService.Generation"/>), so a briefing
+    /// streamed under it wrote its rules pair as <c>0x0a61</c> to a client that had
+    /// reported on <c>0x12de</c> — the sibling set — and the pair arrived under an
+    /// identifier that client was not reading. `briefing-then-solo-game`, the
+    /// capture whose briefing appears, writes the pair as <c>0x0261</c> from t+4.7,
+    /// which is the sibling's own <c>0x0a61</c>, so the set to write a briefing
+    /// under is the report's and not the round's.
+    /// </remarks>
+    private MatchRecordGenerationUtils BriefingGeneration =>
+        matchStart.LastJoinReportIdentifier is { } reported
+            ? MatchRecordGenerationUtils.OfJoinReport(reported)
+            : roundState.Generation;
 
     /// <summary>
     /// Writes the room's lobby-slot array pair — the record a joining client
@@ -317,7 +336,7 @@ public sealed partial class BriefingRoomPublishService(
             return sentCount;
         }
 
-        var generation = roundState.Generation;
+        var generation = BriefingGeneration;
         logger.LogDebug(
             "UDP {LocalPort}: telling {RemoteAddress} the room holds {PlayerCount} player(s) on 0x{Identifier:x4}",
             context.LocalPort,
