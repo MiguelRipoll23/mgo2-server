@@ -313,16 +313,29 @@ other fifteen take a computed temporary (`0x01` at `r1+0xd9`, `0x11` at `r1+0xe9
 `0x68` at `r1+0x84`) or a register (`0x00`, `0x46`, `0x48`, `0xa0`, `0xa4`).
 
 **What this settles, and what it does not.** It settles the key's meaning and the
-order the client fills the object in. It does not give the wire offsets: this
-cluster copies object to object, and the two scans that would have caught a
-direct serializer both came back empty — no stores at wire offsets `0x55`, `0x56`,
-`0x65` or `0x9c` anywhere in the first 5 MB of text (while the same matcher does
-catch a known `stb r0, 0x70(r1)`), and no aligned 32-bit pointer to `0x1229b80` or
-to a record inside it (the only hit is unaligned bytes at file `0x12198ac`). So the
-161-byte body is not this object's memory image, and the object-to-wire step is
-still the missing piece; the remaining anchors are the presence map this file
-measures as `ff 27 fe ee ff ff 3f` at body `0x02`, and the `0x1001` record type on
-the send path.
+order the client fills the object in. It does not give the wire offsets, and the
+search for the encoder needs one correction first: an earlier pass here reported
+that no code stores at wire offsets `0x55`, `0x56`, `0x65` or `0x9c`, but that scan
+was invalid — Capstone's generator stops at the first undecodable byte, so it had
+only walked a fragment of the text segment. Re-run with `skipdata` over the whole
+segment (**4 585 680 instructions**), the answer changes:
+
+* **Two functions do store at those offsets** — `FUN_00d6c4a0` and its twin
+  `FUN_00d6cda8`, at `0x55`, `0x56` and the `0x9c`–`0x9f` tail. But the pattern is
+  not per-field: the stores come in runs of consecutive registers into consecutive
+  bytes (`stb r0, 0x10`, `stb r8, 0x11`, `stb r7, 0x12`, …, at the `0x10`, `0x50`
+  and `0x90` columns). That is an unrolled sixteen-byte block copy of a
+  body-sized buffer — a transport of the body, not a serializer that computes it.
+* **Nothing loads the length and the map together.** No function holds both `0xa1`
+  and the presence-map bytes `0x27`/`0xfe`/`0xee`/`0x3f`; the one candidate that
+  looked like it, `FUN_00b14ae0`, is a six-instruction dispatcher on a small enum.
+* **No literal pointer to the descriptor table.** The raw search still stands: no
+  aligned 32-bit reference to `0x1229b80` or to a record inside it exists in the
+  image (the only hit is unaligned bytes at file `0x12198ac`).
+
+So the object-to-wire step is still the missing piece, and the next anchor is now
+the pair `FUN_00d6c4a0`/`FUN_00d6cda8`: whoever hands them the buffer is one level
+closer to the writer.
 
 ## 6. Open
 
