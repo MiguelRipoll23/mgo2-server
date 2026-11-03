@@ -44,10 +44,12 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// reported it counts, and the instant the room is fully ready the host writes
 /// <c>0b 00 00 &lt;full set&gt; …</c> — the set complete and the count at zero.
 /// That zero is the round's opening and not the count running out:
-/// <c>joined-when-red-team</c> opened with twenty-three still on the ticking
-/// records beside it. **[V]** the opcode, the length, the opening sixty/fifty-five,
-/// the freeze, the growing set and the closing zero; **[U]** the zero between the
-/// count and the set.
+/// <c>joined-when-red-team</c> opened with twenty-three still on the ticking    /// records beside it. **[V]** the opcode, the length, the opening sixty/fifty-five,
+    /// the freeze, the growing set and the closing zero. The zero between the count
+    /// and the set is measured zero on every record of both solo captures — even the
+    /// closing one, whose set is nonzero — so it is reserved and not a third set byte
+    /// or a ready count (`docs/analysis/unknown-byte-readings.md` §2); what a host
+    /// could put there stays **[U]**.
 /// </para>
 /// </remarks>
 public static class BriefingCountdownBodiesUtils

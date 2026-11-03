@@ -104,7 +104,10 @@ field has sixteen slots and is read as such by the native client; a body needs
 third byte is `0x00` in `game1` and `0x00` for all
 but one entry in `game2`, and is **[U]**. The live server writes it from the
 room's own flags byte — the only non-zero value this position was ever seen to
-hold — and what the peer does with it is still **[U]**.
+hold — and what the peer does with it is still **[U]**. The engine does read it on
+its own: `system.dll:0x8eb0c0` and `0x8eb148` return `triple[slot][1]` and
+`triple[slot][2]` of the slot the room selected, so the third byte is a per-entry
+value and not room state (`docs/analysis/rotation-payload-corpus.md` §4).
 
 * `mgo2-game1.pcapng` (`0b 00`, 161 B, t+6.687) — map/mode
   `5/1, 7/5, 10/3, 6/7, 14/1, 15/4, 3/1, 17/2, 2/16, 9/1, 12/5, 4/4, 1/1, 8/6, 13/5`.
@@ -133,7 +136,7 @@ are not established retain their values from
 | 3–8 | `0x4a`–`0x54` | `u8`, `u16`, `u8`, `u8`, `u32`, `u16` | `11 b4 00 02 03 22 40 27 00 00 00` | Meanings unresolved; native readers test bits `0x20` and `0x40` of field 7. |
 | 9 | `0x55` | `u8` | `04` | Current rotation-slot index; native readers use it to select a triple. **[V]** |
 | 10 | `0x56` | `u8` | `02` | Room population, host included, inferred from matched joins. **[I]** |
-| 13, 17–23, 25–27 | `0x57`–`0x64` | `u8` / `u16` | `00 00 00 05 00 00 00 05 00 00 01 00 00 00` | Meanings unresolved. |
+| 13, 17–23, 25–27 | `0x57`–`0x64` | `u8` / `u16` | `00 00 00 05 00 00 00 05 00 00 01 00 00 00` | Meanings unresolved. Field 13 at `0x57` carries the same byte as field 53 at `0xa0` in all fifteen captured bodies. |
 | 29 | `0x65`–`0x86` | 17 little-endian `u16`s | See below. | Eight standard timers verified; higher rule-index entries partly identified. |
 | 30–53 | `0x87`–`0xa0` | `u8` / `u16` | `02 02 02 02 02 02 02 02 01 02 02 02 32 1e 05 03 00 00 00 7f 7f ff 8c 28 01 00` | Fields 50 and 53 have limited native-use evidence; fields 51–52 remain opaque. |
 
@@ -171,6 +174,13 @@ rotation/value pairs for 16. Index 14 is only a name-table inference. No direct
 ELF reader of field 29's state offset `+0x68` has been found, so the complete
 vector's use by the client remains unproven. The builder continues to preserve
 the reference values for these entries rather than inventing a source mapping.
+
+The corpus of fifteen bodies backs both halves of that: index 14 is `0` in exactly
+the ten rooms that state an INTERVAL or SCAP time other than 300 and 300 in the
+other five, so the five entries belong to the room and not to the format, while
+elements 8–11 are a per-room-family constant (`53251 44192 9216 34`, `10240` in
+place of `9216`) with no reading as time. `docs/analysis/rotation-payload-corpus.md`
+§1 lists all seven distinct vectors.
 
 Other native consumers narrow, but do not fully resolve, a few fields:
 
