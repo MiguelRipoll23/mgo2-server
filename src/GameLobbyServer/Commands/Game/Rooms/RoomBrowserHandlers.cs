@@ -284,7 +284,13 @@ public sealed class GetGameDetailsHandler(
         writer.WriteFixedString(game.Comment, 128);
         writer.WriteUInt8(game.Password.Length > 0 ? 1 : 0);
         writer.WriteUInt8(isDedicated ? 1 : 0);
-        writer.WriteUInt8(session.LobbyIdentifier is { } lobbyIdentifier ? Math.Min(lobbyIdentifier, 0xff) : 0);
+        // The room's own game type, not the lobby row it was created in. A lobby
+        // identifier is a database key — the free-battle lobby is `10` here — while
+        // this byte is the mode the client matches on, and the reference server's
+        // room states the free-battle subtype `1`. Writing the key told the client
+        // the room ran a mode no lobby publishes, so a join never entered the
+        // briefing it was told the room had.
+        writer.WriteUInt8((byte)Math.Clamp(game.LobbySubtype, 0, 0xff));
         writer.WriteUInt32((uint)averageExperience);
         writer.WriteUInt32((uint)rating.RatingSum);
         writer.WriteUInt32((uint)rating.Votes);

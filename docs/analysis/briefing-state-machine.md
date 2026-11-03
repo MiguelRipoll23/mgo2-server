@@ -394,3 +394,265 @@ pairs, the join report and its publication, the `0x0002` blobs and the `d001`
 controls. The `0x08xx` tick family does not start until the round plays
 (t+290.649 in `mgo2-game-started-on-briefing`), so it is not a briefing input.
 Nothing in the briefing window is missing on the wire any more.
+
+## 12. The unit has no reachable creator in this build, and the gate is the tutorial's
+
+**Measured 4 November 2026** by disassembling `system.dll` itself
+(`pefile` + `capstone`, preferred base `0x10000000`, `.text` at `0x10001000`,
+5 853 054 bytes of code). This section corrects the expectation in §4, §5 and §10
+that a rebuilt probe could answer the case; it does not change §8's conclusion,
+it strengthens it.
+
+**The factory is never called and never pointed at.** `0x101614e0` — the battle-before
+unit's factory, the one that also contains the only call to its start `0x10160b00`
+at `0x10161551` — has **zero** `E8 rel32` call sites in the whole of `.text`. Its
+address occurs exactly once in the file, as the first half of entry 229 of the
+table at `0x110dda4c`–`0x110de484` (327 records of eight bytes: a code pointer and a
+name hash):
+
+```
+225  0x110de154 -> 0x10161980   hash 0x00c43019
+228  0x110de16c -> 0x101615c0   hash 0x00c4bf5a
+229  0x110de174 -> 0x101614e0   hash 0x00c53fa0     <- the unit's factory
+232  0x110de18c -> 0x10160880   hash 0x00c77991
+```
+
+No instruction addresses the table or that entry as an operand: the base and the
+count are a pair of runtime globals, `0x316c39a4` and `0x316c39a8`, and the only
+readers are the name helpers — `0x10097670`, a binary search by code pointer
+(`ecx` count, `ebx` table, `edi` key), and `0x100976b0`, which calls it with those
+globals and returns `[record+4]`, the **name hash**, or asserts at `0x105c08c8`
+line `0xc0`. So the only thing anything in the image does with the factory's
+address is look up its debug name. Its neighbours in the same table (228, 232) are
+uncalled the same way, which makes this a retained table of the whole module and
+not a hole around one function.
+
+**The unit's step is virtual, and the object it steps is the factory's.**
+`0x10161380` (the state switch of §3) has zero direct callers too; its address
+occurs only inside `.text`, in a table of code addresses — a class table, so the
+object is dispatched through it, and the object exists only if the factory ran.
+The briefing screen's own factory `0x10119720` has **one** caller, `0x10161496`,
+which is case 12 of that same unreachable step.
+
+**So the two probe counters cannot move on this build.** `started 0` and
+`stepped 0` in §9 are not a host's failure and not a stall: with no static
+reference to the factory and a name table that only reads it, no path in this
+image instantiates the unit, whatever a server sends. The instrument was measuring
+a function this build never runs, which is why two rebuilt probes changed nothing.
+
+**The gate's one hardcoded `9` is the tutorial's, not a room's.** The branch at
+`0x101cec16` writes `select_game_mode = 9` only when `0x10344130` returns non-zero
+and not `2`, and that query is:
+
+```
+0x10344130  mov eax, [0x3187726c]      ; the tutorial object, or null
+            test eax, eax / je -> 0
+            cmp dword [eax+0x60], 1 / jne -> 0
+            mov eax, [eax+0x68]       ; 1 or 2, from tuterYN
+```
+
+and its object names itself: `root/tuter/toFlash/timeout` (`0x10ffcba0`),
+`root/tuter/toGame/tuterYN` (`0x10ffcb84`), the label `tutorial_entry2011`
+(`0x10ffcb60`), whose destructor stores zero back into `0x3187726c`
+(`0x10344229`). The three other setters of the mode do not invent a value either:
+`0x1010a157` reads it and writes it back around a screen, `0x10204820` restores the
+value saved before `MGA_BattleBefor_Customize`, and `0x10338e6c` copies
+`[room_object+0x7c]`. **Nothing on the room channel writes `select_game_mode`**, so
+§5's gate is open for an ordinary join and was never the blocker.
+
+**What that leaves, and it is a different screen than §2 assumed.** The briefing
+the reference captures show is drawn over a loaded map, its text comes from the
+map's own `scenerio.gcx` (§7), and this build cannot build the `MGA_BattleBefor`
+screen at all — so the screen on display is the **stage's** briefing, drawn by the
+stage script the patcher already watched running (`n003a`, `n004a`, score table
+writes, no briefing). The conditions, in the order they must hold:
+
+| # | condition | state |
+| --- | --- | --- |
+| 1 | the client joins from the lobby's room channel, not from a map | met — the join answer is what opens the socket |
+| 2 | the room's map stage loads and its script runs | **met** — the patcher names the stage and the script's writes |
+| 3 | `select_game_mode != 9` | met — only the tutorial writes `9` |
+| 4 | the stage script enters its briefing proc | **not met**, and no gameplay record is an input to it |
+| 5 | the client's per-team, per-player room data is filled for that proc | [U] — the only filler measured is inside the unreachable screen builder (`0x10118880`) |
+
+The next thing to read is therefore the stage script of the map the room plays —
+`stage/<map>/scenerio.gcx`, which is where `BRIEFING`, `GAME START`, `READY` and
+the rule blurbs live — and the gate inside its briefing proc. `n003a`'s file is
+**not** among the five stages extracted in this tree (`init_n`, `lobby`,
+`mga_boot`, `nt_mgsetup`, `r_sna01_n`); the download manifest names it at
+`stage/n003a/scenerio.gcx`, 1 489 521 bytes, entry `0x03d4d`, so it can be
+obtained and decompiled with the same `gcx.js` recipe used for the lobby script.
+Until then the honest answer to "what stops the screen" is: **not the gameplay
+host** — measured three times now — and in this build not the battle-before unit
+either, because it does not exist here.
+
+## 13. No script draws the briefing; the stage supplies its strings and its map
+
+**Measured 4 November 2026** against the one stage script the client ships decompiled
+(`game/stage/lobby/scenerio.gcx`: 2 821 lines, 26 procs, 33 000 resources), the
+client's `game/afp` UI definitions, and `docs/strings/strings.txt` (142 114 runs).
+
+The screen photographed on the working side shows `BRIEFING` as a tab, `GAME START`
+beneath the tab strip, the panels `RULE Sneaking Mission`, `MAP Urban Ultimatum`,
+`ROUND 02`, the column headers `PLAYER NAME` and `LEVEL`, a row highlighted
+`START READY`, and a right-hand column of `OK»`.
+
+**Every one of its labels is a resource of the stage table, and the script never
+reads one.** In the lobby table: `GAME START` is 2 808, `RULE` 14 904, `MAP` 14 757,
+`LEVEL` 14 864 and again 23 454, `ROUND` 17 155 and again 23 520, `START` 14 923 and
+again 24 050, `PLAYER` 14 814, and the two values in the right panel are there as
+well — `Sneaking Mission` 3 386, `Urban Ultimatum` 3 687. The doubled `LEVEL`/`ROUND`/
+`START` are the room screen's set and the briefing's own. The script does not touch
+them: `strres` appears **0** times in its 2 821 lines, and its whole command
+vocabulary is the ten calls
+[`briefing-screen-3-november.md`](briefing-screen-3-november.md) §7 lists — camera,
+light, fog, sound, two colours and one variable move. **A stage script cannot raise a
+screen.**
+
+**`BRIEFING` is not a string at all.** Zero runs in `docs/strings/strings.txt` are
+exactly `BRIEFING`, and the stage table carries none either, so the tab is drawn and
+not spelled. The screen's chrome is the asset pair `game/afp/afp_battle-start.afp`
+(3 767 184 B) with `battle_start.xml`, whose own text carries `YOUR TEAM` and
+`RIVAL TEAM` — the two panels a briefing roster shows. **[I]** that this pair is the
+screen's own chrome: what is measured is that it is the only UI asset in the client
+whose text names two teams, and that no `briefing`-named UI file exists.
+
+**The rows are the HUD unit's.** `.\online\hud_mgo2\h_mgo2_briefing.cc` (0x10FEFFB0)
+sits in `.rdata` beside `%s - %s` (0x10FEFFD8) and the row assert `p_info != NULL`
+(0x10FEFFE0), and the unit owns a second key set written with the team and player
+**literal**: `root/matching/briefing/player_data/team_data0/player_data0/{user_name,
+user_class,user_type,shop,areacode,medal_data%d}` at 0x10FC5900–0x10FC5A60, beside
+the `%d` form at 0x10FC45E0 that §7 of the other file tabulates.
+
+**So the conditions are native and there are four of them:**
+
+| # | condition | state | who owns it |
+| --- | --- | --- | --- |
+| 1 | the room's map stage is loaded and its script runs | **met** on our join (`n007a`) | the room's map |
+| 2 | the room's rule, map and round are in hand | met — they arrive on the lobby channel, and the reference client holds them before it opens the game socket | the lobby's `0x4313`/`0x4321` |
+| 3 | the HUD's per-player rows are filled (`p_info != NULL`) | **[U]** — the only filler in the image is the path filler `0x10118880`, inside the builder §12 shows nothing calls | `MGA_BattleBefor_Briefing.cpp` |
+| 4 | the HUD unit is activated | **[U]** — no script, no key and no record in any capture gates it | `h_mgo2_briefing.cc` |
+
+**What the photograph adds that no capture could: which stage it is drawn over.**
+The room shows `MAP Urban Ultimatum`, `ROUND 02`, `RULE Sneaking Mission`, and the
+repository's own map table names it — `.gametools/replay-console/rpdt.js` `MAPS`
+reads `3: ["n003a", "Urban Ultimatum"]` — so the briefing on display is drawn over
+stage **`n003a`**, the same script whose briefing strings
+[`briefing-screen-3-november.md`](briefing-screen-3-november.md) §7 quotes at
+`0x471bd`, `0x4f290` and `0x46a17`. The join that did not brief ran **`n007a`**
+instead — the patcher log's sixth stage, `7: ["n007a", "Blood Bath"]` in that same
+table, its textures `map_n007a_1F_alp`, `map_n007a_B1F_alp` and `map_n007a_grid_alp`
+at `0x10FF027B`–`0x10FF02BF`. So the two
+sessions are on two different maps, and the screen is not a property of one stage
+directory: what was compared is the same native HUD over two maps, one briefing, one
+not.
+
+**This retires the last script-shaped hypothesis.** The next thing to read is no
+longer a stage proc — the scripts carry no briefing logic at all — but the activation
+of `h_mgo2_briefing.cc` and the `MGA_BattleBefor_Briefing.cpp` code that fills its rows.
+Both are native, both are in `system.dll`, and the only path into the second is the
+factory §12 shows that nothing in the image calls.
+
+## 14. The two logs cannot separate the clients, and the working room channel is decoded
+
+Both patcher logs are in hand: `briefing/myserver/mgo2-patcher.log` (7 777 B) and
+`briefing/working server/working-server-log.log` (30 228 B), from the same probe set.
+
+**Their probed state is the same sentence, over and over, on both sides.** Our log's
+final summary and every 30-second summary of the working log read alike: *the briefing
+loader has run 0 time(s) — never … the room asked 0 time(s) and the one-block ask 0;
+the data set is 0 (installed 0, dropped 0); the flow's last screen was "none" (0
+label(s)); the battle-before flow has stepped 0 time(s) and started 0, its unit is
+00000000 at state -1*. The working log says it across **17 stages** (`init_n` …
+`n007a`) and several played rounds, in a session whose client demonstrably briefed
+(its `1d` rows are in the same folder's capture at t+512.883).
+
+So those zeros are not a host's fault and not a stall: they are a measurement of
+functions this build never runs (§12), now confirmed on a client that **did** brief.
+Any conclusion resting on those counters is void in both directions, including the
+reading that our client's `0` is the defect.
+
+**The working log's stage order says where the briefing lives.** It runs
+`init_n`, `nt_mgsetup`, `r_sna01_n`, `mga_boot`, `lobby`, `n006a`, then back to
+`lobby`, then `n012a`, `lobby`, `r_sneak_n`, `n015a`, `r_sna01_n`, `lobby`, `n007a` — the
+client alternates between the lobby stage and a map. The room's briefing belongs to that
+lobby stretch: it is the room screen, drawn while `lobby` is the loaded stage, and the
+map follows when the round opens. Our log runs `lobby` → `n007a` and never returns to
+`lobby` inside the capture.
+
+**What the working room channel says.** `briefing-then-solo-game.pcapng` is the only
+file here that holds the lobby's TCP (`10.2.0.2:61542 ↔ 15.204.239.231:5733`), and it
+decodes:
+
+| record | value |
+| --- | --- |
+| `0x4312` request | game id 381 523 |
+| `0x4313` reply, 877 B | `MOUSE ROOM`, rotation `(5,12,0) (6,4,0) (3,5,0) (16,2,0)`, max 17 / current 1, **briefing 1 minute**, level-limit 22, per-rule `5 2 5 2 5 2 5 2 50 5 30 5 2 5 2 5 2`, ping 46, dedicated 0, subtype 1, 18 roster entries |
+| `0x4320` join → `0x4321` | public `64.181.216.250:5720`, private `10.0.0.171:5720`, gate 0, rule 3, map 7 |
+
+**Our own reply still cannot be compared**: `myserver.pcapng`'s TCP is the internet
+only (`199.232.34.172:80`, `23.14.137.196:443`) and holds no `57xx` frame at all. The
+comparison §5 and §10 have asked for now has a target — these field values — but not
+yet a result.
+
+**The HUD's trigger is lobby-side.** The briefing HUD's code and strings sit at
+`0x102bbc..` and `0x102bd..` (`h_mgo2_briefing.cc`, `%s - %s`, `p_info != NULL`), and
+the only call sites into that region are `0x10152421`, `0x101525dd`, `0x101547c7`,
+`0x101b53c7` and `0x101b70c3` — all in the lobby's own code, none in the map's. Its row
+keys are pushed at `0x10119251` (`team_data0/player_data0`), inside the battle-before
+builder. So the screen is raised by the client's lobby code and the map plays no part
+in raising it.
+
+**Root cause, as far as these four files carry it.** Both clients are the same build,
+both load a map stage and run its script, and only the reference one stays on the
+room's briefing long enough to publish its `1d` rows and repeat its `e1` report; ours
+reports once, never readies, and is on `n007a` 9.9 s after its socket opens. Nothing on
+the gameplay channel gates that, the probes cannot see it, and the one channel that can
+is the lobby's room channel — whose working values are now known field for field and
+whose values on our side have never been captured. The channel was captured afterwards
+and the defect is §15.
+
+## 15. The root cause: the details reply stated the lobby's database key as the room's game type
+
+Our lobby logs every full frame at DBG, so the reply §14 lacked came out of the pod
+(`OUT 0x4313 (424 bytes): 43130190 …`), decoded against the working capture's 877-byte
+reply with the same byte offsets:
+
+| field | ours, room 309 (`server-5731`) | reference, room 381 523 (`MOUSE ROOM`) |
+| --- | --- | --- |
+| briefing minutes `@0x0ec` | **1** | **1** |
+| level limit `@0x108` | **22** | **22** |
+| per-rule bank | `5 2 5 2 5 2 5 2 50 5 30 5 2 5 2 5 2` | identical, word for word |
+| rotation | nine rounds, `(5,12,0) (6,4,0) (3,5,0) (16,2,0) …` | four rounds, the same first four |
+| password `@0x098` | 0 | 0 |
+| dedicated `@0x099` | 1 | 0 |
+| **lobby subtype `@0x09a`** | **10** | **1** |
+| max / current players | 8 / 1 | 17 / 1 |
+| ping | 100 | 46 |
+| roster entries | 1 | 18 |
+
+Everything the round's *play* depends on already agreed: the briefing time, the level
+limit, the per-rule bank and the rotation's first four rounds. The one field that was
+wrong **in kind** is the subtype. `RoomBrowserHandlers.GetGameDetailsHandler` wrote
+`session.LobbyIdentifier` — the lobby row's primary key, `10` for the free-battle
+lobby — into a byte that carries a `LobbySubtypeConstants` value. `10` was not even
+unrecognised: it is `TournamentRegistration`, the game type whose flow registers teams
+and plays no round, so the client was told the room it was joining was a registration
+room that has nothing to brief.
+
+The room row held the right answer throughout: `games` row 309 stores `lobby_id = 10`
+**and** `lobby_subtype = 1`, the latter written by `MatchService` as
+`room.LobbySubtype = lobby.SubtypeIdentifier`. Only the writer read the wrong column.
+It now writes `game.LobbySubtype`, which is the free-battle `1` the reference states.
+
+The differences left are properties of the room rather than defects: a dedicated host
+occupies no playing slot (§7's `0x099`), its ping is its own reported figure, its size
+is its own setting, and its nine rounds are its own rotation. This change does not
+prove that a client whose subtype is right will brief while `dedicated` is 1 — that is
+one join away — but it removes a field that said the room had no game to play.
+
+**Checks run.** `dotnet build src/GameLobbyServer/Mgo2Server.GameLobbyServer.csproj`:
+0 warnings, 0 errors. The database read that the fix rests on:
+`select g.id, g.name, g.lobby_id, g.lobby_subtype, l.subtype_id from games g join
+lobbies l on l.id = g.lobby_id` → `309 | server-5731 | 10 | 1 | 1`. No protocol codec
+changed, so the suite is untouched.
