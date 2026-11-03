@@ -250,9 +250,18 @@ It is a bit field, and the client reads three bits out of it:
 
 Bit `0x40` has a getter of its own: `FUN_008eafe0` fetches key `0x4c` (4 bytes) and
 returns `rlwinm r3, r3, 0, 0x19, 0x19` zero-extended — a boolean property in the same
-family as the map, rule and third-component getters. Bit `0x20` is branched on by
-the lobby code around `0xa3978`, `0xa3af8` and `0xa5030`, which also store the answer
-at `+0x6244` of its own object.
+family as the map, rule and third-component getters. Its `.opd` entry is
+`0x1203e60`, and **nothing in the image references that entry**: the property is
+reached through the object's method table, so its slot index is not a constant and
+the neighbours that would have named it are not statically visible.
+
+Bit `0x20` is branched on by the lobby code at `0xa3978`, `0xa3af8` and `0xa5030`,
+which also store the answer at `+0x6244` of its own object. Their shape is dispatch,
+not property logic: `0xa3978` has five callers (`0xb3ca0c`, `0xb7b8e8`, `0xb97d58`,
+`0xbb8568`, `0xbb8b50`) and branches on the values `0xa` and `6` from two state
+getters; `0xa5030` has one caller (`0xa76fc`) and switches on `[r31+0x70]` compared
+against `4`. Neither compares the flag with a room concept, so the bit still has a
+reader but no name.
 
 Against the corpus: bit `0x20` is set in **all fifteen** rooms, and bit `0x40` in
 exactly the two rooms whose rotation is rule 4/15 (`joined-on-briefing-then-game`,
@@ -333,9 +342,14 @@ segment (**4 585 680 instructions**), the answer changes:
   aligned 32-bit reference to `0x1229b80` or to a record inside it exists in the
   image (the only hit is unaligned bytes at file `0x12198ac`).
 
-So the object-to-wire step is still the missing piece, and the next anchor is now
-the pair `FUN_00d6c4a0`/`FUN_00d6cda8`: whoever hands them the buffer is one level
-closer to the writer.
+The callers were then traced, and they are not statically reachable either:
+`FUN_00d6c4a0` and `FUN_00d6cda8` have **no direct call site**, and their `.opd`
+entries (`0x1211148` and `0x1211160`) are referenced as data once and never — so
+both are dispatched through the runtime method table
+(`lwz r9, [obj]; lwz r11, 8(r9); lwz r0, 0(r11); mtctr r0; bctrl`), the same route as
+the getters. The encoder is therefore either behind that table or not in the client
+at all, and the static anchors are exhausted: what remains is to resolve the
+method table, which needs the object's class id at runtime rather than a constant.
 
 ## 6. Open
 
