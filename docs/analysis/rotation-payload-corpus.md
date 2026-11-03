@@ -251,9 +251,10 @@ It is a bit field, and the client reads three bits out of it:
 Bit `0x40` has a getter of its own: `FUN_008eafe0` fetches key `0x4c` (4 bytes) and
 returns `rlwinm r3, r3, 0, 0x19, 0x19` zero-extended — a boolean property in the same
 family as the map, rule and third-component getters. Its `.opd` entry is
-`0x1203e60`, and **nothing in the image references that entry**: the property is
-reached through the object's method table, so its slot index is not a constant and
-the neighbours that would have named it are not statically visible.
+`0x1203e60`, and it appears in **no method table and at no call site**: unlike the
+rule getter, which sits in nine tables (bases `0x119d250`, `0x119d270`, `0x119d2d8`,
+surrounded by the `0x8eb`/`0x8ed` getter family), this one is unreferenced in the
+shipped build. Its name cannot come from a slot, because it has none.
 
 Bit `0x20` is branched on by the lobby code at `0xa3978`, `0xa3af8` and `0xa5030`,
 which also store the answer at `+0x6244` of its own object. Their shape is dispatch,
@@ -342,14 +343,29 @@ segment (**4 585 680 instructions**), the answer changes:
   aligned 32-bit reference to `0x1229b80` or to a record inside it exists in the
   image (the only hit is unaligned bytes at file `0x12198ac`).
 
-The callers were then traced, and they are not statically reachable either:
-`FUN_00d6c4a0` and `FUN_00d6cda8` have **no direct call site**, and their `.opd`
-entries (`0x1211148` and `0x1211160`) are referenced as data once and never — so
-both are dispatched through the runtime method table
-(`lwz r9, [obj]; lwz r11, 8(r9); lwz r0, 0(r11); mtctr r0; bctrl`), the same route as
-the getters. The encoder is therefore either behind that table or not in the client
-at all, and the static anchors are exhausted: what remains is to resolve the
-method table, which needs the object's class id at runtime rather than a constant.
+The callers were then traced. `FUN_00d6c4a0` and `FUN_00d6cda8` have **no direct
+call site**, and the method tables settle what they are. The tables are arrays of
+32-bit `.opd` pointers, and `FUN_00d6c4a0`'s entry appears exactly once, in the
+table at `0x11db5d8`:
+
+```
+  0x11db5dc -> 0x00d6c4a0   0x11db5e0 -> 0x00d6c460   0x11db5e4 -> 0x00d6cca8
+```
+
+Three adjacent copiers, nothing else — a transport family, not a serializer. The
+encoder is therefore not behind a table that holds these functions, and the static
+anchors are exhausted (see the port check below).
+
+### The port's own DLLs do not hold the encoder
+
+`system.dll` and `savemgo.dll` are both PE32 for x86 (image base `0x10000000`),
+16.6 MB and 4.7 MB. `savemgo.dll` carries the record type (`0x1001`, 18 code
+immediates) and body-sized lengths (`0xa1`, 117 code immediates), but **no function
+holds both**: zero pairs fall within 0x100 bytes of each other. Its hits are a
+network and graphics layer — the `rotation` string is `SDL.surface.rotation`, the
+`settings` one is a DXVK config comment. Neither DLL contains the presence-map
+bytes (`ff 27 fe ee`), which is what a serializer would emit. The encoder stays in
+the PPC client.
 
 ## 6. Open
 
