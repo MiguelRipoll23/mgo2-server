@@ -92,6 +92,22 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
+    /// Units of the round clock a briefing is held on: the whole time of the round
+    /// the briefing precedes, or zero once the room has played a round.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is the clock the briefing's run carries, read for the record beside a
+    /// publication.</b> A briefing's peers are sent the round's whole clock in its
+    /// run and in every player-state record beside a ready publication — the one
+    /// capture holding the latter writes <c>60 09</c> = 2 400 there, and the same
+    /// session opens the round behind that briefing at 2 400 (t+572.4 of
+    /// <c>working-server-log.pcapng</c>). Both read
+    /// <see cref="MatchRoundStateService.BriefingClockUnits"/>, so a record cannot
+    /// carry a clock the run it travels with does not.
+    /// </remarks>
+    public int BriefingRoundUnits => roundState.BriefingClockUnits;
+
+    /// <summary>
     /// Arms the count a briefing's peers are sent, at the join report that reaches
     /// the briefing: the countdown record its client's briefing screen shows. It is
     /// held at the room's whole briefing time until the room's reports are complete.

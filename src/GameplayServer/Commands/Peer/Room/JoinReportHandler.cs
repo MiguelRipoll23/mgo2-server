@@ -180,7 +180,9 @@ public sealed class JoinReportHandler(
     /// </param>
     private async Task PublishAsync(PeerContext context, MatchRecordGenerationUtils generation)
     {
-        var publication = briefingStates.BuildPublication(generation);
+        var publication = briefingStates.BuildPublication(
+            generation,
+            matchStart.BriefingRoundUnits);
         if (publication.Count == 0)
         {
             return;

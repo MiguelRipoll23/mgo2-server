@@ -157,7 +157,9 @@ public sealed class BriefingReadyPublishService(
         }
 
         var generation = MatchRecordGenerationUtils.OfJoinReport(reported);
-        var publication = briefingStates.BuildPublication(generation);
+        var publication = briefingStates.BuildPublication(
+            generation,
+            matchStart.BriefingRoundUnits);
         if (publication.Count == 0)
         {
             return;

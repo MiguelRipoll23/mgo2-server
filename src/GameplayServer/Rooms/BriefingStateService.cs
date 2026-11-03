@@ -391,12 +391,37 @@ public sealed class BriefingStateService(RoomRosterService roster, ILogger<Brief
     }
 
     /// <summary>
-    /// The ready set as it goes on the wire: one record per player that has
-    /// reported, in publication order, each carrying that player's own byte.
+    /// The ready set as it goes on the wire: for each player that has reported, in
+    /// publication order, its player-state record and then its publication, both at
+    /// that player's own fourth byte.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Two records per player, and the state record comes first.</b> A working
+    /// server's own briefing writes <c>0x1b06</c> immediately ahead of the
+    /// <c>0x1ade e0 &lt;slot&gt; …</c> that answers the report, both at the same
+    /// ordinal — <c>0x1b06</c> ordinal 9 beside <c>0x1ade e0 0f …</c> ordinal 9, at
+    /// t+512.10 of <c>working-server-log.pcapng</c> — and it repeats with them on
+    /// every publication after it (eleven copies, t+508.7 to t+513.5). This host
+    /// wrote the publication alone, which was the last record of the join missing
+    /// from its briefing (<c>docs/analysis/briefing-screen-3-november.md</c> §2).
+    /// </para>
+    /// <para>
+    /// **The state record is per player and not per room**: its slot byte is the
+    /// byte that player's own report carried, which is why it is built here where
+    /// the reports are ordered rather than beside the countdown.
+    /// </para>
+    /// </remarks>
     /// <param name="generation">Identifier set the publication travels under.</param>
+    /// <param name="roundUnits">
+    /// The round clock the briefing is held on, in the stream's 125 ms units
+    /// (<see cref="MatchRecords.MatchStartRunService.BriefingRoundUnits"/>), which
+    /// the state record carries.
+    /// </param>
     /// <returns>The records in send order.</returns>
-    public List<RosterRecord> BuildPublication(MatchRecordGenerationUtils generation)
+    public List<RosterRecord> BuildPublication(
+        MatchRecordGenerationUtils generation,
+        int roundUnits)
     {
         List<JoinReport> ordered;
         lock (gate)
@@ -404,13 +429,24 @@ public sealed class BriefingStateService(RoomRosterService roster, ILogger<Brief
             ordered = [.. joinReports.Values.OrderBy(state => state.PublicationIndex)];
         }
 
-        return
-        [
-            .. ordered.Select(state => new RosterRecord(
+        var records = new List<RosterRecord>(ordered.Count * 2);
+        foreach (var state in ordered)
+        {
+            var ordinal = (byte)state.PublicationIndex;
+
+            // The player's state record first, at the publication's own fourth
+            // byte: that is the order the one capture holding both writes them in.
+            records.Add(new RosterRecord(
+                generation.ReadyState,
+                MatchRecords.BriefingReadyStateBodiesUtils.Body(state.Value, roundUnits),
+                ordinal));
+            records.Add(new RosterRecord(
                 generation.MatchStartPayload,
                 MatchStartBodiesUtils.MatchStartPayload(state.Value),
-                (byte)state.PublicationIndex)),
-        ];
+                ordinal));
+        }
+
+        return records;
     }
 
     /// <summary>

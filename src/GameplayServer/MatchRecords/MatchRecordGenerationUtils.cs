@@ -132,6 +132,51 @@ public sealed record MatchRecordGenerationUtils(
     public MatchRecordGenerationUtils Next(byte reported) => Sibling with { ReportedByte = reported };
 
     /// <summary>
+    /// The briefing's player-state record: the payload record
+    /// <see cref="ReadyStateDelta"/> bytes along.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Measured once, on a working server's own briefing.</b>
+    /// <c>.pcapngs/briefing/working server/working-server-log.pcapng</c> writes
+    /// <c>0x1b06</c> beside each of its <c>0x1ade</c> ready-state publications, at
+    /// the same fourth byte, eleven times between t+508.7 and t+513.5
+    /// (<c>docs/analysis/briefing-screen-3-november.md</c> §2). No other capture in
+    /// this repository holds the family, so the delta is one measurement and not a
+    /// rule; it is written as a delta because the sibling set follows from it
+    /// without a second value — <c>0x12de</c> + <c>0x28</c> is <c>0x1306</c>, which
+    /// is <c>0x1b06</c> with <see cref="SiblingBit"/> flipped.
+    /// </para>
+    /// <para>
+    /// **[I]** the sibling's record, for that reason: the measurement names the
+    /// first set's only. A capture of the other set's briefing is what would
+    /// confirm it.
+    /// </para>
+    /// </remarks>
+    public ushort ReadyState => (ushort)(MatchStartPayload + ReadyStateDelta);
+
+    /// <summary>
+    /// Distance from a round's payload record to the briefing's player-state
+    /// record that travels beside it, as the one capture holding both writes it.
+    /// </summary>
+    public const ushort ReadyStateDelta = 0x28;
+
+    /// <summary>
+    /// The identifiers the briefing's player-state record arrives under: the ready
+    /// publication's identifier with the payload class bit, which is the shape a
+    /// live client writes its own ready record in — <c>0x9b06 02 &lt;slot&gt;</c>
+    /// beside its <c>0x1ade</c> report, measured at t+512.01 of
+    /// <c>working-server-log.pcapng</c>.
+    /// </summary>
+    public static IReadOnlyList<ushort> ReadyStateIdentifiers { get; } =
+    [
+        First.ReadyState,
+        (ushort)(First.ReadyState | PeerAcknowledgementUtils.PayloadClassBit),
+        First.Sibling.ReadyState,
+        (ushort)(First.Sibling.ReadyState | PeerAcknowledgementUtils.PayloadClassBit),
+    ];
+
+    /// <summary>
     /// The identifier set a round plays under when its join report arrived
     /// on this identifier: the generation the reporting client is on.
     /// </summary>

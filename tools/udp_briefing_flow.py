@@ -20,6 +20,15 @@ Prints, in capture order, the three things that make up a briefing:
   sibling (`0x1254` <-> `0x1a54`). Nothing opens a round on a clock; the flip
   follows the reports.
 
+It also prints the **briefing rows**: the operations records a client writes for
+its own briefing screen — five `1d <slot> 00..04 ...` statements and a 22-byte
+`22 <slot> ...` behind them. They are written on the client's own clock 0.3 to
+0.9 s after its report, before or after the host's run depending on the host,
+and their presence is the one sign on the wire that the screen is up
+(`docs/analysis/briefing-screen-3-november.md` §1). A capture whose client
+sends its report and none of these is a client that never reached the screen,
+whatever the host wrote.
+
 A frame whose tail digest does not verify contributes nothing, and the run ends
 with the counts it took, so a capture that has been read the wrong way reports
 that rather than printing a plausible timeline.
@@ -64,6 +73,11 @@ PUBLISH_OPCODE = 0xE0
 # and a little-endian 16-bit count of 125 ms units.
 CLOCK_OPCODE = 0x01
 CLOCK_LENGTH = 3
+
+# The opcodes a client writes under when it publishes its own briefing screen:
+# the five `1d <slot> 00..04` statements and the 22-byte row behind them. Their
+# presence is the wire's one sign that the screen exists.
+BRIEFING_ROW_OPCODES = (0x1D, 0x22)
 
 
 def clock_units(body: bytes) -> int | None:
@@ -135,6 +149,7 @@ def main() -> None:
     reports = 0
     publications = 0
     opens = 0
+    briefing_rows = 0
     generation: int | None = None
     heading = False
 
@@ -191,6 +206,13 @@ def main() -> None:
                 else:
                     publications += 1
                     line = f"host publishes a ready state: {body.hex(' ')}"
+            elif (
+                message_type in OPERATIONS_IDENTIFIERS
+                and body[:1] and body[0] in BRIEFING_ROW_OPCODES
+                and direction == "IN"
+            ):
+                briefing_rows += 1
+                line = f"client writes its briefing row: {body.hex(' ')}"
             elif message_type in OPERATIONS_IDENTIFIERS:
                 countdown = clock_units(body)
                 if countdown is not None:
@@ -207,6 +229,10 @@ def main() -> None:
     if fallbacks:
         print(f"{fallbacks} frame(s) read with the pre-handshake key, not the session key")
     print(f"{reports} client report(s), {publications} host publication(s), {opens} round open(s)")
+    print(
+        f"{briefing_rows} client briefing row(s)"
+        + ("" if briefing_rows else " -- the client never published a briefing screen")
+    )
 
 
 if __name__ == "__main__":
