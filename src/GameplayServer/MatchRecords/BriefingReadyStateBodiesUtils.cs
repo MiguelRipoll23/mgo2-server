@@ -41,8 +41,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <para>
 /// This repository carried no record of the family before this measurement: it
 /// is the third record a briefing writes, with the ready publication and the
-/// countdown, and no host here wrote it (<c>docs/analysis/briefing-screen-3-november.md</c>
-/// §2).
+/// countdown, and no host here wrote it before the working server's own capture was
+/// read for it.
 /// </para>
 /// </remarks>
 public static class BriefingReadyStateBodiesUtils

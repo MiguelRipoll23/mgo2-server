@@ -177,8 +177,9 @@ backwards, and the 128-unit clock is a separate, much shorter timer.**
 by about one a second, so it is the room's briefing time and not a fixed sixteen
 seconds. Its zero is not what usually ends a briefing: when the room fills, the
 host writes `0b 00 00 <full set> …` the instant every player is ready, with the
-count still in the twenties, and the round opens on that
-(`joined-when-red-team` t+113.758). The record and its bytes are read in full in
+count still in the twenties, and the count goes on ticking afterwards — that zero
+opens no round (`joined-when-red-team` t+113.758; its run is at t+132.791). The
+record and its bytes are read in full in
 [`BRIEFING_FLOW.md`](BRIEFING_FLOW.md) §1; this host writes it
 (`BriefingCountdownService`, `BriefingCountdownBodiesUtils`).
 

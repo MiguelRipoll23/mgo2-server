@@ -14,8 +14,8 @@
 **What the captures corroborate.** The solo-ready rule is `mgo2-started-briefing-then-solo-game`:
 the client reports on `0x1ade` at t+173.438, the opening run follows at t+174.371
 and the client's own records begin at t+181.578 — one client, one report, a round
-that runs (`docs/analysis/briefing-start-comparison.md` §4.1 for the identifiers
-it plays under). The freeze and the reset are **not** in the captures, and neither
+that runs (the identifiers it plays under are the replay block's,
+`docs/protocol/RPDT_REPLAY_RECORDS.md`). The freeze and the reset are **not** in the captures, and neither
 is the client's side of either; both are stated here because they are the rule the
 host is to follow.
 
@@ -26,7 +26,7 @@ host is to follow.
   briefing time and no deadline is armed, so the briefing never runs out and no
   round opens on it. What ends a solo briefing is the other half of the rule below
   — the client's own ready (`MatchStartRunService.OnJoinReport` arms the count, and
-  `ArmBriefingDeadline` is armed only once the room has a second player).
+  `StartBriefingCount` is armed only once the room has a second player).
 * **The reset on empty.** `MatchStartRunService.ResetWhenEmpty` is called from the
   session reaper's drop (`GameplayServerService.DropReapedPeer`), and it is the
   room's population that decides: a leaver among others returns `false` and

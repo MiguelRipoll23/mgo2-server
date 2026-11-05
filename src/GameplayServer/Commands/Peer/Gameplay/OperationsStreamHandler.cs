@@ -30,15 +30,15 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 /// deltas that are published behind it.
 /// </para>
 /// <para>
-/// <b>The ready record is what starts a round.</b> A client writes
-/// <c>1f &lt;slot&gt; 01</c> on this stream when the player in front of it changes
-/// its briefing state to ready (<see cref="BriefingReadyBodiesUtils"/>), and the
-/// host opens the room's round on the one that completes the room's ready set
-/// (<see cref="MatchStartRunService.OpenWhenEveryPlayerIsReady"/>). Measured:
-/// <c>mgo2-game-joined-when-red-team-then-briefing</c> readies <c>1f 05 01</c> at
-/// t+112.750 on the class-bit form of the countdown's own identifier, and its round
-/// is open at t+113.758; the same room's second briefing readies the same record at
-/// t+844.858 and opens at t+848.046.
+/// <b>The ready record is the player's briefing state, and it opens nothing.</b> A
+/// client writes <c>1f &lt;slot&gt; 01</c> on this stream when the player in front of
+/// it changes its briefing state to ready (<see cref="BriefingReadyBodiesUtils"/>),
+/// and the record is kept as the room's ready set for the countdown. **A round does
+/// not open on it**: the round opens on the report the client sends once it has left
+/// its briefing screen for the weapon select and its spawn
+/// (<see cref="MatchStartRunService.OnJoinReport"/>), and the reference capture of
+/// that flow holds no ready record at all
+/// (`working-server-4-sessions.pcapng`).
 /// </para>
 /// <para>
 /// <b>The record is relayed rather than consumed.</b> The other clients in the room
@@ -53,10 +53,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 /// <param name="ready">The room's briefing states, which a ready record is recorded in.</param>
 /// <param name="score">The host's own score, which the kill feed feeds.</param>
 /// <param name="publisher">Publisher of the scoreboard a kill changes.</param>
-/// <param name="matchStart">
-/// The room's round: a kill can end it on its tickets, and the ready that completes
-/// the room's ready set opens it.
-/// </param>
+/// <param name="matchStart">The room's round, which a kill can end on its tickets.</param>
 /// <param name="results">The round's result, which the ticket end is read from.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class OperationsStreamHandler(
@@ -118,11 +115,6 @@ public sealed class OperationsStreamHandler(
                 slot);
 
             briefingStates.NoteBriefingReady(context.Remote.ToString(), slot, state);
-
-            // The ready that completes the room opens the round the briefing was
-            // waiting on. It is asked here and not only when a report arrives,
-            // because a ready is what the room is waiting for.
-            matchStart.OpenWhenEveryPlayerIsReady();
         }
         else
         {

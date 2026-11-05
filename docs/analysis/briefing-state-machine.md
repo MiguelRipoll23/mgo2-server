@@ -504,9 +504,8 @@ again 24 050, `PLAYER` 14 814, and the two values in the right panel are there a
 well — `Sneaking Mission` 3 386, `Urban Ultimatum` 3 687. The doubled `LEVEL`/`ROUND`/
 `START` are the room screen's set and the briefing's own. The script does not touch
 them: `strres` appears **0** times in its 2 821 lines, and its whole command
-vocabulary is the ten calls
-[`briefing-screen-3-november.md`](briefing-screen-3-november.md) §7 lists — camera,
-light, fog, sound, two colours and one variable move. **A stage script cannot raise a
+vocabulary is the ten calls its own decompile lists — camera, light, fog, sound, two
+colours and one variable move. **A stage script cannot raise a
 screen.**
 
 **`BRIEFING` is not a string at all.** Zero runs in `docs/strings/strings.txt` are
@@ -537,8 +536,7 @@ the `%d` form at 0x10FC45E0 that §7 of the other file tabulates.
 The room shows `MAP Urban Ultimatum`, `ROUND 02`, `RULE Sneaking Mission`, and the
 repository's own map table names it — `.gametools/replay-console/rpdt.js` `MAPS`
 reads `3: ["n003a", "Urban Ultimatum"]` — so the briefing on display is drawn over
-stage **`n003a`**, the same script whose briefing strings
-[`briefing-screen-3-november.md`](briefing-screen-3-november.md) §7 quotes at
+stage **`n003a`**, the same script whose briefing strings its own decompile holds at
 `0x471bd`, `0x4f290` and `0x46a17`. The join that did not brief ran **`n007a`**
 instead — the patcher log's sixth stage, `7: ["n007a", "Blood Bath"]` in that same
 table, its textures `map_n007a_1F_alp`, `map_n007a_B1F_alp` and `map_n007a_grid_alp`

@@ -3643,7 +3643,7 @@ it here; this host measures none, so it writes the two values it can name.
 has left as empty instead of letting the client keep the last value it was told. The 100 for
 the host's own slot and the 50 for a peer are unchanged: those *are* the measured values for
 the two cases this host can be in, and inventing a measured figure it has not measured is what
-`docs/analysis/briefing-start-comparison.md` §4.3 refuses.
+`docs/analysis/unknown-byte-readings.md` refuses.
 
 ## 39. The blob's value is now this host's own round trip, timed from the peer's answers
 
@@ -5486,7 +5486,7 @@ is the client's (`IN`), and the 261 `OUT` ones are the acknowledgement report's 
 `UdpCommandConstants.JoinRequest`, the tag a joiner opens the roster exchange with
 (`RoomRosterService.HostEntryType`), and a host that writes the room's team array under it is
 writing the joiner's own tag back at it: the `0x8000` bit is what a client sets on its own
-records (§4.1 of `briefing-start-comparison.md`), so the array arrives as one the client itself
+records, so the array arrives as one the client itself
 is supposed to have sent.
 
 **Fixed** in the two places a 26-byte team array is written — `MatchStartRunFramesUtils.BuildRun`

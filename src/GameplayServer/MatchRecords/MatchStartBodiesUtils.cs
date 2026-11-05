@@ -44,11 +44,11 @@ public static class MatchStartBodiesUtils
     /// </summary>
     /// <remarks>
     /// The report is the client saying it has fully joined: it has the room's map
-    /// loaded and is on the briefing screen. It is **not** the player's readiness,
-    /// which travels on the operations stream as <c>1f &lt;slot&gt; 01</c> and is
-    /// what opens a round (<see cref="BriefingReadyBodiesUtils"/>,
-    /// <see cref="MatchStartRunService.OpenWhenEveryPlayerIsReady"/>). The byte the
-    /// record carries is the client's own lobby slot. It is recognised and handed to
+    /// loaded and is on the briefing screen. When it arrives again, after the room's
+    /// briefing time is out, it is the client leaving that screen for the weapon
+    /// select and its spawn — and that report is what opens a round
+    /// (<see cref="MatchStartRunService.OnJoinReport"/>). The byte the record carries
+    /// is the client's own lobby slot. It is recognised and handed to
     /// <see cref="MatchStartRunService"/>, which writes the briefing's run that
     /// answers it on the same record read the other way.
     /// </remarks>
@@ -142,7 +142,7 @@ public static class MatchStartBodiesUtils
     /// bits 1, 3 and 5, the slots its reporting players hold. So this is the
     /// room's own set and not an echo of the record's byte, and the bit a player
     /// owns is the slot its report carries — <c>08</c> for a room of one whose
-    /// only reporter is slot 3 (`docs/analysis/briefing-start-comparison.md` §3).
+    /// only reporter is slot 3.
     /// </para>
     /// <para>
     /// <b>The first byte is derived, and the trailing three are not.</b>

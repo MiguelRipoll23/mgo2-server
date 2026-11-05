@@ -381,11 +381,12 @@ The one `0x1x..` / `0x5x..` pairing in §3.1 that **does** hold is the one §3.1
 test, because it is not two families but one record read in two directions. The round's
 payload record is also how a client announces its **join**: the room's map is loaded and it
 is on the briefing screen. It is **not** the player's readiness — that is
-`1f <slot> 01` on the operations stream, the record a room's round is opened on
-(`MatchRecords/BriefingReadyBodiesUtils`, `MatchStartRunService.OpenWhenEveryPlayerIsReady`),
-and the two are up to a minute apart in the capture that holds both
-(`mgo2-game-joined-when-red-team-then-briefing`: the client's report at t+57.656 and its
-ready at t+112.750, with the round's run at t+113.758).
+`1f <slot> 01` on the operations stream, the record that completes the ready set
+the host publishes in its countdown and opens nothing
+(`MatchRecords/BriefingReadyBodiesUtils`), and the two are up to a minute apart in
+the capture that holds both (`mgo2-game-joined-when-red-team-then-briefing`: the
+client's report at t+57.656 and its ready at t+112.750, the countdown's zero at
+t+113.758 and the round's run at t+132.791).
 
 ```
 IN  0x1ade  len=2  ord=0   e1 14        the client reports its join: opcode e1, then its own slot
@@ -1269,15 +1270,16 @@ along: operations `0x1a54` → `0x1254`, payload `0x1ade` → `0x12de`, rules `0
 sibling set when it opens its next round; the replay opens none, so `MatchRecordService`
 holds the first set for the whole stream.
 
-**The run is written for the client's join report and the round opens on the room's
-readies.** §3.2 measures the pairing: every round in every capture begins within a second
-or so of a client's own record, and its run is answered to that client's `e1 NN` report on
-the round's own payload record. The set the round plays under is the one that report
-arrived on, which is why the first round's is read from the report rather than fixed
-(§3.2). What the host opens the round *on* is the other record: in
+**The run is written for the client's join report and the round opens on the record
+that follows the briefing.** §3.2 measures the pairing: every round in every capture
+begins within a second or so of a client's own record, and its run is answered to that
+client's `e1 NN` report on the round's own payload record. The set the round plays under
+is the one that report arrived on, which is why the first round's is read from the report
+rather than fixed (§3.2). A ready opens nothing: in
 `mgo2-game-joined-when-red-team-then-briefing` the room's last player readies `1f 05 01`
-at t+112.750 and the round's run is on the wire at t+113.758, one second later, where that
-same client's join report was 55 s before it. So the sparse phase stops at its last state blob and
+at t+112.750, the countdown writes its zero at t+113.758, and the briefing's run lands at
+t+132.791 — after the client's own records, where its join report was 55 s before it
+(`BRIEFING_FLOW.md` §1–§2). So the sparse phase stops at its last state blob and
 the writer of the capture then writes the marker and the match-start run, and writes the run
 again four times *inside* the beat that follows (one every 56 frames, counters
 32849/32905/32961/33017) — echoing the byte the client sent, as every captured payload does.

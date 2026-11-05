@@ -141,7 +141,7 @@ public sealed record MatchRecordGenerationUtils(
     /// <c>.pcapngs/briefing/working server/working-server-log.pcapng</c> writes
     /// <c>0x1b06</c> beside each of its <c>0x1ade</c> ready-state publications, at
     /// the same fourth byte, eleven times between t+508.7 and t+513.5
-    /// (<c>docs/analysis/briefing-screen-3-november.md</c> §2). No other capture in
+    /// (its own capture, `working-server-log.pcapng`). No other capture in
     /// this repository holds the family, so the delta is one measurement and not a
     /// rule; it is written as a delta because the sibling set follows from it
     /// without a second value — <c>0x12de</c> + <c>0x28</c> is <c>0x1306</c>, which

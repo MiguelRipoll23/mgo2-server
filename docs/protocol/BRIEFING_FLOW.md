@@ -154,34 +154,52 @@ returning to zero on the ticks between. What it counts is **[U]** — readied
 players, or readies since the last tick — and it is the second open byte of the
 record beside the zero between the count and the set.
 
-**Its last word is a zero carrying the whole set, and that is the round
+**A complete ready set writes a zero, and that zero is not the round's
 opening.** The instant the room is fully ready the host writes
 `0b 00 00 ea 01 00 00` (t+113.758), and the ticking records at that same moment
-still carry the count they were on (`0b 17 00 ca 00 00 00`) beside the round's
-run, with twenty-odd seconds left. So a briefing that fills does not wait its
-count out; its zero is the ending written out, and the count is left unfinished.
-A briefing whose count *does* reach zero first — `started-on-briefing`, 60 at
-t+132.2 down to 0 at t+191.4 — is one the room never filled in time.
+still carry the count they were on (`0b 15 00 ca 01 00 00`), with twenty-odd
+seconds left, and go on ticking afterwards. So a briefing that fills does not
+wait its count out; its zero is the set's completion written out, and the round
+behind that briefing is not opened by it — the client's own records do that, and
+its run lands 19 s later (t+132.791, §2). A briefing whose count *does* reach
+zero first — `started-on-briefing`, 60 at t+132.2 down to 0 at t+191.4 — is one
+the room never filled in time.
 
-## 2. The round opens on the ready records, not on a clock
+## 2. The round opens on the report that follows the briefing
 
-**Measured.** In `started-on-briefing` the last player reports at t+196.828 and
-the round opens 1.543 s later, at t+198.371; the publications before it are four
-records wide and the run itself opens with the fourth. In `joined-when-red-team`
-the client reports at t+95.464 and the round opens at t+123.774, twenty-eight
-seconds later, because the room's other players were still arriving, and its
-third round opens 37.8 s after its report. No round opens without a client's
-record behind it and no round opens on a fixed wait.
+**Corrected 5 November 2026, and this supersedes the whole of the ready reading
+below.** A round does not open on the room's ready records, and the briefing's time
+running out does not open one either. It opens on the report a client sends once it
+has left its briefing screen — the weapon select the game shows next, then its
+spawn. Measured in `working-server-4-sessions.pcapng` (`143.47.227.126:5725`, the
+working server's own four sessions): the client reports `e1 08` at t+304.686, writes
+its own `1d`/`22` briefing rows half a second later, sends nothing for ninety
+seconds, reports `e1 08` again at t+395.811, and the round opens at t+396.010 with
+its clock at 2 400 — 0.2 s after that second report. **The capture holds no
+`1f <slot> <state>` record at all**; every body opening `1f` in it is a seven-byte
+record of another family. The host implements this reading: the report that arrives
+once the room's briefing time is out is the one a round opens on
+(`MatchStartRunService.OnJoinReport`), and a room of one is timed by its own
+briefing time because that time is what its client waits out.
 
-**The record that ends the wait is the ready, and the report is what a run is
-written from.** The two are different bodies on different streams: `e1 <slot>`
+**Measured, and still the shape of the wait.** In `started-on-briefing` the last
+player reports at t+196.828 and the round opens 1.543 s later, at t+198.371; the
+publications before it are four records wide and the run itself opens with the
+fourth. In `joined-when-red-team` the client reports at t+95.464 and the round
+opens at t+123.774, twenty-eight seconds later, because the room's other players
+were still arriving, and its third round opens 37.8 s after its report. No round
+opens without a client's record behind it and no round opens on a fixed wait.
+
+**The ready and the report are different bodies on different streams.** `e1 <slot>`
 is a client saying it has loaded, and `1f <slot> 01` is the player changing its
 briefing state to ready. `joined-when-red-team` sends the ready at t+112.750 and
-its round is open at t+113.758, one second later; its second briefing sends the
-same record at t+844.858 and opens at t+848.046, 3.2 s later. The reports of those
-same two briefings are minutes away from the opens — t+57.656 and t+870.222, the
-same client reporting its load — so a gate on the reports would open the first of
-them thirty seconds before this client had readied at all.
+the host's zero follows at t+113.758; its round's run lands at t+132.791, after
+the client's own records. Its second briefing sends the same ready at t+844.858
+and the zero at t+848.046, and its run follows at t+872.290. The reports of those
+same two briefings are minutes away from the runs — t+57.656 and t+870.222, the
+same client reporting its load — so both 113.758 and 848.046 are the zero the
+ready set completes with, which is what the earlier reading mistook for the
+round's opening.
 
 **The room's ready set, ready by ready.** The capture is one client's flow, so the
 other players' ready records are not in it; what is in it is their effect on the

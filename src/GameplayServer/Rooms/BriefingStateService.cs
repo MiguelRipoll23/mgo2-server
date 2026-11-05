@@ -95,9 +95,8 @@ public sealed class BriefingStateService(RoomRosterService roster, ILogger<Brief
     /// play. The capture separates the two by up to half a minute
     /// (<see cref="BriefingReady"/>), and only a record whose state is the ready
     /// counts (<see cref="IsReady"/>), so a state nothing has measured leaves the
-    /// room waiting for the briefing's own deadline — or, in a room of one, waiting
-    /// for the player in it, because a briefing with nobody else in it never ends
-    /// (<see cref="MatchRecords.MatchStartRunService"/>).
+    /// room waiting on the report that follows the briefing, which is the one record
+    /// a round opens on (<see cref="MatchRecords.MatchStartRunService.OnJoinReport"/>).
     /// <para>
     /// An empty room is not a ready room: the round opens for players, and a
     /// room whose last player has left has nobody to open it for. That is what
@@ -187,9 +186,9 @@ public sealed class BriefingStateService(RoomRosterService roster, ILogger<Brief
     /// those reports.
     /// </summary>
     /// <remarks>
-    /// <b>It is not a readiness count and does not open anything.</b> What gates a
-    /// round is <see cref="AllReady"/>, which reads the ready records; this is the
-    /// count of clients that have reached the room's briefing screen. The two
+    /// <b>It is not a readiness count and does not open anything.</b> What opens a
+    /// round is the report that follows the briefing, not the ready records; this is
+    /// the count of clients that have reached the room's briefing screen. The two
     /// callers that read it say so: the briefing's countdown starts moving once a
     /// second player has reported (<see cref="MatchRecords.MatchStartRunService"/>),
     /// and a briefing whose reporters have all left opens nothing.
@@ -404,7 +403,7 @@ public sealed class BriefingStateService(RoomRosterService roster, ILogger<Brief
     /// t+512.10 of <c>working-server-log.pcapng</c> — and it repeats with them on
     /// every publication after it (eleven copies, t+508.7 to t+513.5). This host
     /// wrote the publication alone, which was the last record of the join missing
-    /// from its briefing (<c>docs/analysis/briefing-screen-3-november.md</c> §2).
+    /// from its briefing (its capture, `working-server-log.pcapng`).
     /// </para>
     /// <para>
     /// **The state record is per player and not per room**: its slot byte is the

@@ -91,11 +91,13 @@ the client's report (`e1 <slot>`), its five `1d <slot> 00..04` rows and the
 22-byte `22 <slot>` row behind them, the host's `e0` publications one per player
 in report order, the `0x0b` countdown, and the run the briefing is answered with.
 
-**The round opens on a ready, not on the clock.** In
-`mgo2-game-joined-when-red-team-then-briefing` the room readies `1f 05 01` at
-t+112.750 and its round is open at t+113.758 — one second later — while the same
-briefing's join reports began at t+57.656. A room of one arms no deadline at all:
-its count is held and only its own ready starts the round.
+**The round opens on the report that follows the briefing, not on a ready and not
+on the clock.** In `mgo2-game-joined-when-red-team-then-briefing` the room readies
+`1f 05 01` at t+112.750 and the host's countdown writes its zero at t+113.758 —
+the ready set complete, and no round — while that briefing's run lands at
+t+132.791, after the client's own records; its join report was at t+57.656. A room
+of one arms no deadline at all: its count is held and its round waits for its own
+post-briefing report (`BRIEFING_FLOW.md` §2).
 
 ## 4. Round
 

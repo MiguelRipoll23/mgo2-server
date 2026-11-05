@@ -197,8 +197,8 @@ waits for the host's round *either* until every player is ready *or* until its o
 briefing time is up, so the wait is a deadline and not a rule: the second player's
 report arms one, and a briefing that runs out opens the
 round for the players that did report — under the identifier set the last of their
-reports arrived on (`MatchStartRunService.ArmBriefingDeadline`,
-`OpenWhenBriefingEndsAsync`). A briefing no player has answered
+reports arrived on (`MatchStartRunService.StartBriefingCount`,
+`OnJoinReport`). A briefing no player has answered
 opens nothing, and neither does one whose reporters have all since left: a round
 is still something a report asks for, and a room nothing has answered has no set
 to open one under. The player still to report is served the
@@ -539,7 +539,7 @@ progress.** Concretely, with player A and player B:
 
 1. A joins. `AllReady` is true the moment A's ready arrives, because the roster
    holds exactly one member and it has readied, so
-   `OpenWhenEveryPlayerIsReady` opens round 1 for a one-player room.
+   `OnJoinReport` opens round 1 for a one-player room.
 2. B joins afterwards. `RoomRosterService.Register` adds B, `AllReady` becomes
    false, but the round is already open: `MatchRoundStateService.Open` returns
    `null` for a second open and no second round starts.
@@ -561,38 +561,29 @@ is left, which is what the beat behind it counts down from. It is also how the
 client is told it is in a round rather than a briefing — the client reads that
 from the records it is sent, and the run's own clock is the one that says so.
 
-### 4.2 A player who never readies
+### 4.2 A player who never leaves the briefing
 
-The gate is "every roster member has readied", and a member is removed only when
-its session is reaped (30 s of silence). A peer that joins, stays alive and never
-readies would hold the next round shut for as long as it is there — so, **in a room
-that has somebody else in it**, the gate is a **deadline** as well as a count: the
-room's own briefing time, armed at the join report that gives the room its second
-player, after which the round opens for the players that did ready and the silent
-peer is served it as a late joiner is. That is the client's own contract, and the
-reason it is a deadline rather than patience: a client in a briefing waits either
-for every player to be ready or for its own briefing timer to end, so a room that
-waited longer would leave the players it did hear from past the end of their timer
-with nothing to play.
+The gate is not "every roster member has readied". A round opens on the report a
+client sends once it has left its briefing screen — the weapon select the game shows
+next, then its spawn — and every report before the room's briefing time is out is
+that screen still being waited on. A peer that joins, stays alive and never readies
+therefore holds nothing shut: what it holds is its own round, for as long as it sits
+on the screen, and the round opens for the room when it comes back off it.
 
-**A room of one has no deadline at all, and its briefing is frozen.** Its count is
-held at the room's whole briefing time — that is what the reference host writes for
-a sole client, `mgo2-game-started-on-briefing` holding `0b 3c` for tens of seconds
-— and its briefing never runs out, because the timer is the *room's* and the second
-player is what the wait is for. So the only thing that starts a solo round is that
-player's own ready: `mgo2-started-briefing-then-solo-game` is one client, alone, and
-its round arrives at t+174.371 after it readies at t+165.780 and re-reports at
-t+173.438, with nothing in the 111 s before that. A host that armed the deadline on
-the client's own join report instead started a round nobody had asked for —
-`myserver17.pcapng`'s sole client was handed a round 60.3 s after its report, with
-its own briefing count still held at the room's whole minute
-(`analysis/join-stall-after-mode2.md` §17).
+**The client's timer is the room's briefing time, and the count is that same time.**
+A client in a briefing waits out its own timer, which is the briefing time the
+lobby's room details state (`protocol/GAME_SETTINGS_WIRE.md`), and the count the host
+writes while the room waits is that time as well: held at the room's whole briefing
+time for a room of one, started once the room has a second player. Neither the count
+reaching zero nor the briefing's own time running out opens a round.
 
-What the live experiments *did* produce, before any of this, is a client that sat
-in its ready state for two minutes while a round it had been sent went unrepeated
-(`DATA_PHASE_DELIVERY.md`); what `myserver17` produced after that is the other half
-of the same lesson — a client that kept re-reporting its join for 54 s while the
-host answered with a round on a clock the client had never been given.
+**Measured.** `working-server-4-sessions.pcapng` holds ninety seconds of briefing
+with no ready record in it at all, and a round opening 0.2 s after the report that
+followed the briefing (t+304.686 briefing, t+395.811 report, t+396.010 round; see
+`protocol/BRIEFING_FLOW.md` §2). The rule this section used to state — every player
+ready, or the briefing's deadline in a room of two or more — is what produced a live
+solo briefing that never ended (`analysis/join-stall-after-mode2.md` §17) and a round
+opened on a deadline no client was waiting on.
 
 ### 4.3 What ends a round
 

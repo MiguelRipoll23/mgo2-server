@@ -28,12 +28,16 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// that has not reported has no run and is owed no countdown either, which is what
 /// the wait for the run below is (<c>docs/analysis/join-stall-after-mode2.md</c>
 /// §15).
-/// </para>
-/// <para>
-/// <b>It ends on the round's open and on the briefing's own time running out.</b>
-/// Either end is the same record: the count at zero carrying the room's whole
-/// reporting set, written once. The captures place that zero 3 to 6 s before the
-/// round it belongs to — <c>started-briefing-then-solo</c> writes
+/// </para>    /// <para>
+    /// <b>It ends on the round's open and on the briefing's own time running out,
+    /// and the room's ready set completes at a third instant of its own.</b>
+    /// Either end is the same record: the count at zero carrying the room's whole
+    /// ready set, written once. A complete ready set writes that record beside the
+    /// ticking count (`mgo2-game-joined-when-red-team-then-briefing` t+113.758,
+    /// one second after its last ready record, with the count still running at 21 s
+    /// and going on afterwards); what it opens is nothing, the run behind that
+    /// briefing arriving 19 s later. The captures place the end's zero 3 to 6 s before the
+    /// round it belongs to — <c>started-briefing-then-solo</c> writes
 /// <c>0b 37 00 08 …</c> and <c>0b 00 00 08 …</c> at t+167.992 and again at
 /// t+170.366, and its round follows at t+174.371 — because a briefing that runs
 /// out is over whether or not the round that asks for it has opened yet. A peer
@@ -170,6 +174,10 @@ public sealed partial class BriefingCountdownService(
 
         var ticked = false;
 
+        // Whether this peer has already been sent the zero a complete ready set
+        // draws, which is a separate instant from the briefing's own end.
+        var allReadyPublished = false;
+
         // Why the count stopped, which is what the peer's briefing ended on. It is
         // named in the log below because "ended" alone cannot tell a briefing that
         // ran its minute out from a session the reaper closed, and a room of one
@@ -212,6 +220,21 @@ public sealed partial class BriefingCountdownService(
 
             ticked = true;
 
+            // <b>The room's ready set complete is the other instant a briefing
+            // writes its zero.</b> Measured: `mgo2-game-joined-when-red-team-then-
+            // briefing` carries one ready record, `1f 05 01` at t+112.750, and the
+            // host writes `0b 00 00 ea 01 00 00` at t+113.758 — the next tick, a
+            // second later — beside the ticking `0b 15 00 ca 01`, which goes on
+            // afterwards. It opens no round: the run that follows that briefing is
+            // 19 s later, after the client's own records. What it means is stated
+            // by the room's set and not by the count, so it is written once per
+            // briefing and never in place of the tick.
+            if (!allReadyPublished && briefingStates.AllReady)
+            {
+                allReadyPublished = true;
+                await SendBriefingEndAsync(context, session);
+            }
+
             // The tick ends the moment the round opens: this task is awaited
             // before the beat, and a period slept out after the run was written
             // would hold the beat's first frame behind it.
@@ -234,7 +257,11 @@ public sealed partial class BriefingCountdownService(
             endedBecause = "its round opened";
         }
 
-        if (ticked && MatchRecordPeerUtils.IsAlive(session))
+        // A complete ready set has already written this peer the zero, and the
+        // capture writes one per briefing: the open's own zero would be the same
+        // record's second copy beside the same set (`joined-when-red-team` writes
+        // its zero at t+113.758 and opens the round 19 s later with none).
+        if (ticked && !allReadyPublished && MatchRecordPeerUtils.IsAlive(session))
         {
             await SendBriefingEndAsync(context, session);
         }
