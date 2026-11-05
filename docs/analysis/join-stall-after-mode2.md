@@ -5707,3 +5707,32 @@ is the same one and only the conversation was heard again. No room state is touc
 precondition for the briefing screen rather than a sighting of it; the sign the screen has come
 is still the client writing its own `1d` rows behind the run, and the instrument for a stall that
 survives that is the memory read of §68.
+
+## 75. The room's stream opened eight seconds before the report that named its set
+
+`briefing-then-solo-game` and `myserver.pcapng` are the same client joining two
+hosts, and this file's decoders read both. The reference's room stream starts two
+seconds *after* its client reports: the report `0x12de` at 18:13:31 and the first
+`0x0261` pair at 18:13:33, with nothing of the room's written in the ten seconds
+before it. This host's join wrote two `0x0a61` and a `0x1a58` at t+1.5, on the
+base set, eight seconds ahead of the `0x12de` its client then reported on.
+
+That is `BriefingGeneration`'s fallback seen from the wire. The set a briefing is
+written under is the one the peer's report arrived on — the sibling — and before a
+report arrives there is no such set, so the fallback is the round's own, the base
+one. The records are then written under an identifier the client is not reading:
+the pair and the count are dropped on arrival, and the room's stream the client
+does read only begins behind the report.
+
+**The fix.** `BriefingRoomPublishService.PublishAsync` writes nothing until
+`LastJoinReportIdentifier` names a set, and waits a briefing frame instead. The
+pair, the blobs and the count then start behind the report as the reference
+starts them, under the generation the client is reading.
+
+**What it is not.** This is a record the reference host never writes at that
+point, not a sighting of the briefing screen. The run, its dwell and the marker
+are unchanged, and the sign of the screen is still the client writing its own
+`1d` rows behind the run. `myserver.pcapng`'s own client reported at t+10.2 and
+loaded `n007a` at its sixth stage with its briefing loader still at zero, so the
+early pair is one candidate among the differences §74 leaves open and not a
+measurement of the screen.

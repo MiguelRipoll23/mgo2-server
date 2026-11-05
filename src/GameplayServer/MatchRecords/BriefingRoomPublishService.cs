@@ -166,6 +166,22 @@ public sealed partial class BriefingRoomPublishService(
         {
             try
             {
+                // Nothing of the room's stream goes out before a report names the
+                // set it is written under. Before one arrives there is no briefing
+                // and no report's generation to write under, so the fallback is the
+                // round's own set -- the base one -- while the client reads the
+                // sibling its own report arrives on. `briefing-then-solo-game`
+                // writes its first 0x0261 two seconds *after* that client's report
+                // (18:13:31 then 18:13:33) and nothing of the room's before it, so
+                // an early pair is a record the reference never writes; this host
+                // sent two 0x0a61 and a 0x1a58 at t+1.5, eight seconds ahead of the
+                // 0x12de the client then reported on (`myserver.pcapng`).
+                if (matchStart.LastJoinReportIdentifier is null)
+                {
+                    await roundState.WaitBriefingFrameAsync(session, PublishPeriodMilliseconds);
+                    continue;
+                }
+
                 // The rules pair goes out on the first pass as well and not only
                 // on a tick: the captures write it in the roster run itself, so a
                 // peer answered its roster is told the room's stream at once.
