@@ -170,6 +170,13 @@ public sealed partial class BriefingCountdownService(
 
         var ticked = false;
 
+        // Why the count stopped, which is what the peer's briefing ended on. It is
+        // named in the log below because "ended" alone cannot tell a briefing that
+        // ran its minute out from a session the reaper closed, and a room of one
+        // never starts its count at all — so the two ends that are left are the
+        // round opening and the peer going quiet (PeerSessionService).
+        var endedBecause = "the peer's session went quiet";
+
         while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
         {
             if (!Remaining(DateTimeOffset.UtcNow, out var remaining))
@@ -177,6 +184,7 @@ public sealed partial class BriefingCountdownService(
                 // The briefing's own time is out, so the briefing is over whether
                 // or not the round has opened: it closes on the zero below, which
                 // is the record a client waiting in its briefing acts on.
+                endedBecause = "its briefing's time ran out";
                 break;
             }
 
@@ -221,15 +229,23 @@ public sealed partial class BriefingCountdownService(
         // t+173.438. Either end writes it for a peer the briefing ran for; a peer
         // that arrives into a round already playing is served the round and no
         // countdown at all, which is what `ticked` keeps true here.
+        if (roundState.IsOpen)
+        {
+            endedBecause = "its round opened";
+        }
+
         if (ticked && MatchRecordPeerUtils.IsAlive(session))
         {
             await SendBriefingEndAsync(context, session);
         }
 
         logger.LogDebug(
-            "UDP {LocalPort}: the briefing countdown to {RemoteAddress} ended",
+            "UDP {LocalPort}: the briefing countdown to {RemoteAddress} ended because {EndReason}; "
+            + "{Answers}, which is where a client that never readied had got to",
             context.LocalPort,
-            session.RemoteAddress);
+            session.RemoteAddress,
+            endedBecause,
+            MatchRecordPeerUtils.AnswersSoFar(session));
     }
 
     /// <summary>

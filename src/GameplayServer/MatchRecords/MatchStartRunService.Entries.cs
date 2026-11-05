@@ -155,9 +155,10 @@ public sealed partial class MatchStartRunService
 
         logger.LogDebug(
             "UDP {LocalPort}: {RemoteAddress} asked to be placed in the room; the run it is owed "
-            + "follows its entry and not its report",
+            + "follows its entry and not its report, and {Answers}",
             context.LocalPort,
-            context.Remote);
+            context.Remote,
+            MatchRecordPeerUtils.AnswersSoFar(context.Session));
     }
 
     /// <summary>

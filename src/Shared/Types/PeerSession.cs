@@ -79,6 +79,25 @@ public sealed class PeerSession
     public IReadOnlyCollection<(ushort Type, byte Ordinal)> AcknowledgedRecords => acknowledgedRecords;
 
     /// <summary>
+    /// The record of ours this peer answered last, or <c>null</c> while it has
+    /// answered none.
+    /// </summary>
+    /// <remarks>
+    /// <b>The answers are the only thing a peer still says after its roster.</b> A
+    /// client that skips its briefing screen keeps answering this host's records,
+    /// and one that never draws it stops, so the last answer says where a stream the
+    /// peer no longer follows had reached. It is read when a briefing ends for a
+    /// peer that never readied (<see cref="MatchRecordPeerUtils.AnswersSoFar"/>).
+    /// </remarks>
+    public (ushort Type, byte Ordinal)? LastAcknowledgedRecord { get; private set; }
+
+    /// <summary>
+    /// Instant <see cref="LastAcknowledgedRecord"/> arrived, in milliseconds since
+    /// the epoch; zero while the peer has answered none.
+    /// </summary>
+    public long LastAcknowledgedAt { get; private set; }
+
+    /// <summary>
     /// Notes that the peer answered one of our records, and reports whether it
     /// is the first time this record has been answered.
     /// </summary>
@@ -94,6 +113,8 @@ public sealed class PeerSession
     /// <returns><c>true</c> when this record had not been acknowledged before.</returns>
     public bool NoteAcknowledgement(ushort recordType, byte ordinal)
     {
+        LastAcknowledgedRecord = (recordType, ordinal);
+        LastAcknowledgedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         NoteRoundTrip(recordType, ordinal);
         return acknowledgedRecords.Add((recordType, ordinal));
     }
