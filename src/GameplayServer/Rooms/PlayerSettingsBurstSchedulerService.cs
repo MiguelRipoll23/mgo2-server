@@ -118,7 +118,7 @@ public sealed class PlayerSettingsBurstSchedulerService(
             : burst.BuildSettingsBurst(
                 rotation,
                 loadouts,
-                matchSettings.CurrentRoundNumber,
+                matchSettings.CurrentPhase,
                 matchSettings.CurrentRotationIndex,
                 checked((byte)(roster.JoinerCount + 1)),
                 matchSettings.RuleTimers,

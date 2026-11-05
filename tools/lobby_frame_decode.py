@@ -39,7 +39,7 @@ COMPRESSION_MARKER = 0x8000
 TAIL = 0xA
 HEADER = 2
 
-LINE = re.compile(r"lobby: (in|out) frame of (\d+) byte\(s\) on port (\d+): ([0-9a-f ]+)")
+LINE = re.compile(r"(?:lobby|tcp): (in|out) frame of (\d+) byte\(s\) on port (\d+): ([0-9a-f ]+)")
 
 
 def frames_of(path: str) -> list[tuple[str, int, int, bytes]]:

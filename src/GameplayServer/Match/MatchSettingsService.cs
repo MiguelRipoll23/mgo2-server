@@ -43,8 +43,30 @@ public sealed class MatchSettingsService(
 
     private readonly IReadOnlyList<int> ruleTimers = MatchSettingsUtils.RuleTimers(options.Value);
 
-    /// <summary>The round-phase byte carried by the room's state transfer.</summary>
+    /// <summary>The round number, carried beside the phase as the room's own count.</summary>
     public byte CurrentRoundNumber => unchecked((byte)roundState.RoundNumber);
+
+    /// <summary>
+    /// The phase byte the room states about itself at body offset <c>0x09</c>:
+    /// <c>2</c> while the room is briefing and <c>3</c> once its round is open.
+    /// </summary>
+    /// <remarks>
+    /// <b>The corpus measures a phase here, not the round counter.</b> Every
+    /// briefing in `docs/protocol/MATCH_FLOW.md` §1 states <c>2</c>
+    /// (`joined-on-briefing-then-game`, `mgo2-game-started-on-briefing`,
+    /// `mgo2-started-briefing-then-solo-game`, `mgo2-game2`), and a room whose
+    /// slot is being played states <c>3</c>. A joiner sent the first round's
+    /// number instead is told a phase no capture holds: its client stops
+    /// waiting to be briefed, builds the battle HUD, and never writes the
+    /// <c>1d</c> rows a briefing is answered with.
+    /// </remarks>
+    public byte CurrentPhase => roundState.IsOpen ? PlayingPhase : BriefingPhase;
+
+    /// <summary>Phase byte of a room that is briefing, as the corpus states it.</summary>
+    public const byte BriefingPhase = 2;
+
+    /// <summary>Phase byte of a room whose round is open, as the corpus states it.</summary>
+    public const byte PlayingPhase = 3;
 
     /// <summary>The active rotation slot carried by the room's state transfer.</summary>
     public int CurrentRotationIndex => roundState.RoundNumber % rotation.Count;
