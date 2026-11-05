@@ -381,7 +381,11 @@ public sealed partial class MatchStartRunService
             // on from the run's own, and the pair goes on behind it for the stretch
             // every capture holds before the briefing goes quiet
             // (ContinueItemBoxGroupsAsync).
-            if (!wasOpen && roundNumber == 0)
+            //
+            // Its shape is the room's and not the round number's: a room staged
+            // mid-rotation writes the filler and keeps writing it, and the two must
+            // agree or the groups stop after the first tick (`AddRunItemBoxes`).
+            if (!wasOpen && !roundState.HasRoundEnded)
             {
                 await RepeatItemBoxGroupsAsync(context, generation);
                 await ContinueItemBoxGroupsAsync(context, generation);
