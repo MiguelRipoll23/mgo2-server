@@ -1,0 +1,85 @@
+namespace Mgo2Server.GameplayServer.Rooms;
+
+/// <summary>
+/// The six weapon-select rows a room's host publishes for a player:
+/// <c>0x12e2</c>–<c>0x12e7</c>, each a three-byte body of that player's chosen
+/// value, its lobby slot, and <c>0x18</c>.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>The shape is measured, and measured repeatedly.</b> Every block the
+/// reference host wrote for a slot in
+/// <c>mgo2-game-joined-when-red-team-then-briefing</c>,
+/// <c>mgo2-started-on-game-round1</c> and
+/// <c>mgo2-game-started-team-selection-selected-blue-then-game</c> is those six
+/// records written together, in the order <c>0x12e7</c> down to <c>0x12e2</c>,
+/// and every row of every block is the same three bytes: the value the player
+/// reported, the slot the block is for, and <c>0x18</c>. A family the player
+/// never reported keeps <c>0xff</c>, which is what all six carry in every
+/// capture that shows the block — the reference's own rows for slots
+/// <c>01</c>, <c>08</c>, <c>09</c>, <c>0a</c>, <c>0b</c>, <c>10</c> and
+/// <c>15</c> are all <c>ff SS 18</c>.
+/// </para>
+/// <para>
+/// <b>The report is the same body without the trailer.</b> A team-selection
+/// client writes <c>12e4 ff 11</c> · <c>12e3 ff 11</c> · <c>12e2 ff 11</c> and
+/// the host answers <c>12e4 ff 11 18</c> · <c>12e3 ff 11 18</c> ·
+/// <c>12e2 ff 11 18</c> in the same pass, with no byte of either body changed
+/// but the one that is added. The second byte is the reporting player's own
+/// slot in both directions, so the row belongs to that player rather than to a
+/// new one.
+/// </para>
+/// <para>
+/// <b><c>0x12e1</c> stays outside the block.</b> It shares the prefix and the
+/// two-byte report, but the host's own row on it is seven bytes —
+/// <c>00 11 05 00 00 00 00</c> for the client that reported <c>08 11</c> — and
+/// one observation cannot say whether its first byte is the side, its third a
+/// mode, or both something else. Nothing here writes it, and
+/// <see cref="GameplayServer.Commands.Peer.Room.WeaponSelectionHandler"/> is
+/// not bound to it.
+/// </para>
+/// </remarks>
+public static class WeaponSelectionBodiesUtils
+{
+    /// <summary>First identifier of the block, the one written last.</summary>
+    public const ushort FirstFamily = 0x12e2;
+
+    /// <summary>Last identifier of the block, the one written first.</summary>
+    public const ushort LastFamily = 0x12e7;
+
+    /// <summary>Value of a family the player has not reported.</summary>
+    public const byte UnsetValue = 0xFF;
+
+    /// <summary>Length of a published row's body.</summary>
+    public const int BodyLength = 3;
+
+    /// <summary>Length of the report a client sends under the same identifier.</summary>
+    public const int ReportBodyLength = 2;
+
+    /// <summary>Byte every published row ends on.</summary>
+    public const byte Trailer = 0x18;
+
+    /// <summary>Index of the value, in the report and in the row.</summary>
+    public const int ValueIndex = 0;
+
+    /// <summary>Index of the reporting player's own slot, in the report and in the row.</summary>
+    public const int SlotIndex = 1;
+
+    /// <summary>Number of families the block carries.</summary>
+    public const int FamilyCount = LastFamily - FirstFamily + 1;
+
+    /// <summary>Whether an identifier is one of the block's.</summary>
+    /// <param name="type">Record identifier as it decoded.</param>
+    public static bool IsFamily(ushort type) => type >= FirstFamily && type <= LastFamily;
+
+    /// <summary>Whether a record is a client's report rather than a published row.</summary>
+    /// <param name="type">Record identifier as it decoded.</param>
+    /// <param name="body">Body as it decoded.</param>
+    public static bool IsReport(ushort type, byte[] body) =>
+        IsFamily(type) && body.Length == ReportBodyLength;
+
+    /// <summary>Body of the row a family publishes for a slot.</summary>
+    /// <param name="value">The player's value for that family.</param>
+    /// <param name="slot">The player's own lobby slot.</param>
+    public static byte[] Body(byte value, byte slot) => [value, slot, Trailer];
+}

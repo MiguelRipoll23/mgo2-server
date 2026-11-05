@@ -2892,14 +2892,23 @@ no host ever answers with data, and the reference client never sends one at all.
 
 **What the reference host does write in that class is a *different* set of subs.**
 `mgo2-game-joined-when-red-team-then-briefing` writes `0x12e2` … `0x12e7` — six
-operations-class records on subs `e2` to `e7`, three bytes each, `ff <value> 18` —
+operations-class records on subs `e2` to `e7`, three bytes each, `ff <slot> 18` —
 in one pass, then re-sent as `ff 01 18`, `ff 0a 18` and `ff 09 18` under ordinals `00`,
 `01` and `02` at t+799.165, 800.807 and 805.291;
 `mgo2-game-started-team-selection-selected-blue-then-game`
-writes `0x12e1` (7 bytes, twice) beside `0x12e2` and `0x12e3`. This host writes none of
-them. They are round-side records — every capture that holds them holds them beside tick
-traffic — so they are not what a client in a fade is waiting for, and they were not
-written.
+writes `0x12e1` (7 bytes, twice) beside `0x12e2` and `0x12e3`. They are round-side
+records — every capture that holds them holds them beside tick traffic — so they are not
+what a client in a fade is waiting for, and this host wrote none of them when the
+measurement above was taken.
+
+**The six-family block is written now, and `0x12e1` still is not.**
+`WeaponSelectionHandler` files the two-byte report a client sends under `0x12e2`–`0x12e7`
+and publishes the reporting slot's block as six rows of `<value> <slot> 18`, the last
+identifier first, with `0xff` for a family that slot never reported — the shape every
+captured block has (`GameplayServer/Rooms/WeaponSelectionBodiesUtils.cs`). The `0x12e1`
+row stays unwritten because its seven bytes have one observation (`00 11 05 00 00 00 00`
+for the client that reported `08 11`) and the first byte says `00` where the client said
+`08`, which one sample cannot turn into a rule.
 
 ### 31.2 The early rules pair is not the cause, and the ordinal stream is inconsistent
 

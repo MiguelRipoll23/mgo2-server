@@ -48,6 +48,7 @@ builder.Services.AddSingleton<ScoreboardPublishService>();
 builder.Services.AddSingleton<MatchResultService>();
 builder.Services.AddSingleton<BriefingStateService>();
 builder.Services.AddSingleton<PlayerVitalsService>();
+builder.Services.AddSingleton<WeaponSelectionService>();
 builder.Services.AddSingleton<TeamArrayService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 // The peer command handlers are registered beside the types their messages are
