@@ -177,12 +177,22 @@ public static class MatchStartRunFramesUtils
         // never drains under (`ItemBoxFramesUtils`). The repeat writes its own
         // groups on the counters instead
         // (`MatchStartRunService.RepeatItemBoxGroupsAsync`).
+        // A briefing's repeat leaves the join-state answer behind with its opening.
+        // The reference's fresh-room run writes `0x025c 00 00 00 00` in its frame
+        // (`briefing-then-solo-game` t+9.780, fourth byte 6) and the tick-behind copy
+        // at t+11.579 carries thirteen records with no `0x025c` among them: the pair
+        // of heads and the join-state answer are both the run's opening and both are
+        // dropped. Repeating the answer hands the client a second "you have joined"
+        // every tick, on the record its own join path restarts from.
+        var briefing = !answersReport;
+
         return
         [
             .. run
-                .Skip(answersReport ? RunOpeningCount : BriefingRunOpeningCount)
+                .Skip(briefing ? BriefingRunOpeningCount : RunOpeningCount)
                 .Where(record => record.Type != generation.ItemBox
-                    && record.Type != generation.ItemBoxState),
+                    && record.Type != generation.ItemBoxState
+                    && !(briefing && record.Type == generation.JoinState)),
         ];
     }
 
