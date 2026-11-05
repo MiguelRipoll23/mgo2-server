@@ -29,9 +29,12 @@ public sealed partial class MatchRoundStateService
     /// <c>01 60 09</c> — 2 400 units of its five-minute round — from t+65.036, 7.4 s
     /// after its run, to t+170.366, four seconds before its round opens at
     /// t+174.371. A room that has played writes the round that just ended: every
-    /// round end of <c>mgo2-started-on-game-round1</c> writes <c>01 00 00</c>
-    /// through the briefing after it, and only the next round's open writes a whole
-    /// clock again. So the value is the round in front of the room for a room that
+    /// briefing <c>mgo2-started-on-game-round1</c> runs after a played round writes
+    /// <c>01 00 00</c> through its whole length, and only the next round's open writes
+    /// a whole clock again. The rounds of one game need no such stretch: they run
+    /// back to back and the room is never held on zero between them
+    /// (<c>docs/protocol/MATCH_FLOW.md</c> §5). So the value is the round in front of
+    /// the room for a room that has one, and zero for a room whose round is over
     /// has one, and zero for a room whose round is over
     /// (<see cref="MatchStartRunService.BeginBriefing"/>).
     /// </remarks>
