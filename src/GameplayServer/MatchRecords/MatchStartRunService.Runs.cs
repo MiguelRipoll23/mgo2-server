@@ -42,11 +42,7 @@ public sealed partial class MatchStartRunService
             }
         }
 
-        // The room's first briefing begins with the first peer that reaches it:
-        // that peer's report names the set the briefing is written under, and the
-        // room's own briefing time is the deadline that opens the round, armed
-        // once the room has a second player to be timed with (ArmBriefingDeadline).
-        BeginBriefing();
+        BeginBriefingForEntry();
 
         logger.LogDebug(
             "UDP {LocalPort}: watching for rounds to open for {RemoteAddress}",

@@ -60,6 +60,17 @@ public sealed partial class MatchStartRunService
 
         while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
         {
+            // Between two rounds of one game there is no briefing to write: the
+            // room plays straight on, the client re-readies on the sibling set and
+            // the round's own run answers it (WriteRunAsync). A briefing's run here
+            // would be the between-games shape — full round state, clock zero — and
+            // the client would draw a briefing in the middle of the match
+            // (IsBetweenRoundsOfGame).
+            if (IsBetweenRoundsOfGame)
+            {
+                return;
+            }
+
             // No run is written before a briefing has heard a report: the run
             // echoes that report's byte, so a briefing that has heard from nobody
             // has nothing to write one from.
