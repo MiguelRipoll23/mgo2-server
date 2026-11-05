@@ -79,11 +79,32 @@ public sealed partial class MatchStartRunService
             return false;
         }
 
-        // A round is preceded by its own briefing: the captures open a round,
-        // play it, and then rewrite the ready set for the round after it
-        // (docs/protocol/BRIEFING_FLOW.md). Clearing the states here is what
-        // makes the next round wait for readies of its own instead of opening
-        // the moment the last round's clock stopped.
+        // A round inside a game is followed by the next round of that game, not
+        // by a briefing. The rotation states a game of several rounds as
+        // consecutive identical entries (MatchSettings.IsLastRoundOfGame), and the
+        // capture plays those rounds back to back: mgo2-started-on-game-round1
+        // covers two whole five-minute rounds between t+601.4 and t+1238.2 with no
+        // zero-clock stretch anywhere between them (docs/protocol/MATCH_FLOW.md §5).
+        //
+        // The ready set is left standing, so the next round of the game opens on
+        // the readies the room already holds — the client reports on the sibling
+        // set and that report opens it — instead of the room waiting out a
+        // briefing nothing shown it.
+        if (!matchSettings.IsLastRoundOfGame(ended.Value))
+        {
+            logger.LogInformation(
+                "Round {RoundNumber} ended because {Reason}; its game has another round, so the room "
+                + "runs no briefing and the next round opens on the readies it already holds",
+                ended,
+                reason);
+            return true;
+        }
+
+        // A game's last round is preceded by the game's briefing: the captures
+        // open a round, play it, and then rewrite the ready set for the game after
+        // it (docs/protocol/BRIEFING_FLOW.md). Clearing the states here is what
+        // makes the next game wait for readies of its own instead of opening the
+        // moment the last round's clock stopped.
         briefingStates.BeginNextBriefing();
 
         // The next briefing runs on its own deadline as well, once it has a second

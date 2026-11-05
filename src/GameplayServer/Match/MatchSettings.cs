@@ -90,4 +90,34 @@ public sealed record MatchSettings(
     /// <returns>The round's rule, map and length.</returns>
     public MatchRotationEntry Round(int roundNumber) =>
         Rotation[(Math.Max(roundNumber, 1) - 1) % Rotation.Count];
+
+    /// <summary>
+    /// Whether the round a number names is the last its game plays.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A game is a run of identical entries.</b> The rotation is a per-round
+    /// list, so a game played for several rounds appears as that many consecutive
+    /// triples of one rule on one map: `mgo2-started-on-game-round1` states slots
+    /// 8, 9 and 10 as `[6,1,0]` and its own round count as three
+    /// (`docs/protocol/MATCH_FLOW.md` §2). The entry after this round naming
+    /// another rule, map or flags is where the game ends, and that is where the
+    /// room returns to a briefing — not at every round, which is what the capture
+    /// shows: two whole five-minute rounds run back to back at t+601.4 and
+    /// t+1238.2 with no briefing between them (§5).
+    /// </para>
+    /// <para>
+    /// A rotation of distinct entries has every round as its game's last, which is
+    /// the shape a room plays a rule once in: one briefing per round, unchanged.
+    /// </para>
+    /// </remarks>
+    /// <param name="roundNumber">Round counting from one, as the room counts them.</param>
+    /// <returns><c>true</c> when the round is its game's last.</returns>
+    public bool IsLastRoundOfGame(int roundNumber)
+    {
+        var current = Round(roundNumber);
+        var next = Round(roundNumber + 1);
+
+        return current.Rule != next.Rule || current.Map != next.Map || current.Flags != next.Flags;
+    }
 }

@@ -80,6 +80,32 @@ public sealed class MatchSettingsService(
     /// of this host's channel is answering for.
     /// </summary>
     /// <returns>The room's settings, or <c>null</c> while it has none published.</returns>
+    /// <summary>
+    /// Whether the round a number names is the last its game plays, read off the
+    /// rotation this instance plays.
+    /// </summary>
+    /// <remarks>
+    /// It resolves no room: the rotation is this instance's own and is known before
+    /// the room is published, and a round end that waited on the row would leave a
+    /// game's boundary undecided while the lobby is unreachable. The rule is
+    /// <see cref="MatchSettings.IsLastRoundOfGame"/>'s, over the same list.
+    /// </remarks>
+    /// <param name="roundNumber">Round counting from one, as the room counts them.</param>
+    /// <returns><c>true</c> when the round is its game's last.</returns>
+    public bool IsLastRoundOfGame(int roundNumber)
+    {
+        if (rotation.Count == 0)
+        {
+            return true;
+        }
+
+        var index = Math.Max(roundNumber, 1);
+        var current = rotation[(index - 1) % rotation.Count];
+        var next = rotation[index % rotation.Count];
+
+        return current.Rule != next.Rule || current.Map != next.Map || current.Flags != next.Flags;
+    }
+
     public MatchSettings? FindPublished()
     {
         var matchIdentifier = match.MatchIdentifier;
