@@ -307,7 +307,7 @@ public sealed partial class MatchStartRunService
 
         // The item boxes are the run's own: a fresh briefing's opener and the two
         // groups behind it, or a round's spawned box (`AddRunItemBoxes`).
-        var itemBoxGroups = AddRunItemBoxes(generation, run, briefing, roundNumber);
+        var itemBoxGroups = AddRunItemBoxes(generation, run, briefing);
 
         await MatchRecordSendUtils.SendAsync(context, run);
 

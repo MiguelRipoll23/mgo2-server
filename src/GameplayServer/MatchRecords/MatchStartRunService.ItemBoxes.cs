@@ -87,26 +87,45 @@ public sealed partial class MatchStartRunService
     /// that follow it.
     /// </summary>
     /// <remarks>
-    /// <b>The two shapes are the two states of the room.</b> A fresh briefing's run
-    /// opens the filler pair and leaves two groups to be written behind it, because
-    /// the room has spawned no box; a round's run carries the head and the item of
-    /// the box the round spawned, and nothing follows it, because the beat takes the
+    /// <para>
+    /// <b>The two shapes are the two states of the room.</b> A briefing's run opens
+    /// the filler pair and leaves two groups to be written behind it, because the
+    /// room has spawned no box; a round's run carries the head and the item of the
+    /// box the round spawned, and nothing follows it, because the beat takes the
     /// group over once the round is open
     /// (<see cref="MatchStartRunFramesUtils.BuildRun"/>, `ItemBoxFramesUtils.RunOpeningGroup`).
+    /// </para>
+    /// <para>
+    /// <b>And a briefing's shape is the room's, not its rotation's.</b> The filler
+    /// belongs to a room that has played no round here; a room staged mid-rotation
+    /// by <see cref="Mgo2Server.Shared.Options.ServerOptions.GameplayServerStartRound"/>
+    /// has played none of them, so its first briefing is a fresh room's and takes
+    /// the filler — gating on the round number read that room as a room between
+    /// rounds and handed its briefing the spawned box of a round that never
+    /// played. A briefing handed a box's events is a briefing whose client is
+    /// told a round is under way and enters the game instead of drawing its
+    /// screen, which is the same mechanism the run's own round state has
+    /// (<see cref="MatchStartRunFramesUtils.BuildRun"/>, `carriesRoundState`).
+    /// A room that has played a round writes no group before the next round
+    /// opens, which is why the answer above is <c>null</c> and not the filler.
+    /// </para>
     /// </remarks>
     /// <param name="generation">Identifier set of the run.</param>
     /// <param name="run">The run being built.</param>
     /// <param name="briefing">Whether this is a briefing's run.</param>
-    /// <param name="roundNumber">Round number the run was written for.</param>
     /// <returns>The groups to write behind the run, or <c>null</c> when none do.</returns>
     private List<List<MatchRecordFramesUtils.RecordMessage>>? AddRunItemBoxes(
         MatchRecordGenerationUtils generation,
         List<MatchRecordFramesUtils.RecordMessage> run,
-        bool briefing,
-        int roundNumber)
+        bool briefing)
     {
-        if (briefing && roundNumber == 0)
+        if (briefing)
         {
+            if (roundState.HasRoundEnded)
+            {
+                return null;
+            }
+
             var groups = BuildItemBoxGroups(generation);
             run.AddRange(groups[0]);
             return groups;
