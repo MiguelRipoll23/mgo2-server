@@ -28,6 +28,13 @@
 #   GAMEPLAY_SERVER_PORT=9999 scripts/run-gameplay-local.sh
 #   PI_HOST=miguel@192.168.1.20 scripts/run-gameplay-local.sh
 
+# Run under bash even when the file is started with sh. The run needs bash arrays,
+# process substitution and pipefail, and a POSIX shell rejects the heredoc inside
+# the process substitution as a syntax error before it reaches it.
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec bash "$0" "$@"
+fi
+
 set -euo pipefail
 
 project_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
