@@ -142,6 +142,12 @@ public sealed partial class BriefingCountdownService(
     private TimeSpan length;
 
     /// <summary>
+    /// Whether this briefing's closing zero has been written, which is the record
+    /// a client's briefing screen ends on (<see cref="HasEnded"/>).
+    /// </summary>
+    private bool ended;
+
+    /// <summary>
     /// Sends the countdown to one peer from that peer's own run for as long as its
     /// room's briefing runs, and returns when the briefing's time is out, the round
     /// opens, or the peer goes.
@@ -291,6 +297,14 @@ public sealed partial class BriefingCountdownService(
                     seconds: 0,
                     readySet: briefingStates.ReadyMask),
                 sequences.Take(countdownIdentifier));
+
+            // The zero is the briefing's end for every writer that reads it, and it
+            // is written once: the round's opener does not wait out a briefing whose
+            // screen has already closed (HasEnded).
+            lock (gate)
+            {
+                ended = true;
+            }
         }
         catch (Exception exception)
         {

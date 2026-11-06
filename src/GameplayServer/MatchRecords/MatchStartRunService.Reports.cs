@@ -27,11 +27,12 @@ public sealed partial class MatchStartRunService
     /// loaded the room and its map and is on the briefing screen
     /// (<see cref="Rooms.BriefingStateService.JoinReport"/>); a player's own
     /// readiness arrives on a different record entirely, on the operations
-    /// stream, and it is that one which opens a round
-    /// (<see cref="BriefingTimeElapsed"/>): the report that follows the briefing is
-    /// the client leaving its screen — the weapon select it shows next, then its
-    /// spawn — and the reports before it are the client still waiting on that
-    /// screen. The ready records an earlier reading waited on do not exist:
+    /// stream, and what opens a round is not that record but the report the client
+    /// sends once the briefing has written its closing zero
+    /// (<see cref="BriefingCountdownService.HasEnded"/>). That report is the client
+    /// leaving its screen — the weapon select it shows next, then its spawn — and
+    /// the reports before it are the client still waiting on that screen. The ready
+    /// records an earlier reading waited on do not exist:
     /// `working-server-4-sessions.pcapng` holds no `1f &lt;slot&gt; &lt;state&gt;`
     /// anywhere in ninety seconds of briefing, and its round opens on the report.
     /// </para>
@@ -40,9 +41,10 @@ public sealed partial class MatchStartRunService
     /// hears two join reports a round. The first names the set the briefing itself is
     /// written under — the client is still being briefed, so what it is served is
     /// that briefing's run and not a round (<see cref="MatchStartRunService.Runs"/>)
-    /// — and the second, arriving once the room's briefing time is out, is the client
-    /// leaving its briefing screen and asks for the round the captures show playing
-    /// after it (<c>docs/protocol/BRIEFING_FLOW.md</c> §2). Every report in between
+    /// — and the second, arriving once the room's briefing has written its closing
+    /// zero, is the client leaving its briefing screen and asks for the round the
+    /// captures show playing after it (<c>docs/protocol/BRIEFING_FLOW.md</c> §2).
+    /// Every report in between
     /// is the client still on that screen, re-sending while its own timer runs; it is
     /// answered with the briefing's run and opens nothing.
     /// </para>
@@ -96,8 +98,8 @@ public sealed partial class MatchStartRunService
             // the reports describe: its count is started by the second player's
             // report, the one that gives a frozen room somebody else to wait for. A
             // room of one holds its count at the room's whole briefing time and
-            // nothing runs out, so its round is opened by the report the client
-            // sends when its own briefing timer is done (BriefingTimeElapsed). One
+            // nothing runs out, so its round is opened by the report that follows
+            // the briefing's closing zero (BriefingCountdownService.HasEnded). One
             // briefing starts it once, whatever the reports after that one say.
             startsBriefing = countStartedBriefing != armed
                 && briefingStates.PlayerCount >= CountingJoinReportCount
@@ -131,17 +133,22 @@ public sealed partial class MatchStartRunService
             return false;
         }
 
-        // Every report before the room's briefing time is out is the client still on
+        // Every report before the room's briefing has closed is the client still on
         // its briefing screen, re-sending while its own timer runs; the round is not
-        // what it is asking for yet.
-        if (!BriefingTimeElapsed(out var remaining))
+        // what it is asking for yet. What closes a briefing is its closing zero,
+        // `0b 00 00 <ready set> 00 00` — the record a client's screen ends on — and
+        // not the room's briefing time: a room of one holds its count at the whole
+        // time and sits on that screen far past it (`briefing-then-solo-game` arms
+        // its count at t+12.9 and writes its zero at t+145.1, when its only player
+        // readied), so a clock read here opened the round minutes before the client
+        // left the screen, and the report that asked for the round found one open.
+        if (!countdown.HasEnded && !NoBriefingToWaitFor)
         {
             logger.LogDebug(
-                "A report arrived on 0x{Identifier:x4} with {Remaining} of the room's briefing still to "
-                + "run; the client is on its briefing screen and the round waits for the report it sends "
-                + "when it leaves it",
-                reportIdentifier,
-                remaining);
+                "A report arrived on 0x{Identifier:x4} before the room's briefing wrote its closing zero; "
+                + "the client is on its briefing screen and the round waits for the report it sends when "
+                + "it leaves it",
+                reportIdentifier);
             return false;
         }
 
@@ -157,30 +164,17 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
-    /// Whether the room's briefing time has run out since the report that began it.
+    /// Whether the room has no briefing to wait for, so a report is itself what a
+    /// round opens on.
     /// </summary>
     /// <remarks>
-    /// It is the room's own briefing time, read where the room is published, and a
-    /// host with no published room counts every report as one that follows a
-    /// briefing: there is no briefing to wait on and no round for the wait to serve
+    /// A room with no briefing time writes no count and no closing zero
+    /// (<see cref="BriefingCountdownService.Begin"/> arms nothing without one), so
+    /// <see cref="BriefingCountdownService.HasEnded"/> never turns and the zero
+    /// cannot be what a report waits for. A host whose room is not published yet has
+    /// the same answer, and no round to open for it
     /// (<see cref="OpenRound"/> resolves nothing without a room).
     /// </remarks>
-    /// <param name="remaining">
-    /// How much of the briefing is left, or zero once it is out.
-    /// </param>
-    /// <returns><c>true</c> when the briefing is out and a report is a client leaving it.</returns>
-    private bool BriefingTimeElapsed(out TimeSpan remaining)
-    {
-        DateTimeOffset? reportedAt;
-        lock (gate)
-        {
-            reportedAt = briefingReportInstant;
-        }
-
-        var briefingTime = TimeSpan.FromMinutes(matchSettings.FindPublished()?.BriefingTimeMinutes ?? 0);
-        remaining = reportedAt is { } began
-            ? briefingTime - (DateTimeOffset.UtcNow - began)
-            : TimeSpan.Zero;
-        return remaining <= TimeSpan.Zero;
-    }
+    private bool NoBriefingToWaitFor =>
+        matchSettings.FindPublished() is not { BriefingTimeMinutes: > 0 };
 }

@@ -55,6 +55,7 @@ public sealed partial class BriefingCountdownService
             countingFrom = null;
             length = TimeSpan.FromMinutes(minutes);
             countdownIdentifier = operationsIdentifier;
+            ended = false;
         }
 
         logger.LogDebug(
@@ -94,6 +95,31 @@ public sealed partial class BriefingCountdownService
 
         logger.LogDebug(
             "A second player has reported, so the room's briefing countdown starts moving from now");
+    }
+
+    /// <summary>
+    /// Whether this briefing's closing zero has been written: the count at zero
+    /// carrying the room's whole ready set, which is the record a client's
+    /// briefing screen ends on.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is the briefing's own end and not the count's.</b> A room that fills
+    /// its ready set closes its briefing before its clock runs out — the zero is
+    /// written once, beside the ticking count, with twenty-odd seconds still on it
+    /// (<c>mgo2-game-joined-when-red-team-then-briefing</c> t+113.758) — so the
+    /// record, and not the remaining time, is what says the briefing is over. The
+    /// report that follows it asks for the round like the report a briefing that
+    /// ran out is followed by (<see cref="MatchStartRunService.OnJoinReport"/>).
+    /// </remarks>
+    public bool HasEnded
+    {
+        get
+        {
+            lock (gate)
+            {
+                return ended;
+            }
+        }
     }
 
     /// <summary>

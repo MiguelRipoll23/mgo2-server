@@ -266,9 +266,10 @@ public sealed partial class MatchRoundStateService(
     /// <param name="requested">The set the reporting client is on.</param>
     /// <param name="round">The round the room's rotation names.</param>
     /// <param name="clockHoldMilliseconds">
-    /// How long the round's clock stays whole after it opens: the briefing time
-    /// still to run when the report opened it, or zero when the briefing had
-    /// already ended (<see cref="RemainingUnits"/>).
+    /// How long the round's clock stays whole after it opens. Every round this host
+    /// opens takes it as zero: the report that opens one follows the briefing's
+    /// closing zero, so no briefing time is left to hold the clock through
+    /// (<see cref="RemainingUnits"/>).
     /// </param>
     /// <returns>
     /// The round that is now playing, or <c>null</c> when one already was and

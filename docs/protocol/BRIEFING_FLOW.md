@@ -178,9 +178,28 @@ seconds, reports `e1 08` again at t+395.811, and the round opens at t+396.010 wi
 its clock at 2 400 — 0.2 s after that second report. **The capture holds no
 `1f <slot> <state>` record at all**; every body opening `1f` in it is a seven-byte
 record of another family. The host implements this reading: the report that arrives
-once the room's briefing time is out is the one a round opens on
-(`MatchStartRunService.OnJoinReport`), and a room of one is timed by its own
-briefing time because that time is what its client waits out.
+after the briefing's closing zero is the one a round opens on
+(`MatchStartRunService.OnJoinReport`).
+
+**And the report waits for the zero, not for the briefing's clock.**
+`briefing-then-solo-game.pcapng` rewrites the wait. Its only player reports at
+t+8.696; its count is written once, at t+12.887, as `0b 3c 00 00 00 00 00`, and then
+never ticks, because a room of one holds it at the whole briefing time; the player
+readies at t+144.244 (`1f 0a 01`), the closing zero `0b 00 00 00 04 00 00` follows at
+t+145.098, the round opens at t+146.007 (`02 2a 04 1e 1e 1e 1e` and the two `0b 00 01`
+records), and its run writes the clock whole at t+147.650 (`01 60 09`, 2 400 units).
+That briefing outlived its one-minute time by 76 s. A report gated on the room's
+briefing time therefore opens the round while the client is still reading the
+screen, and the report that does ask for the round finds one already open — the
+fade the client draws on its way out of the briefing then never fades back in.
+
+The two multiplayer sessions show the same rule from the other side, and the zero
+alone opening nothing: `working-server-4-sessions.pcapng` writes its zero at
+t+392.686 and opens nothing until the client's next report at t+395.811, 0.2 s
+before the open at t+396.010; `working-server-log.pcapng` writes its zero at
+t+569.407 and opens at t+572.424, 0.14 s behind the report at t+572.280. In all
+three the round follows a zero and a report, and in none of them does the room's
+briefing time decide it.
 
 **Measured, and still the shape of the wait.** In `started-on-briefing` the last
 player reports at t+196.828 and the round opens 1.543 s later, at t+198.371; the

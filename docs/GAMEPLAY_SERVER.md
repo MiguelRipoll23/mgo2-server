@@ -565,8 +565,9 @@ from the records it is sent, and the run's own clock is the one that says so.
 
 The gate is not "every roster member has readied". A round opens on the report a
 client sends once it has left its briefing screen — the weapon select the game shows
-next, then its spawn — and every report before the room's briefing time is out is
-that screen still being waited on. A peer that joins, stays alive and never readies
+next, then its spawn — and every report before the room's briefing has written its
+closing zero is that screen still being waited on. A peer that joins, stays alive and
+never readies
 therefore holds nothing shut: what it holds is its own round, for as long as it sits
 on the screen, and the round opens for the room when it comes back off it.
 

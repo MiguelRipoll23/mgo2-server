@@ -188,19 +188,14 @@ public sealed partial class MatchStartRunService(
             return false;
         }
 
-        // The clock a round opens on is whole, and it stays whole for as much of the
-        // room's briefing as is still to run. A count that is still moving is a
-        // briefing still being waited out, so the round's clock counts from that
-        // briefing's own end and not from the open; a room of one has no end to wait
-        // for, its count held and TimeRemaining answering nothing for it, so its
-        // clock counts from the open. A clock that counted from the open would run
-        // the round out under a client still reading the briefing
-        // (MatchRoundStateService.RemainingUnits).
-        var hold = countdown.TimeRemaining(DateTimeOffset.UtcNow, out var remaining)
-            ? (int)remaining.TotalMilliseconds
-            : 0;
-
-        var round = roundState.Open(generation, nextRound, hold);
+        // The clock a round opens on is whole and counts from the open, because a
+        // round only opens on a briefing that has closed: the report that opens it
+        // follows the briefing's closing zero (`BriefingCountdownService.HasEnded`),
+        // so there is no briefing time left for the clock to be held whole through.
+        // Measured: `briefing-then-solo-game` writes its zero at t+145.098, opens at
+        // t+146.007, and writes the run's clock whole, `01 60 09` = 2 400 units, at
+        // t+147.650, with nothing held over before it.
+        var round = roundState.Open(generation, nextRound);
         if (round is null)
         {
             // A client reports until it is answered, so a second report for a
@@ -228,7 +223,7 @@ public sealed partial class MatchStartRunService(
 
         _ = EndWhenTimeRunsOutAsync(
             round.Value,
-            hold + RoundClockUtils.TimeLimitMilliseconds(nextRound));
+            RoundClockUtils.TimeLimitMilliseconds(nextRound));
         return true;
     }
 
