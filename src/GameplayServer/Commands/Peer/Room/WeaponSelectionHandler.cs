@@ -6,9 +6,9 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 
 /// <summary>
-/// Takes the weapon-select value a client reports — one of
-/// <c>0x12e2</c>–<c>0x12e7</c>, a two-byte body of the value and the player's
-/// own slot — records it against that slot, and publishes the block the row
+/// Takes the weapon a client reports — one of the three weapon families, each on
+/// its own record identifier, as a two-byte body of the value and the player's own
+/// slot — records it against that family and slot, and publishes the block the row
 /// belongs to.
 /// </summary>
 /// <remarks>
@@ -66,16 +66,34 @@ public sealed class WeaponSelectionHandler(
             return;
         }
 
+        // The identifier says which of the three weapon families the choice is
+        // for; the body says which weapon, and whose slot it was made in. The
+        // block's other three identifiers carry no family, so a record on one of
+        // them is a choice this host cannot file and is left alone.
+        if (!WeaponSelectionBodiesUtils.TryGetFamily(context.Message.Type, out var family))
+        {
+            logger.LogDebug(
+                "UDP {LocalPort}: 0x{MessageType:x4} from {RemoteAddress} is one of the "
+                + "weapon-select block's records but not one of the three weapon families; left alone",
+                context.LocalPort,
+                context.Message.Type,
+                context.Remote);
+
+            return;
+        }
+
         var slot = body[WeaponSelectionBodiesUtils.SlotIndex];
         var value = (WeaponIdentifier)body[WeaponSelectionBodiesUtils.ValueIndex];
-        selections.Note(context.Message.Type, slot, value);
+        selections.Note(family, slot, value);
 
         var rows = selections.RowsFor(slot);
         logger.LogDebug(
-            "UDP {LocalPort}: {RemoteAddress} reported 0x{Value:x2} under 0x{MessageType:x4} for slot "
-            + "{Slot}; publishing {RowCount} weapon-select row(s) to it and the room",
+            "UDP {LocalPort}: {RemoteAddress} reported {Family} weapon 0x{Value:x2} on "
+            + "0x{MessageType:x4} for slot {Slot}; publishing {RowCount} weapon-select row(s) "
+            + "to it and the room",
             context.LocalPort,
             context.Remote,
+            family,
             (byte)value,
             context.Message.Type,
             slot,

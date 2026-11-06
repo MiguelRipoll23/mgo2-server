@@ -3,9 +3,10 @@ using Mgo2Server.Shared.Types;
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
-/// The six weapon-select rows a room's host publishes for a player:
+/// The six weapon-select records a room's host publishes for a player,
 /// <c>0x12e2</c>–<c>0x12e7</c>, each a three-byte body of that player's chosen
-/// value, its lobby slot, and <c>0x18</c>.
+/// value, its lobby slot, and <c>0x18</c>; and the three of them that carry the
+/// three weapon families.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -31,27 +32,30 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// slot in both directions, so the row belongs to that player rather than to a
 /// new one.
 /// </para>
-/// <para>    /// <b>Three of the six are the three weapon types, and a client reports exactly
-    /// those three.</b> The weapon-select stage's script (`n007a/script.gcl`,
-    /// localized by the patcher log's `wp_select` and `LmenuWeapon` labels) builds
-    /// <c>WpMng_SetWeaponList -group 0</c>, <c>-group 1</c> and <c>-group 2</c>,
-    /// and the stage's own text names the three: "switch between primary,
-    /// secondary, and support … one weapon from each type" (`resources.gcl`, line
-    /// 4649). The groups' contents agree: the replay console's id tables
-    /// (`.gametools/replay-console/app.js`, keyed by the item names a replay
-    /// carries) put ten of its sixteen firearm ids in group 0, the two pistols
-    /// (`2` MK2, `7` GSR) and nothing else in group 1, and seven of its nine
-    /// thrown ids plus two blades in group 2 — so the groups are primary,
-    /// secondary and support in that order. Across the ten captures surveyed, only
-    /// <see cref="PrimaryFamily"/>, <see cref="SecondaryFamily"/> and
-    /// <see cref="SupportFamily"/> are ever reported by a client — as two-byte
-    /// bodies — and `0x12e5`–`0x12e7` are rows no report ever fills. That the
-    /// reported three are the weapon types is **[V]**; which type each identifier
-    /// is rests on the order the client reports them in (<c>12e4</c>, <c>12e3</c>,
-    /// <c>12e2</c> — the screen's top-down order), so the pairing is **[I]**.
-    /// </para>
-    /// <para>
-    /// <b><c>0x12e1</c> stays outside the block.</b> It shares the prefix and the
+/// <para>
+/// <b>Three of the six are the three weapon families, and a client reports
+/// exactly those three.</b> The weapon-select stage's script
+/// (<c>n007a/script.gcl</c>, localized by the patcher log's <c>wp_select</c> and
+/// <c>LmenuWeapon</c> labels) builds <c>WpMng_SetWeaponList -group 0</c>,
+/// <c>-group 1</c> and <c>-group 2</c>, and the stage's own text names the
+/// three: "switch between primary, secondary, and support … one weapon from each
+/// type" (<c>resources.gcl</c>, line 4649). The groups' contents agree: the
+/// replay console's id tables (`.gametools/replay-console/app.js`, keyed by the
+/// item names a replay carries) put ten of its sixteen firearm ids in group 0,
+/// the two pistols (<c>2</c> MK2, <c>7</c> GSR) and nothing else in group 1, and
+/// seven of its nine thrown ids plus two blades in group 2 — so the groups are
+/// primary, secondary and support in that order, the families
+/// <see cref="WeaponFamily"/> names. Across the ten captures surveyed, only
+/// <see cref="PrimaryIdentifier"/>, <see cref="SecondaryIdentifier"/> and
+/// <see cref="SupportIdentifier"/> are ever reported by a client — as two-byte
+/// bodies — and <c>0x12e5</c>–<c>0x12e7</c> are rows no report ever fills. That
+/// the reported three are the weapon families is **[V]**; which family each
+/// identifier is rests on the order the client reports them in (<c>12e4</c>,
+/// <c>12e3</c>, <c>12e2</c> — the screen's top-down order), so the pairing is
+/// **[I]**.
+/// </para>
+/// <para>
+/// <b><c>0x12e1</c> stays outside the block.</b> It shares the prefix and the
 /// two-byte report, but the host's own row on it is seven bytes —
 /// <c>00 11 05 00 00 00 00</c> for the client that reported <c>08 11</c> — and
 /// one observation cannot say whether its first byte is the side, its third a
@@ -62,24 +66,28 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </remarks>
 public static class WeaponSelectionBodiesUtils
 {
-    /// <summary>First identifier of the block, the one written last.</summary>
-    public const ushort FirstFamily = 0x12e2;
+    /// <summary>First record identifier of the block, the one written last.</summary>
+    public const ushort BlockFirstIdentifier = 0x12e2;
 
-    /// <summary>Last identifier of the block, the one written first.</summary>
-    public const ushort LastFamily = 0x12e7;
+    /// <summary>Last record identifier of the block, the one written first.</summary>
+    public const ushort BlockLastIdentifier = 0x12e7;
+
+    /// <summary>Number of record identifiers the block carries, the three families among them.</summary>
+    public const ushort BlockIdentifierCount = BlockLastIdentifier - BlockFirstIdentifier + 1;
 
     /// <summary>
-    /// Identifier the primary weapon's selection travels on. That the reported
-    /// three are the three weapon types is **[V]**; which identifier is which rests
-    /// on the order the client reports in, so this pairing is **[I]**.
+    /// Record identifier the primary family's selection travels on. That the
+    /// reported three are the three weapon families is **[V]**; which identifier
+    /// is which rests on the order the client reports in, so this pairing is
+    /// **[I]**.
     /// </summary>
-    public const ushort PrimaryFamily = 0x12e4;
+    public const ushort PrimaryIdentifier = 0x12e4;
 
-    /// <summary>Identifier the secondary weapon's selection travels on; see <see cref="PrimaryFamily"/>.</summary>
-    public const ushort SecondaryFamily = 0x12e3;
+    /// <summary>Record identifier the secondary family's selection travels on; see <see cref="PrimaryIdentifier"/>.</summary>
+    public const ushort SecondaryIdentifier = 0x12e3;
 
-    /// <summary>Identifier the support weapon's selection travels on; see <see cref="PrimaryFamily"/>.</summary>
-    public const ushort SupportFamily = 0x12e2;
+    /// <summary>Record identifier the support family's selection travels on; see <see cref="PrimaryIdentifier"/>.</summary>
+    public const ushort SupportIdentifier = 0x12e2;
 
     /// <summary>Value of a family the player has not reported.</summary>
     public const WeaponIdentifier UnsetValue = WeaponIdentifier.Unreported;
@@ -99,18 +107,55 @@ public static class WeaponSelectionBodiesUtils
     /// <summary>Index of the reporting player's own slot, in the report and in the row.</summary>
     public const int SlotIndex = 1;
 
-    /// <summary>Number of families the block carries.</summary>
-    public const int FamilyCount = LastFamily - FirstFamily + 1;
-
-    /// <summary>Whether an identifier is one of the block's.</summary>
+    /// <summary>Whether an identifier is one of the block's six.</summary>
     /// <param name="type">Record identifier as it decoded.</param>
-    public static bool IsFamily(ushort type) => type >= FirstFamily && type <= LastFamily;
+    public static bool IsBlockIdentifier(ushort type) =>
+        type >= BlockFirstIdentifier && type <= BlockLastIdentifier;
 
     /// <summary>Whether a record is a client's report rather than a published row.</summary>
     /// <param name="type">Record identifier as it decoded.</param>
     /// <param name="body">Body as it decoded.</param>
     public static bool IsReport(ushort type, byte[] body) =>
-        IsFamily(type) && body.Length == ReportBodyLength;
+        IsBlockIdentifier(type) && body.Length == ReportBodyLength;
+
+    /// <summary>The record identifier a weapon family's selection travels on.</summary>
+    /// <param name="family">The family to name the identifier of.</param>
+    public static ushort IdentifierOf(WeaponFamily family) => family switch
+    {
+        WeaponFamily.Primary => PrimaryIdentifier,
+        WeaponFamily.Secondary => SecondaryIdentifier,
+        WeaponFamily.Support => SupportIdentifier,
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(family),
+            family,
+            "Not one of the three weapon families."),
+    };
+
+    /// <summary>
+    /// Reads a block identifier as a weapon family. The three rows whose
+    /// identifier carries no family — <c>0x12e5</c>–<c>0x12e7</c>, which no
+    /// capture has a client report on — answer <see langword="false"/>.
+    /// </summary>
+    /// <param name="type">Record identifier as it decoded.</param>
+    /// <param name="family">The family that identifier belongs to, when it belongs to one.</param>
+    public static bool TryGetFamily(ushort type, out WeaponFamily family)
+    {
+        switch (type)
+        {
+            case PrimaryIdentifier:
+                family = WeaponFamily.Primary;
+                return true;
+            case SecondaryIdentifier:
+                family = WeaponFamily.Secondary;
+                return true;
+            case SupportIdentifier:
+                family = WeaponFamily.Support;
+                return true;
+            default:
+                family = default;
+                return false;
+        }
+    }
 
     /// <summary>Body of the row a family publishes for a slot.</summary>
     /// <param name="value">The player's value for that family.</param>

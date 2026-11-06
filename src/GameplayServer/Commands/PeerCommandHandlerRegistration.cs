@@ -54,18 +54,19 @@ public static class PeerCommandHandlerRegistration
             registry.Register<JoinStateHandler>(identifier);
         }
 
-        // The weapon-select block a client reports its own value on: six
+        // The weapon-select block a client reports its own choices on: six
         // identifiers, each a two-byte body of the value and the reporting
-        // player's slot (WeaponSelectionBodiesUtils). They are numbered records
-        // the answer pass would otherwise only answer; registering them is what
-        // lets the value be filed and the slot's block be published. 0x12e1 is
-        // deliberately absent: its published row is seven bytes and is not the
-        // block's rule.
-        for (var family = WeaponSelectionBodiesUtils.FirstFamily;
-             family <= WeaponSelectionBodiesUtils.LastFamily;
-             family++)
+        // player's slot (WeaponSelectionBodiesUtils). Three of them carry the
+        // three weapon families, and those are the three a client reports on. The
+        // records are otherwise only answered by the answer pass; registering them
+        // is what lets the choice be filed and the slot's block be published.
+        // 0x12e1 is deliberately absent: its published row is seven bytes and is
+        // not the block's rule.
+        for (var identifier = WeaponSelectionBodiesUtils.BlockFirstIdentifier;
+             identifier <= WeaponSelectionBodiesUtils.BlockLastIdentifier;
+             identifier++)
         {
-            registry.Register<WeaponSelectionHandler>(family);
+            registry.Register<WeaponSelectionHandler>(identifier);
         }
 
         // The players' vitals, the two identifiers that carry one player's health

@@ -3,10 +3,16 @@ using Mgo2Server.Shared.Types;
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
-/// The room's weapon-select values: for each identifier of the block and each
-/// lobby slot, the byte that player last reported.
+/// The room's weapon choices: for each of the three weapon families and each
+/// lobby slot, the weapon that player last reported.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>A player has three choices, and the room holds those three.</b> The block
+/// a host publishes is six records, but only three of them are families
+/// (<see cref="WeaponFamily"/>); the other three carry no choice a client can
+/// make and are published unset for every slot.
+/// </para>
 /// <para>
 /// <b>It holds what the clients said and invents nothing.</b> Every slot starts
 /// at <see cref="WeaponSelectionBodiesUtils.UnsetValue"/>, which is the value
@@ -23,61 +29,62 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </remarks>
 public sealed class WeaponSelectionService
 {
-    private readonly object gate = new();
-    private readonly WeaponIdentifier[,] values =
-        new WeaponIdentifier[WeaponSelectionBodiesUtils.FamilyCount, 256];
+    private const int SlotCount = 256;
 
-    /// <summary>Builds the room's values, every family unset.</summary>
+    private static readonly int FamilyCount = Enum.GetValues<WeaponFamily>().Length;
+
+    private readonly object gate = new();
+    private readonly WeaponIdentifier[,] values = new WeaponIdentifier[FamilyCount, SlotCount];
+
+    /// <summary>Builds the room's choices, every family unset for every slot.</summary>
     public WeaponSelectionService()
     {
-        for (var family = 0; family < WeaponSelectionBodiesUtils.FamilyCount; family++)
+        for (var family = 0; family < FamilyCount; family++)
         {
-            for (var slot = 0; slot < 256; slot++)
+            for (var slot = 0; slot < SlotCount; slot++)
             {
                 values[family, slot] = WeaponSelectionBodiesUtils.UnsetValue;
             }
         }
     }
 
-    /// <summary>
-    /// Records one player's report of one family.
-    /// </summary>
-    /// <param name="family">Identifier the report arrived on.</param>
+    /// <summary>Records one player's choice of one weapon family.</summary>
+    /// <param name="family">The family the player chose a weapon from.</param>
     /// <param name="slot">The reporting player's own lobby slot.</param>
-    /// <param name="value">Value the player reported.</param>
-    public void Note(ushort family, byte slot, WeaponIdentifier value)
+    /// <param name="value">Weapon the player reported.</param>
+    public void Note(WeaponFamily family, byte slot, WeaponIdentifier value)
     {
-        if (!WeaponSelectionBodiesUtils.IsFamily(family))
-        {
-            return;
-        }
-
         lock (gate)
         {
-            values[family - WeaponSelectionBodiesUtils.FirstFamily, slot] = value;
+            values[(int)family, slot] = value;
         }
     }
 
     /// <summary>
-    /// The block one slot publishes: every family of the block, the last
-    /// identifier first, as the reference host writes it.
+    /// The block one slot publishes: every record identifier of the block, the
+    /// last one first, as the reference host writes it. Each of the three family
+    /// rows carries that slot's choice; the three rows without a family carry
+    /// the unset value.
     /// </summary>
     /// <param name="slot">The player's own lobby slot.</param>
     public IReadOnlyList<RosterRecord> RowsFor(byte slot)
     {
-        var rows = new List<RosterRecord>(WeaponSelectionBodiesUtils.FamilyCount);
+        var rows = new List<RosterRecord>(WeaponSelectionBodiesUtils.BlockIdentifierCount);
 
         lock (gate)
         {
             // 0x12e7 first, 0x12e2 last: every captured block is written in that
             // order, and the slot's join-state row follows it.
-            for (var family = WeaponSelectionBodiesUtils.LastFamily;
-                 family >= WeaponSelectionBodiesUtils.FirstFamily;
-                 family--)
+            for (var identifier = WeaponSelectionBodiesUtils.BlockLastIdentifier;
+                 identifier >= WeaponSelectionBodiesUtils.BlockFirstIdentifier;
+                 identifier--)
             {
-                var value = values[family - WeaponSelectionBodiesUtils.FirstFamily, slot];
+                var value = WeaponSelectionBodiesUtils.TryGetFamily(identifier, out var family)
+                    ? values[(int)family, slot]
+                    : WeaponSelectionBodiesUtils.UnsetValue;
+
                 rows.Add(new RosterRecord(
-                    family,
+                    identifier,
                     WeaponSelectionBodiesUtils.Body(value, slot),
                     0));
             }
