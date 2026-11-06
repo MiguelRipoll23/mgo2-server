@@ -1,3 +1,5 @@
+using Mgo2Server.Shared.Types;
+
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
@@ -22,7 +24,8 @@ namespace Mgo2Server.GameplayServer.Rooms;
 public sealed class WeaponSelectionService
 {
     private readonly object gate = new();
-    private readonly byte[,] values = new byte[WeaponSelectionBodiesUtils.FamilyCount, 256];
+    private readonly WeaponIdentifier[,] values =
+        new WeaponIdentifier[WeaponSelectionBodiesUtils.FamilyCount, 256];
 
     /// <summary>Builds the room's values, every family unset.</summary>
     public WeaponSelectionService()
@@ -42,7 +45,7 @@ public sealed class WeaponSelectionService
     /// <param name="family">Identifier the report arrived on.</param>
     /// <param name="slot">The reporting player's own lobby slot.</param>
     /// <param name="value">Value the player reported.</param>
-    public void Note(ushort family, byte slot, byte value)
+    public void Note(ushort family, byte slot, WeaponIdentifier value)
     {
         if (!WeaponSelectionBodiesUtils.IsFamily(family))
         {

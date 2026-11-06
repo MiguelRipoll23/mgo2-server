@@ -295,6 +295,46 @@ reports its second time at t+196.828 on `0x1ade` and `started-briefing-then-solo
 asks for its round at t+173.438; the set flips between the briefing and the round,
 and the run the round opens with is on the round's own set.
 
+**The open's first operations record, one and a half seconds ahead of the run.**
+Before the run there is a state write — opcode `02`, an offset, a count and the
+values — under the operations stream's own first value, `00`:
+
+```
+t+146.007  OUT 0x1a54  02 2a 04 1e 1e 1e 1e   (with the two 10-byte 0b 00 01 records)
+t+147.650  OUT 0x1a54  00 …                    the state block, under 01
+t+147.650  OUT 0x1a54  0f 00                  under 02
+t+147.650  OUT 0x1a54  01 60 09               the round clock, under 03
+```
+
+(`briefing-then-solo-game`; the same host's briefing run at t+9.780 takes `00` and
+`01` and writes no `02` record at all. `working-server-log` writes its own at
+`0x1a54 02 0d 03 00 00 00`, t+530.066, so the offset and the values are the
+host's own state and not a constant of the record.)
+
+**The four fields are the unclaimed holders and clocks. [V]** A write's offset
+counts from the state base, two bytes before the block's own vector: the port's
+builder appends the `count` bytes at `[this+0x84] + offset`
+(`0x101ef999`–`0x101efa0b`) and the `0x00` builder reads its vector from
+`[this+0x84] + 2` (`0x101f0b41`–`0x101f0b63`). The captures agree — the write at
+`0x28` in `failed-memoryviolation` moved exactly `state[38..39]` of the next block
+(t+77.235 against t+82.229) — so `0x2a` is `state[40]`, and the four bytes are
+`state[40..43]`: the two objective holders and the two capture clocks, the four
+`1e` bytes this host's block already carries. Written as
+`MatchStateBodiesUtils.RoundStartStateWrite` from the round opener, ahead of the
+run.
+
+**It is not in every room's open, and the numbering is what holds either way.**
+The twelve captures in `.pcapngs/` open their rounds with the block under `00`
+and no `02` record in front of it — `started-briefing-then-solo` t+174.371,
+`started-on-briefing` t+198.371, `game1` t+194.042, `game3` t+59.596 — while
+`mgo2-game2` writes a state write of its own at the stream's first value
+(`02 3f 18 3c …` at t+104.649). So the record is the room's state rather than a
+constant of the open, and what every capture agrees on is that the open's
+records number consecutively from the stream's restart: where the write is
+written it is first and the block is `01`, where it is not the block is `00`.
+The block in this capture holds `1e` at `state[40..43]` where `game1`'s and the
+working server's hold `ff`, which is the state the four values restate.
+
 **The opening run.** The round's records arrive in one compressed frame — the
 marker first and **thirteen** behind it — under the identifier set the report
 arrived on. The thirteen are listed in `DATA_PHASE_DELIVERY.md` and in

@@ -66,6 +66,18 @@ the fields the body carries even where their meaning is still open.
 | `0x24` | `0x7547B0` | `0x10153770` | `24` + one byte | — |
 | `0x26` | `0x7548F0` | `0x101b5e20` | `26` + two single bytes in the PS3 image; the port's version appends one | `26 02 06` |
 
+**`0x02`'s offset and `0x00`'s vector are not on the same base, and the two
+bytes between them are the clock. [V]** The write's builder reads
+`mov edi,[ebx+0x84]`, `movzx ecx,al`, `add edi,ecx` and appends `count` bytes from
+there (`0x101ef999`–`0x101efa0b`), while the state block's builder appends 62
+bytes from `[ebx+0x84]+2` and then the `u16` at `[ebx+0x84]`
+(`0x101f0b41`–`0x101f0b63`). A write at `offset` therefore names the block's
+`offset - 2`, which the captures bear out: the write at `0x28` in
+`mgo2-game-failed-memoryviolation` moved exactly `state[38..39]` of the next block
+(t+77.235 against t+82.229), and `briefing-then-solo-game`'s
+`02 2a 04 1e 1e 1e 1e` names `state[40..43]` — the two objective holders and the
+two capture clocks, unclaimed (`STATE_VECTOR.md` §5).
+
 Two of the four named here are settled beyond their shape:
 
 * **`0x1B` is the writer's own slot in the captured revision. [V]** The PS3 body is two

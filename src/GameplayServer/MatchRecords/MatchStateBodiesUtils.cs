@@ -353,4 +353,45 @@ public static class MatchStateBodiesUtils
         vector[StateClockHighIndex] = (byte)((roundClockUnits >> 8) & 0xff);
         return [stateOpcode, .. vector];
     }
+
+    /// <summary>
+    /// Offset the round's opening state write starts at: <c>0x2a</c>, which is
+    /// <see cref="StateObjectiveHolderFirstIndex"/> in the write's own frame.
+    /// </summary>
+    public const int RoundStartStateOffset = 0x2a;
+
+    /// <summary>Number of values it carries: the two holders and two clocks, four.</summary>
+    public const int RoundStartStateCount = 4;
+
+    /// <summary>
+    /// The state write a round's open carries: the two objective holders and the two
+    /// capture clocks, all four still unclaimed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Measured at the open and nowhere else.</b> <c>briefing-then-solo-game</c>
+    /// writes <c>02 2a 04 1e 1e 1e 1e</c> at t+146.007, 1.62 s before the run that
+    /// opens the round at t+147.650, and writes no <c>0x02</c> record at all
+    /// through the briefing before it.
+    /// </para>
+    /// <para>
+    /// <b>The offset counts from the state base, two bytes before the block's own
+    /// vector.</b> The port's builder appends the count bytes at
+    /// <c>[this+0x84] + offset</c> (<c>0x101ef999</c>–<c>0x101efa0b</c>) while the
+    /// <c>0x00</c> builder reads its vector from <c>[this+0x84] + 2</c>
+    /// (<c>0x101f0b41</c>–<c>0x101f0b63</c>); the captures agree, because the write
+    /// at <c>0x28</c> in <c>failed-memoryviolation</c> moved exactly
+    /// <c>state[38..39]</c> of the next block (t+77.235 against t+82.229). So
+    /// <c>0x2a</c> names <c>state[40]</c>, and the four bytes are the two objective
+    /// holders and the two capture clocks — the same four bytes
+    /// <see cref="MatchStartStateBlock"/> seeds with <see cref="StateUnclaimed"/>.
+    /// </para>
+    /// </remarks>
+    /// <returns>The record body.</returns>
+    public static byte[] RoundStartStateWrite()
+    {
+        var values = new byte[RoundStartStateCount];
+        Array.Fill(values, StateUnclaimed);
+        return MatchRecordBodiesUtils.StateWrite(RoundStartStateOffset, values);
+    }
 }

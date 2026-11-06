@@ -67,7 +67,7 @@ public sealed class WeaponSelectionHandler(
         }
 
         var slot = body[WeaponSelectionBodiesUtils.SlotIndex];
-        var value = body[WeaponSelectionBodiesUtils.ValueIndex];
+        var value = (WeaponIdentifier)body[WeaponSelectionBodiesUtils.ValueIndex];
         selections.Note(context.Message.Type, slot, value);
 
         var rows = selections.RowsFor(slot);
@@ -76,7 +76,7 @@ public sealed class WeaponSelectionHandler(
             + "{Slot}; publishing {RowCount} weapon-select row(s) to it and the room",
             context.LocalPort,
             context.Remote,
-            value,
+            (byte)value,
             context.Message.Type,
             slot,
             rows.Count);

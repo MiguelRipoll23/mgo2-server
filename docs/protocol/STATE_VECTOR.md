@@ -220,6 +220,17 @@ offset 87 with count 2 puts a countdown and a lobby slot there (the decoder read
 it as Team Sneaking). The block here writes the clock, which is what a round's
 open carries.
 
+**A `0x02` write's offset counts from the state base, two bytes before this
+vector's index 0. [V]** The port's builder appends the `count` bytes at
+`[this+0x84] + offset` — `mov edi,[ebx+0x84]`, `movzx ecx,al`, `add edi,ecx` at
+`0x101ef999`–`0x101efa0b` — and the `0x00` builder reads 62 bytes from
+`[this+0x84] + 2` and then the clock at `[this+0x84]`
+(`0x101f0b41`–`0x101f0b63`). The captures agree: the write at `0x28` in
+`failed-memoryviolation` moved exactly `state[38..39]` of the next block
+(t+77.235 against t+82.229). So a write names this vector's index two lower, and
+`briefing-then-solo-game`'s opening `02 2a 04 1e 1e 1e 1e` names `state[40..43]`
+— the four unclaimed bytes of the table above.
+
 ## 6. Open
 
 * **`state[0..1]` and `state[4..6]`** — one decided match. §3.

@@ -1,3 +1,5 @@
+using Mgo2Server.Shared.Types;
+
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
@@ -29,8 +31,27 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// slot in both directions, so the row belongs to that player rather than to a
 /// new one.
 /// </para>
-/// <para>
-/// <b><c>0x12e1</c> stays outside the block.</b> It shares the prefix and the
+/// <para>    /// <b>Three of the six are the three weapon types, and a client reports exactly
+    /// those three.</b> The weapon-select stage's script (`n007a/script.gcl`,
+    /// localized by the patcher log's `wp_select` and `LmenuWeapon` labels) builds
+    /// <c>WpMng_SetWeaponList -group 0</c>, <c>-group 1</c> and <c>-group 2</c>,
+    /// and the stage's own text names the three: "switch between primary,
+    /// secondary, and support … one weapon from each type" (`resources.gcl`, line
+    /// 4649). The groups' contents agree: the replay console's id tables
+    /// (`.gametools/replay-console/app.js`, keyed by the item names a replay
+    /// carries) put ten of its sixteen firearm ids in group 0, the two pistols
+    /// (`2` MK2, `7` GSR) and nothing else in group 1, and seven of its nine
+    /// thrown ids plus two blades in group 2 — so the groups are primary,
+    /// secondary and support in that order. Across the ten captures surveyed, only
+    /// <see cref="PrimaryFamily"/>, <see cref="SecondaryFamily"/> and
+    /// <see cref="SupportFamily"/> are ever reported by a client — as two-byte
+    /// bodies — and `0x12e5`–`0x12e7` are rows no report ever fills. That the
+    /// reported three are the weapon types is **[V]**; which type each identifier
+    /// is rests on the order the client reports them in (<c>12e4</c>, <c>12e3</c>,
+    /// <c>12e2</c> — the screen's top-down order), so the pairing is **[I]**.
+    /// </para>
+    /// <para>
+    /// <b><c>0x12e1</c> stays outside the block.</b> It shares the prefix and the
 /// two-byte report, but the host's own row on it is seven bytes —
 /// <c>00 11 05 00 00 00 00</c> for the client that reported <c>08 11</c> — and
 /// one observation cannot say whether its first byte is the side, its third a
@@ -47,8 +68,21 @@ public static class WeaponSelectionBodiesUtils
     /// <summary>Last identifier of the block, the one written first.</summary>
     public const ushort LastFamily = 0x12e7;
 
+    /// <summary>
+    /// Identifier the primary weapon's selection travels on. That the reported
+    /// three are the three weapon types is **[V]**; which identifier is which rests
+    /// on the order the client reports in, so this pairing is **[I]**.
+    /// </summary>
+    public const ushort PrimaryFamily = 0x12e4;
+
+    /// <summary>Identifier the secondary weapon's selection travels on; see <see cref="PrimaryFamily"/>.</summary>
+    public const ushort SecondaryFamily = 0x12e3;
+
+    /// <summary>Identifier the support weapon's selection travels on; see <see cref="PrimaryFamily"/>.</summary>
+    public const ushort SupportFamily = 0x12e2;
+
     /// <summary>Value of a family the player has not reported.</summary>
-    public const byte UnsetValue = 0xFF;
+    public const WeaponIdentifier UnsetValue = WeaponIdentifier.Unreported;
 
     /// <summary>Length of a published row's body.</summary>
     public const int BodyLength = 3;
@@ -81,5 +115,5 @@ public static class WeaponSelectionBodiesUtils
     /// <summary>Body of the row a family publishes for a slot.</summary>
     /// <param name="value">The player's value for that family.</param>
     /// <param name="slot">The player's own lobby slot.</param>
-    public static byte[] Body(byte value, byte slot) => [value, slot, Trailer];
+    public static byte[] Body(WeaponIdentifier value, byte slot) => [(byte)value, slot, Trailer];
 }

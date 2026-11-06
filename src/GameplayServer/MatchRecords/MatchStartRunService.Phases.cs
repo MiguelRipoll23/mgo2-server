@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
@@ -79,6 +80,76 @@ public sealed partial class MatchStartRunService
             }
 
             await WriteRoundPhaseAsync(context, (byte)round);
+        }
+    }
+
+    /// <summary>
+    /// Writes one peer the round's opening state write: the first record of the
+    /// round's operations stream, a second and a half ahead of its run.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Measured at the open, and written by no briefing.</b>
+    /// <c>briefing-then-solo-game</c> writes <c>0x1a54 02 2a 04 1e 1e 1e 1e</c> at
+    /// t+146.007 — 1.62 s before its run at t+147.650, in the same pass as the two
+    /// ten-byte <c>0b 00 01</c> records — and under the stream's first value,
+    /// <c>00</c>. The run behind it then takes <c>01</c>, <c>02</c> and <c>03</c>,
+    /// where the same host's briefing run takes <c>00</c> and <c>01</c> and writes
+    /// no state write at all, and the beat goes on from the value after the run.
+    /// </para>
+    /// <para>
+    /// <b>The record is not in every room's open, and the numbering is the
+    /// invariant that holds either way.</b> The twelve captures in
+    /// <c>.pcapngs/</c> open their rounds with the block at <c>00</c> and no
+    /// <c>02</c> record in front of it (<c>started-briefing-then-solo</c>
+    /// t+174.371, <c>started-on-briefing</c> t+198.371, <c>game1</c> t+194.042,
+    /// <c>game3</c> t+59.596); <c>mgo2-game2</c> writes one of its own at the
+    /// stream's first value too (<c>02 3f 18 3c …</c>, t+104.649). What every
+    /// capture agrees on is that the open's records number consecutively from the
+    /// stream's restart, so a host that writes this one must let the block follow
+    /// it — which is what the shared counter does here, rather than a pinned
+    /// value.
+    /// </para>
+    /// <para>
+    /// <b>The four fields are the unclaimed holders and clocks.</b> The offset
+    /// counts from the state base two bytes before the block's own vector — the
+    /// port's builder reads <c>[this+0x84] + offset</c> while the <c>0x00</c>
+    /// builder reads its vector from <c>[this+0x84] + 2</c>, and the captures
+    /// agree (a write at <c>0x28</c> moved exactly <c>state[38..39]</c> of the next
+    /// block in <c>failed-memoryviolation</c>). So <c>0x2a</c> is
+    /// <c>state[40]</c>, and the four bytes are the two objective holders and the
+    /// two capture clocks, holding
+    /// <see cref="MatchStateBodiesUtils.StateUnclaimed"/> — the value this host's
+    /// own block carries there.
+    /// </para>
+    /// <para>
+    /// <b>A failed send ends nothing.</b> The record is the open's, and a peer
+    /// that cannot be reached has no round to be told about, which the watcher's
+    /// next wait already handles — so it is logged and the run goes on.
+    /// </para>
+    /// </remarks>
+    /// <param name="context">Context the record is written through.</param>
+    /// <param name="generation">Identifier set the round plays under.</param>
+    /// <param name="round">The round being opened, whose clock the block carries.</param>
+    private async Task WriteRoundStartStateAsync(
+        PeerContext context,
+        MatchRecordGenerationUtils generation,
+        MatchRotationEntry round)
+    {
+        try
+        {
+            await context.Send(
+                generation.Operations,
+                MatchStateBodiesUtils.RoundStartStateWrite(),
+                sequences.Take(generation.Operations, 1)[0]);
+        }
+        catch (Exception exception)
+        {
+            logger.LogDebug(
+                exception,
+                "UDP {LocalPort}: the round's opening state write to {RemoteAddress} was not sent",
+                context.LocalPort,
+                context.Remote);
         }
     }
 

@@ -172,7 +172,7 @@ public sealed partial class MatchStartRunService
                 context.Remote);
             return;
         }
-
+        await WriteRoundStartStateAsync(context, generation, round);
         await WriteRunCoreAsync(context, generation, round, roundState.RemainingUnits, briefing: false);
     }
 
