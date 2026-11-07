@@ -92,6 +92,21 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
     public string ClanName { get; set; } = string.Empty;
 
     /// <summary>
+    /// The 23-byte appearance block the player announced in its join request, empty
+    /// when the record carried none.
+    /// </summary>
+    /// <remarks>
+    /// <b>The recorded host re-broadcasts the client's own block rather than reading
+    /// the character's saved appearance.</b> <c>briefing-then-solo-game</c>'s join
+    /// request carries <c>1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e
+    /// 07 0f 00 00</c> at offset <c>0x10</c> of its 140-byte body, and the loadout the
+    /// host writes for that player carries those bytes as its trailing block
+    /// (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §8.4). A character whose saved row
+    /// states no colours is therefore still announced with the face it plays as.
+    /// </remarks>
+    public byte[] AnnouncedAppearance { get; set; } = [];
+
+    /// <summary>
     /// The peer's public/private endpoint pairs, copied from its handshake and
     /// written into the roster's twelve-byte endpoint field.
     /// </summary>

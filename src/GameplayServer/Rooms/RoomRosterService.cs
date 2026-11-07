@@ -171,6 +171,10 @@ public sealed class RoomRosterService(
                 existing.CharacterId = (int)characterId;
                 existing.Name = profile is { Name.Length: > 0 } ? profile.Name : existing.Name;
                 existing.ClanName = profile?.ClanName ?? existing.ClanName;
+                if (profile is { AnnouncedAppearance.Length: > 0 })
+                {
+                    existing.AnnouncedAppearance = profile.AnnouncedAppearance;
+                }
 
                 // The character's endpoint pairs arrive in its handshake, not
                 // in the profile body. Keep that announced data across profile
@@ -194,6 +198,7 @@ public sealed class RoomRosterService(
                 CharacterId = (int)characterId,
                 Name = profile?.Name ?? string.Empty,
                 ClanName = profile?.ClanName ?? string.Empty,
+                AnnouncedAppearance = profile?.AnnouncedAppearance ?? [],
                 AddressData = peerAddressData.ToArray(),
             };
             members.Add(member);

@@ -763,7 +763,10 @@ host), writes zero at `0x05`/`0x07`, writes the **character id** as a u32 at `0x
 there is no `0x0a` field — and copies the handshake endpoint pairs at `0x13`–`0x1e`.
 `PlayerProfileRecordParseUtils` reads the profile fields, and `RoomRosterService` answers
 a peer with its id and announced endpoints rather than values it invented. The separate
-appearance-like `0x0b` record remains unimplemented. `PlayerNumber` is renamed
+appearance-like `0x0b` record is implemented, and the block it carries for a joiner is the
+one that joiner's own join request announced at `0x10` — the recorded host re-broadcasts
+it rather than reading the character's saved row (`RoomRosterService.Register`,
+`LobbyLoadoutService`). `PlayerNumber` is renamed
 `PlayerValue` and is reported raw, because it is no longer an index. The block has a
 constant `0x02` at `0x12`; `0x18` and `0x1e` are endpoint-port bytes, not structural
 constants.

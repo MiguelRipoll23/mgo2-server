@@ -380,4 +380,19 @@ public static class PlayerProfileRecordUtility
         int CharacterId,
         byte[] AddressData,
         string Name,
-        string ClanName);
+        string ClanName)
+    {
+        /// <summary>
+        /// The appearance block a join request carries, empty on a roster entry.
+        /// </summary>
+        /// <remarks>
+        /// <b>It is the tail the client plays as, and the host re-broadcasts it.</b>
+        /// <c>briefing-then-solo-game</c>'s 140-byte join request holds it at
+        /// <c>0x10</c>, and the loadout the host writes for that player carries the same
+        /// bytes as its trailing block, so a character whose saved row states no colours
+        /// is still announced with the face it plays as
+        /// (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §8.4). A roster entry puts its
+        /// endpoint pairs at that offset and announces nothing here.
+        /// </remarks>
+        public byte[] AnnouncedAppearance { get; init; } = [];
+    }

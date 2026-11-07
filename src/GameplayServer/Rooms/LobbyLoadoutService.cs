@@ -78,16 +78,26 @@ public sealed class LobbyLoadoutService(
         var members = roster.Snapshot();
         var loadouts = new List<LobbyLoadout>(members.Count + 1);
 
+        // The host announces no appearance of its own: its character is created
+        // without one, so it is the one player whose block falls back to the
+        // capture's.
         await AddAsync(
             loadouts,
             RoomRosterService.HostSessionSlot,
             (int)hostIdentity.PeerIdentifier,
             sides,
+            [],
             cancellationToken);
 
         foreach (var member in members)
         {
-            await AddAsync(loadouts, member.SessionSlot, member.CharacterId, sides, cancellationToken);
+            await AddAsync(
+                loadouts,
+                member.SessionSlot,
+                member.CharacterId,
+                sides,
+                member.AnnouncedAppearance,
+                cancellationToken);
         }
 
         logger.LogDebug(
@@ -106,12 +116,16 @@ public sealed class LobbyLoadoutService(
     /// <param name="slot">Key the player holds in the room's player table.</param>
     /// <param name="characterIdentifier">Character whose rows are read.</param>
     /// <param name="sides">The room's side per character.</param>
+    /// <param name="announcedAppearance">
+    /// The appearance block the player's own join request carried, or an empty array.
+    /// </param>
     /// <param name="cancellationToken">Token that cancels the reads.</param>
     private async Task AddAsync(
         List<LobbyLoadout> loadouts,
         byte slot,
         int characterIdentifier,
         Dictionary<int, short> sides,
+        byte[] announcedAppearance,
         CancellationToken cancellationToken)
     {
         // The dedicated host character is created without an appearance row, and
@@ -122,15 +136,28 @@ public sealed class LobbyLoadoutService(
         // and a loadout whose face is the reference one is still a loadout it can
         // read. The room's own players keep their own faces whenever those can be
         // read (`LoadoutBodiesUtils.ReferenceAppearanceBlock`).
-        var appearance = await characterService.GetAppearanceAsync(characterIdentifier, cancellationToken);
-        if (appearance is null || !LoadoutFramesUtils.TryAppearanceBlock(appearance, out var block))
+        // The player's own join request carries the block it plays as, and the
+        // recorded host re-broadcasts that rather than reading the character's saved
+        // row: its loadout for a joiner holds the very bytes the join request sent
+        // (`docs/protocol/UDP_GAME_CAPTURE.md` §8.4). The saved row is the fallback,
+        // for the host's own character and for a peer that announced no block.
+        byte[] block;
+        if (announcedAppearance.Length == LoadoutFramesUtils.AppearanceLength)
         {
-            logger.LogWarning(
-                "Character {CharacterIdentifier}, in the room's slot {Slot}, has no appearance this record can "
-                + "carry; it is announced with the recorded host's own so the room still names it",
-                characterIdentifier,
-                slot);
-            block = LoadoutBodiesUtils.ReferenceAppearanceBlock();
+            block = announcedAppearance;
+        }
+        else
+        {
+            var appearance = await characterService.GetAppearanceAsync(characterIdentifier, cancellationToken);
+            if (appearance is null || !LoadoutFramesUtils.TryAppearanceBlock(appearance, out block))
+            {
+                logger.LogWarning(
+                    "Character {CharacterIdentifier}, in the room's slot {Slot}, has no appearance this record can "
+                    + "carry; it is announced with the recorded host's own so the room still names it",
+                    characterIdentifier,
+                    slot);
+                block = LoadoutBodiesUtils.ReferenceAppearanceBlock();
+            }
         }
 
         // A skill set the record cannot express is dropped rather than guessed at:

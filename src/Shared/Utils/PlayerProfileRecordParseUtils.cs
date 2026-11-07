@@ -31,6 +31,20 @@ namespace Mgo2Server.Shared.Utils;
 public static class PlayerProfileRecordParseUtils
 {
     /// <summary>
+    /// Offset of the appearance block in a join request's body.
+    /// </summary>
+    /// <remarks>
+    /// <c>briefing-then-solo-game</c> sends <c>1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00
+    /// 0b 16 00 0e 0e 07 0f 00 00</c> there, and the loadout its host writes for that
+    /// player repeats the bytes. A roster entry puts its endpoint pairs at the same
+    /// offset, which is why the block is read from the join-request layout alone.
+    /// </remarks>
+    public const int AnnouncedAppearanceOffset = 0x10;
+
+    /// <summary>Length of the appearance block a join request announces: 23 bytes.</summary>
+    public const int AnnouncedAppearanceLength = 23;
+
+    /// <summary>
     /// Parses a profile record body.
     /// </summary>
     /// <param name="body">Message body to parse.</param>
@@ -92,7 +106,10 @@ public static class PlayerProfileRecordParseUtils
                 : 0,
             hasAddressData ? AddressDataOf(body) : [],
             name,
-            clan);
+            clan)
+        {
+            AnnouncedAppearance = AnnouncedAppearanceOf(body, isRosterEntry),
+        };
     }
 
     /// <summary>
@@ -117,6 +134,17 @@ public static class PlayerProfileRecordParseUtils
         body.Slice(
             PlayerProfileRecordUtility.AddressDataOffset,
             PlayerProfileRecordUtility.AddressDataLength).ToArray();
+
+    /// <summary>
+    /// The appearance block a join request carries at
+    /// <see cref="AnnouncedAppearanceOffset"/>, or an empty array for a roster entry or
+    /// a body too short to hold it.
+    /// </summary>
+    private static byte[] AnnouncedAppearanceOf(ReadOnlySpan<byte> body, bool isRosterEntry) =>
+        isRosterEntry
+            || body.Length < AnnouncedAppearanceOffset + AnnouncedAppearanceLength
+            ? []
+            : body.Slice(AnnouncedAppearanceOffset, AnnouncedAppearanceLength).ToArray();
 
     /// <summary>
     /// Reads the names off the documented roster layout, or returns <c>null</c>

@@ -5868,3 +5868,38 @@ after the spawn carries it.
 **Not established.** That the client draws the character from that record. What the
 captures establish is that the reference host writes it from the spawn and this one
 did not write it at all.
+
+## 79. The appearance block is the one the joiner announced
+
+The vitals fix (§78) did not bring the model back either, and the other half of
+the first hypothesis was right: the appearance bytes.
+
+**What the reference writes.** `briefing-then-solo-game`'s join request is a
+140-byte `0x1001` body whose block at `0x10` is
+`1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00`. The
+loadout the host writes for that player carries those same 23 bytes as its
+trailing block, and `docs/protocol/UDP_GAME_CAPTURE.md` §8.4 says the same in
+words: the request "carries the same tail … which the server re-broadcasts".
+So the host is an echo of the client's own appearance, not a reader of the
+character's saved row.
+
+**What our host wrote.** The live session's loadout for the joining player
+(`PhilDunphy23`, slot 1) carried
+`1c 44 2e 56 39 66 66 00 00 00 00 00 00 00 0b 16 00 00 00 07 0f 00 00` — gear
+ids near the reference's but **every colour field zero**: head, chest, hands,
+waist and foot colours, upper and lower colours, both accessory colours. That is
+the row `character_appearances` holds for a character made without a colour ever
+being saved, and it is what the burst sent.
+
+**What was changed.** `PlayerProfileRecordParseUtils` reads the 23-byte block at
+`0x10` of a join request into `PlayerProfileRecord.AnnouncedAppearance` (a roster
+entry puts its endpoint pairs there and announces nothing), `RoomRosterService`
+keeps it on the member across profile retries, and `LobbyLoadoutService` prefers
+it for that player's loadout. The saved row is the fallback, which is what the
+host's own character (created with no appearance at all) still uses, and the
+capture's block is the last resort.
+
+**Not established.** That a zero colour field is what hides the model. What is
+measured is that the reference sends the joiner's own block and this host sent a
+degenerate one; the block we now send is byte for byte what the client
+announced.
