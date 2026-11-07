@@ -179,6 +179,49 @@ public sealed partial class CharacterService
     }
 
     /// <summary>
+    /// Gives a dedicated host an appearance row when it has none, so the records the
+    /// host serves carry a face rather than a zeroed block.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A host character without a row is served as a character with no face.</b>
+    /// The lobby writes an empty twenty-seven-byte appearance block for it, the room
+    /// list writes every field as zero, and a client reading either has no parts to
+    /// build a body from and a voice index of zero to validate — the voice plugin
+    /// prints <c>invalid voice id 0</c> and the character never takes a shape. Every
+    /// other participant is a player, whose character always has a row, which is why
+    /// the symptom follows the host and no one else.
+    /// </para>
+    /// <para>
+    /// The row is only created, never overwritten: a host whose appearance a player
+    /// changed keeps that face, and the ones written here are the reference host's
+    /// own (see <see cref="DedicatedHostAppearanceUtils"/>).
+    /// </para>
+    /// </remarks>
+    /// <param name="characterIdentifier">Identifier of the character.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns><c>true</c> when the row was missing and has been written.</returns>
+    public async Task<bool> EnsureDedicatedHostAppearanceAsync(
+        int characterIdentifier,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await CreateContextAsync(cancellationToken);
+
+        var present = await context.CharacterAppearances
+            .AnyAsync(row => row.CharacterIdentifier == characterIdentifier, cancellationToken);
+        if (present)
+        {
+            return false;
+        }
+
+        var appearance = new CharacterAppearance { CharacterIdentifier = characterIdentifier };
+        DedicatedHostAppearanceUtils.Apply(appearance);
+        context.CharacterAppearances.Add(appearance);
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>
     /// Finds the settings a set of characters saved, one row per character.
     /// <para>
     /// The event-host rules ask what each candidate room's host is running, and

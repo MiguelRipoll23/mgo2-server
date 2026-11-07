@@ -6093,3 +6093,90 @@ player the voice plugin has no voice id for. The burst now writes one body per p
 room, in slot order, falling back to the answered peer's single body only when the room's
 loadouts could not be read. What this does not yet explain is the undrawn mesh: the client's
 own record was in the burst throughout.
+
+## 86. Where the client applies the block — `SVSlotMan`, property `0x181`
+
+Read end to end in the PC client's `system.dll` on 2026-11-07. Its addresses agree with
+`docs/strings/strings.txt`; the `savemgo.dll` in this working tree is a **different build**
+from the one that table was made from (`/parts_id` sits at `0x1047A80B` here and `0x10460CF4`
+there), so savemgo addresses below are marked as this build's.
+
+**The owner is `SVSlotMan`.** Constructor `FUN_101EB3C0` calls `FUN_101722B0`, which
+allocates `0x840` bytes, registers `FUN_10172290` as the object's per-frame callback and
+initialises through `FUN_10171370`. The callback runs `FUN_10170800` (drops ids that are no
+longer live) and then `FUN_101721F0`.
+
+**`FUN_101721F0` walks sixteen slots**, each with four parallel arrays: `+0x828` one applied
+byte, `+0xA8` the pending player id, `+0x7E8` the id applied last, and `+0xE8` (stride
+`0x3C`) the slot's own record. A pending id is applied only if all four hold: the slot is not
+applied, its pending id is not `-1`, its own id is `-1`, and
+**`DAT_31865070 < 0x10`** (`CMP [0x31865070],0x10; JGE`).
+
+**The read is `FUN_10170130(id)`, and this is the parse:**
+
+```c
+FUN_100a0500(*(int *)(iVar1 + 0xE8) + 1);        /* the data share numbered id + 1 */
+FUN_100a0360(share, 0x181, 0x17, &local_18);     /* 23 bytes at share + 0x181      */
+```
+
+`FUN_100A0500` indexes the `NT_DATA_SHARE` table at `0x316C3C00` (`gshare.cc`, `i <
+NT_DATA_SHARE_ID_MAX`) and returns the entry's data pointer; `FUN_100A0360` is that table's
+reader, copying the given length from `data + offset`. **A player's appearance is therefore
+`0x17` bytes at offset `0x181` of the data share numbered `playerId + 1`** — the block of
+`docs/protocol/UDP_SETTINGS_PAYLOAD.md`, carried by the loadout record and stored here.
+
+**Each byte becomes a `slot_online_*` value** through `FUN_1016FE00(name, value, table,
+target)`, which resolves the name in a per-field table and then either finds the existing
+object for that value or creates one. Read off `FUN_10170130`'s call order: `head`, `chest`,
+`hand`, `waist`, `foot` from the first five bytes; `slot_online_etc` from the sixth **and
+again from the seventh**, so the second accessory overwrites the first; `head_color`,
+`chest_color`, `waist_color`, `foot_color` from the next group; `facepaint` from two bytes;
+and `upper_color`. The last argument of every call is one byte common to all of them, which
+is `gender`. **`slot_online_upper` and `slot_online_lower` are never written here**, and no
+`hand_color` is either, so those two item ids are not part of what this function applies.
+
+**The counter is a shared object budget, not a player count.** `FUN_1016FE00` increments
+`DAT_31865070` once for each object it creates and `FUN_10170010` decrements it when the last
+reference goes; `FUN_10171370` resets it to `0` and seeds each slot's pending id from the
+global array at `0x31865030`. Ids enter that queue through `FUN_101700A0(id)`, which forces
+the local player into global slot `0` and otherwise takes the first free entry. So the budget
+is sixteen *distinct appearance values* across the whole manager at once — shared values
+(`None` ids, black colours) cost one, which is why a full room fits at all.
+
+**Three consumers read the same place, and each keys it by the player's own id.** The net
+player's core plugin reads it in its constructor — `PL_PLG_CORE_NET::PL_PLG_CORE_NET`
+(`FUN_102219A0`) does `FUN_100a0500(*(int *)(player + 0x84) + 1)`, then
+`FUN_100a0360(share, 0x181, 0x17, …)`, and unpacks all twenty-three bytes into fields at
+`+0x13a0…+0x13ec`. `pl_net_main`'s model picker (`FUN_1017A0A0`, the one that raises
+`pl_net_main.cc :: NT_DATA_PLAYER is NULL`) reads the same share for its model parameters and
+branches on the block's **byte 12, `gender`** (`local_9c`); `FUN_101328C0` branches on
+**byte 13, `face`** (`local_b == 3`). So the id the share is named by is the player's id, and
+the record that fills it is the one whose own slot byte is that id plus one.
+
+**What this says about a peer with no body.** If the share `playerId + 1` holds nothing at
+`0x181`, `FUN_10170130` applies zeros: the guard `if (param_2 != 0)` in `FUN_1016FE00` skips
+every field, so no `slot_online_*` value is ever set for that player. No parts follow, and the
+voice byte — offset 19 of the same block — is unset with them, which is exactly the pair this
+host sees: an undrawn mesh and `PL_PLG_VOICE_NET :: invalid voice id 0`. The block's *content*
+is not the question; the question is whether that share ever receives it.
+
+**That is what the burst fix is, stated from the client's side.** A player is named by exactly
+one record — the `0b <slot + 1>` body that matches the share the client will look it up in —
+and a room that writes one body for the answering peer and none for the host leaves the host's
+share empty, which is a player with no parts and no voice. Writing one body per player, in slot
+order, is the only shape that gives every share its own content; `LobbyLoadoutService` reads
+them from the room's own rows, and the host's falls back to the recorded block because its
+character has no appearance row.
+
+**And `savemgo.dll`'s own side, for the save-data tree.** `FUN_1027A600(player)` (callers
+`FUN_10271860` ← `FUN_10270B30`, the latter with no static caller) appends each field onto
+`root_save_data/player/category/p…/<field>` and closes every entry with
+`/parts_id/<n>`; `sex`, `voice_base`, `voice_pitch` and
+`root_game_data/player/category/o…/face/paint_id/<n>` are written the same way. The nine
+categories are a table at **`0x10465FD8`**, twelve-byte entries `{name, id offset, colour
+offset}`: `upper` (`+23`/`+26`), `lower` (`+24`/`+27`), `head` (`+34`/`+41`), `chest`
+(`+35`/`+42`), `hands` (`+36`/`+43`), `waist` (`+37`/`+44`), `feet` (`+38`/`+45`), `acce1`
+(`+39`/`+46`), `acce2` (`+40`/`+47`). Its callees are only the C++ string runtime, so it
+materialises lookups and loads no model. The two ways a part can fail to appear are reported
+by `Gear part not loaded: player %d slot %d part %d (%06x), %s` (`0x10474E1D`, this build)
+and `Camo layer on a %s model skipped: …` (`0x10485522`).

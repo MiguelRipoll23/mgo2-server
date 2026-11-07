@@ -68,6 +68,12 @@ public sealed class MatchSettingsService(
     /// <summary>Phase byte of a room whose round is open, as the corpus states it.</summary>
     public const byte PlayingPhase = 3;
 
+    /// <summary>
+    /// The rule the room is on: the one the round in front of it plays, resolved
+    /// from the rotation and the round number rather than from a row.
+    /// </summary>
+    public int CurrentRule => rotation[roundState.RoundNumber % rotation.Count].Rule;
+
     /// <summary>The active rotation slot carried by the room's state transfer.</summary>
     public int CurrentRotationIndex => roundState.RoundNumber % rotation.Count;
 

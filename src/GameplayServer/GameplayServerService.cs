@@ -131,6 +131,13 @@ public sealed partial class GameplayServerService : IAsyncDisposable
                     characterIdentifier,
                     settings,
                     token);
+                if (await characterService.EnsureDedicatedHostAppearanceAsync(characterIdentifier, token))
+                {
+                    logger.LogInformation(
+                        "[{LogPrefix}] Host character {CharacterIdentifier} had no appearance row; the reference face was written",
+                        LogPrefix, characterIdentifier);
+                }
+
                 logger.LogInformation(
                     "[{LogPrefix}] Host settings row restated for character {CharacterIdentifier}: a "
                     + "{BriefingTime}-minute briefing, {RoundCount} round(s), maps {Maps}",

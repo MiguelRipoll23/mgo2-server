@@ -142,6 +142,23 @@ public static class MatchRuleUtils
         return false;
     }
 
+    /// <summary>
+    /// Whether a rule is played with sides, or with every player for itself.
+    /// </summary>
+    /// <remarks>
+    /// <b>The rule decides it, and nothing else does.</b> Blood Bath is a map: the
+    /// same map is a free-for-all under Deathmatch and a two-sided round under Team
+    /// Deathmatch, so neither the map nor the side a row happens to hold can answer
+    /// it. The rules a round is won by a side are Team Deathmatch, Rescue, Capture,
+    /// Base, Bomb, Team Sneaking and Sneaking Capture; Deathmatch, Sneaking, Stealth
+    /// Deathmatch, Interval and Race are every player for itself.
+    /// </remarks>
+    /// <param name="rule">Rule id from a rotation triple.</param>
+    /// <returns><c>true</c> when the rule is played with sides.</returns>
+    public static bool HasTeams(int rule) =>
+        rule is TeamDeathmatch or Rescue or Capture or Base or Bomb or TeamSneaking
+            or SneakingCapture;
+
     /// <summary>Every rule name, for an error message that tells a reader what to write.</summary>
     private static string Names => string.Join(", ", Rules.Select(entry => entry.Name));
 }

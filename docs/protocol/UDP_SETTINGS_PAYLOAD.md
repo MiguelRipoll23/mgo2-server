@@ -316,6 +316,16 @@ Field order, `rpdt.js`'s `APPEARANCE_FIELDS`, byte `L-23+i`:
 the replay decoder and is marked so there. **[V]** for the offsets; **[I]** for
 the colour order.
 
+**Where the client puts these bytes.** The PC client does not consume the block
+from the packet: it stores it at **offset `0x181` of the data share numbered
+`playerId + 1`** and reads it back from there when it applies a player's
+appearance (`FUN_10170130` in `system.dll`: `FUN_100a0500(id + 1)`, then
+`FUN_100a0360(share, 0x181, 0x17, …)`), writing each byte into a
+`slot_online_*` property. A player whose share holds nothing there is applied
+with zeros — no part ids and no voice, which reads on the wire as a body that
+never appears. The apply path, its sixteen-slot manager and its object budget
+are `docs/analysis/join-stall-after-mode2.md` §86.
+
 **The side byte is the lobby array's team group, doubled.** `rpdt.js` aligns the
 lobby-array team groups it reads from the indexed `0x85`/`0x86` pair against this
 byte over 30 recordings and reports group `0` as byte `0` and group `1` as byte
@@ -326,6 +336,13 @@ real assignment — every loadout of `game1` carries `02` — so a player the ro
 rows put on no side keeps the recorded `02`, which is also what side `1` codes to.
 **[V]** for the mapping over the 30 files; **[I]** for reading this byte as the
 player's side in the room the record is sent to.
+
+The live server applies that reading: **the rule decides whether a round has
+sides at all** (`MatchRuleUtils.HasTeams`), because Blood Bath is a map and the
+same map is a free-for-all under Deathmatch and a two-sided round under Team
+Deathmatch. A rule with no sides assigns none, so `LobbyLoadoutService` reads no
+sides and the bodies carry the recorded `02` — which is what a Blood Bath room
+was writing as `00` while its players were on the column's default slot.
 
 **Five shapes the captures hold, and two the captures do not.** The length rule
 above gives every pair count a body: no pair (`0b 01`, 50 B), one (52 B), two

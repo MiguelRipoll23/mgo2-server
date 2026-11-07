@@ -49,6 +49,7 @@ namespace Mgo2Server.GameplayServer.Rooms;
 public sealed class LobbyLoadoutService(
     RoomRosterService roster,
     MatchService match,
+    MatchSettingsService settings,
     HostIdentityService hostIdentity,
     GameService gameService,
     CharacterService characterService,
@@ -75,6 +76,27 @@ public sealed class LobbyLoadoutService(
         }
 
         var sides = await gameService.GetPlayerTeamsAsync(matchIdentifier, cancellationToken);
+
+        // The rule decides whether the round has sides at all: Blood Bath is a map,
+        // not a mode, so the same map is a free-for-all under Deathmatch and a
+        // two-sided round under Team Deathmatch.
+        var rule = settings.CurrentRule;
+        var hasTeams = MatchRuleUtils.HasTeams(rule);
+
+        // A side the room knows is a side a client reported, and nothing on this
+        // channel reports one: the team column is written by the lobby server's peer
+        // register, so a gameplay room's rows hold the value the column is created
+        // with. The room therefore states no side, whether its rule has two sides or
+        // none, and the loadouts keep the recorded unassigned byte
+        // (docs/protocol/UDP_SETTINGS_PAYLOAD.md, the side byte). A body written as
+        // side zero in a round that has none is one the client does not take.
+        logger.LogDebug(
+            "Match {GameIdentifier}: rule {Rule} {Sides}, and the room's rows reported no side, so the "
+            + "loadouts carry the recorded unassigned byte",
+            matchIdentifier,
+            MatchRuleUtils.Name(rule) ?? rule.ToString(),
+            hasTeams ? "has sides" : "has no sides");
+        sides = [];
         var members = roster.Snapshot();
         var loadouts = new List<LobbyLoadout>(members.Count + 1);
 
