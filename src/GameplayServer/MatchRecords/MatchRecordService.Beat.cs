@@ -38,17 +38,28 @@ public sealed partial class MatchRecordService
     /// </remarks>
     /// <param name="context">Context the records are written through.</param>
     /// <summary>
-    /// The room's rotation maps, in play order: the list the beat's rules pair
-    /// carries.
+    /// Slots of the players the round holds, in ascending order: the list the
+    /// beat's rules pair carries.
     /// </summary>
     /// <remarks>
-    /// Read per round rather than per frame, because the rotation is the room's and
-    /// moves only between rounds. An unpublished room answers with none, which
+    /// <para>
+    /// <b>The class-<c>0x00</c> member byte is a player's slot and not a map of
+    /// the room's rotation.</b> The recorded host's class-<c>0x00</c> body at a
+    /// spawn is <c>ff 0a fe fe</c> (<c>briefing-then-solo-game</c> t+148.490): one
+    /// member, and that member is the slot the same frame's 25-byte spawn entry
+    /// names. A room of one that wrote its nine rotation maps there — <c>ff 0c 04
+    /// 05 02 07 03 0e 01 06 fe fe</c> — puts eight players on the field that it
+    /// does not hold.
+    /// </para>
+    /// <para>
+    /// Read per frame rather than per round, because a player joins and leaves on
+    /// a tick and the list is the round's membership; a room that holds none
     /// leaves the pair's empty form.
+    /// </para>
     /// </remarks>
-    /// <returns>The room's maps, or an empty list.</returns>
-    private IReadOnlyList<int> RotationMaps() =>
-        matchSettings.FindPublished()?.Rotation.Select(entry => entry.Map).Distinct().ToArray() ?? [];
+    /// <returns>The room's player slots, or an empty list.</returns>
+    private IReadOnlyList<byte> LiveMemberSlots() =>
+        roster.Snapshot().Select(member => member.SessionSlot).Order().ToArray();
 
     private async Task BeatAsync(PeerContext context)
     {
@@ -56,7 +67,6 @@ public sealed partial class MatchRecordService
         var beat = new BeatCounters { FrameIndex = FirstBeatFrameIndex };
         var round = roundState.RoundNumber;
         var generation = BeatGenerationFor(context);
-        var maps = RotationMaps();
 
         // The period is held by a timer and not by a delay behind the send: a
         // `Task.Delay(33)` costs the send as well, and the measured beat came out
@@ -72,7 +82,6 @@ public sealed partial class MatchRecordService
                 round = roundState.RoundNumber;
                 beat = new BeatCounters { FrameIndex = FirstBeatFrameIndex };
                 generation = BeatGenerationFor(context);
-                maps = RotationMaps();
                 logger.LogDebug(
                     "UDP {LocalPort}: round changed to {RoundNumber}; the beat restarts its frame index "
                     + "and moves to identifier set operations 0x{Operations:x4}",
@@ -100,7 +109,7 @@ public sealed partial class MatchRecordService
                 beat.BlobsWritten,
                 beat.ItemBoxSequence,
                 beat.ItemBoxStateSequence,
-                maps);
+                LiveMemberSlots());
 
             // The insertions' fourth bytes are taken inside the plan, from the
             // stream of the identifier each record travels under; what advances

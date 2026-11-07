@@ -188,6 +188,14 @@ never ticks, because a room of one holds it at the whole briefing time; the play
 readies at t+144.244 (`1f 0a 01`), the closing zero `0b 00 00 00 04 00 00` follows at
 t+145.098, the round opens at t+146.007 (`02 2a 04 1e 1e 1e 1e` and the two `0b 00 01`
 records), and its run writes the clock whole at t+147.650 (`01 60 09`, 2 400 units).
+
+**And a room of one's round is opened by the host, not by a report.** What the client
+sends between the zero at t+145.098 and the open at t+146.007 is the zero's
+own acknowledgement and its `e1 0a` echo — no report — so the host writes the round
+there on the zero. A room of several does report after its zero, and there the round
+follows that report instead (`MatchStartRunService.OnJoinReport`). A host that waits
+for a report a room of one never sends leaves that client on its briefing screen: the
+game fades out and never fades back in.
 That briefing outlived its one-minute time by 76 s. A report gated on the room's
 briefing time therefore opens the round while the client is still reading the
 screen, and the report that does ask for the round finds one already open — the

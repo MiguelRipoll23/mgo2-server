@@ -45,10 +45,17 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// <c>docs/protocol/UDP_GAME_CAPTURE.md</c> and the analysis file named below.
 /// </para>
 /// <para>
-/// <b>The last fifteen bytes are the map's.</b> They are two points on the
-/// stage: the team's spawn at <c>+10</c> and the point that side faces at
-/// <c>+16</c>, each three signed 16-bit coordinates in the position records'
-/// wire units. They are not map-independent — a body recorded on one stage puts
+/// <b>The last fifteen bytes are the map's: a heading and one point.</b>
+/// <c>+10</c> is a signed sixteen-bit turn, <c>+12</c> is the spawn's <c>x</c>,
+/// <c>+16</c> and <c>+20</c> are the point the side faces' <c>y</c> and <c>z</c>, and
+/// <c>+24</c> is a zero. Reading them as a position and a facing of three shorts each
+/// is what §76 of <c>docs/analysis/join-stall-after-mode2.md</c> corrects: the
+/// "third short" of the spawn is the high half of <c>x</c> and the "tail" behind the
+/// facing is the high half of <c>z</c>, so both are the sign of those coordinates and
+/// not a side's flag. The solo Blood Bath body decodes as heading <c>5fff</c>,
+/// <c>x</c> <c>-23750</c>, <c>y</c> <c>800</c>, <c>z</c> <c>20750</c>, and the other
+/// side of the full room as heading <c>0000</c>, <c>x</c> <c>20750</c>, <c>y</c>
+/// <c>800</c>, <c>z</c> <c>-23750</c>. They are not map-independent — a body recorded on one stage puts
 /// the client's briefing camera outside the map when the room plays another —
 /// so the pair is resolved from the map the room plays, not from one recording.
 /// </para>
@@ -107,18 +114,21 @@ public static class RoomPlayerEntryBodiesUtils
     /// </summary>
     public const byte NoTeamByte = 0x00;
 
-    /// <summary>Offset of the spawn's first coordinate, a signed 16-bit value.</summary>
-    public const int SpawnOffset = 0x0a;
+    /// <summary>Offset of the spawn's heading: a signed sixteen-bit turn.</summary>
+    public const int HeadingOffset = 0x0a;
 
-    /// <summary>Offset of the facing point's first coordinate, a signed 16-bit value.</summary>
-    public const int FacingOffset = 0x10;
+    /// <summary>Offset of the spawn's <c>x</c>, a signed thirty-two.</summary>
+    public const int XOffset = 0x0c;
 
-    /// <summary>
-    /// Offset of the three bytes behind the two points. The map 7 recording
-    /// carries <c>ff ff 00</c> on side zero and <c>00 00 00</c> on side one, and
-    /// those are written unchanged; what they say is not established.
-    /// </summary>
-    public const int TailOffset = 0x16;
+    /// <summary>Offset of the point the side faces' <c>y</c>, a signed thirty-two.</summary>
+    public const int YOffset = 0x10;
+
+    /// <summary>Offset of the point the side faces' <c>z</c>, a signed thirty-two.</summary>
+    public const int ZOffset = 0x14;
+
+    /// <summary>Offset of the record's last byte, zero in every measured body.</summary>
+    public const int ClosingByteOffset = 0x18;
+
 
     /// <summary>
     /// Builds the room's entry for one player: the map's spawn and facing pair
@@ -152,16 +162,11 @@ public static class RoomPlayerEntryBodiesUtils
         body[SecondRepeatSlotByteOffset] = slot;
         body[TeamByteOffset] = team;
 
-        WriteCoordinate(body, SpawnOffset, spawn.X);
-        WriteCoordinate(body, SpawnOffset + 2, spawn.Z);
-        WriteCoordinate(body, SpawnOffset + 4, 0);
-        WriteCoordinate(body, FacingOffset, facing.X);
-        WriteCoordinate(body, FacingOffset + 2, facing.Z);
-        WriteCoordinate(body, FacingOffset + 4, 0);
-
-        body[TailOffset] = team == 1 ? (byte)0x00 : (byte)0xff;
-        body[TailOffset + 1] = team == 1 ? (byte)0x00 : (byte)0xff;
-        body[TailOffset + 2] = 0x00;
+        WriteCoordinate(body, HeadingOffset, spawn.First);
+        WriteInt32(body, XOffset, spawn.Along);
+        WriteInt32(body, YOffset, facing.First);
+        WriteInt32(body, ZOffset, facing.Along);
+        body[ClosingByteOffset] = 0;
         return body;
     }
 
@@ -173,6 +178,18 @@ public static class RoomPlayerEntryBodiesUtils
     {
         body[offset] = (byte)(value & 0xff);
         body[offset + 1] = (byte)((value >> 8) & 0xff);
+    }
+
+    /// <summary>Writes one signed 32-bit coordinate little-endian.</summary>
+    /// <param name="body">Body to write into.</param>
+    /// <param name="offset">Offset of the lowest byte.</param>
+    /// <param name="value">Coordinate to write.</param>
+    private static void WriteInt32(byte[] body, int offset, int value)
+    {
+        body[offset] = (byte)(value & 0xff);
+        body[offset + 1] = (byte)((value >> 8) & 0xff);
+        body[offset + 2] = (byte)((value >> 16) & 0xff);
+        body[offset + 3] = (byte)((value >> 24) & 0xff);
     }
 
     /// <summary>

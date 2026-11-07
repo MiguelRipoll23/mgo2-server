@@ -1483,13 +1483,18 @@ copies the slot straight into the record. What the captures still do not give
 is the **selection rule** — `0x280b68` scans the keys, it does not allocate them,
 and `0, 20, 15, 4, 11, 6` in one round follow no order a client announces.
 
-The practical gap that leaves is narrower and now precisely stated: our roster
-entries carry each live player's key, but the steady stream still emits only the
-**empty** `0x0a61 fe` list, so nothing tells the client which handles are live.
-The records it would need are the member-bearing `0x0261`/`0x0a61` ones, which
-this server never emits (its steady frame carries only the empty `0x0a61 fe`
-bodies). **[V]** for the measurement; whether the client needs them to run a game
-is not established by any of the three captures.
+The practical gap that once stood here is closed, and closing it corrected a
+misreading. The beat's `0x0a61` class-`0x00` body is the room's **member list**
+and not its maps: the recorded host's body at a spawn is `ff 0a fe fe`
+(`briefing-then-solo-game` t+148.490), one member, and that member is `0x0a` — the
+slot the same frame's 25-byte spawn entry names. Our stream had been writing the
+rotation's maps under that class (`ff 0c 04 05 02 07 03 0e 01 06 fe fe` for the
+nine rounds of one room), which a room of one would have read as eight players it
+does not hold. `RulesMemberListBodiesUtils` now writes the slots the roster holds
+(`MatchRecordService.LiveMemberSlots`), read per frame, so a joiner can be told
+which members are live. **[V]** for the measurement; whether the client needs the
+list to run a game is still not established by any of the three captures — only
+that the shape we wrote there was not the recorded one.
 
 ### 8.5 The lobby TCP channel, our frames beside the reference's [V]
 
@@ -2074,7 +2079,7 @@ written reconstruction.
 
 | identifier | reference | live | reading |
 | --- | --- | --- | --- |
-| `0x0a61` | the pair throughout | the pair throughout | the room's map list is written under the same class, `0x0a61 class=0` with the lists |
+| `0x0a61` | the pair throughout | the pair throughout | class `0` carries the room's live player slots as its member list; the rotation's maps are not that list |
 | `0x1a54` | 200+ | the opening run | the run goes out; its repeated copies do not |
 | `0x9a54` / `0x9a50` | 0 | 0 | nothing to write: this capture's host writes no `0x9a5x` record at all |
 | `0x0a5c` | `00 00 00 00` | `00 00 00 00` | same body |

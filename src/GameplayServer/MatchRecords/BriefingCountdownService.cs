@@ -184,6 +184,10 @@ public sealed partial class BriefingCountdownService(
         // draws, which is a separate instant from the briefing's own end.
         var allReadyPublished = false;
 
+        // Whether this peer has been sent the held count, which is written once
+        // and not repeated (see the send below).
+        var heldCountSent = false;
+
         // Why the count stopped, which is what the peer's briefing ended on. It is
         // named in the log below because "ended" alone cannot tell a briefing that
         // ran its minute out from a session the reaper closed, and a room of one
@@ -205,10 +209,23 @@ public sealed partial class BriefingCountdownService(
             var seconds = BriefingCountdownBodiesUtils.CountdownSeconds(remaining);
             try
             {
-                await context.Send(
-                    countdownIdentifier,
-                    BriefingCountdownBodiesUtils.CountdownBody(seconds, briefingStates.ReadyMask),
-                    sequences.Take(countdownIdentifier));
+                // <b>A held count is written once, not every tick.</b> A room of
+                // one holds its count at the room's whole briefing time, so the
+                // record does not move: `briefing-then-solo-game` writes it once at
+                // t+12.887 (`0b 3c 00 00 00 00 00`) and writes no second count for
+                // the next 132 s. Repeating it puts a count back on a client whose
+                // briefing screen has already been closed by the zero, which is how
+                // a solo client was left black after its briefing: the host wrote
+                // the zero and then re-sent 60 every tick beside it.
+                if (IsCounting || !heldCountSent)
+                {
+                    await context.Send(
+                        countdownIdentifier,
+                        BriefingCountdownBodiesUtils.CountdownBody(seconds, briefingStates.ReadyMask),
+                        sequences.Take(countdownIdentifier));
+
+                    heldCountSent = true;
+                }
 
                 // The room's own stage rides with the countdown, which is the one
                 // thing this host writes through a briefing.
@@ -239,6 +256,16 @@ public sealed partial class BriefingCountdownService(
             {
                 allReadyPublished = true;
                 await SendBriefingEndAsync(context, session);
+            }
+
+            // Nothing follows the zero in a room of one. Its count has no clock to
+            // tick and the zero is the last record the briefing writes, which is
+            // where `briefing-then-solo-game` ends the count stream (its zero at
+            // t+145.098, and no count record after it).
+            if (allReadyPublished && !IsCounting)
+            {
+                endedBecause = "its briefing closed on the zero";
+                break;
             }
 
             // The tick ends the moment the round opens: this task is awaited

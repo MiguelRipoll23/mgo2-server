@@ -5745,3 +5745,95 @@ are unchanged, and the sign of the screen is still the client writing its own
 loaded `n007a` at its sixth stage with its briefing loader still at zero, so the
 early pair is one candidate among the differences §74 leaves open and not a
 measurement of the screen.
+
+## 76. The entry's fifteen bytes are a heading and three signed thirty-twos, and Blood Bath's two sides are measured
+
+**What the live camera showed.** This host's room is Blood Bath and the client
+joined it into a round that opened on the right stage, and the camera still sat
+outside the map. The entry it was sent carried that stage's spawn, so §24's
+reading — that the pair is two positions in the position records' wire units —
+was the part still wrong.
+
+**What the recordings say.** `UDP_COMMANDS.md`'s kind-`0x04` table reads the
+payload behind the header as a heading and three signed thirty-twos, and the
+bodies agree with it field for field. Decoding `briefing-then-solo-game`
+t+148.490 this way:
+
+```
+07 12 00 04 00 0a 00 0a 0a 00   header, slot 0a, group 0
+ff 5f                             heading 24575
+3a a3 ff ff                       x = -23750
+20 03 00 00                       y = 800
+0e 51 00 00                       z = 20750
+00                                the closing byte
+```
+
+So the third short §24 read as a side flag is the **high half of `x`** — `0xFFFF`
+is the sign extension of a negative thirty-two — and the three bytes read as a
+tail are the high half of `z` and the closing byte. A room's two sides differ in
+those high halves only because one side's coordinates are negative, which is why
+writing them from the team byte happened to reproduce the solo body and could not
+be right in general.
+
+`working-server-4-sessions` t+8.643 is a full room on the same stage, eight
+entries, four a side:
+
+| side | heading | x | y | z |
+| --- | --- | --- | --- | --- |
+| one | `0000` | `0e 51 00 00` (20750) | `20 03 00 00` (800) | `3a a3 ff ff` (-23750) |
+| other | `5fff`–`7ffe` | `3a a3 ff ff` (-23750) | `20 03 00 00` (800) | `0e 51 00 00` (20750) |
+
+`y` is `800` for every entry of both sides, which is the ground plus the lift
+`SV_GetInitialPosDir` adds (§7 of `roster-record-kinds.md`), and the heading is
+the turn: `0` on one side, a value near `0x7FFE` on the other, `0x5FFF` in the
+solo room. Each side's players differ by a few hundred units along `x`, which is
+why one point a side is enough.
+
+**What was changed.** `MapSpawnUtils`' Blood Bath row carries both sides —
+`(24575, -23750)` and `(0, 20750)` with their look-at points `(800, 20750)` and
+`(800, -23750)` — and `RoomPlayerEntryBodiesUtils` writes the fifteen bytes as
+the heading, `x`, `y` and `z` they are rather than as three shorts a point and a
+side flag. The solo capture's body is reproduced byte for byte, and the other
+side's is the full room's.
+
+**What the client showed.** With that body the camera sits on the stage. Two
+consequences worth carrying: the recorded shorts are not world units divided by
+`CoordinateScale` (§24's conversion), and a stage's two sides are a measurement
+rather than a mirror — the entry a solo room gets names only the side it spawns
+on.
+
+**Still open.** Whether the heading is what the client uses for the spawn's
+turn, and why the full room's is `0x7FFE` where the solo room's is `0x5FFF`.
+Neither changes the bytes this host writes, which are the recording's.
+
+## 77. The character is invisible forever: the class-`0x00` rules body was the rotation, not the players
+
+The symptom: the client spawns and its character never appears. In the reference
+the character is semi-transparent at a spawn — the invincibility that aiming the
+weapon also clears — and solid a few seconds later, and neither end of that
+transition is a host record. Measured around the solo capture's spawn entry at
+t+148.490, the host writes only the 25-byte spawn entry, its repeated health
+`fa fa` and its `0x0a61` pair; everything that moves at the transition (`0x08ab`
+aim and the rest) is the client's own block, written inbound.
+
+So what the client is missing is the record that says who is on the field, and
+the beat carries it as the rules-roster body under class `0x00`. At that spawn the
+recorded host writes `ff 0a fe fe`: one member, `0x0a`, and that member is the
+slot the same frame's 25-byte spawn entry names. Our beat wrote
+`ff 0c 04 05 02 07 03 0e 01 06 fe fe` — the room's nine rotation maps (12, 4, 5,
+2, 7, 3, 14, 1, 6) read as members, in a room that held one player. The maps were
+read into the member list because map ids and session slots share the range
+`0..23`, and nothing in the body distinguishes them but the frame it arrives in.
+
+**What was changed.** `RulesMemberListBodiesUtils` writes the recorded list shape
+from the slots the room's roster holds; `MatchRecordService.LiveMemberSlots`
+reads them per frame, so a player joining or leaving changes the list on the next
+frame; `RulesMapListBodiesUtils` is gone and the beat no longer writes maps there.
+A room holding one player writes `ff 01 fe fe` where the recording writes
+`ff 0a fe fe`: the slot differs because this host's run numbers it, and the shape
+is the recorded one.
+
+**Not established.** Whether the client's drawing follows that list. The captures
+show the shape the host writes and nothing about what the client does with it —
+the measurement is the fix's whole basis, and a client's visible result is what
+settles it.

@@ -120,7 +120,50 @@ public sealed partial class MatchStartRunService
             }
 
             await WriteRunCoreAsync(context, generation, round, round.TimeLimitUnits, briefing: true);
-            return;
+
+            // A room of one's closing zero then opens the round, and this host
+            // writes that itself: no report follows the zero there. Measured:
+            // `briefing-then-solo-game` writes its zero at t+145.098 and its round
+            // at t+146.007, and what its only client sends in between is an
+            // acknowledgement of the zero and its `e1 0a` echo — no report. Waiting
+            // for one is what leaves that client on its briefing screen, the game
+            // faded out and never back in. A room of several does report after its
+            // zero and opens on that report (`OnJoinReport`), and this peer waits
+            // for the open it writes.
+            while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
+            {
+                if (IsBetweenRoundsOfGame)
+                {
+                    return;
+                }
+
+                if (!countdown.HasEnded || briefingStates.PlayerCount >= CountingJoinReportCount)
+                {
+                    await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
+                    continue;
+                }
+
+                // The open waits behind the zero as well: `briefing-then-solo-game`
+                // writes its zero at t+145.098 and its round at t+146.007, 0.9 s
+                // later, and the client is fading out of its briefing across that
+                // gap. Opening in the zero's own tick sent the live client from
+                // that fade straight into the map and crashed it in its camera
+                // code (`cam_transparent.cc`).
+                await Task.Delay(MatchRecordTimingUtils.RoundOpenDwellMilliseconds);
+                if (!MatchRecordPeerUtils.IsAlive(session) || roundState.IsOpen)
+                {
+                    return;
+                }
+
+                // The round plays under the other set: the briefing's own is the
+                // one its first report arrived on, and the reference's briefing
+                // at 0x1254 is followed by its round at 0x1a54, one sibling bit
+                // along (MatchRecordGenerationUtils.Sibling).
+                OpenRound(
+                    generation.Sibling,
+                    "the lone player's briefing wrote its closing zero");
+                return;
+            }
         }
     }
 }

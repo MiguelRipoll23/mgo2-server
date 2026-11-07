@@ -58,9 +58,9 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// the item boxes' <em>spawn</em> bodies (head codes <c>0x74</c>, <c>0x8c</c> and
 /// <c>0xb4</c> under the same <c>0x1a50</c> identifier), which are the live
 /// round's own item placement and move irregularly around the group this file
-/// does replay; the member-bearing rules-roster records, since
-/// <see cref="MatchRecordBodiesUtils.RulesRoster"/> is the empty list; the
-/// per-player position and objective frames the host's own character produces.
+/// does replay; the per-player position and objective frames the host's own
+/// character produces. The member-bearing rules record is no longer left out:
+/// its class-`0x00` body carries the slots the roster holds (§77).
 /// The sibling-generation identifier set (<c>0x800</c> bit: <c>0x1254</c>,
 /// <c>0x12de</c>, <c>0x0261</c>, <c>0x010c</c>) was on this list and is not any
 /// more: the set follows the round (<see cref="MatchRecordGenerationUtils"/>),
@@ -274,14 +274,14 @@ public static class MatchRecordFramesUtils
     /// <param name="insertions">Records to place at the head of the frame, or null.</param>
     /// <param name="includeVitals">Whether the vitals record rides in this frame.</param>
     /// <param name="itemBoxes">Item-box group to place behind the rules pair, or null.</param>
-    /// <param name="maps">The room's rotation maps, or null for the empty pair.</param>
+    /// <param name="members">Slots of the players the round holds, or null for the empty pair.</param>
     /// <returns>The records of one beat frame.</returns>
     public static List<RecordMessage> BeatFrame(
         MatchRecordGenerationUtils generation,
         IReadOnlyList<RecordMessage>? insertions = null,
         bool includeVitals = true,
         IReadOnlyList<RecordMessage>? itemBoxes = null,
-        IReadOnlyList<int>? maps = null)
+        IReadOnlyList<byte>? members = null)
     {
         var frame = new List<RecordMessage>(
             (insertions?.Count ?? 0) + (itemBoxes?.Count ?? 0) + (includeVitals ? 3 : 2));
@@ -295,7 +295,7 @@ public static class MatchRecordFramesUtils
             frame.Add(new(generation.Vitals, MatchRecordBodiesUtils.Vitals(), VitalsAttributeClass));
         }
 
-        frame.AddRange(RulesPairFramesUtils.RulesPair(generation, maps ?? []));
+        frame.AddRange(RulesPairFramesUtils.RulesPair(generation, members ?? []));
 
         if (itemBoxes is not null)
         {

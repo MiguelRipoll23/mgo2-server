@@ -10,9 +10,17 @@ what is measured about them and what was written.
 
 | capture | the 22-byte record | the two 54-byte entries |
 | --- | --- | --- |
+| `mgo2-started-briefing-then-solo-game` | `070f000300000000840384033efd840384033efdfd00`, and `070f0003010000013efd7d0307033efd7d030703fd00` beside it | `072f000100000000260100ec2c…3c7d`, `072f000101000001260100983a…807f` |
 | `mgo2-game1` | `070f0003000000407cfc6c07acf47cfc6c07acf4fd00` | `072f000100000000260100ec2c…3c7d`, `072f000101000001260100983a…807f` |
-| `mgo2-started-briefing-then-solo-game` | **identical** | **identical** |
 | `mgo2-game2` | `070f000300000050640014ec5700640014ec5700fd00` | — |
+
+The first row was written from a body that is **not in that capture**: decoding
+`briefing-then-solo-game` end to end gives the two records above at t+9.780,
+t+11.579, t+13.379 and again in the round's opening run at t+147.650, and no
+`…40 7c fc 6c 07 ac f4…` body anywhere. The pair's own points are
+`(900, 900, -706)` and `(-706, 893, 775)` with the payload's tag repeating the
+record's index, which is what `RoomStateRecordBodiesUtils` writes; the two
+`0x40`/`0x50` bodies are other stages' and are left as the rows below quote them.
 
 So the three bodies are **byte-identical across two captures that share no
 origin, no client and no session** — `mgo2-game1` and

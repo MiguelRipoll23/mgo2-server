@@ -13,6 +13,15 @@ public static class RoomStateRecordBodiesUtils
     /// <summary>Kind that indexes the client's stage object: a custom point and its action.</summary>
     private const byte RoomStateKind = (byte)RoomRecordKind.CustomPoint;
 
+    /// <summary>
+    /// The first record's point, as its own six little-endian sixteens:
+    /// <c>(900, 900, -706)</c>, written twice in the body.
+    /// </summary>
+    private static readonly byte[] FirstRecordedPoint = [0x84, 0x03, 0x84, 0x03, 0x3e, 0xfd];
+
+    /// <summary>The second record's point: <c>(-706, 893, 775)</c>.</summary>
+    private static readonly byte[] SecondRecordedPoint = [0x3e, 0xfd, 0x7d, 0x03, 0x07, 0x03];
+
     /// <summary>Low byte of the sixteen-bit tail both records close on.</summary>
     private const byte RoomStateTailLow = 0xfd;
 
@@ -40,57 +49,42 @@ public static class RoomStateRecordBodiesUtils
     /// run and again through a briefing.
     /// </summary>
     /// <remarks>
-    /// The values are the recording's: two captures that share no session write one
-    /// point byte for byte and a third another, so the field is the room's stage
-    /// rather than the session. The client hands the payload to its stage object's
-    /// kind-<c>0x03</c> node, and the port names that module <c>sv_custom_point</c> —
-    /// one point, one action (<c>docs/analysis/roster-record-kinds.md</c> §4 and
-    /// §7). What the point states is still **[U]**, so it is the recording's.
+    /// The values are the recording's, and they are the stage's rather than the
+    /// session's: <c>briefing-then-solo-game</c> writes the same pair at t+9.780,
+    /// t+11.579, t+13.379 and again in the round's opening run at t+147.650, byte
+    /// for byte, and <c>mgo2-game2</c> writes other points on the stage it plays
+    /// (<c>docs/analysis/briefing-room-state.md</c> §1). The client hands the payload
+    /// to its stage object's kind-<c>0x03</c> node, and the port names that module
+    /// <c>sv_custom_point</c> — one point, one action
+    /// (<c>docs/analysis/roster-record-kinds.md</c> §4 and §7). What the point states
+    /// is still **[U]**, so it is the recording's.
     /// </remarks>
     /// <returns>The record body.</returns>
     public static byte[] RoomStateRecord() =>
-        MatchRecordBodiesUtils.RosterShapedRecord(
-            RoomStateRecordLength,
-            RoomStateKind,
-            MatchRecordBodiesUtils.FirstRecordIndex,
-            MatchRecordBodiesUtils.FirstRecordIndex,
-            Payload(x: 900, y: 900, z: -706));
+        Build(MatchRecordBodiesUtils.FirstRecordIndex, FirstRecordedPoint);
 
     /// <summary>The second record of the room's stage, at its own point.</summary>
     /// <returns>The record body.</returns>
     public static byte[] RoomStateRecordSecond() =>
+        Build(MatchRecordBodiesUtils.SecondRecordIndex, SecondRecordedPoint);
+
+    /// <summary>
+    /// Builds one record of the pair: its index, that index as the payload's tag,
+    /// the stage's point written twice and the sixteen-bit tail.
+    /// </summary>
+    /// <param name="index">The record's index within its pair.</param>
+    /// <param name="point">The point the recording states, six bytes.</param>
+    /// <returns>The record body.</returns>
+    private static byte[] Build(byte index, ReadOnlySpan<byte> point) =>
         MatchRecordBodiesUtils.RosterShapedRecord(
             RoomStateRecordLength,
             RoomStateKind,
-            MatchRecordBodiesUtils.SecondRecordIndex,
-            MatchRecordBodiesUtils.SecondRecordIndex,
-            Payload(x: -706, y: 893, z: 775));
-
-    /// <summary>
-    /// The room-state payload: the point, the same point again as the action's
-    /// second side, and the sixteen-bit tail.
-    /// </summary>
-    /// <param name="x">Coordinate along the axis the points separate on.</param>
-    /// <param name="y">Height of the point.</param>
-    /// <param name="z">The remaining horizontal coordinate.</param>
-    /// <returns>The payload bytes behind the record's tag.</returns>
-    private static byte[] Payload(short x, short y, short z) =>
-    [
-        .. Point(x, y, z),
-        .. Point(x, y, z),
-        RoomStateTailLow,
-        RoomStateTailHigh,
-    ];
-
-    /// <summary>One point of the room's stage: x, y and z as little-endian sixteens.</summary>
-    /// <param name="x">Coordinate along the axis the points separate on.</param>
-    /// <param name="y">Height of the point.</param>
-    /// <param name="z">The remaining horizontal coordinate.</param>
-    /// <returns>The six bytes of the point.</returns>
-    private static byte[] Point(short x, short y, short z) =>
-    [
-        (byte)x, (byte)(x >> 8),
-        (byte)y, (byte)(y >> 8),
-        (byte)z, (byte)(z >> 8),
-    ];
+            index,
+            index,
+            [
+                .. point,
+                .. point,
+                RoomStateTailLow,
+                RoomStateTailHigh,
+            ]);
 }

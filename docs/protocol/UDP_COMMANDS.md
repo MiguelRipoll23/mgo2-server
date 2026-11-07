@@ -395,6 +395,15 @@ publishes (`addsd` of `0x10a53f0`). So the `u16` here is the direction, the thre
 the position, and `y` carries the floor plus that lift
 (`docs/analysis/roster-record-kinds.md` §7).
 
+The three integers also say which side of a stage a player is put on, and a room
+of one is told only the side it spawns on: `working-server-4-sessions` t+8.643 is
+eight entries on one Blood Bath room, four at heading `0000` with `x` 20750, `y`
+800, `z` -23750 and four at heading `5fff`–`7ffe` with `x` -23750, `y` 800, `z`
+20750, while `briefing-then-solo-game` t+148.490 carries one of the second kind.
+`MapSpawnUtils` holds both sides measured, and §76 of
+`docs/analysis/join-stall-after-mode2.md` is the correction to an earlier reading
+that took the high halves of `x` and `z` for a side's flag.
+
 **Kind `0x03` — a tag, a triple written twice, and a sixteen-bit tail.** 41 records of 22
 bytes and 2 of 29. `[0x07]` is a tag nibble and the record's index (`0x40`, `0x50`, `0x60`,
 `0x61` measured); the six bytes at `0x08`–`0x0d` are written again at `0x0e`–`0x13`, and a

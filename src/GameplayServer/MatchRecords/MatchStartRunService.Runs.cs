@@ -95,8 +95,9 @@ public sealed partial class MatchStartRunService
                 var round = roundState.RoundNumber;
                 var generation = roundState.Generation;
 
-                // The phase goes out before the run: `briefing-then-solo-game`
-                // publishes field 0 at t+146.007 and its run at t+147.650.
+                // The phase and the run wait for the report the client sends from its
+                // weapon select (report t+146.831, run t+147.650), not for a clock.
+                await WaitForSpawnReportAsync(context);
                 await WriteRoundPhaseAsync(context, (byte)round);
                 await WriteRunAsync(context, generation);
 

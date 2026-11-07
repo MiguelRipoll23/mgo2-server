@@ -147,8 +147,8 @@ fi
 export ADVERTISED_ADDRESS="$advertised_address"
 export DEDICATED_ADVERTISED_ADDRESS="${DEDICATED_ADVERTISED_ADDRESS:-$advertised_address}"
 export GAMEPLAY_SERVER_PORT="$gameplay_port"
-export GAMEPLAY_SERVER_CHARACTER_NAME="${GAMEPLAY_SERVER_CHARACTER_NAME:-server~$gameplay_port}"
-export GAMEPLAY_SERVER_GAME_NAME="${GAMEPLAY_SERVER_GAME_NAME:-server~$gameplay_port}"
+export GAMEPLAY_SERVER_CHARACTER_NAME="${GAMEPLAY_SERVER_CHARACTER_NAME:-server-$gameplay_port}"
+export GAMEPLAY_SERVER_GAME_NAME="${GAMEPLAY_SERVER_GAME_NAME:-server-$gameplay_port}"
 export DATABASE_CONNECTION_STRING="$database_connection_string"
 unset database_connection_string
 

@@ -3,27 +3,55 @@ using Mgo2Server.Shared.Domain.Characters;
 namespace Mgo2Server.GameplayServer.Match;
 
 /// <summary>
-/// One point on a stage, in the wire units the room's 25-byte player entry
-/// carries: <see cref="PlayerPosition.CoordinateScale"/> tenths of a world unit.
+/// One point on a stage: two of the three numbers the room's 25-byte player entry
+/// carries for it.
 /// </summary>
-/// <param name="X">Coordinate along the axis the spawns separate on.</param>
-/// <param name="Z">The remaining horizontal coordinate.</param>
-public readonly record struct MapSpawnPoint(short X, short Z);
+/// <remarks>
+/// A spawn states the pair as its heading (<c>+10</c>) and its <c>x</c>, and a
+/// look-at point as the <c>y</c> and <c>z</c> of the point it names
+/// (<see cref="RoomPlayerEntryBodiesUtils"/>).
+/// </remarks>
+/// <param name="First">
+/// The heading of a spawn, or the <c>y</c> of a look-at point. Blood Bath's solo room
+/// writes <c>0x5FFF</c> on the side it spawns on, the full room <c>0x7FFE</c> on that
+/// same side and <c>0x0000</c> on the other, which is the turn **[I]**; every look-at
+/// point writes <c>800</c>, the ground plus the lift
+/// <c>SV_GetInitialPosDir</c> adds.
+/// </param>
+/// <param name="Along">
+/// The <c>x</c> of a spawn, or the <c>z</c> of a look-at point: the axis a stage's two
+/// sides sit on, <c>+20750</c> to <c>+23750</c> for one side of Blood Bath and
+/// <c>-20750</c> to <c>-25000</c> for the other, over the eight entries a side in a
+/// full room.
+/// </param>
+public readonly record struct MapSpawnPoint(short First, short Along);
 
 /// <summary>
 /// Where each side starts on one stage, and which point that side faces.
 /// </summary>
 /// <remarks>
-/// The two points are a team's spawn and the other team's spawn. In the
-/// replays a round opens with both teams on opposite sides of the stage and
-/// every player's heading pointing across it, so the opposite spawn is the
-/// direction the side is already looking before its first move. The entry's
-/// second point is that look-at point rather than a heading, which is the
-/// shape the recorded bodies have.
+/// The two points are the two sides of a stage. A round opens with the two teams on
+/// opposite sides of it and every player's heading pointing across, so the point a
+/// side faces is the other side's spawn: that is the entry's second point, and it is
+/// a point rather than a heading in every recorded body. Blood Bath's half of the
+/// table is measured from a room of one and from a full room, the rest from the
+/// Survival replays' opening frames.
 /// </remarks>
-/// <param name="Red">Raw team 0's spawn.</param>
-/// <param name="Blue">Raw team 1's spawn.</param>
-public readonly record struct MapSpawns(MapSpawnPoint Red, MapSpawnPoint Blue)
+/// <param name="Red">The side the raw team byte <c>0</c> puts a player on.</param>
+/// <param name="Blue">The side the raw team byte <c>1</c> puts a player on.</param>
+/// <param name="RedFacing">
+/// The look-at point recorded for raw team 0, where the capture carries one that
+/// is not the other side's spawn.
+/// </param>
+/// <param name="BlueFacing">
+/// The look-at point recorded for raw team 1, where the capture carries one that
+/// is not the other side's spawn.
+/// </param>
+public readonly record struct MapSpawns(
+    MapSpawnPoint Red,
+    MapSpawnPoint Blue,
+    MapSpawnPoint? RedFacing = null,
+    MapSpawnPoint? BlueFacing = null)
 {
     /// <summary>
     /// The spawn of the side a raw team byte states.
@@ -37,7 +65,8 @@ public readonly record struct MapSpawns(MapSpawnPoint Red, MapSpawnPoint Blue)
     /// </summary>
     /// <param name="team">Raw team byte, where <c>1</c> is blue and anything else is red.</param>
     /// <returns>The side's look-at point.</returns>
-    public MapSpawnPoint FacingOf(byte team) => team == 1 ? Red : Blue;
+    public MapSpawnPoint FacingOf(byte team) =>
+        team == 1 ? BlueFacing ?? Red : RedFacing ?? Blue;
 }
 
 /// <summary>
@@ -74,12 +103,27 @@ public readonly record struct MapSpawns(MapSpawnPoint Red, MapSpawnPoint Blue)
 /// Desert Duel's eastern spawn would both overflow as world values.
 /// </para>
 /// <para>
-/// <b>Modes differ, the sides do not.</b> The replay for a stage may be a
-/// Capture, Bomb, Base, Race, Rescue or Sneaking match, because that is how the
-/// stage appeared in the list; what does not change is the side the team
-/// occupies at the opening. A stage that appears in several modes has one entry
-/// here, which is the point the briefing camera needs rather than every
-/// respawn point the mode can choose during a round.
+/// <b>Modes mostly share a side, and Blood Bath does not.</b> The replay for a
+/// stage may be a Capture, Bomb, Base, Race, Rescue or Sneaking match, because
+/// that is how the stage appeared in the list, and every stage but one occupies
+/// the same corner in each of them. Blood Bath is read from its own room entries
+/// instead, and its two sides come from two captures:
+/// <c>briefing-then-solo-game</c> is a CAP round on it whose slot <c>0a</c> entry
+/// writes <c>ff 5f 3a a3 ff ff</c> and <c>20 03 00 00 0e 51</c>, and
+/// <c>working-server-4-sessions</c> is a full room on the same stage whose eight
+/// entries come in two mirrored pairs — <c>00 00 20 51 00 00 | 20 03 00 00 3a a3</c>
+/// with the <c>ff ff 00</c> tail, against the solo body's <c>00 00 00</c> — so the
+/// other side is measured rather than mirrored from the first. Every entry of a
+/// side sits at one point and its players differ only along it, which is why one
+/// point per side is enough.
+/// </para>
+/// <para>
+/// <b>The values are the recordings' shorts, byte for byte.</b> They are ten times
+/// the values the replay rows carry for the same stage's corner (the replay row
+/// Blood Bath used to carry had that side at <c>(-2275, 2175)</c>), and dividing
+/// them to match the replays is what put the live client's camera outside the
+/// stage: reading them as world units rather than as the entry's coordinates was
+/// the error, so the recordings' bytes are what is written.
 /// </para>
 /// <para>
 /// <b>Two stages have no measured entry.</b> <c>19</c> Perilous Palace and
@@ -112,7 +156,16 @@ public static class MapSpawnUtils
         [4] = new(new(4900, -2900), new(-2850, -11150)), // n004a Gronznyj Grad, replay_378527_13
         [5] = new(new(-3575, -775), new(3475, -2400)), // n005a Coppertown, replay_378521_14
         [6] = new(new(-1250, -1825), new(2000, 2250)), // n006a Hazard House, replay_378525_15
-        [7] = new(new(-2275, 2175), new(2175, -2275)), // n007a Blood Bath, replay_360828_5
+        // n007a Blood Bath, two captures: briefing-then-solo-game's slot 0a entry
+        // for the side the round spawns on (pos ff 5f 3a a3 ff ff, face
+        // 20 03 00 00 0e 51) and working-server-4-sessions' eight entries for both
+        // sides, which put the other side at pos 00 00 0e 51 00 00 with face
+        // 20 03 00 00 3a a3 and the ffff00 tail.
+        [7] = new(
+            new(24575, -23750),
+            new(0, 20750),
+            new(800, 20750),
+            new(800, -23750)),
         [8] = new(new(-3606, 3425), new(3700, -3850)), // n008a Tomb of Tubes, replay_378519_15
         [9] = new(new(1300, -5950), new(-3850, -6300)), // n009a Ravaged Riverfront, replay_378518_12
         [10] = new(new(5150, 0), new(-975, -1675)), // n010a Silo Sunset, replay_378523_18

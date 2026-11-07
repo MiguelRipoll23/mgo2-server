@@ -81,6 +81,7 @@ public sealed partial class MatchStartRunService
         lock (gate)
         {
             lastJoinReportIdentifier = reportIdentifier;
+            joinReportCount++;
             armed = briefingNumber;
             first = briefingGeneration is null;
             if (first)
