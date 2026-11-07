@@ -46,11 +46,9 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// the item-box state group behind them in one frame in every eight.
 /// </item>
 /// </list>
-/// <para>
-/// <b>What the replay reproduces from the run on</b>: the beat frame's
-/// <see cref="VitalsOnsetFrames"/>-frame delay before the vitals record joins it
-/// and the item-box state group riding in every
-/// <see cref="ItemBoxFramesUtils.ItemBoxPeriodFrames"/>th frame (see
+/// <para>    /// <b>What the replay reproduces from the run on</b>: the vitals record joining
+    /// the frame with the round's spawn, and the item-box state group riding in every
+    /// <see cref="ItemBoxFramesUtils.ItemBoxPeriodFrames"/>th frame (see
 /// <see cref="ItemBoxFramesUtils.ItemBoxGroup"/>).
 /// </para>
 /// <para>
@@ -176,14 +174,6 @@ public static class MatchRecordFramesUtils
     public const int StateBlobPeriodFrames = 181;
 
     /// <summary>
-    /// Beat frame at which the vitals record starts riding in the beat frame:
-    /// 818 frames, 27.0 s after the match-start run. The capture's run is at
-    /// t+46.42 s and its first <see cref="VitalsRecordIdentifier"/> is at
-    /// t+73.43 s; before that the beat frame is the rules-roster pair alone.
-    /// </summary>
-    public const int VitalsOnsetFrames = 818;
-
-    /// <summary>
     /// Beat frames between one control-byte insertion and the next: 130, the
     /// capture's mean. Its gaps are not uniform — the solo window alternates
     /// ~83 and ~180 — so this is the average interval rather than a cadence the
@@ -253,11 +243,11 @@ public static class MatchRecordFramesUtils
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The vitals record is not in every frame. The recorded host writes the
-    /// rules-roster pair alone for the round's first 27.0 s and adds
-    /// <see cref="VitalsRecordIdentifier"/> only from
-    /// <see cref="VitalsOnsetFrames"/> on — 781 of the solo window's frames carry
-    /// nothing else, against 2 385 that carry the vitals record.
+    /// The vitals record joins the frame with the round's spawn: the recorded host
+    /// writes its first <see cref="VitalsRecordIdentifier"/> on the frame that
+    /// carries the spawn entries (`briefing-then-solo-game` t+148.490) and every
+    /// frame after it. The 27.0 s between game1's run and its first vitals record is
+    /// that capture's run-to-spawn gap, not a delay the record waits out.
     /// </para>
     /// <para>
     /// <b>The item-box group follows the pair, not precedes it.</b> game1's

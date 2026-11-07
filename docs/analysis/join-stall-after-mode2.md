@@ -5837,3 +5837,34 @@ is the recorded one.
 show the shape the host writes and nothing about what the client does with it —
 the measurement is the fix's whole basis, and a client's visible result is what
 settles it.
+
+## 78. The character stays invisible: the vitals record never rode
+
+The membership fix (§77) was not the whole story. The client's own model is not
+drawn from anything the client says about itself: in `briefing-then-solo-game`
+every one of its own block records — `0x08a7` state `00 ff 00`, `0x08a9`, the
+five-byte `0x08ab`, `0x08ad` — is **inbound**, 837 of each, and the host writes
+exactly one record about that player on the beat: `0x08a8 fa fa`, 54 times.
+
+**The onset is the spawn.** That record's first appearance is the frame carrying
+the 25-byte spawn entries at t+148.490, and it repeats every frame after it. The
++4.9 s, +6.1 s and +27.0 s offsets measured in earlier sections are each capture's
+run-to-spawn gap, not a delay the record waits out: game1 opens its round 27 s
+after its run because that is when its first player spawned.
+
+**What our host wrote.** A live round-5 session at 01:51 held 626 beat frames and
+`grep fafa` over its log returns **0**: no `0x08xx` record at all. `IncludeVitals`
+read `RoundOpen && (VitalsOnset || FrameIndex >= 818)`, the client reports no
+vitals of its own, and an 818-frame floor is 27 s of beat — the session never got
+there. The beat also chose the right identifier for the peer (`0x084e` for slot 1)
+and then never wrote it, so the client was never told its character had health.
+
+**What was changed.** `BeatFramePlan.IncludeVitals` is the round's open alone and
+`MatchRecordFramesUtils.VitalsOnsetFrames` is gone; `BeatFramePlan` no longer takes
+`VitalsArrived`, which stays on `MatchRoundStateService` as the record the vitals
+handler notes. The spawn the round opens on is the record's onset, and every frame
+after the spawn carries it.
+
+**Not established.** That the client draws the character from that record. What the
+captures establish is that the reference host writes it from the spawn and this one
+did not write it at all.

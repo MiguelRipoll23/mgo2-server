@@ -34,11 +34,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// round that has not, and no capture writes a player's health before the round
 /// it plays is open (<see cref="IncludeVitals"/>).
 /// </param>
-/// <param name="VitalsOnset">
-/// Whether a player has reported vitals in this round, which is the record the
-/// vitals record's onset is gated on in place of the capture's frame count
-/// (<see cref="MatchRoundStateService.VitalsArrived"/>).
-/// </param>
+
 /// <param name="BlobsWritten">State blobs the round has written so far.</param>
 /// <param name="ItemBoxSequence">
 /// Fourth byte the frame's first item-box record carries, when the frame carries
@@ -58,7 +54,6 @@ public sealed record BeatFramePlan(
     MatchRecordGenerationUtils Generation,
     int RoundClockUnits,
     bool RoundOpen,
-    bool VitalsOnset,
     int BlobsWritten,
     byte ItemBoxSequence,
     byte ItemBoxStateSequence,
@@ -229,17 +224,17 @@ public sealed record BeatFramePlan(
     /// range no briefing has: the record belongs to a round that is playing.
     /// </para>
     /// <para>
-    /// <b>The floor behind the report is the capture's own offset, kept rather
-    /// than dropped.</b> The recorded host writes the rules-roster pair alone for
-    /// the round's first 27.0 s and adds the vitals record after it, because that
-    /// is when its round had health to report; a live host has the record the
-    /// moment a player reports any (<see cref="VitalsOnset"/>). A room whose
-    /// players never report vitals still carries the record the client's beat was
-    /// measured with, once its round is open.
+    /// <b>The onset is the spawn, and the round's open is the spawn.</b> The
+    /// recorded host's first vitals record lands on the frame that carries the
+    /// round's spawn entries: `briefing-then-solo-game` writes its 25-byte entry
+    /// at t+148.490 and `0x08a8 fa fa` from that same frame on. The offsets other
+    /// captures show between their run and their first vitals — +4.9 s, +6.1 s and
+    /// +27.0 s — are those captures' run-to-spawn gaps, not a delay the record
+    /// waits out. This host's round opens on the report the spawn follows, so the
+    /// round's own open states the onset and nothing else is needed.
     /// </para>
     /// </remarks>
-    public bool IncludeVitals =>
-        RoundOpen && (VitalsOnset || FrameIndex >= MatchRecordFramesUtils.VitalsOnsetFrames);
+    public bool IncludeVitals => RoundOpen;
 
     /// <summary>
     /// Whether this frame's insertion is a state blob, which is what advances

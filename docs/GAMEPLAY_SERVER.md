@@ -266,9 +266,10 @@ periods, an insertion at its head — the round's **clock, counted down**
 alternating zero/live, or a one-byte control — with the vitals record and the
 item-box group in one frame in eight. The clock, the generation (which flips to
 the sibling identifier set each round) and the round number are live, and so is
-the vitals record's **onset**: it rides from the round's first player vitals
-(`MatchRoundStateService.NoteVitalsArrived`), with the capture's own 818-frame
-(27.0 s) offset kept as its floor. The rest of the cadence is the capture's. **A fresh room's briefing gets no beat**:
+the vitals record's **onset**: it rides from the frame the round's spawn is written
+on, which is the round's open. The offsets the captures show between their run and
+their first vitals (+4.9 s, +6.1 s, +27.0 s) are those captures' run-to-spawn gaps,
+not a delay the record waits out. The rest of the cadence is the capture's. **A fresh room's briefing gets no beat**:
 the reference host writes its first beat when the round opens, not when the
 briefing's run goes out — `mgo2-game-started-on-briefing` holds 3.8 frames a second
 through a 140 s briefing and 42 a second in the round — so the beat waits for the
@@ -417,7 +418,7 @@ steps to the next entry of the room's rotation. It also clears the round's score
 | **the ready set while a briefing waits** | `JoinReportHandler` on every report, and `BriefingReadyPublishService` repeating the room's set every briefing tick until the round opens |
 | **how long each briefing writer sleeps, and that they share one period** | `MatchRoundStateService.BriefingTickMilliseconds` (2.35 s, measured: the reference writes the rules pair and the countdown in the same pass), read by the pair, the countdown and the ready set; `WaitBriefingTickAsync` ends the tick when the round opens, so no writer holds the beat behind a timer |
 | **the round's result: `state[2]` written as the operations state write when the round ends** | `MatchStartRunService` (score → `MatchRecordBodiesUtils.StateWrite`) |
-| **the vitals record's onset: the round's first player vitals rather than a frame count** | `MatchRoundStateService.VitalsArrived` |
+| **the vitals record's onset: the round's open, which is the spawn** | `BeatFramePlan.IncludeVitals` |
 
 The room's rotation, map and clock were *not* live before this revision — they
 were the recorded room's constants — so a host could serve a room whose rows said

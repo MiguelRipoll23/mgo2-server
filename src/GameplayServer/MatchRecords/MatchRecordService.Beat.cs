@@ -105,7 +105,6 @@ public sealed partial class MatchRecordService
                 generation,
                 roundState.RemainingUnits,
                 roundState.IsOpen,
-                roundState.VitalsArrived,
                 beat.BlobsWritten,
                 beat.ItemBoxSequence,
                 beat.ItemBoxStateSequence,
