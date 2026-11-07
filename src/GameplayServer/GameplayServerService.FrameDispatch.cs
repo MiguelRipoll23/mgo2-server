@@ -329,12 +329,13 @@ public sealed partial class GameplayServerService
                 {
                     logger.LogDebug(
                         "[{LogPrefix}] IN {RemoteAddress} relayed tick record 0x{MessageType:x4} " +
-                        "({BodyLength} bytes, ordinal={Ordinal}) to the other established peers",
+                        "({BodyLength} bytes, ordinal={Ordinal}, body={Body}) to the other established peers",
                         LogPrefix,
                         session.RemoteAddress,
                         message.Type,
                         message.Body.Length,
-                        message.Flags);
+                        message.Flags,
+                        Convert.ToHexString(message.Body).ToLowerInvariant());
                     SendToOthers(session, message.Type, message.Body, message.Flags, ofThisHost: false);
                 }
 
