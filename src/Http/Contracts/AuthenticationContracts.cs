@@ -18,6 +18,7 @@ public sealed class LoginForm
         Ps3 = Read(form, "ps3"),
         Stime = Read(form, "stime"),
         Seed = Read(form, "seed"),
+        IpAddress = Read(form, "ip_address"),
     };
 
     /// <summary>Reads one field of the form.</summary>
@@ -52,4 +53,11 @@ public sealed class LoginForm
 
     /// <summary>Random seed the client derives its session field from.</summary>
     public string? Seed { get; set; }
+
+    /// <summary>
+    /// Address the player's host is reachable at from outside its network, which
+    /// the client may state and usually does not: the console has no field for it,
+    /// and only a client that knows its own external address sends one.
+    /// </summary>
+    public string? IpAddress { get; set; }
 }

@@ -74,13 +74,13 @@ public sealed class AuthenticationService(
     {
         if (displayName.Equals("server", StringComparison.OrdinalIgnoreCase))
         {
-            return new LoginAttempt(false, FailedLoginReply);
+            return new LoginAttempt(false, FailedLoginReply, null);
         }
 
         var user = await FindByCredentialsAsync(displayName, passwordHash, cancellationToken);
         if (user is null)
         {
-            return new LoginAttempt(false, FailedLoginReply);
+            return new LoginAttempt(false, FailedLoginReply, null);
         }
 
         var tokenBytes = RandomNumberGenerator.GetBytes(LoginTokenLength / 2);
@@ -89,6 +89,6 @@ public sealed class AuthenticationService(
 
         await sessionService.CreateSessionAsync(user.Identifier, storedField, cancellationToken);
 
-        return new LoginAttempt(true, $"0,{user.Identifier},{LoginPerks},{sessionToken}");
+        return new LoginAttempt(true, $"0,{user.Identifier},{LoginPerks},{sessionToken}", user.Identifier);
     }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Mgo2Server.Http.Contracts;
 
@@ -139,6 +140,12 @@ internal static partial class RequestBodyValidation
     /// as an empty form, so the field rules answer it with the same rejection as
     /// a form that is missing its fields.
     /// </summary>
+    /// <remarks>
+    /// A body posted as JSON is read as the same fields: the plugin's own client
+    /// posts its login that way, and the fields it names are the form's. Only a
+    /// flat object of scalars is read — a nested value is not a field of the form
+    /// it stands for and is written as the field's text.
+    /// </remarks>
     /// <param name="context">Request being handled.</param>
     /// <param name="cancellationToken">Token that cancels the read.</param>
     public static async Task<IFormCollection> ReadFormAsync(
@@ -147,9 +154,53 @@ internal static partial class RequestBodyValidation
     {
         try
         {
-            return await context.Request.ReadFormAsync(cancellationToken);
+            if (context.Request.HasFormContentType)
+            {
+                return await context.Request.ReadFormAsync(cancellationToken);
+            }
         }
         catch (InvalidOperationException)
+        {
+            return new FormCollection([]);
+        }
+
+        return await ReadJsonFormAsync(context, cancellationToken);
+    }
+
+    /// <summary>Reads a JSON body as the form of fields it stands for.</summary>
+    /// <param name="context">Request being handled.</param>
+    /// <param name="cancellationToken">Token that cancels the read.</param>
+    /// <returns>The fields of the body, empty when it is not a JSON object.</returns>
+    private static async Task<IFormCollection> ReadJsonFormAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        if (context.Request.ContentLength is 0)
+        {
+            return new FormCollection([]);
+        }
+
+        try
+        {
+            using var document = await JsonDocument.ParseAsync(
+                context.Request.Body,
+                cancellationToken: cancellationToken);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return new FormCollection([]);
+            }
+
+            Dictionary<string, Microsoft.Extensions.Primitives.StringValues> fields = [];
+            foreach (var field in document.RootElement.EnumerateObject())
+            {
+                fields[field.Name] = field.Value.ValueKind == JsonValueKind.String
+                    ? field.Value.GetString()
+                    : field.Value.GetRawText();
+            }
+
+            return new FormCollection(fields);
+        }
+        catch (JsonException)
         {
             return new FormCollection([]);
         }

@@ -1,5 +1,4 @@
-using System.Net;
-using System.Net.Sockets;
+using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.Shared.Domain.Games;
 
@@ -15,15 +14,6 @@ namespace Mgo2Server.Shared.Domain.Games;
 /// </summary>
 public static class ExternalJoinUtils
 {
-    /// <summary>First octet of the CGNAT range the tailnet addresses are carved from.</summary>
-    private const int TailnetFirstOctet = 100;
-
-    /// <summary>First second octet of that range, 100.64.0.0/10.</summary>
-    private const int TailnetSecondOctetMinimum = 64;
-
-    /// <summary>Last second octet of that range, 100.64.0.0/10.</summary>
-    private const int TailnetSecondOctetMaximum = 127;
-
     /// <summary>
     /// The line the host is shown, naming the page they sign in at to make their
     /// game reachable from outside the network.
@@ -38,16 +28,6 @@ public static class ExternalJoinUtils
     /// sending: every other address is already reachable by the players.
     /// </summary>
     /// <param name="address">Advertised address, or <c>null</c> when none is set.</param>
-    public static bool IsTailnetAddress(string? address)
-    {
-        if (!IPAddress.TryParse(address?.Trim(), out var parsed) ||
-            parsed.AddressFamily != AddressFamily.InterNetwork)
-        {
-            return false;
-        }
-
-        var octets = parsed.GetAddressBytes();
-        return octets[0] == TailnetFirstOctet &&
-               octets[1] is >= TailnetSecondOctetMinimum and <= TailnetSecondOctetMaximum;
-    }
+    public static bool IsTailnetAddress(string? address) =>
+        ExternalAddressUtils.IsTailnetAddress(address);
 }

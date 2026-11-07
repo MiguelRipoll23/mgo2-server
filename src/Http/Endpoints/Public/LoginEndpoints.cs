@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Mgo2Server.Http.Contracts;
 using Mgo2Server.Http.Discord;
 using Mgo2Server.Shared.Domain.Authentication;
+using Mgo2Server.Shared.Domain.Games;
 
 namespace Mgo2Server.Http.Endpoints.Public;
 
@@ -25,6 +26,7 @@ internal static class LoginEndpoints
 
     private static async Task<IResult> LoginAsync(
         AuthenticationService authenticationService,
+        GameService gameService,
         DiscordLoginNotificationService loginNotifications,
         ILoggerFactory loggerFactory,
         HttpContext context,
@@ -45,6 +47,27 @@ internal static class LoginEndpoints
         }
 
         var attempt = await authenticationService.LoginAsync(form.Name!, form.Passwd!, cancellationToken);
+
+        // The address the client states here is the only place a player's own
+        // external address is learned: the connection push that follows reports the
+        // endpoint the server socket sees, which is the tailnet or LAN address and
+        // not the one other players dial. The rows written are the account's
+        // character connections, and a player that states none, or states a tailnet
+        // address, leaves every row as it was.
+        if (attempt.AccountIdentifier is { } accountIdentifier)
+        {
+            var written = await gameService.UpdatePublicAddressAsync(
+                accountIdentifier,
+                form.IpAddress,
+                cancellationToken);
+            if (written > 0)
+            {
+                loggerFactory.CreateLogger(nameof(LoginEndpoints)).LogInformation(
+                    "Account {AccountIdentifier}: public address set on {RowCount} connection row(s)",
+                    accountIdentifier,
+                    written);
+            }
+        }
 
         // Every credential attempt is written in the logins channel, the ones
         // that failed included: a fingerprint that never reaches an account is
