@@ -5903,3 +5903,193 @@ capture's block is the last resort.
 measured is that the reference sends the joiner's own block and this host sent a
 degenerate one; the block we now send is byte for byte what the client
 announced.
+
+## 80. The block the client announces carries no colour, and the mesh is the only thing missing
+
+The client is not failing to spawn. Its weapon draws and follows the spawn state, its
+entity answers the round's records, and only the character's own mesh is absent — which
+is the one thing the appearance block names.
+
+**What the join request carries.** Read at `0x10` of the 140-byte request the live
+client sends, the 23-byte block is
+`1c 44 2e 56 39 66 66 00 00 00 00 00 00 00 0b 16 00 00 00 07 0f 00 00`: the gear ids,
+then **all nine colour fields zero**. The reference's block is the same layout with
+colour in it — `1e 45 2f 57 39 67 68 0e 0e 00 0e 0e 00 00 0b 16 00 0e 0e 07 0f 00 00` —
+and the fields behind the colours (`0b 16 00`, `07 0f`) are identical in both. So the
+echo §79 added is a no-op *because the client announces the very block its own row
+holds*, and the only field group in which the two blocks differ is the colour.
+
+**What was changed.** `LobbyLoadoutService` announces a player whose block carries no
+colour in any of its nine colour fields with the recorded host's own
+(`LoadoutFramesUtils.HasAnyColour`). That block is the capture's, it is the fallback the
+service already used for a player whose appearance cannot be read, and the substitution
+is logged as a warning every time. One zero field is the recording's as well (the hands
+colour), so the test asks for any colour rather than for all of them.
+
+**Not established.** That a colourless block is what hides the mesh. What is measured is
+that it is the only field group in which the client's block and the reference's differ,
+and that the missing mesh is the datum that block names. If the model appears with the
+recorded block, the defect is upstream of the burst — the character creation path saves
+an appearance with no colour in it — and that path is the next thing to read.
+
+## 81. The recorded block did not draw the mesh, so the substitution went
+
+The client was announced with the recorded host's own colour-bearing block (§80) and the
+character's mesh was still absent. That answers §80's open question in the negative: the
+colour group is not what hides the model, and a host that writes another character's
+appearance is writing a fact about the player that is not true. `HasAnyColour` and the
+substitution are removed; a player is announced with the block it announced and its row
+holds, as §79 left it. What is measured now is that appearance reaches the peer — the
+join reply carries the 23-byte block in the loadout record below — and that the peer
+draws everything the block names except the mesh itself.
+
+## 82. What a dedicated host actually sends in the UDP stream
+
+The question was whether a host that never plays sends an appearance and skills at all,
+so that a host sending more than the recording does can stop. Read off the `0x1001`
+records whose body opens `0x0b` (the loadout family, `LoadoutBodiesUtils`):
+
+| what | measured |
+| --- | --- |
+| appearance | **sent**, in the loadout record's 23-byte block, behind the four unnamed bytes at `0x12` and the two before the block |
+| skills | **sent**, as two-byte pairs behind the record's list end; the host's own record carries none, the joiner's carries two or three |
+| slot and side | **sent**, the record's first two bytes (key plus one, and the team array's side byte) |
+
+The fifty-byte body is the host's own — `LoadoutBodiesUtils.PlayerLoadoutPayload` — and
+it carries the colour-bearing block of §80 in the block's own position, so the recording
+sends its appearance exactly where this host writes the player's. Nothing in the burst is
+something the dedicated host does not send, so nothing is removed: `LobbyLoadoutService`
+keeps writing the appearance, the pairs and the slot it already writes, and the join
+reply's `0x1001`/50-byte record keeps its measured shape.
+
+The TCP shape is a different layout and not an alternative source. The lobby's personal
+info reads the appearance as 19 bytes (the ids, then the colours without the two
+accessory colours) followed by four skill ids and four levels, and the account's
+character list repeats the same order; the UDP block is 23 bytes with the colours
+interleaved as `LoadoutFramesUtils.TryAppearanceBlock` writes them. So the TCP stream
+confirms which fields the appearance has and their order within each group, and it
+does not say the UDP block lacks a field.
+
+## 83. The replay console's own parser, read against the live record
+
+The replay console at `eovsstone.com/games/mgo2-replay-console-beta/` ships a second
+independent decoder of the same stream — `rpdt.js`, described in its header as a port of
+`replay_parse.py` cross-checked byte for byte over an 18-file corpus — and a renderer,
+`app.js`, that builds a body out of each player's appearance block. Read together they
+settle three things this file had only inferred.
+
+**The field order is the one this server writes.** `APPEARANCE_FIELDS` is `head, chest,
+hand, waist, foot, acc1, acc2, headColor, chestColor, handColor, waistColor, footColor,
+gender, face, upper, lower, facePaint, upperColor, lowerColor, voice, pitch, acc1Color,
+acc2Color` — exactly the order of `LoadoutFramesUtils.TryAppearanceBlock`, and exactly the
+colour offsets `[7..11, 17, 18, 21, 22]` §80's removed test used.
+
+**The block is the record's trailing 23 bytes, and the record's length is the grammar's.**
+`appearanceRecord` reads `a + L - 23` for any length in `LOADOUT_LEN` (50–62) and keys the
+result by `body[1] - 1`, the slot byte less one — the same key-plus-one rule as the rest of
+this file. The live 50-byte record passes the console's stricter skill grammar with a
+clean zero-pair region (`b[22] = 0x02`, list end `0xff` at 24), exactly as the recorded
+host's own record does, and the two differ only in the slot byte. The 54- and 56-byte
+records read as `[[1,3],[2,1]]` and `[[5,2],[13,3],[15,1]]`.
+
+**Colour is a texture variant, not a visibility switch.** `app.js` maps each item to a
+`COLOUR_FIELD`, looks the colour up in a per-item `VARIANTS` table and falls back to the
+item's own texture when the table has no entry for it (`(V[key] || {})[colour] || null`) —
+so a zero colour is a valid pick and not a missing one. The body is assembled from `face`,
+`upper`, `lower`, `hand` plus the five gear slots and the two accessories, with a fallback
+for each; `gender` 0 is male, 1 female, and nothing else in the block decides whether a
+figure is drawn.
+
+**What this rules out.** The live block is a complete, well-formed male body — `face 0`,
+`upper 11`, `lower 22`, `hand 46`, `foot 57`, four gear ids, `voice 7`, `pitch 15` — carried
+in a record that both parsers align, in the slot the client's own key names, with the
+recording's own block in it during the §80 test. No field of the appearance block, and no
+byte of the record's framing, can be what leaves the mesh undrawn. What remains is that
+the client never applies the block it was handed to itself, which is a client-side state
+this server cannot see in the stream it is sent.
+
+## 84. The whole stream diffed, family by family
+
+The live run of 2026-11-07 02:23 (one joiner, `PhilDunphy23`, key `1`, round 5 of match
+329) was compared against `briefing-then-solo-game` from the spawn at t+148.490 through
+the round. Every record family the reference host writes in that round has a counterpart
+here; what differs is slot bytes, which are the room's own, and the two records below.
+
+| family | reference | live | verdict |
+| --- | --- | --- | --- |
+| vitals | `0x08a8` 2B `fafa` | `0x084e` 2B `fafa` | one rule, `0x0844 + 0x0a×slot`; slot `0x0a` vs `1` |
+| rules roster | `0x0a61` 4B `ff 0a fe fe`, 1B `fe` | `0x0a61` 4B `ff 01 fe fe`, 1B `fe`, `0x0261` 1B | same, slot byte |
+| team array | `0x1001` 26B `85 8d fe … 00 … fe` | `85 7e fe 00 ff … ff` | same, marked slot `0x0a` vs `1` |
+| occupancy | `0x1001` 26B `86 8d … 07 …` | `86 7e 7f 07 …` | same, `07` at the player's slot |
+| spawn entry | `0x1001` 25B `07 12 00 04 00 0a 00 0a 0a 00 …` | `07 12 00 04 00 01 00 01 01 00 …` | same, three slot fields |
+| loadout | `0x1001` 50B slot `01` (host) / 54B, 56B (joiner) | `0x1001` 50B slot `02` | same form; see §82 |
+| item boxes, join state, ops | `0x1a50`, `0x1a5a`, `0x0a5c`, `0x1a54` | `0x1250`, `0x125a`, `0x0a5c`/`0x025c`, `0x1254` | same, sibling generation (`^ 0x800`) |
+| **placement answer** | `0x1001` 10B `0b 00 00 04 00 00 00 00 00 **03**` **and** `0x1001` 25B `0b 18 02 … 10 00 fe ff` (t+145.655) | `0x1001` 10B `0b 00 00 04 00 00 00 00 00 **02**`; the 25B form is written in the settings burst ~2.5 s later with slot `01`, the host's | **two differences** |
+| room-entry header | 25B two-field form | `0x1001` 24B `0b 02 02 …` — the single-field `Build` for the client's slot | different form |
+
+**The two that are not slot-derived.** The tenth byte of the `0b 00 00 04` body is `02`
+here and `03` there, and the answer to the placement request carries no 25-byte settings
+header at all — the reference writes one in the same frame as that body, while this host
+writes its only one when the settings burst goes out, and the one it writes then names the
+host's slot rather than the peer's. Neither is an appearance record, so neither explains
+the mesh by itself; they are, however, the only measured content differences left in the
+setup path, and a client that reads its own seat state out of them would be reading what
+the reference never wrote.
+
+**What was changed because of the table.** The placement answer now carries the join-time
+form of the settings header for the answering peer's own slot
+(`SettingsHeaderBodiesUtils.BuildJoin`), where it carried the shorter single-field form
+whose carried field is written zero. That form is what the reference writes in this very
+answer (t+145.655), the two-field shape is the one whose second field the burst already
+sends, and the peer's slot is the one thing the reference's own copy cannot be compared
+against a joiner of a different key. The tenth byte of the `0b 00 00 04` body is left as it
+was: nothing measured says what it counts.
+
+## 85. The client's own log: the stage runs, and one check is new
+
+The client that joined on 2026-11-07 02:38 (`savemgo.log`, port's own launcher) reached the
+round's map stage and kept drawing for 21 s, and fired three of its own `devcheck`s:
+
+```
+[35354 ms] sv_custom_point.cc line 94: over action 14
+[35969 ms] parse.c line 301: argno <= ...argc
+[46078 ms] pl_plg_voice_net.cc line 459: PL_PLG_VOICE_NET :: invalid voice id 0 !!!!!
+```
+
+**The first two are §60–§68's, and are the stage's own.** `over action 14` is a literal in
+the stage's `scenerio.gcx` `SetCustomPoint` table (§61), one past the script's fourteen-entry
+bound, and `parse.c:301` follows it in the same initialisation. Both are `devcheck`s, not
+crashes: the process went on drawing, and neither names a record this host writes.
+
+**The third is new and is the only one about a player.** `voice` is a field of the
+appearance block itself — offset 19, `docs/protocol/UDP_SETTINGS_PAYLOAD.md` — and every
+block this host sends carries `voice 7`: the client's own announced block
+(`… 0b 16 00 00 00 07 0f 00 00`) and the recorded fallback the host character is announced
+with both do. So the plugin is not rejecting a value that was written; it is asking about a
+player whose voice it never read, and a player with no loadout record is exactly that. The
+room had two players and the burst carried **one** loadout record: the answering peer's,
+which is `AnsweringLoadoutBody`'s contract and what the reference does too.
+
+**What the log does not contain is as useful as what it does.** There is no message about a
+model, a mesh, a character or an appearance — the client reports nothing at all about the
+undrawn body, which is why no amount of server-side logging on this side has named it. The
+one open question the log raises is a player identity: whether the client keys its own actor
+to the slot its loadout record names. If it keys itself to the host's, then its own slot has
+no appearance and no voice, which is the shape of both this check and the missing mesh.
+
+**The room's rows, read over the database on 2026-11-07.** `characters_appearance` holds
+rows for characters `2`, `3`, `4`, `5` and `6` and **none for `651`**, which is the
+`server-9999` character this host plays as; character `2` (`PhilDunphy23`) reads `gender 0,
+face 0, voice 7, pitch 15, head 28, upper 11, lower 22, feet 57, hands 46` — the values its
+announced block carries. So the client's own character has a voice and the host's has no row
+at all, and the appearance it is announced with on the wire is the recorded fallback.
+
+**The defect the log found.** `PlayerSettingsBurstService.BuildSettingsBurst` wrote exactly
+one loadout record — the answering peer's — although its own class remarks say the burst
+names the room's players one record each, and the recorded burst of a two-player room
+(`mgo2-game1` t+6.687) carries three bodies, the host's own slot `01` among them. A peer
+therefore received an appearance for itself and none for anyone else, which is precisely a
+player the voice plugin has no voice id for. The burst now writes one body per player of the
+room, in slot order, falling back to the answered peer's single body only when the room's
+loadouts could not be read. What this does not yet explain is the undrawn mesh: the client's
+own record was in the burst throughout.
