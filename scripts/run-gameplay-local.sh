@@ -41,7 +41,7 @@ project_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pi_host="${PI_HOST:-miguel@raspberrypi.local}"
 pi_database_port="${PI_DATABASE_PORT:-5432}"
 tunnel_port="${DATABASE_TUNNEL_PORT:-15432}"
-gameplay_port="${GAMEPLAY_SERVER_PORT:-3333}"
+gameplay_port="${GAMEPLAY_SERVER_PORT:-9999}"
 log_file="${GAMEPLAY_SERVER_LOG:-${TMPDIR:-/tmp}/mgo2-gameplay-server-${gameplay_port}.log}"
 tunnel_pid=""
 
@@ -123,8 +123,13 @@ database_connection_string="$(remote_kubectl "get secret mgo2-secrets --namespac
 if port_listening "$tunnel_port"; then
     printf 'Reusing the postgres tunnel already listening on 127.0.0.1:%s.\n' "$tunnel_port"
 else
+    # The forward is probed by its listener and not by its process: a
+    # `pgrep -f` on the command line matches the remote shell that carries the
+    # pattern, so it answered "already forwarding" for a forward that a pod
+    # restart had already taken down, and the tunnel then opened onto a dead
+    # port.
     if ssh -o BatchMode=yes -o ConnectTimeout=5 "$pi_host" \
-        "pgrep -f 'kubectl port-forward -n mgo2 svc/mgo2-postgres' >/dev/null"; then
+        "ss -ltn 2>/dev/null | grep -qE '[:.]${pi_database_port}[[:space:]]'"; then
         printf 'The Pi already forwards postgres to its own port %s.\n' "$pi_database_port"
     else
         printf 'Starting the postgres port-forward on %s.\n' "$pi_host"
