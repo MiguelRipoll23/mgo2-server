@@ -178,9 +178,20 @@ public sealed partial class TeamArrayService
 
             if (member is not null)
             {
+                // The peer's own seat, in the join-time form. The answer used to
+                // carry the shorter single-field header, whose one carried field is
+                // written zero; the measured answer to this request carries the
+                // two-field form instead -- `briefing-then-solo-game` t+145.655
+                // answers the placement request with `0b 18 02 ... 10 00 fe ff`
+                // beside its `0b 00 00 04 ...` body, and no capture holds the
+                // single-field form in an answer of this kind. The two forms are
+                // the same record at two moments (§33), so which one a client takes
+                // its own seat state from is the difference this makes: the peer now
+                // receives the field the team array writes for a player the room puts
+                // on no side, and not a zero.
                 run.Add(
                     new(UdpCommandConstants.PlayerProfile,
-                        SettingsHeaderBodiesUtils.Build((byte)(member.SessionSlot + 1)),
+                        SettingsHeaderBodiesUtils.BuildJoin((byte)(member.SessionSlot + 1)),
                         roster.TakeRunOrdinal()));
             }
         }

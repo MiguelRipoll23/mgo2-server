@@ -218,16 +218,34 @@ public sealed partial class PlayerSettingsBurstService(
             .. JoinPreamble(rotationBody),
         ];
 
-        // One loadout, and it is the answering peer's. The reference burst
-        // carries a single fifty-four-byte body — `briefing-then-solo-game`
-        // t+4.712, slot `0b`, the key of the peer it answers plus one — and the
-        // same body is the one its roster run wrote at the join. A burst that
-        // wrote the host's own loadout beside it and two byte-identical records
-        // behind those put three records on a wire that holds one.
-        burst.Add(new(
-            UdpCommandConstants.PlayerProfile,
-            AnsweringLoadoutBody(loadouts, answeringSlot),
-            roster.TakeRunOrdinal()));
+        // One loadout per player of the room, the host's included. The recorded
+        // burst of a two-player room carries three bodies — `mgo2-game1`
+        // t+6.687 writes the fifty-byte one in the host's own slot `01` and the
+        // fifty-four-byte one twice in its joiner's `15` — so the family names
+        // the room's players and not only the peer being answered. Writing the
+        // answering peer's alone leaves every other player of the room with no
+        // appearance record at all, and the client's own voice plugin reports
+        // `PL_PLG_VOICE_NET :: invalid voice id 0` for a player it has no
+        // appearance for (docs/analysis/join-stall-after-mode2.md §85). A solo
+        // capture still writes one, because its room holds one joiner besides
+        // the host, and the host's own body is the one at slot `01` in both.
+        if (loadouts is { Count: > 0 })
+        {
+            foreach (var loadout in loadouts.OrderBy(player => player.Slot))
+            {
+                burst.Add(new(
+                    UdpCommandConstants.PlayerProfile,
+                    LoadoutBody(loadout),
+                    roster.TakeRunOrdinal()));
+            }
+        }
+        else
+        {
+            burst.Add(new(
+                UdpCommandConstants.PlayerProfile,
+                AnsweringLoadoutBody(loadouts, answeringSlot),
+                roster.TakeRunOrdinal()));
+        }
 
         burst.Add(new(UdpCommandConstants.GameStateBlob, BuildClosingStateBlob(), answeringSlot));
         return burst;

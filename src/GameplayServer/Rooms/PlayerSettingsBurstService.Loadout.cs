@@ -1,14 +1,16 @@
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
-/// The one settings payload a join names its peer with, written by the roster
-/// run and again by the burst behind it.
+/// The settings payload the roster run answers a joining peer with — and the one
+/// the burst falls back to when the room's own loadouts could not be read.
 /// </summary>
 /// <remarks>
 /// It is split from the burst for the size limit rather than for a second
 /// question: both callers ask for the same body, and
-/// <see cref="PlayerSettingsBurstService.AnsweringLoadoutBody"/> is the only
-/// place either of them builds it.
+/// <see cref="PlayerSettingsBurstService.AnsweringLoadoutBody"/> is the only place
+/// either of them builds it. The burst itself writes one record per player of the
+/// room (<see cref="PlayerSettingsBurstService.BuildSettingsBurst"/>), because a
+/// peer that is told only about itself has no appearance for anyone else.
 /// </remarks>
 public sealed partial class PlayerSettingsBurstService
 {
