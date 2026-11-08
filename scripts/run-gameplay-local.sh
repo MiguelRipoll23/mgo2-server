@@ -215,6 +215,16 @@ export GAMEPLAY_SERVER_PORT="$gameplay_port"
 export GAMEPLAY_SERVER_START_ROUND="${GAMEPLAY_SERVER_START_ROUND:-${configured_start_round:-${deployed_start_round:-1}}}"
 export GAMEPLAY_SERVER_CHARACTER_NAME="${GAMEPLAY_SERVER_CHARACTER_NAME:-server-$gameplay_port}"
 export GAMEPLAY_SERVER_GAME_NAME="${GAMEPLAY_SERVER_GAME_NAME:-server-$gameplay_port}"
+
+# The local room is the bot room: bots on both sides, filling the slots the humans
+# leave and giving them up when one joins. The count is this run's own, and the
+# stage directory is the client's install, so navigation reads the stage the round
+# is played on out of its own GEOM. A run that points the directory elsewhere gets
+# navigation that says it has no data, rather than a route nothing measured.
+export BOT_TEAM="${BOT_TEAM:-BOTH}"
+export BOT_POPULATION_MODE="${BOT_POPULATION_MODE:-FILL}"
+export BOT_COUNT="${BOT_COUNT:-8}"
+export BOT_POPULATION_INTERVAL_SECONDS="${BOT_POPULATION_INTERVAL_SECONDS:-5}"
 export DATABASE_CONNECTION_STRING="$database_connection_string"
 unset database_connection_string
 

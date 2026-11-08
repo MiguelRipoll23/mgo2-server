@@ -137,7 +137,14 @@ public sealed partial class MatchStartRunService
                     return;
                 }
 
-                if (!countdown.HasEnded || briefingStates.PlayerCount >= CountingJoinReportCount)
+                // The count is over the room's clients and not its players: a bot
+                // holds a roster entry and never a briefing screen, so a room of one
+                // client and its bots is the lone-player room of
+                // `briefing-then-solo-game` — zero at t+145.098 and the round at
+                // t+146.007 — and not a room whose round waits for departures no
+                // peer sends.
+                if (!countdown.HasEnded
+                    || briefingStates.ReportedPlayerCount >= CountingJoinReportCount)
                 {
                     await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
                     continue;

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The stage navigation generator. It reads the client's own stage files and
+    Haven's name table once, extracts the three things navigation needs, and writes
+    one data file the gameplay server embeds, so the server never needs a client
+    install, a mounted directory or the stage files themselves.
+
+    Usage: dotnet run project tools/stage-navigation, then three arguments:
+    the stage directory, the dictionary, and the output file. See README.md.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="Stage/*.cs" />
+    <Compile Include="../../src/GameplayServer/Bots/Stage/StageNavigationTypes.cs" />
+    <Compile Include="../../src/GameplayServer/Bots/Stage/StageNavigationFileUtils.cs" />
+    <Compile Include="../../src/GameplayServer/Bots/Navigation/BotNavigationTypes.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Bots;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Shared.Domain.Games;
 using Microsoft.Extensions.Logging;
@@ -35,6 +36,7 @@ public sealed class LobbySlotService(
     RoomRosterService roster,
     MatchService match,
     GameService gameService,
+    BotSideService bots,
     ILogger<LobbySlotService> logger)
 {
     /// <summary>
@@ -60,7 +62,9 @@ public sealed class LobbySlotService(
         var slots = new List<LobbyTeamSlot>(members.Count);
         var unknown = 0;
 
-        foreach (var member in members)
+        // Bots are named by the population service with the side it resolved for
+        // them; their roster rows hold no team, because a bot has no row there.
+        foreach (var member in members.Where(member => !member.IsBot))
         {
             var team = teams.TryGetValue(member.CharacterId, out var stored) ? stored : (short?)null;
             if (team is not 0 and not 1)
@@ -74,6 +78,8 @@ public sealed class LobbySlotService(
 
             slots.Add(new LobbyTeamSlot(member.SessionSlot, team));
         }
+
+        slots.AddRange(bots.TeamSlots);
 
         logger.LogDebug(
             "Match {GameIdentifier}: the lobby-slot arrays name {PlayerCount} player(s) in slot(s) {Slots}; "

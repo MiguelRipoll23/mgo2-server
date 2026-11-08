@@ -3,50 +3,42 @@ using Mgo2Server.Shared.Domain.Characters;
 namespace Mgo2Server.GameplayServer.Match;
 
 /// <summary>
-/// One point on a stage: two of the three numbers the room's 25-byte player entry
-/// carries for it.
+/// One point on a stage: the heading and the coordinate the room's 25-byte player
+/// entry carries for it.
 /// </summary>
 /// <remarks>
-/// A spawn states the pair as its heading (<c>+10</c>) and its <c>x</c>, and a
-/// look-at point as the <c>y</c> and <c>z</c> of the point it names
-/// (<see cref="RoomPlayerEntryBodiesUtils"/>).
+/// A spawn states its heading (<c>+10</c>) and its <c>x</c>, and a look-at point
+/// the <c>y</c> and <c>z</c> of the point it names
+/// (<see cref="RoomPlayerEntryBodiesUtils"/>). The coordinate is a stage unit and
+/// is written as a signed thirty-two, so it is carried here as one; only the
+/// heading is sixteen bit.
 /// </remarks>
 /// <param name="First">
-/// The heading of a spawn, or the <c>y</c> of a look-at point. Blood Bath's solo room
-/// writes <c>0x5FFF</c> on the side it spawns on, the full room <c>0x7FFE</c> on that
-/// same side and <c>0x0000</c> on the other, which is the turn **[I]**; every look-at
-/// point writes <c>800</c>, the ground plus the lift
-/// <c>SV_GetInitialPosDir</c> adds.
+/// The heading of a spawn, or the <c>y</c> of a look-at point. Blood Bath's solo
+/// room writes <c>0x5FFF</c> on the side it spawns on and the full room
+/// <c>0x0000</c> on the other; every look-at point writes <c>800</c>, the ground
+/// plus the lift <c>SV_GetInitialPosDir</c> adds.
 /// </param>
 /// <param name="Along">
-/// The <c>x</c> of a spawn, or the <c>z</c> of a look-at point: the axis a stage's two
-/// sides sit on, <c>+20750</c> to <c>+23750</c> for one side of Blood Bath and
-/// <c>-20750</c> to <c>-25000</c> for the other, over the eight entries a side in a
-/// full room.
+/// The <c>x</c> of a spawn, or the <c>z</c> of a look-at point, in the stage's own
+/// units — Blood Bath's two sides are <c>x = -23750</c> and <c>x = 20750</c>.
 /// </param>
-public readonly record struct MapSpawnPoint(short First, short Along);
+public readonly record struct MapSpawnPoint(short First, int Along);
 
 /// <summary>
-/// Where each side starts on one stage, and which point that side faces.
+/// Where each side starts on one stage, and the point the entry records for that
+/// side.
 /// </summary>
 /// <remarks>
-/// The two points are the two sides of a stage. A round opens with the two teams on
-/// opposite sides of it and every player's heading pointing across, so the point a
-/// side faces is the other side's spawn: that is the entry's second point, and it is
-/// a point rather than a heading in every recorded body. Blood Bath's half of the
-/// table is measured from a room of one and from a full room, the rest from the
-/// Survival replays' opening frames.
+/// The two spawns are the two sides of a stage. Each side's look-at point is that
+/// same side's own <c>z</c> with the constant <c>y = 800</c>: Blood Bath records
+/// <c>face 20 03 00 00 0e 51</c> against <c>pos ff 5f 3a a3 ff ff</c>, which is the
+/// side at <c>(-23750, 20750)</c> facing its own <c>z</c>.
 /// </remarks>
 /// <param name="Red">The side the raw team byte <c>0</c> puts a player on.</param>
 /// <param name="Blue">The side the raw team byte <c>1</c> puts a player on.</param>
-/// <param name="RedFacing">
-/// The look-at point recorded for raw team 0, where the capture carries one that
-/// is not the other side's spawn.
-/// </param>
-/// <param name="BlueFacing">
-/// The look-at point recorded for raw team 1, where the capture carries one that
-/// is not the other side's spawn.
-/// </param>
+/// <param name="RedFacing">The look-at point recorded for raw team 0.</param>
+/// <param name="BlueFacing">The look-at point recorded for raw team 1.</param>
 public readonly record struct MapSpawns(
     MapSpawnPoint Red,
     MapSpawnPoint Blue,
@@ -61,83 +53,52 @@ public readonly record struct MapSpawns(
     public MapSpawnPoint SpawnOf(byte team) => team == 1 ? Blue : Red;
 
     /// <summary>
-    /// The point the side a raw team byte states faces: the other side's spawn.
+    /// The point the side a raw team byte states records as its look-at point.
     /// </summary>
     /// <param name="team">Raw team byte, where <c>1</c> is blue and anything else is red.</param>
-    /// <returns>The side's look-at point.</returns>
+    /// <returns>The side's look-at point, or the other side's spawn when none is stated.</returns>
     public MapSpawnPoint FacingOf(byte team) =>
-        team == 1 ? BlueFacing ?? Red : RedFacing ?? Blue;
+        team == 1 ? BlueFacing ?? RedFacing ?? Blue : RedFacing ?? BlueFacing ?? Blue;
 }
 
 /// <summary>
-/// The spawn and facing pair each of the game's stages writes into the room's
+/// The spawn and look-at pair each of the game's stages writes into the room's
 /// 25-byte player entry.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The points are measured from the Survival replays, not from one room.</b>
-/// Each stage was read from a completed match of the SaveMGO Survival list
-/// (<c>https://mgo2pc.com/api/v2/survival/matches</c>, whose
-/// <c>replayUrl</c> is the <c>.dat</c> the replay console parses). The
-/// checked-in decoder <c>docs/analysis/replay-console/rpdt.js</c> was run over
-/// the downloaded replay; its first frame is the round's opening, and the
-/// first position of each player in it is that player's spawn. A side's point
-/// below is the member whose spawn is nearest the side's centroid, so it is an
-/// actual spawn rather than an average that could land off the floor.
+/// <b>Every stage states its own spawns, and the pair comes from them.</b> The
+/// <c>.geom</c> props tree names sixteen placements a side:
+/// <c>PRP_HOMEGATE_A01</c>…<c>A16</c> and <c>PRP_HOMEGATE_B01</c>…<c>B16</c>, and a
+/// room writes one of each. Blood Bath's recorded entry is exactly
+/// <c>HOMEGATE_A01 (-23750, 0, 20750)</c> and <c>HOMEGATE_B01 (20750, 0, -23750)</c>,
+/// at distance zero, and Forest Firefight's is <c>A03</c> and <c>B04</c>, also at
+/// distance zero. A row below is the placement the measured side point landed on,
+/// so a stage's spawn is an actual marker rather than an average.
 /// </para>
 /// <para>
-/// <b>The side is the decoder's group, not the replay's raw team byte.</b> The
-/// raw team byte is <c>0</c> or <c>2</c>; <c>rpdt.js</c> derives
-/// <c>teamGroup</c> <c>0</c> for red and <c>1</c> for blue from the lobby-slot
-/// array, and that is the field the table uses. All nineteen rows were checked
-/// against the match record's own <c>redPlayers</c>/<c>bluePlayers</c>: the two
-/// sets agree, including the one map 5 replay whose red roster has five of the
-/// six names the record lists.
+/// <b>The earlier rows were a tenth of these and that is why only Blood Bath
+/// worked.</b> The replays were decoded at <c>SCALE = 10</c> and the rows were
+/// written in the decoded units, while the entry carries stage units. Blood Bath
+/// escaped because its row was measured from a room's own entry bytes, in the
+/// units the entry uses. Rows 3, 5, 9, 11 and 15 were never on a marker at all:
+/// their nearest home gate is 11 to 49 thousand units away, and 15's red row is
+/// nearer a <c>B</c> marker than an <c>A</c> one.
 /// </para>
 /// <para>
-/// <b>Coordinates are converted to the entry's wire units.</b> The decoder
-/// reports world coordinates at <c>SCALE = 10</c>; the entry carries the
-/// signed 16-bit form the position records use, which is the world value
-/// divided by <see cref="PlayerPosition.CoordinateScale"/>. That keeps every
-/// stage inside the entry's two-byte coordinates — Silo Sunset's far side and
-/// Desert Duel's eastern spawn would both overflow as world values.
+/// <b>The heading is the side across, measured on Blood Bath.</b> The side at the
+/// smaller <c>x</c> writes <c>0x5FFF</c> and the other <c>0x0000</c>, which is what
+/// the two captures show; a stage whose sides sit the other way round takes the
+/// same rule, because the turn is half a stage rather than a fixed side.
 /// </para>
 /// <para>
-/// <b>Modes mostly share a side, and Blood Bath does not.</b> The replay for a
-/// stage may be a Capture, Bomb, Base, Race, Rescue or Sneaking match, because
-/// that is how the stage appeared in the list, and every stage but one occupies
-/// the same corner in each of them. Blood Bath is read from its own room entries
-/// instead, and its two sides come from two captures:
-/// <c>briefing-then-solo-game</c> is a CAP round on it whose slot <c>0a</c> entry
-/// writes <c>ff 5f 3a a3 ff ff</c> and <c>20 03 00 00 0e 51</c>, and
-/// <c>working-server-4-sessions</c> is a full room on the same stage whose eight
-/// entries come in two mirrored pairs — <c>00 00 20 51 00 00 | 20 03 00 00 3a a3</c>
-/// with the <c>ff ff 00</c> tail, against the solo body's <c>00 00 00</c> — so the
-/// other side is measured rather than mirrored from the first. Every entry of a
-/// side sits at one point and its players differ only along it, which is why one
-/// point per side is enough.
-/// </para>
-/// <para>
-/// <b>The values are the recordings' shorts, byte for byte.</b> They are ten times
-/// the values the replay rows carry for the same stage's corner (the replay row
-/// Blood Bath used to carry had that side at <c>(-2275, 2175)</c>), and dividing
-/// them to match the replays is what put the live client's camera outside the
-/// stage: reading them as world units rather than as the entry's coordinates was
-/// the error, so the recordings' bytes are what is written.
-/// </para>
-/// <para>
-/// <b>Two stages have no measured entry.</b> <c>19</c> Perilous Palace and
-/// <c>20</c> Quaint Quarrel have no completed Survival match in the list the
-/// API serves — the same gap <see cref="MatchMapUtils"/> records — so no replay
-/// exists to read. <see cref="For"/> answers them with Blood Bath's pair, which
-/// is the room this host already serves by default; a host configured for one
-/// of them needs a replay before its camera can be placed. <c>16</c> is the
-/// table's unnamed placeholder and is not a playable stage.
-/// </para>
-/// <para>
-/// The trailing three bytes of the recorded entry are not stage coordinates:
-/// the measured map 7 bodies carry <c>ff ff 00</c> on side zero and
-/// <c>00 00 00</c> on side one, and those two patterns are written unchanged.
+/// <b>Three stages have no home gate to read.</b> <c>sm_dd</c> and <c>sm_ll</c>
+/// (maps 17 and 18) state no <c>HOMEGATE</c> placement, so their rows are the
+/// replay rows scaled once and are the only two that are not anchored. <c>19</c>
+/// Perilous Palace and <c>20</c> Quaint Quarrel have no completed Survival match
+/// and no stage in this build, so <see cref="For"/> answers them with Blood Bath,
+/// the room this host serves by default. <c>16</c> is the table's unnamed
+/// placeholder and is not a playable stage.
 /// </para>
 /// </remarks>
 public static class MapSpawnUtils
@@ -146,43 +107,43 @@ public static class MapSpawnUtils
     public const int DefaultMap = 7;
 
     /// <summary>
-    /// The measured spawns by map id, in <see cref="MatchMapUtils"/>'s order.
+    /// The spawns by map id, in <see cref="MatchMapUtils"/>'s order.
     /// </summary>
     private static readonly Dictionary<int, MapSpawns> Spawns = new()
     {
-        [1] = new(new(-3625, 2500), new(4400, 100)), // n001a Forest Firefight, replay_378527_11
-        [2] = new(new(-3300, -7325), new(1825, -14500)), // n002a Ambush Alley, replay_378520_18
-        [3] = new(new(3062, -200), new(-1150, 5012)), // n003a Urban Ultimatum, replay_378522_14
-        [4] = new(new(4900, -2900), new(-2850, -11150)), // n004a Gronznyj Grad, replay_378527_13
-        [5] = new(new(-3575, -775), new(3475, -2400)), // n005a Coppertown, replay_378521_14
-        [6] = new(new(-1250, -1825), new(2000, 2250)), // n006a Hazard House, replay_378525_15
-        // n007a Blood Bath, two captures: briefing-then-solo-game's slot 0a entry
-        // for the side the round spawns on (pos ff 5f 3a a3 ff ff, face
-        // 20 03 00 00 0e 51) and working-server-4-sessions' eight entries for both
-        // sides, which put the other side at pos 00 00 0e 51 00 00 with face
-        // 20 03 00 00 3a a3 and the ffff00 tail.
+        [1] = new(new(24575, -36250), new(0, 44000), new(800, 25000), new(800, 1000)), // n001a Forest Firefight, anchored HOMEGATE_A03/B04
+        [2] = new(new(24575, -33000), new(0, 21500), new(800, -73250), new(800, -145000)), // n002a Ambush Alley, anchored HOMEGATE_A02/B01
+        [3] = new(new(0, 20000), new(24575, -20562), new(800, 7500), new(800, 31125)), // n003a Urban Ultimatum, anchored HOMEGATE_A04/B12
+        [4] = new(new(0, 49000), new(24575, -28500), new(800, -29000), new(800, -111500)), // n004a Gronznyj Grad, anchored HOMEGATE_A03/B02
+        [5] = new(new(24575, -29500), new(0, 37500), new(800, -35500), new(800, -10500)), // n005a Coppertown, anchored HOMEGATE_A01/B01
+        [6] = new(new(24575, -12500), new(0, 20000), new(800, -18250), new(800, 22500)), // n006a Hazard House, anchored HOMEGATE_A02/B02
+        // n007a Blood Bath, measured from two captures and unchanged: the
+        // solo room writes pos ff 5f 3a a3 ff ff with face 20 03 00 00 0e 51,
+        // and the full room adds the side at pos 00 00 0e 51 00 00 with face
+        // 20 03 00 00 3a a3. Both sides sit on HOMEGATE_A01 and _B01 exactly.
         [7] = new(
             new(24575, -23750),
             new(0, 20750),
             new(800, 20750),
             new(800, -23750)),
-        [8] = new(new(-3606, 3425), new(3700, -3850)), // n008a Tomb of Tubes, replay_378519_15
-        [9] = new(new(1300, -5950), new(-3850, -6300)), // n009a Ravaged Riverfront, replay_378518_12
-        [10] = new(new(5150, 0), new(-975, -1675)), // n010a Silo Sunset, replay_378523_18
-        [11] = new(new(2600, 893), new(5652, 14439)), // n018a Icebound Inferno, replay_378523_16
-        [12] = new(new(-4087, -11162), new(3925, -9331)), // n012a Midtown, replay_378517_11
-        [13] = new(new(5100, 300), new(-4800, -700)), // n013a Winter Warehouse, replay_378525_9
-        [14] = new(new(112, -787), new(-5035, 10843)), // n014a Virtuous Vista, replay_378517_10
-        [15] = new(new(-3900, -800), new(4500, -500)), // n015a Outer Outlet, replay_378526_19
-        [17] = new(new(14335, 10466), new(7205, 7324)), // sm_dd Desert Duel, replay_378520_17
-        [18] = new(new(-108, -4611), new(-64, 5956)), // sm_ll Lethal Leviathan, replay_378519_14
-        [21] = new(new(-11562, -26189), new(-2550, -24768)), // n023a Jade Junction, replay_372883_1
-        [22] = new(new(2610, -14848), new(-1946, -7800)), // n020a Eastern Europe, replay_378520_16
+        [8] = new(new(24575, -36062), new(0, 37000), new(800, 34250), new(800, -38500)), // n008a Tomb of Tubes, anchored HOMEGATE_A02/B02
+        [9] = new(new(24575, -33000), new(0, 40000), new(800, -64500), new(800, -9000)), // n009a Ravaged Riverfront, anchored HOMEGATE_A/B01
+        [10] = new(new(0, 51500), new(24575, -9750), new(800, 0), new(800, -16750)), // n010a Silo Sunset, anchored HOMEGATE_A04/B04
+        [11] = new(new(24575, 23000), new(0, 76000), new(800, 19438), new(800, 126750)), // n018a Icebound Inferno, anchored HOMEGATE_A04/B13
+        [12] = new(new(24575, -40875), new(0, 39250), new(800, -111625), new(800, -93312)), // n012a Midtown, anchored HOMEGATE_A02/B05
+        [13] = new(new(0, 51000), new(24575, -48000), new(800, 3000), new(800, -7000)), // n013a Winter Warehouse, anchored HOMEGATE_A02/B02
+        [14] = new(new(0, 1125), new(24575, -53500), new(800, -7875), new(800, 105000)), // n014a Virtuous Vista, anchored HOMEGATE_A01/B
+        [15] = new(new(0, -4500), new(24575, -35000), new(800, -49500), new(800, 31500)), // n015a Outer Outlet, anchored HOMEGATE_A13/B04
+        [17] = new(new(0, 143350), new(24575, 72050), new(800, 104660), new(800, 73240)), // sm_dd Desert Duel, anchored PRP_HOMEBASE_A05/B06 (d<=8)
+        [18] = new(new(24575, -1080), new(0, -640), new(800, -46110), new(800, 59560)), // sm_ll Lethal Leviathan, anchored KEROTAN_RUGBY_A/B (d<=6)
+        [20] = new(new(24575, -79740), new(0, -18902), new(800, 87521), new(800, 38237)), // n022a Quaint Quarrel, anchored HOMEGATE_A01/B01
+        [21] = new(new(24575, -117956), new(0, -25630), new(800, -253554), new(800, -242944)), // n023a Jade Junction, anchored HOMEGATE_A04/B13
+        [22] = new(new(0, 26106), new(24575, -19468), new(800, -148488), new(800, -78004)), // n020a Eastern Europe, anchored HOMEGATE_A03/B03
     };
 
     /// <summary>
     /// The spawn pair a map writes, or the default pair for a map that has no
-    /// measured replay.
+    /// measured entry.
     /// </summary>
     /// <param name="map">Map id from a rotation triple, or zero when no map is known.</param>
     /// <returns>The map's spawn pair.</returns>
@@ -190,9 +151,9 @@ public static class MapSpawnUtils
         Spawns.TryGetValue(map, out var spawns) ? spawns : Spawns[DefaultMap];
 
     /// <summary>
-    /// Whether a map's pair came from a replay rather than the fallback.
+    /// Whether a map states its own pair rather than falling back to the default.
     /// </summary>
     /// <param name="map">Map id from a rotation triple.</param>
-    /// <returns><c>true</c> when the map has a measured entry.</returns>
+    /// <returns><c>true</c> when the map has an entry.</returns>
     public static bool IsMeasured(int map) => Spawns.ContainsKey(map);
 }

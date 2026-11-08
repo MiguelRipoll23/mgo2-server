@@ -92,6 +92,22 @@ public static class ServerServiceCollectionExtensions
                 ?? DedicatedHostNameUtils.HostCharacterName(options.GameplayServerPort);
         });
 
+        // The bot settings are read as written and parsed by the gameplay host at
+        // startup, so a value that names no policy stops the process with an error
+        // that names it rather than starting a room with a default nobody asked
+        // for. The environment variables are the task's own two plus the count and
+        // the pass interval.
+        services.Configure<BotOptions>(options =>
+        {
+            options.Team = configuration.ReadText("BOT_TEAM") ?? options.Team;
+            options.PopulationMode =
+                configuration.ReadText("BOT_POPULATION_MODE") ?? options.PopulationMode;
+            options.Count = configuration.ReadNumber("BOT_COUNT", options.Count);
+            options.PopulationIntervalSeconds = configuration.ReadNumber(
+                "BOT_POPULATION_INTERVAL_SECONDS",
+                options.PopulationIntervalSeconds);
+        });
+
         services.Configure<LobbyOptions>(options =>
         {
             options.Name = configuration.ReadText("LOBBY_NAME") ?? options.Name;

@@ -1,4 +1,5 @@
 using System.Net;
+using Mgo2Server.GameplayServer.Bots;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
@@ -218,6 +219,67 @@ public sealed class RoomRosterService(
                 member.CharacterId,
                 member.RosterIndex,
                 members.Count);
+            return member;
+        }
+    }
+
+    /// <summary>
+    /// Adds a bot this host plays to the roster, returning the member it was filed
+    /// under.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A bot is a roster member, filed under a key no endpoint can hold.</b> The
+    /// recorded dedicated hosts put their own bots in the roster run — the
+    /// briefing's ready set names them in the same slots as the players — so a bot
+    /// here is registered the same way, with a slot and a roster index, and its
+    /// entry is the short layout at <c>0x10</c> zero
+    /// (<see cref="RosterMember.BuildRecord"/>). Nothing at its key ever answers,
+    /// which is why the reaper never takes it off: only
+    /// <see cref="Bots.BotPopulationService"/> adds and removes it.
+    /// </para>
+    /// <para>
+    /// It takes no ordinal from the roster exchange. The exchange's counter numbers
+    /// the records sent to a peer, and a bot has no peer to send to; spending values
+    /// on it would move numbers a joining client is about to be handed.
+    /// </para>
+    /// </remarks>
+    /// <param name="name">The bot's character name.</param>
+    /// <returns>The member the bot is now filed under.</returns>
+    public RosterMember RegisterBot(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        lock (gate)
+        {
+            var key = BotRosterKeyUtils.KeyFor(name);
+            var existing = members.Find(member => member.RemoteAddress == key);
+            if (existing is not null)
+            {
+                return existing;
+            }
+
+            var member = new RosterMember(key, NextFreeIndex())
+            {
+                SessionSlot = NextFreeSessionSlot(),
+
+                // Zero, and the record is what carries the slot: the settings
+                // burst reads this id for the character's own appearance, so a
+                // bot given its slot here would be announced with a player's
+                // face. The entry writes the slot as its character id instead
+                // (<see cref="RosterMember.BuildRecord"/>).
+                CharacterId = 0,
+                Name = name,
+                ClanName = string.Empty,
+                IsBot = true,
+            };
+            members.Add(member);
+
+            logger.LogDebug(
+                "Added bot member {Name}: slot {SessionSlot}, roster index {RosterIndex}",
+                name,
+                member.SessionSlot,
+                member.RosterIndex);
             return member;
         }
     }

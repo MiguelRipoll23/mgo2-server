@@ -95,18 +95,6 @@ public sealed partial class MatchStartRunService
                 var round = roundState.RoundNumber;
                 var generation = roundState.Generation;
 
-                // The round's opening state write is its first record and it goes at
-                // the open, not behind the report. `briefing-then-solo-game` writes
-                // it at t+146.007, in the pass that opens the round, and its client
-                // reports ready only at t+146.831 — with the run still 0.82 s beyond
-                // that. Written behind the report it lands 0.82 s late and the gap
-                // to the run is then charged twice
-                // (MatchRecordTimingUtils.RoundStartRunGapMilliseconds).
-                if (roundState.RoundSettings is { } opening)
-                {
-                    await WriteRoundStartStateAsync(context, generation, opening);
-                }
-
                 // The phase and the run wait for the report the client sends from its
                 // weapon select (report t+146.831, run t+147.650), not for a clock.
                 await WaitForSpawnReportAsync(context);
@@ -167,10 +155,7 @@ public sealed partial class MatchStartRunService
         matchSettings.FindPublished()?.Round(roundState.RoundNumber + 1);
 
     /// <summary>
-    /// Writes one round's opening run to a peer and repeats it behind itself. The
-    /// run lands a measured gap behind the round's open, which the round opener
-    /// writes the opening state write in, and the wait before it ends on the
-    /// client's own report.
+    /// Writes one round's opening run to a peer and repeats it behind itself.
     /// </summary>
     /// <param name="context">Context the run is written through.</param>
     /// <param name="generation">Identifier set the round plays under.</param>
@@ -188,37 +173,8 @@ public sealed partial class MatchStartRunService
                 context.Remote);
             return;
         }
-        // The run lands a measured 1.643 s behind the round's open, and not behind
-        // the report that ended the wait before it: `briefing-then-solo-game` opens
-        // at t+146.007, its client reports at t+146.831 and its run follows at
-        // t+147.650, so the report sits 0.82 s inside the gap and the run is the
-        // other 0.82 s behind it. Counted from the report, the gap is paid twice and
-        // every round starts 0.82 s late
-        // (MatchRecordTimingUtils.RoundStartRunGapMilliseconds).
-        if (roundState.OpenedAt is { } openedAt)
-        {
-            var due = openedAt.AddMilliseconds(MatchRecordTimingUtils.RoundStartRunGapMilliseconds)
-                - DateTimeOffset.UtcNow;
-            if (due > TimeSpan.Zero)
-            {
-                await Task.Delay(due);
-            }
-        }
-
-        // The gap is long enough for the round to close under it, and a run written
-        // for a round that is over carries a clock nothing is playing.
-        if (roundState.RoundSettings is not { } opened)
-        {
-            logger.LogDebug(
-                "UDP {LocalPort}: round {RoundNumber} closed inside the gap between its opening state "
-                + "write and its run, so the run to {RemoteAddress} is not written",
-                context.LocalPort,
-                roundState.RoundNumber,
-                context.Remote);
-            return;
-        }
-
-        await WriteRunCoreAsync(context, generation, opened, roundState.RemainingUnits, briefing: false);
+        await WriteRoundStartStateAsync(context, generation, round);
+        await WriteRunCoreAsync(context, generation, round, roundState.RemainingUnits, briefing: false);
     }
 
     /// <summary>
@@ -363,5 +319,82 @@ public sealed partial class MatchStartRunService
         // wait sat in front of would hold this peer's next run — the round's, when
         // the room opens inside that tick — behind a timer nothing is waiting on.
         _ = RepeatRunAsync(context, generation, run, roundNumber, wasOpen);
+    }
+
+    /// <summary>
+    /// Writes a peer the run's records again, one briefing tick after the run
+    /// itself, which is the second instant every capture writes.
+    /// </summary>
+    /// <remarks>
+    /// <b>Only while the room is still in the phase the run was written for.</b>
+    /// A briefing whose round opened inside the tick is a room whose run the
+    /// round's own writer is about to replace, and repeating the briefing's set
+    /// over it would put a whole clock on a round already playing. The repeat does
+    /// not fault: it runs beside the waits for the round, so an exception here
+    /// would be an unobserved one, and a send that fails says the peer is gone,
+    /// which is what ending quietly means.
+    /// </remarks>
+    /// <param name="context">Context the repeat is written through.</param>
+    /// <param name="generation">Identifier set the run was written under.</param>
+    /// <param name="run">The run as it was written.</param>
+    /// <param name="roundNumber">Round number the run was written for.</param>
+    /// <param name="wasOpen">Whether a round was playing when it was written.</param>
+    private async Task RepeatRunAsync(
+        PeerContext context,
+        MatchRecordGenerationUtils generation,
+        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run,
+        int roundNumber,
+        bool wasOpen)
+    {
+        try
+        {
+            await Task.Delay(BriefingCountdownBodiesUtils.PublishPeriodMilliseconds);
+
+            if (!MatchRecordPeerUtils.IsAlive(context.Session))
+            {
+                return;
+            }
+
+            if (roundState.RoundNumber != roundNumber || roundState.IsOpen != wasOpen)
+            {
+                logger.LogDebug(
+                    "UDP {LocalPort}: the room moved on before the tick behind the run written to "
+                    + "{RemoteAddress}, so the run is not repeated",
+                    context.LocalPort,
+                    context.Remote);
+                return;
+            }
+
+            logger.LogDebug(
+                "UDP {LocalPort}: repeating the run written to {RemoteAddress} one tick behind it, "
+                + "without its opening answer",
+                context.LocalPort,
+                context.Remote);
+            await MatchRecordSendUtils.SendAsync(
+                context,
+                MatchStartRunFramesUtils.RepeatOf(generation, run));
+
+            // A fresh briefing's repeat carries the item-box groups again, numbered
+            // on from the run's own, and the pair goes on behind it for the stretch
+            // every capture holds before the briefing goes quiet
+            // (ContinueItemBoxGroupsAsync).
+            //
+            // Its shape is the room's and not the round number's: a room staged
+            // mid-rotation writes the filler and keeps writing it, and the two must
+            // agree or the groups stop after the first tick (`AddRunItemBoxes`).
+            if (!wasOpen && !roundState.HasRoundEnded)
+            {
+                await RepeatItemBoxGroupsAsync(context, generation);
+                await ContinueItemBoxGroupsAsync(context, generation);
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.LogDebug(
+                exception,
+                "UDP {LocalPort}: the run written to {RemoteAddress} was not repeated",
+                context.LocalPort,
+                context.Remote);
+        }
     }
 }

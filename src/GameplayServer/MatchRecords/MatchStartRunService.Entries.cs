@@ -134,7 +134,12 @@ public sealed partial class MatchStartRunService
     /// briefing's run is written in answer to.
     /// </summary>
     /// <param name="context">Context of the entry the peer asked for.</param>
-    public void OnRoomEntry(PeerContext context)
+    /// <returns>
+    /// <c>true</c> when this is the peer's own entry and <c>false</c> when it has
+    /// entered before, which is what tells a re-sent echo from the first one
+    /// (<see cref="Commands.Peer.Room.PlayerProfileHandler"/>).
+    /// </returns>
+    public bool OnRoomEntry(PeerContext context)
     {
         bool first;
         lock (gate)
@@ -150,7 +155,7 @@ public sealed partial class MatchStartRunService
 
         if (!first)
         {
-            return;
+            return false;
         }
 
         logger.LogDebug(
@@ -159,6 +164,8 @@ public sealed partial class MatchStartRunService
             context.LocalPort,
             context.Remote,
             MatchRecordPeerUtils.AnswersSoFar(context.Session));
+
+        return true;
     }
 
     /// <summary>

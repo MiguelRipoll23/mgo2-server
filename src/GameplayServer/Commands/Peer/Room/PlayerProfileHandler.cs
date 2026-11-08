@@ -101,10 +101,27 @@ public sealed class PlayerProfileHandler(
             // arrays this host publishes are owed back under it: every reference
             // host answers `82 8c` with `85 8c`, and a host that answers with a
             // captured client's byte leaves the peer's exchange unconfirmed.
-            roster.NotePairSequence(
-                context.Remote.ToString(),
-                TeamArrayFramesUtils.SequenceOf(context.Message.Body));
-            matchStart.OnRoomEntry(context);
+            var echoed = TeamArrayFramesUtils.SequenceOf(context.Message.Body);
+            roster.NotePairSequence(context.Remote.ToString(), echoed);
+            var first = matchStart.OnRoomEntry(context);
+
+            // <b>A re-sent echo is a pair this host has not answered, and the
+            // pair is all it is answered with.</b> A client repeats `82 NN`·`84 NN`
+            // on its own timer until the room's arrays come back, advancing the
+            // sequence as each pair is read. The first echo's pass writes nothing
+            // because every capture's is silent (`myserver20.pcapng`), and a
+            // repeat is the client saying the pair never arrived — the case
+            // `myserver22.pcapng` records, where it is answered nowhere, the
+            // session is torn down 32 s after the report and the modal follows.
+            // What answers it is the pair under its own sequence and nothing more
+            // (`TeamArrayService.AnswerEchoAsync`); the confirmation belongs to the
+            // entry and is written when the round opens
+            // (`MatchStartRunService.ConfirmEntryAsync`).
+            if (!first && matchStart.IsEntryAnswerDue(context.Session))
+            {
+                await teamArrays.AnswerEchoAsync(context, echoed);
+            }
+
             return;
         }
 

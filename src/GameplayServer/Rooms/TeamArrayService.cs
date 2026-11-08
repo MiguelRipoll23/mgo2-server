@@ -83,6 +83,66 @@ public sealed partial class TeamArrayService(
     private readonly object confirmationGate = new();
 
     /// <summary>
+    /// Echo sequences already answered, by peer and sequence: a client sends its
+    /// two answers for one sequence together, and one pair is owed for the two.
+    /// </summary>
+    private readonly HashSet<string> answeredEchoes = [];
+
+    /// <summary>
+    /// Answers a peer's re-sent lobby-slot echo with the pair under the sequence
+    /// it named, and with nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A re-sent echo is a pair the client has not been given, and the pair
+    /// under its own sequence is the whole of the answer.</b> Every reference host
+    /// meets <c>82 NN</c>/<c>84 NN</c> with <c>85 NN</c>/<c>86 NN</c> — two records
+    /// — and the client advances to <c>NN+1</c> when it reads them. The
+    /// confirmation and the pair at the next sequence belong to the entry
+    /// (<see cref="ConfirmAsync"/>), once, and not to every echo: written per
+    /// echo they are six records for two, and the client answers each pair with
+    /// the next echo. The live server of 2026-11-08 03:54 is that storm — 112
+    /// confirmations through four sequence values in a second, the client
+    /// reloading its stage every 1.1 s, and the session gone quiet 30 s later.
+    /// </para>
+    /// <para>
+    /// <b>The same sequence answered twice is answered once.</b> A client sends
+    /// its two answers for one sequence in one datagram, so this is reached twice
+    /// for one echo; the second pass has nothing to add and would only number a
+    /// second pair the client has already read.
+    /// </para>
+    /// </remarks>
+    /// <param name="context">Context the echo arrived through.</param>
+    /// <param name="answered">Sequence the echo named.</param>
+    public async Task AnswerEchoAsync(PeerContext context, byte answered)
+    {
+        lock (confirmationGate)
+        {
+            if (!answeredEchoes.Add($"{context.Remote}:{answered:x2}"))
+            {
+                return;
+            }
+        }
+
+        var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(answered, await lobbySlots.ReadAsync());
+        var ordinals = roster.TakeRunOrdinals(2);
+
+        logger.LogDebug(
+            "UDP {LocalPort}: answering the re-sent lobby-slot echo at sequence {Sequence:x2} to "
+            + "{RemoteAddress}",
+            context.LocalPort,
+            answered,
+            context.Remote);
+
+        await RosterRunSendUtils.SendAsync(
+            context,
+            [
+                new(UdpCommandConstants.PlayerProfile, teams, ordinals[0]),
+                new(UdpCommandConstants.PlayerProfile, occupancy, ordinals[1]),
+            ]);
+    }
+
+    /// <summary>
     /// Answers the sequence a client echoed and then confirms it, publishing the
     /// pair under the next one.
     /// </summary>
@@ -110,7 +170,7 @@ public sealed partial class TeamArrayService(
         await RosterRunSendUtils.SendAsync(
             context,
             [
-                new(RoomRosterService.HostEntryType, answeredTeams, answeredOrdinals[0]),
+                new(UdpCommandConstants.PlayerProfile, answeredTeams, answeredOrdinals[0]),
                 new(UdpCommandConstants.PlayerProfile, answeredOccupancy, answeredOrdinals[1]),
             ]);
 
@@ -140,7 +200,7 @@ public sealed partial class TeamArrayService(
         var ordinals = roster.TakeRunOrdinals(2);
         var pair = new List<RosterRecord>
         {
-            new(RoomRosterService.HostEntryType, teams, ordinals[0]),
+            new(UdpCommandConstants.PlayerProfile, teams, ordinals[0]),
             new(UdpCommandConstants.PlayerProfile, occupancy, ordinals[1]),
         };
 
@@ -220,6 +280,7 @@ public sealed partial class TeamArrayService(
     {
         lock (confirmationGate)
         {
+            answeredEchoes.RemoveWhere(key => key.StartsWith($"{remoteAddress}:", StringComparison.Ordinal));
             if (confirmationRuns.Remove(remoteAddress))
             {
                 logger.LogDebug(

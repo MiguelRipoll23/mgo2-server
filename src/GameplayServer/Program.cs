@@ -1,4 +1,5 @@
 using Mgo2Server.GameplayServer;
+using Mgo2Server.GameplayServer.Bots;
 using Mgo2Server.GameplayServer.Commands;
 using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Identity;
@@ -50,6 +51,32 @@ builder.Services.AddSingleton<BriefingStateService>();
 builder.Services.AddSingleton<PlayerVitalsService>();
 builder.Services.AddSingleton<WeaponSelectionService>();
 builder.Services.AddSingleton<TeamArrayService>();
+// The bots are assembled from their parts: the identity service names them, the
+// population service holds them, and the decision stack is what a bot's tick
+// calls in order. Every one of them is a singleton, because a room and its bots
+// are one room for the life of the process.
+builder.Services.AddSingleton<BotIdentityService>();
+builder.Services.AddSingleton<BotTeamAssignmentService>();
+builder.Services.AddSingleton<BotRoleAssignmentService>();
+builder.Services.AddSingleton<BotObjectiveService>();
+builder.Services.AddSingleton<BotPerceptionService>();
+builder.Services.AddSingleton<BotDecisionService>();
+builder.Services.AddSingleton<BotWeaponCatalogService>();
+builder.Services.AddSingleton<BotTargetSelectorService>();
+builder.Services.AddSingleton<BotCombatService>();
+builder.Services.AddSingleton<StageNavigationCatalogService>();
+builder.Services.AddSingleton<StageBotNavigationProvider>();
+builder.Services.AddSingleton<IBotNavigationProvider>(
+    provider => provider.GetRequiredService<StageBotNavigationProvider>());
+builder.Services.AddSingleton<IBotMapNavigationDataProvider>(
+    provider => provider.GetRequiredService<StageBotNavigationProvider>());
+builder.Services.AddSingleton<BotNavigationAgent>();
+builder.Services.AddSingleton<BotMovementDestinationService>();
+builder.Services.AddSingleton<BotTeamCoordinationService>();
+builder.Services.AddSingleton<BotSideService>();
+builder.Services.AddSingleton<BotPlayService>();
+builder.Services.AddSingleton<BotController>();
+builder.Services.AddSingleton<BotPopulationService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 // The peer command handlers are registered beside the types their messages are
 // bound to, so a handler cannot be mapped without being resolvable.
@@ -67,6 +94,24 @@ var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Ga
 // Both are refused here, before a peer is answered, rather than by a round that
 // never opens: a named fault, in a process that has served nothing yet.
 MatchSettingsUtils.Validate(options);
+
+// The bots are configured the way the room is: a value that names no policy stops
+// the process before a peer is answered, rather than a room that silently holds
+// the population a default happened to name.
+var botSettings = host.Services.GetRequiredService<IOptions<BotOptions>>().Value;
+var botFaults = BotOptionsUtils.Validate(botSettings);
+if (botFaults.Count > 0)
+{
+    throw new InvalidOperationException(
+        "The bot settings are not readable:" + Environment.NewLine
+        + string.Join(Environment.NewLine, botFaults));
+}
+
+logger.LogInformation(
+    "Bots: {TeamPolicy} sides, {PopulationMode} population, {BotCount} configured",
+    BotOptionsUtils.Team(botSettings),
+    BotOptionsUtils.PopulationMode(botSettings),
+    botSettings.Count);
 
 var rotation = MatchSettingsUtils.Rotation(options);
 logger.LogInformation(

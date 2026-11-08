@@ -218,5 +218,5 @@ public sealed partial class TeamArrayService
     /// <param name="roundIsOpen">Whether a round is playing.</param>
     /// <returns>The type the teams array is written under.</returns>
     private static ushort TeamsTypeOf(bool roundIsOpen) =>
-        roundIsOpen ? RoomRosterService.HostEntryType : UdpCommandConstants.PlayerProfile;
+        UdpCommandConstants.PlayerProfile;
 }

@@ -39,6 +39,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly TeamArrayService teamArrays;
     private readonly PlayerSettingsBurstSchedulerService settingsBurstScheduler;
     private readonly PlayerVitalsService vitals;
+    private readonly Bots.BotPopulationService bots;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
     private readonly ILogger<GameplayServerService> logger;
@@ -86,6 +87,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         teamArrays = serviceProvider.GetRequiredService<TeamArrayService>();
         settingsBurstScheduler = serviceProvider.GetRequiredService<PlayerSettingsBurstSchedulerService>();
         vitals = serviceProvider.GetRequiredService<PlayerVitalsService>();
+        bots = serviceProvider.GetRequiredService<Bots.BotPopulationService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
     }
@@ -164,6 +166,10 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         sessions.Start();
         logger.LogDebug("[{LogPrefix}] Peer idle-session reaper started", LogPrefix);
         matchService.Start();
+        bots.Start();
+        logger.LogDebug(
+            "[{LogPrefix}] Bot population started; a pass reconciles the room's bots on an interval",
+            LogPrefix);
         logger.LogDebug(
             "[{LogPrefix}] Match publisher started; match heartbeats are intentionally not logged",
             LogPrefix);
@@ -192,6 +198,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         logger.LogDebug("[{LogPrefix}] Disposing gameplay server services", LogPrefix);
+        await bots.StopAsync();
         await matchService.StopAsync();
         sessions.Stop();
         socket?.Dispose();

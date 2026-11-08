@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Bots;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Interfaces;
@@ -66,9 +67,12 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// <param name="matchStart">Writer of the round a room's last report opens.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class JoinReportHandler(
+    PlayerSettingsBurstSchedulerService burstScheduler,
     BriefingStateService briefingStates,
     MatchStartRunService matchStart,
     PeerControlByteService controlBytes,
+    BotPopulationService bots,
+    RoomRosterService roster,
     ILogger<JoinReportHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
@@ -112,6 +116,31 @@ public sealed class JoinReportHandler(
             generation.JoinState,
             MatchStartBodiesUtils.JoinStateAnswer(briefingStates.JoinedMask),
             MatchStartBodiesUtils.JoinStateAnswerClass);
+
+        // A fill waits for this report before it seats the room's bots, and it runs
+        // before the room is answered: the roster and the publication below are then
+        // one room — the client plus its bots — instead of a room of one the client
+        // has to reconcile against a second roster a moment behind it. A publication
+        // written first carries the population and the ready set as they were before
+        // the fill, which is the count a briefing draws against the roster it gets
+        // next.
+        if (await bots.ReconcileNowAsync(CancellationToken.None))
+        {
+            var run = roster.BuildRosterRun();
+            await RosterRunSendUtils.SendAsync(context, run);
+
+            // The settings burst names the room's players one loadout record each,
+            // and it went out before this fill existed: a client whose player list
+            // is built from it would never draw a bot. It is written again here,
+            // now that the room it names is the room the client is in.
+            await burstScheduler.ResendAsync(context);
+            logger.LogDebug(
+                "UDP {LocalPort}: the room's bots changed on {RemoteAddress}'s report; the roster is "
+                + "written again with {RecordCount} record(s)",
+                context.LocalPort,
+                context.Remote,
+                run.Count);
+        }
 
         // The publication goes out on every report and not only on the first: it
         // is the host's answer to the report, and a client whose report changed

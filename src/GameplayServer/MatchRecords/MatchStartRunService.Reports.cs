@@ -197,28 +197,47 @@ public sealed partial class MatchStartRunService
         // The count is over the players that have reported at all, not over the
         // room's population: a bot is in the room without a screen, and a peer that
         // never reported is a peer the briefing is not waiting on.
-        if (briefingStates.PlayerCount > 1)
+        // A room of one client opens on its briefing's own dwell and not on a
+        // report: the zero, then 0.9 s, then the round (`briefing-then-solo-game`,
+        // zero at t+145.098 and the round at t+146.007). Reports arrive through the
+        // whole briefing — that capture's client sends one a second and its last is
+        // at t+144.786 — so opening on the first one that lands after the zero puts
+        // the open inside the fade the dwell exists to leave it, which is the crash
+        // in the client's camera code (MatchRecordTimingUtils).
+        //
+        // The bots report beside the client and leave no screen, so the count is
+        // over the room's clients (<see cref="Rooms.BriefingStateService.ReportedPlayerCount"/>)
+        // and a client sitting with eight bots is a room of one.
+        var reported = briefingStates.ReportedPlayerCount;
+        if (reported <= 1)
         {
-            int departed;
-            lock (gate)
-            {
-                briefingDeparted.Add(reporter);
-                departed = briefingDeparted.Count;
-            }
+            logger.LogDebug(
+                "The report on 0x{Identifier:x4} from {Reporter} is the room's only client's; the round "
+                + "opens on the briefing's closing zero and not on a report",
+                reportIdentifier,
+                reporter);
+            return false;
+        }
 
-            var reported = briefingStates.JoinedCount;
-            if (departed < reported)
-            {
-                logger.LogDebug(
-                    "The report on 0x{Identifier:x4} from {Reporter} is one of the room's departures from "
-                    + "its briefing screen; {Departed} of {Reported} reported player(s) have left it and the "
-                    + "round waits for the last",
-                    reportIdentifier,
-                    reporter,
-                    departed,
-                    reported);
-                return false;
-            }
+        // A room of several clients opens on the last of them leaving the screen.
+        int departed;
+        lock (gate)
+        {
+            briefingDeparted.Add(reporter);
+            departed = briefingDeparted.Count;
+        }
+
+        if (departed < reported)
+        {
+            logger.LogDebug(
+                "The report on 0x{Identifier:x4} from {Reporter} is one of the room's departures from "
+                + "its briefing screen; {Departed} of {Reported} client(s) have left it and the "
+                + "round waits for the last",
+                reportIdentifier,
+                reporter,
+                departed,
+                reported);
+            return false;
         }
 
         return OpenRound(

@@ -44,6 +44,19 @@ public sealed class MatchService(
     private const int FreeBattleRoomCapacity = 8;
 
     /// <summary>
+    /// Player cap of the room this instance publishes, as its own row states it,
+    /// or zero until one has been published this run.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is the row's number and not the channel's.</b> The roster can hold
+    /// twenty-three and the room is advertised with this one, so a population
+    /// sized from the channel fills seats the client was never told it had: a
+    /// Free Battle room shows eight and the briefing's own list draws every entry
+    /// beyond them as not placed (<see cref="Bots.BotPopulationService"/>).
+    /// </remarks>
+    public int RoomCapacity { get; private set; }
+
+    /// <summary>
     /// The latency this host's room reports, in milliseconds.
     /// <para>
     /// The unit is milliseconds and the field is the host's own reported
@@ -181,6 +194,7 @@ public sealed class MatchService(
         var maximumPlayers = EventHostEligibilityUtils.IsHostRoleMode(lobby.SubtypeIdentifier)
             ? EventHostEligibilityUtils.MatchPlayerCapacity
             : FreeBattleRoomCapacity;
+        RoomCapacity = maximumPlayers;
 
         // A name is this instance's own, so a second room under it is a row left by
         // an earlier process. Two of them are two rooms a client can tell apart only

@@ -112,17 +112,58 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
     /// </summary>
     public byte[] AddressData { get; set; } = [];
 
+    /// <summary>
+    /// High three bytes of the character id a bot's roster entry carries: the
+    /// <c>0x7f</c> family the recorded hosts' bots are written in, whose low byte
+    /// is the bot's own slot (<see cref="BuildRecord"/>).
+    /// </summary>
+    public const int BotCharacterIdBase = 0x7F000000;
+
+    /// <summary>
+    /// Whether this member is a bot this host added rather than a peer.
+    /// </summary>
+    /// <remarks>
+    /// <b>A bot's entry is the short layout with a zero at <c>0x10</c>.</b> The
+    /// recorded hosts' roster entries separate their own bots from their players
+    /// by exactly that byte — <c>0x00</c> on the 51 <c>BOT-01</c>…<c>BOT-11</c>
+    /// entries and on the ten name-less records, <c>0x01</c> or <c>0x02</c> on the
+    /// rest (<c>docs/Shared/Utils/PlayerProfileRecordLayout.cs</c> and
+    /// <c>docs/protocol/UDP_SETTINGS_PAYLOAD.md</c>) — and a bot has no endpoint
+    /// pairs to announce, so its record is the twelve-bytes-shorter layout.
+    /// </remarks>
+    public bool IsBot { get; init; }
+
     /// <summary>Builds the player-profile record that puts this player on a peer's roster.</summary>
+    /// <remarks>
+    /// <b>A bot's record carries <see cref="BotCharacterIdBase"/> and its slot as
+    /// the character id.</b> The recorded hosts' own bot entries put their network
+    /// player-table slot at <c>0x05</c> and <c>0x07</c> and, at <c>0x08</c>, a
+    /// character id in the <c>0x7f</c> family whose low byte is that same slot:
+    /// <c>pcapng1</c> t+0.562 carries ten of them — <c>BOT-01</c> in slot 13 with
+    /// <c>0d 00 00 7f</c>, <c>BOT-02</c> in slot 18 with <c>12 00 00 7f</c>, and so
+    /// on to <c>BOT-10</c> in slot 19 with <c>13 00 00 7f</c> — while every human
+    /// entry carries its own real id at the same offset (<c>0x1a</c>'s
+    /// <c>95 e9 00 00</c>). This host wrote a zero, and then the bare slot, which
+    /// is a real character id the room does not hold: the client resolves neither,
+    /// and its briefing drew one row for a room of eight. <see cref="CharacterId"/> is
+    /// not used here because the settings burst reads it for a character's own
+    /// appearance, and that face belongs to no bot.
+    /// </remarks>
+    /// <param name="includeEndpointPairs">Whether to emit the twelve-byte endpoint field.</param>
     /// <returns>The record body.</returns>
     public byte[] BuildRecord(bool includeEndpointPairs = true) =>
         PlayerProfileRecordUtility.Build(
             isHostEntry: false,
             RosterIndex,
-            CharacterId,
+            IsBot ? BotCharacterIdBase | SessionSlot : CharacterId,
             Name,
             ClanName,
             SessionSlot,
             addressData: AddressData,
-            unresolvedByte: PlayerProfileRecordUtility.PlayerRecordUnresolvedByte,
-            includeEndpointPairs: includeEndpointPairs);
+            // A bot's entry carries zero at 0x10, measured on the recorded hosts'
+            // own BOT entries; a player's keeps the value the captures put there.
+            unresolvedByte: IsBot
+                ? (byte)0
+                : PlayerProfileRecordUtility.PlayerRecordUnresolvedByte,
+            includeEndpointPairs: includeEndpointPairs && !IsBot);
 }

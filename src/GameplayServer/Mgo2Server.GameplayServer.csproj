@@ -11,4 +11,15 @@
     <ProjectReference Include="..\Infrastructure\Mgo2Server.Infrastructure.csproj" />
   </ItemGroup>
 
+  <!--
+    The stage navigation data, written by tools/stage-navigation. It is embedded so a
+    gameplay host needs no client install and no mounted directory: the cells, bounds
+    and placements of the maps are part of the build. The logical name is fixed, so
+    the reader finds it whatever the project's layout does.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Bots\Stage\Data\stage-navigation.bin"
+                      LogicalName="stage-navigation.bin" />
+  </ItemGroup>
+
 </Project>
