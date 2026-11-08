@@ -85,6 +85,205 @@ per-room-family constant and not a clock.
 | `0x9e`–`0x9f` (field 52) | `0x0128` | constant per room across its own bodies (`277`, `296`, `3813`) | the room's own word, so the pair an earlier row called opaque is two fields; which counter it names is **[U]** |
 | `0xa0` (field 53) | `0` | `0` or `1` | a truth value whose selector is **[U]**; offset `0x57` (field 13) carries the **same byte** in all fifteen captures, so the payload states it twice |
 
+**Eight bodies from six captures and five hosts, measured 2026-11-08.** Decoding
+`.pcapngs/briefing-then-solo-game`, `working-server-4-sessions`,
+`working-server-log`, `game-with-drebin-points-disabled`, `pcapng1` and `pcapng2`
+yields eight distinct 161-byte bodies, from `129.153.74.111`, `143.47.227.126`,
+`64.181.216.250` (two rooms) and `69.213.233.238`. Three of the builder's fields
+barely move across them, which is what makes them the ones a writer can pin with
+confidence:
+
+| field | body | value in all eight | reading |
+| --- | ---: | --- | --- |
+| 4 | `0x4b` | `180` | the client's own literal — it writes `li r0,0xb4` into its object at `0x9e9500`, so no room chose it |
+| 6 | `0x4e` | `3` | the round count, `Number of Rounds`, already named |
+| 5 | `0x4d` | `2` in seven, `20` in the body written at a briefing | the room's phase, not a setting |
+
+Field 3 (`0x4a`) is `17` in all eight of these, and only the wider corpus in §2
+carries the other two values (`13`, `15`), so it is the one of the four that a room
+changes. What genuinely varies body to body is the rest: field 8 is `0` or `300`;
+the word at `0x4f` takes five values (`00274022`, `00264022`, `00126073`,
+`00076022`, `00004033` — the last from the capture named for Drebin points being
+disabled, whose bit `0x02` is nonetheless still set, so that flag is not what that
+capture turned off); `0x57`–`0x64` and `0x87`–`0x9b` move with the room; and the
+tail byte and word differ per body. Those are the fields with no getter in the
+shipped client (§4) and no source in this server, which is why they keep the working
+capture's bytes.
+
+### The writer's block: 168 bytes, its fields, and the client's own literals
+
+The function around the writer cluster is the client's builder of this state, and it
+states the object's size and its fields outright. It clears **`0xa8` (168) bytes at
+`r1+0xd8`** (`addi r29,r1,0xd8; li r5,0xa8` before the zero-fill call) and then fills
+that block through the setter one field at a time. So the object is **seven bytes
+longer than the 161-byte body**, which is the measured reason its offsets and the
+body's are not one shift apart.
+
+| object offset | width | source |
+| ---: | ---: | --- |
+| `0x01` | 16 | stack |
+| `0x11` | 4 | stack |
+| `0x15` | 48 | the rotation, copied to `r1+0xa6` first |
+| `0x45` | 1 | stack |
+| `0x46` | 2 | **literal `0x00b4`** (`li r0,0xb4` at `0x9e9500`) |
+| `0x48` | 1 | **literal `2`** (`li r0,2` at `0x9e9518`) |
+| `0x4c` | 4 | the settings word, built from the room record's `+0x3a0` bitfield |
+| `0x50` | 2 | stack |
+| `0x52` | 1 | stack — the slot |
+| `0x53`, `0x54`, `0x56`, `0x58`, `0x59` | 1, 2, 2, 1, 1 | stack |
+| `0x5a` | 8 | stack — two independent bytes (§4) |
+| `0x62`, `0x64`, `0x66`, `0x67` | 1, 2, 1, 1 | stack |
+| `0x68` | 34 | the seventeen rule times, in seconds |
+| `0x8a`–`0x9d` | 1 each | the room record's own bytes |
+| `0x9e` | 2 | **literal `0x7f 0x7f`** |
+| `0xa0` | 1 | **literal `0xff`** |
+| `0xa4` | 1 | **literal `0`** |
+
+Two fields the corpus was treating as room data are the client's own constants: `0x46`
+is `180` because the client writes it, and `0x9e` is `0x7f 0x7f` for the same reason —
+the unassigned Sneaking role slots. The word at `0x4c` is not one value either: the
+code loads the room record's `+0x3a0` dword, and a run of tests expands it with
+`ori`s of `0x200`, `0x1000`, `0x2000`, `0x4000`, `0x8000`, `0x10000` and `0x20000`
+(`0x9e8e00`–`0x9e8ea0`). Bit `0x02` — the member `RoomCommonSettingsFlag` calls
+Drebin Points — is the one branch that is not a plain expansion: a `+0x3a0` bit makes
+the client call a routine, and the bit is set only when that call answers zero, so the
+Drebin bit is the record's flag **and** the client's own preference together. The byte
+at `+0x3b7` supplies `0x04` and `0x20` the same way.
+
+That is the `S+0x3A0` bitfield `ADDRESSES.md` records as feeding the `0x4310`
+settings word, reached from the other end, and it is why the pinned word's low bits
+are per-room while the high bits track a record the operations body never carries.
+
+The seventeen rule times are where the client shows its units: twelve fields of the
+record are multiplied by `mulli r0,r0,0x3c` — minutes into seconds — and stored as
+`sth`s into the block's `0x68` bank, so `300` on the wire is five minutes by the
+client's own arithmetic rather than by inference from captures.
+
+### The settings word, named by the screen that writes it
+
+The client hosts matches, so the word at object `0x4c` — body `0x4f`–`0x52` — is not
+only read but **written**, and the code that writes it says which switches it carries.
+The builder expands the room record's `+0x3a0` dword with `ori`s of
+`0x200` (bit 9), `0x1000` (12), `0x2000` (13), `0x4000` (14), `0x8000` (15),
+`0x10000` (16) and `0x20000` (17). Those positions are the ones the Create Game
+summary binds to named rows (`mgo2_cmd_4310_c2s.ksy`, complete bit map read from
+`0x8A8A2C`–`0x8A93C4`):
+
+| bit | Create Game row |
+| ---: | --- |
+| 9 | Auto Assign Teams |
+| 12 | Level Limit (enable) |
+| 13 | Allow Quick-Join |
+| 14 | Voice Chat allowed |
+| 15 | Team Kill Kick (enable) |
+| 16 | Idle Kick (enable) |
+| 17 | a bit with no rendered row |
+
+So field 7 is the room's **common-settings switch word**, and the switches it can
+carry are these rows — the same bit positions the `0x4310` blob carries them at, which
+is what makes the two one word rather than two lookalikes. `Level Limit` being here is
+worth noting against field 3: the *enable* is this bit, so field 3 is the base the
+enable gates.
+
+Two parts of the word stay unnamed. Bits 0–7 vary per room (`0x22`, `0x2a`, `0x33`,
+`0x73` in the corpus) and **no instruction tests any of them** — the sweep behind
+`mgo2_cmd_4310_c2s.ksy`'s `common_flags_lsb` note — so they are switches this build
+writes and never consults; and bits 17, 18, 22, 23 are the four positions with no
+rendered row. Naming those would need a later client, not more reading of this one.
+
+### The record the builder reads is the game-settings block
+
+The builder's sources are one struct, and its offsets are the client's own game-settings
+block with a base of **752** — the same 204-byte block `0x4313` delivers and `0x4310`
+carries, whose field map is in `docs/proto/outbound/mgo2_cmd_4313_s2c.ksy`. Four
+alignments pin it, and they were not looked for — they fell out of reading the builder:
+
+| record | block | the block's field | width the builder reads |
+| ---: | ---: | --- | --- |
+| `+0x332` | `+66` | **Max Number of Characters** | one byte |
+| `+0x334` | `+68` | **Briefing Time** | one word, × 60 into a `sth` |
+| `+0x34e` | `+94` | **stance** | one byte |
+| `+0x354`–`+0x394` | `+100`–`+164` | the seventeen per-rule words | seventeen `lwz`/`lbz` |
+| `+0x3a0` | `+176` | the 32-bit **common-settings word** | one `lwz`, expanded by `ori` |
+| `+0x3a4` | `+180` | **Idle Kick** | one `lhz` |
+| `+0x3ac`–`+0x3b7` | `+188`–`+199` | Capture **Extra Time**, the Sneaking **SNAKE** count, and the block's unread tail | one byte each |
+
+The widths agree field by field, which is what makes this an identification rather than
+a coincidence of numbering: `Idle Kick` is the one `lhz` in the run because it is the
+one `u2` in that stretch of the block, and `Max Number of Characters` and `Briefing
+Time` are adjacent at `+66`/`+68` exactly as they are in the block.
+
+**Field 3 closes on it.** Body `0x4a` is `Max Number of Characters`: the builder takes
+the block's `+66` byte — `max_players` — and writes it to the slot three bytes before
+the one it fills with the literal `180`, which is the same three-byte run the body
+carries at `0x4a`–`0x4d`. So 13, 15 and 17 are rooms stating their capacity, and no
+level-limit reading ever fit because `Level Limit` is a *different* field of the same
+block (`+95`/`+96`) that this path never reads — which is also why no level or rank
+appeared anywhere in the gameplay wire.
+
+**Field 8 narrows to `Briefing Time`, and stops short of closing.** The builder loads
+the block's `+68` minutes, multiplies by 60 and stores the result as a two-byte value
+four bytes before the seventeen-word timer bank — the shape field 8 has, and the only
+minutes-as-seconds slot in the object. What keeps it an inference is the repack: that
+`×60` lands at object `0x64`, and no traced write places object `0x64` at body `0x53`.
+If it does, `180`, `240` and `300` are three-, four- and five-minute briefings; the
+corpus already leans that way — three minutes is an ordinary briefing and a short round
+— but leaning is not measuring, and it stays **[I]** until the repack is read.
+
+One caveat, stated rather than smoothed over: `+0x3ac`–`+0x3b7` corresponds to block
+`+188`–`+199`, and the block map's last named field ends at `+189` with the mobile own
+note that `+190`–`+203` has no reader in the image. The builder *does* read those
+bytes, so either that negative needs narrowing to the settings screen's own copy, or
+the builder reads a game-side copy of the block at the same offsets — `0xD49440`
+memcpys 204 bytes between exactly these two shapes. Which of the two it is does not
+change the names above, which rest on offsets the block map calls settled.
+
+### The complete inventory
+
+Every offset of the 161-byte body, with what it is and how well that is known. **[V]**
+measured, **[I]** inferred from a shape or a label, **[U]** open.
+
+| body | field | what it is | |
+| --- | --- | --- | --- |
+| `0x00` | — | the record's state index, `0x0b` | [V] |
+| `0x01`–`0x08` | — | the state's presence mask, constant in every body | [V] shape, [U] per bit |
+| `0x09` | — | the round phase; the client compares it with `0`, `3`, `7` | [V] |
+| `0x0a`–`0x19` | — | reserved, zero in every body | [V] |
+| `0x1a`–`0x49` | — | sixteen rotation triples of map, rule, options | [V] |
+| `0x4a` | 3 | **`Max Number of Characters`** — the settings block's `+66` byte | [V] |
+| `0x4b`–`0x4c` | 4 | `180`, the client's own literal | [V] |
+| `0x4d` | 5 | the room's phase, `2` and `20` at a briefing | [V] |
+| `0x4e` | 6 | `Number of Rounds` | [V] label |
+| `0x4f`–`0x52` | 7 | the common-settings switch word (above) | [V] bits 8-23 |
+| `0x53`–`0x54` | 8 | a whole number of minutes as seconds; `Briefing Time` is the leading candidate | [I] |
+| `0x55` | 9 | the current rotation slot | [V] |
+| `0x56` | 10 | the room's population, host included | [V] |
+| `0x57` | 13 | the selector, repeated at `0xa0` | [V] |
+| `0x58`–`0x64` | 17-27 | per-room settings; `0x5a`/`0x5e` are two standing per-team counts | [I] |
+| `0x65`–`0x86` | 29 | seventeen rule times in seconds: 0-7 the eight standard rules, 8-11 the room family's own, 12-16 rules 12-16 | [V] unit, [I] binding |
+| `0x87`–`0x9b` | 30-49 | per-rule counts; `0x93` the round's ticket allotment; `0x9a`/`0x9b` the Sneaking role slots | [I] / [V] literals |
+| `0x9c` | 50 | `0xff`, the unassigned slot reference | [V] |
+| `0x9d` | — | a byte that moves between bodies of one room; not a checksum of any prefix | [U] |
+| `0x9e`–`0x9f` | — | a word that holds across a room's bodies — a counter, unnamed | [U] |
+| `0xa0` | 53 | the selector again | [V] |
+
+Nothing in this table is written from a guess: every row is either a value the corpus
+separates, a label the client's own screen carries, or a literal the writer loads. The
+five `[U]` rows are the ones where this build contains no reader *and* no labelled
+producer, and they are the honest end of the line for static analysis — a capture of
+the original server carrying different values is the only remaining instrument.
+
+**Two bodies of one host, measured 2026-11-08.** `pcapng1` and `pcapng2` are the same
+room (`129.153.74.111:5720`) about fifteen minutes apart, and their 161-byte bodies
+differ only where the room moved: field 3 is **`0x11` (17) in both**, the population
+byte goes `16` → `17`, the rotation slot `12` → `13`, and the tail is
+`ff 26 38 01 01` → `ff 28 38 01 00` (the byte before the word, the word itself, then
+field 53 flipping). So field 3 is a setting the room holds rather than a count of who
+is in it, and it is not the population either. The range argument separates the two
+settings the builder's comment names: `17` is inside Level-Limit's `0..22` and the
+room's players top out at level 15, so the limit is not violated; a character cap of
+17 would be one past the sixteen the game allows.
+
 **What the builder now writes.** Every field this server does not derive is the
 working capture's: `.pcapngs/mgo2-started-briefing-then-solo-game.pcapng`, the
 capture the port's notes call `briefing-then-solo-game`. Its body therefore
@@ -150,6 +349,28 @@ over `.game/ps3/MGO2.ELF`:
   then computes `3*(slot+1)`, clears the slot to zero and raises an engine notify
   when `slot > 14` — the rotation walk, and the reason a room plays fifteen slots
   and leaves the sixteenth zeroed.
+
+**The shipped getters, key by key.** Of those 283 sites, exactly **eight** lie in
+  the settings getter family (`0x8ea428`–`0x8ebfe8`), and between them they read
+  four fields — this is the whole of what the shipped build exposes as a property:
+
+| getter | key | width | returns |
+| --- | ---: | ---: | --- |
+| `0x8eaf88` | `0x01` | 16 | `block[i]`, the sixteen-byte field one byte at a time |
+| `0x8eafe0` | `0x4c` | 4 | `word & 0x40` — the boolean property, unreferenced by any table |
+| `0x8eb078` | `0x5a` | 8 | `block[1]` |
+| `0x8eb030` | `0x5a` | 8 | `block[5]` |
+| `0x8eb0c0` | `0x15`+`0x52` | 48+1 | `triple[slot][1]`, the rule |
+| `0x8eb148` | `0x15`+`0x52` | 48+1 | `triple[slot][2]`, the round option |
+
+The two bytes of key `0x5a` being fetched by two different getters is the measured
+  reason the eight-byte field is read as at least two independent values rather than
+  one word, and it is why the pair at body `0x5a`/`0x5e` is described as two team
+  figures. Every other field this corpus pins — fields 3 to 8, 13, 17 to 27, the
+  tail entries of field 29 and fields 30 to 49 — has **no getter in the shipped
+  build at all**, which is the concrete reason those offsets have no name to carry:
+  the value matters for byte fidelity with the room that wrote it, not because this
+  client consumes it.
 
 ## 5. The settings descriptor table
 
@@ -492,10 +713,10 @@ and the client's reader at `0x8eb008` returns one bit of it as a boolean.
 
 | body field | measured values | the candidates, and how far each is supported |
 | --- | --- | --- |
-| `0x4a` field 3 | `13`, `15`, `17`, per room | `Level-Limit` or `Max Number of Characters`: `level >= population` holds for all sixteen room configurations, and 13–17 is squarely inside the 0–22 level range while 17 sits *above* the sixteen-player maximum. Neither is excluded by the corpus, so it stays **one of the two** until the lobby's room reply is read |
+| `0x4a` field 3 | `13`, `15`, `17`, per room | **`Max Number of Characters`** — settled by the builder (§ "The record the builder reads"): it writes the settings block's `+66` byte into this slot. The `Level-Limit` candidate is excluded, because the level limit is a different field of that block (`+95`/`+96`) which this path never reads |
 | `0x4d` field 5 | `02`, and `14` in one body | a **state** byte: it moves between bodies of one host while the settings around it do not. `14` = 20 is the shape of a countdown or a count remaining **[U]** |
 | `0x4e` field 6 | `2`, `3`, `6`, per room | `Number of Rounds`: the two rooms that state `2` are the one-rule six-slot rooms, and `6` appears only in the TSNE/SCAP room. **[I]** |
-| `0x53` field 8 | `0`, `180`, `240`, `300` | `Briefing Time` or `Round Time`, both of which the screen sets in minutes — every value is a whole number of minutes and a room holds its own. **[I]**; the two cannot be told apart from the gameplay wire |
+| `0x53` field 8 | `0`, `180`, `240`, `300` | `Briefing Time` is the leading candidate — the builder multiplies the settings block's `+68` minutes by 60 — but its product lands at object `0x64` and no traced write places that at body `0x53`, so `Round Time` is not excluded. Every value is a whole number of minutes and a room holds its own. **[I]** |
 | `0x4f` field 7 | 4 bytes, bits `0x02` in all 34 bodies | the **common-settings switch word**. Bit `0x02` is Drebin Points (`docs/GATES.md` §2) and is set in every captured room, which is why every room played DP rounds; bit `0x40` is set only in the room whose joins asked which team to join, which is `Auto Assign Teams` showing up as a role-selection screen **[I]** |
 | `0x5a`, `0x5e` | `5/5`, `40/40`, `47/35`, `15/33`, … | each team's **remaining tickets**. `0x93` is the room's *starting* count and this pair never exceeds it, so direction is now measured rather than assumed: the pair equals `0x93` in the rooms whose round has not been spent (`40/40` with `0x28`, `50/50` with `0x32`, `55/55` with `0x37`) and sits below it once players have respawned (`30/32` and `5/5` against `50`; `5/5` against `20`). The TDM panel states the mechanic — "Each team starts with a set number of tickets… steal tickets" — and the tooltip at `0x0cee5e` says a ticket is spent on each respawn |
 | `0x93` | `20`, `40`, `50`, `51`, `55` | the round's **ticket allotment** — `Starting Number of Tickets` (`0x0cceed`) — in the rooms that play a ticketed rule: never below the pair at `0x5a`/`0x5e` in any of the 34 bodies, and equal to it in the thirteen whose round is untouched. The SNE/SCAP room carries `51` where no tickets are played, so the reading is a ticket count *where tickets apply* **[I]** and open there **[U]** |

@@ -1,5 +1,6 @@
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.Rooms;
+using Mgo2Server.Shared.Types;
 
 namespace Mgo2Server.Tests;
 
@@ -33,8 +34,8 @@ public sealed class PlayerSettingsBurstServiceTests
     {
         MatchRotationEntry[] rotation =
         [
-            new(Rule: 1, Map: 5, Flags: 0, TimeLimitMinutes: 8),
-            new(Rule: 7, Map: 10, Flags: 0x20, TimeLimitMinutes: 4),
+            new(Rule: 1, Map: 5, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 8),
+            new(Rule: 7, Map: 10, RoundOptions: RoundOption.Unknown0x20, TimeLimitMinutes: 4),
         ];
 
         var body = PlayerSettingsBurstService.RoomRotationBody(rotation);
@@ -46,12 +47,23 @@ public sealed class PlayerSettingsBurstServiceTests
 
         for (var slot = 0; slot < PlayerSettingsBurstService.RotationEntryCount; slot++)
         {
-            var entry = rotation[slot % rotation.Length];
             var offset = PlayerSettingsBurstService.RotationOffset
                 + (slot * PlayerSettingsBurstService.RotationEntryLength);
+
+            if (slot >= rotation.Length)
+            {
+                // Unused slots are zeroed rather than repeated: the field names the
+                // rounds the room holds, which the working capture shows as zeros.
+                Assert.Equal(0, body[offset]);
+                Assert.Equal(0, body[offset + 1]);
+                Assert.Equal(0, body[offset + 2]);
+                continue;
+            }
+
+            var entry = rotation[slot];
             Assert.Equal(entry.Map, body[offset]);
             Assert.Equal(entry.Rule, body[offset + 1]);
-            Assert.Equal(entry.Flags, body[offset + 2]);
+            Assert.Equal((byte)entry.RoundOptions, body[offset + 2]);
         }
 
         // The bytes around the triples are the recorded host's, because nothing
@@ -60,11 +72,15 @@ public sealed class PlayerSettingsBurstServiceTests
         Assert.Equal(0xff, body[2]);
         Assert.Equal(0x27, body[3]);
 
-        // The recorded body is what a room that cannot be read falls back to.
+        // The recorded body is what a room that cannot be read falls back to. Its
+        // triples are the reference rotation's and not the capture's, because the
+        // rotation is the one region the room owns; what it keeps is the shape, a run
+        // of triples followed by zeroed slots.
         var recorded = PlayerSettingsBurstService.RecordedRotationBody();
         Assert.Equal(161, recorded.Length);
-        Assert.Equal(0x05, recorded[PlayerSettingsBurstService.RotationOffset]);
-        Assert.Equal(0x01, recorded[PlayerSettingsBurstService.RotationOffset + 1]);
+        Assert.Equal(0, recorded[PlayerSettingsBurstService.RotationOffset
+            + ((PlayerSettingsBurstService.RotationEntryCount - 1)
+                * PlayerSettingsBurstService.RotationEntryLength)]);
     }
 
     [Fact]

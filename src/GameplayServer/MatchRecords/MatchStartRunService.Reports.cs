@@ -17,6 +17,24 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class MatchStartRunService
 {
     /// <summary>
+    /// The peers that have sent the report they send *after* the briefing's
+    /// closing zero, which is the one a player sends leaving its briefing screen.
+    /// </summary>
+    /// <remarks>
+    /// <b>It takes the room, and not the one report, to open a round.</b> The
+    /// reference opens on the room's **last** such report and not on its first:
+    /// <c>mgo2-game-started-on-briefing</c>'s last player reports at t+196.828 and
+    /// the round opens 1.543 s later, and
+    /// <c>mgo2-game-joined-when-red-team-then-briefing</c>'s client reports at
+    /// t+95.464 with the round following at t+123.774 — twenty-eight seconds
+    /// later — *because the room's other players were still arriving*
+    /// (<c>docs/protocol/BRIEFING_FLOW.md</c> §2). A host that opens on the first
+    /// one starts the round over clients still reading their screens, which is the
+    /// <c>PLEASE WAIT</c> the briefing draws while it waits for the room.
+    /// </remarks>
+    private readonly HashSet<string> briefingDeparted = [];
+
+    /// <summary>
     /// Takes a client's join report and, when it is the one the room's round waits
     /// for, opens the round under the set that report arrived on. It is also where
     /// a briefing's clock is armed with the room it was given.
@@ -70,8 +88,12 @@ public sealed partial class MatchStartRunService
     /// </para>
     /// </remarks>
     /// <param name="reportIdentifier">Identifier the join report arrived on.</param>
+    /// <param name="reporter">
+    /// Endpoint the report arrived from, which is the peer the round counts as
+    /// having left its briefing screen.
+    /// </param>
     /// <returns><c>true</c> when this call opened the round.</returns>
-    public bool OnJoinReport(ushort reportIdentifier)
+    public bool OnJoinReport(ushort reportIdentifier, string reporter)
     {
         var generation = MatchRecordGenerationUtils.OfJoinReport(reportIdentifier);
 
@@ -93,6 +115,10 @@ public sealed partial class MatchStartRunService
                 // may enter before it reports.
                 briefingGeneration = generation;
                 briefingReportInstant = DateTimeOffset.UtcNow;
+
+                // A new briefing's own reports: the last one's departures do not
+                // open this one's round.
+                briefingDeparted.Clear();
             }
 
             // The briefing's timer is the room's own, and it belongs to the room
@@ -159,6 +185,42 @@ public sealed partial class MatchStartRunService
         // behind it, sends nothing for ninety seconds, reports e1 08 again at
         // t+395.811, and its host opens the round 0.2 s later with the clock at 2 400
         // (`working-server-4-sessions.pcapng`). No ready record is in that capture.
+        //
+        // And it is the room's last such report, not its first. The reference waits
+        // for the rest: `joined-when-red-team`'s client leaves its screen at
+        // t+95.464 and the round opens at t+123.774, because the room's other
+        // players were still arriving (`docs/protocol/BRIEFING_FLOW.md` §2), and
+        // `started-on-briefing` opens 1.543 s behind its last report. A round opened
+        // on the first departure starts over the clients still on the screen, which
+        // is what the briefing's `PLEASE WAIT` is drawn for.
+        //
+        // The count is over the players that have reported at all, not over the
+        // room's population: a bot is in the room without a screen, and a peer that
+        // never reported is a peer the briefing is not waiting on.
+        if (briefingStates.PlayerCount > 1)
+        {
+            int departed;
+            lock (gate)
+            {
+                briefingDeparted.Add(reporter);
+                departed = briefingDeparted.Count;
+            }
+
+            var reported = briefingStates.JoinedCount;
+            if (departed < reported)
+            {
+                logger.LogDebug(
+                    "The report on 0x{Identifier:x4} from {Reporter} is one of the room's departures from "
+                    + "its briefing screen; {Departed} of {Reported} reported player(s) have left it and the "
+                    + "round waits for the last",
+                    reportIdentifier,
+                    reporter,
+                    departed,
+                    reported);
+                return false;
+            }
+        }
+
         return OpenRound(
             generation,
             $"the report that followed the room's briefing arrived on 0x{reportIdentifier:x4}");

@@ -1,10 +1,11 @@
 using Mgo2Server.GameplayServer.MatchRecords;
+using Mgo2Server.Shared.Types;
 
 namespace Mgo2Server.GameplayServer.Match;
 
 /// <summary>
 /// One round of a room's rotation: the rule it plays, the map it plays on, the
-/// triple's flags byte, and the round's own clock and kill limit.
+/// triple's options byte, and the round's own clock and kill limit.
 /// </summary>
 /// <remarks>
 /// The first three are the room's three bytes as stored and sent, and the last two
@@ -16,7 +17,10 @@ namespace Mgo2Server.GameplayServer.Match;
 /// </remarks>
 /// <param name="Rule">Rule id of the triple, which <see cref="MatchRuleUtils"/> names.</param>
 /// <param name="Map">Map id of the triple, which <see cref="MatchMapUtils"/> names.</param>
-/// <param name="Flags">Flags byte of the triple, whose meaning is [U].</param>
+/// <param name="RoundOptions">
+/// Options byte of the triple: the round's mode, which
+/// <see cref="RoundOption"/> names (Drebin Points, Headshots Only, or neither).
+/// </param>
 /// <param name="TimeLimitMinutes">Minutes the round's clock runs for.</param>
 /// <param name="Tickets">
 /// The round's kill limit — the word the reply states a rule's time beside — and
@@ -27,7 +31,7 @@ namespace Mgo2Server.GameplayServer.Match;
 public sealed record MatchRotationEntry(
     int Rule,
     int Map,
-    int Flags,
+    RoundOption RoundOptions,
     int TimeLimitMinutes,
     int? Tickets = null)
 {
@@ -110,14 +114,36 @@ public sealed record MatchSettings(
     /// A rotation of distinct entries has every round as its game's last, which is
     /// the shape a room plays a rule once in: one briefing per round, unchanged.
     /// </para>
+    /// <para>
+    /// <b>The walk wraps; a game does not.</b> The last entry the rotation states
+    /// ends its game even when it repeats the first one byte for byte, because the
+    /// rounds after it are the next game and not this one: a rotation of one entry
+    /// is a game of one round, and a rotation whose entries are all identical is a
+    /// game of as many rounds as it states. Comparing with
+    /// <see cref="Round"/>'s wrapped successor would read either shape as a game
+    /// with no end.
+    /// </para>
     /// </remarks>
     /// <param name="roundNumber">Round counting from one, as the room counts them.</param>
     /// <returns><c>true</c> when the round is its game's last.</returns>
     public bool IsLastRoundOfGame(int roundNumber)
     {
-        var current = Round(roundNumber);
-        var next = Round(roundNumber + 1);
+        if (Rotation.Count == 0)
+        {
+            return true;
+        }
 
-        return current.Rule != next.Rule || current.Map != next.Map || current.Flags != next.Flags;
+        var index = (Math.Max(roundNumber, 1) - 1) % Rotation.Count;
+        if (index == Rotation.Count - 1)
+        {
+            return true;
+        }
+
+        var current = Rotation[index];
+        var next = Rotation[index + 1];
+
+        return current.Rule != next.Rule
+            || current.Map != next.Map
+            || current.RoundOptions != next.RoundOptions;
     }
 }

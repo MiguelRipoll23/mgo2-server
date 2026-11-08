@@ -118,7 +118,7 @@ public sealed class JoinReportHandler(
         // nothing is still waiting to be answered.
         await PublishAsync(context, generation);
 
-        if (!matchStart.OnJoinReport(context.Message.Type))
+        if (!matchStart.OnJoinReport(context.Message.Type, player))
         {
             // The report that does not open the round is still answered on its
             // own record, and the marker is only the answer of the report that

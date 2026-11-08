@@ -27,21 +27,28 @@ internal static class RoomStateRegionUtils
     private const int RotationTripleLength = 3;
 
     /// <summary>
-    /// Body <c>0x4a</c>: field 3, <c>13</c>, <c>15</c> or <c>17</c> in every captured
-    /// room and nothing in the corpus says which room gets which.
+    /// Body <c>0x4a</c>: field 3, the room's <c>Max Number of Characters</c>.
     /// </summary>
     /// <remarks>
-    /// It is the room's and not its host's: <c>129.153.74.111:5720</c> writes
-    /// <c>0x11</c> for its thirteen-player room and <c>0x0f</c> for the six-player
-    /// one. The screen offers two settings this could be and the corpus excludes
-    /// neither: <c>Level-Limit</c>, whose 0-22 range holds 13 to 17, and
-    /// <c>Max Number of Characters</c>, which is the only cap the population never
-    /// exceeds — though 17 players is one past the sixteen the game allows.
+    /// The client's own state builder loads the game-settings block's <c>+66</c> — the
+    /// byte <c>0x4313</c> calls <c>max_players</c> — and writes it to this slot, which
+    /// is what settles the older <c>Level-Limit</c> reading: the level limit is a
+    /// different field of the same block (<c>+95</c>/<c>+96</c>) and is never read on
+    /// this path. It is the room's and not its host's, which is why
+    /// <c>129.153.74.111:5720</c> writes <c>0x11</c> for its sixteen-player room and
+    /// <c>0x0f</c> for the six-player one
+    /// (<c>docs/analysis/rotation-payload-corpus.md</c>).
     /// </remarks>
-    private const byte Field3 = 0x0f;
+    private const byte MaximumCharacters = 0x0f;
 
-    /// <summary>Body <c>0x4b</c>: field 4, the same <c>0x00b4</c> in every captured room.</summary>
-    private const ushort Field4 = 0x00b4;
+    /// <summary>
+    /// Body <c>0x4b</c>: field 4, <c>0x00b4</c> in every captured room because the
+    /// client writes it itself — <c>li r0,0xb4</c> at <c>0x9e9500</c> and then
+    /// <c>sth</c> into its object at <c>0x46</c>. It has provenance and no reading: the
+    /// value is the client's, so it is not a setting this server can derive, and what
+    /// the client means by 180 is not established.
+    /// </summary>
+    private const ushort ClientFixedValue = 0x00b4;
 
     /// <summary>
     /// Body <c>0x4d</c>: field 5, <c>0x02</c> in twenty-one of the twenty-two captured
@@ -71,13 +78,27 @@ internal static class RoomStateRegionUtils
     /// Body <c>0x4f</c>–<c>0x52</c>: field 7, a word of flags rather than a number.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The client tests three bits of it: <c>0x20</c> at five call sites, <c>0x04</c> at
     /// one, and <c>0x40</c> in a getter that returns it as a boolean
     /// (<c>docs/analysis/rotation-payload-corpus.md</c> §5). The two bits with a reading
     /// are members of <see cref="RoomCommonSettingsFlag"/> — <c>0x02</c> Drebin Points,
     /// which the captured word sets, and <c>0x40</c> asking a joiner which team to join,
-    /// which it leaves clear. The rest stay unnamed and the working capture's word is
-    /// written.
+    /// which it leaves clear.
+    /// </para>
+    /// <para>
+    /// <b>It is the client's own common-settings word, written and not only read.</b> The
+    /// gameplay client hosts matches, and its state builder assembles this word from the
+    /// room record's <c>+0x3a0</c> bitfield with <c>ori</c>s of bits 9, 12, 13, 14, 15,
+    /// 16 and 17; the Create Game summary binds exactly those positions to
+    /// <c>Auto Assign Teams</c>, <c>Level Limit</c> (enable), <c>Allow Quick-Join</c>,
+    /// <c>Voice Chat</c>, <c>Team Kill Kick</c>, <c>Idle Kick</c> and one unrendered row,
+    /// and they are the members of <see cref="RoomCommonSettingsFlag"/>. The
+    /// level-limit *base* the enable gates is not on this wire at all — it is a different
+    /// field of the settings block (<c>+96</c>) that this builder never reads. Bits 0-7
+    /// vary per room and no instruction in the image tests them, so they stay part of the
+    /// pinned word.
+    /// </para>
     /// </remarks>
     private const RoomCommonSettingsFlag CommonSettingsSwitches = (RoomCommonSettingsFlag)0x0007622a;
 
@@ -105,8 +126,6 @@ internal static class RoomStateRegionUtils
     /// </remarks>
     private const byte SelectorFlag = 0x00;
 
-    /// <summary>
-    /// The timer-bank position each of the eight standard rules owns.
     /// <summary>Body <c>0x9c</c>: field 50, the unassigned slot reference.</summary>
     private const byte UnassignedSlotReference = 0xff;
 
@@ -183,11 +202,14 @@ internal static class RoomStateRegionUtils
     }
 
     /// <summary>
-    /// Body <c>0x1a</c>–<c>0x49</c>: sixteen rotation triples of map, rule and flags.
+    /// Body <c>0x1a</c>–<c>0x49</c>: sixteen rotation triples of map, rule and options.
     /// </summary>
     /// <remarks>
     /// The client reads this block as sixteen entries of three bytes and selects one
-    /// with the slot index at <c>0x55</c>; an unused slot is three zero bytes.
+    /// with the slot index at <c>0x55</c>; an unused slot is three zero bytes. The
+    /// third byte is the round's <see cref="Mgo2Server.Shared.Types.RoundOption"/> —
+    /// <c>0x02</c> on a Drebin Points round and <c>0x00</c> on an ordinary one, which
+    /// is the difference a Drebin-disabled capture shows against an enabled one.
     /// </remarks>
     /// <param name="body">The body being built.</param>
     /// <param name="rotation">The room's rotation, entry zero first.</param>
@@ -204,16 +226,19 @@ internal static class RoomStateRegionUtils
             var entry = rotation[slot];
             body.Add(Component(nameof(entry.Map), entry.Map));
             body.Add(Component(nameof(entry.Rule), entry.Rule));
-            body.Add(Component(nameof(entry.Flags), entry.Flags));
+            body.Add(Component(nameof(entry.RoundOptions), (int)entry.RoundOptions));
         }
     }
 
-    /// <summary>Body <c>0x4a</c>–<c>0x54</c>: state fields 3 to 8, the room's own and unnamed.</summary>
+    /// <summary>
+    /// Body <c>0x4a</c>–<c>0x54</c>: the room's character cap, two client constants, its
+    /// round count, its switch word and a minute limit.
+    /// </summary>
     /// <param name="body">The body being built.</param>
     internal static void WriteRoomStateFields(List<byte> body)
     {
-        body.Add(Field3);
-        WriteUInt16LittleEndian(body, Field4);
+        body.Add(MaximumCharacters);
+        WriteUInt16LittleEndian(body, ClientFixedValue);
         body.Add(Field5);
         body.Add(NumberOfRounds);
         WriteUInt32LittleEndian(body, (uint)CommonSettingsSwitches);

@@ -374,8 +374,8 @@ clock-only round is what a room with no limit to state plays.
 Whichever ends it, the round now carries a **result**: `state[2]` of the
 operations state block is written behind it as the `0x02` state write
 `[0x02, offset, count, values]` the capture shows at every round end, from the
-side that won. The match's own result at `state[3]` is not written, because how
-many rounds a match is has not been resolved (§5).
+side that won — and, at the round that is a game's last, the game's own result at
+`state[3]` in the same write, when one side took every round of it (§5).
 
 Ending a round clears the ready set (`BriefingStateService.BeginNextBriefing`), so
 the next round waits for reports of its own rather than opening on the states of
@@ -644,29 +644,41 @@ its measurement, and the clearing of the `0x0b` candidate, live in
 `docs/protocol/STATE_VECTOR.md` §4, which is where a reader looking for that
 record should be sent.
 
-1. **A match rather than a round.** The match's own result at `state[3]` is
-   **writable and measured**: a working server writes it in the *same* `0x02`
-   write as the round's result — `02 02 02 02 02` is "state[2] = 2, state[3] = 2"
-   — at the round end that decides the match, and never writes one without the
-   other. What is still open is the rest of the block: `state[0..1]` and
+1. **A match rather than a round, in the result write.** The host writes the
+   match's own result at `state[3]` in the *same* `0x02` write as the round's —
+   `02 02 02 02 02` is "state[2] = 2, state[3] = 2" — at the round that is its
+   game's last (`MatchSettings.IsLastRoundOfGame`, `MATCH_FLOW.md` §6), and a round
+   inside a game writes `state[2]` alone. So the match's length is no longer open;
+   its *value* is settled for a game one side swept and left open for a split one.
+   The sweeping side is read off the rounds-won counter — the same number the result
+   screens state their score with — and of the replays that decide a match, three
+   were swept and each states the sweeping side
+   (`MatchResultService.DecideMatchResultAsync`). The fourth, `replay_360824_6`,
+   splits its rounds one each and gives the match to the side that lost the last of
+   them, on the higher total score; one sample is not a rule to decide a screen with,
+   and the score this host keeps is a floor in the modes whose objectives it cannot
+   see, so a split game writes `state[2]` alone rather than a side it cannot
+   support. What is still open is the rest of the block: `state[0..1]` and
    `state[4..6]` move at a match's end as well, and one decided match is the whole
    of the evidence for them (`STATE_VECTOR.md` §3). No round report is stored
-   (`game_rounds` is written by a lobby's own handlers, not by a dedicated host),
-   and the end-of-match report the lobby reads over TCP is not produced. So the
-   blocking question is now narrower than it was: the host can write the match
-   result, but **how many rounds a match is, and what the host reports once the
-   last of them ends**, is a choice rather than a measurement.
+   (`game_rounds` is written by a lobby's own handlers, not by a dedicated host), and
+   the end-of-match report the lobby reads over TCP is not produced.
 2. **A rotation rather than one round.** The room's rotation is this instance's
    configuration and states one round, so the round walk (`MatchSettings.Round`)
    plays the same entry every time. A configured list of rounds — and the room's own
    `games.current_game` column, which exists and is unused — would let a room play a
    rotation, which is the shape a player-hosted room's `0x4313` reply and the
    burst's fifteen-triple field already have room for.
-3. **A score the host computes.** The scoreboard's `score` bit moves only when a
-   peer states a value (§7), and the kills behind it come from a kill feed or a
-   peer's own delta: a room whose clients send neither has neither. Both are the
-   host's own counting to derive, from the deaths it already reads, and the formula
-   is **[U]**.
+3. **A score the host computes, over part of the table.** The host now computes
+   each player's score from the kills and deaths it counts, through the rule's row
+   of the game's own coefficient table — that table is settled and read off the
+   disc (`PROTOCOL.md`, "SETTLED 2026-07-27") and the client's `[0, 65535]` clamp
+   is applied (`MatchScoreRulesUtils`). What is still not counted is everything
+   this channel does not carry: headshots, stuns dealt and received, wakes, combo,
+   assists, hacks, the objective counters, the team-win bonus, and the off-wire
+   `OTHER` counter at column 36. The value is therefore exact for a round in which
+   nothing else scored, and a floor in Rescue, Capture and Team Sneaking, where
+   `OTHER` pays and cannot be seen.
 4. **A shorter sparse phase.** The 17-step, 42.2 s close is the only thing that
    makes a join take that long, and nothing about the client gates on it — the phase
    is a keep-alive, and the ready report is what opens the round. Ending it when the
@@ -712,8 +724,8 @@ record should be sent.
 | `Rooms/LobbySlotService.cs` | the room's own players and sides, as that pair names them |
 | `Rooms/LobbyLoadoutService.cs`, `LoadoutFramesUtils.cs` | the room's own players' appearances and skills, and the loadout records that name them |
 | `Gameplay/PlayerVitalsService.cs`, `Commands/Peer/Gameplay/PlayerVitalsHandler.cs` | the health and stamina each player last reported, and the death when health reaches zero |
-| `MatchRecords/MatchScoreService.cs`, `MatchScoreboardFramesUtils.cs`, `ScoreboardPublishService.cs` | the round's score, the scoreboard body, and its publication |
-| `MatchRecords/MatchResultService.cs` | the round's winner, the kill-limit check, and the result write |
+| `MatchRecords/MatchScoreService.cs`, `MatchScoreService.Teams.cs`, `MatchScoreService.Wins.cs`, `MatchScoreRulesUtils.cs`, `MatchScoreboardFramesUtils.cs`, `ScoreboardPublishService.cs` | the round's score (computed from the rule's table over the host's own kills and deaths), the per-side totals, the winning side's rounds-won step at each round's end, the scoreboard body, and its publication |
+| `MatchRecords/MatchResultService.cs` | the round's winner, the kill-limit check, and the result write — the round's, with the game's when the round decides it |
 | `Commands/Peer/Gameplay/OperationsStreamHandler.cs` | the operations stream's two records: the kill feed, and the score it feeds, and a client's briefing ready state, which opens the round |
 | `MatchRecords/MatchRecordSequenceService.cs` | the fourth byte of every session record: one counter per twelve-bit identifier, restarted where a round or a briefing opens a stream of its own |
 | `MatchRecords/MatchStartRunService.cs`, `MatchStartRunService.Runs.cs` | the round opener, its briefing deadline and its clock, and the per-peer run watcher |

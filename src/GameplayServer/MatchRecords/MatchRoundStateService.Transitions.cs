@@ -4,16 +4,15 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The round's transitions that are not a round opening or closing: the reset
-/// an emptied room takes, and the result the round before it ended on.
+/// The round's transitions that are not a round opening: its close and the
+/// results it leaves, and the reset an emptied room takes.
 /// </summary>
 /// <remarks>
 /// It is split from <c>MatchRoundStateService.cs</c> for the size rule and
-/// because the two members here answer a different question from the rest: the
-/// main file is the round now playing, and this is what the room does around it
-/// — the reset when nobody is left in it
-/// (<see cref="MatchStartRunService.ResetWhenEmpty"/>), and the result a
-/// closed round leaves for the writers that publish it.
+/// because the members here answer a different question from the rest: the main
+/// file is the round now playing, and this is what the room does around it — the
+/// close and the results the writers that publish them read, and the reset when
+/// nobody is left in it (<see cref="MatchStartRunService.ResetWhenEmpty"/>).
 /// </remarks>
 public sealed partial class MatchRoundStateService
 {
@@ -58,6 +57,16 @@ public sealed partial class MatchRoundStateService
     /// (<see cref="MatchStartRunService.BeginBriefing"/>).
     /// </remarks>
     private bool hasRoundEnded;
+
+    /// <summary>Whether the round that just ended was its game's last.</summary>
+    private bool lastRoundClosedGame;
+
+    /// <summary>
+    /// Rounds this room has closed, counted from one and never reset: it is the
+    /// identity a writer uses to award a round's win exactly once, which a round
+    /// number cannot be, because an emptied room returns to its first round.
+    /// </summary>
+    private int roundsClosed;
 
     /// <summary>
     /// The rotation index a configured round number names: <c>GAMEPLAY_SERVER_START_ROUND</c>
@@ -129,6 +138,7 @@ public sealed partial class MatchRoundStateService
             var ended = isOpen;
             isOpen = false;
             lastRoundResult = null;
+            lastRoundClosedGame = false;
             roundSettings = null;
             openedAt = null;
             clockStartsAt = 0;
@@ -165,6 +175,80 @@ public sealed partial class MatchRoundStateService
             lock (gate)
             {
                 return lastRoundResult;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Ends the round now playing and keeps the results it ended on. Nothing is
+    /// written here: the opener that owns the transition does that, and the
+    /// writers that publish the results read them from here.
+    /// </summary>
+    /// <param name="roundResult">
+    /// The result code the round ended on, in the operations state block's own
+    /// coding (<see cref="MatchRecordBodiesUtils.StateResultTeamZero"/>), or
+    /// <c>null</c> when this host has no result to write for it.
+    /// </param>
+    /// <param name="closesGame">
+    /// Whether this round was its game's last. The game's own result is decided by
+    /// the writer that publishes the round's, from the rounds-won counters
+    /// (<see cref="MatchResultService.DecideMatchResultAsync"/>), because that decision
+    /// needs the side each player holds and the counters this service does not keep.
+    /// </param>
+    /// <returns>The round that ended, or <c>null</c> when none was playing.</returns>
+    public int? Close(byte? roundResult, bool closesGame = false)
+    {
+        lock (gate)
+        {
+            if (!isOpen)
+            {
+                return null;
+            }
+
+            isOpen = false;
+            hasRoundEnded = true;
+            lastRoundResult = roundResult;
+            lastRoundClosedGame = closesGame;
+            roundsClosed++;
+            roundSettings = null;
+            openedAt = null;
+            clockStartsAt = 0;
+            logger.LogInformation(
+                "Round {RoundNumber} ended{Result}",
+                roundNumber,
+                roundResult is { } result ? $" with result code {result}" : " with no result to write");
+            return roundNumber;
+        }
+    }
+
+    /// <summary>
+    /// Whether the round that just ended was its game's last, and so whether the
+    /// game's rounds-won counters are owed a fresh start after the screen that
+    /// states them (<see cref="MatchScoreService.ResetRoundWins"/>).
+    /// </summary>
+    public bool LastRoundClosedGame
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastRoundClosedGame;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rounds this room has closed, counted from one and never reset — the identity
+    /// a writer uses to award a round's win exactly once, where a round number
+    /// cannot be one because an emptied room returns to its first round.
+    /// </summary>
+    public int RoundsClosed
+    {
+        get
+        {
+            lock (gate)
+            {
+                return roundsClosed;
             }
         }
     }

@@ -15,7 +15,9 @@ namespace Mgo2Server.Shared.Domain.Characters;
 /// <para>
 /// Twenty-two entries is why the automatch panel's gauge is 23 columns wide — levels
 /// zero through twenty-two — and why the client clamps its own centre column to that
-/// range at <c>0x93C348</c>.
+/// range. That clamp is <c>docs/AUTOMATCH.md</c>'s reading: its code addresses are from a
+/// different build than the ELF in this repository (checked 2026-11-08), so the clamp is
+/// carried as a reading rather than a re-verification.
 /// </para>
 /// </summary>
 public static class LevelUtils

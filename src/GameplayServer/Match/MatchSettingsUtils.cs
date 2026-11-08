@@ -116,7 +116,7 @@ public static class MatchSettingsUtils
             // and the 0x4313 reply both carry.
             RotationRules = [.. rotation.Select(entry => (short)entry.Rule)],
             RotationMaps = [.. rotation.Select(entry => (short)entry.Map)],
-            RotationFlags = [.. rotation.Select(entry => (short)entry.Flags)],
+            RotationFlags = [.. rotation.Select(entry => (short)entry.RoundOptions)],
             RuleTimers = RuleTimers(options),
             Dedicated = true,
         };
@@ -139,7 +139,7 @@ public static class MatchSettingsUtils
         ArgumentNullException.ThrowIfNull(rotation);
 
         return JsonSerializer.Serialize(
-            rotation.Select(entry => new[] { entry.Rule, entry.Map, entry.Flags }).ToArray());
+            rotation.Select(entry => new[] { entry.Rule, entry.Map, (int)entry.RoundOptions }).ToArray());
     }
 
     /// <summary>

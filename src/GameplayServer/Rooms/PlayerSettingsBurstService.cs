@@ -275,13 +275,14 @@ public sealed partial class PlayerSettingsBurstService(
     /// the flags byte the client is handed in the room's details over TCP.
     /// </para>
     /// <para>
-    /// <b>The third byte is written from the room's own flags byte.</b> It is
-    /// **[U]** in the payload's layout, and the measurement is: zero in fifteen of
-    /// the sixteen triples the three captures hold, and <c>0x20</c> in the
-    /// sixteenth — the value the rotation family's flags byte takes, and the only
-    /// non-zero one this position was ever seen to hold. Writing the room's own
-    /// byte therefore reproduces the triple the room was published with, where
-    /// writing zero would put a value there that no row states.
+    /// <b>The third byte is the round's own options, and it is the byte that tells
+    /// a joiner the round is a Drebin Points round.</b> <c>0x02</c> is Drebin
+    /// Points, <c>0x04</c> Headshots Only and <c>0x00</c> neither
+    /// (<see cref="Mgo2Server.Shared.Types.RoundOption"/>): a room with Drebin
+    /// points switched on writes <c>0x02</c> on its configured triples and the same
+    /// room's disabled capture writes <c>0x00</c> on all of its own. Writing the
+    /// room's own byte therefore reproduces the triple the room was published with,
+    /// where writing zero would tell a joiner an ordinary round.
     /// </para>
     /// <para>
     /// <b>Unused entries are zeroed, not repeated.</b> The field has sixteen

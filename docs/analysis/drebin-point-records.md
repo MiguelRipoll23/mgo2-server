@@ -26,7 +26,32 @@ the two rooms whose triples were captured with non-zero flags.
 triple's third byte from the room's own `MatchRotationEntry.Flags`, so a room that turns
 Drebin points on states `2` there. Nothing in this change alters that path.
 
-## 2. The figures travel in their own `0x1001` records
+## 2. The figures travel in their own `0x1001` records — **superseded 2026-11-08**
+
+**This section's reading is wrong, and the measurement below is what corrects it.**
+The `07 2f` family is the client's **stage** kind `0x01` record, not a player's
+figures: `docs/analysis/roster-record-kinds.md` §4 has the dispatch (kind `0x01`
+→ node `1`, slot `1`), `docs/protocol/UDP_COMMANDS.md` §"Kinds `0x01`–`0x04`"
+has the frame, and the family's bodies repeat byte for byte across unrelated
+sessions on one stage — which a per-player figure cannot do. The four-digit runs
+read as balances here are the geometry of that record: `12 fd a3 0f` is `4003`
+read as a signed sixteen, and the identical run appears inside kind `0x02`'s
+corners in the same capture.
+
+**The three measurements that settle it.** Decoded with `tools/udp_frame.py`:
+
+* `pcapng1` — the capture whose weapon-select screen reads **`DP: 1000/8500`** —
+  carries **no `07 2f` record at all**; the same is true of
+  `game-with-drebin-points-disabled`.
+* `pcapng2` — whose screen reads **`DP: 1000/20750`** — carries no `20750` in any
+  `0x1001` record of the session (a scan of every record body for the value, and
+  for its `u32` form).
+* `working-server-4-sessions`, the one capture that does write `07 2f`, writes it
+  for a room whose stage is not either of those rooms'.
+
+So a player's Drebin balance is **not** carried in the `0x1001` family, and the
+paragraphs below are kept only for provenance. §5 is the part of this file that is
+measured: the **toggle**, which is on the wire and is now confirmed.
 
 **How it was measured.** Every gameplay flow of `.pcapngs/**` was decoded with its two
 handshake bases, and every `0x1001` message with a body of 40 to 70 bytes was tabulated
@@ -91,5 +116,96 @@ offset can be tied to one number.
 ## 4. The room-state body's pair is not this
 
 The two words at `0x5a` and `0x5e` of the 161-byte body are not Drebin points: no
-captured body carries `1000` or `5000`, and the figures live in the family above
-(`docs/analysis/rotation-payload-corpus.md` §7).
+captured body carries `1000` or `5000`, and nothing in the family above does either
+(§2).
+
+## 5. The toggle, measured from an enabled and a disabled capture
+
+**The round's option is the third byte of every rotation triple** — body
+`0x1a + 3 × slot + 2` of the 161-byte room-state `0b 00` body, and the same byte in
+the room's `0x4310` block and `0x4313` reply. Read out of the two captures of the
+same field:
+
+| capture | screen | configured triples | third byte |
+| --- | --- | ---: | --- |
+| `pcapng1` | `DP: 1000/8500` | 14 | `0x02` × 12, `0x22` × 2 |
+| `game-with-drebin-points-disabled` | Drebin off | 7 | `0x00` × 7 |
+
+The same capture pair also separates the value from the room's other switches:
+the enabled room's word at body `0x4f`–`0x52` sets bit `0x02`, which
+`RoomCommonSettingsFlag.DrebinPoints` already names, and the disabled room's word
+is the capture's own. Two things follow that the server needs:
+
+* **`0x02` is the Drebin mode, not a per-client choice.** Nothing a joiner sends
+  moves it; it is the host's statement about the round, which is why a client
+  drawing `DP:` is drawing a mode it was told.
+* **`0x20` is a second bit and not part of the mode.** Two of `pcapng1`'s triples
+  read `0x22` — Drebin with `0x20` beside it — so the byte is a mode plus at
+  least one switch nothing has named yet. It stays as the room states it.
+
+An ordinary round is `0x00`, a Headshots-Only round `0x04`, and a value carrying
+`0x02` and `0x04` together has never been measured (`docs/GATES.md` §2).
+
+**Where a player's own balance is, is still open.** It is not in the room state,
+not in either `0x1001` family (`§2`), and the weapon-select screen's own figures
+move without a record in this channel carrying them; what would settle it is a
+capture of one player whose balance is known at two moments beside the records
+written between them.
+
+## 6. The one value that does match the screen, and why it is not claimed
+
+A scan of the **decrypted** plaintext of `pcapng1` — every record, every type, not
+the `0x1001` family alone — finds the weapon-select screen's own figures as a
+little-endian `u32` at offset `0x0c` of **sixteen-byte records**: `8500` in the
+frame at t+332.764 and `20750` four times from t+346.880 on, which is the number
+the two weapon-select screenshots read (`DP: 1000/8500` and `DP: 1000/20750`).
+The three bodies, byte for byte:
+
+```
+e1 81 03 00 00 00 8f 0c 88 01 f0 d0 | 34 21 00 00   the host, 8500
+41 01 04 00 0c 00 63 05 74 02 57 ca | 34 21 00 00   the client, 8500
+21 00 01 00 08 00 c7 f4 88 01 39 d1 | 0e 51 00 00   the host, 20750
+```
+
+**It is a lead and not a reading, for three reasons.** The same `8500` appears in
+both directions inside one session, which a player's balance should not do unless
+the peer echoes the host's figure — and nothing here says which of the two writes
+it first. The six bytes in front of it (`88 01 f0 d0`, `57 ca 34 21`) move with
+neither the value nor the player, so the record's own header has not been
+separated from its payload. And the value was found by searching for the screen's
+number, which cannot tell a field that *is* the balance from a field that happens
+to equal one of the screen's two readings once in a whole session.
+
+**What would settle it** is the same thing §5's toggle needed and got: the same
+record read at two moments where the balance is known to have moved, with the
+record's neighbours named. The screen's `8500` → `20750` is that movement, so what
+is missing is not a capture but the record's meaning — the twelve bytes ahead of
+the value in the client's own reader.
+
+### The candidate is refuted — measured 2026-11-08
+
+The search that produced it was circular — it looked for the screen's numbers — and
+the field it found is not a balance at all. The records are the **position** family
+(`0x0081`, `0x0881`, `0x00b3`, `0x08b3`, `0x006d`, `0x00db`, attribute class
+`0x02`), and offset `0x0c` is the word `PlayerPositionRecordUtility` already places
+as the second facing. Read over every sixteen-byte position body of `pcapng1`
+(9 056 of them) that word takes **7 330 distinct values between 11 and 65 534**, and
+the commonest are `32770`, `32766`, `57052` and `49153` — the sixteen-bit turn's
+half and quarter points, not four-digit balances. A field that spans the whole turn
+is an angle; a Drebin balance in this room's range `0`…`25 250` would take a few
+hundred values and never `57 052`.
+
+The four values a search for the screens' figures had matched — `4500`, `6000`,
+`7000`, `8500`, `10250`, `20750`, `22500` — are therefore angles that happen to
+coincide with them, which 9 000 records of a 65 536-value field make certain rather
+than surprising. **Nothing is renamed from this**, and the player's balance stays
+where §5 left it: not in the room state, not in either `0x1001` family, and not in
+the position records.
+
+**The screens it was validated against**, for the next pass: `pcapng1` reads
+`DP: 0` at 15:55:02, `DP: 4500` at 15:58:44 and `DP: 1000/8500` at 16:01:22;
+`pcapng2` reads `DP: 1000/7000` at 16:06:08, `DP: 6000` at 16:06:17, `DP: 1000/10250`
+at 16:08:54, `DP: 1000/14000` at 16:10:50, `DP: 1000/20750` at 16:13:03,
+`DP: 3500/22500` at 16:14:21 and `DP: 20000/25250` at 16:15:25. A real balance field
+must walk that progression for the local player, and the rounds' result screens carry
+no `DP:` figure at all.

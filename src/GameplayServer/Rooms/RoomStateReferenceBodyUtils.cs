@@ -23,6 +23,11 @@ internal static class RoomStateReferenceBodyUtils
     /// <c>10</c> or <c>0</c> — and keep the working capture's bytes.
     /// </para>
     /// <para>
+    /// <b>The client fetches two bytes of this block, not one word.</b> The eight-byte
+    /// field at key <c>0x5a</c> has two getters of its own — <c>0x8eb078</c> returns
+    /// <c>block[1]</c> and <c>0x8eb030</c> <c>block[5]</c> — which is the measured
+    /// evidence that the <c>0x5a</c>/<c>0x5e</c> pair is two independent values.
+    ///
     /// <b>The two words at <c>0x5a</c> and <c>0x5e</c> are a pair.</b> One room's bodies
     /// hold them equal (<c>5/5</c>, <c>40/40</c>, <c>50/50</c>, <c>55/55</c>, <c>0/0</c>),
     /// another's hold them apart (<c>15/33</c>, <c>27/18</c>, <c>30/32</c>, <c>38/44</c>,

@@ -35,9 +35,22 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// them. That is also what keeps one player's number from being re-sent on
 /// every change another player makes.
 /// </para>
+/// <para>
+/// <b>The score is computed, from the kills and deaths this host counted.</b> The
+/// client does not bank a score: it walks the rule's coefficient table over the
+/// player's live counters every tick and clamps the result to <c>[0, 65535]</c>
+/// (<c>docs/PROTOCOL.md</c>, "SETTLED 2026-07-27"). The same is done here over the
+/// two counters the round's records carry, so the scoreboard's score bit moves
+/// with the round instead of waiting for a peer to state one
+/// (<see cref="MatchScoreRulesUtils"/>). A score a peer does state is kept as
+/// stated: it is that record's own number and has already been relayed.
+/// </para>
 /// </remarks>
+/// <param name="roundState">The room's round, whose rule the score is computed in.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class MatchScoreService(ILogger<MatchScoreService> logger)
+public sealed partial class MatchScoreService(
+    MatchRoundStateService roundState,
+    ILogger<MatchScoreService> logger)
 {
     /// <summary>One team's total for the round.</summary>
     /// <param name="Team">Raw team value the room's rows hold, 0 or 1.</param>
@@ -75,6 +88,7 @@ public sealed class MatchScoreService(ILogger<MatchScoreService> logger)
             var row = RowOf(slot);
             row.Deaths++;
             Queue(slot, MatchScoreboardFramesUtils.DeathsBit, row.Deaths);
+            QueueScore(slot, row);
             logger.LogDebug(
                 "Player in slot {Slot} is dead; the round's scoreboard now reads {Deaths} death(s)",
                 slot,
@@ -102,6 +116,7 @@ public sealed class MatchScoreService(ILogger<MatchScoreService> logger)
             var victim = RowOf(victimSlot);
             victim.Deaths++;
             Queue(victimSlot, MatchScoreboardFramesUtils.DeathsBit, victim.Deaths);
+            QueueScore(victimSlot, victim);
 
             if (killerSlot == victimSlot)
             {
@@ -115,6 +130,7 @@ public sealed class MatchScoreService(ILogger<MatchScoreService> logger)
             killer.Kills++;
             killer.KillsKnown = true;
             Queue(killerSlot, MatchScoreboardFramesUtils.KillsBit, killer.Kills);
+            QueueScore(killerSlot, killer);
             logger.LogDebug(
                 "Player in slot {KillerSlot} killed the player in slot {VictimSlot}; {Kills} kill(s), "
                 + "{Deaths} death(s)",
@@ -261,45 +277,42 @@ public sealed class MatchScoreService(ILogger<MatchScoreService> logger)
     }
 
     /// <summary>
-    /// The round's two team totals, from the slots the room itself assigns to
-    /// each side.
+    /// Recomputes the score a player's own kills and deaths give, and queues the
+    /// scoreboard change when it moved.
     /// </summary>
     /// <remarks>
-    /// A player the room's rows put on no side counts for neither team, which is
-    /// the same reading the lobby-slot pair writes: it marks the slot taken and
-    /// names no side, so a score summed over a team the player is not on would
-    /// put its numbers on a side the client does not show it as being on.
+    /// It is recomputed and not accumulated, which is what the client does: the
+    /// rule's table is walked over the counters every tick and the total is
+    /// clamped, so a round that takes a player below zero states zero rather than a
+    /// debt later kills pay off (<see cref="MatchScoreRulesUtils"/>). Nothing is
+    /// queued for a player whose total is still zero and has never been stated:
+    /// a delta that changed no number would be a record the room does not need.
     /// </remarks>
-    /// <param name="slots">The room's players, by slot and side.</param>
-    /// <returns>One entry per side the room holds players on.</returns>
-    public IReadOnlyList<TeamScore> TeamScores(IReadOnlyList<LobbyTeamSlot> slots)
+    /// <param name="slot">Key in the room's 24-entry player table.</param>
+    /// <param name="row">The player's counters, already updated.</param>
+    private void QueueScore(byte slot, Row row)
     {
-        ArgumentNullException.ThrowIfNull(slots);
-
-        lock (gate)
+        if (roundState.RoundSettings is not { } settings)
         {
-            var totals = new Dictionary<short, (int Kills, int Deaths, bool KillsKnown)>();
-            foreach (var slot in slots.Where(slot => slot.Team is 0 or 1))
-            {
-                var team = slot.Team!.Value;
-                var row = rows.TryGetValue(slot.Slot, out var stored) ? stored : null;
-                var (kills, deaths, known) = totals.TryGetValue(team, out var total) ? total : (0, 0, false);
-                totals[team] = (
-                    kills + (row?.Kills ?? 0),
-                    deaths + (row?.Deaths ?? 0),
-                    known || (row?.KillsKnown ?? false));
-            }
-
-            return
-            [
-                .. totals.OrderBy(entry => entry.Key)
-                    .Select(entry => new TeamScore(
-                        entry.Key,
-                        entry.Value.Kills,
-                        entry.Value.Deaths,
-                        entry.Value.KillsKnown)),
-            ];
+            return;
         }
+
+        var score = MatchScoreRulesUtils.Score(settings.Rule, row.Kills, row.Deaths);
+        if (row.ScoreKnown ? row.Score == score : score == 0)
+        {
+            return;
+        }
+
+        row.Score = score;
+        row.ScoreKnown = true;
+        Queue(slot, MatchScoreboardFramesUtils.ScoreBit, score);
+        logger.LogDebug(
+            "Player in slot {Slot} now scores {Score} in rule {Rule}: {Kills} kill(s), {Deaths} death(s)",
+            slot,
+            score,
+            settings.Rule,
+            row.Kills,
+            row.Deaths);
     }
 
     /// <summary>

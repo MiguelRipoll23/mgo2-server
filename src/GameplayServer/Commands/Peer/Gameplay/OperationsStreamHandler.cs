@@ -55,6 +55,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 /// <param name="publisher">Publisher of the scoreboard a kill changes.</param>
 /// <param name="matchStart">The room's round, which a kill can end on its tickets.</param>
 /// <param name="results">The round's result, which the ticket end is read from.</param>
+/// <param name="roundState">The room's round, whose countdown a ready wakes.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class OperationsStreamHandler(
     BriefingStateService briefingStates,
@@ -62,6 +63,7 @@ public sealed class OperationsStreamHandler(
     ScoreboardPublishService publisher,
     MatchStartRunService matchStart,
     MatchResultService results,
+    MatchRoundStateService roundState,
     ILogger<OperationsStreamHandler> logger) : IPeerCommandHandler
 {
     /// <summary>Opcode the operations stream uses for its kill feed.</summary>
@@ -114,7 +116,14 @@ public sealed class OperationsStreamHandler(
                 state,
                 slot);
 
-            briefingStates.NoteBriefingReady(context.Remote.ToString(), slot, state);
+            if (briefingStates.NoteBriefingReady(context.Remote.ToString(), slot, state))
+            {
+                // The room's countdown is what carries the set, and this is the one
+                // record that moves it: a countdown waiting out its tick writes the
+                // new set at once instead of up to a tick later, which is what a
+                // player who has just readied is watching for.
+                roundState.NoteReadySetChanged();
+            }
         }
         else
         {

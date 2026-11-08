@@ -321,40 +321,6 @@ public sealed partial class MatchRoundStateService(
     }
 
     /// <summary>
-    /// Ends the round now playing and keeps the result it ended on. Nothing is
-    /// written here: the opener that owns the transition does that, and the
-    /// writers that publish the result read it from here.
-    /// </summary>
-    /// <param name="roundResult">
-    /// The result code the round ended on, in the operations state block's own
-    /// coding (<see cref="MatchRecordBodiesUtils.StateResultTeamZero"/>), or
-    /// <c>null</c> when this host has no result to write for it.
-    /// </param>
-    /// <returns>The round that ended, or <c>null</c> when none was playing.</returns>
-    public int? Close(byte? roundResult)
-    {
-        lock (gate)
-        {
-            if (!isOpen)
-            {
-                return null;
-            }
-
-            isOpen = false;
-            hasRoundEnded = true;
-            lastRoundResult = roundResult;
-            roundSettings = null;
-            openedAt = null;
-            clockStartsAt = 0;
-            logger.LogInformation(
-                "Round {RoundNumber} ended{Result}",
-                roundNumber,
-                roundResult is { } result ? $" with result code {result}" : " with no result to write");
-            return roundNumber;
-        }
-    }
-
-    /// <summary>
     /// Notes that a player has reported vitals in the round now playing, which
     /// reaches the beat's vitals onset.
     /// </summary>

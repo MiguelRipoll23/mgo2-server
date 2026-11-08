@@ -29,10 +29,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </para>
 /// <para>
 /// The named bits are the replay parser's and are measured, not inferred: kills
-/// <c>5</c>, deaths <c>6</c>, score <c>8</c> and headshots <c>11</c> have been
-/// seen to move with the round, and <c>152</c> and <c>153</c> carry a last-result
-/// code and a streak. The rest of the mask is unnamed and this file does not
-/// write it (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §4).
+/// <c>5</c>, deaths <c>6</c>, score <c>8</c>, headshots <c>11</c> and rounds won
+/// <c>20</c> have been seen to move with the round, and <c>152</c> and <c>153</c>
+/// carry a last-result code and a streak. The rest of the mask is unnamed and
+/// this file does not write it (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §4).
 /// </para>
 /// </remarks>
 public static class MatchScoreboardFramesUtils
@@ -77,6 +77,23 @@ public static class MatchScoreboardFramesUtils
 
     /// <summary>Bit carrying a player's headshots.</summary>
     public const int HeadshotsBit = 11;
+
+    /// <summary>
+    /// Bit carrying the rounds a player's side has won: the counter every result
+    /// screen states its side's score with.
+    /// </summary>
+    /// <remarks>
+    /// <b>Bit <c>20</c>, named by the replay console's scoreboard table and measured
+    /// against the round's own result.</b> <c>STAT.roundsWon = 20</c>, described as
+    /// "rounds won (whole team at once, +5)" — the whole side steps together at the
+    /// round's end, and the score table pays five for it — and the corpus reads it
+    /// against <c>state[2]</c> over 28 round ends in 16 replays: the code for a side
+    /// stepped exactly that side's players <c>14 of 14</c> and <c>10 of 10</c>, and
+    /// nobody stepped on the two draws and the two no-result rounds
+    /// (<c>.gametools/replay-console/app.js</c>, <c>rpdt.js</c>). It is two bytes wide,
+    /// like the rest of the mask outside bit 1 and bits 128…152.
+    /// </remarks>
+    public const int RoundsWonBit = 20;
 
     /// <summary>Bit carrying the player's last-result code, one byte wide.</summary>
     public const int LastResultBit = 152;

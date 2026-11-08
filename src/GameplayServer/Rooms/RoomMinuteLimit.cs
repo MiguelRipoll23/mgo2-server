@@ -5,10 +5,12 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </summary>
 /// <remarks>
 /// The client's Create Game screen offers two settings in minutes that this could be —
-/// <c>Round Time</c> and <c>Briefing Time</c> — and a room keeps its own value across
-/// every one of its bodies, which no gameplay byte separates further
-/// (<c>docs/analysis/rotation-payload-corpus.md</c> §8). Four values were seen and no
-/// fifth, so the members are those four rather than a wider range.
+/// <c>Round Time</c> and <c>Briefing Time</c> — and the client's own state builder
+/// loads the game-settings block's <c>+68</c> minutes and multiplies them by 60, which
+/// is <c>Briefing Time</c> and is the leading candidate. It is not settled: the product
+/// of that multiply lands at an object offset the object-to-wire repack does not yet
+/// map to this byte (<c>docs/analysis/rotation-payload-corpus.md</c> §8). Four values
+/// were seen and no fifth, so the members are those four rather than a wider range.
 /// </remarks>
 internal enum RoomMinuteLimit : ushort
 {

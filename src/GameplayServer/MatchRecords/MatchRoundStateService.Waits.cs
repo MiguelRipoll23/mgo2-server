@@ -172,6 +172,11 @@ public sealed partial class MatchRoundStateService
     public const int BriefingTickMilliseconds = 2350;
 
     /// <summary>
+    /// How many times the room's ready set has moved in the briefing now running.
+    /// </summary>
+    private int readySetVersion;
+
+    /// <summary>
     /// How often the briefing tick's wait looks for the round to have opened.
     /// </summary>
     /// <remarks>
@@ -200,6 +205,70 @@ public sealed partial class MatchRoundStateService
     /// <param name="session">Session the waiting writer writes to.</param>
     public Task WaitBriefingTickAsync(PeerSession session) =>
         WaitBriefingFrameAsync(session, BriefingTickMilliseconds);
+
+    /// <summary>
+    /// How many times the room's ready set has moved in the briefing now running.
+    /// </summary>
+    /// <remarks>
+    /// <b>A ready is news the room's tick does not wait for.</b> The reference
+    /// writes the countdown between two ticks when a player's ready changes the set:
+    /// in <c>working-server-log.pcapng</c> the ticking records carry 59 down to 51
+    /// at a median gap of 0.974 s, and the ones at t+516.559 and t+516.911 carry the
+    /// set grown by a bit at the same second as the tick before them. A host that
+    /// only answered on its 2.35 s tick left a player who had readied looking at a
+    /// screen that said nothing had moved for up to two seconds, which is the lag
+    /// this counter ends.
+    /// </remarks>
+    public int ReadySetVersion
+    {
+        get
+        {
+            lock (gate)
+            {
+                return readySetVersion;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Notes that the room's ready set has moved, so the countdowns waiting out the
+    /// tick write it now instead of at the tick's end.
+    /// </summary>
+    public void NoteReadySetChanged()
+    {
+        lock (gate)
+        {
+            readySetVersion++;
+        }
+    }
+
+    /// <summary>
+    /// Waits out one briefing tick, or until the room's ready set moves, or until
+    /// the round opens: the countdown's wait, which a ready cuts short.
+    /// </summary>
+    /// <remarks>
+    /// <b>Only the countdown wakes on a ready.</b> The ready set's own repeat and the
+    /// room's rules pair keep the plain tick: the reference writes the set with the
+    /// run and once more on the next tick and not beside the countdown a ready draws
+    /// (<see cref="BriefingReadyPublishService"/>), so a publication woken here would
+    /// put 2N records on the wire where the captures hold one 7-byte record.
+    /// </remarks>
+    /// <param name="session">Session the waiting writer writes to.</param>
+    public async Task WaitBriefingCountdownTickAsync(PeerSession session)
+    {
+        var version = ReadySetVersion;
+        var waited = 0;
+        while (!IsOpen && waited < BriefingTickMilliseconds)
+        {
+            if (!MatchRecordPeerUtils.IsAlive(session) || ReadySetVersion != version)
+            {
+                return;
+            }
+
+            await Task.Delay(TickPollMilliseconds);
+            waited += TickPollMilliseconds;
+        }
+    }
 
     /// <summary>
     /// Waits out one frame of a briefing writer's own period, or until the round

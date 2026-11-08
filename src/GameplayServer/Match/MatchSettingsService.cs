@@ -116,7 +116,8 @@ public sealed class MatchSettingsService(
     /// It resolves no room: the rotation is this instance's own and is known before
     /// the room is published, and a round end that waited on the row would leave a
     /// game's boundary undecided while the lobby is unreachable. The rule is
-    /// <see cref="MatchSettings.IsLastRoundOfGame"/>'s, over the same list.
+    /// <see cref="MatchSettings.IsLastRoundOfGame"/>'s, over the same list, and its
+    /// last entry ends its game instead of wrapping onto the first.
     /// </remarks>
     /// <param name="roundNumber">Round counting from one, as the room counts them.</param>
     /// <returns><c>true</c> when the round is its game's last.</returns>
@@ -127,11 +128,18 @@ public sealed class MatchSettingsService(
             return true;
         }
 
-        var index = Math.Max(roundNumber, 1);
-        var current = rotation[(index - 1) % rotation.Count];
-        var next = rotation[index % rotation.Count];
+        var index = (Math.Max(roundNumber, 1) - 1) % rotation.Count;
+        if (index == rotation.Count - 1)
+        {
+            return true;
+        }
 
-        return current.Rule != next.Rule || current.Map != next.Map || current.Flags != next.Flags;
+        var current = rotation[index];
+        var next = rotation[index + 1];
+
+        return current.Rule != next.Rule
+            || current.Map != next.Map
+            || current.RoundOptions != next.RoundOptions;
     }
 
     public MatchSettings? FindPublished()

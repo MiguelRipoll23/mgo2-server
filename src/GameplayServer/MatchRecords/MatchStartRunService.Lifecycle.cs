@@ -49,6 +49,11 @@ public sealed partial class MatchStartRunService
 
         var dropped = roundState.Reset();
         score.Reset();
+        score.ResetRoundWins();
+        lock (gate)
+        {
+            briefingDeparted.Clear();
+        }
         briefingStates.BeginNextBriefing();
         sequences.Restart(Rooms.RoomRosterService.ExchangeIdentifier);
         BeginBriefing();
@@ -103,12 +108,24 @@ public sealed partial class MatchStartRunService
     /// <param name="roundResult">
     /// Result code the round ended on, or <c>null</c> when this host has none to
     /// write. It is kept beside the round so the peer writers can publish it
-    /// (<see cref="MatchRoundStateService.LastRoundResult"/>).
+    /// (<see cref="MatchRoundStateService.LastRoundResult"/>), and the round is kept
+    /// as its game's last when the rotation says it is, which is what decides the
+    /// game's own result and starts its rounds-won counters over once their last
+    /// number has gone out.
     /// </param>
     /// <returns><c>true</c> when a round was playing and has now ended.</returns>
     public bool End(string reason, byte? roundResult = null)
     {
-        var ended = roundState.Close(roundResult);
+        // The rotation is what says how many rounds a game is, and the count only
+        // moves when the next round opens: the round now playing is the one that
+        // ends, so it is read before the close names it.
+        var playing = roundState.RoundNumber;
+        var closesGame = matchSettings.IsLastRoundOfGame(playing);
+
+        // A round that is its game's last states the game's result as well, in the
+        // round's own write — `02 02 02 02 02` is "state[2] = 2, state[3] = 2"
+        // (docs/protocol/STATE_VECTOR.md §3).
+        var ended = roundState.Close(roundResult, closesGame);
         if (ended is null)
         {
             return false;
@@ -125,7 +142,7 @@ public sealed partial class MatchStartRunService
         // report the client sends between two rounds is already past the room's
         // briefing time and opens the next round, instead of the room waiting out a
         // briefing nothing shown it.
-        if (!matchSettings.IsLastRoundOfGame(ended.Value))
+        if (!closesGame)
         {
             logger.LogInformation(
                 "Round {RoundNumber} ended because {Reason}; its game has another round, so the room "

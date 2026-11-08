@@ -178,6 +178,22 @@ The native was identified through the GCX registration table rather than the sha
 hash `0x00D3656D` at `0x1031584` → OPD `0x1014CF0` → `0x6F9370`. The same walk reproduces the
 sibling `ComputeScore` native that `ADDRESSES.md` already records, which is what validates it.
 
+> **Every address in this section is from a different build than the ELF here — checked
+> 2026-11-08.** The binary is not in doubt: `MGO2.ELF` carries `4d 25 8a b7`
+> (`module_magic`) at `0x0122a5cc`, the anchor `protocol/UDP_COMMANDS.md` verified, with the
+> text `0x10000`–`0x118e347` and `.data` from `0x1190000` that `BUILD_1_36.md` states. In
+> *this* image, though, `0x6F9260` is `lhz r0,0x20(r29)` / `mulli r0,r0,0x32` /
+> `stw r0,0x15e0(r31)` — an object's timer, not a threshold walk; `0x6F9328` is the prologue
+> `std r26,0x90(r1)`; `0x1031584` holds instructions (`38812ab4 …`) rather than the hash;
+> `0x1014CF0` holds instructions rather than an OPD pair; `0x93C348` is AltiVec arithmetic
+> rather than a clamp to 22; and `0x93C790` is `stw r9,0x14(r23)`. The walker, the native's
+> registration and the graph's clamp therefore all have to be re-derived before they are
+> cited again — the re-derivation `UDP_COMMANDS.md` had to do for `0xD78CC8` → `0xF4A248`.
+> **The table cannot be read from any copy of the file either way:** `.bss` past the last
+> file-backed section (`0x12a9fff`) is uninitialised, so `0x1659D24` has no bytes and no
+> reference until a running console's `-r` handler fills it. The thresholds themselves are
+> unaffected — they are the six scripts' payload, and they are what `LevelUtils` carries.
+
 The algorithm *is* readable, and it corrects a claim in `CharacterService`: the level is the **count
 of thresholds `<=` experience**, not one more than that count (signed `ble` at `0x6F9278`; the
 return is the count). Below the first threshold it returns 0. `charRec+0x120` is

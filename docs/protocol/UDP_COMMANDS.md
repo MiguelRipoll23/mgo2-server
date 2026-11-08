@@ -340,6 +340,75 @@ What it does line up with is the kind of entry: **`0x00` on all ten name-less 57
 and on all 51 `BOT-01`…`BOT-11` entries**, `0x01` on the host and on ten records of three
 players, `0x02` on the other 63. Nothing in the captures names the distinction; **[U]**.
 
+**Where LEVEL and GRADE are not — measured 2026-11-08, and still open.** The client's
+vocabulary for the two figures is its own: every map's `scenerio.gcx` carries `LEVEL`
+and `GRADE` beside the room's labels (`n003a` strings 18970/18974, `lobby` 14226/14230),
+with `"%s's grade is now %d."` spelling grade as a number. Neither figure is in this
+record, and three scans say so on the two captures that carry known levels
+(`pcapng1`, whose room screen lists OFF_PAKO 14, pink_panty 15, Oreia Seca 10,
+keﬁn nero 12, fargraven2 10 and ten `BOT-` entries):
+
+* **`0x10` is not either of them.** Read against those names it is `0x00` on every
+  `BOT-` entry and on `OFF_PAKO`, `pink_panty`, `Oreia Seca` and `fargraven2`, and
+  `0x02` on keﬁn nero — so it does not follow the level (10 and 15 both appear on `0x00`).
+* **no per-player `0x1001` body carries a level or an experience total.** Tested against
+  fifteen slots at once, which is sharper than any one player: the 15:58:44 room screen
+  gives a level for every player in the room, bots included — OFF_PAKO 14, pink_panty 15,
+  Oreia Seca 10, kefin nero 12, fargraven2 10, BOT-01/02/05/07/08/09/10 14, BOT-03/04/06 13
+  — and the roster entries map each name to its slot, so every `0b <slot>` state transfer
+  and every kind-`0x04` spawn record is that slot's. Over every offset of those bodies at
+  one, two and four bytes and both endiannesses, for the level itself and for any total
+  whose level-by-`LevelUtils` is that level, **the best any single offset managed was two of
+  the fifteen slots** — a coincidence, not a field. The bodies are visibly indifferent to the figure besides: slots `0x0d` and
+  `0x16` are both level 14 yet differ at `[0x04]` (`00` against `0c`), which is the roster
+  index. A scan of every `0x1001` body of `pcapng2` for `20750` returns nothing either. (The
+  stage kinds `0x01`–`0x03` name no player slot, so a per-player figure could not be in
+  them by construction; `0x01`'s geometry is the subject of §2 above.)
+* **the round-result screen's EXP column is `0000` for every player** in both captures,
+  which is what a host that states no experience writes, so a zero there cannot be told
+  from a field the host never fills.
+
+What would settle it: a capture of a room where one joiner's level is read off the
+screen and their join records are the only ones that differ — or the briefing HUD's
+reader in `system.dll` (`h_mgo2_briefing.cc`), which names the `PL_NET_PLAYER` member
+it formats and therefore the wire byte that fills it.
+
+**Two more scans have since narrowed it, and neither locates it.** A **byte-level**
+pass over the same records, which the earlier 16/32-bit experience scan did not cover:
+no offset carries a slot's level, or that level ± 1, consistently across the five known
+slots. The only offsets that matched were the records' own headers — the `0b` of a
+settings body read as level 10 + 1, and the `07`/`04` of the roster header — which is
+what a coincidence looks like and not a field. And the **two channels disagree about
+one character**: this server's lobby channel (TCP) reports a character at **level 12**
+while the same character's gameplay briefing shows **level 10**. That difference is the
+sharpest discriminator the search has, because the two levels sit one threshold apart
+(level 12 begins at 2 200 experience, level 10 at 1 450 in `LevelUtils.Thresholds`), so
+a candidate byte is the right one only if it reads `10` where the room's character
+reads `12` — and the gameplay server sends no experience at all, so the figure is either
+a level byte the host never writes or a value the client derives from one it does.
+
+**The static lookup stops at the image boundary, and at two stale addresses.** The
+binary is not in question: `MGO2.ELF` is the file this document was read from, and its
+own anchor says so — `4d 25 8a b7` (`module_magic`) at vaddr `0x0122a5cc`, exactly where
+§“Wire verification against `MGO2.ELF`” below records it, with text `0x10000`–`0x118e347`
+and `.data` from `0x1190000`, the LOAD layout `docs/BUILD_1_36.md` states. Two different
+things stop the level table being read from it:
+
+* **The table has no bytes in the file.** `docs/AUTOMATCH.md` puts the 128-entry array in
+  `.bss` at `0x1659D24`, past the last file-backed section (`0x12a9fff`). The `.bss`
+  section that contains it (`0x12aca00`–`0x191ad37`) is uninitialised, so a Ghidra read
+  answers *not accessible* rather than zeros, no relocation and no reference to
+  `0x1659D24` exists anywhere in the image, and neither the address nor its neighbours
+  appear as data. “Zero at load” is literal: the contents exist only in a running
+  console, after the stage script's `-r` payload fills them, so no copy of the ELF can
+  show the mapping however it is read.
+* **The walker's own addresses do not resolve here.** `0x6F9260` in this image is
+  `lhz r0,0x20(r29)` / `mulli r0,r0,0x32` / `stw r0,0x15e0(r31)` — an object's timer, not
+  a threshold walk — and `0x1031584`, the GCX registration hash `0x00D3656D` AUTOMATCH
+  cites, holds instructions (`38812ab4 \u2026`). Those two are stale the way `0xD78CC8` was
+  for the Channel B dispatcher, which this document re-derived at `0xF4A248`; a figure
+  read through them has to be re-derived the same way before it is used.
+
 **The nine-byte body is a fifth shape, not an entry.** `07 00 00 00 02 02 01 00 01` carries
 length byte `0x00` and no name, so it satisfies neither layout's minimum; 29 records of kind
 `0x00` here, and 13 of kind `0x04`. Its seven-byte header is followed by the constant `00 01`

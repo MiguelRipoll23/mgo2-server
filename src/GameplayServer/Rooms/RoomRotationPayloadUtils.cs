@@ -1,4 +1,5 @@
 using Mgo2Server.GameplayServer.Match;
+using Mgo2Server.Shared.Types;
 
 namespace Mgo2Server.GameplayServer.Rooms;
 
@@ -41,15 +42,15 @@ internal static class RoomRotationPayloadUtils
 
     private static readonly MatchRotationEntry[] ReferenceRotation =
     [
-        new(Rule: 5, Map: 12, Flags: 0, TimeLimitMinutes: 5),
-        new(Rule: 6, Map: 4, Flags: 0, TimeLimitMinutes: 5),
-        new(Rule: 3, Map: 5, Flags: 0, TimeLimitMinutes: 5),
-        new(Rule: 16, Map: 2, Flags: 0, TimeLimitMinutes: 5),
-        new(Rule: 3, Map: 7, Flags: 0, TimeLimitMinutes: 5),
-        new(Rule: 1, Map: 3, Flags: 0, TimeLimitMinutes: 5),
-        new(Rule: 2, Map: 14, Flags: 0, TimeLimitMinutes: 5),
-        new(Rule: 1, Map: 1, Flags: 0, TimeLimitMinutes: 5),
-        new(Rule: 5, Map: 6, Flags: 0, TimeLimitMinutes: 5),
+        new(Rule: 5, Map: 12, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 5),
+        new(Rule: 6, Map: 4, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 5),
+        new(Rule: 3, Map: 5, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 5),
+        new(Rule: 16, Map: 2, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 5),
+        new(Rule: 3, Map: 7, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 5),
+        new(Rule: 1, Map: 3, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 5),
+        new(Rule: 2, Map: 14, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 5),
+        new(Rule: 1, Map: 1, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 5),
+        new(Rule: 5, Map: 6, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 5),
     ];
 
     public static byte[] BuildReferenceBody() =>

@@ -1,3 +1,5 @@
+using Mgo2Server.Shared.Types;
+
 namespace Mgo2Server.GameplayServer.Match;
 
 /// <summary>
@@ -110,7 +112,7 @@ public static class MatchRotationUtils
                     + "time at all; GAMEPLAY_SERVER_RULE_TIMERS must state a positive time for its rule.");
             }
 
-            entries.Add(new MatchRotationEntry(rule, map, Flags: 0, minutes, Tickets(ruleTimers, rule)));
+            entries.Add(new MatchRotationEntry(rule, map, RoundOption.Normal, minutes, Tickets(ruleTimers, rule)));
         }
 
         if (entries.Count == 0)

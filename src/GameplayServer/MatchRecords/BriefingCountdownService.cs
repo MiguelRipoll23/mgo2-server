@@ -268,10 +268,13 @@ public sealed partial class BriefingCountdownService(
                 break;
             }
 
-            // The tick ends the moment the round opens: this task is awaited
-            // before the beat, and a period slept out after the run was written
-            // would hold the beat's first frame behind it.
-            await roundState.WaitBriefingTickAsync(session);
+            // The tick ends the moment the round opens, and a ready cuts it short:
+            // this record carries the room's set, and the reference writes it
+            // between ticks when a player's ready moves the set
+            // (`working-server-log.pcapng` t+516.559, beside the 1 s tick it sits
+            // between). This task is awaited before the beat, and a period slept out
+            // after the run was written would hold the beat's first frame behind it.
+            await roundState.WaitBriefingCountdownTickAsync(session);
         }
 
         // A briefing's last word to a peer is a zero, and it carries the room's

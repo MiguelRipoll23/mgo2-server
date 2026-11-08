@@ -123,6 +123,25 @@ public static class MatchRecordBodiesUtils
         team == 0 ? StateResultTeamZero : StateResultTeamOne;
 
     /// <summary>
+    /// The room's raw team a result code names: <c>2</c> is team <c>0</c> and
+    /// <c>3</c> team <c>1</c>, while the drawn and no-result codes name no side.
+    /// </summary>
+    /// <remarks>
+    /// The codes carry the game's own team ids, which number the second side
+    /// <c>2</c>; the room's rows and <see cref="ResultCode"/> use <c>0</c> and
+    /// <c>1</c>, so the two are not the same numbering and a caller that read the
+    /// code as a team would put every second-side win on a side nobody is on.
+    /// </remarks>
+    /// <param name="resultCode">Result code in the state block's own coding.</param>
+    /// <returns>The raw team value the room's rows hold, or <c>null</c>.</returns>
+    public static short? TeamOfResult(byte resultCode) => resultCode switch
+    {
+        StateResultTeamZero => 0,
+        StateResultTeamOne => 1,
+        _ => null,
+    };
+
+    /// <summary>
     /// A state write: the opcode, the offset it starts at, the count of values
     /// behind it and the values themselves.
     /// </summary>
