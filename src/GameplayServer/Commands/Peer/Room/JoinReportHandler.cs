@@ -126,19 +126,7 @@ public sealed class JoinReportHandler(
         // next.
         if (await bots.ReconcileNowAsync(CancellationToken.None))
         {
-            // <b>The room's roster is written again under numbers it has not
-            // spent.</b> A roster run's ordinals are the room stream's and they
-            // never restart: the recorded host's one run is 1, 3, 4, 5 and 6 in
-            // its first frame, 7 to 13 in the second and 14 and 15 in the third
-            // (`pcapng1` t+0.562). The builder numbers a run from zero because a
-            // join's answer is the first run of the stream, so the copy written
-            // here takes the next values instead — a repeat of the numbers the
-            // client already holds is a repeat it has no reason to read.
-            var built = roster.BuildRosterRun();
-            var ordinals = roster.TakeRunOrdinals(built.Count);
-            var run = built
-                .Select((record, index) => new RosterRecord(record.Type, record.Body, ordinals[index]))
-                .ToList();
+            var run = roster.BuildRosterRun();
             await RosterRunSendUtils.SendAsync(context, run);
 
             // The settings burst names the room's players one loadout record each,
