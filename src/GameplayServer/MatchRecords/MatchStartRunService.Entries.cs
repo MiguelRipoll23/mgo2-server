@@ -266,6 +266,52 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
+    /// A run with its opening pair replaced by the answers the peer's entry echo
+    /// drew, which is where every capture puts them.
+    /// </summary>
+    /// <remarks>
+    /// <b>An opening of empty heads leaves the echo's own records unanswered.</b>
+    /// The pass that hears the echo withholds its answers so the run can carry
+    /// them (<see cref="NoteEntryAnswers"/>); a run that opens on the empty heads
+    /// instead never writes them, the client re-sends the pair on its own timer
+    /// and its window never drains, and it tears the session down once its report
+    /// is thirty seconds old. That is the shape `myserver22.pcapng` records, and
+    /// the live run of 2026-11-09 reproduced it: `0x9001 ordinal 9` and
+    /// `0x1001 ordinal 10` re-sent six times from the report on, the client's own
+    /// ticks ending twenty seconds into the round, and `2001:FFFFFF80` behind it.
+    /// </remarks>
+    /// <param name="session">Session the run is written to.</param>
+    /// <param name="run">The run as built, opening on two empty heads.</param>
+    /// <returns>The run, opening on the held answers when the pair was heard.</returns>
+    public List<MatchRecordFramesUtils.RecordMessage> WithEntryAnswers(
+        PeerSession session,
+        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run)
+    {
+        // The echo is a pair: `82 NN` on the team array and `84 NN` on the
+        // occupancy one, each its own record. One heard on its own is a client
+        // part-way through the exchange, and its answer waits for the other.
+        const int echoRecords = 2;
+
+        List<UdpMessage>? held;
+        lock (gate)
+        {
+            entryAnswers.Remove(session, out held);
+        }
+
+        if (held is not { Count: echoRecords })
+        {
+            return [.. run];
+        }
+
+        return
+        [
+            .. held.Select(message =>
+                new MatchRecordFramesUtils.RecordMessage(message.Type, message.Body, message.Flags)),
+            .. run.Skip(echoRecords),
+        ];
+    }
+
+    /// <summary>
     /// Whether the run that answers a peer's entry is due, which is when the
     /// briefing's room publication writes its first membership pair.
     /// </summary>

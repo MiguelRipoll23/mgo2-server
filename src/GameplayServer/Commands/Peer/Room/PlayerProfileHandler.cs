@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Bots;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Constants;
@@ -62,6 +63,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// and the two are told apart by their length (<see cref="MatchScoreboardFramesUtils"/>).
 /// </param>
 /// <param name="clans">Reader of the clan id a roster entry names.</param>
+/// <param name="bots">The room's bots, which give up a seat before a player is answered.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
     RoomRosterService roster,
@@ -74,6 +76,7 @@ public sealed class PlayerProfileHandler(
     TeamArrayService teamArrays,
     MatchScoreService score,
     RosterClanLookupService clans,
+    BotPopulationService bots,
     ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
@@ -207,6 +210,21 @@ public sealed class PlayerProfileHandler(
             member.CharacterId,
             profile.Name,
             member.RosterIndex);
+
+        // A bot gives up its seat before this player is answered the room. The run
+        // built below is the room the client reads, and a roster that names every seat
+        // the room has is read as full: the join is refused there, before the client
+        // ever reaches its briefing. The seat is not given back by the fill until this
+        // player has reported itself in the briefing, because until then the seat is
+        // its own.
+        if (await bots.MakeRoomForPlayerAsync(CancellationToken.None))
+        {
+            logger.LogDebug(
+                "UDP {LocalPort}: a bot gave up its seat for {RemoteAddress}; the room is written to it "
+                + "with one seat still free",
+                context.LocalPort,
+                context.Remote);
+        }
 
         // The copy answered is the copy the client re-sends, in the pass it
         // arrives in: a client answers its own 1.93 s retry timer by sending the

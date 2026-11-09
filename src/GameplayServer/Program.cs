@@ -33,6 +33,12 @@ builder.Services.AddSingleton<MatchService>();
 builder.Services.AddSingleton<MatchSettingsService>();
 builder.Services.AddSingleton<RoomRosterService>();
 builder.Services.AddSingleton<LobbySlotService>();
+
+// The roster entry's clan id is read through the characters domain's service, and
+// the handler that does it is resolved per datagram: a missing registration does
+// not fail at startup but on every profile, so the join is never answered and the
+// client reports that it could not reach the host (0x0b02) rather than a slow room.
+builder.Services.AddSingleton<RosterClanLookupService>();
 builder.Services.AddSingleton<PeerControlByteService>();
 builder.Services.AddSingleton<LobbyLoadoutService>();
 builder.Services.AddSingleton<PlayerSettingsBurstService>();

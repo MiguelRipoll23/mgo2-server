@@ -61,6 +61,22 @@ public sealed partial class BotPopulationService : PeriodicWorker
     /// </summary>
     private readonly SemaphoreSlim reconcileGate = new(1, 1);
 
+    /// <summary>
+    /// Whether a real player has reached the room's briefing screen since the room
+    /// last emptied, which is what a fill waits for before it seats its bots.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is a flag of the room and not a count of the current briefing.</b> The
+    /// reports it is set from are cleared at every game boundary
+    /// (<see cref="BriefingStateService.BeginNextBriefing"/>), and a fill gated on
+    /// that count emptied the room of its bots the moment a game ended — the first
+    /// pass after the clear saw no report and gave every bot's seat away while the
+    /// players were still in the room. It is cleared only when the room holds no
+    /// real player, so what it answers is "a player is here", which is the question
+    /// a fill asks.
+    /// </remarks>
+    private bool playerInBriefing;
+
     /// <summary>Creates the population service of one gameplay host.</summary>
     /// <param name="roster">The room's roster, which owns its members.</param>
     /// <param name="identities">The one place bot names are made.</param>
@@ -178,6 +194,68 @@ public sealed partial class BotPopulationService : PeriodicWorker
     private async Task ReconcileAsync(CancellationToken cancellationToken) =>
         await ReconcileNowAsync(cancellationToken);
 
+    /// <summary>
+    /// The seats the room advertises, which is what a population is sized from.
+    /// </summary>
+    /// <remarks>
+    /// The seats are the room's, not the channel's: a Free Battle room the client
+    /// browses as eight holds eight, and a population sized from the roster's
+    /// twenty-three filled seats the briefing's own list treats as unplaced. The
+    /// protocol's own limit is the fallback for the window before this instance has
+    /// published a room.
+    /// </remarks>
+    private int Capacity => match.RoomCapacity > 0
+        ? match.RoomCapacity
+        : Math.Min(RoomRosterService.SessionSlotCount - 1, serverOptions.GameplayServerMaxPlayers);
+
+    /// <summary>
+    /// The bots the room may hold right now: the mode's count, less a seat for every
+    /// player that is still on its way in.
+    /// </summary>
+    /// <remarks>
+    /// <b>A seat a player is about to take is not a bot's to hold.</b> A client that
+    /// has sent its profile has not reached its briefing yet — it is loading the room
+    /// and the map — and its report is what says it is in. Until that report the
+    /// room must keep the seat free, or the fill's next pass hands it back to a bot
+    /// and the client reads the room as full and refuses the join it was already
+    /// answered. The subtraction is what keeps that window closed, and it ends by
+    /// itself: the report takes the player out of the count.
+    /// </remarks>
+    /// <param name="mode">How a bot holds its slot.</param>
+    /// <param name="members">The room's members.</param>
+    /// <returns>The bots the room may hold.</returns>
+    private int TargetFor(BotPopulationMode mode, IReadOnlyList<RosterMember> members)
+    {
+        var humans = members.Count(member => !member.IsBot);
+        var joining = members.Count(
+            member => !member.IsBot && !briefings.HasJoined(member.RemoteAddress));
+        return Math.Max(0, BotPopulationUtils.TargetCount(mode, botOptions.Count, humans, Capacity) - joining);
+    }
+
+    /// <summary>Whether a real player has reached the room's briefing screen.</summary>
+    private bool PlayerInBriefing
+    {
+        get
+        {
+            lock (gate)
+            {
+                return playerInBriefing;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Notes that a real player has reached the room's briefing screen, which is the
+    /// report a client sends once its room and map have loaded.
+    /// </summary>
+    public void NotePlayerInBriefing()
+    {
+        lock (gate)
+        {
+            playerInBriefing = true;
+        }
+    }
+
     private async Task ReconcileCoreAsync(CancellationToken cancellationToken)
     {
         var policy = BotOptionsUtils.Team(botOptions);
@@ -203,30 +281,28 @@ public sealed partial class BotPopulationService : PeriodicWorker
             .ToList();
 
         var mode = BotOptionsUtils.PopulationMode(botOptions);
-        // The seats are the room's, not the channel's: a Free Battle room the
-        // client browses as eight holds eight, and a population sized from the
-        // roster's twenty-three filled seats the briefing's own list treats as
-        // unplaced. The protocol's own limit is the fallback for the window before
-        // this instance has published a room.
-        var capacity = match.RoomCapacity > 0
-            ? match.RoomCapacity
-            : Math.Min(RoomRosterService.SessionSlotCount - 1, serverOptions.GameplayServerMaxPlayers);
-        // A fill waits for the player it is filling for, on the report a client sends
-        // once it has loaded the room's map. The seats stay free until then, so the
-        // room that client walks into is a room it can enter: a population added at
-        // its first profile made the room look full before the join was heard, and
-        // the game would not let the player in. When that player leaves, its report
-        // leaves with it and the fill empties the room again.
-        var waitingForPlayer = mode == BotPopulationMode.Fill
-            && briefings.JoinedCount == 0;
 
-        var target = waitingForPlayer
-            ? 0
-            : BotPopulationUtils.TargetCount(
-                mode,
-                botOptions.Count,
-                humans.Count,
-                capacity);
+        // A room that holds no real player is not a room anybody is filling, so the
+        // flag the fill waits on is cleared with the last player's departure: the
+        // next player to arrive walks into a room of no bots.
+        if (humans.Count == 0)
+        {
+            lock (gate)
+            {
+                playerInBriefing = false;
+            }
+        }
+
+        // A fill waits for the player it is filling for, on the report a client sends
+        // once it has loaded the room's map — the briefing screen. The seats stay free
+        // until then, so the room that client walks into is a room it can enter: a
+        // population added at its first profile made the room look full before the
+        // join was heard, and the game would not let the player in. It is the room's
+        // own flag rather than the briefing's report count, because those reports are
+        // cleared at every game boundary while the players stay.
+        var waitingForPlayer = mode == BotPopulationMode.Fill && !PlayerInBriefing;
+
+        var target = waitingForPlayer ? 0 : TargetFor(mode, members);
 
         var rotation = MatchSettingsUtils.Rotation(serverOptions);
         var roundNumber = roundState.RoundNumber;

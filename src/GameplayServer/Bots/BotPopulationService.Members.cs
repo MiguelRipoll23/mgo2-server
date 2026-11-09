@@ -21,14 +21,20 @@ public sealed partial class BotPopulationService
     /// <param name="mode">How a bot holds its slot.</param>
     /// <param name="humanCount">Humans on the roster, the host not counted.</param>
     /// <param name="waitingForPlayer">Whether a fill is still waiting for its player's join report.</param>
-    private void Trim(int target, BotPopulationMode mode, int humanCount, bool waitingForPlayer)
+    /// <param name="reason">Why they are going, when the caller has a reason of its own.</param>
+    private void Trim(
+        int target,
+        BotPopulationMode mode,
+        int humanCount,
+        bool waitingForPlayer,
+        string? reason = null)
     {
         while (Bots.Count > target)
         {
             var victim = Bots.OrderByDescending(bot => bot.Identity.Number).First();
             Remove(
                 victim,
-                mode switch
+                reason ?? (mode switch
                 {
                     BotPopulationMode.Fill when waitingForPlayer =>
                         "no player has reported its join to fill",
@@ -36,7 +42,59 @@ public sealed partial class BotPopulationService
                         "the room holds no player for it to fill",
                     BotPopulationMode.Fill => "a human took its slot",
                     _ => "the room holds fewer bots than it did",
-                });
+                }));
+        }
+    }
+
+    /// <summary>
+    /// Gives up the bots that stand between a real player and a seat, before the
+    /// room is written to that player.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It is a trim and never a fill.</b> The profile pass answers the joining
+    /// player with the room this leaves behind, and the room that player can enter is
+    /// one with a seat still free in it: a roster naming as many players as the room
+    /// holds is read as full, and the join is refused before the client is ever in its
+    /// briefing. Seating at the profile is the failure this project already made once,
+    /// so this only removes; what seats them again is the player's own join report,
+    /// once it is in the briefing.
+    /// </para>
+    /// <para>
+    /// <b>The seat is counted with the player just filed</b>, which is still on its
+    /// way in and has no report yet (<see cref="TargetFor"/>), so the run that is
+    /// answered holds one fewer entry than the room's capacity and the client is not
+    /// told the room is full. A bot the fill adds back on the report is the price of
+    /// that guarantee, and it is preferred to turning a player away.
+    /// </para>
+    /// </remarks>
+    /// <param name="cancellationToken">Token that cancels the read of the roster.</param>
+    /// <returns><c>true</c> when a bot gave up its seat.</returns>
+    public async Task<bool> MakeRoomForPlayerAsync(CancellationToken cancellationToken)
+    {
+        await reconcileGate.WaitAsync(cancellationToken);
+        try
+        {
+            var mode = BotOptionsUtils.PopulationMode(botOptions);
+            var members = roster.Snapshot();
+            var humans = members.Count(member => !member.IsBot);
+
+            // The same gate the pass uses: a fill that has heard no player in a
+            // briefing holds no bots, so the first player to arrive is answered a room
+            // of none rather than one holding the seats it is still loading towards.
+            var waitingForPlayer = mode == BotPopulationMode.Fill && !PlayerInBriefing;
+            var before = Bots.Count;
+            Trim(
+                waitingForPlayer ? 0 : TargetFor(mode, members),
+                mode,
+                humans,
+                waitingForPlayer: false,
+                reason: "a player is joining and the room must keep a seat free for it");
+            return Bots.Count != before;
+        }
+        finally
+        {
+            reconcileGate.Release();
         }
     }
 

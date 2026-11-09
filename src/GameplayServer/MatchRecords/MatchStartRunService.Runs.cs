@@ -306,7 +306,7 @@ public sealed partial class MatchStartRunService
         // groups behind it, or a round's spawned box (`AddRunItemBoxes`).
         var itemBoxGroups = AddRunItemBoxes(generation, run, briefing);
 
-        await MatchRecordSendUtils.SendAsync(context, run);
+        await MatchRecordSendUtils.SendAsync(context, WithEntryAnswers(context.Session, run));
 
         if (itemBoxGroups is not null)
         {

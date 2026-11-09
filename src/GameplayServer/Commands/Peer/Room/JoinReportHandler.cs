@@ -125,6 +125,10 @@ public sealed class JoinReportHandler(
         // written first carries the population and the ready set as they were before
         // the fill, which is the count a briefing draws against the roster it gets
         // next.
+        // A real player is on the briefing screen, and that is the room's own answer
+        // to what a fill waits for: the flag outlives the reports, which are cleared
+        // at every game boundary while the players stay in the room.
+        bots.NotePlayerInBriefing();
         if (await bots.ReconcileNowAsync(CancellationToken.None))
         {
             var run = roster.BuildRosterRun();
