@@ -47,21 +47,8 @@ spec:
           value: Free Battle
         - name: GAMEPLAY_SERVER_ACCOUNT_NAME
           value: server
-        # The round of the rotation this host is on. Leaves the rotation itself
-        # alone: it only moves the room's place in it, so the fifth entry of
-        # `GAMEPLAY_SERVER_ROTATION` -- CAP on Blood Bath -- is the round the room
-        # reports as current and the round it opens. Set it to 1 for a room that
-        # starts at the top of its rotation.
-        - name: GAMEPLAY_SERVER_START_ROUND
-          value: '5'
-        # DEDICATED_ADVERTISED_ADDRESS overrides the address this host announces
-        # as the rendezvous point, independently of ADVERTISED_ADDRESS. It exists
-        # for a node whose clients bind their socket somewhere ADVERTISED_ADDRESS
-        # does not reach -- a LAN address that cannot leave over the tailnet, or a
-        # public address behind NAT -- because that node has to announce the
-        # address its clients can actually be reached at. Set it only when that is
-        # true; when a client reaches this host at ADVERTISED_ADDRESS, leave it
-        # unset so the two cannot drift apart.
+        - name: GAMEPLAY_SERVER_ROTATION
+          value: 'TDM@Blood Bath'
         image: ghcr.io/miguelripoll23/mgo2-server/mgo2-gameplay-server:latest
         imagePullPolicy: Always
         lifecycle:
