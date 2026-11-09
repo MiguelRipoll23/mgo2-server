@@ -74,6 +74,31 @@ public sealed class PeerSessionService(
 
     private readonly Lock gate = new();
     private readonly Dictionary<string, PeerSession> sessions = [];
+
+    /// <summary>
+    /// Sessions the reaper has let go, kept with the key each one had so a peer
+    /// that comes back without a handshake is still recognised.
+    /// </summary>
+    /// <remarks>
+    /// <b>A dropped client does not always handshake again.</b> It carries on
+    /// writing the frames it was writing, keyed with the session it still believes
+    /// it holds, and it may arrive from a different endpoint than the one it left
+    /// on - a re-bound socket, or a router that has stopped hairpinning its own
+    /// address back into the LAN. Its key is the only thing that names it then, and
+    /// the key lived on the session the reaper removed. Measured on a local run:
+    /// the peer is reaped at 13:45:39 and answers at 13:45:54 from a second
+    /// endpoint, eight times over the next five minutes, each frame undecodable
+    /// because nothing held the key.
+    /// </remarks>
+    private readonly List<PeerSession> retired = [];
+
+    /// <summary>
+    /// How many reaped sessions keep their key, newest last. The window is the
+    /// count rather than a clock: the keys only have to outlive the handful of
+    /// peers a room holds, and a session taken back up leaves the list.
+    /// </summary>
+    public const int RetiredLimit = 8;
+
     private Timer? reaper;
 
     /// <summary>Starts the reaper that drops idle sessions.</summary>
@@ -161,6 +186,45 @@ public sealed class PeerSessionService(
         }
     }
 
+    /// <summary>
+    /// Returns the sessions the reaper has let go and whose keys are still kept.
+    /// </summary>
+    /// <returns>A snapshot, newest last, safe to walk outside the lock.</returns>
+    public List<PeerSession> SnapshotRetired()
+    {
+        lock (gate)
+        {
+            return [.. retired];
+        }
+    }
+
+    /// <summary>
+    /// Binds a session to the endpoint its peer now answers from, taking it back
+    /// up when the reaper had let it go.
+    /// </summary>
+    /// <remarks>
+    /// The session is filed under the endpoint it was opened on and found by the
+    /// endpoint it now dials back to, which is how its frames are recognised
+    /// (<see cref="FindByDialBack"/>). A live session that has moved is rebound the
+    /// same way, because the peer keeps its key: what changed is only where it is
+    /// reachable. What the room held for a reaped peer is not restored with it —
+    /// the reaper's callback has already dropped that, and the join the peer is in
+    /// the middle of re-states it.
+    /// </remarks>
+    /// <param name="session">Session to take back up.</param>
+    /// <param name="endpoint">Endpoint its peer now answers from.</param>
+    public void Revive(PeerSession session, IPEndPoint endpoint)
+    {
+        lock (gate)
+        {
+            retired.Remove(session);
+            session.DialBack = endpoint;
+            session.Retired = false;
+            session.LastSeenAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            sessions[session.RemoteAddress] = session;
+        }
+    }
+
     private void Reap()
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -173,6 +237,14 @@ public sealed class PeerSessionService(
                 {
                     sessions.Remove(remoteAddress);
                     reaped.Add(session);
+
+                    // The key outlives the session, so the peer that comes back
+                    // without a handshake can still be read (RetiredLimit).
+                    retired.Add(session);
+                    if (retired.Count > RetiredLimit)
+                    {
+                        retired.RemoveAt(0);
+                    }
                 }
             }
         }

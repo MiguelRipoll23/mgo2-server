@@ -57,8 +57,19 @@ public sealed record LobbySkill(byte Identifier, byte Level);
 /// and this byte: group 0 is byte <c>0</c> and group 1 is byte <c>2</c>.
 /// </param>
 /// <param name="Appearance">The 23-byte appearance block, in wire order.</param>
+/// <param name="Level">
+/// Character level the room's rows state, or <c>null</c> when the read could state
+/// none. The settings body writes it as its half
+/// (<see cref="PlayerGearBodiesUtils.LevelByteFromEnd"/>), which is the unit the
+/// client's LEVEL column shows.
+/// </param>
 /// <param name="Skills">The player's equipped skills, in the order they load out.</param>
-public sealed record LobbyLoadout(byte Slot, short? Side, byte[] Appearance, IReadOnlyList<LobbySkill> Skills);
+public sealed record LobbyLoadout(
+    byte Slot,
+    short? Side,
+    byte[] Appearance,
+    int? Level,
+    IReadOnlyList<LobbySkill> Skills);
 
 /// <summary>One joining player on the room roster.</summary>
 /// <param name="RemoteAddress">Endpoint the player is reached at ("address:port").</param>
@@ -151,27 +162,29 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
 
     /// <summary>Builds the player-profile record that puts this player on a peer's roster.</summary>
     /// <remarks>
-    /// <b>A bot's record carries <see cref="BotCharacterIdBase"/> and its slot as
-    /// the character id.</b> The recorded hosts' own bot entries put their network
-    /// player-table slot at <c>0x05</c> and <c>0x07</c> and, at <c>0x08</c>, a
-    /// character id in the <c>0x7f</c> family whose low byte is that same slot:
-    /// <c>pcapng1</c> t+0.562 carries ten of them — <c>BOT-01</c> in slot 13 with
-    /// <c>0d 00 00 7f</c>, <c>BOT-02</c> in slot 18 with <c>12 00 00 7f</c>, and so
-    /// on to <c>BOT-10</c> in slot 19 with <c>13 00 00 7f</c> — while every human
-    /// entry carries its own real id at the same offset (<c>0x1a</c>'s
-    /// <c>95 e9 00 00</c>). This host wrote a zero, and then the bare slot, which
-    /// is a real character id the room does not hold: the client resolves neither,
-    /// and its briefing drew one row for a room of eight. <see cref="CharacterId"/> is
-    /// not used here because the settings burst reads it for a character's own
-    /// appearance, and that face belongs to no bot.
+    /// <b>A bot's record carries the recorded hosts' own family at <c>0x08</c>.</b>
+    /// Every captured bot entry writes a <c>0x7f</c> character id whose low byte is
+    /// the bot's player-table slot (<c>pcapng1</c> t+0.562: <c>BOT-01</c> in slot 13
+    /// with <c>0d 00 00 7f</c>), which no character row holds — and that is the
+    /// point. A row id is one the client has no model for: announced that way, its
+    /// netplayer cannot be built, and the run of 2026-11-09 13:08 failed exactly
+    /// there (`netplayer/parts/pl_net_parts.cc line 936: skel not found`) with the
+    /// bots absent from the map. The row is still what a bot plays *as* — the
+    /// settings burst reads its appearance from <see cref="CharacterId"/> — but the
+    /// entry names it in the family the client resolves without a row.
     /// </remarks>
     /// <param name="includeEndpointPairs">Whether to emit the twelve-byte endpoint field.</param>
     /// <returns>The record body.</returns>
-    public byte[] BuildRecord(bool includeEndpointPairs = true) =>
-        PlayerProfileRecordUtility.Build(
+    public byte[] BuildRecord(bool includeEndpointPairs = true)
+    {
+        var characterIdentifier = IsBot
+            ? BotCharacterIdBase | SessionSlot
+            : CharacterId;
+
+        return PlayerProfileRecordUtility.Build(
             isHostEntry: false,
             RosterIndex,
-            IsBot ? BotCharacterIdBase | SessionSlot : CharacterId,
+            characterIdentifier,
             Name,
             ClanName,
             SessionSlot,
@@ -183,4 +196,5 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
                 ? (byte)0
                 : PlayerProfileRecordUtility.PlayerRecordUnresolvedByte,
             includeEndpointPairs: includeEndpointPairs && !IsBot);
+    }
 }

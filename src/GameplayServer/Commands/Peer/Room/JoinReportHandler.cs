@@ -68,11 +68,12 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// <param name="matchStart">Writer of the round a room's last report opens.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class JoinReportHandler(
-    PlayerSettingsBurstSchedulerService burstScheduler,
     BriefingStateService briefingStates,
     MatchStartRunService matchStart,
     PeerControlByteService controlBytes,
     BotPopulationService bots,
+    BotRosterPublishService botPublication,
+    BotActorPublishService botActors,
     RoomRosterService roster,
     ILogger<JoinReportHandler> logger) : IPeerCommandHandler
 {
@@ -129,23 +130,14 @@ public sealed class JoinReportHandler(
         // to what a fill waits for: the flag outlives the reports, which are cleared
         // at every game boundary while the players stay in the room.
         bots.NotePlayerInBriefing();
-        if (await bots.ReconcileNowAsync(CancellationToken.None))
-        {
-            var run = roster.BuildRosterRun();
-            await RosterRunSendUtils.SendAsync(context, run);
+        await AnnounceBotsAsync(context);
 
-            // The settings burst names the room's players one loadout record each,
-            // and it went out before this fill existed: a client whose player list
-            // is built from it would never draw a bot. It is written again here,
-            // now that the room it names is the room the client is in.
-            await burstScheduler.ResendAsync(context);
-            logger.LogDebug(
-                "UDP {LocalPort}: the room's bots changed on {RemoteAddress}'s report; the roster is "
-                + "written again with {RecordCount} record(s)",
-                context.LocalPort,
-                context.Remote,
-                run.Count);
-        }
+        // A bot is on the briefing's roster from the publication above; what puts
+        // it in the map is its own actor block, which the round's writer sends for
+        // as long as a round is open (BotActorPublishService). Started here because
+        // this is the pass a peer's report arrives on, once per report and once per
+        // room.
+        botActors.Start(context);
 
         // The publication goes out on every report and not only on the first: it
         // is the host's answer to the report, and a client whose report changed
@@ -205,6 +197,52 @@ public sealed class JoinReportHandler(
                 briefingStates.JoinedCount,
                 briefingStates.PlayerCount);
         }
+    }
+
+    /// <summary>
+    /// Seats the fill's bots on the report and names them to the client.
+    /// </summary>
+    /// <remarks>
+    /// <b>The bots are appended to the room the client already holds.</b> The
+    /// reconcile seats them only now — the profile pass keeps their seats free so
+    /// the client can enter a room that is not already full — so the roster the
+    /// client was answered named the humans alone. What puts the bots in its
+    /// briefing is the room's own answer to a join: each bot's entry, the close,
+    /// the room's count and the bot's loadout, numbered from the exchange's counter
+    /// and never as a second roster run restarting at zero
+    /// (<see cref="BotRosterPublishService"/>).
+    /// </remarks>
+    /// <param name="context">Context the report arrived through.</param>
+    private async Task AnnounceBotsAsync(PeerContext context)
+    {
+        var seated = roster.Snapshot()
+            .Where(member => member.IsBot)
+            .Select(member => member.RemoteAddress)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (!await bots.ReconcileNowAsync(CancellationToken.None))
+        {
+            return;
+        }
+
+        var added = roster.Snapshot()
+            .Where(member => member.IsBot && !seated.Contains(member.RemoteAddress))
+            .OrderBy(member => member.RosterIndex)
+            .ToList();
+        if (added.Count == 0)
+        {
+            return;
+        }
+
+        var run = await botPublication.BuildAsync(added, CancellationToken.None);
+        await RosterRunSendUtils.SendAsync(context, run);
+        logger.LogDebug(
+            "UDP {LocalPort}: {BotCount} bot(s) joined the room on {RemoteAddress}'s report; {RecordCount} "
+            + "record(s) name them",
+            context.LocalPort,
+            added.Count,
+            context.Remote,
+            run.Count);
     }
 
     /// <summary>

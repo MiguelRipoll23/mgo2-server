@@ -387,6 +387,52 @@ a candidate byte is the right one only if it reads `10` where the room's charact
 reads `12` — and the gameplay server sends no experience at all, so the figure is either
 a level byte the host never writes or a value the client derives from one it does.
 
+**A live experiment has moved the figure into the settings body, and narrowed it to a handful
+of bytes.** On 2026-11-09 the gameplay server began writing the sixty-one- to ninety-one-byte
+per-player settings body its rooms lacked (`PlayerGearBodiesUtils`), built from the recorded
+body of slot `0x0e` of `pcapng1` as its template. The client's briefing then showed this
+host's own character at **level 14 instead of 10** — so the level is read from that body, and
+not from the roster entry, the `0b <slot>` state transfer or the kind-`0x04` spawn record the
+scans above covered.
+
+**What the builder writes, and therefore what the level cannot be in.** It writes exactly two
+things: the slot at `0x01`, and the appearance block — the body's trailing twenty-three bytes,
+`0x2f`–`0x45` of the seventy-byte template. Every other byte is the recorded slot `0x0e`'s.
+So the level is one of the recorded bytes, and it is not any byte that is **constant across
+the fourteen captured bodies** of this family: `0x05`, `0x06`, `0x09`, `0x0d`, `0x0e`, `0x10`,
+`0x11`, `0x14`, `0x16`. A constant cannot carry a per-player figure. Nor can offsets past
+`0x22` be compared between bodies by absolute position at all, because the block starts
+twenty-three bytes from each end and the bodies run 61 to 91 bytes long — only `0x02`–`0x22`
+is the same field in every one of them. Within that run the per-body varying bytes are
+`0x02`–`0x04`, `0x07`, `0x08`, `0x0a`–`0x0c`, `0x0f`, `0x12`, `0x13`, `0x15`, `0x17`–`0x22`.
+
+**The sharpest suspect is the two bytes immediately before the appearance block** (`0x2d` and
+`0x2e` of the template, `-26` and `-25` from the body's end: the `0xff` closes the region and
+the pair follows it). That pair is per player, and it is the field the older fifty-byte body
+filled from the recorded host's own template — the version that showed level 10 — while this
+body fills it from slot `0x0e`'s. Over the fourteen bodies the pair's second byte runs `05`
+to `08`: `05` on slot `0x03`, `06` on `0x05`, `07` on `0x04`, `0x08`, `0x09`, `0x0b`, `0x0e`,
+`0x13`, `0x14`, `0x15` and `0x16`, and `08` on `0x02`, `0x0f` and `0x17`.
+Read as `ceil(level / 2)` it fits every figure known from a screen: the host's own body
+carries `05` where its briefing showed 10, and slot `0x0e`'s carries `07` where this host's
+briefing showed 14. Half a level per unit also explains why the sample holds only four
+distinct values for fourteen players, whose stated levels are 10, 12, 13, 14 and 15: those map
+onto `05`, `06`, `07`, `07` and `08`, which is exactly the set the bodies carry. **This is a lead, not a field**: two
+levels share one byte, so it cannot be the figure itself, nothing in the captures names the
+pair's first byte, and the name-to-slot map the sample rests on is read out of the entries'
+name field and did not agree between two readings of `pcapng1`. What would settle it: one
+client at two levels in different halves (10 and 15, say) with only these bodies differing, or
+the briefing HUD's reader in `system.dll`.
+
+**The gameplay server now writes it.** `PlayerGearBodiesUtils.Build` takes each player's own
+level — the characters domain's `LevelUtils.CalculateLevel` over the character's experience,
+the derivation the lobby screens use — and writes its half at `LevelByteFromEnd`, twenty-four
+bytes back from the body's end. That is the first field of the level search that two screens
+predict at once, and it is what makes the host's own character show 10 while the room's own
+level for each bot comes from that bot's row. Two things remain unmeasured: what the client
+does with an **odd** level, which this byte cannot state (it is written rounded down), and what
+the pair's first byte is.
+
 **The static lookup stops at the image boundary, and at two stale addresses.** The
 binary is not in question: `MGO2.ELF` is the file this document was read from, and its
 own anchor says so — `4d 25 8a b7` (`module_magic`) at vaddr `0x0122a5cc`, exactly where

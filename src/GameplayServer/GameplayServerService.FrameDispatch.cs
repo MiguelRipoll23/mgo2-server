@@ -1,4 +1,5 @@
 using System.Net;
+using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Constants;
@@ -93,6 +94,14 @@ public sealed partial class GameplayServerService
                 keyed);
             FrameCryptoUtility.RemoveChainInPlace(work, keyed, sessionKey);
             await DispatchKeyedAsync(work, keyed, sessionKey, session, remote);
+            return;
+        }
+
+        // Neither endpoint lookup names the peer that answers from somewhere new,
+        // and the frame is not lost: its key still does (EndpointRecovery).
+        if (keyedCounter is null &&
+            await TryDispatchFromMovedEndpointAsync(work, remote, remoteAddress, session))
+        {
             return;
         }
 
@@ -309,6 +318,16 @@ public sealed partial class GameplayServerService
                 }
 
                 continue;
+            }
+
+            // A client's own position is a tick record with no handler of its own:
+            // it is relayed below and, until now, forgotten. Keeping it is what lets
+            // the room's bots be written where the player actually is
+            // (PlayerPositionService).
+            if (message.Flags == PlayerPosition.AttributeClass &&
+                message.Body.Length == PlayerPosition.BodyLength)
+            {
+                positions.Note(session.RemoteAddress, PlayerPosition.FromBody(message.Body));
             }
 
             if (message.Type < UdpCommandConstants.TickRecordThreshold &&

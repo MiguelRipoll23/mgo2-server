@@ -12,6 +12,17 @@ opponent — a bot perceives, decides and changes state, and sends nothing.
 | A dedicated host adds bots to its own room | `docs/GAMEPLAY_SERVER.md`, the ready-set reading: "a bot the host adds is ready in the record that adds it and never reports", over `mgo2-game-joined-when-red-team-then-briefing` |
 | Bot roster entries are the short layout with `0x10` zero | `src/Shared/Utils/PlayerProfileRecordLayout.cs`: `0x00` on the 51 `BOT-01`…`BOT-11` entries and the ten name-less records |
 | The recorded bots are named `BOT-01` … `BOT-11` | the same reading; this server writes the task's `BOT-1` shape, unpadded |
+| The recorded hosts add a bot to a live room as **one entry on the room's exchange counter**, then the close, then the room's count, then that bot's own loadout (`pcapng1` t+393.858: `BOT-11` entry ordinal 81, close 82, count 83, loadout 84; t+488.724: ten entries 21–30, close 31, count 32, loadouts 33–42) | `BotRosterPublishService`; a whole run restarting at zero is a run the client has already read and drops |
+| A bot's look is a real character's appearance | `BotAppearanceUtils`: ten 23-byte blocks, the trailing block of `pcapng1`'s own bot loadouts at t+488.7, gender in field 12 |
+| A bot's entry names it in the recorded `0x7f` slot family (`0x7F000000` or its slot), while its **row** supplies the look | `RosterMember.BuildRecord`; every captured bot entry writes `slot 00 00 7f` at `0x08` (`pcapng1` t+0.562). A real row id there is one the client has no model for — the run of 2026-11-09 13:08 announced rows and failed `netplayer/parts/pl_net_parts.cc:936: skel not found` with no bot in the map — so the row is read for the appearance only (`BotCharacterService`, `LobbyLoadoutService`) |
+| A player in the match is an **actor block** on the tick channel: state at the slot's base, vitals at `+1`, position at `+2`, the weapon pair and byte at `+4`, aim at `+6`, and `0x0a` between one slot's base and the next | `pcapng1`: the host writes all six for every actor twice a second — 172 times each over 86 s — and the client's own block (`0xed` for slot 17) is `0x4d + 0x0a·16`, the same arithmetic that explains every "per-session allotment" value in `docs/protocol/UDP_GAME_CAPTURE.md` §5 |
+| A bot that only holds a roster entry is on the briefing screen and not in the map | `BotActorPublishService` / `BotActorRecordUtils`; the reference's position bodies carry the map's spawn as a live client writes it — `x` at `+6`, stand height at `+8`, `z` at `+10`, each a tenth of a stage unit, and the heading at `+12` (`MapSpawnUtils`) — under the alive head `21 00 00 00`, and `fa fa` vitals |
+| A bot's roster entries and loadouts are written **when it is seated**, never again at a round's start | `pcapng1` t+485.7 does append them where its own fill seats its bots; this host writes that append on the report that seats them, and repeating it at the round's start froze the client of 2026-11-09 12:48 — no frame for 15 s and no report, with the append the last thing it was sent |
+| A bot is named in the round's **player list**, one two-byte record per player, before its blocks | `pcapng1` t+491.12, half a second before the run: ten records, ordinals 0–9, bodies `0007`, `0014`, `0012`, `000d`, `000b`, `0013`, `0006`, `0005`, `000f`, `0010` — every occupied key behind a zero byte, under the item-box stream with the `0x08` bit (`0x1a58`/`0x1258`); `BotActorPublishService.AnnouncePlayerListAsync` writes the bots' keys |
+| A bot is given the round's own settings state, one record per bot, before its actor blocks | `pcapng1` t+485.74 writes sixteen `0b <key+1> 60 …` bodies, one per occupied key; the three whose keys are `BOT` entries (`01`, `03`, `07`) hold the same 34-byte body and differ only in the slot byte, so `BotRoundStateBodiesUtils.Build` writes it with the bot's key plus one — what the fields mean is not claimed |
+| Every player of the room gets a **second settings body** behind its loadout — the one that carries its gear — and this host wrote none of them | `pcapng1` t+3.63: for each key both a fifty-byte `0b SS 02 …` body and a sixty-one- to ninety-one-byte `0b SS 62/42/60 … 50 02 <gear> …` body; the three keys that carry both shapes (`0x08`, `0x0e`, `0x13`) put the appearance block in the last twenty-three bytes and end the gear region on the `ff` before it, and nothing captured names the bytes between. `PlayerGearBodiesUtils.Build` writes the slot and the block into the recorded seventy-byte template; the gear list is the template's, since no capture maps saved gear onto it. The same body carries two stats blocks at `0x18` and `0x22`, five little-endian `u16` each, and the briefing table's three columns read kills, deaths and points from them: copied from the template they printed `009 010 0004` on **every** row of the 2026-11-09 13:25 screen, the template player's own `8`/`10`/`4` with the first column one above the byte it comes from (unexplained), so the builder clears both blocks and writes the caller's figures into them, every call starting a player from zero (`PlayerGearBodiesUtils.Build(…, PlayerStats)`); the LEVEL column is the same body's byte twenty-four from its end, written as half the character's level from `LevelUtils` — the record carries `0x07` and the client showed 14, and the host's fifty-byte body carries `0x05` where it showed 10 |
+| A bot's stream starts after the peer's **opening run for that round**, never at the round's open alone | `pcapng1` writes the bot append six seconds before its run at t+491.58; the live run of 2026-11-09 had the round open at 12:45:21 and the run at 12:45:31, and the blocks written in between left the client on a black screen — `MatchRoundStateService.HasRunWritten` is the gate |
+| The map's players come from the room's **entry records**, one per player, written when a client asks to be placed in a round | `pcapng1` t+10.19: fourteen 25-byte `07 12 00 04` entries with the close behind them, indices 0–13, one per slot the arrays mark; `TeamArrayService.EnterRoomAsync` writes one per member — the bot included, since no client asks for a bot's own |
 | The game has its own bot AI, by mode and weapon | `docs/strings/codepaths.txt`: `pl_bot_loc_tdm_{ar,sm,sr,sg,rpg,mg,gr}.cc`, `pl_bot_mis_sne_{patrol,watch}.cc`, `pl_bot_mis_{def,mat,sup}.cc` and a `think_layer` per behaviour. It is the **port's**, and it names weapon classes and mission families rather than the five archetypes here |
 | Weapon ids, and some classes | `docs/WEAPONS.md`: 141 rows at `0x1035834`, stride `0x2c`; the per-id category bitmask is in the table, **which is not in this repository** |
 | The five roles | the task's design, not the game's — the port's families are evidence for roles existing, not for these five |
@@ -48,7 +59,10 @@ BotPopulationService        reconciles the room: count, sides, roster, ready sta
   BotIdentityService        BOT-<n>, monotonic; a released number is never reissued
   BotTeamAssignmentService  ENEMY/BOTH resolved against the sides the players hold
   BotRoleAssignmentService  round-robin archetypes, ordered by the round's rule
-  RoomRosterService         RegisterBot: a member with the short layout, no exchange ordinal
+  BotCharacterService       get-or-create the character a bot plays as, and its captured appearance
+  RoomRosterService         RegisterBot: a member with the short layout and that character, no exchange ordinal
+  BotRosterPublishService   the mid-briefing announcement: entry, close, count, the bot's own loadout
+  BotActorPublishService    the round's writer: every bot's actor block, twice a second
   BriefingStateService      NoteBriefingReady under the bot's roster key
 
 BotController               one tick for one bot
@@ -94,9 +108,17 @@ what a bot leans towards and never becomes a second implementation.
 * **Mode asymmetry.** TSNE's attacker/defender side is not on the rotation's
   triple and no capture read here names it, so both behaviours are offered and
   neither is chosen by the bot's side.
+* **A bot's body is at its spawn.** The actor block carries the side's spawn from
+  `MapSpawnUtils` — the pair the round's own entry writes — because no capture
+  shows a host inventing a route for an actor it does not simulate, and this
+  host's bots do not move on the wire yet. The aim record carries the same
+  heading; nothing sends a pose, a shot or a death, which is the state machine's
+  own work and not measured for a bot.
 * **Bot peer sessions.** A bot has no endpoint and receives no state records of
-  its own; it exists in the roster, the sides and the ready set, which is what the
-  recorded hosts' bots do and all this host writes.
+  its own; it exists in the roster, the sides, the ready set and — once it is
+  seated on the briefing report, where the client that was answered the roster is
+  already listening — its own loadout record, which is what the recorded hosts'
+  bots do and all this host writes.
 
 ## Tests
 

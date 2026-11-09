@@ -55,6 +55,7 @@ builder.Services.AddSingleton<ScoreboardPublishService>();
 builder.Services.AddSingleton<MatchResultService>();
 builder.Services.AddSingleton<BriefingStateService>();
 builder.Services.AddSingleton<PlayerVitalsService>();
+builder.Services.AddSingleton<PlayerPositionService>();
 builder.Services.AddSingleton<WeaponSelectionService>();
 builder.Services.AddSingleton<TeamArrayService>();
 // The bots are assembled from their parts: the identity service names them, the
@@ -62,6 +63,8 @@ builder.Services.AddSingleton<TeamArrayService>();
 // calls in order. Every one of them is a singleton, because a room and its bots
 // are one room for the life of the process.
 builder.Services.AddSingleton<BotIdentityService>();
+builder.Services.AddSingleton<BotCharacterService>();
+builder.Services.AddSingleton<BotRosterPublishService>();
 builder.Services.AddSingleton<BotTeamAssignmentService>();
 builder.Services.AddSingleton<BotRoleAssignmentService>();
 builder.Services.AddSingleton<BotObjectiveService>();
@@ -83,6 +86,7 @@ builder.Services.AddSingleton<BotSideService>();
 builder.Services.AddSingleton<BotPlayService>();
 builder.Services.AddSingleton<BotController>();
 builder.Services.AddSingleton<BotPopulationService>();
+builder.Services.AddSingleton<BotActorPublishService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 // The peer command handlers are registered beside the types their messages are
 // bound to, so a handler cannot be mapped without being resolvable.

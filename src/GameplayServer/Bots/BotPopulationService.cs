@@ -41,6 +41,7 @@ public sealed partial class BotPopulationService : PeriodicWorker
 {
     private readonly RoomRosterService roster;
     private readonly BotIdentityService identities;
+    private readonly BotCharacterService characters;
     private readonly BotTeamAssignmentService teamAssignment;
     private readonly BotRoleAssignmentService roleAssignment;
     private readonly BriefingStateService briefings;
@@ -80,6 +81,7 @@ public sealed partial class BotPopulationService : PeriodicWorker
     /// <summary>Creates the population service of one gameplay host.</summary>
     /// <param name="roster">The room's roster, which owns its members.</param>
     /// <param name="identities">The one place bot names are made.</param>
+    /// <param name="characters">The character rows bots play as, created when absent.</param>
     /// <param name="teamAssignment">Resolves which side a bot holds.</param>
     /// <param name="roleAssignment">Distributes the archetypes.</param>
     /// <param name="briefings">The briefing state a bot is readied in.</param>
@@ -94,6 +96,7 @@ public sealed partial class BotPopulationService : PeriodicWorker
     public BotPopulationService(
         RoomRosterService roster,
         BotIdentityService identities,
+        BotCharacterService characters,
         BotTeamAssignmentService teamAssignment,
         BotRoleAssignmentService roleAssignment,
         BriefingStateService briefings,
@@ -112,6 +115,7 @@ public sealed partial class BotPopulationService : PeriodicWorker
     {
         this.roster = roster;
         this.identities = identities;
+        this.characters = characters;
         this.teamAssignment = teamAssignment;
         this.roleAssignment = roleAssignment;
         this.briefings = briefings;
@@ -310,7 +314,7 @@ public sealed partial class BotPopulationService : PeriodicWorker
 
         Trim(target, mode, humans.Count, waitingForPlayer);
         ResolveSides(policy, humanSides);
-        Spawn(target, policy, humanSides, entry.Rule);
+        await SpawnAsync(target, policy, humanSides, entry.Rule, cancellationToken);
 
         // A briefing begins with nobody ready, and a bot never sends the report that
         // would ready it, so its readiness is restated on every pass: the ready set

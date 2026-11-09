@@ -39,6 +39,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly TeamArrayService teamArrays;
     private readonly PlayerSettingsBurstSchedulerService settingsBurstScheduler;
     private readonly PlayerVitalsService vitals;
+    private readonly PlayerPositionService positions;
     private readonly Bots.BotPopulationService bots;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
@@ -87,6 +88,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         teamArrays = serviceProvider.GetRequiredService<TeamArrayService>();
         settingsBurstScheduler = serviceProvider.GetRequiredService<PlayerSettingsBurstSchedulerService>();
         vitals = serviceProvider.GetRequiredService<PlayerVitalsService>();
+        positions = serviceProvider.GetRequiredService<PlayerPositionService>();
         bots = serviceProvider.GetRequiredService<Bots.BotPopulationService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
@@ -305,6 +307,12 @@ public sealed partial class GameplayServerService : IAsyncDisposable
                 session.RemoteAddress);
         }
 
+        // The position it last reported goes with it for the same reason: a point
+        // kept for a player who has left is a point about nobody, and a bot written
+        // at it would stand where no one is.
+        positions.Forget(session.RemoteAddress);
+        positions.Forget(session.DialBack.ToString());
+
         // Both lookups are made: '|' and not '||', because the second endpoint
         // has to be tried even when the first one found the entry.
         var removedObservedEndpoint = roster.Remove(session.RemoteAddress);
@@ -324,21 +332,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
                 session.RemoteAddress);
         }
 
-        // The room's round belongs to the clients in it, so the last client out is
-        // the one that ends the match: with the room empty the round count, its
-        // clock and its tickets start over, and the next client into the room
-        // arrives at a first round rather than at the one that emptied. A leaver
-        // among others changes nothing (`MatchStartRunService.ResetWhenEmpty`, and
-        // the room's own rule in `docs/analysis/empty-and-solo-room-clocks.md`).
-        if (matchStart.ResetWhenEmpty())
-        {
-            settingsBurstScheduler.Reset();
-            logger.LogInformation(
-                "[{LogPrefix}] {RemoteAddress} was the room's last client; the room's round, clock and tickets "
-                + "start over for the next player to join",
-                LogPrefix,
-                session.RemoteAddress);
-        }
+        ResetEmptiedRoom(session);
     }
 
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)

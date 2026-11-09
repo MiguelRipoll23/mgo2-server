@@ -130,15 +130,25 @@ public sealed partial class BotPopulationService
     }
 
     /// <summary>Adds bots until the room holds the target number.</summary>
+    /// <remarks>
+    /// <b>A bot is seated only once its character exists.</b> The identity is
+    /// allocated first, then the row is ensured and the roster is told which
+    /// character the bot plays as, so an entry is never filed with an identifier
+    /// that nothing holds. A pass that cannot create the row releases the name and
+    /// seats nobody: the next pass retries rather than the room showing a bot the
+    /// settings burst has no appearance for.
+    /// </remarks>
     /// <param name="target">Bots the room should hold.</param>
     /// <param name="policy">Which sides bots may hold.</param>
     /// <param name="humanSides">Sides the room's humans hold.</param>
     /// <param name="rule">The round's rule, which tilts the roles.</param>
-    private void Spawn(
+    /// <param name="cancellationToken">Token that cancels the reads.</param>
+    private async Task SpawnAsync(
         int target,
         BotTeamPolicy policy,
         IReadOnlyList<short> humanSides,
-        int rule)
+        int rule,
+        CancellationToken cancellationToken)
     {
         while (Bots.Count < target)
         {
@@ -159,7 +169,27 @@ public sealed partial class BotPopulationService
             }
 
             var identity = identities.Allocate();
-            var member = roster.RegisterBot(identity.Name);
+            int characterIdentifier;
+            try
+            {
+                characterIdentifier = await characters.EnsureAsync(identity, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                identities.Release(identity.Name);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                identities.Release(identity.Name);
+                logger.LogWarning(
+                    exception,
+                    "Bot {BotName} has no character this pass, so it is not seated; the next pass retries",
+                    identity.Name);
+                return;
+            }
+
+            var member = roster.RegisterBot(identity.Name, characterIdentifier);
             var role = roleAssignment.Choose(identity.Number, rule);
             var participant = new BotParticipant(
                 identity,
@@ -184,8 +214,10 @@ public sealed partial class BotPopulationService
                 BriefingReadyBodiesUtils.ReadyState);
 
             logger.LogInformation(
-                "Added bot {BotName} in slot {BotSlot} on side {Side} as {Role}",
+                "Added bot {BotName} as character {CharacterIdentifier} in slot {BotSlot} on side {Side} as "
+                + "{Role}",
                 participant.Name,
+                characterIdentifier,
                 participant.SessionSlot,
                 side,
                 role);
@@ -221,5 +253,23 @@ public sealed partial class BotPopulationService
         {
             Remove(bot, reason);
         }
+    }
+
+    /// <summary>
+    /// Removes every bot now, which is what an emptied room does.
+    /// </summary>
+    /// <remarks>
+    /// <b>A bot is a seat kept free for a player, and a room with no player left has
+    /// nothing to fill.</b> Keeping them would answer the next client with a roster
+    /// that names every seat the room holds, which that client reads as a full room;
+    /// the fill seats them again on the report the next client sends from its
+    /// briefing, so what the arriving client is answered is a room it can enter.
+    /// </remarks>
+    /// <returns><c>true</c> when the room held a bot and it has been removed.</returns>
+    public bool RemoveEveryBot()
+    {
+        var before = Bots.Count;
+        RemoveAll("the room emptied and holds no player to fill");
+        return Bots.Count != before;
     }
 }

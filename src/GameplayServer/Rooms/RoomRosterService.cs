@@ -187,14 +187,23 @@ public sealed partial class RoomRosterService(
     /// <see cref="Bots.BotPopulationService"/> adds and removes it.
     /// </para>
     /// <para>
+    /// <b>The identifier is a real character.</b> A bot plays as a row of the
+    /// characters table, created on demand by <see cref="Bots.BotCharacterService"/>,
+    /// so the settings burst can read the bot's own appearance and the client is
+    /// handed a character it can resolve rather than a number nothing holds. The
+    /// entry still writes the bot's short layout with <c>0x10</c> zero, which is
+    /// what marks it as this host's bot rather than a peer.
+    /// </para>
+    /// <para>
     /// It takes no ordinal from the roster exchange. The exchange's counter numbers
     /// the records sent to a peer, and a bot has no peer to send to; spending values
     /// on it would move numbers a joining client is about to be handed.
     /// </para>
     /// </remarks>
     /// <param name="name">The bot's character name.</param>
+    /// <param name="characterIdentifier">Identifier of the character the bot plays as.</param>
     /// <returns>The member the bot is now filed under.</returns>
-    public RosterMember RegisterBot(string name)
+    public RosterMember RegisterBot(string name, int characterIdentifier)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
@@ -204,6 +213,10 @@ public sealed partial class RoomRosterService(
             var existing = members.Find(member => member.RemoteAddress == key);
             if (existing is not null)
             {
+                // A name the room reuses keeps the row it was filed under but takes
+                // the identifier it is played as now: a character table restored
+                // between runs hands the name a new identifier.
+                existing.CharacterId = characterIdentifier;
                 return existing;
             }
 
@@ -211,12 +224,11 @@ public sealed partial class RoomRosterService(
             {
                 SessionSlot = RosterSlotUtils.NextFreeSessionSlot(members, FirstJoinerSessionSlot, SessionSlotCount),
 
-                // Zero, and the record is what carries the slot: the settings
-                // burst reads this id for the character's own appearance, so a
-                // bot given its slot here would be announced with a player's
-                // face. The entry writes the slot as its character id instead
-                // (<see cref="RosterMember.BuildRecord"/>).
-                CharacterId = 0,
+                // The row the bot plays as, which is what the settings burst reads
+                // its appearance from. Its roster entry names the recorded 0x7f
+                // family instead, because a row id is a model the client cannot
+                // resolve (RosterMember.BuildRecord).
+                CharacterId = characterIdentifier,
                 Name = name,
                 ClanName = string.Empty,
                 IsBot = true,
@@ -224,25 +236,13 @@ public sealed partial class RoomRosterService(
             members.Add(member);
 
             logger.LogDebug(
-                "Added bot member {Name}: slot {SessionSlot}, roster index {RosterIndex}",
+                "Added bot member {Name}: character {CharacterIdentifier}, slot {SessionSlot}, roster index "
+                + "{RosterIndex}",
                 name,
+                member.CharacterId,
                 member.SessionSlot,
                 member.RosterIndex);
             return member;
-        }
-    }
-
-    /// <summary>
-    /// Number of joining players on the roster, the host itself not counted.
-    /// </summary>
-    public int JoinerCount
-    {
-        get
-        {
-            lock (gate)
-            {
-                return members.Count;
-            }
         }
     }
 

@@ -235,7 +235,20 @@ public sealed partial class PlayerSettingsBurstService(
             {
                 burst.Add(new(
                     UdpCommandConstants.PlayerProfile,
-                    LoadoutBody(loadout),
+                    BuildLoadoutBody(loadout),
+                    roster.TakeRunOrdinal()));
+
+                // The second body every player of the reference's room gets: the
+                // loadout above names the player, and this one carries the gear
+                // behind the same key (`PlayerGearBodiesUtils`). Without it a peer
+                // holds an appearance for another player and no gear at all.
+                burst.Add(new(
+                    UdpCommandConstants.PlayerProfile,
+                    PlayerGearBodiesUtils.Build(
+                        (byte)(loadout.Slot + 1),
+                        loadout.Appearance,
+                        PlayerGearBodiesUtils.PlayerStats.None,
+                        loadout.Level),
                     roster.TakeRunOrdinal()));
             }
         }

@@ -42,7 +42,10 @@ public sealed partial class MatchStartRunService
     /// <returns><c>true</c> when the room held no clients and has been reset.</returns>
     public bool ResetWhenEmpty()
     {
-        if (roster.JoinerCount > 0)
+        // A bot is a seat kept free for a player, not a player: a room whose only
+        // members are bots is a room nobody is in, and the round a client left must
+        // not be handed to the client that rejoins (RoomRosterService.HumanJoinerCount).
+        if (roster.HumanJoinerCount > 0)
         {
             return false;
         }

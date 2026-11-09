@@ -86,22 +86,6 @@ public sealed class PlayerSettingsBurstSchedulerService(
     /// <summary>Allows the next room to send its one settings burst.</summary>
     public void Reset() => Interlocked.Exchange(ref scheduled, 0);
 
-    /// <summary>
-    /// Sends the burst again, now, because the room it names has changed.
-    /// </summary>
-    /// <remarks>
-    /// <b>The burst is the player list, and the list is what the briefing draws.</b>
-    /// Each of its <c>0b 02</c> bodies names one player of the room, so a burst
-    /// sent before a fill has seated its bots names the humans alone and the
-    /// briefing shows a room of one: the live server of 2026-11-08 04:08 wrote
-    /// `2 of 2 player(s)` at t+08:56 and seated seven bots five seconds later, and
-    /// the client never learned they were there. The capture's burst is one-shot
-    /// because the recorded host's room does not change under it; this host's does,
-    /// once, when the player it was waiting for reports.
-    /// </remarks>
-    /// <param name="context">Context of the peer the burst answers.</param>
-    public Task ResendAsync(PeerContext context) => SendAsync(context, wait: false);
-
     private async Task SendAsync(PeerContext context, bool wait)
     {
         if (wait)

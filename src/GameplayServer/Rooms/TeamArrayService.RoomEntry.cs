@@ -135,29 +135,40 @@ public sealed partial class TeamArrayService
         // leaves the briefing for a round that has not opened (the remarks above).
         if (roundIsOpen)
         {
-            if (member is not null)
-            {
-                var side = slots.Find(slot => slot.Slot == member.SessionSlot);
-                run.Add(
-                    new(UdpCommandConstants.PlayerProfile,
-                        RoomPlayerEntryBodiesUtils.Build(
-                            0,
-                            member.SessionSlot,
-                            RoomPlayerEntryBodiesUtils.TeamByteOf(side?.Team),
-                            // The round's own map, which is the stage the entry
-                            // is drawn on: a rotation plays a different one each
-                            // round, so the room's first map is only right before
-                            // a round has opened.
-                            roundState.RoundSettings?.Map ?? matchSettings.Map),
-                        roster.TakeRunOrdinal()));
-            }
-            else
+            // One entry per player in the room, and not only the asking peer's.
+            // The entry is what gives a player a body in the map, and the
+            // captures answer a placement request with the room's whole set:
+            // `pcapng1` t+10.19 writes fourteen entries, the indices running
+            // 0 to 13 as the room's slots do, with the close behind them. An
+            // answer that names only the requester leaves every other player
+            // with no body — and a bot above all, which has no client to ask
+            // for its own entry: the bots sat in the briefing and never
+            // appeared in the map.
+            var players = roster.Snapshot()
+                .OrderBy(member => member.RosterIndex)
+                .ToList();
+            if (players.Count == 0)
             {
                 logger.LogDebug(
                     "UDP {LocalPort}: a room request from {RemoteAddress} has no roster entry behind it yet; "
                     + "answering with the room's own state only",
                     context.LocalPort,
                     context.Remote);
+            }
+
+            var map = roundState.RoundSettings?.Map ?? matchSettings.Map;
+            var index = (byte)0;
+            foreach (var player in players)
+            {
+                var side = slots.Find(slot => slot.Slot == player.SessionSlot);
+                run.Add(
+                    new(UdpCommandConstants.PlayerProfile,
+                        RoomPlayerEntryBodiesUtils.Build(
+                            index++,
+                            player.SessionSlot,
+                            RoomPlayerEntryBodiesUtils.TeamByteOf(side?.Team),
+                            map),
+                        roster.TakeRunOrdinal()));
             }
 
             run.Add(

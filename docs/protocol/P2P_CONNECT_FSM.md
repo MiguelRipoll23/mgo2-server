@@ -730,6 +730,99 @@ record's fourth byte) is the bookkeeping the sender kept for the record it built
 as one — no type table exists in the image to confirm it, and the arithmetic is
 what stands in for one.
 
+#### The same function decompiled — what the instructions left open
+
+`0x268ba8` decompiles in the `MGO2` project
+(`process_queued_p2p_handshake_reply`). The decompiled shape settles five points
+§7.1b had to infer from the instruction stream.
+
+```c
+if ((session_flags & 2) == 0) {          // not yet accepted
+    ... read the queued reply: peer id, counter base, magic, capability ...
+    handshake_accepted = true;           // only after every gate passed
+}
+session_state = *(char *)(peer_session + 4);
+if (session_state != 3) {
+    if (session_state != 4 && session_state != 2) goto store;   // ← 5 and 6 land here
+    if ((session_flags & 1) == 0) {
+        if (is_reliable_record_window_drained(lookup(peer_session + 0x48)) == 0)
+            flags |= 1;                  // the record window has drained
+    }
+    if (session_state == 2) {
+        if ((flags & 1) == 0 || *(char *)(peer_session + 5) != 1) goto store;
+        session[4] = 3;                  // host-side step, not the data phase
+    }
+}
+store:
+if (handshake_accepted) {                // the key is installed here, once
+    session[8]  = counter_base;
+    session[0xc] = counter_base ^ 0x2b58de69;
+}
+if ((session_flags & 3) == 3) session[4] = 8;   // ← the only state-8 store
+```
+
+**The store tests two bits.** `(flags & 3) == 3` is `0x2` — the reply was accepted
+and its peer id matched — together with `0x1`, which only the window test's "go" sets.
+Nothing else in the function writes the state, and there is no second site.
+
+**A keyed frame from the client proves bit `0x2`.** The counter base is stored on
+`handshake_accepted` alone, behind every gate, and the client's key comes from it. So a
+join that has gone keyed — as every live attempt has — has already passed the reply,
+the peer id, the tail digest and the capability, and can only be held by the window bit.
+
+**Only a state-2 pass runs the window test.** States `5` and `6` jump straight to the
+store, where `flags & 3` is `2` and the store does nothing. The joiner's send block
+stores `session[4] = 2` after handing out its own handshake, so the promotion pass is
+that state-2 pass, repeated on every tick until the test says go.
+
+**`session[5]` is the handshake kind, not the role.** The send block builds the full
+handshake only while `session[5] == 0`; otherwise it writes one byte
+(`handshake_flags[0] = session[5]`). Its `!= 1` test in the state-2 branch skips only the
+host-side `2 → 3` step — the state-8 store still fires on `(flags & 3) == 3`. So the
+field cannot hold a joining client back, which is what §7.1d concluded from the wire.
+
+**The window arithmetic is monotone.** `0x2676e0` advances `[0xc]` by
+`min([0xd], named - [0xc])`, so a duplicate answer is a no-op and no answer can push
+`[0xc]` past `[0xb]`; only a record left unanswered keeps the two apart.
+
+#### The live rejoin of 2026-11-09, measured against that flow
+
+The failing rejoin built four numbered records: `0x1001` byte `0` (its profile) and
+`0x9001` bytes `1`, `2`, `3`, one every ~5 s. This host answered each of them inside the
+same second — `0x5001` byte `0` as the roster run's head, then `0xd001` bytes `1`, `2`,
+`3` with one body byte each. Under the arithmetic above that window drained, and the
+store should have run; it did not, and the client ended the attempt with `0x4322` 13 s
+after the dial while the lobby was answering `0x4321` with result `0`.
+
+So the open question is no longer whether this host answers the client's records — it
+does, in the shapes the captures give — but what the receive path matches an answer
+*against*: `0x2676e0` matches a bookkeeping entry on the low twelve bits of its first
+word and the record's fourth byte, and one of those two must differ from what this host
+writes for one of the four. The lobby's trailing `canRate`/rule/map bytes were checked
+and are not it: they track the room's staged round, and the join that worked wrote the
+same `canRate` byte as the ones that did not.
+
+**The same log holds a join that succeeded, and it moves the cause off the wire.** The
+peer joined at 13:59:48, was in the map sending position ticks at 14:00:14, restarted its
+session at 14:00:21 and failed the rejoin. Both exchanges are byte for byte the same
+shape — the pre-keyed keep-alive and reply at counters `0` and `1`, the same keyed
+acceptance, a roster run the client acknowledged — so the codecs and the record families
+are not what differs. What differs is the room at the restart: the restart reaches
+`ForgetPeerState`, and the emptied-room reset it performs now counts **human** clients
+(`RoomRosterService.HumanJoinerCount`), so the room was emptied, its round torn down, its
+streams re-armed and the roster exchange restarted in the instant between the client's
+handshake and its profile.
+
+**The bots go with the room.** A bot is a seat kept free for a player and not a player,
+so a room with no client in it has nothing to fill, and a room that keeps its bots
+answers the next client with a roster naming every seat it holds — which is the shape a
+joining client reads as full. The emptied room therefore removes its fill
+(`GameplayServerService.RoomReset.cs`, `BotPopulationService.RemoveEveryBot`), and what
+the rejoining client is answered is the room a first join was answered: the host and
+itself. The fill seats the bots again on the report that client sends from its briefing.
+A re-run is what confirms it; the log lines to look for are "The room emptied, so the
+bots that filled it are gone" and the roster run's record count.
+
 #### The measurement that forced this reading
 
 A live join against the deployed k3s gameplay server (2026-10-08, image

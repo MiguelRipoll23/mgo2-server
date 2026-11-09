@@ -56,6 +56,17 @@ public sealed class LobbyLoadoutService(
     ILogger<LobbyLoadoutService> logger)
 {
     /// <summary>
+    /// Level this host announces its bots at, whatever their character rows state.
+    /// </summary>
+    /// <remarks>
+    /// <b>A bot is the host's, not a player's, so its figures are the host's choice and
+    /// not a reader.</b> Its row exists because it plays as a character, but a bot is
+    /// not a peer with an account and a progression to show, so it is announced at the
+    /// first level. A real player's level is always read from its own row.
+    /// </remarks>
+    public const int BotLevel = 1;
+
+    /// <summary>
     /// The room's players as loadouts, the host first.
     /// </summary>
     /// <param name="cancellationToken">Token that cancels the reads.</param>
@@ -109,6 +120,7 @@ public sealed class LobbyLoadoutService(
             (int)hostIdentity.PeerIdentifier,
             sides,
             [],
+            isBot: false,
             cancellationToken);
 
         foreach (var member in members)
@@ -119,6 +131,7 @@ public sealed class LobbyLoadoutService(
                 member.CharacterId,
                 sides,
                 member.AnnouncedAppearance,
+                member.IsBot,
                 cancellationToken);
         }
 
@@ -132,6 +145,19 @@ public sealed class LobbyLoadoutService(
     }
 
     /// <summary>
+    /// Reads a player's level from its own character row, or nothing when the read
+    /// cannot state one.
+    /// </summary>
+    /// <param name="characterIdentifier">Character whose experience is read.</param>
+    /// <param name="cancellationToken">Token that cancels the read.</param>
+    /// <returns>The level the row's experience derives, or <c>null</c>.</returns>
+    private async Task<int?> ReadLevelAsync(int characterIdentifier, CancellationToken cancellationToken)
+    {
+        var character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken);
+        return character is null ? null : LevelUtils.CalculateLevel(character.Experience);
+    }
+
+    /// <summary>
     /// Reads one player and files its loadout, or logs why it cannot be read.
     /// </summary>
     /// <param name="loadouts">List the loadout is added to.</param>
@@ -141,6 +167,10 @@ public sealed class LobbyLoadoutService(
     /// <param name="announcedAppearance">
     /// The appearance block the player's own join request carried, or an empty array.
     /// </param>
+    /// <param name="isBot">
+    /// Whether the player is a bot this host added, which is announced at
+    /// <see cref="BotLevel"/> instead of a level read from a row.
+    /// </param>
     /// <param name="cancellationToken">Token that cancels the reads.</param>
     private async Task AddAsync(
         List<LobbyLoadout> loadouts,
@@ -148,6 +178,7 @@ public sealed class LobbyLoadoutService(
         int characterIdentifier,
         Dictionary<int, short> sides,
         byte[] announcedAppearance,
+        bool isBot,
         CancellationToken cancellationToken)
     {
         // The dedicated host character is created without an appearance row, and
@@ -197,13 +228,24 @@ public sealed class LobbyLoadoutService(
         }
 
         var side = sides.TryGetValue(characterIdentifier, out var stored) ? stored : (short?)null;
-        loadouts.Add(new LobbyLoadout(slot, side, block, skills));
+
+        // The briefing table's LEVEL column is read from the settings body, which
+        // carries the figure in halves (`PlayerGearBodiesUtils.LevelByteFromEnd`). A
+        // real player's level is its character's experience through the domain's own
+        // table, the derivation the lobby screens use; a bot has no progression to
+        // show and is announced at `BotLevel`.
+        var level = isBot
+            ? BotLevel
+            : await ReadLevelAsync(characterIdentifier, cancellationToken);
+
+        loadouts.Add(new LobbyLoadout(slot, side, block, level, skills));
         logger.LogDebug(
-            "Character {CharacterIdentifier} is announced in slot {Slot}, on side {Side}, with {SkillCount} "
-            + "skill(s)",
+            "Character {CharacterIdentifier} is announced in slot {Slot}, on side {Side}, at level {Level}, "
+            + "with {SkillCount} skill(s)",
             characterIdentifier,
             slot,
             side is null ? "none" : side,
+            level is null ? "unknown" : level,
             skills.Count);
     }
 }

@@ -45,16 +45,18 @@ public sealed partial class PlayerSettingsBurstService
         var answering = loadouts.FirstOrDefault(
                 loadout => (byte)(loadout.Slot + 1) == answeringSlot)
             ?? loadouts.OrderBy(loadout => loadout.Slot).First();
-        return LoadoutBody(answering);
+        return BuildLoadoutBody(answering);
     }
 
     /// <summary>
     /// One player's loadout body: its own character's fields written into the
-    /// recorded body of the shape its skills have.
+    /// recorded body of the shape its skills have. Public because a bot seated after
+    /// the burst is announced with its loadout in its own run
+    /// (<see cref="BotRosterPublishService"/>).
     /// </summary>
     /// <param name="loadout">The player as the room reads it.</param>
     /// <returns>The record body.</returns>
-    private byte[] LoadoutBody(LobbyLoadout loadout)
+    public byte[] BuildLoadoutBody(LobbyLoadout loadout)
     {
         var template = LoadoutBodiesUtils.RecordedLoadoutFor(loadout.Skills.Count);
         if (template is not null && LoadoutFramesUtils.TryWrite(loadout, template, out var body))
