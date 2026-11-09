@@ -24,6 +24,14 @@ namespace Mgo2Server.GameplayServer;
 /// client out takes the fill with it, and the fill seats them again on the report the
 /// next client sends once it has reached its briefing.
 /// </para>
+/// <para>
+/// <b>What the client who started its session over keeps is its ready.</b> The rest of
+/// its briefing state goes with the session it abandoned — its report has to be heard
+/// again from the session that fills it now — but its ready was given on the screen it
+/// is still looking at, and a room of one leaves its briefing on its ready set and on
+/// nothing else. That is the difference between the round opening seconds after the
+/// rejoin's report and a held count of sixty that never moves.
+/// </para>
 /// </remarks>
 public sealed partial class GameplayServerService
 {
@@ -31,9 +39,14 @@ public sealed partial class GameplayServerService
     /// Returns an emptied room to its first round and clears the bots that filled it.
     /// </summary>
     /// <param name="session">Session of the client that has just left.</param>
-    private void ResetEmptiedRoom(PeerSession session)
+    /// <param name="clientJoinsAgain">
+    /// Whether that client started its session over and is coming back into the room
+    /// (<see cref="RestartPeerIfHandshakeStartsOver"/>), in which case the ready it
+    /// sent into the briefing it is still in stays.
+    /// </param>
+    private void ResetEmptiedRoom(PeerSession session, bool clientJoinsAgain = false)
     {
-        if (!matchStart.ResetWhenEmpty())
+        if (!matchStart.ResetWhenEmpty(clientJoinsAgain ? session.DialBack.ToString() : null))
         {
             return;
         }

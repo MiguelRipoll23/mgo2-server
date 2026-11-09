@@ -44,8 +44,11 @@ namespace Mgo2Server.GameplayServer;
 /// and the handshake provisions a fresh session under the same endpoint, which
 /// the peer's own join then fills in from the profile it sends. What the room
 /// held for it is dropped on the way out, for the reason the reaper drops it: a
-/// ready state, a vitals value or a roster entry kept for a session that no
-/// longer exists is state about nobody.
+/// vitals value or a roster entry kept for a session that no longer exists is
+/// state about nobody. The ready state is the exception, and the one thing
+/// <see cref="ForgetPeerState"/> keeps: the client is returning to the briefing
+/// screen it readied on and does not ready a second time, so its ready travels
+/// into the briefing the emptied room begins.
 /// </para>
 /// <para>
 /// <b>A dropped peer rejoins the same way.</b> The reaper lets a peer go after
@@ -121,7 +124,7 @@ public sealed partial class GameplayServerService
         // peer has left.
         session.Retired = true;
         sessions.Remove(session.RemoteAddress);
-        ForgetPeerState(session);
+        ForgetPeerState(session, clientJoinsAgain: true);
         return null;
     }
 

@@ -276,7 +276,13 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     /// </para>
     /// </remarks>
     /// <param name="session">Session whose peer state is dropped.</param>
-    private void ForgetPeerState(PeerSession session)
+    /// <param name="clientJoinsAgain">
+    /// Whether the peer has started its handshake over and is coming back into the
+    /// room (<see cref="RestartPeerIfHandshakeStartsOver"/>). Its briefing report is
+    /// dropped either way; its ready state stays when it is, because the briefing
+    /// screen it readied on is the one it returns to.
+    /// </param>
+    private void ForgetPeerState(PeerSession session, bool clientJoinsAgain = false)
     {
         // The held lobby-slot confirmation is filed by the peer's own endpoint and
         // not by its session, so it has to be named: its ordinals belong to the
@@ -288,7 +294,8 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         // The briefing state the peer reported goes with it. A ready state kept
         // for a player who has left would hold a round shut on somebody who is
         // never going to report, which is a room waiting for nothing.
-        if (briefingStates.Forget(session.RemoteAddress) | briefingStates.Forget(session.DialBack.ToString()))
+        if (briefingStates.Forget(session.RemoteAddress, clientJoinsAgain)
+            | briefingStates.Forget(session.DialBack.ToString(), clientJoinsAgain))
         {
             logger.LogDebug(
                 "[{LogPrefix}] Cleared the briefing state of peer {RemoteAddress}",
@@ -332,7 +339,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
                 session.RemoteAddress);
         }
 
-        ResetEmptiedRoom(session);
+        ResetEmptiedRoom(session, clientJoinsAgain);
     }
 
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)

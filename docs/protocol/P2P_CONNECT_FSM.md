@@ -820,8 +820,34 @@ joining client reads as full. The emptied room therefore removes its fill
 (`GameplayServerService.RoomReset.cs`, `BotPopulationService.RemoveEveryBot`), and what
 the rejoining client is answered is the room a first join was answered: the host and
 itself. The fill seats the bots again on the report that client sends from its briefing.
-A re-run is what confirms it; the log lines to look for are "The room emptied, so the
-bots that filled it are gone" and the roster run's record count.
+
+That is what the next run shows. The rejoin completed: the roster answered the client
+`6 records, 1 joiners` where the failed attempt had been answered `12 records, 7
+joiners`, and the client was in the room. The log lines it is read from are "The room
+emptied, so the bots that filled it are gone" followed by the roster run's own count.
+
+**And the client keeps its ready.** With the roster answered, the next thing the same
+log showed was a briefing that could not end. The rejoin's report at 14:20:25 counted
+the room as `1 of 1` — the fill is seated after the report, so the count is taken
+before them — the seven bots that were seated in the same pass each readied, and
+then nothing moved: the client sat on a held count of sixty for the whole minute the
+log covers, and no round opened.
+
+What the client had already given is the answer. Its first briefing readied at
+14:19:09 — "8 of 8 player(s) in the room have readied", the record that closed that
+briefing and opened round 5 at 14:19:10 — and after the restart it sends no ready at
+all, because it is still on the screen it readied on and has nothing to re-send. Its
+ready was the one state the emptied room dropped: `BriefingStateService.Forget` took
+the ready with the report, and the briefing the reset began cleared whatever was
+left. A room of one leaves its briefing on its **ready set** and on nothing else —
+the solo count is held at the whole briefing time by design
+(`BriefingCountdownService.Remaining`) — so the closing zero never came and the round
+never opened.
+
+The ready now travels with the client. `ForgetPeerState(session, clientJoinsAgain:
+true)` keeps it on the session-start-over path (and still drops it on the reaper's),
+and the reset takes the endpoint to keep it for, so the briefing a restarted client
+comes back to is the room it left, already ready.
 
 #### The measurement that forced this reading
 

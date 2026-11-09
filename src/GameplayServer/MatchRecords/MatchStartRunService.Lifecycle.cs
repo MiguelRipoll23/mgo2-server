@@ -38,9 +38,23 @@ public sealed partial class MatchStartRunService
     /// what makes the reset room a room waiting for a game rather than one replaying
     /// a match nobody played.
     /// </para>
+    /// <para>
+    /// <b>The client that emptied the room keeps its ready.</b> A session that starts
+    /// its handshake over is the same client on the same briefing screen, so the
+    /// ready it sent there is still true of it, and the fresh briefing begins with
+    /// that one state rather than with none
+    /// (<see cref="Rooms.BriefingStateService.BeginNextBriefing(string?)"/>). A room of
+    /// one leaves its briefing on its ready set and on nothing else, so dropping the
+    /// ready is what leaves that client on a held count that never moves.
+    /// </para>
     /// </remarks>
+    /// <param name="clientKeepingItsReady">
+    /// Endpoint of the client whose started-over session emptied the room, whose ready
+    /// state stays with the briefing that begins for it, or <c>null</c> when the room
+    /// emptied for good.
+    /// </param>
     /// <returns><c>true</c> when the room held no clients and has been reset.</returns>
-    public bool ResetWhenEmpty()
+    public bool ResetWhenEmpty(string? clientKeepingItsReady = null)
     {
         // A bot is a seat kept free for a player, not a player: a room whose only
         // members are bots is a room nobody is in, and the round a client left must
@@ -57,7 +71,7 @@ public sealed partial class MatchStartRunService
         {
             briefingDeparted.Clear();
         }
-        briefingStates.BeginNextBriefing();
+        briefingStates.BeginNextBriefing(clientKeepingItsReady);
         sequences.Restart(Rooms.RoomRosterService.ExchangeIdentifier);
         BeginBriefing();
 

@@ -126,18 +126,49 @@ public sealed partial class BriefingStateService
     /// Drops both of a player's states, because the player has left the room.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The ready record goes with the report: a player that has left is not a
     /// player the room is waiting on, and a bit left in the ready set would keep
     /// <see cref="ReadyMask"/> naming a slot nobody fills — and, with the gate on
     /// the readies, hold the round open for a player that is gone.
+    /// </para>
+    /// <para>
+    /// <b>The one exception is a client that is joining again.</b> Its session is
+    /// retired and its handshake starts over, but its briefing screen is the one it
+    /// readied on, and a client that has readied there does not ready a second time:
+    /// in the rejoin of 2026-11-09 the report arrives at 14:20:25 and no ready
+    /// record follows it, because the client is already showing its ready. The
+    /// report still goes, so the room hears it from the session that fills the peer
+    /// now; the ready stays, and the room the client returns to is one whose ready
+    /// set is already complete rather than one waiting on a record nobody sends.
+    /// </para>
     /// </remarks>
     /// <param name="remoteAddress">Endpoint the player was filed under.</param>
+    /// <param name="keepReady">
+    /// Whether the player is joining again, so its ready state is to stay with the
+    /// briefing it belongs to.
+    /// </param>
     /// <returns><c>true</c> when the player had reported a state.</returns>
-    public bool Forget(string remoteAddress)
+    public bool Forget(string remoteAddress, bool keepReady = false)
     {
         var readied = false;
         lock (gate)
         {
+            if (keepReady)
+            {
+                readied = readies.ContainsKey(remoteAddress);
+                var reported = joinReports.Remove(remoteAddress);
+                if (reported || readied)
+                {
+                    logger.LogInformation(
+                        "{RemoteAddress} left the briefing and is joining again; its ready state is kept "
+                        + "with the briefing it is still in",
+                        remoteAddress);
+                }
+
+                return reported || readied;
+            }
+
             readied = readies.Remove(remoteAddress);
             if (!joinReports.Remove(remoteAddress))
             {
@@ -167,18 +198,34 @@ public sealed partial class BriefingStateService
     /// numbers its players from the beginning again.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// A round is preceded by its own briefing — the captures open a round, play
     /// it, then rewrite the ready set for the round after it — so the states
     /// belong to one briefing and not to the room.
+    /// </para>
+    /// <para>
+    /// <b>One player's ready can outlive the clear, and it is the player whose
+    /// session emptied the room.</b> A room whose last client started its session
+    /// over begins its briefing for that same client, still on the screen it readied
+    /// on (<see cref="Forget"/>). Dropping that ready here left the rejoin of
+    /// 2026-11-09 waiting on a record it had already been sent: a held count of
+    /// sixty seconds, seven bots ready, and its only client counted as the one that
+    /// had not readied, so the closing zero never came and the round never opened.
+    /// </para>
     /// </remarks>
-    public void BeginNextBriefing()
+    /// <param name="keepReadyFor">
+    /// Endpoint of a client whose ready belongs to the briefing that is beginning
+    /// too, or <c>null</c> when every state goes.
+    /// </param>
+    public void BeginNextBriefing(string? keepReadyFor = null)
     {
         lock (gate)
         {
-            if (joinReports.Count == 0 && readies.Count == 0)
+            var kept = keepReadyFor is not null && readies.ContainsKey(keepReadyFor) ? 1 : 0;
+            if (joinReports.Count == 0 && readies.Count == kept)
             {
                 nextPublicationIndex = 0;
-            botPublicationIndexes.Clear();
+                botPublicationIndexes.Clear();
                 return;
             }
 
@@ -186,9 +233,13 @@ public sealed partial class BriefingStateService
                 "Beginning the next briefing; {ReportedCount} report(s) and {BriefingReadyCount} ready state(s) "
                 + "from the last one are cleared",
                 joinReports.Count,
-                readies.Count);
+                readies.Count - kept);
             joinReports.Clear();
-            readies.Clear();
+            foreach (var address in readies.Keys.Where(key => key != keepReadyFor).ToList())
+            {
+                readies.Remove(address);
+            }
+
             nextPublicationIndex = 0;
             botPublicationIndexes.Clear();
         }
