@@ -1,4 +1,3 @@
-using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
@@ -21,10 +20,9 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// records beside it are what make the actor alive rather than a corpse.
 /// </para>
 /// <para>
-/// <b>The cadence is the recorded host's.</b> `pcapng1` writes each of its
-/// actors' blocks 172 times over an 86-second span, which is two a second, and
-/// every actor in the room is written on the same tick and in the same frame.
-/// This writer does the same, one frame per tick for the room's bots.
+/// <b>The cadence is the recorded host's.</b> The working-server capture writes
+/// actor records on the 33 ms match beat, with every actor in the room in the
+/// same frame. This writer uses that same beat for the room's bots.
 /// </para>
 /// <para>
 /// <b>It writes only while the round is open.</b> A briefing's client is not in
@@ -43,14 +41,10 @@ public sealed class BotActorPublishService(
     MatchRoundStateService roundState,
     MatchSettingsService matchSettings,
     RoomRosterService roster,
-    PlayerPositionService positions,
     ILogger<BotActorPublishService> logger)
 {
-    /// <summary>
-    /// How often a peer is written the room's bot blocks: the recorded host's
-    /// two a second.
-    /// </summary>
-    public const int TickMilliseconds = 500;
+    /// <summary>Milliseconds between bot actor frames on the match beat.</summary>
+    public const int TickMilliseconds = MatchRecordFramesUtils.FramePeriodMilliseconds;
 
     private readonly Lock gate = new();
     private readonly HashSet<PeerSession> writing = [];
@@ -131,10 +125,11 @@ public sealed class BotActorPublishService(
                 await AnnouncePlayerListAsync(context);
                 await AnnounceRoundStateAsync(context);
 
+                using var period = new PeriodicTimer(TimeSpan.FromMilliseconds(TickMilliseconds));
                 while (roundState.IsOpen && MatchRecordPeerUtils.IsAlive(session))
                 {
                     await PublishAsync(context);
-                    await Task.Delay(TickMilliseconds);
+                    await period.WaitForNextTickAsync();
                 }
             }
         }
@@ -254,19 +249,13 @@ public sealed class BotActorPublishService(
     {
         var map = roundState.RoundSettings?.Map ?? matchSettings.Map;
 
-        // A bot is written where the peer is, when the peer has said. A client's
-        // position is the one thing the room already receives for free — it is the
-        // player's own tick record — and standing the bots on it is how the actor
-        // blocks are checked against a live client: a bot at the player's point is
-        // on the map if the client draws anything at all.
-        var playerPosition = positions.TryGet(context.Session.RemoteAddress, out var reported)
-            ? reported
-            : null;
-
+        // Bots have no simulated movement, so their actor blocks use their side's
+        // map spawn rather than stacking every bot at the peer's position.
+        var generation = roundState.Generation;
         var records = new List<UdpMessage>();
         foreach (var bot in bots.Bots.OrderBy(participant => participant.SessionSlot))
         {
-            records.AddRange(BotActorRecordUtils.Build(bot.SessionSlot, bot.Team, map, playerPosition));
+            records.AddRange(BotActorRecordUtils.Build(bot.SessionSlot, bot.Team, map, generation));
         }
 
         if (records.Count == 0)

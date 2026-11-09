@@ -1,5 +1,5 @@
-using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Match;
+using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.Shared.Types;
 
 namespace Mgo2Server.GameplayServer.Bots;
@@ -19,16 +19,11 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// values, which is why the fourth byte of each record is its kind.
 /// </para>
 /// <para>
-/// <b>The base is the session's first slot, and every slot is ten along.</b>
-/// Measured over `pcapng1` and this host's own live run: the block bases of one
-/// session are <c>0x4d</c>, <c>0x57</c> (slot 2), <c>0x61</c> (slot 3),
-/// <c>0x6b</c> (slot 4) and so on, so the first slot's state record is
-/// <c>0x4d</c> and <c>0x0a</c> separates the slots. The same arithmetic holds
-/// for the five session values the protocol documents as a "per-session
-/// allotment" (<c>0x0b</c>, <c>0x4d</c>, <c>0x61</c>, <c>0x75</c>, <c>0xe3</c>):
-/// each is <c>0x4d + 0x0a·k</c> for a slot those captures happened to hold. A
-/// bot's block is therefore its own session slot's, which is what makes the
-/// client file it against the roster entry already naming that slot.
+/// <b>The base follows the round's identifier generation.</b> Slot one is
+/// <c>0x084d</c> in the first generation and <c>0x004d</c> in its sibling;
+/// every next slot is ten identifiers along. Deriving the state identifier
+/// from the generation-aware vitals identifier keeps all six records in the
+/// same generation the round's opening run uses.
 /// </para>
 /// <para>
 /// <b>The bodies are the capture's, and the position is the map's own spawn.</b>
@@ -43,9 +38,6 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// </remarks>
 public static class BotActorRecordUtils
 {
-    /// <summary>State record identifier of the session's first slot.</summary>
-    public const ushort FirstSlotStateIdentifier = 0x4d;
-
     /// <summary>Distance between two slots' blocks, measured across sessions.</summary>
     public const int SlotStride = 0x0a;
 
@@ -76,10 +68,11 @@ public static class BotActorRecordUtils
     /// <summary>
     /// The state record's identifier for a session slot.
     /// </summary>
+    /// <param name="generation">Identifier set of the round being played.</param>
     /// <param name="sessionSlot">Key the player holds in the room's player table.</param>
     /// <returns>The slot's state identifier; the other five records sit behind it.</returns>
-    public static ushort StateIdentifierOf(byte sessionSlot) =>
-        (ushort)(FirstSlotStateIdentifier + (SlotStride * (sessionSlot - 1)));
+    public static ushort StateIdentifierOf(MatchRecordGenerationUtils generation, byte sessionSlot) =>
+        (ushort)(PlayerVitalsFramesUtils.IdentifierFor(generation, sessionSlot) - 1);
 
     /// <summary>
     /// Builds one slot's whole actor block, in the order the capture writes it.
@@ -87,23 +80,22 @@ public static class BotActorRecordUtils
     /// <param name="sessionSlot">Key the player holds in the room's player table.</param>
     /// <param name="team">Side the player is on, or <c>null</c> for none.</param>
     /// <param name="map">Map the round plays, which holds the spawn.</param>
-    /// <param name="position">
-    /// A position to write instead of the side's spawn — the player's own last
-    /// reported one — or <c>null</c> to stand on the spawn.
-    /// </param>
+    /// <param name="generation">Identifier set of the round being played.</param>
     /// <returns>The six records, or an empty list for a slot of zero.</returns>
     public static IReadOnlyList<UdpMessage> Build(
         byte sessionSlot,
         short? team,
         int map,
-        PlayerPosition? position = null)
+        MatchRecordGenerationUtils generation)
     {
         if (sessionSlot == 0)
         {
             return [];
         }
 
-        var state = StateIdentifierOf(sessionSlot);
+        ArgumentNullException.ThrowIfNull(generation);
+
+        var state = StateIdentifierOf(generation, sessionSlot);
         var side = team == 1 ? (byte)1 : (byte)0;
         return
         [
@@ -113,7 +105,7 @@ public static class BotActorRecordUtils
                 (ushort)(state + 2),
                 (byte)(PositionBodyLength + 1),
                 PositionAttributeClass,
-                BuildPositionBody(side, map, position)),
+                BuildPositionBody(side, map)),
             new UdpMessage((ushort)(state + 4), 6, WeaponPairAttributeClass, [0x00, 0x00, 0x00, 0x00, 0x00]),
             new UdpMessage((ushort)(state + 4), 2, WeaponAttributeClass, [0x00]),
             new UdpMessage(
@@ -142,9 +134,8 @@ public static class BotActorRecordUtils
     /// </remarks>
     /// <param name="team">Side whose spawn is written, <c>0</c> or <c>1</c>.</param>
     /// <param name="map">Map the round plays.</param>
-    /// <param name="position">A position to write instead of the side's spawn.</param>
     /// <returns>The sixteen-byte body.</returns>
-    private static byte[] BuildPositionBody(byte team, int map, PlayerPosition? position = null)
+    private static byte[] BuildPositionBody(byte team, int map)
     {
         var spawns = MapSpawnUtils.For(map);
         var spawn = spawns.SpawnOf(team);
@@ -165,13 +156,11 @@ public static class BotActorRecordUtils
 
         // x, the stand height, then z — the last from the spawn's look-at point,
         // which is where the room entry carries that side's z as well — at a tenth
-        // of a unit, and the heading itself, which is not scaled. A position the
-        // player reported is written exactly as it arrived, so the bot stands on
-        // the point the player is looking at.
-        WriteInt16(body, 6, position?.X ?? (short)(spawn.Along / 10));
-        WriteInt16(body, 8, position?.Y ?? (short)(facing.First / 10));
-        WriteInt16(body, 10, position?.Z ?? (short)(facing.Along / 10));
-        WriteInt16(body, 12, position?.Heading ?? spawn.First);
+        // of a unit, and the heading itself, which is not scaled.
+        WriteInt16(body, 6, (short)(spawn.Along / 10));
+        WriteInt16(body, 8, (short)(facing.First / 10));
+        WriteInt16(body, 10, (short)(facing.Along / 10));
+        WriteInt16(body, 12, spawn.First);
         return body;
     }
 
