@@ -225,10 +225,16 @@ public static class LoadoutFramesUtils
     /// The side byte a body carries for a side the room's rows state, or the
     /// recorded default when they state none.
     /// </summary>
-    /// <param name="side">Team slot the room holds, or <c>null</c>.</param>
+    /// <remarks>
+    /// The coding is <c>2 × side</c> over the sides of the match
+    /// (<see cref="RoomSideUtils"/>), so the orange side writes <c>4</c> where blue
+    /// writes <c>0</c> and red <c>2</c>. Measured over 323 players carrying both a
+    /// lobby-array group and this byte, in the rooms that had two sides.
+    /// </remarks>
+    /// <param name="side">Side the room holds for the player, or <c>null</c>.</param>
     /// <returns>The byte to write.</returns>
     public static byte SideByteOf(short? side) =>
-        side is 0 or 1 ? (byte)(side.Value * 2) : UnassignedSideByte;
+        RoomSideUtils.IsSide(side) ? (byte)(side!.Value * 2) : UnassignedSideByte;
 
     /// <summary>
     /// A character's saved appearance as the record's trailing block: the 23

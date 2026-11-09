@@ -180,6 +180,30 @@ namespace Mgo2Server.Shared.Utils;
 /// written on the wire.
 /// </para>
 /// <para>
+/// <b>What the in-game player list draws, and which of it this record does not
+/// carry.</b> The row is, in order, a ping meter, the name at <c>0x44</c>/<c>0x38</c>,
+/// a level, a rank badge, a clan emblem, a keyboard indicator, a voice indicator
+/// and a second sixteen-pixel-square emblem
+/// (<c>.pcapngs/pcapng3/Screenshot 2026-11-08 at 14.26.04.png</c>). Only two of
+/// those are on this record: the name, and the ping, which is not here at all but
+/// in the state blob's field 150 (<see cref="Mgo2Server.GameplayServer.MatchRecords.MatchStateBodiesUtils.StateBlobValueFor"/>).
+/// Nothing on the bench names the level, the rank, the emblems or the two device
+/// indicators in these bytes: the dedicated hosts write zeros at <c>0x11</c>–
+/// <c>0x42</c> in every entry of every capture that decodes, and the capture whose
+/// screen draws them (<c>pcapng3</c>) opens after its handshake, so its key is not
+/// recoverable and its entries cannot be read. They are left unnamed rather than
+/// guessed at.
+/// </para>
+    /// <para>
+    /// <b>No bit of this region is an image.</b> The only entry that fills any of it
+    /// writes nine lone <c>0x01</c> flags, not a drawn shape, and the peer-to-peer
+    /// channel carries no emblem at all: over some 470,000 decrypted datagrams the
+    /// longest record body is 161 bytes, against the 565 an emblem block is read from,
+    /// and not one holds the <c>EMBD</c> magic. A row's emblems arrive over TCP, by the
+    /// clan id the entry carries (<see cref="ClanIdentifierOffset"/>), so the region is
+    /// not where they hide.
+    /// </para>
+/// <para>
 /// Two offsets are easy to misread. The host sits at roster index
 /// <see cref="HostRosterIndex"/>, signed because the index is, but it carries
 /// a plain <c>0x00</c> at offset <c>0x04</c> where the joining players carry
@@ -227,4 +251,75 @@ public static class PlayerProfileRecordLayout
 
     /// <summary>Offset of the unresolved per-record value that reads 0x00, 0x01 or 0x02.</summary>
     public const int UnresolvedByteOffset = PlayerProfileRecordUtility.UnresolvedByteOffset;
+
+    /// <summary>
+    /// Offset of the clan id a roster entry names, as the long layout writes it: a
+    /// sixteen-bit value that selects the clan emblem the client then fetches.
+    /// </summary>
+    /// <remarks>
+    /// <b>The clan emblem is not in this record; the id that selects it is.</b> The
+    /// emblem is a 768-byte <c>EMBD</c> block fetched over TCP by clan id
+    /// (<c>0x4b48</c>, <c>0x4b4a</c>, <c>0x4b4c</c>, answered by
+    /// <c>ClanEmblemHandlers</c>, and decoded per
+    /// <see cref="ClanEmblemBlockUtils"/>), so a row draws an emblem only when the
+    /// entry it came from names a clan. Both layout offsets are the replay parser's
+    /// own field — <c>rpdt.js</c> reads <c>clanId</c> as a u16 at <c>0x1f</c> here and
+    /// at <c>0x13</c> in the short layout — and this host fills both from the
+    /// character's clan (<see cref="PlayerProfileRecordUtility.Build"/>), which is what
+    /// makes a row's emblem fetch possible at all.
+    /// <para>
+    /// <b>The captures do fill it, and the emblem's two bytes travel beside it.</b>
+    /// <c>pcapng1</c> and <c>pcapng2</c> hold <c>0x0000</c> in 153 of 156 entries,
+    /// <c>0x2284</c> on the two whose clan is <c>gta6</c> and <c>0x04cb</c> once, so the
+    /// field is live rather than always zero. What the client does with it is the
+    /// whole chain: the per-slot announce struct carries the worn title at <c>+3</c>,
+    /// the **clan emblem flag** at <c>+4</c> and the clan id at <c>+8</c>
+    /// (<c>0x88407C</c>); <c>0x4103</c> has to state that flag as exactly <b>3</b> or
+    /// the client skips the fetch entirely; and the emblems it fetches land in a
+    /// thirty-entry cache of <c>{u32 clanId, byte[768]}</c>. So a row's clan emblem is
+    /// a fetch keyed by this id, never a block on this channel.
+    /// </para>
+    /// </remarks>
+    public const int ClanIdentifierOffset = 0x1f;
+
+    /// <summary>The clan id in the short layout, twelve bytes earlier.</summary>
+    public const int ShortClanIdentifierOffset = 0x13;
+
+    /// <summary>Width of the clan id: sixteen bits, little-endian.</summary>
+    public const int ClanIdentifierLength = 2;
+
+    /// <summary>
+    /// Offset of the region of the short layout that no capture decodes: thirty-two
+    /// bytes from here to <c>0x36</c>, straight behind the clan id.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Measured, and not an image.</b> Across the decryptable captures the entries
+    /// of <c>fargraven2</c>, <c>pink_panty</c>, <c>QirtyDan</c> and the rest leave the
+    /// whole region at zero, and the one entry that puts anything there --
+    /// <c>OFF_PAKO</c>'s, in <c>pcapng1</c> -- writes nine <c>0x01</c> bytes, at
+    /// <c>0x17</c>, <c>0x1e</c>, <c>0x20</c> to <c>0x23</c>, <c>0x25</c>, <c>0x2b</c>
+    /// and <c>0x2d</c>, and nothing else. That is a handful of flags, not a bitmap: a
+    /// drawn symbol fills dozens of bits in runs a row wide, and these line up with no
+    /// row of any square.
+    /// </para>
+    /// <para>
+    /// <b>It cannot be an emblem block, because the channel cannot carry one.</b> The
+    /// client's emblem reader wants 565 bytes (<see cref="ClanEmblemBlockUtils"/>), but
+    /// no peer-to-peer record in any capture is longer than 161 bytes -- the longest
+    /// body measured over some 470,000 decrypted datagrams, none of which holds the
+    /// <c>EMBD</c> magic. The ceiling is the channel's rather than a sample's: every
+    /// datagram on the port decrypts (40,178 of 40,178 in <c>pcapng1</c>, 63,626 of
+    /// 63,626 in <c>pcapng2</c>) and the largest is 512 bytes, before the twelve bytes
+    /// of header and tail a frame spends. An emblem reaches a player list over TCP
+    /// alone -- <c>working-server-log</c> holds three <c>0x4b4a</c> fetches answered by
+    /// 569-byte <c>EMBD</c> replies about eight seconds after the <c>0x4320</c> join,
+    /// with the match already running -- by the clan id this record carries
+    /// (<see cref="ClanIdentifierOffset"/>); what sits here stays unresolved.
+    /// </para>
+    /// </remarks>
+    public const int UnresolvedRegionOffset = 0x17;
+
+    /// <summary>Length of the unresolved region: thirty-two bytes, up to the name marker.</summary>
+    public const int UnresolvedRegionLength = 0x20;
 }

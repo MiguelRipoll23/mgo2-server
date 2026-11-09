@@ -135,14 +135,15 @@ public static class PlayerProfileRecordUtility
     private const byte ClanNameMarker = 0x03;
 
     /// <summary>
-    /// The byte at <see cref="BlockConstantOffset"/>: the number of endpoint
+    /// The byte at <see cref="EndpointPairCountOffset"/>: the number of endpoint
     /// pairs behind it, <c>0x02</c> in all sixty-one long entries on the bench and
-    /// <c>0x00</c> in all ninety-one short ones.
+    /// <c>0x00</c> in all ninety-one short ones. It is the field that decides which
+    /// of the two layouts a record is, rather than a constant of the layout.
     /// </summary>
-    private const byte BlockConstant = 0x02;
+    private const byte EndpointPairCount = 0x02;
 
-    /// <summary>Offset of <see cref="BlockConstant"/> within the record body.</summary>
-    private const int BlockConstantOffset = 0x12;
+    /// <summary>Offset of <see cref="EndpointPairCount"/> within the record body.</summary>
+    private const int EndpointPairCountOffset = 0x12;
 
     /// <summary>
     /// Offset of the pair of bytes the host's own entry carries and a player's
@@ -240,6 +241,10 @@ public static class PlayerProfileRecordUtility
     /// <param name="addressData">Two IPv4 endpoint pairs from the peer handshake.</param>
     /// <param name="unresolvedByte">Value written at offset <c>0x10</c>.</param>
     /// <param name="sessionSlot">Slot in the host's network player table.</param>
+    /// <param name="clanIdentifier">
+    /// Clan id, written at <see cref="PlayerProfileRecordLayout.ClanIdentifierOffset"/>;
+    /// zero for a player in no clan and for a bot.
+    /// </param>
     /// <param name="includeEndpointPairs">Whether to emit the twelve-byte endpoint field.</param>
     public static byte[] Build(
         bool isHostEntry,
@@ -248,6 +253,7 @@ public static class PlayerProfileRecordUtility
         string name,
         string clanName,
         byte sessionSlot,
+        int clanIdentifier = 0,
         byte[]? addressData = null,
         byte unresolvedByte = PlayerRecordUnresolvedByte,
         bool includeEndpointPairs = true)
@@ -269,7 +275,20 @@ public static class PlayerProfileRecordUtility
         body[5] = sessionSlot;
         body[7] = sessionSlot;
         BinaryUtility.WriteUInt32LittleEndian(body, CharacterIdOffset, (uint)characterId);
-        body[BlockConstantOffset] = includeEndpointPairs ? BlockConstant : (byte)0;
+
+        // The clan id is what the client fetches the clan emblem with: the record
+        // names the clan, the client asks the game server for the block by this id
+        // (0x4b4a), and a zero names no clan to ask about, which draws no emblem on
+        // the row. It sits twelve bytes lower in the short layout, with the rest of
+        // the fields behind the endpoint pairs.
+        var clanIdentifierOffset = includeEndpointPairs
+            ? PlayerProfileRecordLayout.ClanIdentifierOffset
+            : PlayerProfileRecordLayout.ShortClanIdentifierOffset;
+        var clanField = clanIdentifier & 0xFFFF;
+        body[clanIdentifierOffset] = (byte)(clanField & 0xFF);
+        body[clanIdentifierOffset + 1] = (byte)((clanField >> 8) & 0xFF);
+
+        body[EndpointPairCountOffset] = includeEndpointPairs ? EndpointPairCount : (byte)0;
         body[HostEntryBlockFlagOffset] = isHostEntry ? HostEntryBlockFlag : PlayerBlockFlag;
         body[HostEntryBlockFlagOffset + 1] = isHostEntry ? HostEntryBlockFlagSecond : PlayerBlockFlag;
         body[UnresolvedByteOffset] = unresolvedByte;
@@ -338,61 +357,3 @@ public static class PlayerProfileRecordUtility
         return truncated;
     }
 }
-
-/// <summary>A parsed <c>0x1001</c> player-profile record.</summary>
-/// <param name="Version">Record version byte.</param>
-/// <param name="RecordLength">
-/// Byte at offset 1 read back raw. It is the record's own length less seven, not
-/// a record kind; <see cref="PlayerProfileRecordUtility.IsRosterRecord"/> is the
-/// test over it.
-/// </param>
-/// <param name="RosterBaseField">Raw field at offset 4: 0xe2 plus the index, or zero for the host.</param>
-/// <param name="RosterIndex">
-/// Position of the player in the room roster, recovered from that field. It is
-/// signed because the host's own slot is <c>-1</c>, written as a plain zero
-/// rather than as one below the first player's.
-    /// </param>
-    /// <param name="sessionSlot">
-    /// The player's slot in the host's 24-entry network player table (offsets 0x05
-    /// and 0x07 of the roster entry), the byte the replay console's <c>rpdt.js</c>
-    /// calls <c>slot</c>. It varies per player without following roster order and
-    /// matches the member bytes in the <c>0x0261</c>/<c>0x0a61</c>
-    /// rules-roster-shaped records, so it is not an index. The client binary names
-    /// the field via the table at <c>0x26d5a8</c>; how the host selects it is
-    /// unresolved. The live capture calls these "member bytes" and confirms they
-    /// are slots in a 24-entry table.
-    /// </param>
-/// <param name="HasClanName">Whether a clan name was read alongside the name.</param>
-/// <param name="CharacterId">The character id at offset 8, little-endian.</param>
-/// <param name="AddressData">
-/// The public and private IPv4 endpoint pairs, copied from the character's
-/// handshake and carried as twelve bytes in the roster record.
-/// </param>
-/// <param name="Name">Character name.</param>
-/// <param name="ClanName">Clan name.</param>
-    public sealed record PlayerProfileRecord(
-        byte Version,
-        byte RecordLength,
-        byte RosterBaseField,
-        sbyte RosterIndex,
-        byte SessionSlot,
-        bool HasClanName,
-        int CharacterId,
-        byte[] AddressData,
-        string Name,
-        string ClanName)
-    {
-        /// <summary>
-        /// The appearance block a join request carries, empty on a roster entry.
-        /// </summary>
-        /// <remarks>
-        /// <b>It is the tail the client plays as, and the host re-broadcasts it.</b>
-        /// <c>briefing-then-solo-game</c>'s 140-byte join request holds it at
-        /// <c>0x10</c>, and the loadout the host writes for that player carries the same
-        /// bytes as its trailing block, so a character whose saved row states no colours
-        /// is still announced with the face it plays as
-        /// (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §8.4). A roster entry puts its
-        /// endpoint pairs at that offset and announces nothing here.
-        /// </remarks>
-        public byte[] AnnouncedAppearance { get; init; } = [];
-    }

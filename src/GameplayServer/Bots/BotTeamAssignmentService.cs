@@ -52,7 +52,7 @@ public sealed class BotTeamAssignmentService(ILogger<BotTeamAssignmentService> l
 
         if (policy == BotTeamPolicy.Both)
         {
-            var side = AllSides()
+            var side = CandidateSides(humans, bots)
                 .OrderBy(candidate => bots.Count(held => held == candidate))
                 .ThenBy(candidate => humans.Count(held => held == candidate))
                 .ThenBy(candidate => candidate)
@@ -95,9 +95,41 @@ public sealed class BotTeamAssignmentService(ILogger<BotTeamAssignmentService> l
         return fewerHumans;
     }
 
-    /// <summary>The sides the match's rows can state.</summary>
-    /// <returns>Every side, in order.</returns>
-    private static IEnumerable<short> AllSides() => Enumerable
-        .Range(RoomSideUtils.FirstSide, RoomSideUtils.SideCount)
-        .Select(value => (short)value);
+    /// <summary>
+    /// The sides a fill may place a bot on: the ones this room's players and bots
+    /// already state, and, while they state only one, the side a two-side match
+    /// opposes to it.
+    /// </summary>
+    /// <remarks>
+    /// <b>A room's sides are the ones it holds, not the ones the protocol allows.</b>
+    /// The protocol can state three sides (blue, red and orange,
+    /// <see cref="RoomSideUtils"/>), and a fill that considered all three would put a
+    /// bot on orange in a two-side room that had never named it. So the candidates
+    /// are derived from the room, and a room holding one side is a two-side match
+    /// missing its other, which is where <see cref="RoomSideUtils.Opposite"/> comes
+    /// in. A room holding all three fills across all three.
+    /// </remarks>
+    /// <param name="humans">Sides the room's human players hold.</param>
+    /// <param name="bots">Sides the room's bots already hold.</param>
+    /// <returns>The candidate sides, in ascending order while the room states any.</returns>
+    private static List<short> CandidateSides(IReadOnlyList<short> humans, IReadOnlyList<short> bots)
+    {
+        var stated = humans
+            .Concat(bots)
+            .Distinct()
+            .OrderBy(side => side)
+            .ToList();
+
+        if (stated.Count == 0)
+        {
+            return [RoomSideUtils.FirstSide];
+        }
+
+        if (stated.Count == 1 && RoomSideUtils.Opposite(stated[0]) is { } opposite)
+        {
+            stated.Add(opposite);
+        }
+
+        return stated;
+    }
 }

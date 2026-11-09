@@ -215,6 +215,9 @@ public sealed class GetGameDetailsHandler(
     /// <summary>Size of one player entry.</summary>
     private const int PlayerEntrySize = 28;
 
+    /// <summary>Width of the character name inside a player entry.</summary>
+    private const int PlayerNameLength = 16;
+
     /// <summary>Maximum number of player entries.</summary>
     private const int MaximumPlayers = 18;
 
@@ -355,8 +358,20 @@ public sealed class GetGameDetailsHandler(
         foreach (var characterIdentifier in roster)
         {
             var character = await characterService.FindByIdAsync(characterIdentifier, cancellationToken);
+
+            // One <see cref="PlayerEntrySize"/>-byte player entry, in the room's
+            // order (host first): the character id, the sixteen-byte name, the
+            // ping and the experience (`mgo2_cmd_4313_s2c.ksy`, `player_entry`).
+            //
+            // **The row's level is not a field of this record.** The client draws
+            // it from the experience behind the name, so a character whose stored
+            // experience is zero shows as the first level however it has played,
+            // and the ping is what its meter is drawn from — the entry has no
+            // level, rank, emblem or device byte at all. A row's rank badge, clan
+            // emblem, keyboard and voice indicators are therefore not written
+            // here and cannot be: the record has nowhere to put them.
             writer.WriteUInt32((uint)characterIdentifier);
-            writer.WriteFixedString(character?.Name ?? string.Empty, 16);
+            writer.WriteFixedString(character?.Name ?? string.Empty, PlayerNameLength);
             writer.WriteUInt32((uint)pings.GetValueOrDefault(characterIdentifier));
             writer.WriteUInt32((uint)experiences.GetValueOrDefault(characterIdentifier));
         }

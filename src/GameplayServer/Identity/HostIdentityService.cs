@@ -66,6 +66,18 @@ public sealed class HostIdentityService(IOptions<ServerOptions> options)
     public uint PeerIdentifier => peerIdentifier
         ?? throw new InvalidOperationException("The gameplay server character has not been resolved.");
 
+    /// <summary>
+    /// Identifier of the clan this host plays in, written at <c>0x1f</c> of its own
+    /// roster entry (<c>0x13</c> in the short layout). It is what a client fetches this
+    /// host's clan emblem with; zero means the host names no clan.
+    /// </summary>
+    public int ClanIdentifier { get; private set; }
+
+    /// <summary>Sets the clan id of the configured character.</summary>
+    /// <param name="clanIdentifier">Identifier of the character's clan, or zero for none.</param>
+    public void SetClanIdentifier(int clanIdentifier) =>
+        ClanIdentifier = Math.Max(0, clanIdentifier);
+
     /// <summary>Sets the peer identifier to the configured character's database identifier.</summary>
     /// <param name="characterIdentifier">Identifier of the configured character.</param>
     public void SetCharacterIdentifier(int characterIdentifier)

@@ -31,10 +31,10 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// <c>mgo2-game1</c> the record's <c>0b</c> is a slot the same frame's occupancy
 /// array writes <c>07</c> at — so it is the raw key and not the slot plus one the
 /// loadout record carries (<see cref="LoadoutFramesUtils.SlotByteOffset"/>). The
-/// team byte is the raw <c>0</c>/<c>1</c> the arrays carry and not the doubled
-/// value the loadout carries, and it follows the room: the record for slot
-/// <c>0b</c> is written <c>01</c> only after the arrays put that player on side
-/// one.
+/// team byte is the raw side id the arrays carry — <c>0</c>, <c>1</c> or the
+/// orange side's <c>2</c> — and not the doubled value the loadout carries, and it
+/// follows the room: the record for slot <c>0b</c> is written <c>01</c> only after
+/// the arrays put that player on side one.
 /// </para>
 /// <para>
 /// <b>The index is unresolved.</b> It runs 0, 1, 2, 3 down the copies a room
@@ -104,7 +104,10 @@ public static class RoomPlayerEntryBodiesUtils
     /// <summary>Offset of the second repetition of the player's key.</summary>
     public const int SecondRepeatSlotByteOffset = 0x08;
 
-    /// <summary>Offset of the raw team byte, <c>0</c> or <c>1</c>.</summary>
+    /// <summary>
+    /// Offset of the side id: <c>0</c> blue, <c>1</c> red, <c>2</c> orange
+    /// (<see cref="RoomSideUtils"/>).
+    /// </summary>
     public const int TeamByteOffset = 0x09;
 
     /// <summary>
@@ -198,5 +201,5 @@ public static class RoomPlayerEntryBodiesUtils
     /// <param name="team">Team slot the room holds for the player, or <c>null</c>.</param>
     /// <returns>The byte to write.</returns>
     public static byte TeamByteOf(short? team) =>
-        team is 0 or 1 ? (byte)team.Value : NoTeamByte;
+        RoomSideUtils.IsSide(team) ? (byte)team!.Value : NoTeamByte;
 }

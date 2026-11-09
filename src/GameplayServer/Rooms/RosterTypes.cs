@@ -92,6 +92,22 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
     public string ClanName { get; set; } = string.Empty;
 
     /// <summary>
+    /// Identifier of the player's clan, written at <c>0x1f</c> of its roster entry
+    /// (<c>0x13</c> in the short layout), or zero for a player in no clan and for a
+    /// bot.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the field the row's clan emblem hangs off.</b> The record names the
+    /// clan and the client fetches that clan's 768-byte block over TCP by this id
+    /// (<c>0x4b4a</c>), so an entry left at zero draws no emblem even when the clan
+    /// name beside it is right. The sampled hosts fill it — <c>pcapng1</c> and
+    /// <c>pcapng2</c> hold <c>0x2284</c> on the two <c>gta6</c> entries and
+    /// <c>0x04cb</c> once — and the value is the server's, not the peer's: a join
+    /// request ends with the clan's name and never with its id.
+    /// </remarks>
+    public int ClanIdentifier { get; set; }
+
+    /// <summary>
     /// The 23-byte appearance block the player announced in its join request, empty
     /// when the record carried none.
     /// </summary>
@@ -159,6 +175,7 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
             Name,
             ClanName,
             SessionSlot,
+            clanIdentifier: IsBot ? 0 : ClanIdentifier,
             addressData: AddressData,
             // A bot's entry carries zero at 0x10, measured on the recorded hosts'
             // own BOT entries; a player's keeps the value the captures put there.

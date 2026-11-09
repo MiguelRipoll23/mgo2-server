@@ -117,40 +117,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         // browsing client's game details from, so a room published before its rows
         // is a room whose first browsers are told it briefs for no minutes and
         // plays rounds of no length.
-        await StartupUtils.RetryAsync(
-            "publish the host account and character settings",
-            async token =>
-            {
-                var characterIdentifier = await accountService.GetOrCreateCharacterIdentifierAsync(token);
-                hostIdentity.SetCharacterIdentifier(characterIdentifier);
-
-                // The row is written whole, as a host with no earlier row would be: it
-                // is what a browsing client's details name and where a joining client
-                // reads the rotation it loads, so the values it is given are logged
-                // here rather than left to be compared by eye later.
-                var settings = MatchSettingsUtils.HostSettings(options);
-                await characterService.EnsureDedicatedHostSettingsAsync(
-                    characterIdentifier,
-                    settings,
-                    token);
-                if (await characterService.EnsureDedicatedHostAppearanceAsync(characterIdentifier, token))
-                {
-                    logger.LogInformation(
-                        "[{LogPrefix}] Host character {CharacterIdentifier} had no appearance row; the reference face was written",
-                        LogPrefix, characterIdentifier);
-                }
-
-                logger.LogInformation(
-                    "[{LogPrefix}] Host settings row restated for character {CharacterIdentifier}: a "
-                    + "{BriefingTime}-minute briefing, {RoundCount} round(s), maps {Maps}",
-                    LogPrefix,
-                    characterIdentifier,
-                    settings.BriefingTime,
-                    settings.RotationMaps?.Length ?? 0,
-                    string.Join(",", settings.RotationMaps ?? []));
-            },
-            logger,
-            cancellationToken);
+        await EnsureHostCharacterAsync(cancellationToken);
         logger.LogDebug(
             "[{LogPrefix}] Host character {CharacterIdentifier} ({CharacterName}) is ready",
             LogPrefix,

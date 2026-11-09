@@ -40,6 +40,7 @@ public static class RoomRosterFramesUtils
                 hostIdentity.CharacterName,
                 hostIdentity.ClanName,
                 RoomRosterService.HostSessionSlot,
+                clanIdentifier: hostIdentity.ClanIdentifier,
                 addressData: hostIdentity.AddressData,
                 unresolvedByte: PlayerProfileRecordUtility.HostEntryUnresolvedByte,
                 includeEndpointPairs: includeEndpointPairs),

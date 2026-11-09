@@ -32,7 +32,12 @@ public abstract class ClanEmblemHandlerBase : ICommandHandler
     }
 
     /// <summary>Bytes one emblem occupies on the wire.</summary>
-    public const int EmblemSize = 768;
+    /// <remarks>
+    /// The block and what the client reads of it are
+    /// <see cref="ClanEmblemBlockUtils"/>'s: a <c>EMBD</c> magic, a flag, a 48-byte
+    /// palette and 512 packed pixels, then padding to this length.
+    /// </remarks>
+    public const int EmblemSize = ClanEmblemBlockUtils.BlockSize;
 
     /// <summary>Reply the handler answers on.</summary>
     protected abstract ushort ReplyCommand { get; }
@@ -66,7 +71,10 @@ public abstract class ClanEmblemHandlerBase : ICommandHandler
         var writer = new PacketWriter();
         writer.WriteUInt32(0);
 
-        if (emblemBytes is { Length: > 0 })
+        // A stored blob the client would not decode is not served as an emblem: a
+        // block without its magic is padding to the decoder, and answering with it
+        // tells the row it has an emblem while drawing nothing.
+        if (emblemBytes is { Length: > 0 } && ClanEmblemBlockUtils.IsBlock(emblemBytes))
         {
             if (emblemBytes.Length >= EmblemSize)
             {

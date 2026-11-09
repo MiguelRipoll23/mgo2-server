@@ -67,11 +67,13 @@ public sealed class LobbySlotService(
         foreach (var member in members.Where(member => !member.IsBot))
         {
             var team = teams.TryGetValue(member.CharacterId, out var stored) ? stored : (short?)null;
-            if (team is not 0 and not 1)
+            if (!RoomSideUtils.IsSide(team))
             {
-                // A player in the third role, one reported as the client's own
-                // 0xFE, and one the room's rows do not hold at all: the slot is
-                // still the player's and the pair marks it taken.
+                // A side the match does not have — including the 0xFE the client
+                // reports for itself before a lobby puts it on one — and a player
+                // the room's rows do not hold at all: the slot is still the
+                // player's and the pair marks it taken. The orange side is one of
+                // the match's sides and is not this case.
                 team = null;
                 unknown++;
             }

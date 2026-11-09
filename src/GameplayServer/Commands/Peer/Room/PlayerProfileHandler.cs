@@ -61,6 +61,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// is merged into. The identifier carries the scoreboard as well as the roster,
 /// and the two are told apart by their length (<see cref="MatchScoreboardFramesUtils"/>).
 /// </param>
+/// <param name="clans">Reader of the clan id a roster entry names.</param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
     RoomRosterService roster,
@@ -72,6 +73,7 @@ public sealed class PlayerProfileHandler(
     MatchStartRunService matchStart,
     TeamArrayService teamArrays,
     MatchScoreService score,
+    RosterClanLookupService clans,
     ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
@@ -170,11 +172,16 @@ public sealed class PlayerProfileHandler(
             return;
         }
 
+        // The row's clan emblem is fetched by clan id and a profile record carries the
+        // clan's name only, so the id is read here: an entry left at zero names no clan
+        // to fetch and the row draws no emblem at all.
+        var clanIdentifier = await clans.FindAsync(context.Session.PeerIdentifier);
         var member = roster.Register(
             context.Remote,
             profile,
             context.Session.PeerIdentifier,
-            context.Session.PeerAddressData);
+            context.Session.PeerAddressData,
+            clanIdentifier);
         logger.LogDebug(
             "UDP {LocalPort}: registered roster entry for {RemoteAddress}: character {CharacterId}, "
             + "slot {RosterIndex}, current joiner count {JoinerCount}",

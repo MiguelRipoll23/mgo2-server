@@ -109,7 +109,30 @@ public static class PlayerProfileRecordParseUtils
             clan)
         {
             AnnouncedAppearance = AnnouncedAppearanceOf(body, isRosterEntry),
+            ClanIdentifier = isRosterEntry ? ClanIdentifierOf(body, hasAddressData) : 0,
         };
+    }
+
+    /// <summary>
+    /// The clan id a roster entry names, read from the long or the short layout's own
+    /// offset; zero for a body too short to hold the field.
+    /// </summary>
+    /// <remarks>
+    /// It is a little-endian sixteen-bit value. The client does not draw an emblem
+    /// from it: it asks the game server for the clan's 768-byte block over TCP by this
+    /// id, so a zero here is a row with no clan to ask about.
+    /// </remarks>
+    /// <param name="body">Record body to read.</param>
+    /// <param name="longLayout">Whether the record carries the twelve-byte endpoint field.</param>
+    /// <returns>The clan id, zero when the field is absent.</returns>
+    private static int ClanIdentifierOf(ReadOnlySpan<byte> body, bool longLayout)
+    {
+        var offset = longLayout
+            ? PlayerProfileRecordLayout.ClanIdentifierOffset
+            : PlayerProfileRecordLayout.ShortClanIdentifierOffset;
+        return body.Length < offset + PlayerProfileRecordLayout.ClanIdentifierLength
+            ? 0
+            : body[offset] | (body[offset + 1] << 8);
     }
 
     /// <summary>

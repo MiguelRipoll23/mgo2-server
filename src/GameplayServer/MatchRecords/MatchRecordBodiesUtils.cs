@@ -89,6 +89,22 @@ public static class MatchRecordBodiesUtils
     /// <summary>Result code of a round raw team <c>1</c> took; see <see cref="StateResultTeamZero"/>.</summary>
     public const byte StateResultTeamOne = 3;
 
+    /// <summary>
+    /// Result code of a round the orange side took: <c>4</c>, the same <c>2 + side</c>
+    /// ladder the other two rungs are on.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured as a ladder, not as three unrelated codes.</b> The vector's round
+    /// result reads <c>2</c> for side zero and <c>3</c> for side one
+    /// (<see cref="StateResultTeamZero"/>, <see cref="StateResultTeamOne"/>), and
+    /// the sides a match can have are three
+    /// (<see cref="Mgo2Server.GameplayServer.Rooms.RoomSideUtils"/>) — so the third
+    /// is the next rung. The drawn and no-result codes sit outside the ladder at
+    /// <c>1</c> and <c>6</c>, which is why the ladder is read from its base rather
+    /// than as a count of sides.
+    /// </remarks>
+    public const byte StateResultTeamTwo = 4;
+
     /// <summary>Result code of a round nobody won.</summary>
     public const byte StateResultDrawn = 1;
 
@@ -113,18 +129,20 @@ public static class MatchRecordBodiesUtils
     public const int StateMatchResultIndex = 3;
 
     /// <summary>
-    /// The result code a raw team's win is written as: team <c>0</c> is the
-    /// decoder's code <c>2</c> and team <c>1</c> its code <c>3</c>, since the
-    /// coding names the game's own team ids and the room's rows hold sides.
+    /// The result code a side's win is written as: side <c>0</c> is the decoder's
+    /// code <c>2</c>, side <c>1</c> its code <c>3</c> and side <c>2</c> its code
+    /// <c>4</c>, since the coding names the game's own team ids and the room's rows
+    /// hold sides.
     /// </summary>
-    /// <param name="team">Raw team value the room's rows hold, 0 or 1.</param>
+    /// <param name="team">Side the room's rows hold, 0, 1 or 2.</param>
     /// <returns>The result code.</returns>
     public static byte ResultCode(short team) =>
-        team == 0 ? StateResultTeamZero : StateResultTeamOne;
+        (byte)(StateResultTeamZero + team);
 
     /// <summary>
-    /// The room's raw team a result code names: <c>2</c> is team <c>0</c> and
-    /// <c>3</c> team <c>1</c>, while the drawn and no-result codes name no side.
+    /// The room's raw side a result code names: <c>2</c> is side <c>0</c>, <c>3</c>
+    /// side <c>1</c> and <c>4</c> side <c>2</c>, while the drawn and no-result codes
+    /// name no side.
     /// </summary>
     /// <remarks>
     /// The codes carry the game's own team ids, which number the second side
@@ -138,6 +156,7 @@ public static class MatchRecordBodiesUtils
     {
         StateResultTeamZero => 0,
         StateResultTeamOne => 1,
+        StateResultTeamTwo => 2,
         _ => null,
     };
 
