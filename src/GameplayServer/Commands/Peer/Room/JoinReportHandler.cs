@@ -40,11 +40,12 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// it.
 /// </para>
 /// <para>
-/// <b>The publication, and the report's own bare answer, are why the round does
+/// <b>The publication, and the report's own answer, are why the round does
 /// not have to open yet.</b> Only the report that opens the round is answered by
 /// the round's marker; every other one draws the same record with the answer bit
-/// set and no body, which is what the reference host writes while its briefing
-/// waits (<c>docs/analysis/connection-not-stable-disconnect.md</c>). A client
+/// set — one body byte when the report carries the payload-class bit, none
+/// otherwise — which is what the reference host writes while its briefing
+/// waits (<c>docs/analysis/connection-not-stable-disconnect.md</c> §2). A client
 /// that readied first in a room of six is answered by the host's publication of
 /// the set — its own state in it — and not by the round,
 /// which is still minutes away
@@ -162,27 +163,34 @@ public sealed class JoinReportHandler(
             // live solo briefing whose report was answered only by the
             // publication (`myserver17.pcapng`, t+68.5) had the client
             // retransmit the same record as `0x92de e1 01` eight times over
-            // 24 s — the one capture in the set in which that record appears —
-            // and give up at its own deadline 64 s after reporting, which is
-            // the `CONNECTION NOT STABLE` modal
+            // 24 s, and give up at its own deadline 64 s after reporting, which
+            // is the `CONNECTION NOT STABLE` modal
             // (`docs/analysis/connection-not-stable-disconnect.md`).
             //
-            // Only the record without the payload-class bit is answered here,
-            // because that is the record the capture answers: the bare
-            // `0x52de` / `0x5ade` carries no body, and a retransmission under
-            // `0x8000` stops as soon as this one is heard.
-            if ((context.Message.Type & PeerAcknowledgementUtils.PayloadClassBit) == 0)
-            {
-                // The byte is read for the phase and never written: the record
-                // answered here is the one without the payload-class bit, whose
-                // answer carries no body at all. It is still the ladder's value
-                // rather than a literal, so a body that ever starts being
-                // written here carries this pass's phase and not a stale one.
-                var answer = PeerAcknowledgementUtils.AcknowledgementOf(
-                    context.Message,
-                    controlBytes.Current());
-                await context.Send(answer.Type, answer.Body, answer.Flags);
-            }
+            // **Both forms of the report are answered, each in its own shape.**
+            // The answer to a record carrying the payload-class bit carries one
+            // body byte and the answer to the plain one none
+            // (<see cref="PeerAcknowledgementUtils"/>), and the reference host
+            // writes one answer per form in `briefing-then-solo-game`: 77
+            // `0xd2de` with a byte, from t+13.5 to t+145.6, beside 55 empty
+            // `0x52de`. A live client sends the class-bit form on its own — 91
+            // `0x92de e1 0a` against 65 plain reports in that same capture — so
+            // a host that answered only the plain form would leave every one of
+            // those records at the far end of the client's 24-deep window, and
+            // the client would raise the modal 60 s after the first of them.
+            // Answering the class-bit record does not stop the plain one being
+            // answered as well: they are two records, numbered separately.
+            // The control byte reaches the wire only on the class-bit answer,
+            // so it is read through the ladder's advancing form only there, and
+            // through the phase's own value otherwise: reading the advancing one
+            // for a record answered with no body would spend one of the round's
+            // answers on a value nothing sees
+            // (<see cref="Rooms.PeerControlByteService.Next"/>).
+            var controlByte = (context.Message.Type & PeerAcknowledgementUtils.PayloadClassBit) != 0
+                ? controlBytes.Next()
+                : controlBytes.Current();
+            var answer = PeerAcknowledgementUtils.AcknowledgementOf(context.Message, controlByte);
+            await context.Send(answer.Type, answer.Body, answer.Flags);
 
             logger.LogDebug(
                 "UDP {LocalPort}: {RemoteAddress} has joined with {Value}; {JoinedCount} of {PlayerCount} "

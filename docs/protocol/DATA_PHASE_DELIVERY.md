@@ -60,18 +60,26 @@ records: 0x5ade` and sent `0x5ade` at counter 34, then wrote the run's own marke
 solo round carries one host `0x5ade` for its report, at t+46.4155 and with the
 run. **[V]**
 
-**A report that does not open the round is answered by the bare record, and by
+**A report that does not open the round is answered by its own record, and by
 nothing else.** The marker is the answer of the report its round opens on; a
 report the host hears while the briefing still waits gets the same identifier
-with the answer bit set and no body, beside the join publication. In
+with the answer bit set, beside the join publication. In
 `mgo2-game-joined-when-red-team-then-briefing` the client reports
 `0x12de e1 05` at t+57.656 and the host writes `0x52de` at t+60.273, in the same
 datagram as its `0x12de e0 05`, with its round forty seconds out; the same group
-repeats at t+62.666. Withholding it leaves the client re-sending its own report
-under the class bit — `0x92de e1 01`, eight times over 24 s in the live session
-recorded in `docs/analysis/connection-not-stable-disconnect.md` — until its own
-60 s deadline raises *CONNECTION NOT STABLE*. **[V]** on the answer, **[V]** on
-what follows its absence.
+repeats at t+62.666. **[V]** on the answer.
+
+**The answer's body follows the report's class bit, and both forms are answered.**
+A report carrying the payload-class bit draws one body byte and a plain one draws
+none. `briefing-then-solo-game` writes both from its first report to its last: 77
+`0xd2de` carrying a byte, between t+13.5 and t+145.6, beside 55 empty `0x52de`.
+The class-bit record is therefore not a retransmission of the plain one but a
+record of its own, and a host that answers only the plain form leaves it
+unanswered: withholding it leads the client to re-send its report until its own
+60 s deadline raises *CONNECTION NOT STABLE*, which is the live session in
+`docs/analysis/connection-not-stable-disconnect.md`, where the client sent the
+class-bit form (`0x92de e1 01`) eight times over 24 s and the plain one not at
+all. **[V]** on both answers, **[V]** on what follows their absence.
 
 **Written it is three records, and the report's byte is what the third echoes.**
 `e1 14` is answered `e0 14 …` and `e1 01` is answered `e0 01 …`, so the run's

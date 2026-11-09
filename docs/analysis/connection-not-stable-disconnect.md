@@ -51,6 +51,16 @@ times over 24 s, the only capture in the set in which `0x92de e1 01` appears at 
 answer, beside the publication, which is where the reference writes it. The pass still skips
 join reports, so a report that does open the round still draws exactly one marker.
 
+**And the answer's shape follows the report's class bit.** That first fix answered only the record
+without the payload-class bit, on the reading that the class-bit form was a retransmission that
+stops once the plain one is heard. It is not. `briefing-then-solo-game` answers **both**, 77
+`0xd2de` carrying one body byte beside 55 empty `0x52de`, from its first report at t+13.5 to its
+last at t+145.6, and its client sends 91 `0x92de e1 0a` on its own alongside 65 plain reports. A
+client whose reports arrive only in that class — which is what `ms17` shows, and what the reported
+live session shows — was therefore answered by nothing at all, and the record stayed at the far
+end of its window. Both forms now draw `PeerAcknowledgementUtils.AcknowledgementOf`: one body byte
+for the class-bit record, none for the plain one.
+
 **Why an unanswered record is fatal rather than late** is already read out of the image
 (`docs/protocol/P2P_CONNECT_FSM.md` §7.1b): the session holds a 24-deep window over the records
 it sends at `session+0x48`, `[0xc]` is that window's far end, and the only thing that drains it
@@ -94,7 +104,10 @@ Re-capture one solo briefing and read three things:
 
 * `0x1f` from the client within 60 s of its report, and the round's own run (`0x9254`, class
   `0x1d`) after it. That is the success line.
-* `0x92de` in the client's direction: it must be absent, as it is in every reference.
+* `0x92de` in the client's direction: every one of them must be answered, not absent. The
+  reference sends them too (`briefing-then-solo-game`: 91) and answers each with `0xd2de`. What a
+  healthy session does not show is the same `0x92de e1 NN` repeated once a second with no answer
+  behind it.
 * the run written once, not three times.
 
 If `0x1f` still does not come with the answer in place, §4.1 is the next suspect, and the

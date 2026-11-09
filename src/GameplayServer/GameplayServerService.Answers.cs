@@ -31,7 +31,8 @@ public sealed partial class GameplayServerService
     /// <para>
     /// The join report is the other exception, and it is the handler that answers
     /// it: the report that opens the round is answered by the round's marker, and
-    /// only the report that does not open it draws a bare answer
+    /// only the report that does not open it draws an answer of its own — one body
+    /// byte when the report carries the payload-class bit, none otherwise
     /// (<c>JoinReportHandler</c>). The recorded host answers `e1 NN` with the
     /// marker — `0x5ade`, and `0x52de` a 0x800 bit along — when its round opens
     /// on that report, and with the bare same record, empty, while the briefing
