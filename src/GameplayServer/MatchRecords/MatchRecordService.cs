@@ -124,12 +124,27 @@ public sealed partial class MatchRecordService(
             // behind it would not start until the round it was waiting for.
             _ = roomPublications.PublishAsync(context);
 
+            // The steps are the join's own replay — 42.2 s counted from the roster
+            // answer — and a briefing can be shorter than that, so a round opens
+            // inside them. Everything the beat carries belongs to the round: the
+            // rules member list, the vitals and the clock. A replay still running at
+            // the open therefore leaves the client on its round-start screen with
+            // none of them, and hands it a clock that jumped the whole wait once the
+            // beat starts. Measured 2026-11-10 17:42: the round's run went out at
+            // 17:42:39 with the clock at 2388, the next clock record was 17:43:08 at
+            // 2154 — 29 s of silence and a 29 s jump — and the reference writes its
+            // member list and vitals 0.085 s behind its run
+            // (`game-with-bots-workingserver` t+29.397 → t+29.482). So the steps stop
+            // at the frame the round's run is written and the beat takes the channel.
+            var steps = SparsePhaseFramesUtils.SparseSteps();
+
             logger.LogDebug(
                 "UDP {LocalPort}: playing {StepCount} sparse match-record steps to {RemoteAddress}",
                 context.LocalPort,
-                SparsePhaseFramesUtils.SparseSteps().Count,
+                steps.Count,
                 session.RemoteAddress);
-            foreach (var step in SparsePhaseFramesUtils.SparseSteps())
+            var playedSteps = 0;
+            foreach (var step in steps)
             {
                 if (!IsAlive(session))
                 {
@@ -146,6 +161,21 @@ public sealed partial class MatchRecordService(
                 }
 
                 await SendAsync(context, step.Records);
+                playedSteps++;
+
+                // The round's own run is what the beat follows: the reference writes
+                // the member list and the vitals 0.085 s behind its run, not behind
+                // the replay that happened to be running when the round opened.
+                if (roundState.IsOpen && roundState.HasRunWritten(session))
+                {
+                    logger.LogDebug(
+                        "UDP {LocalPort}: a round opened during the sparse phase, so its remaining "
+                        + "{RemainingCount} step(s) to {RemoteAddress} are left to the beat",
+                        context.LocalPort,
+                        steps.Count - playedSteps,
+                        session.RemoteAddress);
+                    break;
+                }
             }
 
             // The beat is the round's, not the sparse phase's, and what it is

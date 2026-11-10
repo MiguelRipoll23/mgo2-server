@@ -116,14 +116,22 @@ public sealed class PlayerSettingsBurstSchedulerService(
             ? (byte)(member.SessionSlot + 1)
             : (byte)0;
 
+        // Both branches carry the room's own phase, slot and population. The
+        // recorded room's body is the one pinned to the capture's values, so a
+        // joiner of a room whose rotation could not be read is told the capture's
+        // round rather than this room's (RoomRotationPayloadUtils).
+        var roundPhase = matchSettings.CurrentPhase;
+        var rotationIndex = matchSettings.CurrentRotationIndex;
+        var playerCount = checked((byte)(roster.JoinerCount + 1));
+
         var settingsBurst = rotation is null
-            ? burst.BuildSettingsBurst(rotation, loadouts, answeringSlot)
+            ? burst.BuildSettingsBurst(rotation, loadouts, roundPhase, rotationIndex, playerCount, answeringSlot)
             : burst.BuildSettingsBurst(
                 rotation,
                 loadouts,
-                matchSettings.CurrentPhase,
-                matchSettings.CurrentRotationIndex,
-                checked((byte)(roster.JoinerCount + 1)),
+                roundPhase,
+                rotationIndex,
+                playerCount,
                 matchSettings.RuleTimers,
                 answeringSlot);
         await RosterRunSendUtils.SendAsync(context, settingsBurst);

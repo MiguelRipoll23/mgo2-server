@@ -160,12 +160,20 @@ public sealed partial class PlayerSettingsBurstService(
     /// (`docs/analysis/join-stall-after-mode2.md` §28).
     /// </param>
     /// <returns>The records in send order, each with the type it travels as.</returns>
+    /// <param name="roundNumber">The room's round-phase byte.</param>
+    /// <param name="currentRotationIndex">Slot of the round the room is playing.</param>
+    /// <param name="playerCount">The room's population, host included.</param>
     public List<RosterRecord> BuildSettingsBurst(
         IReadOnlyList<MatchRotationEntry>? rotation,
         IReadOnlyList<LobbyLoadout>? loadouts,
+        byte roundNumber,
+        int currentRotationIndex,
+        byte playerCount,
         byte answeringSlot = 0)
     {
-        var rotationBody = rotation is null ? RecordedRotationBody() : RoomRotationBody(rotation);
+        var rotationBody = rotation is null
+            ? RecordedRotationBody()
+            : RoomRotationBody(rotation, roundNumber, currentRotationIndex, playerCount);
         return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
     }
 
@@ -277,8 +285,8 @@ public sealed partial class PlayerSettingsBurstService(
     public static byte[] RecordedRotationBody() => RoomRotationPayloadUtils.BuildReferenceBody();
 
     /// <summary>
-    /// A settings body with this room's rotation and reference values for state
-    /// fields not supplied by this overload. The send path supplies live state.
+    /// A settings body with this room's rotation and the state of the room it is
+    /// being written for.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -306,10 +314,21 @@ public sealed partial class PlayerSettingsBurstService(
     /// </para>
     /// </remarks>
     /// <param name="rotation">The room's rotation, in play order.</param>
+    /// <param name="roundNumber">The room's round-phase byte.</param>
+    /// <param name="currentRotationIndex">Slot of the round the room is playing.</param>
+    /// <param name="playerCount">The room's population, host included.</param>
     /// <returns>The body.</returns>
-    public static byte[] RoomRotationBody(IReadOnlyList<MatchRotationEntry> rotation)
+    public static byte[] RoomRotationBody(
+        IReadOnlyList<MatchRotationEntry> rotation,
+        byte roundNumber,
+        int currentRotationIndex,
+        byte playerCount)
     {
-        return RoomRotationPayloadUtils.BuildReferenceBody(rotation);
+        return RoomRotationPayloadUtils.BuildReferenceBody(
+            rotation,
+            roundNumber,
+            currentRotationIndex,
+            playerCount);
     }
 
     /// <summary>

@@ -61,13 +61,30 @@ internal static class RoomRotationPayloadUtils
             ReferencePlayerCount,
             ruleTimers: null);
 
-    public static byte[] BuildReferenceBody(IReadOnlyList<MatchRotationEntry> rotation) =>
-        BuildCore(
-            rotation,
-            ReferenceRoundNumber,
-            currentRotationIndex: 0,
-            playerCount: ReferencePlayerCount,
-            ruleTimers: null);
+    /// <summary>
+    /// The body for a room this host serves: its rotation, its round phase, the
+    /// slot it is playing and its population.
+    /// </summary>
+    /// <remarks>
+    /// <b>None of the three state fields is a constant of the format.</b> The
+    /// client reads the slot at <c>0x55</c> and names its round by that triple's
+    /// map byte — the getter at <c>system.dll 0x8eb0c0</c> returns
+    /// <c>rotation_data[slot * 3]</c> — and the walk at <c>0x27bb10</c> wraps the
+    /// slot to zero when that byte is zero. So a body pinned to slot <c>0</c> tells
+    /// a room on its fifth entry that it is playing the first, and one pinned to a
+    /// population of two tells a room of nine it holds two.
+    /// </remarks>
+    /// <param name="rotation">The room's rotation, entry zero first.</param>
+    /// <param name="roundNumber">The room's round-phase byte.</param>
+    /// <param name="currentRotationIndex">Slot of the round the room is playing.</param>
+    /// <param name="playerCount">The room's population, host included.</param>
+    /// <returns>The body.</returns>
+    public static byte[] BuildReferenceBody(
+        IReadOnlyList<MatchRotationEntry> rotation,
+        byte roundNumber,
+        int currentRotationIndex,
+        byte playerCount) =>
+        BuildCore(rotation, roundNumber, currentRotationIndex, playerCount, ruleTimers: null);
 
     public static byte[] Build(
         IReadOnlyList<MatchRotationEntry> rotation,
@@ -93,6 +110,12 @@ internal static class RoomRotationPayloadUtils
         {
             throw new ArgumentException("A room's rotation must contain at least one entry.", nameof(rotation));
         }
+
+        // The slot has to name one of the triples this body writes. The client
+        // resolves the round through that triple's map byte and falls back to slot
+        // zero when the byte is zero (system.dll 0x27bb10), so a slot past the
+        // rotation would be a round no client can name.
+        currentRotationIndex %= rotation.Count;
 
         if (currentRotationIndex is < 0 or >= RotationEntryCount)
         {

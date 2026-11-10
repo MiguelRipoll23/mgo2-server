@@ -38,7 +38,11 @@ public sealed class PlayerSettingsBurstServiceTests
             new(Rule: 7, Map: 10, RoundOptions: RoundOption.Unknown0x20, TimeLimitMinutes: 4),
         ];
 
-        var body = PlayerSettingsBurstService.RoomRotationBody(rotation);
+        var body = PlayerSettingsBurstService.RoomRotationBody(
+            rotation,
+            roundNumber: 2,
+            currentRotationIndex: 0,
+            playerCount: 2);
 
         Assert.Equal(161, body.Length);
         Assert.Equal(PlayerSettingsBurstService.RoomRotationPayloadLength, body.Length);
