@@ -19,6 +19,13 @@
 # be tried for one run without editing it. The host character and its game are named
 # after the local port unless the environment names them.
 #
+# Two settings are this run's own and never the cluster's. GAMEPLAY_LOG_LEVEL is
+# the level the run logs at — Debug by default, Trace for every datagram in and out
+# — and it is exported as LOG_LEVEL before the ConfigMap is merged, so the level a
+# pod logs at stays on the pod. GAMEPLAY_SERVER_ROTATION is one round, TDM on Blood
+# Bath, because a local run is played to watch a round and not the deployed
+# rotation of nine.
+#
 # The output is written to a log file as it arrives, through tee, so the run can be
 # read back after the terminal has scrolled or the process has stopped. The file is
 # truncated at the start of each run; set GAMEPLAY_SERVER_LOG to write it elsewhere.
@@ -27,6 +34,8 @@
 #   scripts/run-gameplay-local.sh
 #   GAMEPLAY_SERVER_PORT=9999 scripts/run-gameplay-local.sh
 #   PI_HOST=miguel@192.168.1.20 scripts/run-gameplay-local.sh
+#   GAMEPLAY_LOG_LEVEL=Trace scripts/run-gameplay-local.sh
+#   GAMEPLAY_SERVER_ROTATION='CAP@Coppertown, TDM@Blood Bath' scripts/run-gameplay-local.sh
 
 # Run under bash even when the file is started with sh. The run needs bash arrays,
 # process substitution and pipefail, and a POSIX shell rejects the heredoc inside
@@ -207,6 +216,13 @@ export ADVERTISED_ADDRESS="$advertised_address"
 export DEDICATED_ADVERTISED_ADDRESS="${DEDICATED_ADVERTISED_ADDRESS:-$advertised_address}"
 export GAMEPLAY_SERVER_PORT="$gameplay_port"
 
+# The log level is this run's own and not the cluster's. LOG_LEVEL is exported
+# before the ConfigMap is merged, and the merge only fills names the environment
+# has not set, so the level a pod logs at never reaches a local run. Debug is what
+# a run is read at: what each service made of a payload, and the decisions between
+# them. Trace adds the wire — every datagram in and out, with its hex.
+export LOG_LEVEL="${GAMEPLAY_LOG_LEVEL:-Debug}"
+
 # The room's place in its rotation is the deployment's, not entry zero: a run
 # staged at the top of the rotation would brief on a different round than the
 # room it is being compared with, and the row it publishes would name that
@@ -215,6 +231,12 @@ export GAMEPLAY_SERVER_PORT="$gameplay_port"
 export GAMEPLAY_SERVER_START_ROUND="${GAMEPLAY_SERVER_START_ROUND:-${configured_start_round:-${deployed_start_round:-1}}}"
 export GAMEPLAY_SERVER_CHARACTER_NAME="${GAMEPLAY_SERVER_CHARACTER_NAME:-server-$gameplay_port}"
 export GAMEPLAY_SERVER_GAME_NAME="${GAMEPLAY_SERVER_GAME_NAME:-server-$gameplay_port}"
+
+# The local room plays one round, TDM on Blood Bath. A run is played to watch a
+# round, and the deployed rotation is nine of them, so naming one here keeps the
+# room's own row and its settings burst on the round being watched. An environment
+# that names a rotation still wins, over both this and the ConfigMap.
+export GAMEPLAY_SERVER_ROTATION="${GAMEPLAY_SERVER_ROTATION:-TDM@Blood Bath}"
 
 # The local room is the bot room: bots on both sides, filling the slots the humans
 # leave and giving them up when one joins. The count is this run's own, and the
@@ -228,8 +250,9 @@ export BOT_POPULATION_INTERVAL_SECONDS="${BOT_POPULATION_INTERVAL_SECONDS:-5}"
 export DATABASE_CONNECTION_STRING="$database_connection_string"
 unset database_connection_string
 
-printf 'Starting the gameplay server on UDP %s, advertising %s, staged at round %s.\n' \
-    "$gameplay_port" "$advertised_address" "$GAMEPLAY_SERVER_START_ROUND"
+printf 'Starting the gameplay server on UDP %s, advertising %s, staged at round %s, playing %s, logging at %s.\n' \
+    "$gameplay_port" "$advertised_address" "$GAMEPLAY_SERVER_START_ROUND" \
+    "$GAMEPLAY_SERVER_ROTATION" "$LOG_LEVEL"
 printf 'Writing output to %s; press Control-C to stop the server.\n' "$log_file"
 
 # The ConfigMap's settings become the environment, except where the environment

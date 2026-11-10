@@ -94,10 +94,16 @@ public sealed class AcceptHandshakeHandler(
             hostIdentity.AdvertisedPort,
             hostIdentity.PrivateAddress);
         await context.Send(UdpCommandConstants.Handshake, reply, 0);
+
+        // The reply's own body at Debug: the wire dump is Trace, and this is the
+        // payload a client keys its session from, so it is the one whose bytes a
+        // join is diagnosed from.
         logger.LogDebug(
-            "UDP {LocalPort}: sent pre-keyed handshake reply to {RemoteAddress}",
+            "UDP {LocalPort}: sent pre-keyed handshake reply to {RemoteAddress} ({BodyLength} bytes): {Body}",
             context.LocalPort,
-            dialBack);
+            dialBack,
+            reply.Length,
+            TrafficLogger.FormatHex(reply));
 
         context.Session.Established = true;
 

@@ -57,7 +57,7 @@ public sealed partial class GameplayServerService
         // one of those peer's frames as undecodable, because the digest cannot
         // be verified without the session key.
         var session = sessions.Get(remoteAddress) ?? sessions.FindByDialBack(remote);
-        logger.LogDebug(
+        logger.LogTrace(
             "[{LogPrefix}] IN {RemoteAddress} looking up session: {SessionLookup} ({SessionCount} sessions)",
             LogPrefix,
             remoteAddress,
@@ -75,7 +75,7 @@ public sealed partial class GameplayServerService
 
         if (preKeyedCounter is { } preCounter)
         {
-            logger.LogDebug(
+            logger.LogTrace(
                 "[{LogPrefix}] IN {RemoteAddress} passed the pre-key tail-digest check at counter {Counter}",
                 LogPrefix,
                 remoteAddress,
@@ -87,7 +87,7 @@ public sealed partial class GameplayServerService
 
         if (keyedCounter is { } keyed && session is not null)
         {
-            logger.LogDebug(
+            logger.LogTrace(
                 "[{LogPrefix}] IN {RemoteAddress} passed the session tail-digest check at counter {Counter}",
                 LogPrefix,
                 remoteAddress,
@@ -346,7 +346,7 @@ public sealed partial class GameplayServerService
                 // not a recipient yet.
                 if (session.Established)
                 {
-                    logger.LogDebug(
+                    logger.LogTrace(
                         "[{LogPrefix}] IN {RemoteAddress} relayed tick record 0x{MessageType:x4} " +
                         "({BodyLength} bytes, ordinal={Ordinal}, body={Body}) to the other established peers",
                         LogPrefix,

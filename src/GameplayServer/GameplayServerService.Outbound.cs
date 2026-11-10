@@ -35,7 +35,7 @@ public sealed partial class GameplayServerService
         var recipients = sessions.Snapshot()
             .Where(session => session.Established && !ReferenceEquals(session, origin))
             .ToList();
-        logger.LogDebug(
+        logger.LogTrace(
             "[{LogPrefix}] Broadcasting 0x{MessageType:x4} ({BodyLength} body bytes, ordinal={Ordinal}) " +
             "from {Origin} to {RecipientCount} established peers",
             LogPrefix,
@@ -128,7 +128,7 @@ public sealed partial class GameplayServerService
             {
                 session.NoteSent(message.Type, message.Flags);
             }
-            logger.LogDebug(
+            logger.LogTrace(
                 "[{LogPrefix}] OUT {RemoteAddress} building frame counter={Counter}, compression=uncompressed, " +
                 "keyed={Keyed}, records=[{Records}]",
                 LogPrefix,

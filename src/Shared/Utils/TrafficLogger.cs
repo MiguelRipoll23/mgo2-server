@@ -7,6 +7,14 @@ namespace Mgo2Server.Shared.Utils;
 /// <summary>
 /// Logs the traffic of the TCP and UDP transports: connection life cycle,
 /// inbound packets and outbound frames, rendered as hex with their ASCII form.
+/// <para>
+/// <b>The two transports are logged at different levels.</b> The TCP lobbies write
+/// their packets and frames at Debug. A gameplay session's UDP traffic is Trace:
+/// it is a datagram every 33 ms per peer, so at Debug it buries everything the
+/// services decided, and the run that needs it is a run that asked for the wire.
+/// What a service builds and the wire only repeats — the settings burst, the
+/// round's run — is logged by that service at Debug instead.
+/// </para>
 /// </summary>
 public static class TrafficLogger
 {
@@ -109,7 +117,7 @@ public static class TrafficLogger
             FormatHex(buffer));
     }
 
-    /// <summary>Logs a UDP datagram with its ASCII form.</summary>
+    /// <summary>Logs a UDP datagram with its ASCII form, at Trace.</summary>
     /// <param name="logger">Logger to write to.</param>
     /// <param name="logPrefix">Prefix of the server.</param>
     /// <param name="remoteAddress">Address of the peer.</param>
@@ -121,7 +129,7 @@ public static class TrafficLogger
         string remoteAddress,
         string direction,
         ReadOnlySpan<byte> buffer) =>
-        logger.LogDebug(
+        logger.LogTrace(
             "[{LogPrefix}] {Direction} {RemoteAddress} {Length} bytes\n{Bytes}",
             logPrefix,
             direction,
@@ -129,26 +137,26 @@ public static class TrafficLogger
             buffer.Length,
             FormatHexAscii(buffer));
 
-    /// <summary>Logs an inbound peer-to-peer frame.</summary>
+    /// <summary>Logs an inbound peer-to-peer frame, at Trace.</summary>
     /// <param name="logger">Logger to write to.</param>
     /// <param name="logPrefix">Prefix of the server.</param>
     /// <param name="tag">Description of the frame.</param>
     /// <param name="buffer">Decrypted datagram.</param>
     public static void LogUdpInboundPacket(ILogger logger, string logPrefix, string tag, ReadOnlySpan<byte> buffer) =>
-        logger.LogDebug(
+        logger.LogTrace(
             "[{LogPrefix}] IN {Tag} ({Length} bytes): {Bytes}",
             logPrefix,
             tag,
             buffer.Length,
             FormatHex(buffer));
 
-    /// <summary>Logs an outbound peer-to-peer frame.</summary>
+    /// <summary>Logs an outbound peer-to-peer frame, at Trace.</summary>
     /// <param name="logger">Logger to write to.</param>
     /// <param name="logPrefix">Prefix of the server.</param>
     /// <param name="tag">Description of the frame.</param>
     /// <param name="buffer">Plaintext frame.</param>
     public static void LogUdpOutboundPacket(ILogger logger, string logPrefix, string tag, ReadOnlySpan<byte> buffer) =>
-        logger.LogDebug(
+        logger.LogTrace(
             "[{LogPrefix}] OUT {Tag} ({Length} bytes): {Bytes}",
             logPrefix,
             tag,

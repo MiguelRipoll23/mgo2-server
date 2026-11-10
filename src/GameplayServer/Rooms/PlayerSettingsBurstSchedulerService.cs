@@ -1,5 +1,6 @@
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Shared.Types;
+using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameplayServer.Rooms;
@@ -134,6 +135,12 @@ public sealed class PlayerSettingsBurstSchedulerService(
                 playerCount,
                 matchSettings.RuleTimers,
                 answeringSlot);
+
+        // The burst's own bytes, at the level a run is read at. The wire dump they
+        // used to appear in is Trace now (TrafficLogger), and the room's settings
+        // are the payload a join is diagnosed from: the rotation's triples, the
+        // state fields beside them and a loadout per player of the room.
+        LogBurst(settingsBurst);
         await RosterRunSendUtils.SendAsync(context, settingsBurst);
         logger.LogDebug(
             "UDP {LocalPort}: settings burst sent to {RemoteAddress}; sending its closing control",
@@ -147,6 +154,30 @@ public sealed class PlayerSettingsBurstSchedulerService(
             context.LocalPort,
             closing.Type,
             context.Remote);
+    }
+
+    /// <summary>
+    /// Writes the burst's records, with their bodies, at Debug.
+    /// </summary>
+    /// <remarks>
+    /// One line per record rather than one for the burst: the rotation body is
+    /// 161 bytes and each loadout is its own player's, so a burst read as one
+    /// blob is a burst nothing can be found in. The record types and ordinals are
+    /// the ones the peer receives, which is what makes this the burst read against
+    /// the wire rather than a second rendering of an intention.
+    /// </remarks>
+    /// <param name="records">Records about to be sent.</param>
+    private void LogBurst(IReadOnlyList<RosterRecord> records)
+    {
+        foreach (var record in records)
+        {
+            logger.LogDebug(
+                "UDP settings burst record 0x{MessageType:x4} ({BodyLength} bytes, ordinal={Ordinal}): {Body}",
+                record.Type,
+                record.Body.Length,
+                record.Ordinal,
+                TrafficLogger.FormatHex(record.Body));
+        }
     }
 
     /// <summary>
