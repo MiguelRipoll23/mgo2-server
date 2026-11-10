@@ -344,6 +344,19 @@ public sealed partial class GameplayServerService
                 // more tick types than this server decodes. Nothing is answered
                 // in return, and a peer that has not finished its handshake is
                 // not a recipient yet.
+
+                // A client's hit on a bot is a damage record whose identifier names
+                // that bot's slot. The bots are simulated on this host, so the hit
+                // has to reach the body the actor blocks are built from, or the
+                // victim's vitals never fall and it never goes down.
+                if (message.Flags == Bots.BotActorRecordUtils.DamageAttributeClass &&
+                    message.Body.Length >= 4)
+                {
+                    botSimulation.NoteIncomingDamage(
+                        message.Type,
+                        (ushort)(message.Body[2] | (message.Body[3] << 8)));
+                }
+
                 if (session.Established)
                 {
                     logger.LogTrace(

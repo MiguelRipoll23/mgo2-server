@@ -86,6 +86,11 @@ builder.Services.AddSingleton<BotSideService>();
 builder.Services.AddSingleton<BotPlayService>();
 builder.Services.AddSingleton<BotController>();
 builder.Services.AddSingleton<BotPopulationService>();
+// The simulation moves, aims and fires the bots: it is what gives an actor block
+// a pose that changes between beats, and what a client's hit against a bot is
+// applied to.
+builder.Services.AddSingleton<BotLocomotionService>();
+builder.Services.AddSingleton<BotSimulationService>();
 builder.Services.AddSingleton<BotActorPublishService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 // The peer command handlers are registered beside the types their messages are

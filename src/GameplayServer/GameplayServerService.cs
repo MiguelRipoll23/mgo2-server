@@ -41,6 +41,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly PlayerVitalsService vitals;
     private readonly PlayerPositionService positions;
     private readonly Bots.BotPopulationService bots;
+    private readonly Bots.BotSimulationService botSimulation;
     private readonly HostIdentityService hostIdentity;
     private readonly PeerCommandRegistry registry;
     private readonly ILogger<GameplayServerService> logger;
@@ -90,6 +91,7 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         vitals = serviceProvider.GetRequiredService<PlayerVitalsService>();
         positions = serviceProvider.GetRequiredService<PlayerPositionService>();
         bots = serviceProvider.GetRequiredService<Bots.BotPopulationService>();
+        botSimulation = serviceProvider.GetRequiredService<Bots.BotSimulationService>();
         hostIdentity = serviceProvider.GetRequiredService<HostIdentityService>();
         registry = serviceProvider.GetRequiredService<PeerCommandRegistry>();
     }

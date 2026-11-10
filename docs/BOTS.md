@@ -94,13 +94,20 @@ what a bot leans towards and never becomes a second implementation.
   anything sampled. A map the build carries no data for is `Unavailable` with the
   stage named, and never a straight line dressed as a route.
 
-* **Where a bot's position comes from.** Nothing on the wire states a bot's
-  position, so a route starts from the round's own placement when the bot has none;
-  the bot is not sent a position and its route is not sent to anyone.
-* **Aiming, firing, reloading.** No builder for those operations records has been
-  measured for a host, so `BotCombatService` resolves the weapon and the target
-  and refuses to shoot with the reason. Writing records the client never sent is
-  the invented mechanic the project forbids.
+* **Where a bot's position comes from.** It is simulated. `BotLocomotionService`
+  owns the body, starts it at the side's spawn and walks it along a route at the
+  working-server capture's pace (fifteen tenths of a stage unit per 33 ms beat),
+  and the beat writes that pose. A player's position is read back from the
+  client's own record (`PlayerPositionService`), which is what a bot walks
+  towards.
+* **Aiming, firing, reloading.** Aiming and firing are on the wire now, measured
+  from `.pcapngs/game-with-bots-workingserver.pcapng`: the nine-byte state record
+  (`0x40 | action`, the target slot, a one when firing, the aim point),
+  the six-byte aim point, and the fifteen-byte damage record three below the
+  victim's state identifier. `BotSimulationService` holds one enemy per bot, fires
+  on a 500 ms interval within range, and applies a client's damage record to the
+  bot it names (`BotSimulationService.NoteIncomingDamage`) so a bot's vitals fall
+  and it goes down. Reloading has no measured record and is not written.
 * **Positions and health in perception.** Not read on this path, so
   `BotPerceptionSnapshot.PositionsKnown` is false and `OwnHealth` is null.
 * **Most weapon classes.** Four ids are classified; the rest are `Unknown` until
@@ -108,12 +115,13 @@ what a bot leans towards and never becomes a second implementation.
 * **Mode asymmetry.** TSNE's attacker/defender side is not on the rotation's
   triple and no capture read here names it, so both behaviours are offered and
   neither is chosen by the bot's side.
-* **A bot's body is at its spawn.** The actor block carries the side's spawn from
-  `MapSpawnUtils` — the pair the round's own entry writes — because no capture
-  shows a host inventing a route for an actor it does not simulate, and this
-  host's bots do not move on the wire yet. The aim record carries the same
-  heading; nothing sends a pose, a shot or a death, which is the state machine's
-  own work and not measured for a bot.
+* **A bot's body is published every beat.** The block carries the simulated
+  pose: the walking head `41 81 00 00` or the standing `21 00 00 00`, the three
+  coordinates at a tenth of a stage unit, the heading, the aim point, and the
+  vitals the simulation holds — `fa fa` alive, health falling by each hit, zero on
+  a death, and whole again eight seconds later. A hit the bot lands on a player is
+  written as that player's damage record and vitals, which is the pair the
+  working-server host writes.
 * **Bot peer sessions.** A bot has no endpoint and receives no state records of
   its own; it exists in the roster, the sides, the ready set and — once it is
   seated on the briefing report, where the client that was answered the roster is

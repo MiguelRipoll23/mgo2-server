@@ -36,8 +36,11 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <param name="matchSettings">This host's room settings, which name the map before a round opens.</param>
 /// <param name="roster">The room's roster, which hands out the run's ordinals.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class BotActorPublishService(
+public sealed partial class BotActorPublishService(
     BotPopulationService bots,
+    BotSimulationService simulation,
+    Gameplay.PlayerPositionService positions,
+    Rooms.LobbySlotService lobbySlots,
     MatchRoundStateService roundState,
     MatchSettingsService matchSettings,
     RoomRosterService roster,
@@ -248,15 +251,13 @@ public sealed class BotActorPublishService(
     private async Task PublishAsync(PeerContext context)
     {
         var map = roundState.RoundSettings?.Map ?? matchSettings.Map;
-
-        // Bots have no simulated movement, so their actor blocks use their side's
-        // map spawn rather than stacking every bot at the peer's position.
+        var rule = roundState.RoundSettings?.Rule ?? matchSettings.CurrentRule;
         var generation = roundState.Generation;
-        var records = new List<UdpMessage>();
-        foreach (var bot in bots.Bots.OrderBy(participant => participant.SessionSlot))
-        {
-            records.AddRange(BotActorRecordUtils.Build(bot.SessionSlot, bot.Team, map, generation));
-        }
+
+        // Every bot is advanced before its block is built: the body the simulation
+        // leaves is what the position, aim, state and vitals records carry, and a
+        // hit it lands this tick is written under its victim's damage identifier.
+        var records = await BuildActorRecordsAsync(context, map, rule, generation, Environment.TickCount64);
 
         if (records.Count == 0)
         {
