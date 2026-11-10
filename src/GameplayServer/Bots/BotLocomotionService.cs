@@ -9,10 +9,16 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <remarks>
 /// <para>
 /// <b>The rate is the working-server capture's.</b> A walking bot's position
-/// record moves fifteen tenths of a stage unit on each 33 ms beat — forty-five
-/// hundredths of a stage unit a millisecond — and the step here is that rate over
-/// the time since the body's last tick, so a slow beat walks further rather than
-/// walking slower.
+/// record moves fifteen wire units — a hundred and fifty stage units — on each
+/// 33 ms beat, which is four and a half thousand stage units a second, and the
+/// step here is that rate over the time since the body's last tick, so a slow beat
+/// walks further rather than walking slower. Measured over the working-server
+/// capture's walking runs (t+262.2 to 262.9 of `game-with-bots-workingserver`,
+/// fifteen to a beat without a gap); this capture of 2026-11-10 walked at a tenth
+/// of it and read as bodies wading.
+/// </para>
+/// <para>
+/// <b>The height is the body's and not the route's</b> — see <see cref="Step"/>.
 /// </para>
 /// <para>
 /// <b>The heading is the direction of travel.</b> The capture's walking bots face
@@ -29,10 +35,11 @@ public sealed class BotLocomotionService(
     BotNavigationAgent navigation)
 {
     /// <summary>
-    /// Walking speed, in stage units per second: fifteen tenths of a unit on each
-    /// 33 ms beat of the working-server capture.
+    /// Walking speed, in stage units per second: fifteen wire units — a hundred and
+    /// fifty stage units — on each 33 ms beat of the working-server capture, which
+    /// is four and a half thousand a second.
     /// </summary>
-    public const float WalkUnitsPerSecond = 450f;
+    public const float WalkUnitsPerSecond = 4500f;
 
     /// <summary>How often a bot plans its route again, in milliseconds.</summary>
     public const int RouteRefreshMilliseconds = 1500;
@@ -189,9 +196,18 @@ public sealed class BotLocomotionService(
             }
 
             var step = MathF.Min(remaining, distance);
+
+            // The height stays the body's own, and no cell's is adopted. The
+            // extracted cells are a lattice sampled over the stage's bounding box
+            // (`tools/stage-navigation`: `bounds.MinY + (y + 0.5) * step`), so their
+            // Y is where the box was divided and not where the floor is: Blood Bath's
+            // cells state -1000 while its recorded ground is 800. Taking the cell's Y
+            // put every bot of the capture of 2026-11-10 20:49 a thousand units under
+            // the map and popped it back to 800 at each respawn — the teleporting the
+            // same report names. A route therefore moves a body across the stage and
+            // never up or down it, which is the honest reading of this data.
             body.X += deltaX / distance * step;
             body.Z += deltaZ / distance * step;
-            body.Y = waypoint.Y;
             body.Yaw = YawTowards(deltaX, deltaZ);
             body.Moving = true;
             remaining -= step;

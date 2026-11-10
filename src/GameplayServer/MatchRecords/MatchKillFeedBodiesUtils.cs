@@ -1,54 +1,46 @@
+using Mgo2Server.Shared.Types;
+
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The four-byte record the working host writes when a player goes down:
-/// <c>02 &lt;killer slot&gt; &lt;victim slot&gt; 02</c>, under the item-box group's
-/// identifier with the <c>0x08</c> bit (<c>0x1a58</c>), its fourth byte an ordinal
-/// that climbs one per record.
+/// The three-byte record the working host writes when a player goes down:
+/// <c>09 &lt;killer slot&gt; &lt;victim slot&gt;</c>, under the operations
+/// stream's identifier (<c>0x1a54</c> and its <c>0x800</c> sibling) and numbered
+/// on that stream.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Measured on `.pcapngs/game-with-bots-workingserver.pcapng`.</b> Twenty-nine
-/// of them in ten minutes, all host to client, ordinals <c>0</c> to <c>28</c>:
-/// <c>02 06 00 02</c>, <c>02 06 0e 02</c>, <c>02 05 0e 02</c>, then
-/// <c>02 08 05 02</c>, <c>02 08 03 02</c>, <c>02 08 0c 02</c>, <c>02 08 06 02</c>,
-/// <c>02 08 04 02</c> and <c>02 08 00 02</c> four times. The slot that dies is the
-/// second: the human holds slot <c>8</c> and appears as the second byte only on
-/// itself, while <c>5</c>, <c>6</c>, <c>3</c>, <c>4</c> and <c>0c</c> are the
-/// bots' slots, and every one of those deaths is a vitals record at zero a beat
-/// later.
+/// <b>Measured on `.pcapngs/game-with-bots-workingserver.pcapng`.</b> Every one
+/// of its kill feeds lands on the beat a vitals record reaches zero:
+/// <c>09 02 08</c> at t+311.03 against slot 8's health reaching <c>0</c> at
+/// t+310.81, <c>09 07 05</c> at t+313.75 against slot 5's at t+313.71, and
+/// <c>09 06 01</c> at t+317.38 against slot 1's at t+317.34. The three bytes are
+/// the replay parser's opcode <c>0x09</c> and the two slots, and the body is
+/// written under the same identifier pair as the round clock
+/// (<c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>, <c>OperationsOpcode.KillFeed</c>).
 /// </para>
 /// <para>
-/// <b>The two slot bytes' roles are [I].</b> The shape and the ordinal are
-/// measured; that the first byte is the killer and the second the victim is the
-/// reading the vitals records support, and it is the direction the client's own
-/// kill feed draws. The opcode and the trailing byte are the recorded body's and
-/// nothing here claims to know them.
-/// </para>
-/// <para>
-/// **This is the identifier this host used to write a player list under.** A
-/// two-byte <c>00 &lt;slot&gt;</c> per member in that slot read as a kill feed —
-/// slot zero killing each player — and took every player off the client's screen
-/// the moment a round opened.
+/// **The four-byte <c>02 &lt;killer&gt; &lt;victim&gt; 02</c> body this class used
+/// to build, under <c>0x1a58</c>, is a chat macro.** The room of 2026-11-10 21:00
+/// wrote one per kill and the client announced <i>Roger that</i> instead of the
+/// death — the same body the reference writes twice in ten minutes as its own
+/// chatter. It is not a kill feed and this host no longer writes it.
 /// </para>
 /// </remarks>
 public static class MatchKillFeedBodiesUtils
 {
-    /// <summary>Length of the body the working host writes.</summary>
-    public const int BodyLength = 4;
+    /// <summary>Length of the body the working host writes: the opcode and two slots.</summary>
+    public const int BodyLength = 3;
 
-    /// <summary>Leading byte of the recorded body, <c>0x02</c>.</summary>
-    public const byte Opcode = 0x02;
-
-    /// <summary>Trailing byte of the recorded body, <c>0x02</c>.</summary>
-    public const byte Tail = 0x02;
+    /// <summary>Leading byte of the recorded body, the operations stream's kill feed opcode.</summary>
+    public const byte Opcode = (byte)OperationsOpcode.KillFeed;
 
     /// <summary>
     /// The record one death travels as.
     /// </summary>
     /// <param name="killerSlot">Slot the kill is credited to.</param>
     /// <param name="victimSlot">Slot that went down.</param>
-    /// <returns>The four-byte body.</returns>
+    /// <returns>The three-byte body.</returns>
     public static byte[] Build(byte killerSlot, byte victimSlot) =>
-        [Opcode, killerSlot, victimSlot, Tail];
+        [Opcode, killerSlot, victimSlot];
 }

@@ -35,12 +35,6 @@ public sealed partial class BotActorPublishService
     private readonly Lock combatGate = new();
     private long nextSideRead;
 
-    /// <summary>
-    /// Ordinal the kill-feed record carries, which the working host climbs one per
-    /// record — its twenty-nine in ten minutes run <c>0</c> to <c>28</c>.
-    /// </summary>
-    private byte killFeedOrdinal;
-
     /// <summary>Ordinal the round's state blob carries, which climbs with the beat.</summary>
     private byte stateBlobOrdinal = 2;
 
@@ -62,7 +56,6 @@ public sealed partial class BotActorPublishService
             humanHealth.Clear();
             humanRespawn.Clear();
             nextSideRead = 0;
-            killFeedOrdinal = 0;
             stateBlobOrdinal = 2;
             nextStateBlobMilliseconds = 0;
         }
@@ -99,19 +92,21 @@ public sealed partial class BotActorPublishService
 
             if (advance.Shot is { } shot && !IsBotSlot(shot.VictimSlot))
             {
-                records.AddRange(PlayerHit(shot, generation, now));
+                records.AddRange(PlayerHit(shot, bot.SessionSlot, generation, now));
             }
         }
 
-        // The kill feed: one four-byte record per death, under the item-box group's
-        // identifier. The working host writes its own on the same beat as its actor
-        // blocks, with the ordinal its fourth byte carries climbing one per record.
+        // The kill feed: three bytes under the operations stream, `09 <killer>
+        // <victim>`, numbered on that stream. The reference writes it on the beat a
+        // victim's vitals reach zero and announces the death with it; the item-box
+        // identifier this loop used to write under carries a chat macro, which the
+        // client played as "Roger that" on every kill.
         foreach (var kill in simulation.DrainKills())
         {
             records.Add(new UdpMessage(
-                (ushort)(generation.ItemBox | 0x0008),
+                generation.Operations,
                 (byte)MatchKillFeedBodiesUtils.BodyLength,
-                killFeedOrdinal++,
+                sequences.Take(generation.Operations),
                 MatchKillFeedBodiesUtils.Build(kill.KillerSlot, kill.VictimSlot)));
         }
 
@@ -203,11 +198,13 @@ public sealed partial class BotActorPublishService
     /// vitals at the health it now holds.
     /// </summary>
     /// <param name="shot">The hit.</param>
+    /// <param name="killerSlot">The bot that landed it, which the death is credited to.</param>
     /// <param name="generation">Identifier set of the round being played.</param>
     /// <param name="now">Monotonic milliseconds.</param>
     /// <returns>The damage record and the vitals record.</returns>
     private IReadOnlyList<UdpMessage> PlayerHit(
         BotShot shot,
+        byte killerSlot,
         MatchRecordGenerationUtils generation,
         long now)
     {
@@ -233,6 +230,10 @@ public sealed partial class BotActorPublishService
             if (health == 0)
             {
                 humanRespawn[shot.VictimSlot] = now + BotSimulationService.RespawnMilliseconds;
+
+                // The reference announces the player's own death on the kill feed too
+                // (`09 02 08` at t+311.03, slot 8's health reaching zero at 310.81).
+                simulation.NoteKill(killerSlot, shot.VictimSlot);
             }
         }
 

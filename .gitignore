@@ -1,6 +1,7 @@
 appsettings.json
 bin/
 obj/
+mgo2-memory-scan.txt
 
 # Written by `dotnet affected` when the pipelines run it locally.
 affected.json

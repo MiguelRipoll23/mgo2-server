@@ -42,10 +42,18 @@ public sealed class BotSimulationService(
     public const byte ShotWeapon = BotActorRecordUtils.CarriedWeapon;
 
     /// <summary>
-    /// Distance a bot fires within, in stage units: the longest hit the working
-    /// host recorded was 336 units, against a map over 40 000 units across.
+    /// Distance a bot holds its trigger within, in stage units: the working host's
+    /// bots write the firing byte at 282 to 6 043 units from the enemy they hold,
+    /// a median of 1 414, across the 640 s of its round.
     /// </summary>
-    public const float ShotRange = 336f;
+    public const float ShotRange = 6000f;
+
+    /// <summary>
+    /// Distance a bot keeps from the enemy it holds, in stage units: the reference's
+    /// bots close to about 1 400 and stay there, every one of them between 1 233 and
+    /// 1 525, a median of 1 414.
+    /// </summary>
+    public const float EngagementDistance = 1400f;
 
     /// <summary>How long a dead bot stays down, in milliseconds.</summary>
     public const int RespawnMilliseconds = 8000;
@@ -92,8 +100,9 @@ public sealed class BotSimulationService(
             locomotion.Respawn(bot, body, map);
         }
 
-        var target = ChooseTarget(bot, actors);
+        var target = ChooseTarget(bot, body, actors);
         BotShot? shot = null;
+        var firing = false;
         if (target is null)
         {
             body.TargetSlot = BotBodyState.NoTarget;
@@ -105,7 +114,16 @@ public sealed class BotSimulationService(
             body.AimY = target.Y + BotLocomotionService.AimHeight;
             body.AimZ = target.Z;
 
-            if (now >= body.NextShotMilliseconds && Distance(body, target) <= ShotRange)
+            // The trigger, not the hit. The working host's bots write the firing
+            // byte on about seven beats in ten while they hold an enemy, and their
+            // hits land far less often than that, so the byte the client draws a
+            // bot firing from is held while the enemy is in range and the damage
+            // record keeps the cadence below. Writing it only on the beat a hit
+            // landed is a bot that never appears to shoot: the capture of
+            // 2026-11-10 21:00 has it set once or twice in a minute.
+            firing = Distance(body, target) <= ShotRange;
+
+            if (firing && now >= body.NextShotMilliseconds)
             {
                 body.NextShotMilliseconds = now + ShotIntervalMilliseconds;
                 shot = new BotShot(
@@ -126,12 +144,12 @@ public sealed class BotSimulationService(
 
         var destination = target is null
             ? locomotion.PlacementOf(bot, map, rule)
-            : new BotPosition(target.X, target.Y, target.Z);
+            : Standoff(body, target);
 
         locomotion.PlanRoute(bot, body, map, rule, destination, now);
         locomotion.Step(body, now);
 
-        return new BotAdvance(body, shot is not null, shot);
+        return new BotAdvance(body, firing, shot);
     }
 
     /// <summary>
@@ -158,6 +176,15 @@ public sealed class BotSimulationService(
         ApplyDamage(slot, Math.Max(points, 1), killerSlot, Environment.TickCount64);
         return true;
     }
+
+    /// <summary>
+    /// Records a death the room owes a kill-feed record for, which is what a hit on
+    /// a player leaves behind when the health it takes is the last of it.
+    /// </summary>
+    /// <param name="killerSlot">Slot the kill is credited to.</param>
+    /// <param name="victimSlot">Slot that went down.</param>
+    public void NoteKill(byte killerSlot, byte victimSlot) =>
+        kills.Enqueue(new BotKill(killerSlot, victimSlot));
 
     /// <summary>
     /// Takes the deaths the room owes a kill-feed record for, oldest first.
@@ -218,25 +245,56 @@ public sealed class BotSimulationService(
     private IReadOnlyList<BotBodyState> Bodies() => locomotion.Bodies;
 
     /// <summary>
-    /// The enemy this bot holds: the enemy list's entry its slot lands on, which
-    /// spreads a room's bots over the players they can see.
+    /// The enemy this bot holds: the nearest one, which is what keeps it moving as
+    /// the room moves. The recorded host's bots change target constantly — each of
+    /// its eight names four or five different slots over its round, and its firing
+    /// distance shows them closing on each in turn — where a bot bound to one index
+    /// of the room stands where it spawned once that index is dead or far away.
     /// </summary>
     /// <param name="bot">The bot choosing.</param>
+    /// <param name="body">Its body, which the distance is measured from.</param>
     /// <param name="actors">Every actor in the room.</param>
     /// <returns>The actor it holds, or <c>null</c> when the room holds no enemy.</returns>
-    private static BotActorView? ChooseTarget(BotParticipant bot, IReadOnlyList<BotActorView> actors)
+    private static BotActorView? ChooseTarget(
+        BotParticipant bot,
+        BotBodyState body,
+        IReadOnlyList<BotActorView> actors)
     {
         if (bot.Team is not { } side)
         {
             return null;
         }
 
-        var enemies = actors
+        return actors
             .Where(actor => actor.SessionSlot != bot.SessionSlot && actor.Side != side)
-            .OrderBy(actor => actor.SessionSlot)
-            .ToList();
+            .OrderBy(actor => Distance(body, actor))
+            .ThenBy(actor => actor.SessionSlot)
+            .FirstOrDefault();
+    }
 
-        return enemies.Count == 0 ? null : enemies[bot.SessionSlot % enemies.Count];
+    /// <summary>
+    /// Where a bot walks while it holds an enemy: the point that keeps it at
+    /// <see cref="EngagementDistance"/>, or where it already stands when it is that
+    /// close already.
+    /// </summary>
+    /// <param name="body">Its body.</param>
+    /// <param name="target">The actor it holds.</param>
+    /// <returns>The point it walks to.</returns>
+    private static BotPosition Standoff(BotBodyState body, BotActorView target)
+    {
+        var deltaX = target.X - body.X;
+        var deltaZ = target.Z - body.Z;
+        var distance = MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
+        if (distance <= EngagementDistance)
+        {
+            return new BotPosition(body.X, body.Y, body.Z);
+        }
+
+        var scale = (distance - EngagementDistance) / distance;
+        return new BotPosition(
+            body.X + (deltaX * scale),
+            target.Y,
+            body.Z + (deltaZ * scale));
     }
 
     /// <summary>
