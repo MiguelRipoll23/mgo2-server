@@ -52,18 +52,18 @@ public sealed partial class GameplayServerService
         }
 
         settingsBurstScheduler.Reset();
-
-        if (bots.RemoveEveryBot())
-        {
-            logger.LogInformation(
-                "[{LogPrefix}] The room emptied, so the bots that filled it are gone; they are seated again "
-                + "when the next player reports its join",
-                LogPrefix);
-        }
+        bots.Reset();
+        botActors.Reset();
+        botSimulation.Reset();
+        positions.Reset();
+        vitals.Reset();
+        roster.Reset();
+        rosterAnswers.Reset();
+        teamArrays.Reset();
 
         logger.LogInformation(
-            "[{LogPrefix}] {RemoteAddress} was the room's last client; the room's round, clock and tickets "
-            + "start over for the next player to join",
+            "[{LogPrefix}] {RemoteAddress} was the room's last client; every in-memory room state was reset, "
+            + "so the next player joins a fresh room",
             LogPrefix,
             session.RemoteAddress);
     }

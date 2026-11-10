@@ -11,9 +11,9 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <b>Every rate here is the working-server capture's.</b> A bot holds one enemy
 /// slot — its state record names it and <c>0xff</c> when it holds none — and
 /// alternates between action <c>2</c> and action <c>4</c> at a few hundred
-/// milliseconds. A hit's damage word is a sixteenth of a health point, and the
-/// victim's vitals fall by that much a beat later. Nothing is given a value the
-/// capture does not show.
+/// milliseconds. A hit's damage word is a hundred-and-twenty-eighth of a health
+/// point, and the victim's vitals fall by that much a beat later. Nothing is given
+/// a value the capture does not show.
 /// </para>
 /// <para>
 /// <b>A bot walks towards the enemy it holds and stands on its placement when it
@@ -28,20 +28,30 @@ public sealed class BotSimulationService(
     BotLocomotionService locomotion,
     ILogger<BotSimulationService> logger)
 {
-    /// <summary>Interval between one bot's shots, in milliseconds.</summary>
-    public const int ShotIntervalMilliseconds = 500;
+    /// <summary>
+    /// Interval between one bot's shots, in milliseconds. The working host's 362
+    /// hits over its 640 s round land on a given victim about five times a minute,
+    /// which is one hit every twelve seconds.
+    /// </summary>
+    public const int ShotIntervalMilliseconds = 12_000;
 
     /// <summary>Health points one bot hit takes, as the capture's hits measure.</summary>
     public const int ShotDamage = 33;
 
-    /// <summary>Weapon id the capture's bot hits carry.</summary>
-    public const byte ShotWeapon = 18;
+    /// <summary>Weapon id the capture's bot hits carry, <c>0x18</c>.</summary>
+    public const byte ShotWeapon = BotActorRecordUtils.CarriedWeapon;
 
-    /// <summary>Distance a bot fires within, in stage units.</summary>
-    public const float ShotRange = 24000f;
+    /// <summary>
+    /// Distance a bot fires within, in stage units: the longest hit the working
+    /// host recorded was 336 units, against a map over 40 000 units across.
+    /// </summary>
+    public const float ShotRange = 336f;
 
     /// <summary>How long a dead bot stays down, in milliseconds.</summary>
     public const int RespawnMilliseconds = 8000;
+
+    /// <summary>Deaths the room owes the client a kill-feed record for.</summary>
+    private readonly Queue<BotKill> kills = new();
 
     /// <summary>
     /// A bot's body, created at its side's spawn the first time it is asked for.
@@ -109,7 +119,7 @@ public sealed class BotSimulationService(
 
                 if (target.IsBot)
                 {
-                    ApplyDamage(target.SessionSlot, ShotDamage, now);
+                    ApplyDamage(target.SessionSlot, ShotDamage, bot.SessionSlot, now);
                 }
             }
         }
@@ -135,8 +145,9 @@ public sealed class BotSimulationService(
     /// </remarks>
     /// <param name="identifier">Identifier the hit arrived under.</param>
     /// <param name="damage">Damage word the hit carried.</param>
+    /// <param name="killerSlot">Slot the kill is credited to, which is the shooter's.</param>
     /// <returns><c>true</c> when the hit named a bot.</returns>
-    public bool NoteIncomingDamage(ushort identifier, ushort damage)
+    public bool NoteIncomingDamage(ushort identifier, ushort damage, byte killerSlot)
     {
         if (BotActorRecordUtils.SlotOfDamageIdentifier(identifier) is not { } slot)
         {
@@ -144,8 +155,30 @@ public sealed class BotSimulationService(
         }
 
         var points = damage / BotActorRecordUtils.DamageScale;
-        ApplyDamage(slot, Math.Max(points, 1), Environment.TickCount64);
+        ApplyDamage(slot, Math.Max(points, 1), killerSlot, Environment.TickCount64);
         return true;
+    }
+
+    /// <summary>
+    /// Takes the deaths the room owes a kill-feed record for, oldest first.
+    /// </summary>
+    /// <returns>One entry per player that went down since the last call.</returns>
+    public IReadOnlyList<BotKill> DrainKills()
+    {
+        var taken = new List<BotKill>();
+        while (kills.Count > 0)
+        {
+            taken.Add(kills.Dequeue());
+        }
+
+        return taken;
+    }
+
+    /// <summary>Drops every body and owed death, because the room has emptied.</summary>
+    public void Reset()
+    {
+        kills.Clear();
+        locomotion.Reset();
     }
 
     /// <summary>Forgets a bot's body, because the bot has left the room.</summary>
@@ -158,7 +191,7 @@ public sealed class BotSimulationService(
     /// <param name="slot">Slot the hit landed on.</param>
     /// <param name="damage">Health points it takes.</param>
     /// <param name="now">Monotonic milliseconds.</param>
-    private void ApplyDamage(byte slot, int damage, long now)
+    private void ApplyDamage(byte slot, int damage, byte killerSlot, long now)
     {
         var body = Bodies().FirstOrDefault(candidate => candidate.SessionSlot == slot);
         if (body is null || body.IsDead)
@@ -172,6 +205,7 @@ public sealed class BotSimulationService(
             return;
         }
 
+        kills.Enqueue(new BotKill(killerSlot, slot));
         body.RespawnMilliseconds = now + RespawnMilliseconds;
         logger.LogDebug(
             "Bot in slot {BotSlot} went down and stands up in {RespawnMilliseconds} ms",

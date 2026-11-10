@@ -37,22 +37,26 @@ public sealed class MatchService(
     private static readonly TimeSpan LobbyLookupRetryDelay = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// Player cap a Free Battle host's room advertises. It is unrelated to the
-    /// event capacity: this host plays with whoever joins it, so it keeps a
-    /// normal room's size.
-    /// </summary>
-    private const int FreeBattleRoomCapacity = 8;
-
-    /// <summary>
     /// Player cap of the room this instance publishes, as its own row states it,
     /// or zero until one has been published this run.
     /// </summary>
     /// <remarks>
     /// <b>It is the row's number and not the channel's.</b> The roster can hold
     /// twenty-three and the room is advertised with this one, so a population
-    /// sized from the channel fills seats the client was never told it had: a
-    /// Free Battle room shows eight and the briefing's own list draws every entry
-    /// beyond them as not placed (<see cref="Bots.BotPopulationService"/>).
+    /// sized from the channel fills seats the client was never told it had. It is
+    /// this instance's configured size (<see cref="options"/>) and not a number of
+    /// its own: the host's settings row already states
+    /// <c>GameplayServerMaxPlayers</c> (<c>MatchSettingsUtils</c>), and a room that
+    /// advertised eight while that row said seventeen told a browsing client two
+    /// room sizes.
+    /// <para>
+    /// <b>A room too small for its own players refuses the player it is hosting.</b>
+    /// An eight-seat room filled by bots writes eight players into the join's count
+    /// record, and the client will not place itself in a room that names every seat
+    /// it holds — the capture of 2026-11-10 20:38 does exactly that. The reference
+    /// room the captures are measured against holds more than nine, which is why its
+    /// join answer names a full roster and is still entered.
+    /// </para>
     /// </remarks>
     public int RoomCapacity { get; private set; }
 
@@ -190,10 +194,12 @@ public sealed class MatchService(
         var hostIdentifier = (int)hostIdentity.PeerIdentifier;
 
         // The size is the role's size, decided once: every start states it, so the
-        // row below and a fresh one cannot disagree.
+        // row below and a fresh one cannot disagree. A Free Battle host plays at the
+        // size this instance is configured for, which is the same figure its own
+        // settings row states.
         var maximumPlayers = EventHostEligibilityUtils.IsHostRoleMode(lobby.SubtypeIdentifier)
             ? EventHostEligibilityUtils.MatchPlayerCapacity
-            : FreeBattleRoomCapacity;
+            : Math.Max(1, options.GameplayServerMaxPlayers);
         RoomCapacity = maximumPlayers;
 
         // A name is this instance's own, so a second room under it is a row left by

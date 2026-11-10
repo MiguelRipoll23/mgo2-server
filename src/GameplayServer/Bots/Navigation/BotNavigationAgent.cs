@@ -57,6 +57,15 @@ public sealed class BotNavigationAgent(IBotNavigationProvider provider)
         }
     }
 
+    /// <summary>Drops every bot's navigation state, because the room has emptied.</summary>
+    public void Reset()
+    {
+        lock (gate)
+        {
+            lastResults.Clear();
+        }
+    }
+
     /// <summary>Forgets a bot's navigation state, because the bot is gone.</summary>
     /// <param name="botName">The bot that left.</param>
     public void Forget(string botName)

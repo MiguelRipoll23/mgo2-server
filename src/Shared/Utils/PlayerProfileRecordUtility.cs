@@ -246,6 +246,13 @@ public static class PlayerProfileRecordUtility
     /// zero for a player in no clan and for a bot.
     /// </param>
     /// <param name="includeEndpointPairs">Whether to emit the twelve-byte endpoint field.</param>
+    /// <param name="rosterField">
+    /// Value to write at offset 4 instead of the roster-index scale, or <c>null</c>
+    /// for that scale. A host's own bots are the case: their entries carry the
+    /// bot's own number there (<c>BOT-01</c> writes <c>0x01</c>), which is neither
+    /// <see cref="RosterIndexBase"/> plus a roster index nor
+    /// <see cref="HostRosterField"/>. See <c>docs/BOTS.md</c>.
+    /// </param>
     public static byte[] Build(
         bool isHostEntry,
         sbyte rosterIndex,
@@ -256,7 +263,8 @@ public static class PlayerProfileRecordUtility
         int clanIdentifier = 0,
         byte[]? addressData = null,
         byte unresolvedByte = PlayerRecordUnresolvedByte,
-        bool includeEndpointPairs = true)
+        bool includeEndpointPairs = true,
+        byte? rosterField = null)
     {
         var nameBytes = Truncate(Encoding.ASCII.GetBytes(name ?? string.Empty), MaximumNameLength);
         var clanBytes = Truncate(Encoding.ASCII.GetBytes(clanName ?? string.Empty), MaximumClanLength);
@@ -269,9 +277,9 @@ public static class PlayerProfileRecordUtility
         var body = new byte[nameOffset + 1 + nameBytes.Length + clanBytes.Length];
         body[0] = RecordVersion;
         body[RecordLengthOffset] = (byte)(body.Length - FixedPrefixLength);
-        body[4] = rosterIndex == HostRosterIndex
+        body[4] = rosterField ?? (rosterIndex == HostRosterIndex
             ? HostRosterField
-            : (byte)(RosterIndexBase + rosterIndex);
+            : (byte)(RosterIndexBase + rosterIndex));
         body[5] = sessionSlot;
         body[7] = sessionSlot;
         BinaryUtility.WriteUInt32LittleEndian(body, CharacterIdOffset, (uint)characterId);

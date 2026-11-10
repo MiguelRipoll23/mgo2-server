@@ -354,7 +354,8 @@ public sealed partial class GameplayServerService
                 {
                     botSimulation.NoteIncomingDamage(
                         message.Type,
-                        (ushort)(message.Body[2] | (message.Body[3] << 8)));
+                        (ushort)(message.Body[2] | (message.Body[3] << 8)),
+                        roster.Find(session.RemoteAddress)?.SessionSlot ?? 0);
                 }
 
                 if (session.Established)

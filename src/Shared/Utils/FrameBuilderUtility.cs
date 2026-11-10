@@ -40,6 +40,55 @@ public static class FrameBuilderUtility
             new byte[UdpCommandConstants.TailSize]);
     }
 
+    /// <summary>
+    /// Splits messages into the groups one datagram can carry, in order.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A datagram that outgrows <see cref="UdpCommandConstants.MaximumDatagramSize"/>
+    /// is dropped whole, and every record on it with it.</b> The working host
+    /// spreads a roster run across several frames to stay under the cap; this
+    /// host wrote the same kind of run as one frame and the client answered none
+    /// of its records, though it answered every frame before that one. The
+    /// measurement is on the constant.
+    /// </para>
+    /// <para>
+    /// A single record larger than a whole datagram's content region travels
+    /// alone rather than being cut: its length is its own, and a frame is where
+    /// a split belongs.
+    /// </para>
+    /// </remarks>
+    /// <param name="messages">Messages to group, in order.</param>
+    /// <returns>The groups, each one a datagram's content region.</returns>
+    public static IReadOnlyList<IReadOnlyList<UdpMessage>> SplitByFrameSize(
+        IReadOnlyList<UdpMessage> messages)
+    {
+        var groups = new List<IReadOnlyList<UdpMessage>>();
+        var group = new List<UdpMessage>();
+        var used = 0;
+
+        foreach (var message in messages)
+        {
+            var size = UdpCommandConstants.MessageHeaderSize + message.Body.Length;
+            if (group.Count > 0 && used + size > UdpCommandConstants.MaximumContentSize)
+            {
+                groups.Add(group);
+                group = [];
+                used = 0;
+            }
+
+            group.Add(message);
+            used += size;
+        }
+
+        if (group.Count > 0)
+        {
+            groups.Add(group);
+        }
+
+        return groups;
+    }
+
     /// <summary>Creates a message whose declared length matches its body.</summary>
     /// <param name="type">Message type.</param>
     /// <param name="body">Body bytes.</param>

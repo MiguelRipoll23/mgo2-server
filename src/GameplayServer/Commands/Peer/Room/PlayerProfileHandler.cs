@@ -175,6 +175,21 @@ public sealed class PlayerProfileHandler(
             return;
         }
 
+        // The room's bots are seated before this player is filed, so the run that
+        // answers it names them first: the game-with-bots capture writes `BOT-01`…
+        // `BOT-07` at ordinals 1–7 in the table's slots 1–7 and the player at 8. The
+        // seat this player is about to take is counted by the fill itself
+        // (<see cref="BotPopulationService.MakeRoomForPlayerAsync"/>), so the bots
+        // leave it one.
+        if (await bots.MakeRoomForPlayerAsync(context.Remote.ToString(), CancellationToken.None))
+        {
+            logger.LogDebug(
+                "UDP {LocalPort}: the room's bots were seated ahead of {RemoteAddress}, so the answer "
+                + "to it names them",
+                context.LocalPort,
+                context.Remote);
+        }
+
         // The row's clan emblem is fetched by clan id and a profile record carries the
         // clan's name only, so the id is read here: an entry left at zero names no clan
         // to fetch and the row draws no emblem at all.
@@ -210,21 +225,6 @@ public sealed class PlayerProfileHandler(
             member.CharacterId,
             profile.Name,
             member.RosterIndex);
-
-        // A bot gives up its seat before this player is answered the room. The run
-        // built below is the room the client reads, and a roster that names every seat
-        // the room has is read as full: the join is refused there, before the client
-        // ever reaches its briefing. The seat is not given back by the fill until this
-        // player has reported itself in the briefing, because until then the seat is
-        // its own.
-        if (await bots.MakeRoomForPlayerAsync(CancellationToken.None))
-        {
-            logger.LogDebug(
-                "UDP {LocalPort}: a bot gave up its seat for {RemoteAddress}; the room is written to it "
-                + "with one seat still free",
-                context.LocalPort,
-                context.Remote);
-        }
 
         // The copy answered is the copy the client re-sends, in the pass it
         // arrives in: a client answers its own 1.93 s retry timer by sending the

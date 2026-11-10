@@ -264,6 +264,16 @@ public sealed partial class TeamArrayService(
         }
     }
 
+    /// <summary>Drops every held confirmation and answered sequence, because the room has emptied.</summary>
+    public void Reset()
+    {
+        lock (confirmationGate)
+        {
+            confirmationRuns.Clear();
+            answeredEchoes.Clear();
+        }
+    }
+
     /// <summary>
     /// Forgets the confirmation run held for a peer that is starting over.
     /// </summary>

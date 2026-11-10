@@ -195,6 +195,9 @@ public sealed record RosterMember(string RemoteAddress, sbyte RosterIndex)
             unresolvedByte: IsBot
                 ? (byte)0
                 : PlayerProfileRecordUtility.PlayerRecordUnresolvedByte,
-            includeEndpointPairs: includeEndpointPairs && !IsBot);
+            includeEndpointPairs: includeEndpointPairs && !IsBot,
+            // The entry names its player at offset 4 by the same key as 0x05 and
+            // 0x07: the key the room's player table holds it under.
+            rosterField: SessionSlot);
     }
 }

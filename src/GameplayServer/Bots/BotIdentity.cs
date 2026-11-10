@@ -10,8 +10,7 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// in the room list is a bot a player will talk to, and the recorded dedicated
 /// hosts' own bots are named this way — the briefing capture's ready set names
 /// <c>BOT-01</c>, <c>BOT-02</c> and <c>BOT-03</c> (<c>docs/GAMEPLAY_SERVER.md</c>,
-/// the ready-set reading). This server's format is the same shape without the zero
-/// padding, as the task states it.
+/// the ready-set reading). This server writes that same two-digit shape.
 /// </para>
 /// <para>
 /// The number is kept beside the name so a released name can be named in a log

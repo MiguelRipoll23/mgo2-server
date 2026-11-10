@@ -78,6 +78,16 @@ public sealed partial class RoomRosterService(
     /// </summary>
     private readonly Dictionary<string, byte> pairSequences = [];
 
+    /// <summary>Drops every member and pair sequence, because the room has emptied.</summary>
+    public void Reset()
+    {
+        lock (gate)
+        {
+            members.Clear();
+            pairSequences.Clear();
+        }
+    }
+
     /// <summary>
     /// Adds or refreshes a peer on the roster, returning the slot it ended up in.
     /// A peer without a readable profile still takes a slot — the slot is what the

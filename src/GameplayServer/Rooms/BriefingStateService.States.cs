@@ -14,6 +14,34 @@ namespace Mgo2Server.GameplayServer.Rooms;
 public sealed partial class BriefingStateService
 {
     /// <summary>
+    /// Drops every report and ready state for an emptied room, keeping the ready
+    /// of a client that is still on the briefing screen.
+    /// </summary>
+    /// <param name="keepingReady">
+    /// Endpoint whose ready survives, or <c>null</c> when the room emptied for good.
+    /// </param>
+    public void Reset(string? keepingReady = null)
+    {
+        lock (gate)
+        {
+            BriefingReady? kept = null;
+            if (keepingReady is not null)
+            {
+                readies.TryGetValue(keepingReady, out kept);
+            }
+
+            joinReports.Clear();
+            readies.Clear();
+            botPublicationIndexes.Clear();
+            nextPublicationIndex = 0;
+            if (kept is not null)
+            {
+                readies[keepingReady!] = kept;
+            }
+        }
+    }
+
+    /// <summary>
     /// Records a player's map-loaded report, and reports whether that is news to
     /// the room.
     /// </summary>

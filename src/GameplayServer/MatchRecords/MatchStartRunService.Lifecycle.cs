@@ -67,12 +67,24 @@ public sealed partial class MatchStartRunService
         var dropped = roundState.Reset();
         score.Reset();
         score.ResetRoundWins();
+        results.Reset();
+        countdown.Reset();
+        sequences.Reset();
         lock (gate)
         {
             briefingDeparted.Clear();
+            briefingNumber = 0;
+            lastJoinReportIdentifier = null;
+            briefingGeneration = null;
+            countStartedBriefing = null;
+            joinReportCount = 0;
         }
-        briefingStates.BeginNextBriefing(clientKeepingItsReady);
-        sequences.Restart(Rooms.RoomRosterService.ExchangeIdentifier);
+
+        entered.Clear();
+        entrySequences.Clear();
+        entryAnswers.Clear();
+        entryInstants.Clear();
+        briefingStates.Reset(clientKeepingItsReady);
         BeginBriefing();
 
         logger.LogInformation(

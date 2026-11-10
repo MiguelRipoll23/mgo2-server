@@ -1,5 +1,6 @@
 using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Match;
+using Mgo2Server.Shared.Constants;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Types;
@@ -35,6 +36,39 @@ public sealed partial class BotActorPublishService
     private long nextSideRead;
 
     /// <summary>
+    /// Ordinal the kill-feed record carries, which the working host climbs one per
+    /// record — its twenty-nine in ten minutes run <c>0</c> to <c>28</c>.
+    /// </summary>
+    private byte killFeedOrdinal;
+
+    /// <summary>Ordinal the round's state blob carries, which climbs with the beat.</summary>
+    private byte stateBlobOrdinal = 2;
+
+    /// <summary>When the round's state blob is written again, in monotonic milliseconds.</summary>
+    private long nextStateBlobMilliseconds;
+
+    /// <summary>
+    /// Interval between the round's state blobs: the working host writes 522 of
+    /// them in the ten minutes of its round, a little more than one a second.
+    /// </summary>
+    private const int StateBlobIntervalMilliseconds = 1200;
+
+    /// <summary>Drops the combat state and its ordinals, because the room has emptied.</summary>
+    public void Reset()
+    {
+        lock (combatGate)
+        {
+            humanSides.Clear();
+            humanHealth.Clear();
+            humanRespawn.Clear();
+            nextSideRead = 0;
+            killFeedOrdinal = 0;
+            stateBlobOrdinal = 2;
+            nextStateBlobMilliseconds = 0;
+        }
+    }
+
+    /// <summary>
     /// Advances every bot and returns the records of this beat: each bot's block,
     /// the hit it landed on a player, and any player whose vitals have come back.
     /// </summary>
@@ -67,6 +101,32 @@ public sealed partial class BotActorPublishService
             {
                 records.AddRange(PlayerHit(shot, generation, now));
             }
+        }
+
+        // The kill feed: one four-byte record per death, under the item-box group's
+        // identifier. The working host writes its own on the same beat as its actor
+        // blocks, with the ordinal its fourth byte carries climbing one per record.
+        foreach (var kill in simulation.DrainKills())
+        {
+            records.Add(new UdpMessage(
+                (ushort)(generation.ItemBox | 0x0008),
+                (byte)MatchKillFeedBodiesUtils.BodyLength,
+                killFeedOrdinal++,
+                MatchKillFeedBodiesUtils.Build(kill.KillerSlot, kill.VictimSlot)));
+        }
+
+        // The round's state blob, every 1.2 s: twenty-two bytes, the presence map's
+        // field 150 and the value the captured burst carries. The working host
+        // writes 522 of them across its round, in the same body the settings burst
+        // closes on.
+        if (now >= nextStateBlobMilliseconds)
+        {
+            nextStateBlobMilliseconds = now + StateBlobIntervalMilliseconds;
+            records.Add(new UdpMessage(
+                UdpCommandConstants.GameStateBlob,
+                (byte)(PlayerSettingsBurstService.StateBlobLength + 1),
+                stateBlobOrdinal++,
+                PlayerSettingsBurstService.BuildClosingStateBlob()));
         }
 
         records.AddRange(PlayerRespawns(generation, now));
@@ -154,10 +214,18 @@ public sealed partial class BotActorPublishService
         short health;
         lock (combatGate)
         {
-            humanHealth.TryGetValue(shot.VictimSlot, out var held);
-            if (held == 0)
+            if (!humanHealth.TryGetValue(shot.VictimSlot, out var held))
             {
                 held = BotBodyState.MaximumVitals;
+            }
+
+            // The working host writes nothing on a slot between its zero and its
+            // two hundred and fifty eight seconds later. A player at zero has
+            // already been put down: another hit must not restate its health from
+            // the maximum, nor push its respawn back, or it never stands up.
+            if (held == 0)
+            {
+                return [];
             }
 
             health = (short)Math.Max(0, held - shot.Damage);

@@ -114,6 +114,17 @@ public sealed class BotController(
         return new BotTick(state, decision, outcome, route, seen);
     }
 
+    /// <summary>Drops every bot's decision and route state, because the room has emptied.</summary>
+    public void Reset()
+    {
+        lock (gate)
+        {
+            states.Clear();
+        }
+
+        navigation.Reset();
+    }
+
     /// <summary>Forgets a bot's body state, because the bot is gone.</summary>
     /// <param name="botName">The bot that left.</param>
     public void Forget(string botName)

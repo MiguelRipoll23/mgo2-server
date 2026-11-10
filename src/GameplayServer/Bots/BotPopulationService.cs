@@ -62,22 +62,6 @@ public sealed partial class BotPopulationService : PeriodicWorker
     /// </summary>
     private readonly SemaphoreSlim reconcileGate = new(1, 1);
 
-    /// <summary>
-    /// Whether a real player has reached the room's briefing screen since the room
-    /// last emptied, which is what a fill waits for before it seats its bots.
-    /// </summary>
-    /// <remarks>
-    /// <b>It is a flag of the room and not a count of the current briefing.</b> The
-    /// reports it is set from are cleared at every game boundary
-    /// (<see cref="BriefingStateService.BeginNextBriefing"/>), and a fill gated on
-    /// that count emptied the room of its bots the moment a game ended — the first
-    /// pass after the clear saw no report and gave every bot's seat away while the
-    /// players were still in the room. It is cleared only when the room holds no
-    /// real player, so what it answers is "a player is here", which is the question
-    /// a fill asks.
-    /// </remarks>
-    private bool playerInBriefing;
-
     /// <summary>Creates the population service of one gameplay host.</summary>
     /// <param name="roster">The room's roster, which owns its members.</param>
     /// <param name="identities">The one place bot names are made.</param>
@@ -202,62 +186,63 @@ public sealed partial class BotPopulationService : PeriodicWorker
     /// The seats the room advertises, which is what a population is sized from.
     /// </summary>
     /// <remarks>
-    /// The seats are the room's, not the channel's: a Free Battle room the client
-    /// browses as eight holds eight, and a population sized from the roster's
-    /// twenty-three filled seats the briefing's own list treats as unplaced. The
-    /// protocol's own limit is the fallback for the window before this instance has
-    /// published a room.
+    /// The seats are the room's, not the channel's: a room the client browses as
+    /// eight holds eight, and a population sized from the roster's twenty-three
+    /// filled seats the briefing's own list treats as unplaced. A Free Battle room
+    /// is published at <c>GameplayServerMaxPlayers</c>, so the row and the settings
+    /// row state one size. The protocol's own limit is the fallback for the window
+    /// before this instance has published a room.
     /// </remarks>
     private int Capacity => match.RoomCapacity > 0
         ? match.RoomCapacity
         : Math.Min(RoomRosterService.SessionSlotCount - 1, serverOptions.GameplayServerMaxPlayers);
 
     /// <summary>
-    /// The bots the room may hold right now: the mode's count, less a seat for every
-    /// player that is still on its way in.
+    /// Seats of the room a fill never gives a bot: the host's own entry, and one left
+    /// empty for the player that joins next.
     /// </summary>
     /// <remarks>
-    /// <b>A seat a player is about to take is not a bot's to hold.</b> A client that
-    /// has sent its profile has not reached its briefing yet — it is loading the room
-    /// and the map — and its report is what says it is in. Until that report the
-    /// room must keep the seat free, or the fill's next pass hands it back to a bot
-    /// and the client reads the room as full and refuses the join it was already
-    /// answered. The subtraction is what keeps that window closed, and it ends by
-    /// itself: the report takes the player out of the count.
+    /// <b>A roster that names every seat the room holds is a room the client refuses
+    /// to enter.</b> The join's count record carries the room's population with the
+    /// host counted, so a fill sized to the room alone writes <c>08</c> into an
+    /// eight-seat match: the capture of 2026-11-10 20:38 did exactly that, with seven
+    /// bots and the player already named, and its client would not place itself. The
+    /// working host's answer carries <c>09</c> because its room holds more than nine
+    /// seats; a room that states a size has to leave the two seats below out instead,
+    /// which is what this reserves — at a configured seventeen it costs nothing, and
+    /// it is what keeps a room advertised at eight from naming its last seat.
+    /// </remarks>
+    private const int SeatsAFillKeepsFree = 2;
+
+    /// <summary>
+    /// The bots the room may hold right now: the mode's count, less a seat for every
+    /// player of the room and for each player still on its way in.
+    /// </summary>
+    /// <remarks>
+    /// <b>A seat a player is about to take is not a bot's to hold.</b> The pass that
+    /// answers a joining profile seats the fill before that player is filed, so the
+    /// player is counted here as <paramref name="incomingPlayers"/> and the bots take
+    /// the seats below it — the order the working host's run names them in, its bots
+    /// at 1–7 and the player at 8 — and
+    /// <see cref="SeatsAFillKeepsFree"/> seats are held back from the fill entirely.
     /// </remarks>
     /// <param name="mode">How a bot holds its slot.</param>
     /// <param name="members">The room's members.</param>
+    /// <param name="incomingPlayers">Players about to be filed, not yet on the roster.</param>
     /// <returns>The bots the room may hold.</returns>
-    private int TargetFor(BotPopulationMode mode, IReadOnlyList<RosterMember> members)
+    private int TargetFor(
+        BotPopulationMode mode,
+        IReadOnlyList<RosterMember> members,
+        int incomingPlayers = 0)
     {
-        var humans = members.Count(member => !member.IsBot);
-        var joining = members.Count(
-            member => !member.IsBot && !briefings.HasJoined(member.RemoteAddress));
-        return Math.Max(0, BotPopulationUtils.TargetCount(mode, botOptions.Count, humans, Capacity) - joining);
-    }
-
-    /// <summary>Whether a real player has reached the room's briefing screen.</summary>
-    private bool PlayerInBriefing
-    {
-        get
-        {
-            lock (gate)
-            {
-                return playerInBriefing;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Notes that a real player has reached the room's briefing screen, which is the
-    /// report a client sends once its room and map have loaded.
-    /// </summary>
-    public void NotePlayerInBriefing()
-    {
-        lock (gate)
-        {
-            playerInBriefing = true;
-        }
+        var humans = members.Count(member => !member.IsBot) + incomingPlayers;
+        return Math.Max(
+            0,
+            BotPopulationUtils.TargetCount(
+                mode,
+                botOptions.Count,
+                humans,
+                Math.Max(0, Capacity - SeatsAFillKeepsFree)));
     }
 
     private async Task ReconcileCoreAsync(CancellationToken cancellationToken)
@@ -286,25 +271,15 @@ public sealed partial class BotPopulationService : PeriodicWorker
 
         var mode = BotOptionsUtils.PopulationMode(botOptions);
 
-        // A room that holds no real player is not a room anybody is filling, so the
-        // flag the fill waits on is cleared with the last player's departure: the
-        // next player to arrive walks into a room of no bots.
-        if (humans.Count == 0)
-        {
-            lock (gate)
-            {
-                playerInBriefing = false;
-            }
-        }
-
-        // A fill waits for the player it is filling for, on the report a client sends
-        // once it has loaded the room's map — the briefing screen. The seats stay free
-        // until then, so the room that client walks into is a room it can enter: a
-        // population added at its first profile made the room look full before the
-        // join was heard, and the game would not let the player in. It is the room's
-        // own flag rather than the briefing's report count, because those reports are
-        // cleared at every game boundary while the players stay.
-        var waitingForPlayer = mode == BotPopulationMode.Fill && !PlayerInBriefing;
+        // An empty room is nobody's to fill, and it stops being empty at the profile:
+        // the fill seats its bots as soon as a player is on the roster, before that
+        // player has reported itself in the briefing, so the roster the player is
+        // answered names them (<see cref="MakeRoomForPlayerAsync"/>). Waiting for the
+        // report instead wrote the bots as a run of their own seconds later, and the
+        // game-with-bots capture names them in the join answer — `BOT-01`…`BOT-07` at
+        // ordinals 1–7, the player at 8, the close at 9 and the count at 10 — with
+        // nothing added after it.
+        var waitingForPlayer = mode == BotPopulationMode.Fill && humans.Count == 0;
 
         var target = waitingForPlayer ? 0 : TargetFor(mode, members);
 
@@ -312,9 +287,22 @@ public sealed partial class BotPopulationService : PeriodicWorker
         var roundNumber = roundState.RoundNumber;
         var entry = rotation[Math.Max(0, roundNumber) % rotation.Count];
 
-        Trim(target, mode, humans.Count, waitingForPlayer);
+        // The population changes between rounds and never inside one. The
+        // working-server capture writes every bot's actor block from the round's run
+        // to its close, and no seat changes hands while it plays: a bot taken off the
+        // roster mid-round is an actor that goes off the client's screen, because its
+        // block is only written while the population holds it. A pass that trimmed
+        // inside a round did exactly that — the bots appeared, walked, and then went
+        // as the next pass applied a target a joining player or a reaped session had
+        // moved. So the seats are settled while the room waits, and the round keeps
+        // the ones it opened with.
+        if (!roundState.IsOpen)
+        {
+            Trim(target, mode, humans.Count, waitingForPlayer);
+            await SpawnAsync(target, policy, humanSides, entry.Rule, cancellationToken);
+        }
+
         ResolveSides(policy, humanSides);
-        await SpawnAsync(target, policy, humanSides, entry.Rule, cancellationToken);
 
         // A briefing begins with nobody ready, and a bot never sends the report that
         // would ready it, so its readiness is restated on every pass: the ready set

@@ -36,6 +36,11 @@
 #   PI_HOST=miguel@192.168.1.20 scripts/run-gameplay-local.sh
 #   GAMEPLAY_LOG_LEVEL=Trace scripts/run-gameplay-local.sh
 #   GAMEPLAY_SERVER_ROTATION='CAP@Coppertown, TDM@Blood Bath' scripts/run-gameplay-local.sh
+#
+# The rotation and the round the run is staged at are meant to be edited in
+# scripts/gameplay-local-overrides.conf, which this run reads when it exists, so a
+# round can be tried without editing this file. Set GAMEPLAY_LOCAL_OVERRIDES to
+# read another file instead.
 
 # Run under bash even when the file is started with sh. The run needs bash arrays,
 # process substitution and pipefail, and a POSIX shell rejects the heredoc inside
@@ -52,6 +57,7 @@ pi_database_port="${PI_DATABASE_PORT:-5432}"
 tunnel_port="${DATABASE_TUNNEL_PORT:-15432}"
 gameplay_port="${GAMEPLAY_SERVER_PORT:-9999}"
 log_file="${GAMEPLAY_SERVER_LOG:-${TMPDIR:-/tmp}/mgo2-gameplay-server-${gameplay_port}.log}"
+override_file="${GAMEPLAY_LOCAL_OVERRIDES:-$project_directory/scripts/gameplay-local-overrides.conf}"
 tunnel_pid=""
 
 abort() {
@@ -223,20 +229,8 @@ export GAMEPLAY_SERVER_PORT="$gameplay_port"
 # them. Trace adds the wire — every datagram in and out, with its hex.
 export LOG_LEVEL="${GAMEPLAY_LOG_LEVEL:-Debug}"
 
-# The room's place in its rotation is the deployment's, not entry zero: a run
-# staged at the top of the rotation would brief on a different round than the
-# room it is being compared with, and the row it publishes would name that
-# wrong round to every browsing client. An environment that names a start round
-# still wins, over both this and the ConfigMap.
-export GAMEPLAY_SERVER_START_ROUND="${GAMEPLAY_SERVER_START_ROUND:-${configured_start_round:-${deployed_start_round:-1}}}"
 export GAMEPLAY_SERVER_CHARACTER_NAME="${GAMEPLAY_SERVER_CHARACTER_NAME:-server-$gameplay_port}"
 export GAMEPLAY_SERVER_GAME_NAME="${GAMEPLAY_SERVER_GAME_NAME:-server-$gameplay_port}"
-
-# The local room plays one round, TDM on Blood Bath. A run is played to watch a
-# round, and the deployed rotation is nine of them, so naming one here keeps the
-# room's own row and its settings burst on the round being watched. An environment
-# that names a rotation still wins, over both this and the ConfigMap.
-export GAMEPLAY_SERVER_ROTATION="${GAMEPLAY_SERVER_ROTATION:-TDM@Blood Bath}"
 
 # The local room is the bot room: bots on both sides, filling the slots the humans
 # leave and giving them up when one joins. The count is this run's own, and the
@@ -247,6 +241,25 @@ export BOT_TEAM="${BOT_TEAM:-BOTH}"
 export BOT_POPULATION_MODE="${BOT_POPULATION_MODE:-FILL}"
 export BOT_COUNT="${BOT_COUNT:-8}"
 export BOT_POPULATION_INTERVAL_SECONDS="${BOT_POPULATION_INTERVAL_SECONDS:-5}"
+
+# The round the room is staged with is read from the overrides file when there is
+# one, so a round is tried by editing that file and never this one. What the file
+# leaves out falls back to the room's own values: the rotation is then one round,
+# TDM on Blood Bath, because a local run is played to watch a round and not the
+# deployed nine, and the start round is the deployment's own place in the
+# rotation, read from the cluster above — the ConfigMap's value first, then the
+# deployment's, which is 5 (CAP on Blood Bath) on mgo2-gameplay-1. Entry zero would
+# brief on a different round than the room this run is compared with, and the row
+# it publishes would name that wrong round to every browsing client.
+if [[ -f "$override_file" ]]; then
+    # shellcheck source=/dev/null
+    . "$override_file"
+    printf 'Read the round overrides from %s.\n' "$override_file"
+fi
+
+export GAMEPLAY_SERVER_START_ROUND="${GAMEPLAY_SERVER_START_ROUND:-${configured_start_round:-${deployed_start_round:-1}}}"
+export GAMEPLAY_SERVER_ROTATION="${GAMEPLAY_SERVER_ROTATION:-TDM@Blood Bath}"
+
 export DATABASE_CONNECTION_STRING="$database_connection_string"
 unset database_connection_string
 

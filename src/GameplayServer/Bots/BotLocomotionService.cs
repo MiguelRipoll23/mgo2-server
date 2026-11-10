@@ -88,6 +88,15 @@ public sealed class BotLocomotionService(
         body.LastAdvanceMilliseconds = 0;
     }
 
+    /// <summary>Drops every body, because the room has emptied.</summary>
+    public void Reset()
+    {
+        lock (gate)
+        {
+            bodies.Clear();
+        }
+    }
+
     /// <summary>The placement a bot without an enemy walks to.</summary>
     /// <param name="bot">The bot.</param>
     /// <param name="map">The round's map.</param>

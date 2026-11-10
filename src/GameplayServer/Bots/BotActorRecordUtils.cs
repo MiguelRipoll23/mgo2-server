@@ -132,6 +132,15 @@ public static class BotActorRecordUtils
     }
 
     /// <summary>
+    /// Weapon a live bot's actor block carries: the working host writes <c>0x18</c>
+    /// in the pair for slots 1, 2, 3, 5, 6 and 7 and <c>0x19</c> for slot 4.
+    /// </summary>
+    public const byte CarriedWeapon = 0x18;
+
+    /// <summary>Magazine count the working host writes beside the weapon.</summary>
+    public const byte CarriedAmmo = 0x0f;
+
+    /// <summary>
     /// Builds one slot's whole actor block, in the order the capture writes it.
     /// </summary>
     /// <param name="sessionSlot">Key the player holds in the room's player table.</param>
@@ -167,11 +176,22 @@ public static class BotActorRecordUtils
                 (byte)(PositionBodyLength + 1),
                 PositionAttributeClass,
                 BuildPositionBody(body)),
-            new UdpMessage((ushort)(state + 4), 6, WeaponPairAttributeClass, [0x00, 0x00, 0x00, 0x00, 0x00]),
+            new UdpMessage((ushort)(state + 4), 6, WeaponPairAttributeClass, BuildWeaponPair(body)),
             new UdpMessage((ushort)(state + 4), 2, WeaponAttributeClass, [0x00]),
             new UdpMessage((ushort)(state + 6), 7, AimAttributeClass, BuildAimBody(body)),
         ];
     }
+
+    /// <summary>
+    /// The weapon pair a live bot carries, <c>00 18 00 00 0f</c> in the capture,
+    /// and the zero pair a corpse carries.
+    /// </summary>
+    /// <param name="body">The bot's body.</param>
+    /// <returns>The pair's five bytes.</returns>
+    private static byte[] BuildWeaponPair(BotBodyState body) =>
+        body.IsDead
+            ? [0x00, 0x00, 0x00, 0x00, 0x00]
+            : [0x00, CarriedWeapon, 0x00, 0x00, CarriedAmmo];
 
     /// <summary>
     /// The damage record one bot's hit travels under, on the slot it hit.

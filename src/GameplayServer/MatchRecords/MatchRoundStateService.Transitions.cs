@@ -62,9 +62,10 @@ public sealed partial class MatchRoundStateService
     private bool lastRoundClosedGame;
 
     /// <summary>
-    /// Rounds this room has closed, counted from one and never reset: it is the
-    /// identity a writer uses to award a round's win exactly once, which a round
-    /// number cannot be, because an emptied room returns to its first round.
+    /// Rounds this room has closed, counted from one and reset only when the room
+    /// empties: it is the identity a writer uses to award a round's win exactly once,
+    /// which a round number cannot be, because an emptied room returns to its first
+    /// round.
     /// </summary>
     private int roundsClosed;
 
@@ -139,6 +140,7 @@ public sealed partial class MatchRoundStateService
             isOpen = false;
             lastRoundResult = null;
             lastRoundClosedGame = false;
+            roundsClosed = 0;
             roundSettings = null;
             openedAt = null;
             clockStartsAt = 0;

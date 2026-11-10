@@ -39,3 +39,10 @@ public sealed record BotShot(
     float ImpactY,
     float ImpactZ,
     ushort Bearing);
+
+/// <summary>
+/// A death the room owes the client a kill-feed record for.
+/// </summary>
+/// <param name="KillerSlot">Slot the kill is credited to.</param>
+/// <param name="VictimSlot">Slot that went down.</param>
+public sealed record BotKill(byte KillerSlot, byte VictimSlot);

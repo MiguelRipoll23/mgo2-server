@@ -136,6 +136,27 @@ public static class UdpCommandConstants
     public const int FrameOverhead = HeaderSize + TailSize;
 
     /// <summary>
+    /// Largest peer-to-peer datagram a peer accepts, header and digest included.
+    /// </summary>
+    /// <remarks>
+    /// <b>A datagram past this size is dropped whole, and every record on it with
+    /// it.</b> Measured on the working host's ten-minute capture: across 23 820
+    /// datagrams the largest is exactly 512 bytes on the wire and the largest
+    /// content region exactly 500, which is this value less <see cref="FrameOverhead"/>,
+    /// and the host spreads a roster run over several frames to stay inside it.
+    /// This host of 2026-11-10 wrote twenty-three records as one 1 402-byte
+    /// datagram and the client answered none of them, while answering every
+    /// frame before it — see <see cref="MaximumContentSize"/>.
+    /// </remarks>
+    public const int MaximumDatagramSize = 0x200;
+
+    /// <summary>
+    /// Largest content region a datagram carries: <see cref="MaximumDatagramSize"/>
+    /// less the frame's own header and tail digest.
+    /// </summary>
+    public const int MaximumContentSize = MaximumDatagramSize - FrameOverhead;
+
+    /// <summary>
     /// Header bit marking the content region as a raw LZSS stream.
     /// </summary>
     /// <remarks>

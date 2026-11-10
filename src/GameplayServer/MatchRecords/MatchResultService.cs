@@ -137,6 +137,13 @@ public sealed class MatchResultService(
             : MatchRecordBodiesUtils.ResultCode(ordered[0].Team);
     }
 
+    /// <summary>Drops the awarded round, because the room has emptied.</summary>
+    public void Reset()
+    {
+        awardedRound = 0;
+        settledResult = null;
+    }
+
     /// <summary>
     /// Writes the result of the round that just ended to a peer: the operations
     /// stream's state write into <c>state[2]</c>.

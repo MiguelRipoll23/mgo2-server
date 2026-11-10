@@ -50,6 +50,9 @@ public sealed class BotPlayService(BotController controller)
         }
     }
 
+    /// <summary>Drops the decision stack's state, because the room has emptied.</summary>
+    public void Reset() => controller.Reset();
+
     /// <summary>Forgets a bot's state, because the bot is gone.</summary>
     /// <param name="botName">The bot that left.</param>
     public void Forget(string botName) => controller.Forget(botName);

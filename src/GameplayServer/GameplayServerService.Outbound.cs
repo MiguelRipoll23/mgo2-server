@@ -80,16 +80,25 @@ public sealed partial class GameplayServerService
     }
 
     /// <summary>
-    /// Writes several messages to a peer as one datagram on one outbound
-    /// counter.
+    /// Writes several messages to a peer, as few datagrams as they fit in on
+    /// one outbound counter each.
     /// </summary>
     /// <remarks>
-    /// The recorded host sends a roster run whole: one frame carrying the head,
-    /// the room's own entry, every player's entry and the record that closes
-    /// the run. Sending those one per datagram spends an outbound sequence each
-    /// and reaches the peer as a scatter of frames rather than the single
-    /// exchange it reads, and it shifts every later sequence number away from
-    /// the capture's.
+    /// <para>
+    /// The recorded host keeps a roster run together rather than writing it one
+    /// record per datagram: sending those one per frame spends an outbound
+    /// sequence each and reaches the peer as a scatter of frames rather than the
+    /// exchange it reads.
+    /// </para>
+    /// <para>
+    /// <b>Together, but only as far as a datagram reaches.</b> A frame past
+    /// <see cref="UdpCommandConstants.MaximumDatagramSize"/> is dropped by the
+    /// client whole, so a run that does not fit is written as consecutive frames
+    /// under that cap, in order, each on its own counter
+    /// (<see cref="FrameBuilderUtility.SplitByFrameSize"/>). The whole run is
+    /// written under the session's one gate, so no other write can land between
+    /// the frames of a run.
+    /// </para>
     /// </remarks>
     /// <param name="session">Session to write through.</param>
     /// <param name="messages">Messages to write, in order.</param>
@@ -110,7 +119,22 @@ public sealed partial class GameplayServerService
 
         lock (session.OutboundGate)
         {
-            var counter = session.OutboundCounter;
+            foreach (var group in FrameBuilderUtility.SplitByFrameSize(messages))
+            {
+                SendFrame(session, group);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes one group of messages as one datagram on the session's next
+    /// outbound counter.
+    /// </summary>
+    /// <param name="session">Session to write through.</param>
+    /// <param name="messages">Messages of the frame, in order.</param>
+    private void SendFrame(PeerSession session, IReadOnlyList<UdpMessage> messages)
+    {
+        var counter = session.OutboundCounter;
             session.OutboundCounter = FrameCounterUtility.Next(counter);
 
             var plain = FrameBuilderUtility.BuildMessageFrame(counter, messages);
@@ -146,7 +170,6 @@ public sealed partial class GameplayServerService
                 $"{(session.Established ? string.Empty : " pre-keyed")} " +
                 $"compression=uncompressed to {session.DialBack}",
                 wire);
-        }
     }
 
     private void Send(byte[] data, IPEndPoint remote)

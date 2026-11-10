@@ -1,5 +1,7 @@
+using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
+using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameplayServer.Bots;
@@ -52,44 +54,72 @@ public sealed partial class BotPopulationService
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>It is a trim and never a fill.</b> The profile pass answers the joining
-    /// player with the room this leaves behind, and the room that player can enter is
-    /// one with a seat still free in it: a roster naming as many players as the room
-    /// holds is read as full, and the join is refused before the client is ever in its
-    /// briefing. Seating at the profile is the failure this project already made once,
-    /// so this only removes; what seats them again is the player's own join report,
-    /// once it is in the briefing.
+    /// <b>The bots belong to the answer and not to a run behind it.</b> The
+    /// game-with-bots capture answers a join with the host's entry, <c>BOT-01</c>…
+    /// <c>BOT-07</c> at ordinals 1–7, the player at 8, the close at 9 and the room's
+    /// count at 10, and adds nothing after it. Seating them on the player's report
+    /// instead wrote a second run seconds into the briefing; the client of
+    /// 2026-11-10 answered none of it and its briefing held no bot.
     /// </para>
     /// <para>
-    /// <b>The seat is counted with the player just filed</b>, which is still on its
-    /// way in and has no report yet (<see cref="TargetFor"/>), so the run that is
-    /// answered holds one fewer entry than the room's capacity and the client is not
-    /// told the room is full. A bot the fill adds back on the report is the price of
-    /// that guarantee, and it is preferred to turning a player away.
+    /// <b>The seat is counted with the player just filed</b> because that player is
+    /// already on the roster here, so the run the answer carries holds the player and
+    /// the bots and no more than the room's capacity. The recorded host answers with
+    /// nine players named in a room that holds more than nine, so the count names the
+    /// population and not the capacity: naming every seat the room holds is what the
+    /// client of 2026-11-10 refused.
     /// </para>
     /// </remarks>
+    /// <param name="remoteAddress">The player being answered, still on its way in.</param>
     /// <param name="cancellationToken">Token that cancels the read of the roster.</param>
-    /// <returns><c>true</c> when a bot gave up its seat.</returns>
-    public async Task<bool> MakeRoomForPlayerAsync(CancellationToken cancellationToken)
+    /// <returns><c>true</c> when the room's bots changed.</returns>
+    public async Task<bool> MakeRoomForPlayerAsync(string remoteAddress, CancellationToken cancellationToken)
     {
         await reconcileGate.WaitAsync(cancellationToken);
         try
         {
+            // A round that is playing keeps its bots. The seat a joining player would
+            // take is free again at the next briefing, and taking it now would remove
+            // an actor from a round the client is already in: its block stops being
+            // written the moment the population stops holding it.
+            if (roundState.IsOpen)
+            {
+                logger.LogDebug(
+                    "A round is playing, so no bot gives up its seat for a joining player yet");
+                return false;
+            }
+
             var mode = BotOptionsUtils.PopulationMode(botOptions);
             var members = roster.Snapshot();
             var humans = members.Count(member => !member.IsBot);
-
-            // The same gate the pass uses: a fill that has heard no player in a
-            // briefing holds no bots, so the first player to arrive is answered a room
-            // of none rather than one holding the seats it is still loading towards.
-            var waitingForPlayer = mode == BotPopulationMode.Fill && !PlayerInBriefing;
             var before = Bots.Count;
-            Trim(
-                waitingForPlayer ? 0 : TargetFor(mode, members),
-                mode,
-                humans,
-                waitingForPlayer: false,
-                reason: "a player is joining and the room must keep a seat free for it");
+
+            // A player this host has not filed yet counts as one on its way in: the
+            // bots take the seats below it and the player is filed after them, which
+            // is the order the working host's run names them in — its bots at 1–7 and
+            // the player at 8. A re-sent profile finds itself on the roster and adds
+            // nothing, so the second copy cannot trim a bot it has just admitted.
+            var incoming = members.Any(
+                member => !member.IsBot && member.RemoteAddress == remoteAddress) ? 0 : 1;
+            var target = TargetFor(mode, members, incoming);
+            Trim(target, mode, humans, waitingForPlayer: false);
+
+            var policy = BotOptionsUtils.Team(botOptions);
+            var matchIdentifier = match.MatchIdentifier;
+            if (policy != BotTeamPolicy.None && matchIdentifier != 0 && Bots.Count < target)
+            {
+                var teams = await gameService.GetPlayerTeamsAsync(matchIdentifier, cancellationToken);
+                var humanSides = members
+                    .Where(member => !member.IsBot)
+                    .Select(member => teams.TryGetValue(member.CharacterId, out var side) ? side : (short?)null)
+                    .Where(RoomSideUtils.IsSide)
+                    .Select(side => side!.Value)
+                    .ToList();
+                var rotation = MatchSettingsUtils.Rotation(serverOptions);
+                var entry = rotation[Math.Max(0, roundState.RoundNumber) % rotation.Count];
+                await SpawnAsync(target, policy, humanSides, entry.Rule, cancellationToken);
+            }
+
             return Bots.Count != before;
         }
         finally
@@ -230,6 +260,7 @@ public sealed partial class BotPopulationService
     private void Remove(BotParticipant bot, string reason)
     {
         roster.Remove(bot.RosterKey);
+        briefings.Forget(bot.RosterKey);
         identities.Release(bot.Name);
         play.Forget(bot.Name);
         sides.Remove(bot.SessionSlot);
@@ -271,5 +302,14 @@ public sealed partial class BotPopulationService
         var before = Bots.Count;
         RemoveAll("the room emptied and holds no player to fill");
         return Bots.Count != before;
+    }
+
+    /// <summary>Drops every bot and its state, because the room has emptied.</summary>
+    public void Reset()
+    {
+        RemoveAll("the room emptied and the server is resetting");
+        identities.Reset();
+        play.Reset();
+        sides.Reset();
     }
 }

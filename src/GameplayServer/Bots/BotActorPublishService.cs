@@ -125,20 +125,50 @@ public sealed partial class BotActorPublishService(
                 // player in the round has told the host the settings it plays
                 // with, and a bot has no client to do it. `pcapng1` t+485.74
                 // writes one per occupied key six seconds before its run.
-                await AnnouncePlayerListAsync(context);
+                // The round's player list is not written here. The working-server
+                // capture writes no 0x1a58 in the four seconds around its round start
+                // and only twenty-nine in ten minutes, in shapes this host never built
+                // (`02 08 00 02`, `00 0f`); the one this host wrote — a two-byte
+                // `00 <slot>` per member, ordinal in the flags — took every player off
+                // the client's screen the moment the round opened.
                 await AnnounceRoundStateAsync(context);
 
                 using var period = new PeriodicTimer(TimeSpan.FromMilliseconds(TickMilliseconds));
+                var faultLogged = false;
                 while (roundState.IsOpen && MatchRecordPeerUtils.IsAlive(session))
                 {
-                    await PublishAsync(context);
+                    try
+                    {
+                        await PublishAsync(context);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        // One bad beat must not take the round's bodies with it: the
+                        // writer keeps its beat and the actors keep being written. Only
+                        // the first failure is logged, so a fault that repeats every
+                        // 33 ms cannot bury the log it needs to be read in.
+                        if (!faultLogged)
+                        {
+                            faultLogged = true;
+                            logger.LogWarning(
+                                exception,
+                                "UDP {LocalPort}: a bot actor beat for {RemoteAddress} failed; the writer "
+                                + "keeps its beat",
+                                context.LocalPort,
+                                context.Remote);
+                        }
+                    }
+
                     await period.WaitForNextTickAsync();
                 }
             }
         }
         catch (Exception exception)
         {
-            logger.LogDebug(
+            // A writer that ends takes every bot off the client's screen with it, so
+            // this is not a Debug line: the run that has no bots in it needs the
+            // reason it has none.
+            logger.LogWarning(
                 exception,
                 "UDP {LocalPort}: the bot actors to {RemoteAddress} ended",
                 context.LocalPort,
@@ -151,67 +181,6 @@ public sealed partial class BotActorPublishService(
                 writing.Remove(session);
             }
         }
-    }
-
-    /// <summary>
-    /// Writes the round's player list: one two-byte record per player, its own
-    /// key behind a zero byte, numbered from zero.
-    /// </summary>
-    /// <remarks>
-    /// <b>This is where a remote player is created for a client.</b> `pcapng1`
-    /// writes ten of them at t+491.12, half a second before its round's run, each
-    /// two bytes and one ordinal: <c>0007</c>, <c>0014</c>, <c>0012</c>, <c>000d</c>,
-    /// <c>000b</c>, <c>0013</c>, <c>0006</c>, <c>0005</c>, <c>000f</c>, <c>0010</c> —
-    /// every key the room's entries mark occupied, in one frame, the human's
-    /// included. Its identifier is the item-box group's own with the <c>0x08</c> bit
-    /// added (<c>0x1a50</c> is <c>0x1a58</c>, its sibling <c>0x1250</c> is
-    /// <c>0x1258</c>), so it travels under the generation the round plays under.
-    /// Masking the <c>0x0800</c> bit out of the item-box identifier instead builds
-    /// <c>0x0a58</c>, which no client knows — the run of 2026-11-09 13:08 wrote that
-    /// and listed nobody.
-    /// </remarks>
-    /// <param name="context">Context the records are written through.</param>
-    private async Task AnnouncePlayerListAsync(PeerContext context)
-    {
-        var players = roster.Snapshot()
-            .Where(member => member.SessionSlot > 0)
-            .OrderBy(member => member.SessionSlot)
-            .ToList();
-        if (players.Count == 0)
-        {
-            return;
-        }
-
-        var generation = roundState.Generation;
-        var playerListType = (ushort)(generation.ItemBox | 0x0008);
-        var records = new List<UdpMessage>(players.Count);
-        for (var index = 0; index < players.Count; index++)
-        {
-            records.Add(new UdpMessage(
-                playerListType,
-                3,
-                (byte)index,
-                [0x00, players[index].SessionSlot]));
-        }
-
-        if (context.SendRecords is { } sendRecords)
-        {
-            await sendRecords(records);
-        }
-        else
-        {
-            foreach (var record in records)
-            {
-                await context.Send(record.Type, record.Body, record.Flags);
-            }
-        }
-
-        logger.LogDebug(
-            "UDP {LocalPort}: listed {PlayerCount} player(s) under 0x{ListType:x4} for {RemoteAddress}",
-            context.LocalPort,
-            players.Count,
-            playerListType,
-            context.Remote);
     }
 
     /// <summary>

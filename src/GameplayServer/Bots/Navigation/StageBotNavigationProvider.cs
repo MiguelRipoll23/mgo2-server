@@ -85,7 +85,9 @@ public sealed class StageBotNavigationProvider(
             return new BotNavigationResult(BotNavigationStatus.Failed, null, refusal);
         }
 
-        logger.LogDebug(
+        // Trace, not Debug: a route is planned again every 1.5 s per bot, so this
+        // line is the hot path's own and not something a Debug run should hold.
+        logger.LogTrace(
             "Routed map {Map} over {WaypointCount} point(s) from {FromX},{FromY},{FromZ} to {ToX},{ToY},{ToZ}",
             request.Map,
             path.Count,

@@ -129,6 +129,15 @@ public sealed class PlayerPositionService(ILogger<PlayerPositionService> logger)
         }
     }
 
+    /// <summary>Drops every position, because the room has emptied.</summary>
+    public void Reset()
+    {
+        lock (gate)
+        {
+            lastReported.Clear();
+        }
+    }
+
     /// <summary>
     /// Drops a player's position, because the player has left the room.
     /// </summary>

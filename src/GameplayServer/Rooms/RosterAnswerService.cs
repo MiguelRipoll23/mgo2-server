@@ -94,6 +94,17 @@ public sealed class RosterAnswerService(ILogger<RosterAnswerService> logger)
         return false;
     }
 
+    /// <summary>Drops every held profile, because the room has emptied.</summary>
+    public void Reset()
+    {
+        lock (gate)
+        {
+            // The hold's own deadline removes its key and returns without answering;
+            // cancelling here would race the task's finally disposing the source.
+            held.Clear();
+        }
+    }
+
     /// <summary>
     /// Answers a held profile once the hold's deadline passes, unless the client's
     /// re-send took it first.

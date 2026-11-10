@@ -96,6 +96,15 @@ public sealed class PlayerVitalsService(ILogger<PlayerVitalsService> logger)
         }
     }
 
+    /// <summary>Drops every player's vitals, because the room has emptied.</summary>
+    public void Reset()
+    {
+        lock (gate)
+        {
+            lastReported.Clear();
+        }
+    }
+
     /// <summary>
     /// Drops a player's vitals, because the player has left the room. Called by
     /// the session reaper.

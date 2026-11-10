@@ -119,17 +119,12 @@ public sealed class JoinReportHandler(
             MatchStartBodiesUtils.JoinStateAnswer(briefingStates.JoinedMask),
             MatchStartBodiesUtils.JoinStateAnswerClass);
 
-        // A fill waits for this report before it seats the room's bots, and it runs
-        // before the room is answered: the roster and the publication below are then
-        // one room — the client plus its bots — instead of a room of one the client
-        // has to reconcile against a second roster a moment behind it. A publication
-        // written first carries the population and the ready set as they were before
-        // the fill, which is the count a briefing draws against the roster it gets
-        // next.
-        // A real player is on the briefing screen, and that is the room's own answer
-        // to what a fill waits for: the flag outlives the reports, which are cleared
-        // at every game boundary while the players stay in the room.
-        bots.NotePlayerInBriefing();
+        // The fill seated its bots in the pass that answered this player's profile,
+        // so the roster it holds already names them and this pass has nothing to
+        // append: the reconcile below changes nothing and publishes nothing. It
+        // stays because a report that does move the room — a human taking a bot's
+        // seat, a fill whose player has arrived — is owed to the client before it is
+        // answered.
         await AnnounceBotsAsync(context);
 
         // A bot is on the briefing's roster from the publication above; what puts
@@ -203,13 +198,13 @@ public sealed class JoinReportHandler(
     /// Seats the fill's bots on the report and names them to the client.
     /// </summary>
     /// <remarks>
-    /// <b>The bots are appended to the room the client already holds.</b> The
-    /// reconcile seats them only now — the profile pass keeps their seats free so
-    /// the client can enter a room that is not already full — so the roster the
-    /// client was answered named the humans alone. What puts the bots in its
-    /// briefing is the room's own answer to a join: each bot's entry, the close,
-    /// the room's count and the bot's loadout, numbered from the exchange's counter
-    /// and never as a second roster run restarting at zero
+    /// <b>The bots ride the join answer, and only a change is appended.</b> A fill
+    /// seats the room's bots in the pass that answers the profile
+    /// (<see cref="Bots.BotPopulationService.MakeRoomForPlayerAsync"/>), so the roster
+    /// the client holds already names them and this pass finds nothing added. What
+    /// it still writes is a seat that changed hands on the report: each bot's entry,
+    /// the close, the room's count and the bot's loadout, numbered from the
+    /// exchange's counter and never as a second roster run restarting at zero
     /// (<see cref="BotRosterPublishService"/>).
     /// </remarks>
     /// <param name="context">Context the report arrived through.</param>

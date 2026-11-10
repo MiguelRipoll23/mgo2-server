@@ -113,6 +113,15 @@ public sealed class MatchRecordSequenceService(ILogger<MatchRecordSequenceServic
         return values;
     }
 
+    /// <summary>Drops every stream, because the room has emptied.</summary>
+    public void Reset()
+    {
+        lock (gate)
+        {
+            nextOrdinals.Clear();
+        }
+    }
+
     /// <summary>
     /// Restarts a stream: its next record takes zero.
     /// </summary>

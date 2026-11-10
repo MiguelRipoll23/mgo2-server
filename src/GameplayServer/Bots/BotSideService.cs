@@ -45,6 +45,15 @@ public sealed class BotSideService
         }
     }
 
+    /// <summary>Drops every slot and side, because the room has emptied.</summary>
+    public void Reset()
+    {
+        lock (gate)
+        {
+            sides.Clear();
+        }
+    }
+
     /// <summary>The slots and sides, as the lobby-slot arrays name them.</summary>
     public IReadOnlyList<LobbyTeamSlot> TeamSlots
     {

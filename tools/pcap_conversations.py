@@ -145,8 +145,15 @@ class Pcapng:
                     frame = frame[offset:]
                 else:
                     continue
-            elif link in (LINKTYPE_RAW, LINKTYPE_NULL):
+            elif link == LINKTYPE_RAW:
                 pass
+            elif link == LINKTYPE_NULL:
+                # A null/loopback packet starts with a four-byte address family,
+                # not with the IP header. macOS writes that family natively, so
+                # its value is not the IP version the next byte holds.
+                if len(frame) < 4:
+                    continue
+                frame = frame[4:]
             else:
                 continue
 

@@ -17,7 +17,7 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// settings burst can read no appearance for, so every bot fell back to the
 /// recorded host's single face — the reason a room of eight showed one body. The
 /// row is created once per bot name and reused by every later run: the names are
-/// <c>BOT-1</c>, <c>BOT-2</c>, … across the process's life
+/// <c>BOT-01</c>, <c>BOT-02</c>, … across the process's life
 /// (<see cref="BotIdentityService"/>), so a restarted host finds the characters it
 /// made last time rather than a second set.
 /// </para>
