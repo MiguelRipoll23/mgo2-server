@@ -9,8 +9,8 @@ namespace Mgo2Server.GameplayServer.Gameplay;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This is the one place a player's vitals are read, and nothing is written
-/// back with them.</b> A client reports its own health and stamina under
+/// <b>This is the one place a player's vitals are read, and a hit the bots land is
+/// the one value written back.</b> A client reports its own health and stamina under
 /// <c>0x0080</c> (and <c>0x0880</c> for the second player's record), which
 /// <c>UDP_GAME_CAPTURE.md</c> §5 measures end to end — 250 is full, 0 is death,
 /// and the ladder between them is the game's own — and those records reach this
@@ -19,14 +19,15 @@ namespace Mgo2Server.GameplayServer.Gameplay;
 /// not say what any player's health was.
 /// </para>
 /// <para>
-/// <b>The host's own beat record is not written from here.</b> The steady stream
-/// carries a two-byte <c>0x090c</c> record whose body is <c>fa fa</c> in all
-/// 4 298 captured observations, including while <c>0x0080</c> reports death; the
-/// capture's own note is to keep it and not to substitute a player's live vitals
-/// into it, and that is what this server does
-/// (<see cref="MatchRecords.MatchRecordBodiesUtils.Vitals"/>). What the values
-/// kept here are for is the host's own reading: a round's scoreboard, a vitals
-/// display, or a question about a player asked after the fact.
+/// <b>The beat's constant <c>fa fa</c> is kept until this host has a hit of its
+/// own to state.</b> The steady stream's two-byte vitals record is <c>fa fa</c> in
+/// all 4 298 captured observations, including while <c>0x0080</c> reports death
+/// (<see cref="MatchRecords.MatchRecordBodiesUtils.Vitals"/>), and that is what
+/// this host writes while <see cref="NoteDamage"/> has set nothing. Once it has,
+/// the beat carries the health the hit left: this room's beat writes that record
+/// under the player's own actor identifier (<see cref="MatchRecords.MatchRecordService"/>),
+/// where a constant full health is a bar that never moves, which is the report of
+/// 2026-11-11 — bots that aim, hit nothing visible, and a player who never falls.
 /// </para>
 /// </remarks>
 /// <param name="logger">Logger of this service.</param>
@@ -34,6 +35,14 @@ public sealed class PlayerVitalsService(ILogger<PlayerVitalsService> logger)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<string, PlayerVitals> lastReported = [];
+
+    /// <summary>
+    /// Players whose health this host has set itself, with a hit it landed. A
+    /// report from such a player does not raise the value again: the client does
+    /// not know about the hit yet, and its own <c>fa fa</c> would put the bar back
+    /// to full on the next tick — the room of 2026-11-11, whose player never fell.
+    /// </summary>
+    private readonly HashSet<string> held = [];
 
     /// <summary>
     /// Records a player's vitals, and reports whether that is news.
@@ -54,6 +63,11 @@ public sealed class PlayerVitalsService(ILogger<PlayerVitalsService> logger)
 
         lock (gate)
         {
+            if (held.Contains(remoteAddress))
+            {
+                return false;
+            }
+
             if (lastReported.TryGetValue(remoteAddress, out var existing))
             {
                 if (existing == vitals)
@@ -83,6 +97,51 @@ public sealed class PlayerVitalsService(ILogger<PlayerVitalsService> logger)
     }
 
     /// <summary>
+    /// Lowers a player's held health to what a hit this host landed leaves, and
+    /// holds it against the client's own reports until the respawn clears it.
+    /// </summary>
+    /// <remarks>
+    /// The beat's vitals record rides the player's own actor identifier in this
+    /// room (<see cref="MatchRecords.MatchRecordService"/>), so a constant
+    /// <c>fa fa</c> written there every 33 ms is a health bar that never moves. The
+    /// value held here is what that record carries while a hit stands.
+    /// </remarks>
+    /// <param name="remoteAddress">Endpoint of the player that was hit.</param>
+    /// <param name="vitals">Health the hit leaves.</param>
+    public void NoteDamage(string remoteAddress, PlayerVitals vitals)
+    {
+        ArgumentNullException.ThrowIfNull(remoteAddress);
+        ArgumentNullException.ThrowIfNull(vitals);
+
+        lock (gate)
+        {
+            if (lastReported.TryGetValue(remoteAddress, out var existing)
+                && existing.Health <= vitals.Health)
+            {
+                return;
+            }
+
+            lastReported[remoteAddress] = vitals;
+            held.Add(remoteAddress);
+        }
+    }
+
+    /// <summary>
+    /// Clears a held hit, because the player has stood up again at full health.
+    /// </summary>
+    /// <param name="remoteAddress">Endpoint of the player that respawned.</param>
+    public void Restore(string remoteAddress)
+    {
+        ArgumentNullException.ThrowIfNull(remoteAddress);
+
+        lock (gate)
+        {
+            held.Remove(remoteAddress);
+            lastReported[remoteAddress] = PlayerVitals.Full;
+        }
+    }
+
+    /// <summary>
     /// The vitals a player last reported.
     /// </summary>
     /// <param name="remoteAddress">Endpoint the player is filed under.</param>
@@ -102,6 +161,7 @@ public sealed class PlayerVitalsService(ILogger<PlayerVitalsService> logger)
         lock (gate)
         {
             lastReported.Clear();
+            held.Clear();
         }
     }
 
@@ -115,6 +175,7 @@ public sealed class PlayerVitalsService(ILogger<PlayerVitalsService> logger)
     {
         lock (gate)
         {
+            held.Remove(remoteAddress);
             if (!lastReported.Remove(remoteAddress))
             {
                 return false;

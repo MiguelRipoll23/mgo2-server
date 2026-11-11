@@ -45,4 +45,17 @@ internal sealed class BeatCounters
 
     /// <summary>Fourth byte the next <c>0x1a5a</c> item-box state record carries.</summary>
     public byte ItemBoxStateSequence { get; set; }
+
+    /// <summary>
+    /// The player's vitals body last written, as hex, so a change — a hit, a
+    /// death, a respawn — is the only thing that writes it again.
+    /// </summary>
+    public string LastVitals { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Frames left to repeat a changed vitals body for. The working host writes a
+    /// new value on four beats and then stops; this host wrote one on every frame,
+    /// and after a death it wrote <c>00 fa</c> for the whole respawn delay.
+    /// </summary>
+    public int VitalsRepeats { get; set; }
 }

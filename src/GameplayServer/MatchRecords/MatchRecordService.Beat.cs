@@ -1,4 +1,5 @@
 using Mgo2Server.GameplayServer.Rooms;
+using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
 
@@ -100,6 +101,21 @@ public sealed partial class MatchRecordService
             // first report asks for, and no capture writes a player's health while
             // its client is still being briefed
             // (docs/analysis/join-stall-after-mode2.md §14).
+            // The vitals record rides only while it is news. The working host
+            // writes a player's health when it changes and for the three beats
+            // after, then goes quiet until the next change.
+            var vitals = HeldVitalsBody(context);
+            var vitalsHex = Convert.ToHexString(vitals);
+            if (vitalsHex != beat.LastVitals)
+            {
+                beat.LastVitals = vitalsHex;
+                beat.VitalsRepeats = VitalsRepeatsAfterChange;
+            }
+            else if (beat.VitalsRepeats > 0)
+            {
+                beat.VitalsRepeats--;
+            }
+
             var plan = new BeatFramePlan(
                 beat.FrameIndex,
                 generation,
@@ -108,7 +124,8 @@ public sealed partial class MatchRecordService
                 beat.BlobsWritten,
                 beat.ItemBoxSequence,
                 beat.ItemBoxStateSequence,
-                LiveMemberSlots());
+                LiveMemberSlots(),
+                beat.VitalsRepeats > 0 || beat.FrameIndex % VitalsPeriodFrames == 0 ? vitals : null);
 
             // The insertions' fourth bytes are taken inside the plan, from the
             // stream of the identifier each record travels under; what advances
@@ -132,6 +149,52 @@ public sealed partial class MatchRecordService
             "UDP {LocalPort}: steady match records stopped for {RemoteAddress} because the peer is idle",
             context.LocalPort,
             session.RemoteAddress);
+    }
+
+    /// <summary>
+    /// Beats a changed vitals body is written on, counting the one it changed on:
+    /// the capture's death runs are four frames of <c>00 fa</c>.
+    /// </summary>
+    private const int VitalsRepeatsAfterChange = 3;
+
+    /// <summary>
+    /// Frames between the repeats a held vitals value gets once its burst is over:
+    /// the capture writes a standing value about once a second.
+    /// </summary>
+    private const int VitalsPeriodFrames = 30;
+
+    /// <summary>
+    /// The vitals body this peer's beat carries: the health a hit of this host's
+    /// left, or the constant <c>fa fa</c> the capture always writes.
+    /// </summary>
+    /// <remarks>
+    /// <b>The beat's vitals record is the player's own actor identifier in this
+    /// room</b> (<see cref="BeatGenerationFor"/>), which is the identifier a bot's
+    /// hit writes the player's falling health under. A constant full health
+    /// written there every 33 ms is a bar that never moves, and it is what the room
+    /// of 2026-11-11 measured: <c>bots1.pcapng</c> slot 9 falls
+    /// <c>250 → 217 → 184 → 151 → 118</c> in thirty milliseconds and is back at
+    /// <c>250</c> thirty after. A held hit is what the record carries until the
+    /// respawn clears it (<see cref="PlayerVitalsService.NoteDamage"/>).
+    /// </remarks>
+    /// <param name="context">Context of the peer the beat is written to.</param>
+    /// <returns>The two-byte body.</returns>
+    private byte[] HeldVitalsBody(PeerContext context)
+    {
+        var member = roster.Find(context.Remote.ToString())
+            ?? roster.Find(context.Session.DialBack.ToString());
+        if (member is null
+            || !playerVitals.TryGet(member.RemoteAddress, out var held)
+            || held.Health >= PlayerVitals.MaximumValue)
+        {
+            return MatchRecordBodiesUtils.Vitals();
+        }
+
+        return
+        [
+            (byte)Math.Clamp(held.Health, 0, PlayerVitals.MaximumValue),
+            (byte)Math.Clamp(held.Stamina, 0, PlayerVitals.MaximumValue),
+        ];
     }
 
     /// <summary>

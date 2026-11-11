@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Types;
@@ -47,6 +48,7 @@ public sealed partial class MatchRecordService(
     BriefingRoomPublishService roomPublications,
     MatchRecordSequenceService sequences,
     RoomRosterService roster,
+    PlayerVitalsService playerVitals,
     ILogger<MatchRecordService> logger)
 {
     /// <summary>

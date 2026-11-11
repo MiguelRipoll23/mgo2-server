@@ -356,17 +356,19 @@ public sealed partial class GameplayServerService
                 // in return, and a peer that has not finished its handshake is
                 // not a recipient yet.
 
-                // A client's hit on a bot is a damage record whose identifier names
-                // that bot's slot. The bots are simulated on this host, so the hit
-                // has to reach the body the actor blocks are built from, or the
-                // victim's vitals never fall and it never goes down.
+                // A client's hit on a bot is a damage record naming that bot's slot.
                 if (message.Flags == Bots.BotActorRecordUtils.DamageAttributeClass &&
                     message.Body.Length >= 4)
                 {
+                    // A shooter the roster cannot name credits nobody: a zero is the
+                    // host's own entry on the client's player table.
                     botSimulation.NoteIncomingDamage(
                         message.Type,
                         (ushort)(message.Body[2] | (message.Body[3] << 8)),
-                        roster.Find(session.RemoteAddress)?.SessionSlot ?? 0);
+                        roster.Find(session.RemoteAddress)?.SessionSlot);
+
+                    // The echo carries the hit's subtype, and so the death drawn.
+                    botActors.NoteDamageEcho(message.Type, message.Body);
                 }
 
                 if (session.Established)

@@ -57,7 +57,8 @@ public sealed record BeatFramePlan(
     int BlobsWritten,
     byte ItemBoxSequence,
     byte ItemBoxStateSequence,
-    IReadOnlyList<byte> Members)
+    IReadOnlyList<byte> Members,
+    byte[]? VitalsBody = null)
 {
     /// <summary>
     /// Which insertion this frame carries, decided from its index alone.
@@ -234,7 +235,15 @@ public sealed record BeatFramePlan(
     /// round's own open states the onset and nothing else is needed.
     /// </para>
     /// </remarks>
-    public bool IncludeVitals => RoundOpen;
+    /// <remarks>
+    /// <b>It rides only when the beat has a body to carry</b>, which is the burst a
+    /// change gets and the once-a-second repeat behind it. The round being open is
+    /// not enough: this host wrote the record on every open-round frame, so a hit's
+    /// <c>200</c> stood for one frame and the constant <c>fa fa</c> put the bar back
+    /// to <c>250</c> on the next — the bar that dropped and came back of 2026-11-11,
+    /// and the collision at <c>0x10224D7B</c> thirty seconds into it.
+    /// </remarks>
+    public bool IncludeVitals => RoundOpen && VitalsBody is not null;
 
     /// <summary>
     /// Whether this frame's insertion is a state blob, which is what advances
@@ -274,6 +283,6 @@ public sealed record BeatFramePlan(
             : null;
 
         return MatchRecordFramesUtils.BeatFrame(
-            Generation, insertions, IncludeVitals, itemBoxes, Members);
+            Generation, insertions, IncludeVitals, itemBoxes, Members, VitalsBody);
     }
 }

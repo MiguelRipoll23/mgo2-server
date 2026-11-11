@@ -37,26 +37,41 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </remarks>
 /// <param name="score">The host's own score, which this publishes.</param>
 /// <param name="roster">Roster of the room, whose exchange the index continues.</param>
+/// <param name="roundState">The room's round, whose rule states the ticket allotment.</param>
+/// <param name="lobbySlots">Reader of the room's players, by slot and side.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class ScoreboardPublishService(
     MatchScoreService score,
     RoomRosterService roster,
+    MatchRoundStateService roundState,
+    LobbySlotService lobbySlots,
     ILogger<ScoreboardPublishService> logger)
 {
     /// <summary>
+    /// The remaining tickets each side has already been told about: a death that
+    /// does not move a side's count writes nothing.
+    /// </summary>
+    private readonly Dictionary<short, int> publishedTickets = [];
+
+    /// <summary>The round the cached ticket counts belong to, which resets them.</summary>
+    private int publishedRound;
+
+    /// <summary>
     /// Writes every queued score change to the peer the change arrived through
-    /// and to the rest of the room.
+    /// and to the rest of the room, then each side's remaining tickets when a death
+    /// has spent one (<see cref="TeamTicketBodiesUtils"/>).
     /// </summary>
     /// <param name="context">Context the change arrived through.</param>
     public async Task PublishAsync(PeerContext context)
     {
         var deltas = score.TakeDeltas();
-        if (deltas.Count == 0)
+        var tickets = await TicketRecordsAsync();
+        if (deltas.Count == 0 && tickets.Count == 0)
         {
             return;
         }
 
-        var records = new List<RosterRecord>(deltas.Count);
+        var records = new List<RosterRecord>(deltas.Count + tickets.Count);
         foreach (var delta in deltas)
         {
             records.Add(new RosterRecord(
@@ -65,8 +80,20 @@ public sealed class ScoreboardPublishService(
                 roster.TakeRunOrdinal()));
         }
 
+        // The ticket record rides behind the scoreboard delta the death queued, in
+        // the order the capture writes them: the victim's and killer's deltas, then
+        // the side's remaining count (`0b 00 00 00 08 …` at t+40.85 of the working
+        // capture).
+        foreach (var ticket in tickets)
+        {
+            records.Add(new RosterRecord(
+                MatchScoreboardFramesUtils.RecordType,
+                ticket,
+                roster.TakeRunOrdinal()));
+        }
+
         logger.LogDebug(
-            "UDP {LocalPort}: publishing {RecordCount} scoreboard delta(s) to {RemoteAddress} and the room",
+            "UDP {LocalPort}: publishing {RecordCount} scoreboard record(s) to {RemoteAddress} and the room",
             context.LocalPort,
             records.Count,
             context.Remote);
@@ -76,5 +103,56 @@ public sealed class ScoreboardPublishService(
         {
             await context.Broadcast(record.Type, record.Body, record.Ordinal);
         }
+    }
+
+    /// <summary>
+    /// Each side's remaining tickets, for the sides whose count a death has moved.
+    /// </summary>
+    /// <remarks>
+    /// <b>A ticket is spent on a death, and a side's allotment is the rule's own
+    /// ticket word.</b> The record is the capture's, its count the allotment less
+    /// the deaths this host has counted for that side, and it is written only when
+    /// the count changes — the reference writes one per death, never the same value
+    /// twice (see <see cref="TeamTicketBodiesUtils"/>). A rule that states no
+    /// allotment plays no ticketed round and writes nothing.
+    /// </remarks>
+    /// <returns>The bodies to publish, one per side that moved.</returns>
+    private async Task<IReadOnlyList<byte[]>> TicketRecordsAsync()
+    {
+        if (roundState.RoundSettings is not { Tickets: { } allotment })
+        {
+            return [];
+        }
+
+        // A round's tickets start over with its score, so the cache is the round's
+        // and not the room's: the first death of a new round states the new count
+        // even when the number it reaches is one the previous round also held.
+        if (roundState.RoundNumber != publishedRound)
+        {
+            publishedRound = roundState.RoundNumber;
+            publishedTickets.Clear();
+        }
+
+        var bodies = new List<byte[]>(2);
+        foreach (var team in score.TeamScores(await lobbySlots.ReadAsync()))
+        {
+            var remaining = Math.Max(0, allotment - team.Deaths);
+            if (publishedTickets.TryGetValue(team.Team, out var held) && held == remaining)
+            {
+                continue;
+            }
+
+            publishedTickets[team.Team] = remaining;
+            bodies.Add(TeamTicketBodiesUtils.Build(team.Team, remaining));
+            logger.LogDebug(
+                "Team {Team} has {Remaining} of its round's {Allotment} ticket(s) left after {Deaths} "
+                + "death(s)",
+                team.Team,
+                remaining,
+                allotment,
+                team.Deaths);
+        }
+
+        return bodies;
     }
 }

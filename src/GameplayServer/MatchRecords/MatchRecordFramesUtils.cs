@@ -265,13 +265,17 @@ public static class MatchRecordFramesUtils
     /// <param name="includeVitals">Whether the vitals record rides in this frame.</param>
     /// <param name="itemBoxes">Item-box group to place behind the rules pair, or null.</param>
     /// <param name="members">Slots of the players the round holds, or null for the empty pair.</param>
+    /// <param name="vitals">
+    /// Body of this peer's vitals record, or null for the captured constant.
+    /// </param>
     /// <returns>The records of one beat frame.</returns>
     public static List<RecordMessage> BeatFrame(
         MatchRecordGenerationUtils generation,
         IReadOnlyList<RecordMessage>? insertions = null,
         bool includeVitals = true,
         IReadOnlyList<RecordMessage>? itemBoxes = null,
-        IReadOnlyList<byte>? members = null)
+        IReadOnlyList<byte>? members = null,
+        byte[]? vitals = null)
     {
         var frame = new List<RecordMessage>(
             (insertions?.Count ?? 0) + (itemBoxes?.Count ?? 0) + (includeVitals ? 3 : 2));
@@ -282,7 +286,7 @@ public static class MatchRecordFramesUtils
 
         if (includeVitals)
         {
-            frame.Add(new(generation.Vitals, MatchRecordBodiesUtils.Vitals(), VitalsAttributeClass));
+            frame.Add(new(generation.Vitals, vitals ?? MatchRecordBodiesUtils.Vitals(), VitalsAttributeClass));
         }
 
         frame.AddRange(RulesPairFramesUtils.RulesPair(generation, members ?? []));

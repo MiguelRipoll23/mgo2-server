@@ -108,15 +108,25 @@ public sealed partial class MatchScoreService(
     /// </remarks>
     /// <param name="killerSlot">Slot the feed names as the killer.</param>
     /// <param name="victimSlot">Slot the feed names as the victim.</param>
+    /// <param name="countDeath">
+    /// Whether this call is the one that counts the death. A player's own vitals
+    /// report reaching zero is counted where it arrives
+    /// (<see cref="Commands.Peer.Gameplay.PlayerVitalsHandler"/>), so a kill a bot
+    /// lands on a player is credited here without counting that death a second
+    /// time.
+    /// </param>
     /// <returns><c>true</c> when the round's score changed.</returns>
-    public bool NoteKill(byte killerSlot, byte victimSlot)
+    public bool NoteKill(byte killerSlot, byte victimSlot, bool countDeath = true)
     {
         lock (gate)
         {
             var victim = RowOf(victimSlot);
-            victim.Deaths++;
-            Queue(victimSlot, MatchScoreboardFramesUtils.DeathsBit, victim.Deaths);
-            QueueScore(victimSlot, victim);
+            if (countDeath)
+            {
+                victim.Deaths++;
+                Queue(victimSlot, MatchScoreboardFramesUtils.DeathsBit, victim.Deaths);
+                QueueScore(victimSlot, victim);
+            }
 
             if (killerSlot == victimSlot)
             {

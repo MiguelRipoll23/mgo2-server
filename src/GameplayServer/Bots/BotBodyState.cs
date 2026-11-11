@@ -39,6 +39,17 @@ public sealed class BotBodyState
     /// <summary>Health the vitals record reports; zero is a corpse.</summary>
     public short Health { get; set; } = BotBodyState.MaximumVitals;
 
+    /// <summary>
+    /// Health the vitals record last reported. The working host writes a bot's
+    /// vitals about once a second, and on a change, not on every beat: slot 1 of
+    /// the capture writes 719 vitals records over 610 s against 15 900 position
+    /// records.
+    /// </summary>
+    public short LastPublishedHealth { get; set; } = -1;
+
+    /// <summary>When the vitals record may be written again, in monotonic milliseconds.</summary>
+    public long NextVitalsMilliseconds { get; set; }
+
     /// <summary>Stamina the vitals record reports.</summary>
     public short Stamina { get; set; } = BotBodyState.MaximumVitals;
 
@@ -66,6 +77,28 @@ public sealed class BotBodyState
     /// <summary>Whether the body is walking this tick, which the position head shows.</summary>
     public bool Moving { get; set; }
 
+    /// <summary>
+    /// Whether this beat is one a shot leaves the weapon on, which the state
+    /// record writes as action <c>0x47</c> rather than the held trigger's
+    /// <c>0x44</c>.
+    /// </summary>
+    public bool ShotThisBeat { get; set; }
+
+    /// <summary>
+    /// Whether the body is in the hit reaction the capture's <c>c1 81</c> position
+    /// head marks, which lasts <see cref="BotLocomotionService.HitReactionMilliseconds"/>.
+    /// </summary>
+    public bool HitReacting { get; set; }
+
+    /// <summary>When the hit reaction ends, in monotonic milliseconds.</summary>
+    public long HitReactUntilMilliseconds { get; set; }
+
+    /// <summary>
+    /// How many patrol points the bot has taken so far, which is the phase of its
+    /// tour of the stage.
+    /// </summary>
+    public int PatrolIndex { get; set; }
+
     /// <summary>Route it is following, if any.</summary>
     public IReadOnlyList<BotPosition> Route { get; set; } = [];
 
@@ -81,11 +114,24 @@ public sealed class BotBodyState
     /// <summary>When it may fire again, in monotonic milliseconds.</summary>
     public long NextShotMilliseconds { get; set; }
 
+    /// <summary>
+    /// When the next <c>0x47</c> fire beat may ride, in monotonic milliseconds. The
+    /// capture writes one about 1.3 times a second while engaged — slot 1 has 799
+    /// in 610 s — and a hit far less often than that.
+    /// </summary>
+    public long NextFireBeatMilliseconds { get; set; }
+
     /// <summary>When it stands up again after a death, in monotonic milliseconds.</summary>
     public long RespawnMilliseconds { get; set; }
 
     /// <summary>Last time the body was advanced, in monotonic milliseconds.</summary>
     public long LastAdvanceMilliseconds { get; set; }
+
+    /// <summary>
+    /// Deaths this slot has taken in the round, which the corpse body's header
+    /// counts: the capture's word at <c>+4</c> is odd and rises by two a death.
+    /// </summary>
+    public int Deaths { get; set; }
 
     /// <summary>Whether it is dead, which is health at zero.</summary>
     public bool IsDead => Health <= 0;

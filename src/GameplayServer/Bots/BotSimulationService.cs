@@ -7,56 +7,55 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// records report.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>Every rate here is the working-server capture's.</b> A bot holds one enemy
-/// slot — its state record names it and <c>0xff</c> when it holds none — and
-/// alternates between action <c>2</c> and action <c>4</c> at a few hundred
-/// milliseconds. A hit's damage word is a hundred-and-twenty-eighth of a health
-/// point, and the victim's vitals fall by that much a beat later. Nothing is given
-/// a value the capture does not show.
-/// </para>
-/// <para>
-/// <b>A bot walks towards the enemy it holds and stands on its placement when it
-/// holds none.</b> The walking itself is <see cref="BotLocomotionService"/>: it
-/// owns the body and the route, and this service decides where the route goes and
-/// when the body fires.
-/// </para>
+/// <b>Every rate here is the working-server capture's.</b> A bot walks a recorded
+/// track while no enemy is in range, stands and faces the enemy it takes, and
+/// writes a <c>0x47</c> fire beat about 1.3 times a second while engaged; a hit's
+/// damage word is a hundred-and-twenty-eighth of a health point. The walking
+/// belongs to <see cref="BotLocomotionService"/>.
 /// </remarks>
 /// <param name="locomotion">Walks and places the bots.</param>
+/// <param name="destinations">Chooses the point a bot without an enemy patrols to.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class BotSimulationService(
     BotLocomotionService locomotion,
+    BotMovementDestinationService destinations,
     ILogger<BotSimulationService> logger)
 {
     /// <summary>
-    /// Interval between one bot's shots, in milliseconds. The working host's 362
-    /// hits over its 640 s round land on a given victim about five times a minute,
-    /// which is one hit every twelve seconds.
+    /// Interval between one bot's hits: the capture's 398 damage records over 640 s
+    /// are one hit every twelve seconds for each of its eight slots.
     /// </summary>
     public const int ShotIntervalMilliseconds = 12_000;
 
-    /// <summary>Health points one bot hit takes, as the capture's hits measure.</summary>
-    public const int ShotDamage = 33;
+    /// <summary>
+    /// Health points one bot hit takes: the capture's <c>0x11</c> hits mean a
+    /// damage word of 6 400, which is 50 of an actor's 250.
+    /// </summary>
+    public const int ShotDamage = 50;
 
     /// <summary>Weapon id the capture's bot hits carry, <c>0x18</c>.</summary>
     public const byte ShotWeapon = BotActorRecordUtils.CarriedWeapon;
 
     /// <summary>
-    /// Distance a bot holds its trigger within, in stage units: the working host's
-    /// bots write the firing byte at 282 to 6 043 units from the enemy they hold,
-    /// a median of 1 414, across the 640 s of its round.
+    /// Distance a bot holds its trigger within: the capture's bots fire at 282 to
+    /// 6 043 units.
     /// </summary>
     public const float ShotRange = 6000f;
 
     /// <summary>
-    /// Distance a bot keeps from the enemy it holds, in stage units: the reference's
-    /// bots close to about 1 400 and stay there, every one of them between 1 233 and
-    /// 1 525, a median of 1 414.
+    /// Distance a bot keeps from its enemy: the capture's bots sit between 1 233 and
+    /// 1 525.
     /// </summary>
     public const float EngagementDistance = 1400f;
 
-    /// <summary>How long a dead bot stays down, in milliseconds.</summary>
+    /// <summary>
+    /// How long a dead bot stays down: the capture writes a death's corpse on 240
+    /// beats and the vitals come back on the beat it stops.
+    /// </summary>
     public const int RespawnMilliseconds = 8000;
+
+    /// <summary>Interval between <c>0x47</c> fire beats while engaged: 1.3 a second.</summary>
+    public const int FireBeatIntervalMilliseconds = 750;
 
     /// <summary>Deaths the room owes the client a kill-feed record for.</summary>
     private readonly Queue<BotKill> kills = new();
@@ -94,10 +93,28 @@ public sealed class BotSimulationService(
             {
                 body.Moving = false;
                 body.TargetSlot = BotBodyState.NoTarget;
+                body.HitReacting = false;
+                body.ShotThisBeat = false;
                 return new BotAdvance(body, false, null);
             }
 
             locomotion.Respawn(bot, body, map);
+        }
+
+        if (body.HitReacting && now >= body.HitReactUntilMilliseconds)
+        {
+            body.HitReacting = false;
+        }
+
+        body.ShotThisBeat = false;
+
+        // A bot's first shot is its own beat of the twelve seconds. A room that
+        // arms eight triggers on the same millisecond fires as one volley, which
+        // reads as the room shooting once and then nothing; the capture's bots fire
+        // apart.
+        if (body.NextShotMilliseconds == 0)
+        {
+            body.NextShotMilliseconds = now + (bot.SessionSlot * 900L);
         }
 
         var target = ChooseTarget(bot, body, actors);
@@ -114,14 +131,15 @@ public sealed class BotSimulationService(
             body.AimY = target.Y + BotLocomotionService.AimHeight;
             body.AimZ = target.Z;
 
-            // The trigger, not the hit. The working host's bots write the firing
-            // byte on about seven beats in ten while they hold an enemy, and their
-            // hits land far less often than that, so the byte the client draws a
-            // bot firing from is held while the enemy is in range and the damage
-            // record keeps the cadence below. Writing it only on the beat a hit
-            // landed is a bot that never appears to shoot: the capture of
-            // 2026-11-10 21:00 has it set once or twice in a minute.
+            // The trigger, not the hit: the capture holds the firing byte on seven
+            // beats in ten while an enemy is in range and lands hits far less often.
             firing = Distance(body, target) <= ShotRange;
+
+            if (firing && now >= body.NextFireBeatMilliseconds)
+            {
+                body.ShotThisBeat = true;
+                body.NextFireBeatMilliseconds = now + FireBeatIntervalMilliseconds;
+            }
 
             if (firing && now >= body.NextShotMilliseconds)
             {
@@ -142,9 +160,18 @@ public sealed class BotSimulationService(
             }
         }
 
-        var destination = target is null
-            ? locomotion.PlacementOf(bot, map, rule)
-            : Standoff(body, target);
+        BotPosition? destination = null;
+        if (target is not null && Distance(body, target) <= EngagementDistance)
+        {
+            // Close enough to shoot: stand, face it, and keep a route out of it.
+            body.Route = [];
+            body.Moving = false;
+            body.Yaw = BotLocomotionService.YawTowards(target.X - body.X, target.Z - body.Z);
+        }
+        else
+        {
+            destination = target is null ? Patrol(bot, body, map, rule) : Standoff(body, target);
+        }
 
         locomotion.PlanRoute(bot, body, map, rule, destination, now);
         locomotion.Step(body, now);
@@ -163,9 +190,12 @@ public sealed class BotSimulationService(
     /// </remarks>
     /// <param name="identifier">Identifier the hit arrived under.</param>
     /// <param name="damage">Damage word the hit carried.</param>
-    /// <param name="killerSlot">Slot the kill is credited to, which is the shooter's.</param>
+    /// <param name="killerSlot">
+    /// Slot the kill is credited to, or <c>null</c> when the roster names no peer: a
+    /// zero is announced as the host's own.
+    /// </param>
     /// <returns><c>true</c> when the hit named a bot.</returns>
-    public bool NoteIncomingDamage(ushort identifier, ushort damage, byte killerSlot)
+    public bool NoteIncomingDamage(ushort identifier, ushort damage, byte? killerSlot)
     {
         if (BotActorRecordUtils.SlotOfDamageIdentifier(identifier) is not { } slot)
         {
@@ -173,7 +203,8 @@ public sealed class BotSimulationService(
         }
 
         var points = damage / BotActorRecordUtils.DamageScale;
-        ApplyDamage(slot, Math.Max(points, 1), killerSlot, Environment.TickCount64);
+
+        ApplyDamage(slot, Math.Max(points, 1), killerSlot ?? slot, Environment.TickCount64);
         return true;
     }
 
@@ -229,10 +260,12 @@ public sealed class BotSimulationService(
         body.Health = (short)Math.Max(0, body.Health - damage);
         if (body.Health != 0)
         {
+            BotLocomotionService.NoteHit(body, now);
             return;
         }
 
         kills.Enqueue(new BotKill(killerSlot, slot));
+        body.Deaths++;
         body.RespawnMilliseconds = now + RespawnMilliseconds;
         logger.LogDebug(
             "Bot in slot {BotSlot} went down and stands up in {RespawnMilliseconds} ms",
@@ -245,17 +278,19 @@ public sealed class BotSimulationService(
     private IReadOnlyList<BotBodyState> Bodies() => locomotion.Bodies;
 
     /// <summary>
-    /// The enemy this bot holds: the nearest one, which is what keeps it moving as
-    /// the room moves. The recorded host's bots change target constantly — each of
-    /// its eight names four or five different slots over its round, and its firing
-    /// distance shows them closing on each in turn — where a bot bound to one index
-    /// of the room stands where it spawned once that index is dead or far away.
+    /// The enemy this bot holds: each of the capture's eight bots names four or
+    /// five different slots over its round, so its target is not one fixed index.
     /// </summary>
     /// <param name="bot">The bot choosing.</param>
     /// <param name="body">Its body, which the distance is measured from.</param>
     /// <param name="actors">Every actor in the room.</param>
     /// <returns>The actor it holds, or <c>null</c> when the room holds no enemy.</returns>
-    private static BotActorView? ChooseTarget(
+    /// <remarks>
+    /// <b>The enemy the fewest bots already hold comes first</b> — slot 2 of the
+    /// capture holds <c>8</c> for 190 records, <c>5</c> for 133 and <c>1</c> for
+    /// 69 — and only an enemy within <see cref="ShotRange"/> is taken at all.
+    /// </remarks>
+    private BotActorView? ChooseTarget(
         BotParticipant bot,
         BotBodyState body,
         IReadOnlyList<BotActorView> actors)
@@ -265,12 +300,55 @@ public sealed class BotSimulationService(
             return null;
         }
 
+        var claims = Bodies()
+            .Where(other => other.SessionSlot != bot.SessionSlot)
+            .Select(other => other.TargetSlot)
+            .ToList();
+
         return actors
-            .Where(actor => actor.SessionSlot != bot.SessionSlot && actor.Side != side)
-            .OrderBy(actor => Distance(body, actor))
-            .ThenBy(actor => actor.SessionSlot)
+            .Where(actor => actor.SessionSlot != bot.SessionSlot && actor.Side != side
+                && Distance(body, actor) <= ShotRange)
+            .OrderBy(actor => claims.Count(claim => claim == actor.SessionSlot))
+            .ThenBy(actor => Distance(body, actor))
+            .ThenBy(actor => (actor.SessionSlot + 24 - bot.SessionSlot) % 24)
             .FirstOrDefault();
     }
+
+    /// <summary>
+    /// The point a bot walks to while it holds no enemy: the next point of its
+    /// patrol, which it takes when it arrives at the last one.
+    /// </summary>
+    /// <remarks>
+    /// <b>It walks a recorded track rather than its spawn</b> — slot 1 of the
+    /// working capture crosses <c>x 20750 → 25160</c> in twenty-one seconds — see
+    /// <see cref="BotPatrolRouteUtils"/>.
+    /// </remarks>
+    /// <param name="bot">The bot walking.</param>
+    /// <param name="body">Its body.</param>
+    /// <param name="map">Map the round plays.</param>
+    /// <param name="rule">The round's rule.</param>
+    /// <returns>The point it walks to.</returns>
+    private BotPosition Patrol(BotParticipant bot, BotBodyState body, int map, int rule)
+    {
+        var chosen = destinations.ChoosePatrol(map, bot.SessionSlot, body.PatrolIndex);
+        if (chosen.Position is not { } point)
+        {
+            return locomotion.PlacementOf(bot, map, rule);
+        }
+
+        var deltaX = point.X - body.X;
+        var deltaZ = point.Z - body.Z;
+        if ((deltaX * deltaX) + (deltaZ * deltaZ) > PatrolArrivalDistance * PatrolArrivalDistance)
+        {
+            return point;
+        }
+
+        body.PatrolIndex++;
+        return destinations.ChoosePatrol(map, bot.SessionSlot, body.PatrolIndex).Position ?? point;
+    }
+
+    /// <summary>Distance at which a patrol point counts as reached, in stage units.</summary>
+    private const float PatrolArrivalDistance = 600f;
 
     /// <summary>
     /// Where a bot walks while it holds an enemy: the point that keeps it at

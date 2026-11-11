@@ -191,6 +191,18 @@ against is therefore in place, and the counting is this host's own:
 `ScoreboardPublishService` writes each delta to the peer it came from and to the
 room (`GAMEPLAY_SERVER.md` §3.1; what is left of the score is its §5 item 4).
 
+**A death also states its side's remaining tickets.** The working host answers
+every death with an eleven-byte `0x1001` body
+`0b 00 00 00 <side> 00 00 00 00 <left> 00`, where `<side>` is `0x08` for raw team
+`0` and `0x40` for raw team `1`, and `<left>` is a little-endian count that steps
+down one per death of that side from the round's allotment. Measured on
+`game-with-bots-workingserver`: `19` at t+40.85, `18` at t+45.61, `17` at t+52.01
+and `16` at t+53.75 for team `0`; `19` at t+55.26, `18` at t+80.75 and `17` at
+t+87.88 for team `1` — against the twenty tickets the room's own body states at
+`0x5a`/`0x5e` (§2). `TeamTicketBodiesUtils` builds it and
+`ScoreboardPublishService` writes it with the deltas; a host that writes none
+leaves both sides on their starting number for the whole round.
+
 ## 5. Reading this from a capture
 
 ```bash

@@ -38,16 +38,21 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <param name="sequences">
 /// The round's record sequences, which the kill feed takes its fourth byte from.
 /// </param>
+/// <param name="score">The host's own score, which a kill a bot lands feeds.</param>
+/// <param name="scoreboard">Publisher of the scoreboard a kill changes.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class BotActorPublishService(
     BotPopulationService bots,
     BotSimulationService simulation,
     Gameplay.PlayerPositionService positions,
+    Gameplay.PlayerVitalsService vitals,
     Rooms.LobbySlotService lobbySlots,
     MatchRoundStateService roundState,
     MatchSettingsService matchSettings,
     RoomRosterService roster,
     MatchRecordSequenceService sequences,
+    MatchScoreService score,
+    ScoreboardPublishService scoreboard,
     ILogger<BotActorPublishService> logger)
 {
     /// <summary>Milliseconds between bot actor frames on the match beat.</summary>

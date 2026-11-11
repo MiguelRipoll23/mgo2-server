@@ -1,6 +1,7 @@
 using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Shared.Constants;
+using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Types;
@@ -12,26 +13,16 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// from the body the tick leaves, and writes the hits the bots land.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>A hit on a player is two records, and both are the capture's.</b> The
-/// working-server host writes the damage record three below that player's state
-/// record and then the player's vitals at the health it now holds — slot 8 falls
-/// <c>250</c>, <c>197</c>, <c>141</c> as the bots hit it. A hit on another bot is
-/// applied to that bot's body instead, and reaches the client through that bot's
-/// own vitals record on the next beat.
-/// </para>
-/// <para>
-/// <b>The player's position is the one the client reported</b>
-/// (<see cref="PlayerPositionService"/>), which is what lets a bot walk towards
-/// the player rather than at its own spawn, and the sides are the room's own
-/// reading (<see cref="LobbySlotService"/>) so a bot does not shoot its teammate.
-/// </para>
+/// <b>A hit is a damage record on the victim and, for a player, that player's
+/// vitals at the health it now holds</b> — the capture writes both, for a bot's
+/// hits on another bot too. The player's position is the one the client reported
+/// (<see cref="PlayerPositionService"/>) and the sides are the room's reading
+/// (<see cref="LobbySlotService"/>), so a bot does not shoot its teammate.
 /// </remarks>
 public sealed partial class BotActorPublishService
 {
     private readonly Dictionary<byte, short> humanSides = [];
-    private readonly Dictionary<byte, short> humanHealth = [];
-    private readonly Dictionary<byte, long> humanRespawn = [];
+    private readonly Queue<UdpMessage> damageEchoes = new();
     private readonly Lock combatGate = new();
     private long nextSideRead;
 
@@ -46,6 +37,12 @@ public sealed partial class BotActorPublishService
     /// them in the ten minutes of its round, a little more than one a second.
     /// </summary>
     private const int StateBlobIntervalMilliseconds = 1200;
+
+    /// <summary>
+    /// How often a bot's vitals record is written while its health does not change:
+    /// once a second, which is the capture's own cadence for a standing value.
+    /// </summary>
+    private const int VitalsIntervalMilliseconds = 1000;
 
     /// <summary>Drops the combat state and its ordinals, because the room has emptied.</summary>
     public void Reset()
@@ -84,31 +81,62 @@ public sealed partial class BotActorPublishService
         foreach (var bot in bots.Bots.OrderBy(participant => participant.SessionSlot))
         {
             var advance = simulation.Advance(bot, map, rule, now, views);
+
+            // The vitals record rides on a change and once a second, which is the
+            // capture's cadence for a bot — slot 1 writes 719 of them against
+            // 15 900 position records — and not on every beat.
+            var publishVitals = advance.Body.Health != advance.Body.LastPublishedHealth
+                || now >= advance.Body.NextVitalsMilliseconds;
+            if (publishVitals)
+            {
+                advance.Body.LastPublishedHealth = advance.Body.Health;
+                advance.Body.NextVitalsMilliseconds = now + VitalsIntervalMilliseconds;
+            }
+
             records.AddRange(BotActorRecordUtils.Build(
                 bot.SessionSlot,
                 generation,
                 advance.Body,
-                advance.Fired));
+                advance.Fired,
+                advance.Body.ShotThisBeat,
+                publishVitals));
 
-            if (advance.Shot is { } shot && !IsBotSlot(shot.VictimSlot))
+            if (advance.Shot is { } shot)
             {
-                records.AddRange(PlayerHit(shot, bot.SessionSlot, generation, now));
+                // A hit is a damage record on the victim, bot or player: the capture
+                // writes them for a bot's hits on another bot as well.
+                if (IsBotSlot(shot.VictimSlot))
+                {
+                    records.Add(BotActorRecordUtils.BuildShot(
+                        shot.VictimSlot,
+                        generation,
+                        shot.Damage,
+                        shot.Weapon,
+                        shot.ImpactX,
+                        shot.ImpactY,
+                        shot.ImpactZ,
+                        shot.Bearing));
+                }
+                else
+                {
+                    records.AddRange(PlayerHit(shot, bot.SessionSlot, generation, now));
+                }
             }
         }
 
-        // The kill feed: three bytes under the operations stream, `09 <killer>
-        // <victim>`, numbered on that stream. The reference writes it on the beat a
-        // victim's vitals reach zero and announces the death with it; the item-box
-        // identifier this loop used to write under carries a chat macro, which the
-        // client played as "Roger that" on every kill.
-        foreach (var kill in simulation.DrainKills())
+        // The host echoes a client's own hit back unchanged, which is what the
+        // capture does: the same fifteen bytes under the same identifier appear in
+        // the client's stream and the host's. The echo is what carries a hit's
+        // subtype — and with it a headshot's impact point — to the client that
+        // draws the death; this host dropped it, so every death was drawn as a
+        // body hit.
+        foreach (var echo in DrainDamageEchoes())
         {
-            records.Add(new UdpMessage(
-                generation.Operations,
-                (byte)MatchKillFeedBodiesUtils.BodyLength,
-                sequences.Take(generation.Operations),
-                MatchKillFeedBodiesUtils.Build(kill.KillerSlot, kill.VictimSlot)));
+            records.Add(echo);
         }
+
+        // The kill feed, and the score behind it (`BotActorPublishService.Kills.cs`).
+        await DrainKillsAsync(context, generation, records);
 
         // The round's state blob, every 1.2 s: twenty-two bytes, the presence map's
         // field 150 and the value the captured burst carries. The working host
@@ -142,6 +170,16 @@ public sealed partial class BotActorPublishService
         foreach (var bot in bots.Bots)
         {
             var body = simulation.BodyOf(bot, map);
+
+            // A corpse is not a target. The capture's bots leave a body alone once
+            // its health is zero — its 350 host-written hits name only a living
+            // actor — and a bot that kept firing at one would write damage on a
+            // body the client is drawing as dead.
+            if (body.IsDead)
+            {
+                continue;
+            }
+
             views.Add(new BotActorView(bot.SessionSlot, bot.Team ?? 0, body.X, body.Y, body.Z, IsBot: true));
         }
 
@@ -149,7 +187,8 @@ public sealed partial class BotActorPublishService
         foreach (var member in roster.Snapshot().Where(member => !member.IsBot && member.SessionSlot > 0))
         {
             if (!sides.TryGetValue(member.SessionSlot, out var side)
-                || !positions.TryGet(context.Session.RemoteAddress, out var reported))
+                || !positions.TryGet(context.Session.RemoteAddress, out var reported)
+                || IsVictimDown(member.SessionSlot))
             {
                 continue;
             }
@@ -194,97 +233,50 @@ public sealed partial class BotActorPublishService
     }
 
     /// <summary>
-    /// The records one bot hit on a player writes: its damage, then the player's
-    /// vitals at the health it now holds.
+    /// Keeps a hit a client wrote, so the next beat echoes it back byte for byte,
+    /// which is what the working host does.
     /// </summary>
-    /// <param name="shot">The hit.</param>
-    /// <param name="killerSlot">The bot that landed it, which the death is credited to.</param>
-    /// <param name="generation">Identifier set of the round being played.</param>
-    /// <param name="now">Monotonic milliseconds.</param>
-    /// <returns>The damage record and the vitals record.</returns>
-    private IReadOnlyList<UdpMessage> PlayerHit(
-        BotShot shot,
-        byte killerSlot,
-        MatchRecordGenerationUtils generation,
-        long now)
+    /// <param name="identifier">Identifier the hit arrived under.</param>
+    /// <param name="body">The hit's fifteen bytes.</param>
+    public void NoteDamageEcho(ushort identifier, byte[] body)
     {
-        short health;
+        ArgumentNullException.ThrowIfNull(body);
+
         lock (combatGate)
         {
-            if (!humanHealth.TryGetValue(shot.VictimSlot, out var held))
+            // A hit on an actor that is already down is dropped rather than echoed.
+            // The capture holds seven of the client's own hits on a corpse and not
+            // one of them comes back: the host relays a living actor's damage and
+            // leaves a dead one alone, which is why a captured body does not take
+            // damage when it is shot. Echoing them is what made ours flinch and
+            // bleed health it does not have, and what a client drawing a corpse
+            // reads as damage on the body.
+            if (BotActorRecordUtils.SlotOfDamageIdentifier(identifier) is not { } victim
+                || !IsVictimDownLocked(victim))
             {
-                held = BotBodyState.MaximumVitals;
-            }
-
-            // The working host writes nothing on a slot between its zero and its
-            // two hundred and fifty eight seconds later. A player at zero has
-            // already been put down: another hit must not restate its health from
-            // the maximum, nor push its respawn back, or it never stands up.
-            if (held == 0)
-            {
-                return [];
-            }
-
-            health = (short)Math.Max(0, held - shot.Damage);
-            humanHealth[shot.VictimSlot] = health;
-            if (health == 0)
-            {
-                humanRespawn[shot.VictimSlot] = now + BotSimulationService.RespawnMilliseconds;
-
-                // The reference announces the player's own death on the kill feed too
-                // (`09 02 08` at t+311.03, slot 8's health reaching zero at 310.81).
-                simulation.NoteKill(killerSlot, shot.VictimSlot);
+                damageEchoes.Enqueue(new UdpMessage(
+                    identifier,
+                    (byte)(body.Length + 1),
+                    BotActorRecordUtils.DamageAttributeClass,
+                    body));
             }
         }
-
-        return
-        [
-            BotActorRecordUtils.BuildShot(
-                shot.VictimSlot,
-                generation,
-                shot.Damage,
-                shot.Weapon,
-                shot.ImpactX,
-                shot.ImpactY,
-                shot.ImpactZ,
-                shot.Bearing),
-            new UdpMessage(
-                PlayerVitalsFramesUtils.IdentifierFor(generation, shot.VictimSlot),
-                3,
-                BotActorRecordUtils.VitalsAttributeClass,
-                [(byte)health, (byte)BotBodyState.MaximumVitals]),
-        ];
     }
 
-    /// <summary>
-    /// The vitals of every player whose health has come back after a death.
-    /// </summary>
-    /// <param name="generation">Identifier set of the round being played.</param>
-    /// <param name="now">Monotonic milliseconds.</param>
-    /// <returns>One vitals record per player standing up.</returns>
-    private IReadOnlyList<UdpMessage> PlayerRespawns(MatchRecordGenerationUtils generation, long now)
+    /// <summary>Takes the hits waiting to be echoed, oldest first.</summary>
+    /// <returns>One record per hit a client wrote since the last call.</returns>
+    private IReadOnlyList<UdpMessage> DrainDamageEchoes()
     {
-        var records = new List<UdpMessage>();
         lock (combatGate)
         {
-            foreach (var slot in humanRespawn.Keys.ToList())
+            var taken = new List<UdpMessage>();
+            while (damageEchoes.Count > 0)
             {
-                if (now < humanRespawn[slot])
-                {
-                    continue;
-                }
-
-                humanRespawn.Remove(slot);
-                humanHealth[slot] = BotBodyState.MaximumVitals;
-                records.Add(new UdpMessage(
-                    PlayerVitalsFramesUtils.IdentifierFor(generation, slot),
-                    3,
-                    BotActorRecordUtils.VitalsAttributeClass,
-                    [(byte)BotBodyState.MaximumVitals, (byte)BotBodyState.MaximumVitals]));
+                taken.Add(damageEchoes.Dequeue());
             }
-        }
 
-        return records;
+            return taken;
+        }
     }
 
     /// <summary>Whether a slot belongs to one of the room's bots.</summary>

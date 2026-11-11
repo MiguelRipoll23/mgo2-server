@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.Shared.Types;
@@ -11,27 +12,23 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>It is an identifier block, not one record.</b> The recorded host writes six
-/// records per actor per tick, and their identifiers are one base plus a fixed
-/// offset: the state record at the base, vitals at <c>+1</c>, position at
-/// <c>+2</c>, the weapon pair and the weapon byte at <c>+4</c>, and aim at
-/// <c>+6</c>. A hit on that actor is written three below the state record, which
-/// is the base <c>−3</c> the working-server capture's damage records sit at.
+/// <b>It is an identifier block, not one record.</b> Six records per actor per
+/// tick share one base: state at it, vitals at <c>+1</c>, position at <c>+2</c>,
+/// the weapon pair and byte at <c>+4</c>, aim at <c>+6</c>, and a hit three below
+/// it at <c>−3</c>.
 /// </para>
 /// <para>
 /// <b>The base follows the round's identifier generation.</b> Slot one is
-/// <c>0x084d</c> in the first generation and <c>0x004d</c> in its sibling;
-/// every next slot is ten identifiers along.
+/// <c>0x084d</c> in the first generation and <c>0x004d</c> in its sibling; each
+/// next slot is ten identifiers along.
 /// </para>
 /// <para>
 /// <b>The bodies are the working-server capture's.</b> A standing actor writes
 /// <c>00 ff 00</c> and the head <c>21 00 00 00</c>; one that is walking or aiming
-/// writes the nine-byte state — action, target slot, a one when firing, and the
-/// aim point — and the head <c>41 81 00 00</c>. The position's three coordinates
-/// and the aim's are a tenth of a stage unit, the heading is the recorded word,
-/// and the vitals are health and stamina. A hit is fifteen bytes: subtype, the
-/// damage at <c>+2</c> as a sixteenth of a health point, the weapon, the impact
-/// point, two unread bytes, and the bearing.
+/// writes the nine-byte state and the head <c>41 81 00 00</c>. Coordinates are a
+/// tenth of a stage unit and a hit is fifteen bytes: subtype, damage at <c>+2</c>
+/// as a sixteenth of a health point, weapon, impact point, two unread bytes and
+/// the bearing.
 /// </para>
 /// </remarks>
 public static class BotActorRecordUtils
@@ -62,6 +59,16 @@ public static class BotActorRecordUtils
 
     /// <summary>Length of the walking position body the capture carries.</summary>
     public const int PositionBodyLength = 16;
+
+    /// <summary>
+    /// Length of the corpse's position body, which replaces the living one from
+    /// the beat a bot's health reaches zero.
+    /// </summary>
+    /// <remarks>
+    /// <b>A dead actor's position record is thirty-two bytes and opens on
+    /// <c>0x22</c></b> — see <see cref="BuildCorpseBody"/>; a living one is sixteen.
+    /// </remarks>
+    public const int CorpsePositionBodyLength = 32;
 
     /// <summary>Length of the vitals body: health, then stamina.</summary>
     public const int VitalsBodyLength = 2;
@@ -103,14 +110,9 @@ public static class BotActorRecordUtils
     public static ushort DamageIdentifierOf(MatchRecordGenerationUtils generation, byte sessionSlot) =>
         (ushort)(StateIdentifierOf(generation, sessionSlot) - 3);
 
-    /// <summary>
-    /// Reads the slot a damage identifier names, in either generation.
-    /// </summary>
+    /// <summary>Reads the slot a damage identifier names, in either generation.</summary>
     /// <param name="identifier">Identifier a hit arrived under.</param>
-    /// <returns>
-    /// The slot the hit names, or <c>null</c> when the identifier is not a damage
-    /// record of any slot.
-    /// </returns>
+    /// <returns>The slot it names, or <c>null</c> for another record.</returns>
     public static byte? SlotOfDamageIdentifier(ushort identifier)
     {
         for (var generation = 0; generation < 2; generation++)
@@ -131,13 +133,10 @@ public static class BotActorRecordUtils
         return null;
     }
 
-    /// <summary>
-    /// Weapon a live bot's actor block carries: the working host writes <c>0x18</c>
-    /// in the pair for slots 1, 2, 3, 5, 6 and 7 and <c>0x19</c> for slot 4.
-    /// </summary>
+    /// <summary>Weapon a live bot carries: <c>0x18</c> in the capture's pairs.</summary>
     public const byte CarriedWeapon = 0x18;
 
-    /// <summary>Magazine count the working host writes beside the weapon.</summary>
+    /// <summary>Magazine count the capture writes beside the weapon.</summary>
     public const byte CarriedAmmo = 0x0f;
 
     /// <summary>
@@ -146,13 +145,20 @@ public static class BotActorRecordUtils
     /// <param name="sessionSlot">Key the player holds in the room's player table.</param>
     /// <param name="generation">Identifier set of the round being played.</param>
     /// <param name="body">The bot's body: pose, aim, health and target.</param>
-    /// <param name="firing">Whether the bot fires this tick.</param>
-    /// <returns>The six records, or an empty list for a slot of zero.</returns>
+    /// <param name="firing">Whether the bot holds its trigger this tick.</param>
+    /// <param name="fireBeat">Whether this tick is one a shot animation rides on.</param>
+    /// <param name="vitals">
+    /// Whether the vitals record rides in this frame. The capture writes it about
+    /// once a second and on a change, not on every beat.
+    /// </param>
+    /// <returns>The block's records, or an empty list for a slot of zero.</returns>
     public static IReadOnlyList<UdpMessage> Build(
         byte sessionSlot,
         MatchRecordGenerationUtils generation,
         BotBodyState body,
-        bool firing)
+        bool firing,
+        bool fireBeat,
+        bool vitals)
     {
         if (sessionSlot == 0)
         {
@@ -163,23 +169,32 @@ public static class BotActorRecordUtils
         ArgumentNullException.ThrowIfNull(body);
 
         var state = StateIdentifierOf(generation, sessionSlot);
-        return
-        [
-            new UdpMessage(state, 4, StateAttributeClass, BuildStateBody(body, firing)),
-            new UdpMessage(
-                (ushort)(state + 1),
-                3,
-                VitalsAttributeClass,
-                [(byte)Math.Clamp((int)body.Health, 0, (int)BotBodyState.MaximumVitals), (byte)body.Stamina]),
-            new UdpMessage(
+        var position = BuildPositionBody(body);
+        var records = new List<UdpMessage>
+        {
+            new(state, 4, StateAttributeClass, BuildStateBody(body, firing, fireBeat)),
+            new(
                 (ushort)(state + 2),
-                (byte)(PositionBodyLength + 1),
+                (byte)(position.Length + 1),
                 PositionAttributeClass,
-                BuildPositionBody(body)),
-            new UdpMessage((ushort)(state + 4), 6, WeaponPairAttributeClass, BuildWeaponPair(body)),
-            new UdpMessage((ushort)(state + 4), 2, WeaponAttributeClass, [0x00]),
-            new UdpMessage((ushort)(state + 6), 7, AimAttributeClass, BuildAimBody(body)),
-        ];
+                position),
+            new((ushort)(state + 4), 6, WeaponPairAttributeClass, BuildWeaponPair(body)),
+            new((ushort)(state + 4), 2, WeaponAttributeClass, [0x00]),
+            new((ushort)(state + 6), 7, AimAttributeClass, BuildAimBody(body)),
+        };
+
+        if (vitals)
+        {
+            records.Insert(
+                1,
+                new UdpMessage(
+                    (ushort)(state + 1),
+                    3,
+                    VitalsAttributeClass,
+                    [(byte)Math.Clamp((int)body.Health, 0, (int)BotBodyState.MaximumVitals), (byte)body.Stamina]));
+        }
+
+        return records;
     }
 
     /// <summary>
@@ -238,24 +253,28 @@ public static class BotActorRecordUtils
     /// acting form when the actor is walking, aiming or firing.
     /// </summary>
     /// <remarks>
-    /// The acting form is <c>42 ff 00 bd 08 78 00 d9 ff</c> in the capture: the
-    /// first byte's low six bits are the action (<c>2</c> walking and aiming,
-    /// <c>4</c> firing) and its <c>0x40</c> is set on every one of them, the second
-    /// is the target slot or <c>0xff</c>, the third is a one exactly on the firing
-    /// records, and the rest is the point looked at.
+    /// The acting form is <c>42 ff 00 bd 08 78 00 d9 ff</c>: the first byte's low
+    /// six bits are the action (<c>2</c> walking and aiming, <c>4</c> the held
+    /// trigger, <c>7</c> the shot's beat), the second the target slot or
+    /// <c>0xff</c>, the third a one exactly on the firing records, and the rest the
+    /// point looked at. <b>The acting form is written only while an enemy is
+    /// held</b>: the capture writes the standing <c>00 ff 00</c> on about eight
+    /// beats in ten, its walking bots included, where this host wrote the acting
+    /// form whenever a bot moved — a bot aiming down every corridor it patrolled.
     /// </remarks>
     /// <param name="body">The bot's body.</param>
-    /// <param name="firing">Whether it fires this tick.</param>
+    /// <param name="firing">Whether it holds its trigger this tick.</param>
+    /// <param name="fireBeat">Whether this tick is one a shot animation rides on.</param>
     /// <returns>The three- or nine-byte body.</returns>
-    private static byte[] BuildStateBody(BotBodyState body, bool firing)
+    private static byte[] BuildStateBody(BotBodyState body, bool firing, bool fireBeat)
     {
-        if (!body.Moving && body.TargetSlot == BotBodyState.NoTarget && !firing)
+        if (body.TargetSlot == BotBodyState.NoTarget)
         {
             return [0x00, 0xff, 0x00];
         }
 
         var state = new byte[ActingStateBodyLength];
-        state[0] = (byte)(0x40 | (firing ? 4 : 2));
+        state[0] = (byte)(0x40 | (fireBeat ? 7 : firing ? 4 : 2));
         state[1] = body.TargetSlot;
         state[2] = (byte)(firing ? 1 : 0);
         WriteInt16(state, 3, ToTenths(body.AimX));
@@ -278,15 +297,64 @@ public static class BotActorRecordUtils
     /// <returns>The sixteen-byte body.</returns>
     private static byte[] BuildPositionBody(BotBodyState body)
     {
+        if (body.IsDead)
+        {
+            return BuildCorpseBody(body);
+        }
+
+        // The head is the pose, and the capture's are four: 0x21 standing, 0x41
+        // walking, 0xC1 the hit reaction, and 0x22 the corpse. An actor holding an
+        // enemy writes the walking head whether or not it moves that beat — the
+        // working host's engaged bots are 0x41 0x81 on 60% to 75% of their beats —
+        // and the 0x81 second byte is what tells the client the actor is armed and
+        // acting rather than standing at ease.
+        var acting = body.Moving || body.TargetSlot != BotBodyState.NoTarget;
         var position = new byte[PositionBodyLength];
-        position[0] = body.Moving ? (byte)0x41 : (byte)0x21;
-        position[1] = body.Moving ? (byte)0x81 : (byte)0x00;
+        position[0] = (byte)(body.HitReacting ? 0xc1 : acting ? 0x41 : 0x21);
+        position[1] = (byte)(body.HitReacting || acting ? 0x81 : 0x00);
         WriteInt16(position, 6, ToTenths(body.X));
         WriteInt16(position, 8, ToTenths(body.Y));
         WriteInt16(position, 10, ToTenths(body.Z));
         WriteInt16(position, 12, (short)body.Yaw);
         return position;
     }
+
+    /// <summary>
+    /// The corpse's position body, byte for byte as the capture writes it.
+    /// </summary>
+    /// <remarks>
+    /// <b>The floats are <c>z</c>, height and <c>x</c> — not <c>x</c>, <c>y</c>,
+    /// <c>z</c>.</b> The capture's death of slot 7 writes <c>22 1a 00 0b 01 00 00 00</c>,
+    /// then <c>22161</c>, <c>3265</c>, <c>-8946</c> for a body at <c>x -8950, y 3260,
+    /// z 22160</c>, the heading, and the living body's four words again.
+    /// </remarks>
+    /// <param name="body">The dead body.</param>
+    /// <returns>The thirty-two-byte body.</returns>
+    private static byte[] BuildCorpseBody(BotBodyState body)
+    {
+        var corpse = new byte[CorpsePositionBodyLength];
+        corpse[0] = 0x22;
+        corpse[1] = 0x1a;
+        corpse[2] = 0x00;
+        corpse[3] = 0x0b;
+        WriteUInt16(corpse, 4, (ushort)((body.Deaths * 2) - 1));
+        WriteFloat(corpse, 8, body.Z);
+        WriteFloat(corpse, 12, body.Y);
+        WriteFloat(corpse, 16, body.X);
+        WriteInt16(corpse, 20, (short)body.Yaw);
+        WriteInt16(corpse, 22, ToTenths(body.X));
+        WriteInt16(corpse, 24, ToTenths(body.Y));
+        WriteInt16(corpse, 26, ToTenths(body.Z));
+        WriteInt16(corpse, 28, (short)body.Yaw);
+        return corpse;
+    }
+
+    /// <summary>Writes one float little-endian.</summary>
+    /// <param name="body">Body to write into.</param>
+    /// <param name="offset">Offset of its first byte.</param>
+    /// <param name="value">Value to write.</param>
+    private static void WriteFloat(byte[] body, int offset, float value) =>
+        BinaryPrimitives.WriteSingleLittleEndian(body.AsSpan(offset, 4), value);
 
     /// <summary>
     /// The aim body: the point the bot looks at, three words at a tenth of a

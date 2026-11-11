@@ -44,6 +44,17 @@ public sealed class BotLocomotionService(
     /// <summary>How often a bot plans its route again, in milliseconds.</summary>
     public const int RouteRefreshMilliseconds = 1500;
 
+    /// <summary>
+    /// How long the <c>c1 81</c> position head lasts after a hit, in milliseconds.
+    /// </summary>
+    /// <remarks>
+    /// The working host writes it in runs of six or seven beats — about 200 ms —
+    /// after a hit that does not kill (t+258.745 to 258.910 on slot 6, and every
+    /// bot at t+289.0), and again as a corpse's fall. This host writes the run and
+    /// not the fall, which the corpse body carries.
+    /// </remarks>
+    public const int HitReactionMilliseconds = 200;
+
     /// <summary>Height above an actor's feet that a bot looks at.</summary>
     public const float AimHeight = 200f;
 
@@ -93,6 +104,27 @@ public sealed class BotLocomotionService(
         body.RouteIndex = 0;
         body.RouteKey = string.Empty;
         body.LastAdvanceMilliseconds = 0;
+        body.ShotThisBeat = false;
+        body.HitReacting = false;
+        body.HitReactUntilMilliseconds = 0;
+        body.PatrolIndex = 0;
+    }
+
+    /// <summary>
+    /// Marks a body as taking a hit, which is the <c>c1 81</c> head the capture
+    /// writes over the beats after one.
+    /// </summary>
+    /// <param name="body">The body that was hit.</param>
+    /// <param name="now">Monotonic milliseconds.</param>
+    public static void NoteHit(BotBodyState body, long now)
+    {
+        if (body.IsDead)
+        {
+            return;
+        }
+
+        body.HitReacting = true;
+        body.HitReactUntilMilliseconds = now + HitReactionMilliseconds;
     }
 
     /// <summary>Drops every body, because the room has emptied.</summary>
@@ -218,7 +250,10 @@ public sealed class BotLocomotionService(
             }
         }
 
-        if (!body.Moving)
+        // A bot holding an enemy keeps looking at it; only one with no enemy looks
+        // down its own heading, walking or not. Leaving a walking bot's aim where
+        // the last fight left it is a bot that stares at a wall down every corridor.
+        if (body.TargetSlot == BotBodyState.NoTarget)
         {
             AimForward(body);
         }
@@ -285,6 +320,6 @@ public sealed class BotLocomotionService(
     /// <param name="deltaX">Direction along <c>x</c>.</param>
     /// <param name="deltaZ">Direction along <c>z</c>.</param>
     /// <returns>The heading word.</returns>
-    private static ushort YawTowards(float deltaX, float deltaZ) =>
+    public static ushort YawTowards(float deltaX, float deltaZ) =>
         (ushort)((long)MathF.Round(MathF.Atan2(deltaX, deltaZ) / (2f * MathF.PI) * 65536f) & 0xffff);
 }
