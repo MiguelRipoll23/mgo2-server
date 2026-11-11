@@ -30,7 +30,7 @@ public sealed record BotAdvance(BotBodyState Body, bool Fired, BotShot? Shot);
 /// <param name="ImpactX">Impact <c>x</c>, in stage units.</param>
 /// <param name="ImpactY">Impact height, in stage units.</param>
 /// <param name="ImpactZ">Impact <c>z</c>, in stage units.</param>
-/// <param name="Bearing">Bearing the shot came from, as the recorded word.</param>
+/// <param name="Bearing">The shooter's own heading, the word its position record carries.</param>
 public sealed record BotShot(
     byte VictimSlot,
     int Damage,
@@ -46,6 +46,12 @@ public sealed record BotShot(
     /// headshot for; a kill that ran the victim's health out is an ordinary <c>0x11</c>.
     /// </summary>
     public bool Headshot { get; init; }
+
+    /// <summary>
+    /// The shot's vertical angle as the record carries it: a sixteen-bit turn,
+    /// positive when the shooter looks down on the point it hit.
+    /// </summary>
+    public short Pitch { get; init; }
 
 }
 

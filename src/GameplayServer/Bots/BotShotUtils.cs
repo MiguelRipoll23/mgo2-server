@@ -35,13 +35,29 @@ public static class BotShotUtils
     private static readonly int[] HitDamages = [56, 56, 56, 56, 56, 56, 56, 34, 34, 34];
 
     /// <summary>
-    /// Heights an ordinary hit lands at above the victim's floor, in stage units:
-    /// the capture's 140 on nearly half of its hits, then 100 and 120.
+    /// How far the point a hit lands on sits from the victim's own position along
+    /// <c>x</c> and <c>z</c>, in stage units. Every one of the reference's bot hits lands
+    /// a hundred wire tenths short of its victim on both axes — a victim at
+    /// <c>(1755, 117, 213)</c> is hit at <c>(1655, 157, 113)</c> — and the shooter's state
+    /// record names that same point.
     /// </summary>
-    private static readonly float[] BodyHeights = [600f, 600f, 600f, 600f, 600f, 200f, 200f, 200f, 400f, 400f];
+    public const float ImpactOffset = 1000f;
 
-    /// <summary>Height a headshot lands at above the floor: the capture's 180 tenths.</summary>
-    private const float HeadHeight = 1000f;
+    /// <summary>
+    /// Height an ordinary hit lands at above the victim's position: forty wire tenths on
+    /// most of the reference's hits (157 on a victim at 117, 140 on one at 100).
+    /// </summary>
+    public const float BodyHeight = 400f;
+
+    /// <summary>Height a headshot lands at above the victim: 200 on a victim at 120.</summary>
+    private const float HeadHeight = 800f;
+
+    /// <summary>
+    /// Height of a standing shooter's eye above its position, in stage units: the pitch
+    /// the reference writes puts it 79 wire tenths up (a pitch of 126 over 1 840 tenths
+    /// from a shooter at 100 to an impact at 157).
+    /// </summary>
+    private const float EyeHeight = 790f;
 
     /// <summary>Whether the next hit is a headshot.</summary>
     /// <returns><c>true</c> on the share of hits the reference makes headshots.</returns>
@@ -51,9 +67,51 @@ public static class BotShotUtils
     /// <returns>One of the capture's two sizes.</returns>
     public static int RollDamage() => HitDamages[Random.Shared.Next(HitDamages.Length)];
 
-    /// <summary>The height a hit lands at above the victim's floor.</summary>
+    /// <summary>
+    /// The hit one bot lands on its enemy, with the three things the reference's record
+    /// says about where it came from.
+    /// </summary>
+    /// <remarks>
+    /// <b>The record names its shooter by direction, and this host named nobody.</b> In
+    /// <c>working-server-v2</c> the two bytes that close a bot's hit are the shooter's own
+    /// heading, the same word its position record carries on that beat (<c>62ab</c> on
+    /// both for slot 7's hit at t+42.55), and the two before them its vertical angle from
+    /// eye to impact. This host wrote a zero angle, an impact on the victim's own position
+    /// and a heading its bots did not hold — a bot backing off faced away from the enemy
+    /// it was shooting — so a client could not walk the hit back to a player, and the one
+    /// of <c>this-server.pcapng</c> stopped speaking on the beat a bot's hit killed it.
+    /// </remarks>
+    /// <param name="body">The shooter's body.</param>
+    /// <param name="target">The enemy it hit.</param>
+    /// <param name="damage">Health points the hit takes.</param>
+    /// <param name="weapon">Weapon id the record carries.</param>
     /// <param name="headshot">Whether the hit is a headshot.</param>
-    /// <returns>Stage units above the floor.</returns>
-    public static float ImpactHeight(bool headshot) =>
-        headshot ? HeadHeight : BodyHeights[Random.Shared.Next(BodyHeights.Length)];
+    /// <returns>The hit.</returns>
+    public static BotShot Build(BotBodyState body, BotActorView target, int damage, byte weapon, bool headshot)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        ArgumentNullException.ThrowIfNull(target);
+
+        var impactX = target.X - ImpactOffset;
+        var impactY = target.Y + (headshot ? HeadHeight : BodyHeight);
+        var impactZ = target.Z - ImpactOffset;
+        var deltaX = impactX - body.X;
+        var deltaZ = impactZ - body.Z;
+        var distance = MathF.Max(1f, MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ)));
+        var drop = body.Y + EyeHeight - impactY;
+        var pitch = (short)MathF.Round(MathF.Atan2(drop, distance) / (2f * MathF.PI) * 65536f);
+
+        return new BotShot(
+            target.SessionSlot,
+            damage,
+            weapon,
+            impactX,
+            impactY,
+            impactZ,
+            BotEngagementUtils.Bearing(body, target))
+        {
+            Headshot = headshot,
+            Pitch = pitch,
+        };
+    }
 }

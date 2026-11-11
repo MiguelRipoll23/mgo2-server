@@ -27,8 +27,8 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <c>00 ff 00</c> and the head <c>21 00 00 00</c>; one that is walking or aiming
 /// writes the nine-byte state and the head <c>41 81 00 00</c>. Coordinates are a
 /// tenth of a stage unit and a hit is fifteen bytes: subtype, damage at <c>+2</c>
-/// as a sixteenth of a health point, weapon, impact point, two unread bytes and
-/// the bearing.
+/// as a sixteenth of a health point, weapon, impact point, the shot's pitch and
+/// the shooter's heading.
 /// </para>
 /// </remarks>
 public static class BotActorRecordUtils
@@ -240,6 +240,7 @@ public static class BotActorRecordUtils
     /// and a blow the size of a whole health bar as the damage word. A hit that only
     /// runs the last health out is an ordinary one.
     /// </param>
+    /// <param name="pitch">The shot's vertical angle, as <see cref="BotShot.Pitch"/> states it.</param>
     /// <returns>The fifteen-byte damage record.</returns>
     public static UdpMessage BuildShot(
         byte victimSlot,
@@ -250,7 +251,8 @@ public static class BotActorRecordUtils
         float impactY,
         float impactZ,
         ushort bearing,
-        bool headshot = false)
+        bool headshot = false,
+        short pitch = 0)
     {
         ArgumentNullException.ThrowIfNull(generation);
 
@@ -270,6 +272,7 @@ public static class BotActorRecordUtils
         WriteInt16(body, 5, ToTenths(impactX));
         WriteInt16(body, 7, ToTenths(impactY));
         WriteInt16(body, 9, ToTenths(impactZ));
+        WriteInt16(body, 11, pitch);
         WriteUInt16(body, 13, bearing);
 
         return new UdpMessage(

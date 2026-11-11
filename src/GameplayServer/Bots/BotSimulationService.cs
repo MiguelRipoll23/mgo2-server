@@ -143,9 +143,10 @@ public sealed class BotSimulationService(
         else
         {
             body.TargetSlot = target.SessionSlot;
-            body.AimX = target.X;
-            body.AimY = target.Y + BotLocomotionService.AimHeight;
-            body.AimZ = target.Z;
+            // The state record names the point the hit lands on (BotShotUtils).
+            body.AimX = target.X - BotShotUtils.ImpactOffset;
+            body.AimY = target.Y + BotShotUtils.BodyHeight;
+            body.AimZ = target.Z - BotShotUtils.ImpactOffset;
 
             // The trigger, not the hit: the capture holds the firing byte on seven
             // beats in ten while an enemy is in range and lands hits far less often.
@@ -171,17 +172,7 @@ public sealed class BotSimulationService(
                     ApplyDamage(target.SessionSlot, damage, bot.SessionSlot, now, headshot);
                 }
 
-                shot = new BotShot(
-                    target.SessionSlot,
-                    damage,
-                    ShotWeapon,
-                    target.X,
-                    target.Y + BotShotUtils.ImpactHeight(headshot),
-                    target.Z,
-                    BotEngagementUtils.Bearing(body, target))
-                {
-                    Headshot = headshot,
-                };
+                shot = BotShotUtils.Build(body, target, damage, ShotWeapon, headshot);
             }
         }
 
@@ -202,6 +193,13 @@ public sealed class BotSimulationService(
 
         locomotion.PlanRoute(bot, body, map, rule, destination, now);
         locomotion.Step(body, now);
+
+        // A bot that holds its trigger faces its enemy, whichever way it walks: the
+        // heading its position record carries is the one its hits name (BotShotUtils).
+        if (firing && target is not null)
+        {
+            body.Yaw = shot?.Bearing ?? BotEngagementUtils.Bearing(body, target);
+        }
 
         return new BotAdvance(body, firing, shot);
     }

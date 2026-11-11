@@ -101,7 +101,8 @@ public sealed partial class BotActorPublishService
                 shot.ImpactY,
                 shot.ImpactZ,
                 shot.Bearing,
-                shot.Headshot),
+                shot.Headshot,
+                shot.Pitch),
             vitalsRecord,
         ];
     }
