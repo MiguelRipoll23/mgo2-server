@@ -40,7 +40,7 @@ public sealed class PlayerSettingsBurstServiceTests
 
         var body = PlayerSettingsBurstService.RoomRotationBody(
             rotation,
-            roundNumber: 2,
+            state: Mgo2Server.GameplayServer.Rooms.RoomState.Briefing,
             currentRotationIndex: 0,
             playerCount: 2);
 

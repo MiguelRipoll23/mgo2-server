@@ -26,11 +26,13 @@ namespace Mgo2Server.GameplayServer.Match;
 /// </remarks>
 /// <param name="match">Publisher of this host's room, which names the room to serve.</param>
 /// <param name="roundState">The room's round, which names the map the room stands on.</param>
+/// <param name="roster">The room's roster, which says whether the room holds one player.</param>
 /// <param name="options">Options of this instance, which state what the room runs.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class MatchSettingsService(
     MatchService match,
     MatchRecords.MatchRoundStateService roundState,
+    Rooms.RoomRosterService roster,
     IOptions<ServerOptions> options,
     ILogger<MatchSettingsService> logger)
 {
@@ -47,26 +49,22 @@ public sealed class MatchSettingsService(
     public byte CurrentRoundNumber => unchecked((byte)roundState.RoundNumber);
 
     /// <summary>
-    /// The phase byte the room states about itself at body offset <c>0x09</c>:
-    /// <c>2</c> while the room is briefing and <c>3</c> once its round is open.
+    /// The state the room states about itself at body offset <c>0x09</c> and in
+    /// state <c>0x00</c>'s field 0: <see cref="RoomState.Briefing"/> while the room
+    /// is briefed, and the round's own start once one plays —
+    /// <see cref="RoomState.RoundStartSolo"/> for the one player and no bots the
+    /// roster says the room holds, <see cref="RoomState.RoundStart"/> otherwise.
     /// </summary>
     /// <remarks>
-    /// <b>The corpus measures a phase here, not the round counter.</b> Every
-    /// briefing in `docs/protocol/MATCH_FLOW.md` §1 states <c>2</c>
-    /// (`joined-on-briefing-then-game`, `mgo2-game-started-on-briefing`,
-    /// `mgo2-started-briefing-then-solo-game`, `mgo2-game2`), and a room whose
-    /// slot is being played states <c>3</c>. A joiner sent the first round's
-    /// number instead is told a phase no capture holds: its client stops
-    /// waiting to be briefed, builds the battle HUD, and never writes the
-    /// <c>1d</c> rows a briefing is answered with.
+    /// <b>It is a state and not the round counter.</b> Every briefing in
+    /// `docs/protocol/MATCH_FLOW.md` §1 states <c>2</c> and a room whose round is
+    /// playing states its start; a joiner sent the first round's number instead is
+    /// told a phase no capture holds: its client stops waiting to be briefed,
+    /// builds the battle HUD, and never writes the <c>1d</c> rows a briefing is
+    /// answered with. The values, and the flow they are written in, are
+    /// <see cref="RoomState"/>'s.
     /// </remarks>
-    public byte CurrentPhase => roundState.IsOpen ? PlayingPhase : BriefingPhase;
-
-    /// <summary>Phase byte of a room that is briefing, as the corpus states it.</summary>
-    public const byte BriefingPhase = 2;
-
-    /// <summary>Phase byte of a room whose round is open, as the corpus states it.</summary>
-    public const byte PlayingPhase = 3;
+    public Rooms.RoomState CurrentRoomState => roundState.State(roster.IsSolo);
 
     /// <summary>
     /// The rule the room is on: the one the round in front of it plays, resolved

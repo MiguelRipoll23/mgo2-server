@@ -135,60 +135,6 @@ database_connection_string="$(remote_kubectl "get secret mgo2-secrets --namespac
 [[ -n "$database_connection_string" ]] ||
     abort "DATABASE_CONNECTION_STRING is missing from mgo2-secrets."
 
-# The row a browsing client reads names the round this host is on, so the local
-# run has to be staged where the deployed one is. Its place in the rotation is
-# the deployment's own: the ConfigMap's appsettings.json carries no GAMEPLAY_*
-# key, and `mgo2-gameplay-1` states GAMEPLAY_SERVER_START_ROUND=5 in its
-# container environment. That is the fifth entry of the rotation both runs share
-# — CAP on Blood Bath — so it is read from the deployment rather than assumed,
-# and a manifest that stages the room elsewhere stages this run with it.
-gameplay_deployment="${PI_GAMEPLAY_DEPLOYMENT:-mgo2-gameplay-1}"
-deployed_environment="$(remote_kubectl "get deployment $gameplay_deployment \
-    --namespace mgo2 --output json")" || deployed_environment=""
-deployed_start_round="$(
-    printf '%s' "$deployed_environment" | python3 -c '
-import json
-import sys
-
-try:
-    deployment = json.load(sys.stdin)
-    container = deployment["spec"]["template"]["spec"]["containers"][0]
-except Exception:
-    print("")
-    raise SystemExit(0)
-
-for entry in container.get("env") or []:
-    if entry.get("name") == "GAMEPLAY_SERVER_START_ROUND":
-        print(entry.get("value", ""))
-        break
-else:
-    print("")
-'
-)"
-unset deployed_environment
-
-# The ConfigMap's appsettings.json is the other place the cluster can state it,
-# and a value written there is the one the deployment is configured with, so it
-# is preferred over the deployment's own when both exist.
-configured_start_round="$(
-    printf '%s' "$settings_json" | python3 -c '
-import json
-import sys
-
-try:
-    settings = json.load(sys.stdin)
-except Exception:
-    print("")
-    raise SystemExit(0)
-
-value = settings.get("GAMEPLAY_SERVER_START_ROUND")
-print("" if value is None else value)
-'
-)"
-[[ -n "$configured_start_round" || -n "$deployed_start_round" ]] ||
-    printf '\nNo GAMEPLAY_SERVER_START_ROUND in the ConfigMap or on %s, so the room starts at round 1.\n' \
-        "$gameplay_deployment" >&2
-
 if port_listening "$tunnel_port"; then
     printf 'Reusing the postgres tunnel already listening on 127.0.0.1:%s.\n' "$tunnel_port"
 else
@@ -242,29 +188,23 @@ export BOT_POPULATION_MODE="${BOT_POPULATION_MODE:-FILL}"
 export BOT_COUNT="${BOT_COUNT:-8}"
 export BOT_POPULATION_INTERVAL_SECONDS="${BOT_POPULATION_INTERVAL_SECONDS:-5}"
 
-# The round the room is staged with is read from the overrides file when there is
-# one, so a round is tried by editing that file and never this one. What the file
-# leaves out falls back to the room's own values: the rotation is then one round,
-# TDM on Blood Bath, because a local run is played to watch a round and not the
-# deployed nine, and the start round is the deployment's own place in the
-# rotation, read from the cluster above — the ConfigMap's value first, then the
-# deployment's, which is 5 (CAP on Blood Bath) on mgo2-gameplay-1. Entry zero would
-# brief on a different round than the room this run is compared with, and the row
-# it publishes would name that wrong round to every browsing client.
+# The rotation the room plays is read from the overrides file when there is one,
+# so a rotation is tried by editing that file and never this one. What the file
+# leaves out falls back to the run's own default: one round, TDM on Blood Bath,
+# because a local run is played to watch a round and not the deployed nine.
 if [[ -f "$override_file" ]]; then
     # shellcheck source=/dev/null
     . "$override_file"
     printf 'Read the round overrides from %s.\n' "$override_file"
 fi
 
-export GAMEPLAY_SERVER_START_ROUND="${GAMEPLAY_SERVER_START_ROUND:-${configured_start_round:-${deployed_start_round:-1}}}"
 export GAMEPLAY_SERVER_ROTATION="${GAMEPLAY_SERVER_ROTATION:-TDM@Blood Bath}"
 
 export DATABASE_CONNECTION_STRING="$database_connection_string"
 unset database_connection_string
 
-printf 'Starting the gameplay server on UDP %s, advertising %s, staged at round %s, playing %s, logging at %s.\n' \
-    "$gameplay_port" "$advertised_address" "$GAMEPLAY_SERVER_START_ROUND" \
+printf 'Starting the gameplay server on UDP %s, advertising %s, playing %s, logging at %s.\n' \
+    "$gameplay_port" "$advertised_address" \
     "$GAMEPLAY_SERVER_ROTATION" "$LOG_LEVEL"
 printf 'Writing output to %s; press Control-C to stop the server.\n' "$log_file"
 

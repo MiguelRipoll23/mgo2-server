@@ -1,8 +1,6 @@
 using Mgo2Server.GameplayServer.Match;
-using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
@@ -32,10 +30,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </para>
 /// </remarks>
 /// <param name="logger">Logger of this service.</param>
-/// <param name="options">Options of this instance, which state the round the room starts on.</param>
-public sealed partial class MatchRoundStateService(
-    ILogger<MatchRoundStateService> logger,
-    IOptions<ServerOptions> options)
+public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateService> logger)
 {
     /// <summary>
     /// How long a peer's beat waits for the round to open before it starts
@@ -82,9 +77,23 @@ public sealed partial class MatchRoundStateService(
     private bool isOpen;
     private bool vitalsArrived;
 
-    // Seeded from the configured start round, so the first round this room opens is
-    // the one it was staged on rather than entry zero (StartRoundIndex).
-    private int roundNumber = StartRoundIndex(options.Value.GameplayServerStartRound);
+    /// <summary>
+    /// Whether the room holds one player and no bots, which is the state
+    /// <see cref="Rooms.RoomState.RoundStartSolo"/> names and the condition the
+    /// round's clock is held under.
+    /// </summary>
+    private bool isSolo;
+
+    /// <summary>
+    /// When the round's clock stopped counting, or <c>null</c> while it counts. It
+    /// is the instant a solo round's remaining time is read at, so the value the
+    /// room states does not move while nobody else is in it.
+    /// </summary>
+    private long? clockFrozenAt;
+
+    // The rotation index the room is on, counted from zero: a room opens on its
+    // rotation's first entry and moves one entry per round.
+    private int roundNumber;
     private MatchRecordGenerationUtils generation = MatchRecordGenerationUtils.First;
     private MatchRotationEntry? roundSettings;
     private byte? lastRoundResult;
@@ -113,6 +122,98 @@ public sealed partial class MatchRoundStateService(
             {
                 return roundNumber;
             }
+        }
+    }
+
+    /// <summary>
+    /// The state the room states about itself, from the round it has and whether
+    /// the room holds one player or more.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is a state and not the round counter.</b> The value repeats while the
+    /// phase it names lasts — a room of one plays a whole round on
+    /// <see cref="Rooms.RoomState.RoundStartSolo"/> — where the counter moved at
+    /// every round. The values and the flow they are written in are
+    /// <see cref="Rooms.RoomState"/>'s.
+    /// </remarks>
+    /// <param name="solo">
+    /// Whether the room holds one player and no bots, the roster's own count.
+    /// </param>
+    /// <returns>The room state.</returns>
+    public Rooms.RoomState State(bool solo)
+    {
+        lock (gate)
+        {
+            if (!isOpen)
+            {
+                return Rooms.RoomState.Briefing;
+            }
+
+            return solo ? Rooms.RoomState.RoundStartSolo : Rooms.RoomState.RoundStart;
+        }
+    }
+
+    /// <summary>
+    /// Whether the round's clock is being held because the room holds one player.
+    /// </summary>
+    public bool IsClockFrozen
+    {
+        get
+        {
+            lock (gate)
+            {
+                return clockFrozenAt is not null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Notes whether the room now holds one player and no bots: a solo round's
+    /// clock is held where it stood, and the clock a room of more players plays is
+    /// given back the time it was held for.
+    /// </summary>
+    /// <remarks>
+    /// <b>The time held is time that does not count.</b> The clock is measured from
+    /// when it started counting, so a thaw moves that instant forward by the stretch
+    /// it stood still: a second player joining a solo round is handed the round with
+    /// the time its first player had, and not the time the room was alone. Nothing is
+    /// moved while no round is open — a briefing holds its own clock, which is the
+    /// round's whole time until its report opens one
+    /// (<see cref="RemainingUnits"/>).
+    /// </remarks>
+    /// <param name="solo">Whether the room holds one player and no bots.</param>
+    public void NoteSolo(bool solo)
+    {
+        lock (gate)
+        {
+            if (solo == isSolo)
+            {
+                return;
+            }
+
+            isSolo = solo;
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            if (solo)
+            {
+                if (isOpen)
+                {
+                    clockFrozenAt = now;
+                }
+
+                return;
+            }
+
+            if (clockFrozenAt is { } frozenAt)
+            {
+                clockStartsAt += now - frozenAt;
+                clockFrozenAt = null;
+            }
+
+            logger.LogInformation(
+                "The room holds more than its one player now, so round {RoundNumber}'s clock counts "
+                + "again from where it was held",
+                roundNumber);
         }
     }
 
@@ -238,7 +339,10 @@ public sealed partial class MatchRoundStateService(
                     return BriefingClockUnits;
                 }
 
-                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                // A held clock is read at the instant it stopped: that is the
+                // time the room still holds for a solo round, whatever the wall
+                // clock has done since (NoteSolo).
+                var now = clockFrozenAt ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 return now >= clockStartsAt
                     ? RoundClockUtils.RemainingUnits(settings, clockStartsAt, now)
                     : settings.TimeLimitUnits;
@@ -300,6 +404,11 @@ public sealed partial class MatchRoundStateService(
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             openedAt = now;
             clockStartsAt = now + Math.Max(0, clockHoldMilliseconds);
+
+            // A round that opens for a room of one opens with its clock already
+            // held: the first player is the only player, and the timer does not
+            // move until somebody else is in the room with them.
+            clockFrozenAt = isSolo ? now : null;
             writtenRuns.Clear();
             logger.LogInformation(
                 "Round {RoundNumber} opened under identifier set 0x{Identifier:x4} "

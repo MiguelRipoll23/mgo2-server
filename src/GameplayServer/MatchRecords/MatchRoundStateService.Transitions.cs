@@ -39,16 +39,6 @@ public sealed partial class MatchRoundStateService
     /// </remarks>
     private int briefingClockUnits;
 
-    /// <summary>
-    /// The rotation index of the round the room returns to when it starts or
-    /// empties: <c>GAMEPLAY_SERVER_START_ROUND</c>, counted from zero.
-    /// </summary>
-    /// <remarks>
-    /// It is the room's place in its rotation and not a round of it, so the rotation
-    /// a client is handed is untouched (<see cref="ServerOptions.GameplayServerStartRound"/>).
-    /// </remarks>
-    private readonly int firstRoundIndex = StartRoundIndex(options.Value.GameplayServerStartRound);
-
     /// <summary>Whether a round has ended in this process, which a briefing's clock reads.</summary>
     /// <remarks>
     /// It is "a round ended here" and not "the count is above zero": a room staged
@@ -68,14 +58,6 @@ public sealed partial class MatchRoundStateService
     /// round.
     /// </summary>
     private int roundsClosed;
-
-    /// <summary>
-    /// The rotation index a configured round number names: <c>GAMEPLAY_SERVER_START_ROUND</c>
-    /// is the round counted from one, and a rotation is read from zero.
-    /// </summary>
-    /// <param name="startRound">The configured round, counted from one.</param>
-    /// <returns>The rotation index it names.</returns>
-    public static int StartRoundIndex(int startRound) => Math.Max(1, startRound) - 1;
 
     /// <summary>Whether a round has ended in this process.</summary>
     public bool HasRoundEnded
@@ -144,10 +126,11 @@ public sealed partial class MatchRoundStateService
             roundSettings = null;
             openedAt = null;
             clockStartsAt = 0;
-            // Back to the round this room starts on rather than to zero: a room
-            // staged mid-rotation returns to the round it was staged on, which is
-            // the round its clients were told about (GameplayServerStartRound).
-            roundNumber = firstRoundIndex;
+            isSolo = false;
+            clockFrozenAt = null;
+            // Back to the rotation's first entry: a room nobody is in has no round
+            // of its own, so the next client into it arrives at the first one.
+            roundNumber = 0;
             hasRoundEnded = false;
             vitalsArrived = false;
             briefingClockUnits = 0;
@@ -215,6 +198,7 @@ public sealed partial class MatchRoundStateService
             roundSettings = null;
             openedAt = null;
             clockStartsAt = 0;
+            clockFrozenAt = null;
             logger.LogInformation(
                 "Round {RoundNumber} ended{Result}",
                 roundNumber,

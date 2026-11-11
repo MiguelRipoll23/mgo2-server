@@ -264,7 +264,7 @@ public sealed class MatchService(
                     // lobby reads the stored rotation at this index to answer a
                     // browse and to fill a join, so a row left at zero told every
                     // client the rotation's first round while this host played
-                    // another (GameplayServerStartRound).
+                    // another.
                     room.CurrentGame = roundState.RoundNumber % rounds.Count;
                 },
                 cancellationToken);

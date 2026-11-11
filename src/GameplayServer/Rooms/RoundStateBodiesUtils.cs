@@ -72,38 +72,41 @@ public static class RoundStateBodiesUtils
     public const int ValueOffset = MapOffset + MapLength;
 
     /// <summary>
-    /// The state field the round's own transitions carry: one byte at state offset
+    /// The state field the room's own transitions carry: one byte at state offset
     /// <c>0</c>, whose map bit is the <c>0x01</c> of the map's first byte.
     /// </summary>
-    public const int RoundPhaseFieldIndex = 0;
+    public const int RoomStateFieldIndex = 0;
 
     /// <summary>
-    /// The round-state transfer a room's transition writes: state <c>0x00</c>,
-    /// field <c>0</c> at the round the match is on.
+    /// The state transfer a room's transition writes: state <c>0x00</c>, field
+    /// <c>0</c> at the room's state.
     /// </summary>
     /// <remarks>
-    /// <b>The client gates its join on this field, and 0 is the value it waits
-    /// on.</b> The state machine at <c>0x2882B4</c> reads field 0 through
+    /// <para>
+    /// <b>The client gates its join on this field, and it is a room state and not
+    /// a round.</b> The state machine at <c>0x2882B4</c> reads field 0 through
     /// <c>0x27E480</c> and treats <c>0</c> and <c>7</c> as "wait and ask again":
     /// any other value sends its lobby-slot echo (<c>82</c>/<c>84</c>) and moves
-    /// to the next state. The corpus' values are <c>00</c> to <c>06</c>, they are
-    /// written at the room's own transitions — <c>mgo2-game2</c> writes <c>00</c>
-    /// at its round's open (t+102.663) and close (t+218.629), <c>03</c> through
-    /// its round, and <c>04</c> behind the close — and they rise through a match
-    /// and start over when the room does, which is the round's number within the
-    /// match. **[I]** for the name: the schema names no field.
+    /// to the next state. The values the captures carry are <see cref="RoomState"/>'s
+    /// three measured phases and three that keep their wire value behind an
+    /// unknown name, and the same value repeats while its phase lasts — which is
+    /// what a round number could not do.
+    /// </para>
+    /// <para>
+    /// <b>[I] for the field's name.</b> The schema names no field; the values are
+    /// what the room body at <c>0x09</c> states and what the two writers here are
+    /// measured to agree on.
+    /// </para>
     /// </remarks>
-    /// <param name="round">
-    /// The round the match is on, <c>0</c> for a room with none open.
-    /// </param>
+    /// <param name="state">The room state to state.</param>
     /// <returns>The record body.</returns>
-    public static byte[] RoundPhaseBody(byte round)
+    public static byte[] RoomStateBody(RoomState state)
     {
         var body = new byte[PayloadLength];
         body[0] = PayloadType;
         body[StateIndexOffset] = 0;
-        body[MapOffset + (RoundPhaseFieldIndex / 8)] = (byte)(1 << (RoundPhaseFieldIndex % 8));
-        body[ValueOffset] = round;
+        body[MapOffset + (RoomStateFieldIndex / 8)] = (byte)(1 << (RoomStateFieldIndex % 8));
+        body[ValueOffset] = (byte)state;
         return body;
     }
 

@@ -6,15 +6,16 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The room's own phase record: state <c>0x00</c>'s field <c>0</c>, written at
-/// the round's open, on every tick of the round, and at its close.
+/// The room's own state record: state <c>0x00</c>'s field <c>0</c>, written as the
+/// briefing ends, at the round's open, on every tick of the round, and at its
+/// close.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>It is the field a joining client waits on.</b> The client's join machine
 /// reads field 0 and treats <c>0</c> and <c>7</c> as "wait and ask again"; any
 /// other value makes it write its lobby-slot echo and move on
-/// (<see cref="Rooms.RoundStateBodiesUtils.RoundPhaseBody"/>). A host that never
+/// (<see cref="Rooms.RoundStateBodiesUtils.RoomStateBody"/>). A host that never
 /// writes it leaves the peer holding whatever its last room put there, and a
 /// state transfer that is written once and never again is one a lost datagram
 /// takes with it.
@@ -79,7 +80,7 @@ public sealed partial class MatchStartRunService
                 return;
             }
 
-            await WriteRoundPhaseAsync(context, (byte)round);
+            await WriteRoomStateAsync(context);
         }
     }
 
@@ -154,20 +155,34 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
-    /// Writes one peer the room's phase record on the round's stream.
+    /// Writes one peer the room's state record, read from the room's roster and
+    /// round.
+    /// </summary>
+    /// <remarks>
+    /// <b>The roster is noted here as well as read.</b> A second player joining a
+    /// round of one moves the room off <see cref="Rooms.RoomState.RoundStartSolo"/>,
+    /// and this is the writer that hears it while the round plays — the held clock
+    /// is given back at that instant (<see cref="MatchRoundStateService.NoteSolo"/>).
+    /// </remarks>
+    /// <param name="context">Context the record is written through.</param>
+    private async Task WriteRoomStateAsync(PeerContext context)
+    {
+        roundState.NoteSolo(roster.IsSolo);
+        await WriteRoomStateAsync(context, CurrentRoomState);
+    }
+
+    /// <summary>
+    /// Writes one peer the room's state record on the round's stream.
     /// </summary>
     /// <param name="context">Context the record is written through.</param>
-    /// <param name="round">
-    /// The round the match is on, or <c>0</c> for the moment a round has closed
-    /// and the room is back in its briefing.
-    /// </param>
-    private async Task WriteRoundPhaseAsync(PeerContext context, byte round)
+    /// <param name="state">The room state to state.</param>
+    private async Task WriteRoomStateAsync(PeerContext context, Rooms.RoomState state)
     {
         try
         {
             await context.Send(
                 UdpCommandConstants.PlayerProfile,
-                Rooms.RoundStateBodiesUtils.RoundPhaseBody(round),
+                Rooms.RoundStateBodiesUtils.RoomStateBody(state),
                 roster.TakeRunOrdinal());
         }
         catch (Exception exception)

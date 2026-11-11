@@ -49,8 +49,6 @@ spec:
           value: server
         - name: GAMEPLAY_SERVER_ROTATION
           value: 'TDM@Blood Bath'
-        - name: GAMEPLAY_SERVER_START_ROUND
-          value: 5
         image: ghcr.io/miguelripoll23/mgo2-server/mgo2-gameplay-server:latest
         imagePullPolicy: Always
         lifecycle:

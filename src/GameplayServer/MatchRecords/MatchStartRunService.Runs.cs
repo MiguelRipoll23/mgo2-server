@@ -98,14 +98,14 @@ public sealed partial class MatchStartRunService
                 // The phase and the run wait for the report the client sends from its
                 // weapon select (report t+146.831, run t+147.650), not for a clock.
                 await WaitForSpawnReportAsync(context);
-                await WriteRoundPhaseAsync(context, (byte)round);
+                await WriteRoomStateAsync(context);
                 await WriteRunAsync(context, generation);
 
                 // The room's phase, which a joining client's own state machine
                 // waits on: the round it is now playing, written behind its run
                 // and then once a tick for as long as the round lasts
                 // (MatchStartRunService.Phases).
-                await WriteRoundPhaseAsync(context, (byte)round);
+                await WriteRoomStateAsync(context);
                 _ = PublishRoundPhaseAsync(context, round);
                 await roundState.WaitForCloseAsync(round, session);
 
@@ -117,9 +117,11 @@ public sealed partial class MatchStartRunService
                 {
                     await results.WriteResultAsync(context, generation);
 
-                    // The closed round's phase is the one a client waits on, and
-                    // the reference writes it at this boundary too.
-                    await WriteRoundPhaseAsync(context, 0);
+                    // The closed round's state is the one the working-server
+                    // captures write at this boundary: the value before the next
+                    // round's own, and not a zero a client's placement machine
+                    // would wait on (Rooms.RoomState.Unknown1).
+                    await WriteRoomStateAsync(context, Rooms.RoomState.Unknown1);
                 }
             }
         }

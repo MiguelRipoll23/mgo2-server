@@ -160,20 +160,20 @@ public sealed partial class PlayerSettingsBurstService(
     /// (`docs/analysis/join-stall-after-mode2.md` §28).
     /// </param>
     /// <returns>The records in send order, each with the type it travels as.</returns>
-    /// <param name="roundNumber">The room's round-phase byte.</param>
+    /// <param name="roomState">The room state.</param>
     /// <param name="currentRotationIndex">Slot of the round the room is playing.</param>
     /// <param name="playerCount">The room's population, host included.</param>
     public List<RosterRecord> BuildSettingsBurst(
         IReadOnlyList<MatchRotationEntry>? rotation,
         IReadOnlyList<LobbyLoadout>? loadouts,
-        byte roundNumber,
+        RoomState roomState,
         int currentRotationIndex,
         byte playerCount,
         byte answeringSlot = 0)
     {
         var rotationBody = rotation is null
             ? RecordedRotationBody()
-            : RoomRotationBody(rotation, roundNumber, currentRotationIndex, playerCount);
+            : RoomRotationBody(rotation, roomState, currentRotationIndex, playerCount);
         return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
     }
 
@@ -182,7 +182,7 @@ public sealed partial class PlayerSettingsBurstService(
     /// </summary>
     /// <param name="rotation">The room's rotation.</param>
     /// <param name="loadouts">The room's player loadouts.</param>
-    /// <param name="roundNumber">The round-phase byte.</param>
+    /// <param name="roomState">The room state.</param>
     /// <param name="currentRotationIndex">The slot the native state selects.</param>
     /// <param name="playerCount">The room population, including the host.</param>
     /// <param name="ruleTimers">The configured seventeen-word timer bank.</param>
@@ -191,7 +191,7 @@ public sealed partial class PlayerSettingsBurstService(
     public List<RosterRecord> BuildSettingsBurst(
         IReadOnlyList<MatchRotationEntry> rotation,
         IReadOnlyList<LobbyLoadout>? loadouts,
-        byte roundNumber,
+        RoomState roomState,
         int currentRotationIndex,
         byte playerCount,
         IReadOnlyList<int> ruleTimers,
@@ -199,7 +199,7 @@ public sealed partial class PlayerSettingsBurstService(
     {
         var rotationBody = RoomRotationPayloadUtils.Build(
             rotation,
-            roundNumber,
+            roomState,
             currentRotationIndex,
             playerCount,
             ruleTimers);
@@ -314,19 +314,19 @@ public sealed partial class PlayerSettingsBurstService(
     /// </para>
     /// </remarks>
     /// <param name="rotation">The room's rotation, in play order.</param>
-    /// <param name="roundNumber">The room's round-phase byte.</param>
+    /// <param name="state">The room state.</param>
     /// <param name="currentRotationIndex">Slot of the round the room is playing.</param>
     /// <param name="playerCount">The room's population, host included.</param>
     /// <returns>The body.</returns>
     public static byte[] RoomRotationBody(
         IReadOnlyList<MatchRotationEntry> rotation,
-        byte roundNumber,
+        RoomState state,
         int currentRotationIndex,
         byte playerCount)
     {
         return RoomRotationPayloadUtils.BuildReferenceBody(
             rotation,
-            roundNumber,
+            state,
             currentRotationIndex,
             playerCount);
     }

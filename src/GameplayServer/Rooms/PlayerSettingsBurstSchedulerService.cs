@@ -121,16 +121,16 @@ public sealed class PlayerSettingsBurstSchedulerService(
         // recorded room's body is the one pinned to the capture's values, so a
         // joiner of a room whose rotation could not be read is told the capture's
         // round rather than this room's (RoomRotationPayloadUtils).
-        var roundPhase = matchSettings.CurrentPhase;
+        var roomState = matchSettings.CurrentRoomState;
         var rotationIndex = matchSettings.CurrentRotationIndex;
         var playerCount = checked((byte)(roster.JoinerCount + 1));
 
         var settingsBurst = rotation is null
-            ? burst.BuildSettingsBurst(rotation, loadouts, roundPhase, rotationIndex, playerCount, answeringSlot)
+            ? burst.BuildSettingsBurst(rotation, loadouts, roomState, rotationIndex, playerCount, answeringSlot)
             : burst.BuildSettingsBurst(
                 rotation,
                 loadouts,
-                roundPhase,
+                roomState,
                 rotationIndex,
                 playerCount,
                 matchSettings.RuleTimers,

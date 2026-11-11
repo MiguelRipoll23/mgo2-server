@@ -97,9 +97,9 @@ public sealed partial class MatchStartRunService
     /// </para>
     /// <para>
     /// <b>And a briefing's shape is the room's, not its rotation's.</b> The filler
-    /// belongs to a room that has played no round here; a room staged mid-rotation
-    /// by <see cref="Mgo2Server.Shared.Options.ServerOptions.GameplayServerStartRound"/>
-    /// has played none of them, so its first briefing is a fresh room's and takes
+    /// belongs to a room that has played no round here; a room that opens on a later
+    /// entry of its rotation has played none of them, so its first briefing is a
+    /// fresh room's and takes
     /// the filler — gating on the round number read that room as a room between
     /// rounds and handed its briefing the spawned box of a round that never
     /// played. A briefing handed a box's events is a briefing whose client is

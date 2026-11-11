@@ -81,9 +81,6 @@ public static class ServerServiceCollectionExtensions
             options.GameplayServerBriefingMinutes = configuration.ReadNumber(
                 "GAMEPLAY_SERVER_BRIEFING_MINUTES",
                 options.GameplayServerBriefingMinutes);
-            options.GameplayServerStartRound = configuration.ReadNumber(
-                "GAMEPLAY_SERVER_START_ROUND",
-                options.GameplayServerStartRound);
             options.GameplayServerAccountName = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_NAME")
                 ?? options.GameplayServerAccountName;
             options.GameplayServerAccountPassword = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_PASSWORD")

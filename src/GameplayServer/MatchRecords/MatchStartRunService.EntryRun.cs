@@ -121,6 +121,11 @@ public sealed partial class MatchStartRunService
 
             await WriteRunCoreAsync(context, generation, round, round.TimeLimitUnits, briefing: true);
 
+            // The room's state while this peer is briefed: the value the room body
+            // it joined with carries, so the state record and the room agree
+            // (Rooms.RoomState.Briefing).
+            await WriteRoomStateAsync(context, Rooms.RoomState.Briefing);
+
             // A room of one's closing zero then opens the round, and this host
             // writes that itself: no report follows the zero there. Measured:
             // `briefing-then-solo-game` writes its zero at t+145.098 and its round

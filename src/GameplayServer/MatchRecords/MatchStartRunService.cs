@@ -166,6 +166,20 @@ public sealed partial class MatchStartRunService(
     }
 
     /// <summary>
+    /// The state the room states about itself, which a peer is told on the phase
+    /// record: the briefing while the room waits, the solo start in a room that
+    /// holds one player and no bots, and the ordinary start otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <b>The roster decides and not the round's number.</b> The state is what the
+    /// room is, so it is read when it is written: a second player mid-round moves
+    /// it off the solo start, and the clock that was held for the first player is
+    /// given back (<see cref="MatchRoundStateService.NoteSolo"/>,
+    /// <see cref="Rooms.RoomState"/>).
+    /// </remarks>
+    private Rooms.RoomState CurrentRoomState => roundState.State(roster.IsSolo);
+
+    /// <summary>
     /// Opens the room's round, under the identifier set a report arrived on.
     /// </summary>
     /// <param name="generation">The set the round plays under.</param>
@@ -195,6 +209,10 @@ public sealed partial class MatchStartRunService(
         // Measured: `briefing-then-solo-game` writes its zero at t+145.098, opens at
         // t+146.007, and writes the run's clock whole, `01 60 09` = 2 400 units, at
         // t+147.650, with nothing held over before it.
+        // The roster's answer is noted before the round opens: a round of one player
+        // and no bots opens in RoundStartSolo with its clock held, and a round of
+        // anybody else opens counting.
+        roundState.NoteSolo(roster.IsSolo);
         var round = roundState.Open(generation, nextRound);
         if (round is null)
         {

@@ -178,13 +178,6 @@ public static class MatchSettingsUtils
                 + $"(got {options.GameplayServerMaxPlayers}); a room of zero admits nobody.");
         }
 
-        if (options.GameplayServerStartRound < 1)
-        {
-            throw new InvalidOperationException(
-                "GAMEPLAY_SERVER_START_ROUND counts a round from one and cannot be "
-                + $"{options.GameplayServerStartRound}; the round it names is one a client is told "
-                + "about as the room's current round.");
-        }
 
         if (options.GameplayServerLevelLimitBase < 0)
         {

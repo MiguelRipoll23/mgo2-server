@@ -56,14 +56,14 @@ internal static class RoomRotationPayloadUtils
     public static byte[] BuildReferenceBody() =>
         BuildCore(
             ReferenceRotation,
-            ReferenceRoundNumber,
+            (RoomState)ReferenceRoundNumber,
             ReferenceRotationIndex,
             ReferencePlayerCount,
             ruleTimers: null);
 
     /// <summary>
-    /// The body for a room this host serves: its rotation, its round phase, the
-    /// slot it is playing and its population.
+    /// The body for a room this host serves: its rotation, its state, the slot it
+    /// is playing and its population.
     /// </summary>
     /// <remarks>
     /// <b>None of the three state fields is a constant of the format.</b> The
@@ -75,31 +75,31 @@ internal static class RoomRotationPayloadUtils
     /// population of two tells a room of nine it holds two.
     /// </remarks>
     /// <param name="rotation">The room's rotation, entry zero first.</param>
-    /// <param name="roundNumber">The room's round-phase byte.</param>
+    /// <param name="state">The room state.</param>
     /// <param name="currentRotationIndex">Slot of the round the room is playing.</param>
     /// <param name="playerCount">The room's population, host included.</param>
     /// <returns>The body.</returns>
     public static byte[] BuildReferenceBody(
         IReadOnlyList<MatchRotationEntry> rotation,
-        byte roundNumber,
+        RoomState state,
         int currentRotationIndex,
         byte playerCount) =>
-        BuildCore(rotation, roundNumber, currentRotationIndex, playerCount, ruleTimers: null);
+        BuildCore(rotation, state, currentRotationIndex, playerCount, ruleTimers: null);
 
     public static byte[] Build(
         IReadOnlyList<MatchRotationEntry> rotation,
-        byte roundNumber,
+        RoomState state,
         int currentRotationIndex,
         byte playerCount,
         IReadOnlyList<int> ruleTimers)
     {
         ArgumentNullException.ThrowIfNull(ruleTimers);
-        return BuildCore(rotation, roundNumber, currentRotationIndex, playerCount, ruleTimers);
+        return BuildCore(rotation, state, currentRotationIndex, playerCount, ruleTimers);
     }
 
     private static byte[] BuildCore(
         IReadOnlyList<MatchRotationEntry> rotation,
-        byte roundNumber,
+        RoomState state,
         int currentRotationIndex,
         byte playerCount,
         IReadOnlyList<int>? ruleTimers)
@@ -135,7 +135,7 @@ internal static class RoomRotationPayloadUtils
         List<byte> body = new(PayloadLength);
 
         RoomStateRegionUtils.WritePresenceMap(body);
-        RoomStateRegionUtils.WriteRoundPhase(body, roundNumber);
+        RoomStateRegionUtils.WriteRoundPhase(body, state);
         RoomStateRegionUtils.WriteRotationTriples(body, rotation);
         RoomStateRegionUtils.WriteRoomStateFields(body);
         RoomStateRegionUtils.WriteCurrentSlotAndPopulation(body, currentRotationIndex, playerCount);

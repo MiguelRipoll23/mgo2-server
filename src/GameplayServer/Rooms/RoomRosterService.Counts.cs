@@ -53,4 +53,27 @@ public sealed partial class RoomRosterService
             }
         }
     }
+
+    /// <summary>
+    /// Whether the room holds one player and nothing else: a single joiner who is a
+    /// person, and no bot of this host's beside it.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is the state the room states, not only its arithmetic.</b> A round a
+    /// lone player starts is <see cref="RoomState.RoundStartSolo"/>, and the round
+    /// clock is held for it (<see cref="MatchRecords.MatchRoundStateService"/>). The
+    /// host is not counted here: its own entry is written beside the joiners, and a
+    /// room body states its population as this count plus one, which is the
+    /// <c>2</c> a solo capture's room states with the phase <c>3</c>.
+    /// </remarks>
+    public bool IsSolo
+    {
+        get
+        {
+            lock (gate)
+            {
+                return members.Count == 1 && members.All(member => !member.IsBot);
+            }
+        }
+    }
 }

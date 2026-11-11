@@ -188,16 +188,17 @@ internal static class RoomStateRegionUtils
         body.Add(0x3f);
     }
 
-    /// <summary>Body <c>0x09</c>–<c>0x19</c>: the round phase, then sixteen reserved bytes.</summary>
+    /// <summary>Body <c>0x09</c>–<c>0x19</c>: the room state, then sixteen reserved bytes.</summary>
     /// <remarks>
-    /// The phase is the room's own. The client compares it with <c>0</c>, <c>3</c> and
-    /// <c>7</c>; the corpus only ever carries <c>2</c> to <c>5</c>.
+    /// The state is the room's own and is the same value state <c>0x00</c>'s field 0
+    /// carries on its own (<see cref="RoomState"/>). The client compares it with
+    /// <c>0</c>, <c>3</c> and <c>7</c>; the captures carry <c>2</c> to <c>5</c>.
     /// </remarks>
     /// <param name="body">The body being built.</param>
-    /// <param name="roundNumber">The room's round-phase value.</param>
-    internal static void WriteRoundPhase(List<byte> body, byte roundNumber)
+    /// <param name="state">The room state.</param>
+    internal static void WriteRoundPhase(List<byte> body, RoomState state)
     {
-        body.Add(roundNumber);
+        body.Add((byte)state);
         WriteZeroBytes(body, 16);
     }
 

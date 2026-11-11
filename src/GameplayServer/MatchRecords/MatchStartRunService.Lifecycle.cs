@@ -220,16 +220,29 @@ public sealed partial class MatchStartRunService
     {
         try
         {
-            await Task.Delay(timeLimitMilliseconds);
-            if (roundState.RoundNumber != roundNumber || !roundState.IsOpen)
+            // The clock is read and not waited out: a solo round's clock is held
+            // while the room holds one player, so a wait of the round's whole
+            // length would end a round whose timer never moved
+            // (Rooms.RoomState.RoundStartSolo). Each poll re-reads what is left,
+            // and a held clock keeps returning the same value without ending
+            // anything.
+            while (roundState.RoundNumber == roundNumber && roundState.IsOpen)
             {
+                var remainingUnits = roundState.RemainingUnits;
+                if (remainingUnits > 0)
+                {
+                    var remainingMilliseconds = remainingUnits
+                        * MatchRecordBodiesUtils.ClockUnitMilliseconds;
+                    await Task.Delay(Math.Clamp(remainingMilliseconds, 250, 1_000));
+                    continue;
+                }
+
+                End(
+                    $"round {roundNumber}'s time limit ran out after "
+                    + $"{timeLimitMilliseconds} ms",
+                    await results.ClockResultAsync());
                 return;
             }
-
-            End(
-                $"round {roundNumber}'s time limit ran out after "
-                + $"{timeLimitMilliseconds} ms",
-                await results.ClockResultAsync());
         }
         catch (Exception exception)
         {
