@@ -47,6 +47,9 @@ public sealed partial class BotActorPublishService
     /// <summary>Drops the combat state and its ordinals, because the room has emptied.</summary>
     public void Reset()
     {
+        // A death still waiting for its feed belongs to the round that emptied, and
+        // announcing it into the next one would credit a kill nobody made.
+        pendingFeeds.Clear();
         lock (combatGate)
         {
             humanSides.Clear();

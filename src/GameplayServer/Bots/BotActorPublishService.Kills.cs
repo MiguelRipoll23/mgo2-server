@@ -21,6 +21,29 @@ namespace Mgo2Server.GameplayServer.Bots;
 public sealed partial class BotActorPublishService
 {
     /// <summary>
+    /// How long a death waits before its feed is written, measured on the working
+    /// host: its lethal <c>0x12</c> on slot 8 lands at t+310.81, the victim's vitals
+    /// reach zero on the same beat, and <c>09 02 08</c> follows at t+311.03. This host
+    /// wrote all three in one beat, and the client of 2026-11-11 13:54 read that beat
+    /// and never spoke again — its last frame is the one acknowledging those records
+    /// (44.7526 s of `bots1.pcapng`), where the working client carries on for another
+    /// 329 s past its own death.
+    /// </summary>
+    private const int FeedDelayMilliseconds = 220;
+
+    /// <summary>
+    /// Age at which a queued feed is dropped instead of written: a room that emptied
+    /// inside the delay must not announce its deaths into the round that replaces it.
+    /// </summary>
+    private const int StaleFeedMilliseconds = 2_000;
+
+    /// <summary>
+    /// Deaths waiting for the beat their feed is written on: when the record is due,
+    /// and the two slots it names.
+    /// </summary>
+    private readonly List<(long Due, byte Killer, byte Victim)> pendingFeeds = [];
+
+    /// <summary>
     /// Whether a kill drained this frame owes the scoreboard a record.
     /// </summary>
     /// <remarks>
@@ -40,13 +63,23 @@ public sealed partial class BotActorPublishService
     /// <param name="records">The beat's records, which the feeds are appended to.</param>
     private void DrainKills(MatchRecordGenerationUtils generation, List<UdpMessage> records)
     {
-        var kills = simulation.DrainKills();
-        if (kills.Count == 0)
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        foreach (var kill in simulation.DrainKills())
+        {
+            pendingFeeds.Add((now + FeedDelayMilliseconds, kill.KillerSlot, kill.VictimSlot));
+        }
+
+        pendingFeeds.RemoveAll(feed => feed.Due < now - StaleFeedMilliseconds);
+
+        var due = pendingFeeds.Where(feed => feed.Due <= now).ToList();
+        if (due.Count == 0)
         {
             return;
         }
 
-        foreach (var kill in kills)
+        pendingFeeds.RemoveAll(feed => feed.Due <= now);
+
+        foreach (var kill in due)
         {
             // The death is counted here for every victim, a player as well as a bot.
             // A player's own vitals report cannot be the count: the host has already
@@ -57,7 +90,7 @@ public sealed partial class BotActorPublishService
             // with no victim delta and no ticket for that side, where the working
             // capture answers a player's death with both. A death a client reports
             // on its own, with no feed behind it, is still counted at that report.
-            score.NoteKill(kill.KillerSlot, kill.VictimSlot);
+            score.NoteKill(kill.Killer, kill.Victim);
 
             // Three bytes under the operations stream, `09 <killer> <victim>`,
             // numbered on that stream. The item-box identifier an earlier writer
@@ -67,7 +100,7 @@ public sealed partial class BotActorPublishService
                 generation.Operations,
                 (byte)MatchKillFeedBodiesUtils.BodyLength,
                 sequences.Take(generation.Operations),
-                MatchKillFeedBodiesUtils.Build(kill.KillerSlot, kill.VictimSlot)));
+                MatchKillFeedBodiesUtils.Build(kill.Killer, kill.Victim)));
         }
 
         scoreboardDue = true;

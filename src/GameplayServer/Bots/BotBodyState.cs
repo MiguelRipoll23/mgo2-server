@@ -115,6 +115,12 @@ public sealed class BotBodyState
     public long NextShotMilliseconds { get; set; }
 
     /// <summary>
+    /// Rounds left in the burst the trigger is in the middle of, which is what
+    /// keeps a bot firing three rounds rather than one (<see cref="BotBurstUtils"/>).
+    /// </summary>
+    public int BurstRemaining { get; set; }
+
+    /// <summary>
     /// When the next <c>0x47</c> fire beat may ride, in monotonic milliseconds. The
     /// capture writes one about 1.3 times a second while engaged — slot 1 has 799
     /// in 610 s — and a hit far less often than that.
@@ -132,6 +138,22 @@ public sealed class BotBodyState
     /// counts: the capture's word at <c>+4</c> is odd and rises by two a death.
     /// </summary>
     public int Deaths { get; set; }
+
+    /// <summary>
+    /// Slot of the body that took this one's last health, or
+    /// <see cref="NoTarget"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The victim names its killer on the beat it dies.</b> The working host
+    /// keeps the victim's state record on its killer right up to the blow — slot 5
+    /// writes <c>44 06 01 …</c> for six beats and stands with <c>00 ff 00</c> only
+    /// after the fatal hit — so a body that dropped its target the instant it died
+    /// would be one the client never saw turn on the actor that shot it.
+    /// </remarks>
+    public byte KillerSlot { get; set; } = BotBodyState.NoTarget;
+
+    /// <summary>Whether the beat naming <see cref="KillerSlot"/> is still to be written.</summary>
+    public bool DiedThisBeat { get; set; }
 
     /// <summary>Whether it is dead, which is health at zero.</summary>
     public bool IsDead => Health <= 0;

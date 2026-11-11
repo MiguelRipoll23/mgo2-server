@@ -49,6 +49,16 @@ spec:
           value: server
         - name: GAMEPLAY_SERVER_ROTATION
           value: 'TDM@Blood Bath'
+        # The Free Battle room plays itself when nobody is in it. FILL hands a
+        # bot's seat to a joining player, so the room is never advertised full;
+        # BOTH is what puts the bots on either side, so a player who joins has a
+        # team and an enemy rather than a room of enemies. No BOT_COUNT: under
+        # FILL a count of zero is every seat the players are not in, which is the
+        # room's own size (`BotOptions`, `scripts/run-gameplay-local.sh`).
+        - name: BOT_POPULATION_MODE
+          value: FILL
+        - name: BOT_TEAM
+          value: BOTH
         image: ghcr.io/miguelripoll23/mgo2-server/mgo2-gameplay-server:latest
         imagePullPolicy: Always
         lifecycle:

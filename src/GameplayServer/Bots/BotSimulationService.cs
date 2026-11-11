@@ -103,7 +103,12 @@ public sealed class BotSimulationService(
             if (now < body.RespawnMilliseconds)
             {
                 body.Moving = false;
-                body.TargetSlot = BotBodyState.NoTarget;
+
+                // The beat the blow landed on still names the killer, and the beats
+                // after it stand. A corpse that named nobody on the beat the client
+                // reads its death from is a body nobody was seen to have shot.
+                body.TargetSlot = body.DiedThisBeat ? body.KillerSlot : BotBodyState.NoTarget;
+                body.DiedThisBeat = false;
                 body.HitReacting = false;
                 body.ShotThisBeat = false;
                 return new BotAdvance(body, false, null);
@@ -152,9 +157,11 @@ public sealed class BotSimulationService(
                 body.NextFireBeatMilliseconds = now + FireBeatIntervalMilliseconds;
             }
 
-            if (firing && now >= body.NextShotMilliseconds)
+            if (BotBurstUtils.Ready(body, firing, now))
             {
-                body.NextShotMilliseconds = now + ShotIntervalMilliseconds;
+                // Every round of a burst rides its own fire beat, which is what the
+                // recorded `0x47` records beside a run of hits are.
+                body.ShotThisBeat = true;
 
                 // The health is read before the hit lands because the blow that
                 // takes the last of it is written as the capture's 0x12 record
@@ -292,6 +299,10 @@ public sealed class BotSimulationService(
         kills.Enqueue(new BotKill(killerSlot, slot));
         body.Deaths++;
         body.RespawnMilliseconds = now + RespawnMilliseconds;
+
+        // The body turns on the actor that put it down, so the record it writes
+        // next still names shooter and victim of each other (BotDeathUtils).
+        BotDeathUtils.NoteDeath(body, killerSlot, Bodies());
         logger.LogDebug(
             "Bot in slot {BotSlot} went down and stands up in {RespawnMilliseconds} ms",
             slot,
