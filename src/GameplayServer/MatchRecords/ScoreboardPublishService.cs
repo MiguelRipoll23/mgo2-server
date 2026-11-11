@@ -65,6 +65,21 @@ public sealed class ScoreboardPublishService(
     private int publishedRound;
 
     /// <summary>
+    /// Copies of a delta still to be written: the reference writes each one four times,
+    /// the copies 0.6 s apart (slot 11's kill at t+46.45 of <c>working-server-v2</c> is
+    /// written again at 47.05, 47.63 and 48.30), so a client that missed the first still
+    /// reads the number.
+    /// </summary>
+    private readonly List<(long Due, byte[] Body)> repeats = [];
+
+    private const int RepeatCount = 3;
+
+    private const int RepeatIntervalMilliseconds = 600;
+
+    /// <summary>Longest a copy may wait before it is dropped as belonging to a past round.</summary>
+    private const int StaleRepeatMilliseconds = 3_000;
+
+    /// <summary>
     /// Writes every queued score change to the peer the change arrived through
     /// and to the rest of the room, then each side's remaining tickets when a death
     /// has spent one (<see cref="TeamTicketBodiesUtils"/>).
@@ -82,6 +97,16 @@ public sealed class ScoreboardPublishService(
         var records = new List<RosterRecord>(deltas.Count + tickets.Count);
         foreach (var delta in deltas)
         {
+            var copy = MatchScoreboardFramesUtils.BuildBody(delta);
+            var due = Environment.TickCount64;
+            lock (repeats)
+            {
+                for (var index = 1; index <= RepeatCount; index++)
+                {
+                    repeats.Add((due + index * RepeatIntervalMilliseconds, copy));
+                }
+            }
+
             records.Add(new RosterRecord(
                 MatchScoreboardFramesUtils.RecordType,
                 MatchScoreboardFramesUtils.BuildBody(delta),
@@ -106,6 +131,36 @@ public sealed class ScoreboardPublishService(
             records.Count,
             context.Remote);
 
+        await RosterRunSendUtils.SendAsync(context, records);
+        foreach (var record in records)
+        {
+            await context.Broadcast(record.Type, record.Body, record.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// Writes the copies of earlier deltas whose time has come, to the peer and the room.
+    /// </summary>
+    /// <param name="context">Context the beat runs on.</param>
+    public async Task PublishRepeatsAsync(PeerContext context)
+    {
+        var now = Environment.TickCount64;
+        List<byte[]> due;
+        lock (repeats)
+        {
+            repeats.RemoveAll(entry => entry.Due < now - StaleRepeatMilliseconds);
+            due = [.. repeats.Where(entry => entry.Due <= now).Select(entry => entry.Body)];
+            repeats.RemoveAll(entry => entry.Due <= now);
+        }
+
+        if (due.Count == 0)
+        {
+            return;
+        }
+
+        var records = due
+            .Select(body => new RosterRecord(MatchScoreboardFramesUtils.RecordType, body, roster.TakeRunOrdinal()))
+            .ToList();
         await RosterRunSendUtils.SendAsync(context, records);
         foreach (var record in records)
         {

@@ -260,5 +260,7 @@ public sealed partial class BotActorPublishService(
             scoreboardDue = false;
             await scoreboard.PublishAsync(context);
         }
+
+        await scoreboard.PublishRepeatsAsync(context);
     }
 }
