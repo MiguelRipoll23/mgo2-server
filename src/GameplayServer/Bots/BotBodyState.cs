@@ -120,6 +120,9 @@ public sealed class BotBodyState
     /// </summary>
     public int BurstRemaining { get; set; }
 
+    /// <summary>Rounds the burst in hand was started with, which sets the pause behind it.</summary>
+    public int BurstSize { get; set; }
+
     /// <summary>
     /// When the next <c>0x47</c> fire beat may ride, in monotonic milliseconds. The
     /// capture writes one about 1.3 times a second while engaged — slot 1 has 799
