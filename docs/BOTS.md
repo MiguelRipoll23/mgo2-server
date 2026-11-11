@@ -40,7 +40,7 @@ opponent — a bot perceives, decides and changes state, and sends nothing.
 | --- | --- | --- |
 | `BOT_TEAM` | `ENEMY` | `NONE`, `BOTH`, `ENEMY` |
 | `BOT_POPULATION_MODE` | `FILL` | `FILL`, `PERMANENT` |
-| `BOT_COUNT` | `0` | bots the room keeps, capacity permitting |
+| `BOT_COUNT` | `0` | bots the room keeps, capacity permitting; under `FILL` the size of the fill in players, so a joining player takes a bot's seat |
 | `BOT_POPULATION_INTERVAL_SECONDS` | `5` | interval between population passes |
 
 The stage navigation data is built, not configured: `tools/stage-navigation`
@@ -50,8 +50,13 @@ room into a bot room — `BOT_TEAM=BOTH`, `BOT_POPULATION_MODE=FILL`, `BOT_COUNT
 — and needs no stage directory at all.
 
 `BOT_COUNT` is the count the two documented settings do not state: a room with a
-policy and a mode but no number holds no bots. Invalid values stop the process at
-startup with a sentence naming the variable (`BotOptionsUtils.Validate`).
+policy and a mode but no number holds no bots — a `FILL` of `0` is every free
+seat, which is the one case where the fill is not a number the operator picked.
+A `FILL` of a number is that many players: one bot leaves for each human who
+joins, before the roster and the room's count are written to that human, so an
+`BOT_COUNT=8` room is eight players and not eight bots beside a player. Invalid
+values stop the process at startup with a sentence naming the variable
+(`BotOptionsUtils.Validate`).
 
 `NONE` wins over the mode. `ENEMY` is resolved per pass from the sides the room's
 human rows hold — no side number is written anywhere in the bot system, and the

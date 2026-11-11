@@ -57,6 +57,16 @@ namespace Mgo2Server.GameplayServer;
 /// was always there. This one is for the peer that comes back sooner than that,
 /// or whose session the reaper has not reached yet.
 /// </para>
+/// <para>
+/// <b>A peer that says it is leaving is let go at once.</b> The leave notice is
+/// a zero-length <see cref="UdpCommandConstants.LeaveGame"/> record — the last
+/// thing a departing client writes
+/// (<c>player-leaves-game-at-briefing-t-45.pcapng</c>) — and it is the only
+/// departure this host hears stated rather than infers from silence. The reap
+/// window is measured for a peer that is still there and loading, so waiting it
+/// out keeps a roster entry and a session for a player who has already gone and
+/// holds that player out of the room until it expires.
+/// </para>
 /// </remarks>
 public sealed partial class GameplayServerService
 {
@@ -126,6 +136,48 @@ public sealed partial class GameplayServerService
         sessions.Remove(session.RemoteAddress);
         ForgetPeerState(session, clientJoinsAgain: true);
         return null;
+    }
+
+    /// <summary>
+    /// Whether a record is a client's leave notice: the zero-length
+    /// <see cref="UdpCommandConstants.LeaveGame"/> record.
+    /// </summary>
+    /// <param name="message">Record to test.</param>
+    /// <returns><c>true</c> when the record says the peer is leaving.</returns>
+    private static bool IsLeaveNotice(UdpMessage message) =>
+        message.Type == UdpCommandConstants.LeaveGame && message.Body.Length == 0;
+
+    /// <summary>
+    /// Ends the session of a peer that has said it is leaving, and the room state
+    /// filed against it, so the player can join again immediately.
+    /// </summary>
+    /// <remarks>
+    /// It does what the reaper does at the end of its window, at the one moment the
+    /// peer has stated the same thing itself. Nothing is kept for a return: the
+    /// player is not coming back to the briefing screen it readied on, it is
+    /// leaving the room, so its ready state goes with the rest.
+    /// </remarks>
+    /// <param name="session">Session of the peer that is leaving.</param>
+    private void LeavePeer(PeerSession session)
+    {
+        if (session.Retired)
+        {
+            return;
+        }
+
+        logger.LogInformation(
+            "[{LogPrefix}] {RemoteAddress} left the game (record 0x{LeaveType:x4}); its session is "
+            + "dropped now rather than at the reap window, so it can join again",
+            LogPrefix,
+            session.RemoteAddress,
+            UdpCommandConstants.LeaveGame);
+
+        // Retired first, for the reason the restart retires first: every worker of
+        // this host tests it, and one that wakes between this line and the removal
+        // must not write to a session the peer has left.
+        session.Retired = true;
+        sessions.Remove(session.RemoteAddress);
+        ForgetPeerState(session);
     }
 
     /// <summary>

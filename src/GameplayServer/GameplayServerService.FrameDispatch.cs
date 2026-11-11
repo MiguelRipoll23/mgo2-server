@@ -283,6 +283,17 @@ public sealed partial class GameplayServerService
 
         foreach (var message in frame.Messages)
         {
+            // The client's own leave notice, and the last thing it writes. It is
+            // below the tick threshold, so without this it would be relayed as an
+            // unnamed gameplay record; it closes the session here instead, which is
+            // what lets the player join again at once
+            // (UdpCommandConstants.LeaveGame).
+            if (IsLeaveNotice(message))
+            {
+                LeavePeer(session);
+                break;
+            }
+
             // A frame acknowledgement closes an outbound frame and must not
             // itself receive a record-level answer.
             if (PeerAcknowledgementUtils.IsFrameAcknowledgement(message))

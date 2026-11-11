@@ -9,6 +9,22 @@ public static class UdpCommandConstants
     public const ushort Handshake = 0x1000;
 
     /// <summary>
+    /// Zero-length record a client sends when it leaves the game: the last thing
+    /// it writes before it goes quiet.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is the only notice a departure gets, and the room waits thirty
+    /// seconds for it today.</b> <c>player-leaves-game-at-briefing-t-45.pcapng</c>
+    /// holds the whole departure: the client is in its briefing, writes
+    /// <c>00 01</c> with no body at t+29.147, and sends nothing after it — one copy
+    /// of the type in the capture, and the last record of the flow. The reap
+    /// window is measured for a peer that is still there and loading (30 s), so a
+    /// player who has said it is leaving keeps a roster entry, a briefing state and
+    /// a session for the whole of it, and cannot rejoin until it expires.
+    /// </remarks>
+    public const ushort LeaveGame = 0x0001;
+
+    /// <summary>
     /// Keep-alive message mirrored back to the peer. It is id 0 in the
     /// keep-alive class: the serializer builds a wire type from a twelve-bit
     /// id plus flag-derived class bits, so this value is `0 | 0x5000`.

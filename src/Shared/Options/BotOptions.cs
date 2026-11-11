@@ -36,7 +36,10 @@ public sealed class BotOptions
     public string PopulationMode { get; set; } = "FILL";
 
     /// <summary>
-    /// Bots this room keeps, capacity permitting. Zero leaves the room human-only
+    /// The size of the room's bot population, capacity permitting. Under
+    /// <c>FILL</c> it is the size of the fill in players, so a joining player takes
+    /// a bot's seat and one bot leaves before the room is written to that player;
+    /// under <c>PERMANENT</c> it is the bots themselves. Zero leaves the room human-only
     /// and is the default: nothing in the protocol states a bot count, so a host
     /// told nothing adds none.
     /// </summary>

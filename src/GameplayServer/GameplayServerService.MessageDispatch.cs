@@ -55,6 +55,15 @@ public sealed partial class GameplayServerService
     /// <param name="session">Session the frame was decoded against.</param>
     private async Task DispatchMessageAsync(UdpMessage message, IPEndPoint remote, PeerSession session)
     {
+        // A peer that says it is leaving takes its session with it, and the rest of
+        // the frame with it: nothing follows a departure. The session is this
+        // server's own, which is why it is closed here and not by a handler.
+        if (IsLeaveNotice(message))
+        {
+            LeavePeer(session);
+            return;
+        }
+
         var remoteAddress = $"{remote.Address}:{remote.Port}";
         var handlerType = registry.ResolveHandlerType(message.Type);
         if (handlerType is null)

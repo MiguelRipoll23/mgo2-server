@@ -56,8 +56,17 @@ public static class BotPopulationUtils
             // the reference room it is measured against holds seven; a count that
             // is set is the number the operator asked for, and the room's remaining
             // seats are the bound rather than the target.
+            //
+            // The count is the size of the fill in players: the humans are taken
+            // out of it and the bots hold the rest, so a joining player takes a
+            // bot's seat instead of a seat beside it. A fill that kept its count
+            // whole is a room that grows with every joiner, and an eight-seat fill
+            // of eight bots plus a player is a roster the client reads as over
+            // capacity.
             var free = Math.Max(0, capacity - humanCount);
-            return configured > 0 ? Math.Min(configured, free) : free;
+            return configured > 0
+                ? Math.Min(Math.Max(0, configured - humanCount), free)
+                : free;
         }
 
         return Math.Min(configured, capacity);
