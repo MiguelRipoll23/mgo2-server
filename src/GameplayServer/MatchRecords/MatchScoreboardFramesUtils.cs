@@ -95,6 +95,9 @@ public static class MatchScoreboardFramesUtils
     /// </remarks>
     public const int RoundsWonBit = 20;
 
+    /// <summary>Bit carrying the player's combo total, which the score pays one point for.</summary>
+    public const int ComboBit = 47;
+
     /// <summary>Bit carrying the player's last-result code, one byte wide.</summary>
     public const int LastResultBit = 152;
 

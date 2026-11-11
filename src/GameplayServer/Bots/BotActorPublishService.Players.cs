@@ -59,7 +59,8 @@ public sealed partial class BotActorPublishService
                 return [];
             }
 
-            health = (short)Math.Max(0, held - shot.Damage);
+            // A headshot ends the player at once, whatever health is left.
+            health = shot.Headshot ? (short)0 : (short)Math.Max(0, held - shot.Damage);
             humanHealth[shot.VictimSlot] = health;
 
             // The beat writes the peer's vitals record under this player's own
@@ -78,7 +79,7 @@ public sealed partial class BotActorPublishService
 
                 // The reference announces the player's own death on the kill feed too
                 // (`09 02 08` at t+311.03, slot 8's health reaching zero at 310.81).
-                simulation.NoteKill(killerSlot, shot.VictimSlot);
+                simulation.NoteKill(killerSlot, shot.VictimSlot, shot.Headshot);
             }
         }
 
@@ -100,7 +101,8 @@ public sealed partial class BotActorPublishService
                 shot.ImpactY,
                 shot.ImpactZ,
                 shot.Bearing,
-                health == 0),
+                shot.Headshot,
+                shot.Pitch),
             vitalsRecord,
         ];
     }

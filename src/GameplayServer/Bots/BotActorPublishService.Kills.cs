@@ -41,7 +41,7 @@ public sealed partial class BotActorPublishService
     /// Deaths waiting for the beat their feed is written on: when the record is due,
     /// and the two slots it names.
     /// </summary>
-    private readonly List<(long Due, byte Killer, byte Victim)> pendingFeeds = [];
+    private readonly List<(long Due, byte Killer, byte Victim, bool Headshot)> pendingFeeds = [];
 
     /// <summary>
     /// Whether a kill drained this frame owes the scoreboard a record.
@@ -66,7 +66,7 @@ public sealed partial class BotActorPublishService
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         foreach (var kill in simulation.DrainKills())
         {
-            pendingFeeds.Add((now + FeedDelayMilliseconds, kill.KillerSlot, kill.VictimSlot));
+            pendingFeeds.Add((now + FeedDelayMilliseconds, kill.KillerSlot, kill.VictimSlot, kill.Headshot));
         }
 
         pendingFeeds.RemoveAll(feed => feed.Due < now - StaleFeedMilliseconds);
@@ -90,7 +90,7 @@ public sealed partial class BotActorPublishService
             // with no victim delta and no ticket for that side, where the working
             // capture answers a player's death with both. A death a client reports
             // on its own, with no feed behind it, is still counted at that report.
-            score.NoteKill(kill.Killer, kill.Victim);
+            score.NoteKill(kill.Killer, kill.Victim, headshot: kill.Headshot);
 
             // Three bytes under the operations stream, `09 <killer> <victim>`,
             // numbered on that stream. The item-box identifier an earlier writer

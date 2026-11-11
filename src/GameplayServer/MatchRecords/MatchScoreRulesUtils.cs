@@ -53,14 +53,30 @@ public static class MatchScoreRulesUtils
     private static readonly int[] DeathsCoefficients = [-2, -2, 0, 0, -2, 0, 0, 0, 0, 0, 0];
 
     /// <summary>
+    /// Headshot coefficient per rule. DM and TDM pay <c>1</c> on the reference host:
+    /// slot 10 of <c>working-server-v2.pcapng</c> stands at 4 kills, 3 headshots and
+    /// combo 6 and scores 21, which is <c>12 + 3 + 6</c>. The other rows are the
+    /// stage script's own column.
+    /// </summary>
+    private static readonly int[] HeadshotCoefficients = [1, 1, 3, 3, 2, 0, 0, 0, 0, 0, 0];
+
+    /// <summary>
+    /// Combo coefficient per rule: one point per combo point in DM and TDM, where the
+    /// loader clamps column 9 to one, and nothing measured elsewhere.
+    /// </summary>
+    private static readonly int[] ComboCoefficients = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+    /// <summary>
     /// A player's score in a rule, from the kills and deaths this host has counted
     /// for the round.
     /// </summary>
     /// <param name="rule">Rule id the round is played under.</param>
     /// <param name="kills">Kills counted for the player this round.</param>
     /// <param name="deaths">Deaths counted for the player this round.</param>
+    /// <param name="headshots">Headshot kills counted for the player this round.</param>
+    /// <param name="combo">The player's combo total: one less than the streak, added on each consecutive kill.</param>
     /// <returns>The score, clamped to <c>[0, 65535]</c> as the client clamps it.</returns>
-    public static int Score(int rule, int kills, int deaths)
+    public static int Score(int rule, int kills, int deaths, int headshots = 0, int combo = 0)
     {
         if (rule is < 0 || rule >= KillsCoefficients.Length)
         {
@@ -68,7 +84,10 @@ public static class MatchScoreRulesUtils
         }
 
         return Math.Clamp(
-            kills * KillsCoefficients[rule] + deaths * DeathsCoefficients[rule],
+            kills * KillsCoefficients[rule]
+            + deaths * DeathsCoefficients[rule]
+            + headshots * HeadshotCoefficients[rule]
+            + combo * ComboCoefficients[rule],
             0,
             ScoreCeiling);
     }

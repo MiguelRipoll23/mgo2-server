@@ -143,9 +143,10 @@ public sealed class BotSimulationService(
         else
         {
             body.TargetSlot = target.SessionSlot;
-            body.AimX = target.X;
-            body.AimY = target.Y + BotLocomotionService.AimHeight;
-            body.AimZ = target.Z;
+            // The state record names the point the hit lands on (BotShotUtils).
+            body.AimX = target.X - BotShotUtils.ImpactOffset;
+            body.AimY = target.Y + BotShotUtils.BodyHeight;
+            body.AimZ = target.Z - BotShotUtils.ImpactOffset;
 
             // The trigger, not the hit: the capture holds the firing byte on seven
             // beats in ten while an enemy is in range and lands hits far less often.
@@ -163,24 +164,15 @@ public sealed class BotSimulationService(
                 // recorded `0x47` records beside a run of hits are.
                 body.ShotThisBeat = true;
 
-                // The health is read before the hit lands because the blow that
-                // takes the last of it is written as the capture's 0x12 record
-                // carrying a whole health bar's blow, not an ordinary hit's 50 points
-                // (BotActorRecordUtils.FatalDamageSubtype).
-                var lethal = target.IsBot
-                    && ApplyDamage(target.SessionSlot, ShotDamage, bot.SessionSlot, now);
-
-                shot = new BotShot(
-                    target.SessionSlot,
-                    ShotDamage,
-                    ShotWeapon,
-                    target.X,
-                    target.Y + BotLocomotionService.AimHeight,
-                    target.Z,
-                    BotEngagementUtils.Bearing(body, target))
+                // An ordinary hit, or a headshot that ends its victim at once (BotShotUtils).
+                var headshot = BotShotUtils.RollHeadshot();
+                var damage = headshot ? BotBodyState.MaximumVitals : BotShotUtils.RollDamage();
+                if (target.IsBot)
                 {
-                    Lethal = lethal,
-                };
+                    ApplyDamage(target.SessionSlot, damage, bot.SessionSlot, now, headshot);
+                }
+
+                shot = BotShotUtils.Build(body, target, damage, ShotWeapon, headshot);
             }
         }
 
@@ -202,6 +194,13 @@ public sealed class BotSimulationService(
         locomotion.PlanRoute(bot, body, map, rule, destination, now);
         locomotion.Step(body, now);
 
+        // A bot that holds its trigger faces its enemy, whichever way it walks: the
+        // heading its position record carries is the one its hits name (BotShotUtils).
+        if (firing && target is not null)
+        {
+            body.Yaw = shot?.Bearing ?? BotEngagementUtils.Bearing(body, target);
+        }
+
         return new BotAdvance(body, firing, shot);
     }
 
@@ -217,20 +216,28 @@ public sealed class BotSimulationService(
     /// <param name="identifier">Identifier the hit arrived under.</param>
     /// <param name="damage">Damage word the hit carried.</param>
     /// <param name="killerSlot">
-    /// Slot the kill is credited to, or <c>null</c> when the roster names no peer: a
-    /// zero is announced as the host's own.
+    /// Slot the kill is credited to, or <c>null</c> when the roster names no peer.
     /// </param>
-    /// <returns><c>true</c> when the hit named a bot.</returns>
-    public bool NoteIncomingDamage(ushort identifier, ushort damage, byte? killerSlot)
+    /// <param name="headshot">Whether the hit is a headshot: the <c>0x12</c> subtype.</param>
+    /// <returns><c>true</c> when the hit named a bot and was credited to a player.</returns>
+    public bool NoteIncomingDamage(ushort identifier, ushort damage, byte? killerSlot, bool headshot = false)
     {
         if (BotActorRecordUtils.SlotOfDamageIdentifier(identifier) is not { } slot)
         {
             return false;
         }
 
+        // Slot zero is the host's own entry, which is not in the gameplay session, so a
+        // kill announced under it names a player the game cannot resolve. A shooter the
+        // room cannot name is no better: the hit is left to the echo.
+        if (killerSlot is not > 0)
+        {
+            return false;
+        }
+
         var points = damage / BotActorRecordUtils.DamageScale;
 
-        ApplyDamage(slot, Math.Max(points, 1), killerSlot ?? slot, Environment.TickCount64);
+        ApplyDamage(slot, Math.Max(points, 1), killerSlot.Value, Environment.TickCount64, headshot);
         return true;
     }
 
@@ -240,8 +247,9 @@ public sealed class BotSimulationService(
     /// </summary>
     /// <param name="killerSlot">Slot the kill is credited to.</param>
     /// <param name="victimSlot">Slot that went down.</param>
-    public void NoteKill(byte killerSlot, byte victimSlot) =>
-        kills.Enqueue(new BotKill(killerSlot, victimSlot));
+    /// <param name="headshot">Whether the blow that ended it was a headshot.</param>
+    public void NoteKill(byte killerSlot, byte victimSlot, bool headshot = false) =>
+        kills.Enqueue(new BotKill(killerSlot, victimSlot, headshot));
 
     /// <summary>
     /// Takes the deaths the room owes a kill-feed record for, oldest first.
@@ -274,12 +282,13 @@ public sealed class BotSimulationService(
     /// </summary>
     /// <param name="slot">Slot the hit landed on.</param>
     /// <param name="damage">Health points it takes.</param>
+    /// <param name="killerSlot">Slot the death is credited to.</param>
     /// <param name="now">Monotonic milliseconds.</param>
+    /// <param name="headshot">Whether the blow that ends the body is a headshot.</param>
     /// <returns>
-    /// <c>true</c> when the hit was the last of the body's health, which the
-    /// damage record then carries as the <c>0x12</c> subtype.
+    /// <c>true</c> when the hit was the last of the body's health.
     /// </returns>
-    private bool ApplyDamage(byte slot, int damage, byte killerSlot, long now)
+    private bool ApplyDamage(byte slot, int damage, byte killerSlot, long now, bool headshot = false)
     {
         var body = Bodies().FirstOrDefault(candidate => candidate.SessionSlot == slot);
         if (body is null || body.IsDead)
@@ -294,7 +303,7 @@ public sealed class BotSimulationService(
             return false;
         }
 
-        kills.Enqueue(new BotKill(killerSlot, slot));
+        kills.Enqueue(new BotKill(killerSlot, slot, headshot));
         body.Deaths++;
         body.RespawnMilliseconds = now + RespawnMilliseconds;
 

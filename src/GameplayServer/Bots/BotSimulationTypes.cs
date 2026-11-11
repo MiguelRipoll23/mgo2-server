@@ -30,7 +30,7 @@ public sealed record BotAdvance(BotBodyState Body, bool Fired, BotShot? Shot);
 /// <param name="ImpactX">Impact <c>x</c>, in stage units.</param>
 /// <param name="ImpactY">Impact height, in stage units.</param>
 /// <param name="ImpactZ">Impact <c>z</c>, in stage units.</param>
-/// <param name="Bearing">Bearing the shot came from, as the recorded word.</param>
+/// <param name="Bearing">The shooter's own heading, the word its position record carries.</param>
 public sealed record BotShot(
     byte VictimSlot,
     int Damage,
@@ -41,11 +41,17 @@ public sealed record BotShot(
     ushort Bearing)
 {
     /// <summary>
-    /// Whether this hit took the last of the victim's health, which the capture
-    /// writes as the <c>0x12</c> damage subtype rather than the ordinary
-    /// <c>0x11</c>.
+    /// Whether this hit is a headshot: the <c>0x12</c> damage subtype, which ends its
+    /// victim at once. The reference writes it on exactly the kills its feed credits a
+    /// headshot for; a kill that ran the victim's health out is an ordinary <c>0x11</c>.
     /// </summary>
-    public bool Lethal { get; init; }
+    public bool Headshot { get; init; }
+
+    /// <summary>
+    /// The shot's vertical angle as the record carries it: a sixteen-bit turn,
+    /// positive when the shooter looks down on the point it hit.
+    /// </summary>
+    public short Pitch { get; init; }
 
 }
 
@@ -54,4 +60,5 @@ public sealed record BotShot(
 /// </summary>
 /// <param name="KillerSlot">Slot the kill is credited to.</param>
 /// <param name="VictimSlot">Slot that went down.</param>
-public sealed record BotKill(byte KillerSlot, byte VictimSlot);
+/// <param name="Headshot">Whether the blow that ended it was a headshot.</param>
+public sealed record BotKill(byte KillerSlot, byte VictimSlot, bool Headshot = false);

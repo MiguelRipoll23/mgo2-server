@@ -70,6 +70,11 @@ public sealed partial class MatchScoreService(
         public int Score;
         public bool KillsKnown;
         public bool ScoreKnown;
+        public int Headshots;
+        public int Streak;
+        public int Combo;
+        public int SentLastResult = -1;
+        public int SentStreak = -1;
     }
 
     private readonly Lock gate = new();
@@ -93,61 +98,6 @@ public sealed partial class MatchScoreService(
                 "Player in slot {Slot} is dead; the round's scoreboard now reads {Deaths} death(s)",
                 slot,
                 row.Deaths);
-            return true;
-        }
-    }
-
-    /// <summary>
-    /// Records a kill and the death that came with it, which is what a kill-feed
-    /// record names: the killer's slot and the victim's.
-    /// </summary>
-    /// <remarks>
-    /// A killer that is also the victim is a suicide: it is a death and not a
-    /// kill, which is the replay parser's own reading of the feed
-    /// (<c>docs/analysis/replay-console/rpdt.js</c>).
-    /// </remarks>
-    /// <param name="killerSlot">Slot the feed names as the killer.</param>
-    /// <param name="victimSlot">Slot the feed names as the victim.</param>
-    /// <param name="countDeath">
-    /// Whether this call is the one that counts the death. A player's own vitals
-    /// report reaching zero is counted where it arrives
-    /// (<see cref="Commands.Peer.Gameplay.PlayerVitalsHandler"/>), so a kill a bot
-    /// lands on a player is credited here without counting that death a second
-    /// time.
-    /// </param>
-    /// <returns><c>true</c> when the round's score changed.</returns>
-    public bool NoteKill(byte killerSlot, byte victimSlot, bool countDeath = true)
-    {
-        lock (gate)
-        {
-            var victim = RowOf(victimSlot);
-            if (countDeath)
-            {
-                victim.Deaths++;
-                Queue(victimSlot, MatchScoreboardFramesUtils.DeathsBit, victim.Deaths);
-                QueueScore(victimSlot, victim);
-            }
-
-            if (killerSlot == victimSlot)
-            {
-                logger.LogDebug(
-                    "Player in slot {Slot} killed itself; the death is counted and the kill is not",
-                    killerSlot);
-                return true;
-            }
-
-            var killer = RowOf(killerSlot);
-            killer.Kills++;
-            killer.KillsKnown = true;
-            Queue(killerSlot, MatchScoreboardFramesUtils.KillsBit, killer.Kills);
-            QueueScore(killerSlot, killer);
-            logger.LogDebug(
-                "Player in slot {KillerSlot} killed the player in slot {VictimSlot}; {Kills} kill(s), "
-                + "{Deaths} death(s)",
-                killerSlot,
-                victimSlot,
-                killer.Kills,
-                victim.Deaths);
             return true;
         }
     }
@@ -307,7 +257,7 @@ public sealed partial class MatchScoreService(
             return;
         }
 
-        var score = MatchScoreRulesUtils.Score(settings.Rule, row.Kills, row.Deaths);
+        var score = MatchScoreRulesUtils.Score(settings.Rule, row.Kills, row.Deaths, row.Headshots, row.Combo);
         if (row.ScoreKnown ? row.Score == score : score == 0)
         {
             return;
