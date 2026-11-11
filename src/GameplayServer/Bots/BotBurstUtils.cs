@@ -16,8 +16,17 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// </remarks>
 public static class BotBurstUtils
 {
-    /// <summary>Rounds one burst holds.</summary>
-    public const int Rounds = 3;
+    /// <summary>
+    /// Rounds one burst holds, drawn in the shares <c>working-server-v2</c> writes them:
+    /// of its 173 runs of hits on one victim 134 are a single hit, 29 are two and 8 are
+    /// three, so a bot mostly fires once and the old fixed three was a bot that never did.
+    /// </summary>
+    /// <returns>One, two or three.</returns>
+    public static int RollRounds()
+    {
+        var roll = Random.Shared.NextDouble();
+        return roll < 0.78 ? 1 : roll < 0.95 ? 2 : 3;
+    }
 
     /// <summary>
     /// Interval between two rounds of one burst, in milliseconds: the capture's
@@ -54,11 +63,20 @@ public static class BotBurstUtils
             return false;
         }
 
-        body.BurstRemaining = body.BurstRemaining > 0 ? body.BurstRemaining - 1 : Rounds - 1;
+        if (body.BurstRemaining > 0)
+        {
+            body.BurstRemaining--;
+        }
+        else
+        {
+            body.BurstSize = RollRounds();
+            body.BurstRemaining = body.BurstSize - 1;
+        }
+
         body.NextShotMilliseconds = now
             + (body.BurstRemaining > 0
                 ? RoundIntervalMilliseconds
-                : Rounds * BotSimulationService.ShotIntervalMilliseconds);
+                : body.BurstSize * BotSimulationService.ShotIntervalMilliseconds);
         return true;
     }
 }
