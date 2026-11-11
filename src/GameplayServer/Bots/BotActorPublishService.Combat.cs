@@ -115,7 +115,9 @@ public sealed partial class BotActorPublishService
                         shot.ImpactX,
                         shot.ImpactY,
                         shot.ImpactZ,
-                        shot.Bearing));
+                        shot.Bearing,
+                        shot.Lethal,
+                        shot.HealthBefore));
                 }
                 else
                 {
@@ -136,7 +138,7 @@ public sealed partial class BotActorPublishService
         }
 
         // The kill feed, and the score behind it (`BotActorPublishService.Kills.cs`).
-        await DrainKillsAsync(context, generation, records);
+        DrainKills(generation, records);
 
         // The round's state blob, every 1.2 s: twenty-two bytes, the presence map's
         // field 150 and the value the captured burst carries. The working host

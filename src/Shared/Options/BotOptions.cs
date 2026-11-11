@@ -17,8 +17,9 @@ namespace Mgo2Server.Shared.Options;
 /// <b>Count is this server's own number and not part of the two settings.</b>
 /// <c>BOT_TEAM</c> says where a bot may stand and <c>BOT_POPULATION_MODE</c> says
 /// whether a human may take its place; neither says how many bots a room holds.
-/// A room with no count is a room with no bots, which is why the default is zero:
-/// the recorded dedicated hosts add bots only to the room they were built for.
+/// The default is zero, and under <c>FILL</c> zero is the room's own size: a host
+/// told no count fills the seats it advertises, so a deployment states a number
+/// only when it wants a fill smaller than its room.
 /// </para>
 /// </remarks>
 public sealed class BotOptions
@@ -39,9 +40,9 @@ public sealed class BotOptions
     /// The size of the room's bot population, capacity permitting. Under
     /// <c>FILL</c> it is the size of the fill in players, so a joining player takes
     /// a bot's seat and one bot leaves before the room is written to that player;
-    /// under <c>PERMANENT</c> it is the bots themselves. Zero leaves the room human-only
-    /// and is the default: nothing in the protocol states a bot count, so a host
-    /// told nothing adds none.
+    /// under <c>PERMANENT</c> it is the bots themselves. Zero is the default and
+    /// under <c>FILL</c> it is every seat the players are not in, so a host told no
+    /// count fills the room it advertises.
     /// </summary>
     public int Count { get; set; }
 

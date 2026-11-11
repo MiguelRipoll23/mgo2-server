@@ -188,16 +188,15 @@ public sealed class BotFoundationTests
     public void AFillTakesTheConfiguredCountButNeverMoreThanIsFree()
     {
         // FILL answers a room a player is in: with no human on the roster the room
-        // holds no bots, and the first human to arrive brings them back. The count is
-        // the deployment's BOT_COUNT and it is the size of the fill in players, so a
-        // joining player takes a bot's seat rather than a seat beside it; an unset
-        // count is the one that takes every free seat, because a room of seventeen
-        // seats given sixteen bots is not what BOT_COUNT="8" asks for.
+        // holds no bots, and the first human to arrive brings them back. BOT_COUNT is
+        // the number of bots, and a room that states none fills every seat its humans
+        // are not in; the free seats bound both, so a bot never stands where a player
+        // does or where the room has ended.
         Assert.Equal(0, BotPopulationUtils.TargetCount(BotPopulationMode.Fill, 4, 0, 16));
-        Assert.Equal(3, BotPopulationUtils.TargetCount(BotPopulationMode.Fill, 4, 1, 16));
+        Assert.Equal(4, BotPopulationUtils.TargetCount(BotPopulationMode.Fill, 4, 1, 16));
         // Six slots and two humans leave four free, which is all the count allows.
-        Assert.Equal(2, BotPopulationUtils.TargetCount(BotPopulationMode.Fill, 4, 2, 6));
-        Assert.Equal(1, BotPopulationUtils.TargetCount(BotPopulationMode.Fill, 3, 2, 6));
+        Assert.Equal(4, BotPopulationUtils.TargetCount(BotPopulationMode.Fill, 4, 2, 6));
+        Assert.Equal(3, BotPopulationUtils.TargetCount(BotPopulationMode.Fill, 3, 2, 6));
         Assert.Equal(0, BotPopulationUtils.TargetCount(BotPopulationMode.Fill, 4, 6, 6));
         // No count configured: every seat a player is not in.
         Assert.Equal(4, BotPopulationUtils.TargetCount(BotPopulationMode.Fill, 0, 2, 6));

@@ -46,6 +46,29 @@ internal static class RoomStateReferenceBodyUtils
     ];
 
     /// <summary>
+    /// The ticket count each side's word of <see cref="StateFields17To27"/> holds —
+    /// the first team's, then the second's.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is not the rule's kill limit.</b> The bank's ticket word is where a
+    /// ticketed round ends (fifty in this room's configuration); what the client's
+    /// panel counts down is this pair, which the room body states as forty for each
+    /// side, and the <c>0x93</c> allotment beside it agrees. A death therefore
+    /// counts down from forty: a host that counted from the bank's fifty wrote a
+    /// count higher than the panel was holding and the panel never moved.
+    /// </remarks>
+    internal const int FirstTeamTicketOffset = 2;
+
+    /// <summary>Offset of the second side's remaining tickets.</summary>
+    internal const int SecondTeamTicketOffset = 6;
+
+    /// <summary>
+    /// The allotment the room body states for a side, which a death counts down
+    /// from (<see cref="FirstTeamTicketOffset"/>).
+    /// </summary>
+    internal static int TicketAllotment => StateFields17To27[FirstTeamTicketOffset];
+
+    /// <summary>
     /// Body <c>0x65</c>–<c>0x86</c>: state field 29, seventeen rule times in seconds.
     /// </summary>
     /// <remarks>

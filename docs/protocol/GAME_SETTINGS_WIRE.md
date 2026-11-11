@@ -203,6 +203,14 @@ t+87.88 for team `1` — against the twenty tickets the room's own body states a
 `ScoreboardPublishService` writes it with the deltas; a host that writes none
 leaves both sides on their starting number for the whole round.
 
+**The count starts at the room's pair, not at the rule's ticket word.** The two
+are different numbers in a room whose configuration states fifty: the bank's word
+is where the round ends, and the `0x5a`/`0x5e` pair — forty here, with the `0x93`
+allotment beside it — is what the client's panel holds. A record that counted
+down from fifty states `49` where the panel is showing `40`, and the panel never
+moves; `bots1.pcapng` of 2026-11-11 12:34 is that shape (`0b 00 00 00 08 … 32 00`
+and `… 31 00`, fifty and forty-nine, with the panel still at forty).
+
 ## 5. Reading this from a capture
 
 ```bash

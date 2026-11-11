@@ -237,20 +237,28 @@ public sealed partial class BotActorPublishService(
         // hit it lands this tick is written under its victim's damage identifier.
         var records = await BuildActorRecordsAsync(context, map, rule, generation, Environment.TickCount64);
 
-        if (records.Count == 0)
+        if (records.Count > 0)
         {
-            return;
+            if (context.SendRecords is { } sendRecords)
+            {
+                await sendRecords(records);
+            }
+            else
+            {
+                foreach (var record in records)
+                {
+                    await context.Send(record.Type, record.Body, record.Flags);
+                }
+            }
         }
 
-        if (context.SendRecords is { } sendRecords)
+        // The scoreboard rides behind the frame the death was announced in: the
+        // capture writes the feed first and the side's ticket, the victim's delta
+        // and the killer's behind it (`BotActorPublishService.Kills.cs`).
+        if (scoreboardDue)
         {
-            await sendRecords(records);
-            return;
-        }
-
-        foreach (var record in records)
-        {
-            await context.Send(record.Type, record.Body, record.Flags);
+            scoreboardDue = false;
+            await scoreboard.PublishAsync(context);
         }
     }
 }

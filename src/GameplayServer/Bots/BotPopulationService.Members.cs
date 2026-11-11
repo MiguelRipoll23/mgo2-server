@@ -78,18 +78,23 @@ public sealed partial class BotPopulationService
         await reconcileGate.WaitAsync(cancellationToken);
         try
         {
-            // A round that is playing keeps its bots. The seat a joining player would
-            // take is free again at the next briefing, and taking it now would remove
+            var mode = BotOptionsUtils.PopulationMode(botOptions);
+
+            // A round that is playing keeps its bots, because taking one now removes
             // an actor from a round the client is already in: its block stops being
-            // written the moment the population stops holding it.
-            if (roundState.IsOpen)
+            // written the moment the population stops holding it. A fill is the
+            // exception, since it holds every seat the players are not in and the room
+            // can therefore be full when a player asks to enter — and a room the client
+            // reads as full is one it refuses. The bots between that player and its
+            // seat go here, before the answer names the population, and the seat they
+            // leave is the one the player takes.
+            if (roundState.IsOpen && mode != BotPopulationMode.Fill)
             {
                 logger.LogDebug(
                     "A round is playing, so no bot gives up its seat for a joining player yet");
                 return false;
             }
 
-            var mode = BotOptionsUtils.PopulationMode(botOptions);
             var members = roster.Snapshot();
             var humans = members.Count(member => !member.IsBot);
             var before = Bots.Count;

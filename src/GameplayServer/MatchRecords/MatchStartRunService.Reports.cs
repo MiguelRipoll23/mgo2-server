@@ -128,9 +128,18 @@ public sealed partial class MatchStartRunService
             // nothing runs out, so its round is opened by the report that follows
             // the briefing's closing zero (BriefingCountdownService.HasEnded). One
             // briefing starts it once, whatever the reports after that one say.
+            // The reports the count waits for are the room's clients', and a bot is
+            // never one of them: a room of one client and its bots is a room of
+            // several players and one report, so the gate is a report per client and
+            // never a report per player. Waiting for two there held the count at the
+            // whole briefing time with the bots already seated, so the briefing never
+            // wrote its zero and the round never opened (local run of 2026-11-11
+            // 13:30: count armed at t+10 and never moved).
             startsBriefing = countStartedBriefing != armed
                 && briefingStates.PlayerCount >= CountingJoinReportCount
-                && briefingStates.JoinedCount >= CountingJoinReportCount;
+                && briefingStates.JoinedCount >= Math.Min(
+                    CountingJoinReportCount,
+                    briefingStates.ClientCount);
             if (startsBriefing)
             {
                 countStartedBriefing = armed;

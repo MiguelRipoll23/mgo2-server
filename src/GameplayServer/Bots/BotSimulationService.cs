@@ -22,10 +22,21 @@ public sealed class BotSimulationService(
     ILogger<BotSimulationService> logger)
 {
     /// <summary>
-    /// Interval between one bot's hits: the capture's 398 damage records over 640 s
-    /// are one hit every twelve seconds for each of its eight slots.
+    /// Interval between one bot's hits, counted from the beat the last one landed
+    /// on: five seconds, which is the capture's rate once its bots' engagement is
+    /// taken out.
     /// </summary>
-    public const int ShotIntervalMilliseconds = 12_000;
+    /// <remarks>
+    /// <b>Measured, not copied.</b> The working capture writes 374 host-written hits
+    /// across its 640 s, one every 13.7 s for each of its eight bots; a room of
+    /// 2026-11-11 wrote 26 in 123 s, one every 33 s for each of its seven, because a
+    /// bot only lands a hit while an enemy is inside
+    /// <see cref="ShotRange"/> and that is a little over a third of its round. The
+    /// interval that lands at the recorded rate is therefore 13.7 s times that
+    /// fraction, five seconds — the twelve this host waited until now was a bot
+    /// firing a third as often as the working host's.
+    /// </remarks>
+    public const int ShotIntervalMilliseconds = 5_000;
 
     /// <summary>
     /// Health points one bot hit takes: the capture's <c>0x11</c> hits mean a
@@ -133,7 +144,7 @@ public sealed class BotSimulationService(
 
             // The trigger, not the hit: the capture holds the firing byte on seven
             // beats in ten while an enemy is in range and lands hits far less often.
-            firing = Distance(body, target) <= ShotRange;
+            firing = BotEngagementUtils.Distance(body, target) <= ShotRange;
 
             if (firing && now >= body.NextFireBeatMilliseconds)
             {
@@ -144,6 +155,15 @@ public sealed class BotSimulationService(
             if (firing && now >= body.NextShotMilliseconds)
             {
                 body.NextShotMilliseconds = now + ShotIntervalMilliseconds;
+
+                // The health is read before the hit lands because the blow that
+                // takes the last of it is written as the capture's 0x12 record
+                // carrying that health, not as an ordinary hit's 50 points
+                // (BotActorRecordUtils.FatalDamageSubtype).
+                var healthBefore = HealthOf(target.SessionSlot);
+                var lethal = target.IsBot
+                    && ApplyDamage(target.SessionSlot, ShotDamage, bot.SessionSlot, now);
+
                 shot = new BotShot(
                     target.SessionSlot,
                     ShotDamage,
@@ -151,17 +171,16 @@ public sealed class BotSimulationService(
                     target.X,
                     target.Y + BotLocomotionService.AimHeight,
                     target.Z,
-                    Bearing(body, target));
-
-                if (target.IsBot)
+                    BotEngagementUtils.Bearing(body, target))
                 {
-                    ApplyDamage(target.SessionSlot, ShotDamage, bot.SessionSlot, now);
-                }
+                    Lethal = lethal,
+                    HealthBefore = healthBefore,
+                };
             }
         }
 
         BotPosition? destination = null;
-        if (target is not null && Distance(body, target) <= EngagementDistance)
+        if (target is not null && BotEngagementUtils.Distance(body, target) <= EngagementDistance)
         {
             // Close enough to shoot: stand, face it, and keep a route out of it.
             body.Route = [];
@@ -170,7 +189,9 @@ public sealed class BotSimulationService(
         }
         else
         {
-            destination = target is null ? Patrol(bot, body, map, rule) : Standoff(body, target);
+            destination = target is null
+                ? Patrol(bot, body, map, rule)
+                : BotEngagementUtils.Standoff(body, target);
         }
 
         locomotion.PlanRoute(bot, body, map, rule, destination, now);
@@ -249,19 +270,23 @@ public sealed class BotSimulationService(
     /// <param name="slot">Slot the hit landed on.</param>
     /// <param name="damage">Health points it takes.</param>
     /// <param name="now">Monotonic milliseconds.</param>
-    private void ApplyDamage(byte slot, int damage, byte killerSlot, long now)
+    /// <returns>
+    /// <c>true</c> when the hit was the last of the body's health, which the
+    /// damage record then carries as the <c>0x12</c> subtype.
+    /// </returns>
+    private bool ApplyDamage(byte slot, int damage, byte killerSlot, long now)
     {
         var body = Bodies().FirstOrDefault(candidate => candidate.SessionSlot == slot);
         if (body is null || body.IsDead)
         {
-            return;
+            return false;
         }
 
         body.Health = (short)Math.Max(0, body.Health - damage);
         if (body.Health != 0)
         {
             BotLocomotionService.NoteHit(body, now);
-            return;
+            return false;
         }
 
         kills.Enqueue(new BotKill(killerSlot, slot));
@@ -271,7 +296,14 @@ public sealed class BotSimulationService(
             "Bot in slot {BotSlot} went down and stands up in {RespawnMilliseconds} ms",
             slot,
             RespawnMilliseconds);
+        return true;
     }
+
+    /// <summary>Health the bot holding a slot has left, in points.</summary>
+    /// <param name="slot">Slot to read.</param>
+    /// <returns>The health, or zero for a slot no body holds.</returns>
+    private int HealthOf(byte slot) =>
+        Bodies().FirstOrDefault(body => body.SessionSlot == slot)?.Health ?? 0;
 
     /// <summary>Every body the simulation holds.</summary>
     /// <returns>The bodies, which is how a hit by slot is placed on a bot.</returns>
@@ -307,9 +339,9 @@ public sealed class BotSimulationService(
 
         return actors
             .Where(actor => actor.SessionSlot != bot.SessionSlot && actor.Side != side
-                && Distance(body, actor) <= ShotRange)
+                && BotEngagementUtils.Distance(body, actor) <= ShotRange)
             .OrderBy(actor => claims.Count(claim => claim == actor.SessionSlot))
-            .ThenBy(actor => Distance(body, actor))
+            .ThenBy(actor => BotEngagementUtils.Distance(body, actor))
             .ThenBy(actor => (actor.SessionSlot + 24 - bot.SessionSlot) % 24)
             .FirstOrDefault();
     }
@@ -350,50 +382,4 @@ public sealed class BotSimulationService(
     /// <summary>Distance at which a patrol point counts as reached, in stage units.</summary>
     private const float PatrolArrivalDistance = 600f;
 
-    /// <summary>
-    /// Where a bot walks while it holds an enemy: the point that keeps it at
-    /// <see cref="EngagementDistance"/>, or where it already stands when it is that
-    /// close already.
-    /// </summary>
-    /// <param name="body">Its body.</param>
-    /// <param name="target">The actor it holds.</param>
-    /// <returns>The point it walks to.</returns>
-    private static BotPosition Standoff(BotBodyState body, BotActorView target)
-    {
-        var deltaX = target.X - body.X;
-        var deltaZ = target.Z - body.Z;
-        var distance = MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
-        if (distance <= EngagementDistance)
-        {
-            return new BotPosition(body.X, body.Y, body.Z);
-        }
-
-        var scale = (distance - EngagementDistance) / distance;
-        return new BotPosition(
-            body.X + (deltaX * scale),
-            target.Y,
-            body.Z + (deltaZ * scale));
-    }
-
-    /// <summary>
-    /// The recorded bearing word from the shooter to its target, which is the
-    /// heading the damage record carries.
-    /// </summary>
-    /// <param name="body">The shooter's body.</param>
-    /// <param name="actor">The target.</param>
-    /// <returns>The bearing word.</returns>
-    private static ushort Bearing(BotBodyState body, BotActorView actor) =>
-        (ushort)((long)MathF.Round(
-            MathF.Atan2(actor.X - body.X, actor.Z - body.Z) / (2f * MathF.PI) * 65536f) & 0xffff);
-
-    /// <summary>Distance between a body and an actor, in stage units.</summary>
-    /// <param name="body">The bot's body.</param>
-    /// <param name="actor">The actor.</param>
-    /// <returns>The distance.</returns>
-    private static float Distance(BotBodyState body, BotActorView actor)
-    {
-        var deltaX = actor.X - body.X;
-        var deltaZ = actor.Z - body.Z;
-        return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
-    }
 }

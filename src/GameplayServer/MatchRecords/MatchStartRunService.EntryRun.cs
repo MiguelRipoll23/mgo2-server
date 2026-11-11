@@ -142,14 +142,17 @@ public sealed partial class MatchStartRunService
                     return;
                 }
 
-                // The count is over the room's clients and not its players: a bot
-                // holds a roster entry and never a briefing screen, so a room of one
-                // client and its bots is the lone-player room of
-                // `briefing-then-solo-game` — zero at t+145.098 and the round at
-                // t+146.007 — and not a room whose round waits for departures no
-                // peer sends.
-                if (!countdown.HasEnded
-                    || briefingStates.ReportedPlayerCount >= CountingJoinReportCount)
+                // <b>The count's own zero opens the round.</b> A briefing that has
+                // run its time out is over for every client in it, and the record
+                // that says so is the count's closing zero — the same one a complete
+                // ready set draws, which is what closes a briefing early when the
+                // room readies. A client that stays on its screen and never sends
+                // the report that follows the zero would otherwise hold the whole
+                // room for a minute it has already waited out, so the zero is the
+                // end here and not the leave that may or may not follow it. The
+                // dwell behind the zero is the fade the client is in; it is kept
+                // because it is the client's and not the report's.
+                if (!countdown.HasEnded)
                 {
                     await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
                     continue;

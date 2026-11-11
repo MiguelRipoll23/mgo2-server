@@ -48,10 +48,18 @@ public sealed class ScoreboardPublishService(
     ILogger<ScoreboardPublishService> logger)
 {
     /// <summary>
-    /// The remaining tickets each side has already been told about: a death that
-    /// does not move a side's count writes nothing.
+    /// The deaths each side has already been told about: a side whose count has not
+    /// moved since the last publish writes nothing.
     /// </summary>
-    private readonly Dictionary<short, int> publishedTickets = [];
+    /// <remarks>
+    /// The deaths are kept rather than the remaining count because the reference
+    /// writes one record per death and only for the side that lost the player — the
+    /// working capture's first death writes team <c>0</c>'s <c>19</c> alone and
+    /// leaves team <c>1</c>'s twenty standing, not a pair of records. A cache of the
+    /// counts wrote both sides on the round's first death, which is a record per
+    /// side the capture never sends.
+    /// </remarks>
+    private readonly Dictionary<short, int> publishedDeaths = [];
 
     /// <summary>The round the cached ticket counts belong to, which resets them.</summary>
     private int publishedRound;
@@ -109,17 +117,18 @@ public sealed class ScoreboardPublishService(
     /// Each side's remaining tickets, for the sides whose count a death has moved.
     /// </summary>
     /// <remarks>
-    /// <b>A ticket is spent on a death, and a side's allotment is the rule's own
-    /// ticket word.</b> The record is the capture's, its count the allotment less
-    /// the deaths this host has counted for that side, and it is written only when
-    /// the count changes — the reference writes one per death, never the same value
-    /// twice (see <see cref="TeamTicketBodiesUtils"/>). A rule that states no
-    /// allotment plays no ticketed round and writes nothing.
+    /// <b>A ticket is spent on a death, and a side's allotment is the room's own
+    /// pair.</b> The record is the capture's, its count the room body's count less
+    /// the deaths this host has counted for that side, and it is written only for a
+    /// side whose deaths moved — the reference writes one per death, never the same
+    /// value twice and never the side that lost nobody (see
+    /// <see cref="TeamTicketBodiesUtils"/>). A rule that states no allotment plays
+    /// no ticketed round and writes nothing.
     /// </remarks>
     /// <returns>The bodies to publish, one per side that moved.</returns>
     private async Task<IReadOnlyList<byte[]>> TicketRecordsAsync()
     {
-        if (roundState.RoundSettings is not { Tickets: { } allotment })
+        if (roundState.RoundSettings is not { Tickets: not null })
         {
             return [];
         }
@@ -130,19 +139,24 @@ public sealed class ScoreboardPublishService(
         if (roundState.RoundNumber != publishedRound)
         {
             publishedRound = roundState.RoundNumber;
-            publishedTickets.Clear();
+            publishedDeaths.Clear();
         }
 
+        // The count is the room body's own pair and not the bank's ticket word: the
+        // panel counts down from what the room states, forty, while the bank's
+        // fifty is the kill limit the round ends on. Counting from fifty wrote a
+        // count the panel was not holding, so it never moved.
+        var allotment = RoomStateReferenceBodyUtils.TicketAllotment;
         var bodies = new List<byte[]>(2);
         foreach (var team in score.TeamScores(await lobbySlots.ReadAsync()))
         {
-            var remaining = Math.Max(0, allotment - team.Deaths);
-            if (publishedTickets.TryGetValue(team.Team, out var held) && held == remaining)
+            if (publishedDeaths.TryGetValue(team.Team, out var held) && held == team.Deaths)
             {
                 continue;
             }
 
-            publishedTickets[team.Team] = remaining;
+            publishedDeaths[team.Team] = team.Deaths;
+            var remaining = Math.Max(0, allotment - team.Deaths);
             bodies.Add(TeamTicketBodiesUtils.Build(team.Team, remaining));
             logger.LogDebug(
                 "Team {Team} has {Remaining} of its round's {Allotment} ticket(s) left after {Deaths} "

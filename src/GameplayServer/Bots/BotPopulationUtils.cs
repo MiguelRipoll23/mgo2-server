@@ -50,23 +50,13 @@ public static class BotPopulationUtils
                 return 0;
             }
 
-            // The deployment's count when it states one, and every seat the
-            // players are not in when it does not. A fill of the room alone put
-            // sixteen bots in a seventeen-seat room whatever `BOT_COUNT` said, and
-            // the reference room it is measured against holds seven; a count that
-            // is set is the number the operator asked for, and the room's remaining
-            // seats are the bound rather than the target.
-            //
-            // The count is the size of the fill in players: the humans are taken
-            // out of it and the bots hold the rest, so a joining player takes a
-            // bot's seat instead of a seat beside it. A fill that kept its count
-            // whole is a room that grows with every joiner, and an eight-seat fill
-            // of eight bots plus a player is a roster the client reads as over
-            // capacity.
+            // The count is bots, and every seat the players are not in is the
+            // count when none is stated: a room with no `BOT_COUNT` fills itself,
+            // which is the default, and one that states eight holds eight bots
+            // beside its humans. The free seats are the bound either way, so a bot
+            // never stands on a seat a player holds or one the room does not have.
             var free = Math.Max(0, capacity - humanCount);
-            return configured > 0
-                ? Math.Min(Math.Max(0, configured - humanCount), free)
-                : free;
+            return configured > 0 ? Math.Min(configured, free) : free;
         }
 
         return Math.Min(configured, capacity);

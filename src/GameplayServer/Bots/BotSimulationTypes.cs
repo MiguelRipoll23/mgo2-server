@@ -38,7 +38,21 @@ public sealed record BotShot(
     float ImpactX,
     float ImpactY,
     float ImpactZ,
-    ushort Bearing);
+    ushort Bearing)
+{
+    /// <summary>
+    /// Whether this hit took the last of the victim's health, which the capture
+    /// writes as the <c>0x12</c> damage subtype rather than the ordinary
+    /// <c>0x11</c>.
+    /// </summary>
+    public bool Lethal { get; init; }
+
+    /// <summary>
+    /// The health the victim held before the hit, which is what a lethal record
+    /// carries as its damage word.
+    /// </summary>
+    public int HealthBefore { get; init; }
+}
 
 /// <summary>
 /// A death the room owes the client a kill-feed record for.

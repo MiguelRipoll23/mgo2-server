@@ -178,14 +178,15 @@ export LOG_LEVEL="${GAMEPLAY_LOG_LEVEL:-Debug}"
 export GAMEPLAY_SERVER_CHARACTER_NAME="${GAMEPLAY_SERVER_CHARACTER_NAME:-server-$gameplay_port}"
 export GAMEPLAY_SERVER_GAME_NAME="${GAMEPLAY_SERVER_GAME_NAME:-server-$gameplay_port}"
 
-# The local room is the bot room: bots on both sides, filling the slots the humans
-# leave and giving them up when one joins. The count is this run's own, and the
-# stage directory is the client's install, so navigation reads the stage the round
-# is played on out of its own GEOM. A run that points the directory elsewhere gets
-# navigation that says it has no data, rather than a route nothing measured.
+# The local room is the bot room: bots on both sides, filling every seat the humans
+# leave and giving one up when a human joins. No count is stated here, so the fill
+# is the room's own size; a run that wants a smaller fill exports `BOT_COUNT`, and
+# nothing in this script picks a number for it. The stage directory is the client's
+# install, so navigation reads the stage the round is played on out of its own GEOM.
+# A run that points the directory elsewhere gets navigation that says it has no
+# data, rather than a route nothing measured.
 export BOT_TEAM="${BOT_TEAM:-BOTH}"
 export BOT_POPULATION_MODE="${BOT_POPULATION_MODE:-FILL}"
-export BOT_COUNT="${BOT_COUNT:-8}"
 export BOT_POPULATION_INTERVAL_SECONDS="${BOT_POPULATION_INTERVAL_SECONDS:-5}"
 
 # The rotation the room plays is read from the overrides file when there is one,

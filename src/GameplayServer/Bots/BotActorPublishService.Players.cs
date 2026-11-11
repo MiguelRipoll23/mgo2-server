@@ -43,12 +43,15 @@ public sealed partial class BotActorPublishService
         long now)
     {
         short health;
+        short heldBefore;
         lock (combatGate)
         {
             if (!humanHealth.TryGetValue(shot.VictimSlot, out var held))
             {
                 held = BotBodyState.MaximumVitals;
             }
+
+            heldBefore = held;
 
             // The working host writes nothing on a slot between its zero and its
             // two hundred and fifty eight seconds later. A player at zero has
@@ -92,7 +95,9 @@ public sealed partial class BotActorPublishService
                 shot.ImpactX,
                 shot.ImpactY,
                 shot.ImpactZ,
-                shot.Bearing),
+                shot.Bearing,
+                health == 0,
+                heldBefore),
             new UdpMessage(
                 PlayerVitalsFramesUtils.IdentifierFor(generation, shot.VictimSlot),
                 3,

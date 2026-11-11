@@ -66,7 +66,7 @@ public static class BotActorRecordUtils
     /// </summary>
     /// <remarks>
     /// <b>A dead actor's position record is thirty-two bytes and opens on
-    /// <c>0x22</c></b> — see <see cref="BuildCorpseBody"/>; a living one is sixteen.
+    /// <c>0x22</c></b> — see <see cref="BotPositionBodiesUtils"/>; a living one is sixteen.
     /// </remarks>
     public const int CorpsePositionBodyLength = 32;
 
@@ -90,6 +90,22 @@ public static class BotActorRecordUtils
 
     /// <summary>Subtype the capture's ordinary hits carry.</summary>
     public const byte DamageSubtype = 0x11;
+
+    /// <summary>
+    /// Subtype of the hit that takes a victim's last health, which carries that
+    /// health as its damage word instead of the hit's own damage.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured on <c>game-with-bots-workingserver.pcapng</c>.</b> Nine hits
+    /// there open <c>0x12</c> where 341 open <c>0x11</c>, and each sits on a death
+    /// the feed names for the same victim within a fifth of a second — t+40.83 on
+    /// slot 6, t+45.59 on slot 7, t+89.01 on slot 6, t+310.81 on slot 8 — with a
+    /// damage word of <c>7d 08</c>, <c>07 7d</c> or <c>8d 07</c>: the victim's whole
+    /// remaining health (250.1, 250.0, 125.1) rather than a hit's 50. A host that
+    /// writes a death as an ordinary 50-point hit leaves the client told that the
+    /// actor took a hit but never that it died.
+    /// </remarks>
+    public const byte FatalDamageSubtype = 0x12;
 
     /// <summary>
     /// The state record's identifier for a session slot.
@@ -169,7 +185,7 @@ public static class BotActorRecordUtils
         ArgumentNullException.ThrowIfNull(body);
 
         var state = StateIdentifierOf(generation, sessionSlot);
-        var position = BuildPositionBody(body);
+        var position = BotPositionBodiesUtils.Build(body);
         var records = new List<UdpMessage>
         {
             new(state, 4, StateAttributeClass, BuildStateBody(body, firing, fireBeat)),
@@ -219,6 +235,12 @@ public static class BotActorRecordUtils
     /// <param name="impactY">Impact height, in stage units.</param>
     /// <param name="impactZ">Impact <c>z</c>, in stage units.</param>
     /// <param name="bearing">Bearing the shot came from, as the recorded word.</param>
+    /// <param name="lethal">
+    /// Whether the hit took the victim's last health, which writes
+    /// <see cref="FatalDamageSubtype"/> and <paramref name="healthBefore"/> as the
+    /// damage word.
+    /// </param>
+    /// <param name="healthBefore">Health the victim held before the hit.</param>
     /// <returns>The fifteen-byte damage record.</returns>
     public static UdpMessage BuildShot(
         byte victimSlot,
@@ -228,13 +250,16 @@ public static class BotActorRecordUtils
         float impactX,
         float impactY,
         float impactZ,
-        ushort bearing)
+        ushort bearing,
+        bool lethal = false,
+        int healthBefore = 0)
     {
         ArgumentNullException.ThrowIfNull(generation);
 
         var body = new byte[DamageBodyLength];
-        body[0] = DamageSubtype;
-        WriteUInt16(body, 2, (ushort)Math.Clamp(damage * DamageScale, 0, ushort.MaxValue));
+        body[0] = lethal ? FatalDamageSubtype : DamageSubtype;
+        var points = lethal ? healthBefore : damage;
+        WriteUInt16(body, 2, (ushort)Math.Clamp(points * DamageScale, 0, ushort.MaxValue));
         body[4] = weapon;
         WriteInt16(body, 5, ToTenths(impactX));
         WriteInt16(body, 7, ToTenths(impactY));
@@ -283,77 +308,11 @@ public static class BotActorRecordUtils
         return state;
     }
 
-    /// <summary>
-    /// The position body: the walking or standing head, then <c>x</c>, height and
-    /// <c>z</c> at a tenth of a unit, then the heading.
-    /// </summary>
-    /// <remarks>
-    /// The heads are the capture's: <c>21 00 00 00</c> on a bot standing at its
-    /// spawn, <c>41 81 00 00</c> on one walking. The three coordinates are the
-    /// stage's at a tenth, which is how the recorded host writes a bot from
-    /// <c>-23750</c> as <c>-2375</c>.
-    /// </remarks>
-    /// <param name="body">The bot's body.</param>
-    /// <returns>The sixteen-byte body.</returns>
-    private static byte[] BuildPositionBody(BotBodyState body)
-    {
-        if (body.IsDead)
-        {
-            return BuildCorpseBody(body);
-        }
-
-        // The head is the pose, and the capture's are four: 0x21 standing, 0x41
-        // walking, 0xC1 the hit reaction, and 0x22 the corpse. An actor holding an
-        // enemy writes the walking head whether or not it moves that beat — the
-        // working host's engaged bots are 0x41 0x81 on 60% to 75% of their beats —
-        // and the 0x81 second byte is what tells the client the actor is armed and
-        // acting rather than standing at ease.
-        var acting = body.Moving || body.TargetSlot != BotBodyState.NoTarget;
-        var position = new byte[PositionBodyLength];
-        position[0] = (byte)(body.HitReacting ? 0xc1 : acting ? 0x41 : 0x21);
-        position[1] = (byte)(body.HitReacting || acting ? 0x81 : 0x00);
-        WriteInt16(position, 6, ToTenths(body.X));
-        WriteInt16(position, 8, ToTenths(body.Y));
-        WriteInt16(position, 10, ToTenths(body.Z));
-        WriteInt16(position, 12, (short)body.Yaw);
-        return position;
-    }
-
-    /// <summary>
-    /// The corpse's position body, byte for byte as the capture writes it.
-    /// </summary>
-    /// <remarks>
-    /// <b>The floats are <c>z</c>, height and <c>x</c> — not <c>x</c>, <c>y</c>,
-    /// <c>z</c>.</b> The capture's death of slot 7 writes <c>22 1a 00 0b 01 00 00 00</c>,
-    /// then <c>22161</c>, <c>3265</c>, <c>-8946</c> for a body at <c>x -8950, y 3260,
-    /// z 22160</c>, the heading, and the living body's four words again.
-    /// </remarks>
-    /// <param name="body">The dead body.</param>
-    /// <returns>The thirty-two-byte body.</returns>
-    private static byte[] BuildCorpseBody(BotBodyState body)
-    {
-        var corpse = new byte[CorpsePositionBodyLength];
-        corpse[0] = 0x22;
-        corpse[1] = 0x1a;
-        corpse[2] = 0x00;
-        corpse[3] = 0x0b;
-        WriteUInt16(corpse, 4, (ushort)((body.Deaths * 2) - 1));
-        WriteFloat(corpse, 8, body.Z);
-        WriteFloat(corpse, 12, body.Y);
-        WriteFloat(corpse, 16, body.X);
-        WriteInt16(corpse, 20, (short)body.Yaw);
-        WriteInt16(corpse, 22, ToTenths(body.X));
-        WriteInt16(corpse, 24, ToTenths(body.Y));
-        WriteInt16(corpse, 26, ToTenths(body.Z));
-        WriteInt16(corpse, 28, (short)body.Yaw);
-        return corpse;
-    }
-
     /// <summary>Writes one float little-endian.</summary>
     /// <param name="body">Body to write into.</param>
     /// <param name="offset">Offset of its first byte.</param>
     /// <param name="value">Value to write.</param>
-    private static void WriteFloat(byte[] body, int offset, float value) =>
+    internal static void WriteFloat(byte[] body, int offset, float value) =>
         BinaryPrimitives.WriteSingleLittleEndian(body.AsSpan(offset, 4), value);
 
     /// <summary>
@@ -374,21 +333,21 @@ public static class BotActorRecordUtils
     /// <summary>Rounds a stage coordinate to the wire's tenth of a unit.</summary>
     /// <param name="value">Coordinate in stage units.</param>
     /// <returns>The coordinate at a tenth of a unit, saturated to the wire's word.</returns>
-    private static short ToTenths(float value) =>
+    internal static short ToTenths(float value) =>
         (short)Math.Clamp(MathF.Round(value / 10f), short.MinValue, short.MaxValue);
 
     /// <summary>Writes one signed sixteen-bit value little-endian.</summary>
     /// <param name="body">Body to write into.</param>
     /// <param name="offset">Offset of the low byte.</param>
     /// <param name="value">Value to write.</param>
-    private static void WriteInt16(byte[] body, int offset, short value) =>
+    internal static void WriteInt16(byte[] body, int offset, short value) =>
         WriteUInt16(body, offset, (ushort)value);
 
     /// <summary>Writes one unsigned sixteen-bit value little-endian.</summary>
     /// <param name="body">Body to write into.</param>
     /// <param name="offset">Offset of the low byte.</param>
     /// <param name="value">Value to write.</param>
-    private static void WriteUInt16(byte[] body, int offset, ushort value)
+    internal static void WriteUInt16(byte[] body, int offset, ushort value)
     {
         body[offset] = (byte)(value & 0xff);
         body[offset + 1] = (byte)((value >> 8) & 0xff);

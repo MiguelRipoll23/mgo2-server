@@ -21,16 +21,24 @@ namespace Mgo2Server.GameplayServer.Bots;
 public sealed partial class BotActorPublishService
 {
     /// <summary>
-    /// Writes the deaths waiting in the simulation as kill-feed records, credits
-    /// them, and publishes the scoreboard the credit changed.
+    /// Whether a kill drained this frame owes the scoreboard a record.
     /// </summary>
-    /// <param name="context">Context the records are written through.</param>
+    /// <remarks>
+    /// The feed leaves with the frame and the scoreboard follows it, which is the
+    /// order the capture writes: the <c>09 &lt;killer&gt; &lt;victim&gt;</c> record
+    /// arrives first and the side's ticket and the two deltas answer it. Publishing
+    /// inside this method put every delta on the wire a frame ahead of the feed the
+    /// death was announced by.
+    /// </remarks>
+    private bool scoreboardDue;
+
+    /// <summary>
+    /// Writes the deaths waiting in the simulation as kill-feed records and credits
+    /// them; the scoreboard the credit changed is published behind the frame.
+    /// </summary>
     /// <param name="generation">Identifier set of the round being played.</param>
     /// <param name="records">The beat's records, which the feeds are appended to.</param>
-    private async Task DrainKillsAsync(
-        PeerContext context,
-        MatchRecordGenerationUtils generation,
-        List<UdpMessage> records)
+    private void DrainKills(MatchRecordGenerationUtils generation, List<UdpMessage> records)
     {
         var kills = simulation.DrainKills();
         if (kills.Count == 0)
@@ -40,12 +48,16 @@ public sealed partial class BotActorPublishService
 
         foreach (var kill in kills)
         {
-            // A bot's death is this host's to count: it has no client to report its
-            // health reaching zero, where a player's has one and
-            // PlayerVitalsHandler counts the death there. Counting both would make
-            // one death read as two on the scoreboard, so the kill is credited
-            // either way and the death only for the bot.
-            score.NoteKill(kill.KillerSlot, kill.VictimSlot, countDeath: IsBotSlot(kill.VictimSlot));
+            // The death is counted here for every victim, a player as well as a bot.
+            // A player's own vitals report cannot be the count: the host has already
+            // put that player at zero when its hit landed, so the client's report of
+            // zero reads as "still dead" rather than as a death
+            // (PlayerVitalsHandler). Measured on the run of 2026-11-11 13:01 —
+            // `Player in slot 4 killed the player in slot 8; 1 kill(s), 0 death(s)`,
+            // with no victim delta and no ticket for that side, where the working
+            // capture answers a player's death with both. A death a client reports
+            // on its own, with no feed behind it, is still counted at that report.
+            score.NoteKill(kill.KillerSlot, kill.VictimSlot);
 
             // Three bytes under the operations stream, `09 <killer> <victim>`,
             // numbered on that stream. The item-box identifier an earlier writer
@@ -58,6 +70,6 @@ public sealed partial class BotActorPublishService
                 MatchKillFeedBodiesUtils.Build(kill.KillerSlot, kill.VictimSlot)));
         }
 
-        await scoreboard.PublishAsync(context);
+        scoreboardDue = true;
     }
 }

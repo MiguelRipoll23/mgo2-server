@@ -214,6 +214,19 @@ public sealed partial class BriefingStateService(RoomRosterService roster, ILogg
     /// <summary>Players in the room, counted over the roster that owns who is in it.</summary>
     public int PlayerCount => roster.JoinerCount;
 
+    /// <summary>
+    /// Clients in the room, this host's bots not counted: the players a briefing's
+    /// count waits for reports from.
+    /// </summary>
+    /// <remarks>
+    /// <b>A bot holds a roster entry and never sends a join report.</b> A room of
+    /// one client and its bots is several players and one report, and a count that
+    /// waited for two reports there never moved: the local run of 2026-11-11 13:30
+    /// armed its count with thirteen bots seated and the briefing never reached its
+    /// zero.
+    /// </remarks>
+    public int ClientCount => roster.HumanJoinerCount;
+
     /// <summary>Players in the room that have not reported a map yet.</summary>
     public int PendingJoinCount => Math.Max(0, roster.JoinerCount - JoinedCount);
 
