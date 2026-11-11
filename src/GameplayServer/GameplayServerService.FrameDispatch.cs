@@ -368,12 +368,11 @@ public sealed partial class GameplayServerService
                     // every killing headshot was drawn as a body death.
                     botActors.NoteDamageEcho(message.Type, message.Body);
 
-                    // A shooter the roster cannot name credits nobody: a zero is the
-                    // host's own entry on the client's player table.
                     botSimulation.NoteIncomingDamage(
                         message.Type,
                         (ushort)(message.Body[2] | (message.Body[3] << 8)),
-                        roster.Find(session.RemoteAddress)?.SessionSlot);
+                        roster.Find(session.RemoteAddress)?.SessionSlot,
+                        message.Body[0] == Bots.BotActorRecordUtils.HeadshotDamageSubtype);
                 }
 
                 if (session.Established)

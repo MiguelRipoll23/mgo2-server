@@ -92,20 +92,20 @@ public static class BotActorRecordUtils
     public const byte DamageSubtype = 0x11;
 
     /// <summary>
-    /// Subtype of the hit that takes a victim's last health, which carries that
-    /// health as its damage word instead of the hit's own damage.
+    /// Subtype of a headshot: the blow that ends its victim at once, whose damage word
+    /// is the victim's whole remaining bar rather than the hit's own damage.
     /// </summary>
     /// <remarks>
-    /// <b>Measured on <c>game-with-bots-workingserver.pcapng</c>.</b> Nine hits
-    /// there open <c>0x12</c> where 341 open <c>0x11</c>, and each sits on a death
-    /// the feed names for the same victim within a fifth of a second — t+40.83 on
-    /// slot 6, t+45.59 on slot 7, t+89.01 on slot 6, t+310.81 on slot 8 — with a
-    /// damage word of <c>7d 08</c>, <c>07 7d</c> or <c>8d 07</c>: the victim's whole
-    /// remaining health (250.1, 250.0, 125.1) rather than a hit's 50. A host that
-    /// writes a death as an ordinary 50-point hit leaves the client told that the
-    /// actor took a hit but never that it died.
+    /// <b>Measured on <c>working-server-v2.pcapng</c>.</b> Every kill the feed credits a
+    /// headshot for ends on a <c>0x12</c> record — twelve of twelve, at damage words of
+    /// 209 to 250 — and none of the thirty-two kills that were not headshots does: they
+    /// end on an ordinary <c>0x11</c> of about 56 points that ran the health out, with
+    /// the victim's vitals reaching zero beside it. An earlier reading took <c>0x12</c> for
+    /// "the killing blow" from nine records that all happened to be headshots, and wrote
+    /// every death as one, so every bot kill by this host was announced as a headshot
+    /// death. A client's own record is the same: its kill by headshot is <c>12 01 10 7d</c>.
     /// </remarks>
-    public const byte FatalDamageSubtype = 0x12;
+    public const byte HeadshotDamageSubtype = 0x12;
 
     /// <summary>
     /// The state record's identifier for a session slot.
@@ -235,10 +235,10 @@ public static class BotActorRecordUtils
     /// <param name="impactY">Impact height, in stage units.</param>
     /// <param name="impactZ">Impact <c>z</c>, in stage units.</param>
     /// <param name="bearing">Bearing the shot came from, as the recorded word.</param>
-    /// <param name="lethal">
-    /// Whether the hit took the victim's last health, which writes
-    /// <see cref="FatalDamageSubtype"/> and a blow the size of a whole health bar
-    /// as the damage word.
+    /// <param name="headshot">
+    /// Whether the hit is a headshot, which writes <see cref="HeadshotDamageSubtype"/>
+    /// and a blow the size of a whole health bar as the damage word. A hit that only
+    /// runs the last health out is an ordinary one.
     /// </param>
     /// <returns>The fifteen-byte damage record.</returns>
     public static UdpMessage BuildShot(
@@ -250,12 +250,12 @@ public static class BotActorRecordUtils
         float impactY,
         float impactZ,
         ushort bearing,
-        bool lethal = false)
+        bool headshot = false)
     {
         ArgumentNullException.ThrowIfNull(generation);
 
         var body = new byte[DamageBodyLength];
-        body[0] = lethal ? FatalDamageSubtype : DamageSubtype;
+        body[0] = headshot ? HeadshotDamageSubtype : DamageSubtype;
 
         // The killing blow states a whole health bar and not what was left of it:
         // the working host writes `7d 02` (250.02) on a victim whose own vitals
@@ -264,7 +264,7 @@ public static class BotActorRecordUtils
         // word of the host's tracked remainder leaves the client alive and then
         // contradicts it with the zero the vitals record carries — the state its
         // kill log crashes on.
-        var points = lethal ? BotBodyState.MaximumVitals : damage;
+        var points = headshot ? BotBodyState.MaximumVitals : damage;
         WriteUInt16(body, 2, (ushort)Math.Clamp(points * DamageScale, 0, ushort.MaxValue));
         body[4] = weapon;
         WriteInt16(body, 5, ToTenths(impactX));
