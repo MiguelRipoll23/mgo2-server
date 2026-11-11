@@ -210,27 +210,6 @@ public sealed partial class BotPopulationService : PeriodicWorker
     }
 
     /// <summary>
-    /// Names a join's run spends after the population it names: the close, and the
-    /// room's count — the two records that follow the last player.
-    /// </summary>
-    /// <remarks>
-    /// <b>A roster that names every seat the room holds is a room the client refuses
-    /// to enter.</b> The join's run names the population and then the close and the
-    /// room's count, so a population that reaches the room's size writes that count
-    /// into the room's capacity. The capture of 2026-11-10 20:38 did it at eight
-    /// seats, with seven bots and the player already named, and its client would not
-    /// place itself; the deployed room of 2026-11-11 13:07 did it at seventeen —
-    /// fourteen bots, the join answered with fifteen members and a count of
-    /// seventeen, the room's own size — and the client answered "game is full".
-    /// So the fill stops two names short of the room at every pass, and not only at
-    /// a join: trimming for the answer alone holds for a tick, and the next
-    /// population pass grows the room back to its own size under the client that has
-    /// just been let in (local run of 2026-11-11 13:28: fifteen bots in a room of
-    /// seventeen, the client acknowledged the roster and never readied).
-    /// </remarks>
-    private const int JoinAnswerTrailingNames = 2;
-
-    /// <summary>
     /// The bots the room may hold right now: the mode's count, less a seat for every
     /// player of the room and for each player still on its way in.
     /// </summary>
@@ -239,10 +218,9 @@ public sealed partial class BotPopulationService : PeriodicWorker
     /// answers a joining profile seats the fill before that player is filed, so the
     /// player is counted here as <paramref name="incomingPlayers"/> and the bots take
     /// the seats below it — the order the working host's run names them in, its bots
-    /// at 1–7 and the player at 8. No seat is reserved at rest; only a join answers
-    /// with a run, so only a join leaves room for what follows the population and for
-    /// one seat short of the room's size, which is what the client reads as a room it
-    /// can enter.
+    /// at 1–7 and the player at 8. The host's seat is out of <see cref="Capacity"/> and
+    /// the players' out of the count, and nothing else is held back: a room filled to
+    /// its whole table is a room the client calls full.
     /// </remarks>
     /// <param name="mode">How a bot holds its slot.</param>
     /// <param name="members">The room's members.</param>
@@ -255,12 +233,13 @@ public sealed partial class BotPopulationService : PeriodicWorker
     {
         var humans = members.Count(member => !member.IsBot) + incomingPlayers;
 
-        // The two names the run closes with are held on every pass and not only on
-        // the pass that answers a join: the population reconciles again seconds
-        // later, and a room grown back to its own size is one the joining client has
-        // already been told is full. The joiner's own seat is taken out of the count
-        // by `humans`, so this is the whole of the reservation.
-        var seats = Math.Max(0, Capacity - JoinAnswerTrailingNames);
+        // The host's seat is out of `Capacity` and every joiner's is out of `humans`,
+        // so the fill is the room's advertised size less the host and less the players
+        // in it: fourteen bots beside one player in a room advertised at sixteen, which
+        // is the population the client admitted on 2026-11-11 13:52. A fill one bot
+        // larger put sixteen joiners in a room of seventeen and the client called it
+        // full and went quiet (13:43).
+        var seats = Capacity;
         return Math.Max(
             0,
             BotPopulationUtils.TargetCount(mode, botOptions.Count, humans, seats));

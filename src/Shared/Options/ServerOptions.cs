@@ -146,11 +146,20 @@ public sealed class ServerOptions
     public string GameplayServerRuleTimers { get; set; } = DefaultRuleTimers;
 
     /// <summary>
-    /// Players the gameplay server's room admits. It is the figure the room row and
-    /// the host's settings row both state, and the one a browsing client draws as
-    /// the room's capacity; the recorded room played seventeen.
+    /// Slots the gameplay server's room admits, the host's own seat among them. It is
+    /// the figure the room row and the host's settings row both state, and the one a
+    /// browsing client draws as the room's capacity.
     /// </summary>
-    public int GameplayServerMaxPlayers { get; set; } = 17;
+    /// <remarks>
+    /// <b>The host holds a slot it never plays.</b> A dedicated host is a seat the
+    /// room's table spends and the client never draws — a room of sixteen shows the
+    /// player fifteen slots — so the figure stated here is the room's whole table and
+    /// not its roster: the bots fill it less the host's seat and less the players in
+    /// it (`GameplayServer.Bots.BotPopulationService.Capacity`). Sixteen is the table
+    /// the local room was measured at on 2026-11-11 13:52, with fourteen bots beside
+    /// the player.
+    /// </remarks>
+    public int GameplayServerMaxPlayers { get; set; } = 16;
 
     /// <summary>
     /// Level-limit base the host's settings row states: the level the room's limit
