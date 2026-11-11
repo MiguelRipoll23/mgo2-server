@@ -24,6 +24,14 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// no capture says what they state.
 /// </para>
 /// <para>
+/// <b>The round itself is not stated here.</b> The reference writes it as a
+/// <c>0x1001</c> record whose body is <c>81 &lt;n&gt;</c>, one byte counting the rounds
+/// played since the process started, a second or two before every round's opening
+/// run: <c>game-with-bots-workingserver</c> writes <c>81 00</c>, <c>81 01</c> and
+/// <c>81 02</c> for its briefing, round 1, round 2, briefing, round 1 flow — it does
+/// not reset at a briefing, which is what a rotation index would do.
+/// </para>
+/// <para>
 /// <b>The flow those captures show.</b> A room is in <see cref="Briefing"/> while
 /// its briefing runs. As the briefing ends the host writes <see cref="Unknown0"/>
 /// and then <see cref="Unknown1"/>; the round opens as <see cref="RoundStart"/>,
