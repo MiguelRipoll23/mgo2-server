@@ -360,15 +360,20 @@ public sealed partial class GameplayServerService
                 if (message.Flags == Bots.BotActorRecordUtils.DamageAttributeClass &&
                     message.Body.Length >= 4)
                 {
+                    // The echo carries the hit's subtype, and so the death drawn. It is
+                    // taken before the hit is applied: the echo drops a hit on an actor
+                    // that is already down, and the blow that kills is the one that
+                    // carries the headshot's impact point. Applied first, it zeroed the
+                    // bot and its own echo was then dropped as a hit on a corpse, so
+                    // every killing headshot was drawn as a body death.
+                    botActors.NoteDamageEcho(message.Type, message.Body);
+
                     // A shooter the roster cannot name credits nobody: a zero is the
                     // host's own entry on the client's player table.
                     botSimulation.NoteIncomingDamage(
                         message.Type,
                         (ushort)(message.Body[2] | (message.Body[3] << 8)),
                         roster.Find(session.RemoteAddress)?.SessionSlot);
-
-                    // The echo carries the hit's subtype, and so the death drawn.
-                    botActors.NoteDamageEcho(message.Type, message.Body);
                 }
 
                 if (session.Established)
