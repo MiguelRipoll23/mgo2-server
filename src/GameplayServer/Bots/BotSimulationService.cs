@@ -165,9 +165,8 @@ public sealed class BotSimulationService(
 
                 // The health is read before the hit lands because the blow that
                 // takes the last of it is written as the capture's 0x12 record
-                // carrying that health, not as an ordinary hit's 50 points
+                // carrying a whole health bar's blow, not an ordinary hit's 50 points
                 // (BotActorRecordUtils.FatalDamageSubtype).
-                var healthBefore = HealthOf(target.SessionSlot);
                 var lethal = target.IsBot
                     && ApplyDamage(target.SessionSlot, ShotDamage, bot.SessionSlot, now);
 
@@ -181,7 +180,6 @@ public sealed class BotSimulationService(
                     BotEngagementUtils.Bearing(body, target))
                 {
                     Lethal = lethal,
-                    HealthBefore = healthBefore,
                 };
             }
         }
@@ -309,12 +307,6 @@ public sealed class BotSimulationService(
             RespawnMilliseconds);
         return true;
     }
-
-    /// <summary>Health the bot holding a slot has left, in points.</summary>
-    /// <param name="slot">Slot to read.</param>
-    /// <returns>The health, or zero for a slot no body holds.</returns>
-    private int HealthOf(byte slot) =>
-        Bodies().FirstOrDefault(body => body.SessionSlot == slot)?.Health ?? 0;
 
     /// <summary>Every body the simulation holds.</summary>
     /// <returns>The bodies, which is how a hit by slot is placed on a bot.</returns>

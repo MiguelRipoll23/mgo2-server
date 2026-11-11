@@ -47,11 +47,6 @@ public sealed record BotShot(
     /// </summary>
     public bool Lethal { get; init; }
 
-    /// <summary>
-    /// The health the victim held before the hit, which is what a lethal record
-    /// carries as its damage word.
-    /// </summary>
-    public int HealthBefore { get; init; }
 }
 
 /// <summary>

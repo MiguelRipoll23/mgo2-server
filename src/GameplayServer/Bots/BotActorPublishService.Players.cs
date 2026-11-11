@@ -43,15 +43,12 @@ public sealed partial class BotActorPublishService
         long now)
     {
         short health;
-        short heldBefore;
         lock (combatGate)
         {
             if (!humanHealth.TryGetValue(shot.VictimSlot, out var held))
             {
                 held = BotBodyState.MaximumVitals;
             }
-
-            heldBefore = held;
 
             // The working host writes nothing on a slot between its zero and its
             // two hundred and fifty eight seconds later. A player at zero has
@@ -85,6 +82,13 @@ public sealed partial class BotActorPublishService
             }
         }
 
+        var vitalsRecord = new UdpMessage(
+            PlayerVitalsFramesUtils.IdentifierFor(generation, shot.VictimSlot),
+            3,
+            BotActorRecordUtils.VitalsAttributeClass,
+            [(byte)health, (byte)BotBodyState.MaximumVitals]);
+        QueueVitalsRepeats(vitalsRecord, now);
+
         return
         [
             BotActorRecordUtils.BuildShot(
@@ -96,14 +100,64 @@ public sealed partial class BotActorPublishService
                 shot.ImpactY,
                 shot.ImpactZ,
                 shot.Bearing,
-                health == 0,
-                heldBefore),
-            new UdpMessage(
-                PlayerVitalsFramesUtils.IdentifierFor(generation, shot.VictimSlot),
-                3,
-                BotActorRecordUtils.VitalsAttributeClass,
-                [(byte)health, (byte)BotBodyState.MaximumVitals]),
+                health == 0),
+            vitalsRecord,
         ];
+    }
+
+    /// <summary>
+    /// How many times one change of a player's health is written: four, which is
+    /// what the working host writes for its own player.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured on <c>game-with-bots-workingserver.pcapng</c>.</b> Slot 8's
+    /// vitals record falls to <c>68</c> (104) at t+310.608 and is written again at
+    /// 310.628, 310.645 and 310.660; the fatal blow at 310.810 zeroes it and the
+    /// zero is written at 310.810, 310.827, 310.844 and 310.862. A single record is
+    /// what this host wrote, and a client whose bar is driven by the record it
+    /// reads is given one beat of a change it was never told again.
+    /// </remarks>
+    private const int VitalsRepeatCount = 4;
+
+    /// <summary>Interval between two copies of that record, in milliseconds.</summary>
+    private const int VitalsRepeatIntervalMilliseconds = 17;
+
+    /// <summary>Copies of a player's vitals record still to be written, and when.</summary>
+    private readonly List<(long Due, UdpMessage Record)> pendingVitals = [];
+
+    /// <summary>
+    /// Queues the three copies that follow the one a hit writes on its own beat.
+    /// </summary>
+    /// <param name="record">The vitals record the hit carries.</param>
+    /// <param name="now">Monotonic milliseconds.</param>
+    private void QueueVitalsRepeats(UdpMessage record, long now)
+    {
+        for (var copy = 1; copy < VitalsRepeatCount; copy++)
+        {
+            pendingVitals.Add((now + copy * VitalsRepeatIntervalMilliseconds, record));
+        }
+    }
+
+    /// <summary>The copies of a vitals record whose beat has come.</summary>
+    /// <param name="now">Monotonic milliseconds.</param>
+    /// <returns>The records to write in this beat, oldest first.</returns>
+    private IReadOnlyList<UdpMessage> DrainVitalsRepeats(long now)
+    {
+        if (pendingVitals.Count == 0)
+        {
+            return [];
+        }
+
+        var due = pendingVitals
+            .Where(entry => entry.Due <= now)
+            .Select(entry => entry.Record)
+            .ToList();
+        if (due.Count > 0)
+        {
+            pendingVitals.RemoveAll(entry => entry.Due <= now);
+        }
+
+        return due;
     }
 
     /// <summary>

@@ -50,6 +50,7 @@ public sealed partial class BotActorPublishService
         // A death still waiting for its feed belongs to the round that emptied, and
         // announcing it into the next one would credit a kill nobody made.
         pendingFeeds.Clear();
+        pendingVitals.Clear();
         lock (combatGate)
         {
             humanSides.Clear();
@@ -119,8 +120,7 @@ public sealed partial class BotActorPublishService
                         shot.ImpactY,
                         shot.ImpactZ,
                         shot.Bearing,
-                        shot.Lethal,
-                        shot.HealthBefore));
+                        shot.Lethal));
                 }
                 else
                 {
@@ -158,6 +158,10 @@ public sealed partial class BotActorPublishService
         }
 
         records.AddRange(PlayerRespawns(generation, now));
+
+        // The copies that follow a player's changed health, which the working host
+        // writes four of for one change (BotActorPublishService.Players.cs).
+        records.AddRange(DrainVitalsRepeats(now));
         return records;
     }
 

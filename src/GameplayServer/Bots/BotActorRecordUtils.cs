@@ -237,10 +237,9 @@ public static class BotActorRecordUtils
     /// <param name="bearing">Bearing the shot came from, as the recorded word.</param>
     /// <param name="lethal">
     /// Whether the hit took the victim's last health, which writes
-    /// <see cref="FatalDamageSubtype"/> and <paramref name="healthBefore"/> as the
-    /// damage word.
+    /// <see cref="FatalDamageSubtype"/> and a blow the size of a whole health bar
+    /// as the damage word.
     /// </param>
-    /// <param name="healthBefore">Health the victim held before the hit.</param>
     /// <returns>The fifteen-byte damage record.</returns>
     public static UdpMessage BuildShot(
         byte victimSlot,
@@ -251,14 +250,21 @@ public static class BotActorRecordUtils
         float impactY,
         float impactZ,
         ushort bearing,
-        bool lethal = false,
-        int healthBefore = 0)
+        bool lethal = false)
     {
         ArgumentNullException.ThrowIfNull(generation);
 
         var body = new byte[DamageBodyLength];
         body[0] = lethal ? FatalDamageSubtype : DamageSubtype;
-        var points = lethal ? healthBefore : damage;
+
+        // The killing blow states a whole health bar and not what was left of it:
+        // the working host writes `7d 02` (250.02) on a victim whose own vitals
+        // record read `68` (104) one beat earlier (t+310.81), so a client that
+        // applies the word to its own bar reaches zero whatever that bar held. A
+        // word of the host's tracked remainder leaves the client alive and then
+        // contradicts it with the zero the vitals record carries — the state its
+        // kill log crashes on.
+        var points = lethal ? BotBodyState.MaximumVitals : damage;
         WriteUInt16(body, 2, (ushort)Math.Clamp(points * DamageScale, 0, ushort.MaxValue));
         body[4] = weapon;
         WriteInt16(body, 5, ToTenths(impactX));
