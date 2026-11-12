@@ -80,6 +80,19 @@ public sealed partial class MatchScoreService
                 return true;
             }
 
+            // Slot zero is this host's own seat — the dedicated host's character,
+            // `server-99999` — and no player or bot of the round holds it. A kill
+            // credited there is drawn on a row the room does not have, which is where
+            // every bot's kill ended up: the death is counted and the kill is not.
+            if (killerSlot == 0)
+            {
+                logger.LogDebug(
+                    "A kill named slot zero, which holds no player of the round; the death in slot {VictimSlot} "
+                    + "is counted and the kill is not",
+                    victimSlot);
+                return true;
+            }
+
             var killer = RowOf(killerSlot);
             killer.Kills++;
             killer.KillsKnown = true;

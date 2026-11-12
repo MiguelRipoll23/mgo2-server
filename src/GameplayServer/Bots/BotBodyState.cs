@@ -133,6 +133,14 @@ public sealed class BotBodyState
     /// <summary>When it stands up again after a death, in monotonic milliseconds.</summary>
     public long RespawnMilliseconds { get; set; }
 
+    /// <summary>
+    /// When a stun wears off, in monotonic milliseconds; zero when it is not
+    /// stunned. A stunned bot keeps its health — the record that knocks it out
+    /// spends the stun bar and not a point of health — and holds no target and no
+    /// trigger until this has passed.
+    /// </summary>
+    public long StunnedUntilMilliseconds { get; set; }
+
     /// <summary>Last time the body was advanced, in monotonic milliseconds.</summary>
     public long LastAdvanceMilliseconds { get; set; }
 

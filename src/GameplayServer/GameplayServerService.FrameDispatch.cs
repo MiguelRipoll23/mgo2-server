@@ -356,9 +356,14 @@ public sealed partial class GameplayServerService
                 // in return, and a peer that has not finished its handshake is
                 // not a recipient yet.
 
-                // A client's hit on a bot is a damage record naming that bot's slot.
+                // A client's hit is a class-0x00 damage record: the identifier names
+                // the victim's slot and the subtype says what the blow is — a body
+                // hit, a headshot, a stun, a knife, or a grenade's blast
+                // (`Bots.BotHitUtils`). The rest of that class is the operations and
+                // objective streams, whose first byte is a count and not a subtype, so
+                // the record is decoded here and a rule body is never read as damage.
                 if (message.Flags == Bots.BotActorRecordUtils.DamageAttributeClass &&
-                    message.Body.Length >= 4)
+                    Bots.BotHitUtils.Decode(message.Type, message.Body) is { } hit)
                 {
                     // The echo carries the hit's subtype, and so the death drawn. It is
                     // taken before the hit is applied: the echo drops a hit on an actor
@@ -368,11 +373,16 @@ public sealed partial class GameplayServerService
                     // every killing headshot was drawn as a body death.
                     botActors.NoteDamageEcho(message.Type, message.Body);
 
-                    botSimulation.NoteIncomingDamage(
-                        message.Type,
-                        (ushort)(message.Body[2] | (message.Body[3] << 8)),
-                        roster.Find(session.RemoteAddress)?.SessionSlot,
-                        message.Body[0] == Bots.BotActorRecordUtils.HeadshotDamageSubtype);
+                    // The two halves of the hit. A bot's body is the simulation's,
+                    // and a player's health is the actor writer's — which is the half
+                    // that was missing: a player damaging a teammate, or putting
+                    // itself down with a grenade, had its bar moved by nobody and its
+                    // death counted by nothing.
+                    var shooter = roster.Find(session.RemoteAddress)?.SessionSlot;
+                    if (!botSimulation.NoteIncomingDamage(hit, shooter))
+                    {
+                        botActors.NoteClientHit(hit, shooter);
+                    }
                 }
 
                 if (session.Established)

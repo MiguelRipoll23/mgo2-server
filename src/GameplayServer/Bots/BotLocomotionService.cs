@@ -107,6 +107,7 @@ public sealed class BotLocomotionService(
         body.ShotThisBeat = false;
         body.HitReacting = false;
         body.HitReactUntilMilliseconds = 0;
+        body.StunnedUntilMilliseconds = 0;
         body.PatrolIndex = 0;
     }
 

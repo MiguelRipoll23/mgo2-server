@@ -25,7 +25,10 @@ public static class BotDeathUtils
         ArgumentNullException.ThrowIfNull(body);
         ArgumentNullException.ThrowIfNull(bodies);
 
-        body.KillerSlot = killerSlot;
+        // A death with nobody to credit names nobody on its last beat. Slot zero is
+        // this host's own seat, and a corpse that turns on it is a body the room
+        // reads as shot by the dedicated host's character rather than by no one.
+        body.KillerSlot = killerSlot == 0 ? BotBodyState.NoTarget : killerSlot;
         body.DiedThisBeat = true;
 
         if (bodies.FirstOrDefault(other => other.SessionSlot == killerSlot) is not { } killer)

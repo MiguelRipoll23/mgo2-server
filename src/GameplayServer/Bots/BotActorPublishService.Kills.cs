@@ -92,6 +92,16 @@ public sealed partial class BotActorPublishService
             // on its own, with no feed behind it, is still counted at that report.
             score.NoteKill(kill.Killer, kill.Victim, headshot: kill.Headshot);
 
+            // A death with nobody to credit is counted and not announced. A feed
+            // whose killer is slot zero is drawn on the dedicated host's own
+            // character — `server-99999` — which is where every kill this host could
+            // not name went; the reference's feed never names a slot the round does
+            // not hold.
+            if (kill.Killer == 0)
+            {
+                continue;
+            }
+
             // Three bytes under the operations stream, `09 <killer> <victim>`,
             // numbered on that stream. The item-box identifier an earlier writer
             // used carries a chat macro, which the client played as "Roger that" on

@@ -16,7 +16,7 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <param name="locomotion">Walks and places the bots.</param>
 /// <param name="destinations">Chooses the point a bot without an enemy patrols to.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class BotSimulationService(
+public sealed partial class BotSimulationService(
     BotLocomotionService locomotion,
     BotMovementDestinationService destinations,
     ILogger<BotSimulationService> logger)
@@ -117,6 +117,17 @@ public sealed class BotSimulationService(
             locomotion.Respawn(bot, body, map);
         }
 
+        // A stunned bot stays where the blow put it and gets up when the stun runs
+        // out: no target, no trigger, and its health untouched (`BotHitUtils`).
+        if (body.StunnedUntilMilliseconds > now)
+        {
+            body.Moving = false;
+            body.TargetSlot = BotBodyState.NoTarget;
+            body.ShotThisBeat = false;
+            body.BurstRemaining = 0;
+            return new BotAdvance(body, false, null);
+        }
+
         if (body.HitReacting && now >= body.HitReactUntilMilliseconds)
         {
             body.HitReacting = false;
@@ -167,9 +178,9 @@ public sealed class BotSimulationService(
                 // An ordinary hit, or a headshot that ends its victim at once (BotShotUtils).
                 var headshot = BotShotUtils.RollHeadshot();
                 var damage = headshot ? BotBodyState.MaximumVitals : BotShotUtils.RollDamage();
-                if (target.IsBot)
+                if (target.IsBot && Bodies().FirstOrDefault(other => other.SessionSlot == target.SessionSlot) is { } victim)
                 {
-                    ApplyDamage(target.SessionSlot, damage, bot.SessionSlot, now, headshot);
+                    ApplyDamage(victim, damage, bot.SessionSlot, headshot, headshot, now);
                 }
 
                 shot = BotShotUtils.Build(body, target, damage, ShotWeapon, headshot);
@@ -204,68 +215,6 @@ public sealed class BotSimulationService(
         return new BotAdvance(body, firing, shot);
     }
 
-    /// <summary>
-    /// Applies a hit a client wrote against a bot.
-    /// </summary>
-    /// <remarks>
-    /// The client's own damage record is the hit: it names the victim's slot in
-    /// the identifier and carries the health it takes at <c>+2</c>, a sixteenth of
-    /// a point. A bot whose health reaches zero goes down and stands up again
-    /// after <see cref="RespawnMilliseconds"/>.
-    /// </remarks>
-    /// <param name="identifier">Identifier the hit arrived under.</param>
-    /// <param name="damage">Damage word the hit carried.</param>
-    /// <param name="killerSlot">
-    /// Slot the kill is credited to, or <c>null</c> when the roster names no peer.
-    /// </param>
-    /// <param name="headshot">Whether the hit is a headshot: the <c>0x12</c> subtype.</param>
-    /// <returns><c>true</c> when the hit named a bot and was credited to a player.</returns>
-    public bool NoteIncomingDamage(ushort identifier, ushort damage, byte? killerSlot, bool headshot = false)
-    {
-        if (BotActorRecordUtils.SlotOfDamageIdentifier(identifier) is not { } slot)
-        {
-            return false;
-        }
-
-        // Slot zero is the host's own entry, which is not in the gameplay session, so a
-        // kill announced under it names a player the game cannot resolve. A shooter the
-        // room cannot name is no better: the hit is left to the echo.
-        if (killerSlot is not > 0)
-        {
-            return false;
-        }
-
-        var points = damage / BotActorRecordUtils.DamageScale;
-
-        ApplyDamage(slot, Math.Max(points, 1), killerSlot.Value, Environment.TickCount64, headshot);
-        return true;
-    }
-
-    /// <summary>
-    /// Records a death the room owes a kill-feed record for, which is what a hit on
-    /// a player leaves behind when the health it takes is the last of it.
-    /// </summary>
-    /// <param name="killerSlot">Slot the kill is credited to.</param>
-    /// <param name="victimSlot">Slot that went down.</param>
-    /// <param name="headshot">Whether the blow that ended it was a headshot.</param>
-    public void NoteKill(byte killerSlot, byte victimSlot, bool headshot = false) =>
-        kills.Enqueue(new BotKill(killerSlot, victimSlot, headshot));
-
-    /// <summary>
-    /// Takes the deaths the room owes a kill-feed record for, oldest first.
-    /// </summary>
-    /// <returns>One entry per player that went down since the last call.</returns>
-    public IReadOnlyList<BotKill> DrainKills()
-    {
-        var taken = new List<BotKill>();
-        while (kills.Count > 0)
-        {
-            taken.Add(kills.Dequeue());
-        }
-
-        return taken;
-    }
-
     /// <summary>Drops every body and owed death, because the room has emptied.</summary>
     public void Reset()
     {
@@ -276,50 +225,6 @@ public sealed class BotSimulationService(
     /// <summary>Forgets a bot's body, because the bot has left the room.</summary>
     /// <param name="botName">The bot that left.</param>
     public void Forget(string botName) => locomotion.Forget(botName);
-
-    /// <summary>
-    /// Takes health off the bot holding a slot, and puts it down when it runs out.
-    /// </summary>
-    /// <param name="slot">Slot the hit landed on.</param>
-    /// <param name="damage">Health points it takes.</param>
-    /// <param name="killerSlot">Slot the death is credited to.</param>
-    /// <param name="now">Monotonic milliseconds.</param>
-    /// <param name="headshot">Whether the blow that ends the body is a headshot.</param>
-    /// <returns>
-    /// <c>true</c> when the hit was the last of the body's health.
-    /// </returns>
-    private bool ApplyDamage(byte slot, int damage, byte killerSlot, long now, bool headshot = false)
-    {
-        var body = Bodies().FirstOrDefault(candidate => candidate.SessionSlot == slot);
-        if (body is null || body.IsDead)
-        {
-            return false;
-        }
-
-        body.Health = (short)Math.Max(0, body.Health - damage);
-        if (body.Health != 0)
-        {
-            BotLocomotionService.NoteHit(body, now);
-            return false;
-        }
-
-        kills.Enqueue(new BotKill(killerSlot, slot, headshot));
-        body.Deaths++;
-        body.RespawnMilliseconds = now + RespawnMilliseconds;
-
-        // The body turns on the actor that put it down, so the record it writes
-        // next still names shooter and victim of each other (BotDeathUtils).
-        BotDeathUtils.NoteDeath(body, killerSlot, Bodies());
-        logger.LogDebug(
-            "Bot in slot {BotSlot} went down and stands up in {RespawnMilliseconds} ms",
-            slot,
-            RespawnMilliseconds);
-        return true;
-    }
-
-    /// <summary>Every body the simulation holds.</summary>
-    /// <returns>The bodies, which is how a hit by slot is placed on a bot.</returns>
-    private IReadOnlyList<BotBodyState> Bodies() => locomotion.Bodies;
 
     /// <summary>
     /// The enemy this bot holds: each of the capture's eight bots names four or
