@@ -5,6 +5,7 @@ using Mgo2Server.Shared.Domain.Characters;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Types;
+using System.Security.Cryptography.Xml;
 
 namespace Mgo2Server.GameplayServer.Bots;
 
@@ -156,6 +157,7 @@ public sealed partial class BotActorPublishService
                 {
                     records.Add(BotActorRecordUtils.BuildShot(
                         shot.VictimSlot,
+                        bot.SessionSlot,
                         generation,
                         shot.Damage,
                         shot.Weapon,

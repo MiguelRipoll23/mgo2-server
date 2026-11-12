@@ -65,6 +65,7 @@ public sealed partial class BotActorPublishService
         [
             BotActorRecordUtils.BuildShot(
                 shot.VictimSlot,
+                killerSlot,
                 generation,
                 shot.Damage,
                 shot.Weapon,

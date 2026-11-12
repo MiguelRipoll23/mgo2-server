@@ -266,6 +266,7 @@ public static class BotActorRecordUtils
     /// <returns>The fifteen-byte damage record.</returns>
     public static UdpMessage BuildShot(
         byte victimSlot,
+        byte shooterSlot,
         MatchRecordGenerationUtils generation,
         int damage,
         byte weapon,
@@ -281,15 +282,14 @@ public static class BotActorRecordUtils
         var body = new byte[DamageBodyLength];
         body[0] = headshot ? HeadshotDamageSubtype : DamageSubtype;
 
-        // The killing blow states a whole health bar and not what was left of it:
-        // the working host writes `7d 02` (250.02) on a victim whose own vitals
-        // record read `68` (104) one beat earlier (t+310.81), so a client that
-        // applies the word to its own bar reaches zero whatever that bar held. A
-        // word of the host's tracked remainder leaves the client alive and then
-        // contradicts it with the zero the vitals record carries — the state its
-        // kill log crashes on.
+        // The damage word encodes both damage points and the shooter's actor slot:
+        // (points << 7) | shooterSlot.
+        // The client extracts the shooter slot using word & 0x1F.
         var points = headshot ? BotBodyState.MaximumVitals : damage;
-        WriteUInt16(body, 2, (ushort)Math.Clamp(points * DamageScale, 0, ushort.MaxValue));
+        var damageWord = (Math.Clamp(points, 0, 0x1FF) << 7) | (shooterSlot & 0x1F);
+
+        WriteUInt16(body, 2, (ushort)damageWord);
+
         body[4] = weapon;
         WriteInt16(body, 5, ToTenths(impactX));
         WriteInt16(body, 7, ToTenths(impactY));
