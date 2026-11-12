@@ -14,8 +14,8 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <para>
 /// <b>It is an identifier block, not one record.</b> Six records per actor per
 /// tick share one base: state at it, vitals at <c>+1</c>, position at <c>+2</c>,
-/// the weapon pair and byte at <c>+4</c>, aim at <c>+6</c>, and a hit three below
-/// it at <c>−3</c>.
+/// the weapon pair and byte at <c>+4</c>, aim at <c>+6</c>, and a hit seven above
+/// it at <c>+7</c>.
 /// </para>
 /// <para>
 /// <b>The base follows the round's identifier generation.</b> Slot one is
@@ -118,8 +118,19 @@ public static class BotActorRecordUtils
 
     /// <summary>
     /// The identifier a hit on a session slot travels under: three below the
-    /// state record, which is where the capture's damage records sit.
+    /// state record, which is where the captures' damage records sit.
     /// </summary>
+    /// <remarks>
+    /// <b>Not three below it.</b> Slot 4 of <c>.pcapngs/actions/actions.pcapng</c>
+    /// writes its state at <c>0x086b</c> and its hits at <c>0x0872</c>; slot 12
+    /// writes <c>0x08bb</c> and <c>0x08c2</c>. The stride between slots is ten, so
+    /// <c>state − 3</c> is not a hole in the block — it is the *previous* slot's
+    /// <c>state + 7</c>, and every hit this host wrote for slot <c>n</c> arrived on
+    /// the victim record of slot <c>n − 1</c>: a blow that killed slot 12 went out
+    /// as <c>0x08b8</c>, slot 11's damage identifier. The client files the death
+    /// against the record's victim, so no death matched the feed that named the
+    /// real one and every bot kill was drawn on the row it fell back to.
+    /// </remarks>
     /// <param name="generation">Identifier set of the round being played.</param>
     /// <param name="sessionSlot">Key the player holds in the room's player table.</param>
     /// <returns>The slot's damage identifier.</returns>
@@ -134,6 +145,8 @@ public static class BotActorRecordUtils
         for (var generation = 0; generation < 2; generation++)
         {
             var value = (ushort)(identifier ^ (generation * MatchRecordGenerationUtils.SiblingBit));
+            // **Three below the state, for every family.** On `actions.pcapng`, 415 of
+            // 415 host hits and 22 of 22 client hits land on the vitals that move.
             var offset = (int)value - (StateIdentifierOf(MatchRecordGenerationUtils.First, 0) - 3);
             if (offset < SlotStride)
             {
@@ -150,7 +163,7 @@ public static class BotActorRecordUtils
     }
 
     /// <summary>Weapon a live bot carries: <c>0x18</c> in the capture's pairs.</summary>
-    public const byte CarriedWeapon = 0x18;
+    public const byte CarriedWeapon = (byte)ItemIdentifier.M4;
 
     /// <summary>Magazine count the capture writes beside the weapon.</summary>
     public const byte CarriedAmmo = 0x0f;
@@ -167,6 +180,11 @@ public static class BotActorRecordUtils
     /// Whether the vitals record rides in this frame. The capture writes it about
     /// once a second and on a change, not on every beat.
     /// </param>
+    /// <param name="publishState">
+    /// Whether the state record rides in this frame. An idle actor's standing form
+    /// is written about once a second; an acting one's is written on every beat
+    /// (<see cref="BotBodyState.NextStateMilliseconds"/>).
+    /// </param>
     /// <returns>The block's records, or an empty list for a slot of zero.</returns>
     public static IReadOnlyList<UdpMessage> Build(
         byte sessionSlot,
@@ -174,7 +192,8 @@ public static class BotActorRecordUtils
         BotBodyState body,
         bool firing,
         bool fireBeat,
-        bool vitals)
+        bool vitals,
+        bool publishState = true)
     {
         if (sessionSlot == 0)
         {
@@ -186,18 +205,20 @@ public static class BotActorRecordUtils
 
         var state = StateIdentifierOf(generation, sessionSlot);
         var position = BotPositionBodiesUtils.Build(body);
-        var records = new List<UdpMessage>
+        var records = new List<UdpMessage>(6);
+        if (publishState)
         {
-            new(state, 4, StateAttributeClass, BuildStateBody(body, firing, fireBeat)),
-            new(
-                (ushort)(state + 2),
-                (byte)(position.Length + 1),
-                PositionAttributeClass,
-                position),
-            new((ushort)(state + 4), 6, WeaponPairAttributeClass, BuildWeaponPair(body)),
-            new((ushort)(state + 4), 2, WeaponAttributeClass, [0x00]),
-            new((ushort)(state + 6), 7, AimAttributeClass, BuildAimBody(body)),
-        };
+            records.Add(new(state, 4, StateAttributeClass, BuildStateBody(body, firing, fireBeat)));
+        }
+
+        records.Add(new(
+            (ushort)(state + 2),
+            (byte)(position.Length + 1),
+            PositionAttributeClass,
+            position));
+        records.Add(new((ushort)(state + 4), 6, WeaponPairAttributeClass, BuildWeaponPair()));
+        records.Add(new((ushort)(state + 4), 2, WeaponAttributeClass, [0x00]));
+        records.Add(new((ushort)(state + 6), 7, AimAttributeClass, BuildAimBody(body)));
 
         if (vitals)
         {
@@ -214,15 +235,16 @@ public static class BotActorRecordUtils
     }
 
     /// <summary>
-    /// The weapon pair a live bot carries, <c>00 18 00 00 0f</c> in the capture,
-    /// and the zero pair a corpse carries.
+    /// The weapon pair a bot carries, <c>00 18 00 00 0f</c>, which a corpse keeps.
     /// </summary>
-    /// <param name="body">The bot's body.</param>
+    /// <remarks>
+    /// <b>A dead bot still carries its gun.</b> Across `actions.pcapng`'s 231 dead
+    /// beats the pair is `00 18 00 00 0f` on 197 and `00 19 00 00 0f` on 26, and zero
+    /// only eight times; this host blanked it on all 2,449 of its own.
+    /// </remarks>
     /// <returns>The pair's five bytes.</returns>
-    private static byte[] BuildWeaponPair(BotBodyState body) =>
-        body.IsDead
-            ? [0x00, 0x00, 0x00, 0x00, 0x00]
-            : [0x00, CarriedWeapon, 0x00, 0x00, CarriedAmmo];
+    private static byte[] BuildWeaponPair() =>
+        [0x00, CarriedWeapon, 0x00, 0x00, CarriedAmmo];
 
     /// <summary>
     /// The damage record one bot's hit travels under, on the slot it hit.
@@ -302,15 +324,29 @@ public static class BotActorRecordUtils
     /// <returns>The three- or nine-byte body.</returns>
     private static byte[] BuildStateBody(BotBodyState body, bool firing, bool fireBeat)
     {
-        if (body.TargetSlot == BotBodyState.NoTarget)
+        if (body.TargetSlot == BotBodyState.NoTarget && body.HeldBySlot == BotBodyState.NoTarget)
         {
             return [0x00, 0xff, 0x00];
         }
 
+        // A body a client holds writes the aim form with `0xff` for the target and
+        // a zero trigger — the capture's `42 ff 00 63 08 8c 00 d8 07` on slot 15 for
+        // the whole of t+392.19's grab, after the single standing `00 ff 00` beat
+        // that opens it. It is still `0x42`, not the standing form, and the tail is
+        // the point it was looking at when the grab took it.
+        var held = body.HeldBySlot != BotBodyState.NoTarget;
         var state = new byte[ActingStateBodyLength];
-        state[0] = (byte)(0x40 | (fireBeat ? 7 : firing ? 4 : 2));
-        state[1] = body.TargetSlot;
-        state[2] = (byte)(firing ? 1 : 0);
+
+        // A firing beat's action cycles `46 47 47` — the round that opens a burst
+        // writes `0x46`, the ones behind it `0x47` (3,006 against 9,434 measured).
+        var opening = fireBeat && body.BurstSize > 0 && body.BurstRemaining >= body.BurstSize;
+        state[0] = held
+            ? (byte)0x42
+            : opening
+                ? (byte)0x46
+                : (byte)(0x40 | (fireBeat ? 7 : firing ? 4 : 2));
+        state[1] = held ? BotBodyState.NoTarget : body.TargetSlot;
+        state[2] = (byte)(!held && firing ? 1 : 0);
         WriteInt16(state, 3, ToTenths(body.AimX));
         WriteInt16(state, 5, ToTenths(body.AimY));
         WriteInt16(state, 7, ToTenths(body.AimZ));

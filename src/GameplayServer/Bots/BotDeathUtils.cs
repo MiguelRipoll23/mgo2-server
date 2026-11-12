@@ -5,11 +5,15 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// last health, and the one beat that still has to name it.
 /// </summary>
 /// <remarks>
-/// <b>The victim names its killer on the beat it dies.</b> The working host keeps
-/// the victim's state record on its killer right up to the blow — slot 5 writes
-/// <c>44 06 01 …</c> for six beats, and stands with <c>00 ff 00</c> only after the
-/// fatal hit — so a body that dropped its target the instant it died would be one
-/// the client never saw turn on the actor that shot it.
+/// <b>The victim does not name its killer on the beat it dies; it stands.</b>
+/// Measured over every kill in the working capture: the victim's last state
+/// record before its feed is the standing <c>00 ff 00</c> on 108 of 113 deaths,
+/// and the five that carry a target are beats where the victim was still alive
+/// and shooting at somebody else. A corpse that turns on the actor that shot it
+/// names a killer the working host never names from the victim's side — the
+/// credit is the <c>09</c> feed's and the killer's own aim record's, and this
+/// host wrote the victim's <c>42 &lt;killer&gt; 00</c> on all nine of
+/// <c>myserver.pcapng</c>'s deaths.
 /// </remarks>
 public static class BotDeathUtils
 {
@@ -25,21 +29,11 @@ public static class BotDeathUtils
         ArgumentNullException.ThrowIfNull(body);
         ArgumentNullException.ThrowIfNull(bodies);
 
-        // A death with nobody to credit names nobody on its last beat. Slot zero is
-        // this host's own seat, and a corpse that turns on it is a body the room
-        // reads as shot by the dedicated host's character rather than by no one.
-        body.KillerSlot = killerSlot == 0 ? BotBodyState.NoTarget : killerSlot;
-        body.DiedThisBeat = true;
-
-        if (bodies.FirstOrDefault(other => other.SessionSlot == killerSlot) is not { } killer)
-        {
-            return;
-        }
-
-        body.TargetSlot = killerSlot;
-        body.AimX = killer.X;
-        body.AimY = killer.Y + BotLocomotionService.AimHeight;
-        body.AimZ = killer.Z;
-        body.Yaw = BotLocomotionService.YawTowards(killer.X - body.X, killer.Z - body.Z);
+        // A corpse stands. The working host's victim is on `00 ff 00` by the beat
+        // its health reaches zero, and naming the killer here instead — `42
+        // <killer> 00` — is a target the working host's victim never holds.
+        body.KillAimSlot = BotBodyState.NoTarget;
+        body.KillAimUntilMilliseconds = 0;
+        body.TargetSlot = BotBodyState.NoTarget;
     }
 }

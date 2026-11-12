@@ -21,15 +21,33 @@ namespace Mgo2Server.GameplayServer.Bots;
 public sealed partial class BotActorPublishService
 {
     /// <summary>
-    /// How long a death waits before its feed is written, measured on the working
-    /// host: its lethal <c>0x12</c> on slot 8 lands at t+310.81, the victim's vitals
-    /// reach zero on the same beat, and <c>09 02 08</c> follows at t+311.03. This host
-    /// wrote all three in one beat, and the client of 2026-11-11 13:54 read that beat
-    /// and never spoke again — its last frame is the one acknowledging those records
-    /// (44.7526 s of `bots1.pcapng`), where the working client carries on for another
-    /// 329 s past its own death.
+    /// How long a death waits before its feed is written: none, because the feed
+    /// rides the beat the victim's vitals reach zero.
     /// </summary>
-    private const int FeedDelayMilliseconds = 220;
+    /// <remarks>
+    /// <para>
+    /// <b>Measured on `.pcapngs/actions/actions.pcapng`, the working host writes the
+    /// two in one frame</b> — <c>09 01 12</c> at t+43.78 against slot 12's vitals
+    /// reaching <c>0</c> at t+43.78, <c>09 16 02</c> at t+48.55 against t+48.53,
+    /// <c>09 08 07</c> at t+49.71 against t+49.68, and <c>09 09 15</c> at t+55.05
+    /// against t+55.05 — never more than one frame apart.
+    /// </para>
+    /// <para>
+    /// <b>This host wrote them 0.22 to 0.24 s apart.</b> On `.pcapngs/myserver.pcapng`
+    /// slot 5's vitals reach <c>0</c> at t+32.32 and <c>09 10 05</c> follows at
+    /// t+32.56; slot 10's at t+35.53 against <c>09 13 10</c> at t+35.76; slot 12's at
+    /// t+42.59 against <c>09 15 12</c> at t+42.82. Eight beats of separation, and the
+    /// client builds its kill-log entry on the beat the feed arrives: by then it has
+    /// already drawn the death it names, so the entry is never written and the kill is
+    /// drawn on the one row the client always has, the host's.
+    /// </para>
+    /// <para>
+    /// The delay was 220 ms, taken from a reading of a different capture's
+    /// <c>0x12</c> at t+310.81 and its <c>09 02 08</c> at t+311.03. This one states it
+    /// the other way, and the reference is the one this host is measured against.
+    /// </para>
+    /// </remarks>
+    private const int FeedDelayMilliseconds = 0;
 
     /// <summary>
     /// Age at which a queued feed is dropped instead of written: a room that emptied
@@ -60,8 +78,8 @@ public sealed partial class BotActorPublishService
     /// them; the scoreboard the credit changed is published behind the frame.
     /// </summary>
     /// <param name="generation">Identifier set of the round being played.</param>
-    /// <param name="records">The beat's records, which the feeds are appended to.</param>
-    private void DrainKills(MatchRecordGenerationUtils generation, List<UdpMessage> records)
+    /// <returns>The feeds due, each with the victim whose block it is written before.</returns>
+    private List<(byte Victim, UdpMessage Record)> DrainKills(MatchRecordGenerationUtils generation)
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         foreach (var kill in simulation.DrainKills())
@@ -74,11 +92,12 @@ public sealed partial class BotActorPublishService
         var due = pendingFeeds.Where(feed => feed.Due <= now).ToList();
         if (due.Count == 0)
         {
-            return;
+            return [];
         }
 
         pendingFeeds.RemoveAll(feed => feed.Due <= now);
 
+        var feeds = new List<(byte Victim, UdpMessage Record)>(due.Count);
         foreach (var kill in due)
         {
             // The death is counted here for every victim, a player as well as a bot.
@@ -115,14 +134,15 @@ public sealed partial class BotActorPublishService
             // numbered on that stream. The item-box identifier an earlier writer
             // used carries a chat macro, which the client played as "Roger that" on
             // every kill.
-            records.Add(new UdpMessage(
+            feeds.Add((kill.Victim, new UdpMessage(
                 generation.Operations,
                 (byte)MatchKillFeedBodiesUtils.BodyLength,
                 sequences.Take(generation.Operations),
-                MatchKillFeedBodiesUtils.Build(kill.Killer, kill.Victim)));
+                MatchKillFeedBodiesUtils.Build(kill.Killer, kill.Victim))));
         }
 
         scoreboardDue = true;
+        return feeds;
     }
 
     /// <summary>

@@ -94,6 +94,20 @@ public sealed class BotRosterPublishService(
                     PlayerGearBodiesUtils.PlayerStats.None,
                     loadout.Level),
                 roster.TakeRunOrdinal()));
+
+            // The per-slot settings header, which is the record that gives a client
+            // a player at a slot: `0b <slot> 02 00 … 10 00 fe ff`, the twenty-five
+            // byte join form (`SettingsHeaderBodiesUtils.BuildJoin`).
+            // `.pcapngs/actions/actions.pcapng` writes **194 of them across 17
+            // slots** — one per seat, repeated — where this host wrote four, because
+            // only the host's own seat and a joining player's ever got one. A bot
+            // without one is known to the client only through its position records:
+            // it is drawn, and it takes no damage, because the row a hit is applied
+            // to and the row a kill feed resolves are both this record's.
+            records.Add(new RosterRecord(
+                UdpCommandConstants.PlayerProfile,
+                SettingsHeaderBodiesUtils.BuildJoin((byte)(loadout.Slot + 1)),
+                roster.TakeRunOrdinal()));
         }
 
         return records;

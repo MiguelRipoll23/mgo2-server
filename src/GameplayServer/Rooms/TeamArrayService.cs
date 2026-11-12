@@ -264,6 +264,77 @@ public sealed partial class TeamArrayService(
         }
     }
 
+    /// <summary>
+    /// How often a peer is sent the pair again while a round plays: the working
+    /// capture repeats it about every two thirds of a second.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured.</b> `actions.pcapng` writes the two twenty-six byte records
+    /// **395 times** over the round, in pairs whose gap is 0.0 s and whose
+    /// publication gap clusters at 0.60–0.67 s, with occasional full sixteen-record
+    /// refreshes. This host wrote 33, all of them answers to something a client
+    /// sent, so a peer that stopped asking stopped being told which side the room's
+    /// bots are on.
+    /// </remarks>
+    public const int RepublishIntervalMilliseconds = 650;
+
+    /// <summary>Guards <see cref="nextRepublishMilliseconds"/> and the sequence.</summary>
+    private readonly object republishGate = new();
+
+    /// <summary>When the next periodic pair is due, in monotonic milliseconds.</summary>
+    private long nextRepublishMilliseconds;
+
+    /// <summary>
+    /// Sequence the next periodic pair carries, advanced with
+    /// <see cref="TeamArrayFramesUtils.NextSequence"/>: the capture's own runs read
+    /// `85 00`, `85 01`, `85 02`, so the repeats move the loop rather than repeat
+    /// one value.
+    /// </summary>
+    private byte republishSequence = TeamArrayFramesUtils.OpeningSequence;
+
+    /// <summary>
+    /// Republishes the room's side assignment to one peer on its own clock, which
+    /// is the one thing about the pair this host never did.
+    /// </summary>
+    /// <remarks>
+    /// It is per peer and not fanned out: the sequence is what a client answers, and
+    /// every peer holds its own (<see cref="ConfirmAsync"/>). The room's rows are read
+    /// again for each pair so a player who changed sides is published on the new one.
+    /// </remarks>
+    /// <param name="context">Context of the peer the pair is written to.</param>
+    public async Task RepublishAsync(PeerContext context)
+    {
+        var now = Environment.TickCount64;
+        byte sequence;
+        lock (republishGate)
+        {
+            if (now < nextRepublishMilliseconds)
+            {
+                return;
+            }
+
+            nextRepublishMilliseconds = now + RepublishIntervalMilliseconds;
+            sequence = republishSequence;
+            republishSequence = TeamArrayFramesUtils.NextSequence(republishSequence);
+        }
+
+        var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(sequence, await lobbySlots.ReadAsync());
+        var ordinals = roster.TakeRunOrdinals(2);
+
+        logger.LogDebug(
+            "UDP {LocalPort}: republishing the lobby-slot arrays at sequence {Sequence:x2} to {RemoteAddress}",
+            context.LocalPort,
+            sequence,
+            context.Remote);
+
+        await RosterRunSendUtils.SendAsync(
+            context,
+            [
+                new(UdpCommandConstants.PlayerProfile, teams, ordinals[0]),
+                new(UdpCommandConstants.PlayerProfile, occupancy, ordinals[1]),
+            ]);
+    }
+
     /// <summary>Drops every held confirmation and answered sequence, because the room has emptied.</summary>
     public void Reset()
     {

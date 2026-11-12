@@ -119,6 +119,30 @@ public sealed partial class RoomRosterService(
 
         lock (gate)
         {
+            // **A player who joins again takes the seat they left, dropped here rather
+            // than at the reap window.** A client that gave up on a stalled join
+            // reconnects from a new source port, so it arrives under an endpoint nothing
+            // is filed against while its old seat is still held — the room then counts
+            // one player twice with its cap already met, which is a rejoin refused as a
+            // full room (`myserver.pcapng`, 2026-11-12: the second join asks `0x5001`
+            // seventy-two times, never opens a round and so writes no bot actor at all).
+            // The character id is the key because it survives the port change.
+            if (characterId != 0)
+            {
+                foreach (var dropped in members
+                    .Where(member => !member.IsBot
+                        && member.CharacterId == (int)characterId
+                        && member.RemoteAddress != key)
+                    .ToList())
+                {
+                    pairSequences.Remove(dropped.RemoteAddress);
+                    members.Remove(dropped);
+                    logger.LogInformation(
+                        "Character {CharacterId} rejoined from {RemoteAddress}; seat {StaleEndpoint} dropped",
+                        characterId, key, dropped.RemoteAddress);
+                }
+            }
+
             var existing = members.Find(member => member.RemoteAddress == key);
             if (existing is not null)
             {
@@ -269,24 +293,6 @@ public sealed partial class RoomRosterService(
         }
     }
 
-    /// <summary>
-    /// The member filed under an endpoint, when the roster has one.
-    /// </summary>
-    /// <remarks>
-    /// The lookup is by the endpoint the peer's profile arrived from, which is
-    /// the key <see cref="Register"/> files it under; an endpoint with no entry
-    /// is a peer that has not sent a profile yet, or one the reaper has already
-    /// taken off the roster.
-    /// </remarks>
-    /// <param name="remoteAddress">Endpoint formatted as "address:port".</param>
-    /// <returns>The member, or <c>null</c>.</returns>
-    public RosterMember? Find(string remoteAddress)
-    {
-        lock (gate)
-        {
-            return members.Find(member => member.RemoteAddress == remoteAddress);
-        }
-    }
 
     /// <summary>
     /// Notes the lobby-slot sequence a peer's own exchange named.
@@ -376,8 +382,18 @@ public sealed partial class RoomRosterService(
     /// the room's count.
     /// </param>
     /// <returns>The records in send order, each with the type it travels as.</returns>
+    /// <param name="omitSlot">
+    /// Slot the run leaves out, which is the answered peer's own: a reference host
+    /// never sends a player its own entry (`RoomRosterFramesUtils.BuildRecords`).
+    /// </param>
     public List<RosterRecord> BuildRosterRun(
         byte[]? answeringLoadout = null,
-        bool includeEndpointPairs = true) =>
-        RoomRosterFramesUtils.BuildRun(Snapshot(), hostIdentity, answeringLoadout, includeEndpointPairs);
+        bool includeEndpointPairs = true,
+        byte? omitSlot = null) =>
+        RoomRosterFramesUtils.BuildRun(
+            Snapshot(),
+            hostIdentity,
+            answeringLoadout,
+            includeEndpointPairs,
+            omitSlot);
 }

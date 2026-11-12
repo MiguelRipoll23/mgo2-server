@@ -126,6 +126,12 @@ public sealed class BotLocomotionService(
 
         body.HitReacting = true;
         body.HitReactUntilMilliseconds = now + HitReactionMilliseconds;
+
+        // The blow's beat is owed a state record whatever the idle cadence says: the
+        // reference writes the victim's record on the beat its health drops, and a
+        // body whose next standing record is up to a second away would be shot and
+        // look untouched until it came (`BotActorPublishService.PublishesState`).
+        body.NextStateMilliseconds = 0;
     }
 
     /// <summary>Drops every body, because the room has emptied.</summary>

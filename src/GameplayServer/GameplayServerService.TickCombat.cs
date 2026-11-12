@@ -56,7 +56,11 @@ public sealed partial class GameplayServerService
         if (message.Flags == Bots.BotActorRecordUtils.StateAttributeClass &&
             Bots.CqcHoldUtils.HeldSlotOf(message.Body) is { } heldSlot)
         {
-            botSimulation.HoldSlot(heldSlot, Environment.TickCount64);
+            // The holder is the peer that wrote the hold, and the body turns on it:
+            // the capture's held slot climbs its heading about 47 degrees a beat
+            // until it faces the client holding it.
+            var holder = roster.Find(remoteAddress)?.SessionSlot ?? (byte)0;
+            botSimulation.HoldSlot(heldSlot, holder, Environment.TickCount64);
         }
     }
 }

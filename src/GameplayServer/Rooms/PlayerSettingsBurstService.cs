@@ -246,18 +246,14 @@ public sealed partial class PlayerSettingsBurstService(
                     BuildLoadoutBody(loadout),
                     roster.TakeRunOrdinal()));
 
-                // The second body every player of the reference's room gets: the
-                // loadout above names the player, and this one carries the gear
-                // behind the same key (`PlayerGearBodiesUtils`). Without it a peer
-                // holds an appearance for another player and no gear at all.
-                burst.Add(new(
-                    UdpCommandConstants.PlayerProfile,
-                    PlayerGearBodiesUtils.Build(
-                        (byte)(loadout.Slot + 1),
-                        loadout.Appearance,
-                        PlayerGearBodiesUtils.PlayerStats.None,
-                        loadout.Level),
-                    roster.TakeRunOrdinal()));
+                // **One record per seat, and no gear body beside it.** The burst here
+                // wrote a loadout *and* a seventy-byte gear record for every player,
+                // which `actions.pcapng` never writes at all: its `0x1001` lengths are
+                // 57, 63, 72, 49, 50, 54, 25 and 161, and a seventy-byte body appears
+                // nowhere in the round. Its burst is one body per seat — the fifteen
+                // bots' at 49 or 50 bytes and the human's at 54 — so this writes the
+                // loadout alone. A late-seated bot still carries its gear in its own
+                // run (`BotRosterPublishService`), which is a different frame.
             }
         }
         else

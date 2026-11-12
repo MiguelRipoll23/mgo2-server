@@ -149,12 +149,9 @@ public sealed partial class BriefingRoomPublishService(
         var session = context.Session;
         var sentCount = NoCountSent;
 
-        // Counted from the same instant the sparse phase is, because the two are
-        // started together and the blob's own tick is read off the phase's end
-        // (StateBlobFrameInterval): the phase's steps are the recorded host's, and
-        // a blob written among them on this counter would repeat ones the
-        // recording already carries.
-        var started = DateTimeOffset.UtcNow;
+        // Counted from the join's own first pass, because that is where the reference
+        // writes its fan-out: `actions.pcapng` sends it 5.2 s after the burst and the
+        // client reports 0.4 s behind it (StateBlobFrameInterval).
         var frames = 0;
 
         // The pair's own counter, started where the pair is due: the first copy is
@@ -166,6 +163,12 @@ public sealed partial class BriefingRoomPublishService(
         {
             try
             {
+                // **The players' blobs go out before the report, and that is measured.**
+                // The reference's sixteen arrive at t+8.75 and its client reports at
+                // t+9.11, so a fan-out held behind the report is one the client never
+                // sees in time to report at all.
+                await PublishStateBlobAsync(context, frames);
+
                 // Nothing of the room's stream goes out before a report names the
                 // set it is written under. Before one arrives there is no briefing
                 // and no report's generation to write under, so the fallback is the
@@ -178,6 +181,7 @@ public sealed partial class BriefingRoomPublishService(
                 // 0x12de the client then reported on (`myserver.pcapng`).
                 if (matchStart.LastJoinReportIdentifier is null)
                 {
+                    frames++;
                     await roundState.WaitBriefingFrameAsync(session, PublishPeriodMilliseconds);
                     continue;
                 }
@@ -203,7 +207,6 @@ public sealed partial class BriefingRoomPublishService(
 
                 pairFrames++;
 
-                await PublishStateBlobAsync(context, started, frames);
                 sentCount = await PublishCountAsync(context, sentCount);
                 frames++;
             }

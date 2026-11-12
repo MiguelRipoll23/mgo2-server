@@ -323,10 +323,23 @@ public sealed partial class BriefingStateService
                 generation.ReadyState,
                 MatchRecords.BriefingReadyStateBodiesUtils.Body(state.Value, roundUnits),
                 ordinal));
+        }
+
+        // One round-start payload per publication, and not one per player.
+        // `.pcapngs/actions/actions.pcapng` writes `0x1ade`/`0x12de` **twice in
+        // 592 s** — once per round open — where this host wrote one beside every
+        // ready-state record: 86 of them in 51 s, twelve of them identical in the
+        // same instant. A client handed a round start sixteen times a publication
+        // rebuilds the round and its actor table every second, and a body rebuilt
+        // every second is one that takes no damage and never dies on screen — the
+        // report of "the bots cannot be killed". The body is the reported byte
+        // echoed, so the report this publication answers is the one it carries.
+        if (ordered.Count > 0)
+        {
             records.Add(new RosterRecord(
                 generation.MatchStartPayload,
-                MatchStartBodiesUtils.MatchStartPayload(state.Value),
-                ordinal));
+                MatchStartBodiesUtils.MatchStartPayload(ordered[0].Value),
+                (byte)ordered[0].PublicationIndex));
         }
 
         // The bots are in the publication too, and the room a client is briefed in
@@ -356,10 +369,6 @@ public sealed partial class BriefingStateService
                 records.Add(new RosterRecord(
                     generation.ReadyState,
                     MatchRecords.BriefingReadyStateBodiesUtils.Body(ready.Slot, roundUnits),
-                    (byte)index));
-                records.Add(new RosterRecord(
-                    generation.MatchStartPayload,
-                    MatchStartBodiesUtils.MatchStartPayload(ready.Slot),
                     (byte)index));
             }
         }

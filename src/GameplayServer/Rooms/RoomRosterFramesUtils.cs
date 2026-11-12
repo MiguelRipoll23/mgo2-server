@@ -26,10 +26,19 @@ public static class RoomRosterFramesUtils
     /// <param name="members">The room's joining players, as a snapshot.</param>
     /// <param name="hostIdentity">Identity this host presents to its peers.</param>
     /// <returns>One record body per entry, in send order.</returns>
+    /// <param name="omitSlot">
+    /// Slot whose entry the run leaves out, or <c>null</c> for a room that leaves
+    /// none out. The reference never sends a peer its own entry: its join reads
+    /// sixteen entries for seventeen actors, and the actor that is missing is the
+    /// `0x10` its kill feeds name — `actions.pcapng` at t+43.29 writes
+    /// `09 10 04` and holds no profile entry for slot sixteen at all, while the
+    /// client draws that player's own name in its corner regardless.
+    /// </param>
     public static List<byte[]> BuildRecords(
         IReadOnlyList<RosterMember> members,
         HostIdentityService hostIdentity,
-        bool includeEndpointPairs = true)
+        bool includeEndpointPairs = true,
+        byte? omitSlot = null)
     {
         var records = new List<byte[]>
         {
@@ -37,7 +46,15 @@ public static class RoomRosterFramesUtils
                 isHostEntry: true,
                 PlayerProfileRecordUtility.HostRosterIndex,
                 (int)hostIdentity.PeerIdentifier,
-                hostIdentity.CharacterName,
+                // The host's entry names no character. `.pcapngs/actions/actions.pcapng`
+                // writes it 57 bytes long where this host wrote 68, and the whole of
+                // that difference is `server-9999` — the eleven characters of the
+                // dedicated host's character name. The seat is the room's and not a
+                // player of the round: the host is not in the gameplay session, so a
+                // client that resolves slot zero as a character holds a player object
+                // no avatar ever fills (`system.dll` `FUN_1032fec0`: an empty handle
+                // pair resolves to null, and its callers read through it).
+                string.Empty,
                 hostIdentity.ClanName,
                 RoomRosterService.HostSessionSlot,
                 clanIdentifier: hostIdentity.ClanIdentifier,
@@ -47,6 +64,7 @@ public static class RoomRosterFramesUtils
         };
         records.AddRange(
             members
+                .Where(member => member.SessionSlot != omitSlot)
                 .OrderBy(member => member.RosterIndex)
                 .Select(member => member.BuildRecord(includeEndpointPairs)));
         return records;
@@ -81,9 +99,10 @@ public static class RoomRosterFramesUtils
         IReadOnlyList<RosterMember> members,
         HostIdentityService hostIdentity,
         byte[]? answeringLoadout = null,
-        bool includeEndpointPairs = true)
+        bool includeEndpointPairs = true,
+        byte? omitSlot = null)
     {
-        var entries = BuildRecords(members, hostIdentity, includeEndpointPairs);
+        var entries = BuildRecords(members, hostIdentity, includeEndpointPairs, omitSlot);
         var run = new List<RosterRecord>(entries.Count + 3)
         {
             new(UdpCommandConstants.RosterHead, [], 0),
@@ -131,6 +150,14 @@ public static class RoomRosterFramesUtils
                 (byte)(entries.Count + 2)));
         }
 
+        // **The per-seat settings headers do not belong here.** They were written in
+        // this run once, one per seated member, and the join stopped working: the
+        // answer became one datagram of nineteen records where the reference writes
+        // five, and the capture after it holds thirty frames instead of four
+        // thousand — a client that never finished the join. The reference's 194
+        // twenty-five-byte headers across 17 slots are spread through the settings
+        // burst, not carried by the answer; `PlayerSettingsBurstService` is where
+        // they are written.
         return run;
     }
 

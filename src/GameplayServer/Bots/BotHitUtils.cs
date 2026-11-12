@@ -1,3 +1,5 @@
+using Mgo2Server.Shared.Types;
+
 namespace Mgo2Server.GameplayServer.Bots;
 
 /// <summary>
@@ -99,10 +101,35 @@ public static class BotHitUtils
     /// <summary>Subtype of a headshot.</summary>
     public const byte HeadshotSubtype = BotActorRecordUtils.HeadshotDamageSubtype;
 
-    /// <summary>Subtype of a stun: the Mk.2's dart, or the knife's hold-up.</summary>
+    /// <summary>
+    /// Subtype of a stun. The replay console's <c>STUN_SUBTYPE</c> names <c>0x42</c>
+    /// the head zone and <c>0x41</c> the body zone, and its <c>HIT_ZONE</c> puts the
+    /// same two bytes in the same pair, so they are the two zones of one kind of blow
+    /// and not two kinds.
+    /// </summary>
     public const byte StunSubtype = 0x42;
 
+    /// <summary>
+    /// Subtype of a body-zone blow, <c>0x41</c>, which the console's <c>HIT_ZONE</c>
+    /// names the same zone as <c>0x11</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>It was refused here, and a refused hit is a hit that does nothing.</b>
+    /// <see cref="KindOf"/> recognised five bytes and not this one, so a client that
+    /// wrote <c>0x41</c> was answered with nothing at all: no health taken, no record
+    /// echoed, no death — the report of a magazine emptied into a bot that stands
+    /// there. The console's own table is the measurement that it is a hit.
+    /// </remarks>
+    public const byte BodyZoneSubtype = 0x41;
+
     /// <summary>Subtype of a knife blow.</summary>
+    /// <remarks>
+    /// The subtype alone does not say whether the blow kills: the capture's two
+    /// knife blows both carry <c>10 7d</c> (250.1) and a <c>00</c> in the byte every
+    /// other hit sets to one, and neither drew a death, so a knife at <c>00</c> is
+    /// the stun stab. A knife that carries <c>01</c> there is the critical stab and
+    /// is still read as a whole-bar kill.
+    /// </remarks>
     public const byte MeleeSubtype = 0x91;
 
     /// <summary>Subtype of a blast.</summary>
@@ -111,17 +138,26 @@ public static class BotHitUtils
     /// <summary>Length of the capture's blast record, fifteen bytes longer than a hit's.</summary>
     public const int BlastBodyLength = 28;
 
-    /// <summary>Weapon a stun record carries: <c>02</c>, the Mk.2 tranquilliser.</summary>
-    public const byte StunWeapon = 0x02;
-
-    /// <summary>Weapon a knife blows record carries: <c>01</c>, ST KNIFE.</summary>
-    public const byte MeleeWeapon = 0x01;
+    /// <summary>
+    /// Weapon a stun record carries: <c>02</c>, which the replay console's item
+    /// table names <c>ST KNIFE</c> at index 2 — the knife a hold-up is made with,
+    /// not the Mk.2 dart an earlier comment here claimed.
+    /// </summary>
+    public const byte StunWeapon = (byte)ItemIdentifier.StKnife;
 
     /// <summary>
-    /// Weapon a blast record carries: <c>34</c>, which is the grenade the weapon
+    /// Weapon the capture's knife blows carry, <c>01</c>, the table's empty row
+    /// <c>NONE</c>. Its clearest blows carry <c>18</c> (M4) instead, so the byte is
+    /// the weapon the attacker held and not the blade: `0x91 01` and `0x91 18` are
+    /// the same blow reported by two loadouts.
+    /// </summary>
+    public const byte MeleeWeapon = (byte)ItemIdentifier.None;
+
+    /// <summary>
+    /// Weapon a blast record carries: <c>34</c>, which is the grenade the item
     /// table names at id 52.
     /// </summary>
-    public const byte BlastWeapon = 0x34;
+    public const byte BlastWeapon = (byte)ItemIdentifier.Grenade;
 
     /// <summary>Offset of the blast's own point in a blast record.</summary>
     public const int BlastPointOffset = 14;
@@ -145,7 +181,31 @@ public static class BotHitUtils
             return null;
         }
 
+        // A knife blow whose second byte is `00` is the stun stab, not the
+        // critical one. Every other hit in the capture writes a `1` there — a body
+        // hit `11 01`, a headshot `12 01`, a tranquilliser `42 01` — and the two
+        // knife blows it holds write `00`: `91 00 10 7d 01` on slot 6 at t+409.36
+        // and `91 00 10 7d 01` on slot 3 at t+421.05, a whole bar in a damage word
+        // the working host answers with the same record and **without a death** (no
+        // feed names either slot and neither victim's vitals reach zero). Read as a
+        // kill, the whole-bar word it carries put every knife victim down instead
+        // of knocking it out, which is the stun that did not work.
         var points = (body[2] | (body[3] << 8)) / BotActorRecordUtils.DamageScale;
+
+        // **The stun is the whole-bar word, not the zero alone.** Read on the zero
+        // only, every `0x91` a magazine carries was a knock-out that spends no health,
+        // which is a bot shot at point blank that never bleeds: this capture's
+        // twenty-two are 42.6 points each behind weapon `0x18`, where the reference's
+        // recorded knife blows are `91 00 10 7d` — the whole 250.1 bar. So the subtype
+        // names the family, the base its identifier is written on, and the damage word
+        // which blow it is.
+        if (kind == BotHitKind.Melee
+            && body[1] == 0
+            && points >= BotBodyState.MaximumVitals)
+        {
+            kind = BotHitKind.Stun;
+        }
+
         return new BotHit(victim, kind, Math.Max(points, 1), body[4]);
     }
 
@@ -157,6 +217,7 @@ public static class BotHitUtils
     public static BotHitKind? KindOf(byte subtype) => subtype switch
     {
         BodySubtype => BotHitKind.Body,
+        BodyZoneSubtype => BotHitKind.Body,
         HeadshotSubtype => BotHitKind.Headshot,
         StunSubtype => BotHitKind.Stun,
         MeleeSubtype => BotHitKind.Melee,

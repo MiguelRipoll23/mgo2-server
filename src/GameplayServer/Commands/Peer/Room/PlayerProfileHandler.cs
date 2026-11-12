@@ -326,6 +326,18 @@ public sealed class PlayerProfileHandler(
                 context.Remote);
         }
 
+        // **The peer's own entry is sent, and the run's own counts say why.** It was
+        // left out once, on a survey that read sixteen entries from the first two
+        // datagrams of `actions.pcapng` t+0.60. The third holds `63, 63, 72, 54`: that
+        // seventy-two byte record names slot `10`, the human's own entry, with its
+        // loadout behind it. So the answer is seventeen entries and its count record
+        // states 17, and one carrying sixteen while counting seventeen tells the
+        // client of a player in the room it cannot place — which is what a client
+        // stopped at its settings burst is reading (`myserver.pcapng`, 2026-11-12).
+        //
+        // The run is packed, not written as one datagram: seventeen entries came to
+        // 1,151 bytes and a peer drops anything past 512
+        // (<see cref="RosterRunSendUtils"/>).
         var run = roster.BuildRosterRun(
             answeringLoadout,
             includeEndpointPairs: context.Session.PeerHandshakeShape != HandshakeShape.Native);

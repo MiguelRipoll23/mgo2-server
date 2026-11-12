@@ -137,7 +137,7 @@ internal static class RoomRotationPayloadUtils
         RoomStateRegionUtils.WritePresenceMap(body);
         RoomStateRegionUtils.WriteRoundPhase(body, state);
         RoomStateRegionUtils.WriteRotationTriples(body, rotation);
-        RoomStateRegionUtils.WriteRoomStateFields(body);
+        RoomStateRegionUtils.WriteRoomStateFields(body, playerCount);
         RoomStateRegionUtils.WriteCurrentSlotAndPopulation(body, currentRotationIndex, playerCount);
         RoomStateRegionUtils.WriteStateFields17To27(body);
         RoomStateRegionUtils.WriteRuleTimerVector(body, ruleTimers);

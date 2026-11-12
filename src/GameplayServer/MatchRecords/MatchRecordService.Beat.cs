@@ -58,9 +58,19 @@ public sealed partial class MatchRecordService
     /// leaves the pair's empty form.
     /// </para>
     /// </remarks>
-    /// <returns>The room's player slots, or an empty list.</returns>
-    private IReadOnlyList<byte> LiveMemberSlots() =>
-        roster.Snapshot().Select(member => member.SessionSlot).Order().ToArray();
+    /// <returns>The room's players and the sides they hold, or an empty list.</returns>
+    private IReadOnlyList<Rooms.LobbyTeamSlot> LiveMembers()
+    {
+        var sides = botSides.TeamSlots.ToDictionary(slot => slot.Slot);
+        return
+        [
+            .. roster.Snapshot()
+                .Select(member => new Rooms.LobbyTeamSlot(
+                    member.SessionSlot,
+                    sides.TryGetValue(member.SessionSlot, out var botSlot) ? botSlot.Team : null))
+                .OrderBy(slot => slot.Slot),
+        ];
+    }
 
     private async Task BeatAsync(PeerContext context)
     {
@@ -124,7 +134,7 @@ public sealed partial class MatchRecordService
                 beat.BlobsWritten,
                 beat.ItemBoxSequence,
                 beat.ItemBoxStateSequence,
-                LiveMemberSlots(),
+                LiveMembers(),
                 beat.VitalsRepeats > 0 || beat.FrameIndex % VitalsPeriodFrames == 0 ? vitals : null);
 
             // The insertions' fourth bytes are taken inside the plan, from the

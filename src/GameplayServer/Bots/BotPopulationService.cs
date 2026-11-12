@@ -191,10 +191,15 @@ public sealed partial class BotPopulationService : PeriodicWorker
     /// filled seats the briefing's own list treats as unplaced. A Free Battle room
     /// is published at <c>GameplayServerMaxPlayers</c>, so the row and the settings
     /// row state one size. The protocol's own limit is the fallback for the window
-    /// before this instance has published a room. The advertised maximum counts the
-    /// host's own seat — it is what the room list states and what the join answer's
-    /// count is read against — so the bots fill the seats below it and never the
-    /// host's.
+    /// before this instance has published a room.
+    /// <para>
+    /// <b>The number is the players' and the host's seat is outside it.</b>
+    /// `.pcapngs/actions/actions.pcapng` states sixteen over TCP and holds sixteen
+    /// players — `BOT-01` to `BOT-15` at slots 1 to 15 and the human at 16 — with
+    /// the host's entry at slot 0 above them, so the seats a population fills are
+    /// the row's number exactly, less the humans. An earlier reading subtracted a
+    /// seat for the host as well and seated fourteen.
+    /// </para>
     /// </remarks>
     private int Capacity
     {
@@ -205,7 +210,7 @@ public sealed partial class BotPopulationService : PeriodicWorker
                 : Math.Min(
                     RoomRosterService.SessionSlotCount - 1,
                     serverOptions.GameplayServerMaxPlayers);
-            return Math.Max(1, advertised - 1);
+            return Math.Max(1, advertised);
         }
     }
 

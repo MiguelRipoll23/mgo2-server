@@ -53,6 +53,7 @@ public sealed partial class BotActorPublishService(
     MatchRecordSequenceService sequences,
     MatchScoreService score,
     ScoreboardPublishService scoreboard,
+    Rooms.TeamArrayService teamArrays,
     ILogger<BotActorPublishService> logger)
 {
     /// <summary>Milliseconds between bot actor frames on the match beat.</summary>
@@ -251,6 +252,13 @@ public sealed partial class BotActorPublishService(
                 }
             }
         }
+
+        // The room's side assignment rides the same beat, on its own slower clock:
+        // the reference republishes the pair about every two thirds of a second
+        // while a round plays (`TeamArrayService.RepublishAsync`). It is written
+        // behind the frame rather than inside it so a pair never splits an actor
+        // block.
+        await teamArrays.RepublishAsync(context);
 
         // The scoreboard rides behind the frame the death was announced in: the
         // capture writes the feed first and the side's ticket, the victim's delta

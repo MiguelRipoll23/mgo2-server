@@ -142,6 +142,18 @@ public sealed class PlayerSettingsBurstSchedulerService(
         // state fields beside them and a loadout per player of the room.
         LogBurst(settingsBurst);
         await RosterRunSendUtils.SendAsync(context, settingsBurst);
+
+        // **The other seats' rows follow the burst as their own run.** They are the
+        // twenty-five byte headers that make a slot a player and the seventy-byte gear
+        // bodies the appearance and the level come from, and the burst cannot carry
+        // them: seventeen of each made it fifty-two records against the reference's
+        // twenty-two. The reference writes them eleven seconds behind its burst
+        // (`actions.pcapng` t+15.44), so they travel as the frame after it.
+        var seatRows = burst.BuildSeatRows(loadouts);
+        if (seatRows.Count > 0)
+        {
+            await RosterRunSendUtils.SendAsync(context, seatRows);
+        }
         logger.LogDebug(
             "UDP {LocalPort}: settings burst sent to {RemoteAddress}; sending its closing control",
             context.LocalPort,

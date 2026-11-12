@@ -117,6 +117,19 @@ public sealed partial class BotSimulationService
     public const int HeldMilliseconds = 600;
 
     /// <summary>
+    /// How long a corpse keeps naming the slot that put it down, in milliseconds.
+    /// </summary>
+    /// <remarks>
+    /// The feed rides the death's own beat (`FeedDelayMilliseconds` is zero), and
+    /// the working host names the killer across the whole second around it: its
+    /// victim slot 13 writes <c>44 0b 01 …</c> from t+152.78 until the
+    /// <c>09 0b 0d</c> feed at t+153.85. One second spans that with room for a
+    /// dropped beat, and is short enough that the body stands again long before its
+    /// <see cref="RespawnMilliseconds"/> respawn.
+    /// </remarks>
+    public const int KillerNamedMilliseconds = 1_000;
+
+    /// <summary>
     /// Holds a bot in a client's grab: it stands, holds no target and pulls no
     /// trigger until the grab's records stop coming.
     /// </summary>
@@ -130,7 +143,11 @@ public sealed partial class BotSimulationService
     /// <param name="slot">Slot the client's hold names as the actor it holds.</param>
     /// <param name="now">Monotonic milliseconds.</param>
     /// <returns><c>true</c> when a living bot holds the slot.</returns>
-    public bool HoldSlot(byte slot, long now)
+    /// <param name="slot">Slot the client's hold names as the actor it holds.</param>
+    /// <param name="holder">Slot of the client that wrote the hold, which the body turns on.</param>
+    /// <param name="now">Monotonic milliseconds.</param>
+    /// <returns><c>true</c> when a living bot holds the slot.</returns>
+    public bool HoldSlot(byte slot, byte holder, long now)
     {
         if (Bodies().FirstOrDefault(candidate => candidate.SessionSlot == slot) is not { } body
             || body.IsDead)
@@ -139,6 +156,7 @@ public sealed partial class BotSimulationService
         }
 
         body.HeldUntilMilliseconds = Math.Max(body.HeldUntilMilliseconds, now + HeldMilliseconds);
+        body.HeldBySlot = holder;
         return true;
     }
 
@@ -197,6 +215,11 @@ public sealed partial class BotSimulationService
             return false;
         }
 
+        // A body that dies in someone's grab is nobody's held actor any more: its
+        // corpse record must not keep the hold's aim form, which names no target.
+        body.HeldUntilMilliseconds = 0;
+        body.HeldBySlot = BotBodyState.NoTarget;
+
         kills.Enqueue(new BotKill(killerSlot, body.SessionSlot, headshot));
         body.Deaths++;
         body.RespawnMilliseconds = now + RespawnMilliseconds;
@@ -205,6 +228,20 @@ public sealed partial class BotSimulationService
         // The body turns on the actor that put it down, so the record it writes
         // next still names shooter and victim of each other (BotDeathUtils).
         BotDeathUtils.NoteDeath(body, killerSlot, Bodies());
+
+        // The shooter keeps naming the body it put down for as long as the victim
+        // does: every `09 <killer> <victim>` in the working capture lands with the
+        // killer's state still on the victim, and a killer that re-targets within
+        // the feed's delay leaves the client no record naming both actors.
+        if (Bodies().FirstOrDefault(other => other.SessionSlot == killerSlot) is { } shooter)
+        {
+            shooter.KillAimSlot = body.SessionSlot;
+            shooter.KillAimUntilMilliseconds = now + KillerNamedMilliseconds;
+            shooter.TargetSlot = body.SessionSlot;
+            shooter.AimX = body.X;
+            shooter.AimY = body.Y + BotLocomotionService.AimHeight;
+            shooter.AimZ = body.Z;
+        }
         logger.LogDebug(
             "Bot in slot {BotSlot} went down and stands up in {RespawnMilliseconds} ms",
             body.SessionSlot,

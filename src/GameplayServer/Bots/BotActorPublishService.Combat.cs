@@ -98,6 +98,14 @@ public sealed partial class BotActorPublishService
         var records = new List<UdpMessage>();
         var views = await ActorViewsAsync(context, map, now);
 
+        // The feeds due this beat. Each one is written inside its victim's turn — the
+        // victim's zero, the feed, then the victim's block — because that is the order
+        // the reference writes, and a feed handled before the death it names has
+        // nothing to log. A victim this beat carries no block for leaves its feed at
+        // the frame's end instead of waiting for a beat written elsewhere.
+        var feeds = DrainKills(generation);
+        var placed = new HashSet<byte>();
+
         foreach (var bot in bots.Bots.OrderBy(participant => participant.SessionSlot))
         {
             var advance = simulation.Advance(bot, map, rule, now, views);
@@ -113,15 +121,34 @@ public sealed partial class BotActorPublishService
                 advance.Body.NextVitalsMilliseconds = now + VitalsIntervalMilliseconds;
             }
 
+            // A death's feed is written inside its victim's turn, in the reference's
+            // order (`BotActorPublishService.Cadence`).
+            var deathFeed = feeds.FirstOrDefault(feed => feed.Victim == bot.SessionSlot);
+            if (WriteDeathTurn(records, generation, advance.Body, deathFeed, placed, now))
+            {
+                publishVitals = false;
+            }
+
+            // A beat's firing state stays what the simulation decided. Forcing it on
+            // every beat that carries a hit was tried and withdrawn: the working
+            // host writes 319 of its 744 damage records on frames where no slot
+            // shows the shot state at all (42%, `tools/beat_shot_check.py`), so a
+            // hit without a firing beat is not what tells the two hosts apart and a
+            // rule invented here would be a shape the reference never writes.
             records.AddRange(BotActorRecordUtils.Build(
                 bot.SessionSlot,
                 generation,
                 advance.Body,
                 advance.Fired,
                 advance.Body.ShotThisBeat,
-                publishVitals));
+                publishVitals,
+                PublishesState(advance.Body, now)));
 
-            if (advance.Shot is { } shot)
+            // A shot at a body that was already down is not a hit and carries no
+            // record: the reference writes no damage on a corpse, and a word written
+            // there revives the actor on the client, which then spends its bullets on
+            // a slot this host has at zero (`BotShot.Landed`).
+            if (advance.Shot is { Landed: true } shot)
             {
                 // A hit is a damage record on the victim, bot or player: the capture
                 // writes them for a bot's hits on another bot as well.
@@ -157,8 +184,15 @@ public sealed partial class BotActorPublishService
             records.Add(echo);
         }
 
-        // The kill feed, and the score behind it (`BotActorPublishService.Kills.cs`).
-        DrainKills(generation, records);
+        // A feed whose victim this beat carries no block for still leaves, behind the
+        // blocks, rather than waiting for a beat that may be written elsewhere.
+        foreach (var feed in feeds)
+        {
+            if (!placed.Contains(feed.Victim))
+            {
+                records.Add(feed.Record);
+            }
+        }
 
         // The round's state blob, every 1.2 s: twenty-two bytes, the presence map's
         // field 150 and the value the captured burst carries. The working host
@@ -212,8 +246,13 @@ public sealed partial class BotActorPublishService
         var sides = await HumanSidesAsync(now);
         foreach (var member in roster.Snapshot().Where(member => !member.IsBot && member.SessionSlot > 0))
         {
+            // The position is the member's own, read at its own endpoint. Reading
+            // it at the context peer's wrote one player's coordinates into every
+            // other player's slot — a room of two placed both humans at the same
+            // point — and a bot that aims at them then damages and names the slot
+            // that is not there, which the feed cannot resolve.
             if (!sides.TryGetValue(member.SessionSlot, out var side)
-                || !positions.TryGet(context.Session.RemoteAddress, out var reported)
+                || !positions.TryGet(member.RemoteAddress, out var reported)
                 || IsVictimDown(member.SessionSlot))
             {
                 continue;

@@ -49,6 +49,7 @@ public sealed partial class MatchRecordService(
     MatchRecordSequenceService sequences,
     RoomRosterService roster,
     PlayerVitalsService playerVitals,
+    Bots.BotSideService botSides,
     ILogger<MatchRecordService> logger)
 {
     /// <summary>

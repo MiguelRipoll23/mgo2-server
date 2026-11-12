@@ -20,11 +20,11 @@ public static class RulesPairFramesUtils
     /// holds any, the empty list under the other.
     /// </summary>
     /// <param name="generation">Identifier set of the room being briefed or played.</param>
-    /// <param name="members">Slots of the players the round holds.</param>
+    /// <param name="members">The players the round holds, with their sides.</param>
     /// <returns>The two records, in the order a frame carries them.</returns>
     public static List<MatchRecordFramesUtils.RecordMessage> RulesPair(
         MatchRecordGenerationUtils generation,
-        IReadOnlyList<byte> members) =>
+        IReadOnlyList<Rooms.LobbyTeamSlot> members) =>
     [
         new(generation.RulesRoster,
             members.Count > 0

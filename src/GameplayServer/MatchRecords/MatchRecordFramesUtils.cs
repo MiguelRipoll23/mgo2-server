@@ -264,7 +264,7 @@ public static class MatchRecordFramesUtils
     /// <param name="insertions">Records to place at the head of the frame, or null.</param>
     /// <param name="includeVitals">Whether the vitals record rides in this frame.</param>
     /// <param name="itemBoxes">Item-box group to place behind the rules pair, or null.</param>
-    /// <param name="members">Slots of the players the round holds, or null for the empty pair.</param>
+    /// <param name="members">The players the round holds and their sides, or null for the empty pair.</param>
     /// <param name="vitals">
     /// Body of this peer's vitals record, or null for the captured constant.
     /// </param>
@@ -274,7 +274,7 @@ public static class MatchRecordFramesUtils
         IReadOnlyList<RecordMessage>? insertions = null,
         bool includeVitals = true,
         IReadOnlyList<RecordMessage>? itemBoxes = null,
-        IReadOnlyList<byte>? members = null,
+        IReadOnlyList<Rooms.LobbyTeamSlot>? members = null,
         byte[]? vitals = null)
     {
         var frame = new List<RecordMessage>(

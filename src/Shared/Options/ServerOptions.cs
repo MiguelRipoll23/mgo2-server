@@ -151,13 +151,16 @@ public sealed class ServerOptions
     /// browsing client draws as the room's capacity.
     /// </summary>
     /// <remarks>
-    /// <b>The host holds a slot it never plays.</b> A dedicated host is a seat the
-    /// room's table spends and the client never draws — a room of sixteen shows the
-    /// player fifteen slots — so the figure stated here is the room's whole table and
-    /// not its roster: the bots fill it less the host's seat and less the players in
-    /// it (`GameplayServer.Bots.BotPopulationService.Capacity`). Sixteen is the table
-    /// the local room was measured at on 2026-11-11 13:52, with fourteen bots beside
-    /// the player.
+    /// <b>The host holds a seat the row does not count.</b> This figure is what the
+    /// room list states and what a browsing client draws, and it is the players' —
+    /// the host's seat is added on the gameplay channel's side, as one more than the
+    /// row states (`GameplayServer.Match.MatchService.RoomCapacity`). A room of
+    /// sixteen therefore seats fifteen players and the host, which is the working
+    /// room's shape: `.pcapngs/actions/actions.pcapng`'s roster lists a nameless host
+    /// entry and `BOT-01` to `BOT-15`, and its kill feeds name the human in the
+    /// sixteenth player slot — fifteen bots, one player, one host. A room advertised
+    /// at sixteen that sized the fill from the row alone seated fourteen
+    /// (2026-11-11 13:52), the one bot short.
     /// </remarks>
     public int GameplayServerMaxPlayers { get; set; } = 16;
 

@@ -27,9 +27,11 @@ internal static class RoomStateRegionUtils
     private const int RotationTripleLength = 3;
 
     /// <summary>
-    /// Body <c>0x4a</c>: field 3, the room's <c>Max Number of Characters</c>.
+    /// Body <c>0x4a</c>: field 3, the room's <c>Max Number of Characters</c>, or this
+    /// floor where the room holds fewer.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The client's own state builder loads the game-settings block's <c>+66</c> — the
     /// byte <c>0x4313</c> calls <c>max_players</c> — and writes it to this slot, which
     /// is what settles the older <c>Level-Limit</c> reading: the level limit is a
@@ -38,8 +40,19 @@ internal static class RoomStateRegionUtils
     /// <c>129.153.74.111:5720</c> writes <c>0x11</c> for its sixteen-player room and
     /// <c>0x0f</c> for the six-player one
     /// (<c>docs/analysis/rotation-payload-corpus.md</c>).
+    /// </para>
+    /// <para>
+    /// <b>It is a cap, and one below the room's population tells a client the match is
+    /// full.</b> Written as the constant <c>0x0f</c> it did exactly that: a room of
+    /// fifteen bots answered a joining client with a cap of fifteen while seating
+    /// seventeen, and the join stopped dead at the settings burst
+    /// (<c>myserver.pcapng</c>, 2026-11-12, t+14.77). So the body never states fewer
+    /// characters than the room holds — the population at <c>0x56</c> is the floor —
+    /// and keeps the capture's <c>0x0f</c> beneath that, which is the value its
+    /// six-player room writes and the largest figure no captured room contradicts.
+    /// </para>
     /// </remarks>
-    private const byte MaximumCharacters = 0x0f;
+    private const byte MinimumMaximumCharacters = 0x0f;
 
     /// <summary>
     /// Body <c>0x4b</c>: field 4, <c>0x00b4</c> in every captured room because the
@@ -236,9 +249,12 @@ internal static class RoomStateRegionUtils
     /// round count, its switch word and a minute limit.
     /// </summary>
     /// <param name="body">The body being built.</param>
-    internal static void WriteRoomStateFields(List<byte> body)
+    /// <param name="playerCount">
+    /// The room's population, host included, which the cap can never state fewer of.
+    /// </param>
+    internal static void WriteRoomStateFields(List<byte> body, byte playerCount)
     {
-        body.Add(MaximumCharacters);
+        body.Add((byte)Math.Max(MinimumMaximumCharacters, playerCount));
         WriteUInt16LittleEndian(body, ClientFixedValue);
         body.Add(Field5);
         body.Add(NumberOfRounds);

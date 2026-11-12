@@ -200,6 +200,13 @@ public sealed class MatchService(
         var maximumPlayers = EventHostEligibilityUtils.IsHostRoleMode(lobby.SubtypeIdentifier)
             ? EventHostEligibilityUtils.MatchPlayerCapacity
             : Math.Max(1, options.GameplayServerMaxPlayers);
+        // The row's number is the players' capacity, and the host's seat sits
+        // outside it. `.pcapngs/actions/actions.pcapng` states sixteen over TCP and
+        // then holds exactly sixteen players — `BOT-01` to `BOT-15` in slots 1 to
+        // 15 and the human in 16 — with the host's own entry at slot 0 above them,
+        // drawn by nothing. The fill is therefore the row's number less the humans,
+        // and the host's seat is not subtracted anywhere: it is not in the table the
+        // client counts. Subtracting it twice is what left the room one bot short.
         RoomCapacity = maximumPlayers;
 
         // A name is this instance's own, so a second room under it is a row left by

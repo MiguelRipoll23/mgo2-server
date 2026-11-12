@@ -53,6 +53,22 @@ public sealed record BotShot(
     /// </summary>
     public short Pitch { get; init; }
 
+    /// <summary>
+    /// Whether the blow was one a body could take: <c>false</c> when the victim was
+    /// already down when it was fired.
+    /// </summary>
+    /// <remarks>
+    /// <b>A hit is never written on a corpse.</b> The working host's 350 host-written
+    /// damage records all name a living actor, and a record written on a slot this
+    /// host already holds at zero is what puts the body back on its feet on the
+    /// client: the client applies the word it reads, so the actor the player keeps
+    /// shooting is one this host drops every bullet on. Measured on
+    /// `.pcapngs/myserver.pcapng`, 54 of 85 damage records had no vitals answer and
+    /// 14 of the 18 client-written hits named a slot at zero, where
+    /// `.pcapngs/actions/actions.pcapng` answers 48 of its 49 client-written hits on
+    /// a living slot and holds one on a corpse.
+    /// </remarks>
+    public bool Landed { get; init; } = true;
 }
 
 /// <summary>

@@ -68,6 +68,18 @@ public sealed partial class BotSimulationService(
     /// <summary>Interval between <c>0x47</c> fire beats while engaged: 1.3 a second.</summary>
     public const int FireBeatIntervalMilliseconds = 750;
 
+    /// <summary>
+    /// Heading a held body turns through in one beat, as the working capture states
+    /// it.
+    /// </summary>
+    /// <remarks>
+    /// <c>.pcapngs/actions/actions.pcapng</c> slot 15 runs <c>0x200c</c>, <c>0x2894</c>,
+    /// <c>0x311c</c>, <c>0x3da4</c> while held — <c>+0x888</c> a beat — until it faces
+    /// the client that holds it. A stage heading is a sixteenth of a turn, so that is
+    /// about 47 degrees.
+    /// </remarks>
+    private const int HoldTurnPerBeat = 0x888;
+
     /// <summary>Deaths the room owes the client a kill-feed record for.</summary>
     private readonly Queue<BotKill> kills = new();
 
@@ -104,11 +116,12 @@ public sealed partial class BotSimulationService(
             {
                 body.Moving = false;
 
-                // The beat the blow landed on still names the killer, and the beats
-                // after it stand. A corpse that named nobody on the beat the client
-                // reads its death from is a body nobody was seen to have shot.
-                body.TargetSlot = body.DiedThisBeat ? body.KillerSlot : BotBodyState.NoTarget;
-                body.DiedThisBeat = false;
+                // A corpse stands: the working capture's victim is on `00 ff 00` on
+                // the beat its health reaches zero on 108 of 113 deaths, never on
+                // the killer's slot. The credit is the `09` feed's and the killer's
+                // own aim record's, not the victim's (`BotDeathUtils`).
+                body.TargetSlot = BotBodyState.NoTarget;
+                body.KillAimSlot = BotBodyState.NoTarget;
                 body.HitReacting = false;
                 body.ShotThisBeat = false;
                 return new BotAdvance(body, false, null);
@@ -137,7 +150,16 @@ public sealed partial class BotSimulationService(
             body.TargetSlot = BotBodyState.NoTarget;
             body.ShotThisBeat = false;
             body.BurstRemaining = 0;
+            TurnTowardsHolder(body);
             return new BotAdvance(body, false, null);
+        }
+
+        // The grab has let go: the body keeps no holder, so its state record goes
+        // back to naming a target rather than the aim form's `0xff`.
+        if (body.HeldUntilMilliseconds != 0)
+        {
+            body.HeldUntilMilliseconds = 0;
+            body.HeldBySlot = BotBodyState.NoTarget;
         }
 
         if (body.HitReacting && now >= body.HitReactUntilMilliseconds)
@@ -146,6 +168,25 @@ public sealed partial class BotSimulationService(
         }
 
         body.ShotThisBeat = false;
+
+        // A bot that has just put a body down keeps naming it until the feed that
+        // credits the kill has gone out (`BotBodyState.KillAimSlot`). The working
+        // host's killer is still on its victim on the feed's own beat — `46 0c 01`
+        // for `09 01 0c` — where a killer that re-targets on the next beat names a
+        // third bot and leaves the death with no record pairing the two.
+        if (now < body.KillAimUntilMilliseconds
+            && body.KillAimSlot != BotBodyState.NoTarget
+            && Bodies().FirstOrDefault(other => other.SessionSlot == body.KillAimSlot) is { } killed)
+        {
+            body.TargetSlot = body.KillAimSlot;
+            body.AimX = killed.X;
+            body.AimY = killed.Y + BotLocomotionService.AimHeight;
+            body.AimZ = killed.Z;
+            body.Yaw = BotLocomotionService.YawTowards(killed.X - body.X, killed.Z - body.Z);
+            return new BotAdvance(body, true, null);
+        }
+
+        body.KillAimSlot = BotBodyState.NoTarget;
 
         // A bot's first shot is its own beat of the twelve seconds. A room that
         // arms eight triggers on the same millisecond fires as one volley, which
@@ -190,12 +231,25 @@ public sealed partial class BotSimulationService(
                 // An ordinary hit, or a headshot that ends its victim at once (BotShotUtils).
                 var headshot = BotShotUtils.RollHeadshot();
                 var damage = headshot ? BotBodyState.MaximumVitals : BotShotUtils.RollDamage();
-                if (target.IsBot && Bodies().FirstOrDefault(other => other.SessionSlot == target.SessionSlot) is { } victim)
+                var victim = target.IsBot
+                    ? Bodies().FirstOrDefault(other => other.SessionSlot == target.SessionSlot)
+                    : null;
+
+                // A blow a body can take, or a shot at one already down. The second is
+                // not a hit and is not written as one: the reference's records all name
+                // a living actor, and one written on a zero slot revives the body on the
+                // client, which then shoots an actor this host drops every bullet on
+                // (`BotShot.Landed`).
+                var landed = !target.IsBot || victim is { IsDead: false };
+                if (landed && victim is not null)
                 {
                     ApplyDamage(victim, damage, bot.SessionSlot, headshot, headshot, now);
                 }
 
-                shot = BotShotUtils.Build(body, target, damage, ShotWeapon, headshot);
+                shot = BotShotUtils.Build(body, target, damage, ShotWeapon, headshot) with
+                {
+                    Landed = landed,
+                };
             }
         }
 
@@ -225,6 +279,38 @@ public sealed partial class BotSimulationService(
         }
 
         return new BotAdvance(body, firing, shot);
+    }
+
+    /// <summary>
+    /// Turns a held body towards the client holding it, by at most one beat's turn.
+    /// </summary>
+    /// <remarks>
+    /// The body keeps its feet and its aim point; only the heading moves, which is
+    /// what the capture's held slot does — <c>0x200c</c> through <c>0x3da4</c> at
+    /// <c>+0x888</c> a beat until it faces the holder.
+    /// </remarks>
+    /// <param name="body">The body being held.</param>
+    private void TurnTowardsHolder(BotBodyState body)
+    {
+        if (body.HeldBySlot == BotBodyState.NoTarget
+            || Bodies().FirstOrDefault(other => other.SessionSlot == body.HeldBySlot) is not { } holder)
+        {
+            return;
+        }
+
+        var wanted = BotLocomotionService.YawTowards(holder.X - body.X, holder.Z - body.Z);
+        var delta = (int)wanted - body.Yaw;
+        if (delta > 0x8000)
+        {
+            delta -= 0x10000;
+        }
+        else if (delta < -0x8000)
+        {
+            delta += 0x10000;
+        }
+
+        var step = Math.Clamp(delta, -HoldTurnPerBeat, HoldTurnPerBeat);
+        body.Yaw = (ushort)((body.Yaw + step + 0x10000) % 0x10000);
     }
 
     /// <summary>Drops every body and owed death, because the room has emptied.</summary>

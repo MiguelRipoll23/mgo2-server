@@ -68,6 +68,89 @@ public sealed partial class PlayerSettingsBurstService
                 SettingsHeaderBodiesUtils.BuildJoin((byte)(RoomRosterService.HostSessionSlot + 1)),
                 roster.TakeRunOrdinal()),
         ];
+
+        // **The burst carries one header, the host's own, and no seat's besides it.**
+        //
+        // The other seats' headers are written by `BuildSeatRows` in the run behind
+        // this one, which is where they belong: they make a slot a player — a client
+        // holding none draws the body, shoots at it and reports no hit, and a kill
+        // feed's killer byte for that slot resolves no name and is drawn on the
+        // host's own row — but they are not part of the frame that seats the room.
+        //
+        // A twenty-five byte header per seat was written here once, on the reading
+        // that `actions.pcapng` holds 194 of them across 17 slots. The count is right
+        // and the frame is wrong: the burst at t+3.55 holds exactly one, for slot
+        // `01`, and the other 193 do not begin until t+15.44 — a different exchange,
+        // twelve seconds behind the join. Writing seventeen of them here made this
+        // burst fifty-two records against the reference's twenty-two, and the join
+        // answered it with fifty-two nulls and stopped (`myserver.pcapng`, 2026-11-12,
+        // t+14.77). So the header stays where the reference writes it: one seat, in
+        // the burst, and every other seat's left to whatever exchange writes it later.
         return preamble;
+    }
+
+    /// <summary>
+    /// The rows that name every other seat of the room, written as their own run
+    /// behind the burst.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>These are the records that make a slot a player, and they are not the
+    /// burst's.</b> A client holding no settings row for a slot draws the body, shoots
+    /// at it and reports no hit; a kill feed's killer byte for that slot resolves no
+    /// name and is drawn on the host's own row. So each seat gets its twenty-five
+    /// byte header, and each player its seventy-byte gear body, which is the record
+    /// the appearance and the level come from.
+    /// </para>
+    /// <para>
+    /// <b>Behind the burst and not inside it.</b> `actions.pcapng` t+3.55 holds one
+    /// twenty-five byte header and nothing of this run; the other 193 begin at
+    /// t+15.44, eleven seconds after the burst and after its client has reported. A
+    /// burst carrying all seventeen came to fifty-two records against the reference's
+    /// twenty-two and the join answered it with fifty-two nulls and stopped, so this
+    /// run travels as the frame behind the burst, where the reference's own seats are
+    /// named (`myserver.pcapng`, 2026-11-12).
+    /// </para>
+    /// </remarks>
+    /// <param name="loadouts">
+    /// The room's players, each with its own appearance and level, or <c>null</c> for a
+    /// room whose rows could not be read, in which case only the headers are written.
+    /// </param>
+    /// <returns>The records in send order, each with the type it travels as.</returns>
+    public List<RosterRecord> BuildSeatRows(IReadOnlyList<LobbyLoadout>? loadouts)
+    {
+        List<RosterRecord> rows = [];
+
+        foreach (var member in roster.Snapshot().OrderBy(member => member.RosterIndex))
+        {
+            // The host's own seat is the burst's header; two for one slot is a
+            // sequence the reference never writes.
+            if (member.SessionSlot == RoomRosterService.HostSessionSlot)
+            {
+                continue;
+            }
+
+            rows.Add(new(
+                UdpCommandConstants.PlayerProfile,
+                SettingsHeaderBodiesUtils.BuildJoin((byte)(member.SessionSlot + 1)),
+                roster.TakeRunOrdinal()));
+        }
+
+        if (loadouts is { Count: > 0 })
+        {
+            foreach (var loadout in loadouts.OrderBy(player => player.Slot))
+            {
+                rows.Add(new(
+                    UdpCommandConstants.PlayerProfile,
+                    PlayerGearBodiesUtils.Build(
+                        (byte)(loadout.Slot + 1),
+                        loadout.Appearance,
+                        PlayerGearBodiesUtils.PlayerStats.None,
+                        loadout.Level),
+                    roster.TakeRunOrdinal()));
+            }
+        }
+
+        return rows;
     }
 }

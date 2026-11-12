@@ -45,9 +45,9 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// carries the group.
 /// </param>
 /// <param name="Members">
-/// Slots of the players the round holds, written in the frame's rules pair. It
-/// is empty on a room that holds none, which is the empty pair the captures'
-/// briefing writes.
+/// The players the round holds and the sides they are on, written in the
+/// frame's rules pair as one group per side. It is empty on a room that holds
+/// none, which is the empty pair the captures' briefing writes.
 /// </param>
 public sealed record BeatFramePlan(
     int FrameIndex,
@@ -57,7 +57,7 @@ public sealed record BeatFramePlan(
     int BlobsWritten,
     byte ItemBoxSequence,
     byte ItemBoxStateSequence,
-    IReadOnlyList<byte> Members,
+    IReadOnlyList<Rooms.LobbyTeamSlot> Members,
     byte[]? VitalsBody = null)
 {
     /// <summary>

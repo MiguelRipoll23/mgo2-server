@@ -61,11 +61,9 @@ public sealed partial class BriefingRoomPublishService
     /// </para>
     /// </remarks>
     /// <param name="context">Context the records are written through.</param>
-    /// <param name="started">When this publication started, beside the sparse phase.</param>
     /// <param name="frames">Passes this publication has made.</param>
     private async Task PublishStateBlobAsync(
         PeerContext context,
-        DateTimeOffset started,
         int frames)
     {
         if (frames % StateBlobFrameInterval != 0)
@@ -73,14 +71,14 @@ public sealed partial class BriefingRoomPublishService
             return;
         }
 
-        // The sparse phase writes the recording's own blobs, so nothing here goes
-        // out until it has closed: a blob beside a recorded one would be a second
-        // record the capture does not carry.
-        if (DateTimeOffset.UtcNow - started
-            < TimeSpan.FromMilliseconds(SparsePhaseFramesUtils.SparsePhaseMilliseconds))
-        {
-            return;
-        }
+        // **The fan-out is the join's, not the sparse phase's.** It waited for the
+        // recorded phase to close — 42.2 s — on the reading that a blob beside a
+        // recorded one is a record the capture does not carry. The capture carries
+        // them exactly there: `actions.pcapng` t+8.75 writes sixteen of them, one per
+        // player key, 5.2 s after its burst and *before* its client reports at t+9.11,
+        // and the client moves the instant they land. This host wrote one blob at
+        // t+7.09 and nothing per player for the whole of the join that mattered
+        // (`myserver.pcapng`, 2026-11-12).
 
         var present = new HashSet<byte>();
         foreach (var slot in await lobbySlots.ReadAsync())

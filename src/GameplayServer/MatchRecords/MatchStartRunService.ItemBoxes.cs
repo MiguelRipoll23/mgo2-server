@@ -131,6 +131,18 @@ public sealed partial class MatchStartRunService
             return groups;
         }
 
+        // A team round places no boxes. The two this host spawns are the ENVG
+        // (`0x8c`) and the drum can (`0x71`) — the GE-KO and KEROTAN props the room
+        // reported standing between the spawn points of opposite sides — and they
+        // are `ItemBoxRecordBodiesUtils.OpeningEventBodies`' pair, not a team
+        // round's. The filler pair still rides the beat, which is what tells the
+        // client a box exists; the events that create these two are what TDM must
+        // not write.
+        if (roundState.RoundSettings?.Rule == Match.MatchRuleUtils.TeamDeathmatch)
+        {
+            return null;
+        }
+
         var boxOrdinals = sequences.Take(
             generation.ItemBox, ItemBoxFramesUtils.OpeningEventRunRecords);
         var stateOrdinals = sequences.Take(

@@ -94,6 +94,19 @@ public sealed class BotBodyState
     public long HitReactUntilMilliseconds { get; set; }
 
     /// <summary>
+    /// When the standing state record may be written again, in monotonic
+    /// milliseconds.
+    /// </summary>
+    /// <remarks>
+    /// The reference writes an idle actor's three-byte <c>00 ff 00</c> about once a
+    /// second and its acting form on every beat: 7,974 standing records against
+    /// 39,693 acting ones across 592 s. This host wrote the standing form on every
+    /// beat instead — 16,770 against 11,947 — so the client saw an idle bot at six
+    /// times the rate the reference shows and an acting one at a third of it.
+    /// </remarks>
+    public long NextStateMilliseconds { get; set; }
+
+    /// <summary>
     /// How many patrol points the bot has taken so far, which is the phase of its
     /// tour of the stage.
     /// </summary>
@@ -150,6 +163,19 @@ public sealed class BotBodyState
     /// </summary>
     public long HeldUntilMilliseconds { get; set; }
 
+    /// <summary>
+    /// Slot of the client that holds this body, or <see cref="NoTarget"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured on <c>.pcapngs/actions/actions.pcapng</c>.</b> The client writes
+    /// its hold on slot 15 from t+392.19, and the holding host turns the held body
+    /// towards it: the heading climbs <c>0x200c</c>, <c>0x2894</c>, <c>0x311c</c>,
+    /// <c>0x3da4</c> — about <c>+0x888</c> a beat, which is the 8 bits of a stage
+    /// heading. A body that kept facing where it was aiming is one the client's grab
+    /// never settled on.
+    /// </remarks>
+    public byte HeldBySlot { get; set; } = BotBodyState.NoTarget;
+
     /// <summary>Last time the body was advanced, in monotonic milliseconds.</summary>
     public long LastAdvanceMilliseconds { get; set; }
 
@@ -160,20 +186,25 @@ public sealed class BotBodyState
     public int Deaths { get; set; }
 
     /// <summary>
-    /// Slot of the body that took this one's last health, or
-    /// <see cref="NoTarget"/>.
+    /// Slot this bot has just put down and keeps naming until its feed is written,
+    /// or <see cref="NoTarget"/>.
     /// </summary>
     /// <remarks>
-    /// <b>The victim names its killer on the beat it dies.</b> The working host
-    /// keeps the victim's state record on its killer right up to the blow — slot 5
-    /// writes <c>44 06 01 …</c> for six beats and stands with <c>00 ff 00</c> only
-    /// after the fatal hit — so a body that dropped its target the instant it died
-    /// would be one the client never saw turn on the actor that shot it.
+    /// <b>Every kill feed in the working capture lands while the killer's state
+    /// record still names the victim:</b> <c>09 01 0c</c> arrives with slot 1
+    /// writing <c>46 0c 01 …</c>, <c>09 08 07</c> with <c>47 07 …</c>, <c>09 0c 08</c>
+    /// with <c>46 08 …</c>. In <c>myserver.pcapng</c> the killer re-targeted within
+    /// the feed's 220 ms and named a third bot (<c>44 0e</c> against a feed naming
+    /// slot 10), so the one record pair the client can file the attacker from named
+    /// no such pair.
     /// </remarks>
-    public byte KillerSlot { get; set; } = BotBodyState.NoTarget;
+    public byte KillAimSlot { get; set; } = BotBodyState.NoTarget;
 
-    /// <summary>Whether the beat naming <see cref="KillerSlot"/> is still to be written.</summary>
-    public bool DiedThisBeat { get; set; }
+    /// <summary>
+    /// When the bot stops naming <see cref="KillAimSlot"/>, in monotonic
+    /// milliseconds.
+    /// </summary>
+    public long KillAimUntilMilliseconds { get; set; }
 
     /// <summary>Whether it is dead, which is health at zero.</summary>
     public bool IsDead => Health <= 0;

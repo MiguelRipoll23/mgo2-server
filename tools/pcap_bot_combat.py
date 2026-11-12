@@ -6,8 +6,8 @@ Usage:
 
 The actor block is six tick records ten identifiers apart: state (class 0x01) at
 the base, vitals (class 0x03) at +1, position (class 0x02) at +2, the weapon pair
-and byte at +4, and aim (class 0x05) at +6. A hit lands three below the base, as
-class 0x00 and fifteen bytes.
+and byte at +4, and aim (class 0x05) at +6. A hit lands seven above the state
+record, as class 0x00 and fifteen bytes (slot 4: state 0x086b, hits 0x0872).
 
 This prints, per slot: the health its vitals records carry and when it changes,
 the hits it takes and the damage word they carry, and the state records' target
