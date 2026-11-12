@@ -128,6 +128,18 @@ public sealed partial class BotSimulationService(
             return new BotAdvance(body, false, null);
         }
 
+        // A bot a client has grabbed stands where the grab put it: the hold is the
+        // grabber's client's and the host's only part is to stop writing a body that
+        // aims, fires or walks out of it (`CqcHoldUtils`, `HoldSlot`).
+        if (body.HeldUntilMilliseconds > now)
+        {
+            body.Moving = false;
+            body.TargetSlot = BotBodyState.NoTarget;
+            body.ShotThisBeat = false;
+            body.BurstRemaining = 0;
+            return new BotAdvance(body, false, null);
+        }
+
         if (body.HitReacting && now >= body.HitReactUntilMilliseconds)
         {
             body.HitReacting = false;

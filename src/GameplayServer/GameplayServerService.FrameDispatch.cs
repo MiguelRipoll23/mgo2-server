@@ -356,34 +356,10 @@ public sealed partial class GameplayServerService
                 // in return, and a peer that has not finished its handshake is
                 // not a recipient yet.
 
-                // A client's hit is a class-0x00 damage record: the identifier names
-                // the victim's slot and the subtype says what the blow is — a body
-                // hit, a headshot, a stun, a knife, or a grenade's blast
-                // (`Bots.BotHitUtils`). The rest of that class is the operations and
-                // objective streams, whose first byte is a count and not a subtype, so
-                // the record is decoded here and a rule body is never read as damage.
-                if (message.Flags == Bots.BotActorRecordUtils.DamageAttributeClass &&
-                    Bots.BotHitUtils.Decode(message.Type, message.Body) is { } hit)
-                {
-                    // The echo carries the hit's subtype, and so the death drawn. It is
-                    // taken before the hit is applied: the echo drops a hit on an actor
-                    // that is already down, and the blow that kills is the one that
-                    // carries the headshot's impact point. Applied first, it zeroed the
-                    // bot and its own echo was then dropped as a hit on a corpse, so
-                    // every killing headshot was drawn as a body death.
-                    botActors.NoteDamageEcho(message.Type, message.Body, hit.Kind);
-
-                    // The two halves of the hit. A bot's body is the simulation's,
-                    // and a player's health is the actor writer's — which is the half
-                    // that was missing: a player damaging a teammate, or putting
-                    // itself down with a grenade, had its bar moved by nobody and its
-                    // death counted by nothing.
-                    var shooter = roster.Find(session.RemoteAddress)?.SessionSlot;
-                    if (!botSimulation.NoteIncomingDamage(hit, shooter))
-                    {
-                        botActors.NoteClientHit(hit, shooter);
-                    }
-                }
+                // A client's hit and the actor its CQC hold names are the two tick
+                // records this host acts on rather than relays; the relay below writes
+                // them on to the room either way (`GameplayServerService.TickCombat.cs`).
+                NoteCombatTickRecord(message, session.RemoteAddress);
 
                 if (session.Established)
                 {

@@ -105,6 +105,44 @@ public sealed partial class BotSimulationService
     }
 
     /// <summary>
+    /// How long a grab holds a body after the last record that states it, in
+    /// milliseconds.
+    /// </summary>
+    /// <remarks>
+    /// <b>The interval is inferred; the hold is measured.</b> The grabber's client
+    /// writes its hold every beat for as long as it holds (`CqcHoldUtils`), so this
+    /// only has to survive a dropped record: three seconds is the stun's own length
+    /// and far longer than a hold, and the reference's hold runs about two.
+    /// </remarks>
+    public const int HeldMilliseconds = 600;
+
+    /// <summary>
+    /// Holds a bot in a client's grab: it stands, holds no target and pulls no
+    /// trigger until the grab's records stop coming.
+    /// </summary>
+    /// <remarks>
+    /// <b>The host's whole part in a grab is to stop writing the body out of it.</b>
+    /// The hold is the grabber's client's — the reference's host sends nothing that
+    /// gates one — so a simulated bot that kept aiming, firing and walking was a
+    /// target whose client-side grab check could never settle, which is the grab this
+    /// server refused.
+    /// </remarks>
+    /// <param name="slot">Slot the client's hold names as the actor it holds.</param>
+    /// <param name="now">Monotonic milliseconds.</param>
+    /// <returns><c>true</c> when a living bot holds the slot.</returns>
+    public bool HoldSlot(byte slot, long now)
+    {
+        if (Bodies().FirstOrDefault(candidate => candidate.SessionSlot == slot) is not { } body
+            || body.IsDead)
+        {
+            return false;
+        }
+
+        body.HeldUntilMilliseconds = Math.Max(body.HeldUntilMilliseconds, now + HeldMilliseconds);
+        return true;
+    }
+
+    /// <summary>
     /// Records a death the room owes a kill-feed record for, which is what a hit on
     /// a player leaves behind when the health it takes is the last of it.
     /// </summary>

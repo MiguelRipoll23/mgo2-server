@@ -141,6 +141,15 @@ public sealed class BotBodyState
     /// </summary>
     public long StunnedUntilMilliseconds { get; set; }
 
+    /// <summary>
+    /// When a grab on this body ends, in monotonic milliseconds; zero when no
+    /// client is holding it. A held bot stands, holds no target and pulls no
+    /// trigger, which is the host's whole part in a grab its client owns
+    /// (<see cref="CqcHoldUtils"/>). It keeps its feet and its health: the grab
+    /// knocks nobody out.
+    /// </summary>
+    public long HeldUntilMilliseconds { get; set; }
+
     /// <summary>Last time the body was advanced, in monotonic milliseconds.</summary>
     public long LastAdvanceMilliseconds { get; set; }
 
