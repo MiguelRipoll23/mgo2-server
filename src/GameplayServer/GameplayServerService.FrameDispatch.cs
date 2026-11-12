@@ -371,7 +371,7 @@ public sealed partial class GameplayServerService
                     // carries the headshot's impact point. Applied first, it zeroed the
                     // bot and its own echo was then dropped as a hit on a corpse, so
                     // every killing headshot was drawn as a body death.
-                    botActors.NoteDamageEcho(message.Type, message.Body);
+                    botActors.NoteDamageEcho(message.Type, message.Body, hit.Kind);
 
                     // The two halves of the hit. A bot's body is the simulation's,
                     // and a player's health is the actor writer's — which is the half

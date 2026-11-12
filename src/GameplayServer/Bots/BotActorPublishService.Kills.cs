@@ -97,7 +97,16 @@ public sealed partial class BotActorPublishService
             // character — `server-99999` — which is where every kill this host could
             // not name went; the reference's feed never names a slot the round does
             // not hold.
-            if (kill.Killer == 0)
+            //
+            // The same holds for any slot the room's roster does not seat. The
+            // replay console resolves a feed's killer as a lobby slot and nothing
+            // else — `rpdt.js` reads byte +1 of the `09` record and hands it to
+            // `slotPlayer`, which is the roster's slot-to-player map built from the
+            // profile entries (`slot2idx`) — so a byte no entry names resolves to no
+            // player, and the client draws the kill on the one row it always has,
+            // the host's. Naming a slot nobody holds is the same bug as naming zero
+            // and is not written for the same reason.
+            if (kill.Killer == 0 || !IsSeatedSlot(kill.Killer))
             {
                 continue;
             }
@@ -115,4 +124,14 @@ public sealed partial class BotActorPublishService
 
         scoreboardDue = true;
     }
+
+    /// <summary>
+    /// Whether the room's roster holds a member at a slot, which is what makes a
+    /// kill-feed record's killer resolvable to a player.
+    /// </summary>
+    /// <param name="slot">Slot the feed would name as the killer.</param>
+    /// <returns><c>true</c> when a player or bot of the room holds the slot.</returns>
+    private bool IsSeatedSlot(byte slot) =>
+        bots.Bots.Any(bot => bot.SessionSlot == slot) ||
+        roster.Snapshot().Any(member => member.SessionSlot == slot);
 }

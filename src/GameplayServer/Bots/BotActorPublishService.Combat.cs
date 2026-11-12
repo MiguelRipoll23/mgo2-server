@@ -22,7 +22,20 @@ namespace Mgo2Server.GameplayServer.Bots;
 public sealed partial class BotActorPublishService
 {
     private readonly Dictionary<byte, short> humanSides = [];
-    private readonly Queue<UdpMessage> damageEchoes = new();
+
+    /// <summary>
+    /// Hits a client wrote waiting to be echoed back, with the beat each is due on.
+    /// </summary>
+    private readonly Queue<(long Due, UdpMessage Record)> damageEchoes = new();
+
+    /// <summary>
+    /// How long a blast's echo waits: the reference writes it behind the record it
+    /// answers by about a fifth of a second — its client's t+160.68 blast is written
+    /// back at t+160.86 and its t+167.38 one at t+167.57 — where a bullet's echo rides
+    /// the next beat. The echo is the packet the victim's client plays the blast's hit
+    /// animation from, so a host that dropped it left the damage with nothing to draw.
+    /// </summary>
+    private const int BlastEchoDelayMilliseconds = 180;
     private readonly Lock combatGate = new();
     private long nextSideRead;
 
@@ -53,6 +66,9 @@ public sealed partial class BotActorPublishService
         pendingVitals.Clear();
         lock (combatGate)
         {
+            // A hit still waiting for its echo belongs to the round that emptied
+            // too, and writing it into the next one is damage nobody dealt.
+            damageEchoes.Clear();
             humanSides.Clear();
             humanHealth.Clear();
             humanRespawn.Clear();
@@ -136,7 +152,7 @@ public sealed partial class BotActorPublishService
         // subtype — and with it a headshot's impact point — to the client that
         // draws the death; this host dropped it, so every death was drawn as a
         // body hit.
-        foreach (var echo in DrainDamageEchoes())
+        foreach (var echo in DrainDamageEchoes(now))
         {
             records.Add(echo);
         }
@@ -248,7 +264,7 @@ public sealed partial class BotActorPublishService
     /// </summary>
     /// <param name="identifier">Identifier the hit arrived under.</param>
     /// <param name="body">The hit's fifteen bytes.</param>
-    public void NoteDamageEcho(ushort identifier, byte[] body)
+    public void NoteDamageEcho(ushort identifier, byte[] body, BotHitKind kind)
     {
         ArgumentNullException.ThrowIfNull(body);
 
@@ -261,28 +277,53 @@ public sealed partial class BotActorPublishService
             // damage when it is shot. Echoing them is what made ours flinch and
             // bleed health it does not have, and what a client drawing a corpse
             // reads as damage on the body.
-            if (BotActorRecordUtils.SlotOfDamageIdentifier(identifier) is not { } victim
-                || !IsVictimDownLocked(victim))
+            //
+            // A blast is the exception, and it is the animation rather than a relay of
+            // damage: the reference answers one whose victim its own earlier blast had
+            // already put at zero (`actions.pcapng`, the t+167.38 record on a slot at 0
+            // since t+160.68, written back at t+167.57).
+            var blast = kind == BotHitKind.Blast;
+            if (BotActorRecordUtils.SlotOfDamageIdentifier(identifier) is { } victim
+                && !blast
+                && IsVictimDownLocked(victim))
             {
-                damageEchoes.Enqueue(new UdpMessage(
+                return;
+            }
+
+            damageEchoes.Enqueue((
+                Environment.TickCount64 + (blast ? BlastEchoDelayMilliseconds : 0),
+                new UdpMessage(
                     identifier,
                     (byte)(body.Length + 1),
                     BotActorRecordUtils.DamageAttributeClass,
-                    body));
-            }
+                    body)));
         }
     }
 
-    /// <summary>Takes the hits waiting to be echoed, oldest first.</summary>
+    /// <summary>Takes the hits waiting to be echoed whose beat has come, oldest first.</summary>
+    /// <param name="now">Monotonic milliseconds.</param>
     /// <returns>One record per hit a client wrote since the last call.</returns>
-    private IReadOnlyList<UdpMessage> DrainDamageEchoes()
+    private IReadOnlyList<UdpMessage> DrainDamageEchoes(long now)
     {
         lock (combatGate)
         {
             var taken = new List<UdpMessage>();
+            var waiting = new Queue<(long Due, UdpMessage Record)>();
             while (damageEchoes.Count > 0)
             {
-                taken.Add(damageEchoes.Dequeue());
+                var entry = damageEchoes.Dequeue();
+                if (entry.Due <= now)
+                {
+                    taken.Add(entry.Record);
+                    continue;
+                }
+
+                waiting.Enqueue(entry);
+            }
+
+            while (waiting.Count > 0)
+            {
+                damageEchoes.Enqueue(waiting.Dequeue());
             }
 
             return taken;
