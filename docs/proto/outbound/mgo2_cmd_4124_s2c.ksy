@@ -7,8 +7,9 @@ doc: |
   parser shape as `0x4133` (0xd3c77c) writing into the same table, so the two specs should be read
   together.
 
-  Layout: `u32 count`, then `count x {u8 item_id, u32 colour_mask}`, then a **fixed 16** pairs of
-  `{u8 item_id, u8 bit_index}`.
+  Layout: 32 zero bytes, then `u32 count`, then `count x {u8 item_id, u32 colour_mask}`, then a
+  **fixed 16** pairs of `{u8 item_id, u8 bit_index}`. The count is at **+32**, not +0 — see the
+  `reserved` field below for the capture and the observation that settle the offset.
 
       0xd3ceb8  u32 count -> scratch
       0xd3cecc  loop: u8 id, u32 mask     entry at the *bottom* (0xd3cec4 beq -> 0xd3cf28),
@@ -26,17 +27,30 @@ doc: |
   PROTOCOL.md documents `0x26b: 32 bytes of 0xff` as a "terminator" and flags "whether the 32
   `0xff` bytes are a terminator or a fixed-size trailing field is also a guess". Neither: they are
   **16 `{u8 item_id, u8 bit_index}` pairs**, read by a fixed 16-iteration loop. `0xff` works as a
-  no-op only because item id 255 > 128 makes every pair skip. The size we send (651 =
-  4 + 123*5 + 32) is correct.
+  no-op only because item id 255 > 128 makes every pair skip. The size we send (403 =
+  32 + 4 + 67*5 + 32) is what the capture shows; the 651-byte payload this project served in July
+  (35-byte header, one-byte count, 123 records) is read the same way, because a `u32` at +32 of it
+  is `00 00 00 <count>`.
 doc-ref: dev/docs/GEAR.md
 seq:
+  - id: reserved
+    size: 32
+    doc: |
+      Zeroes, and the count does not begin until after them. Captured from the working server's
+      `0x4124` 2026-11-13 (`.pcapngs/character-gears.pcapng`): 750 bytes = these 32, a `u32` count
+      of 130, its records, the sixteen-pair tail, and 32 bytes past the tail the client never reads.
+      The payload that was observed gating the wardrobe on 2026-07-30 opened with a 35-byte header
+      and a **one-byte** count, whose `u32` at +32 is `00 00 00 <count>`; a payload with the count
+      at +0 is read as a count taken from mid-record and the wardrobe comes up broken. The
+      decompile in `docs/analysis/site_00f098dc_.opd.FUN_00f09854_00f09854.c` shows the count read
+      straight after the stream reset and is wrong about the offset.
   - id: count
     type: u4
     doc: |
-      [ELF] Wire 0x00. Number of item records that follow. Loop-exit is `i >= count` **or**
-      `i == 129`, so at most 129 records are ever read however large the count; a count larger
-      than the payload would read stale buffer, since the primitives never check payload length.
-      We send 123.
+      [ELF] Wire 0x20, not 0x00. Number of item records that follow. Loop-exit is `i >= count`
+      **or** `i == 129`, so at most 129 records are ever read however large the count; a count
+      larger than the payload would read stale buffer, since the primitives never check payload
+      length. The working server sends 130 (the 129 bound is reached only by a larger count).
   - id: items
     type: item_record
     repeat: expr

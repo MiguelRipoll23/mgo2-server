@@ -4,11 +4,25 @@ namespace Mgo2Server.GameLobbyServer.Commands.Game.Characters;
 
 /// <summary>
 /// The gear catalogue every character may use: the read payload and the reply
-/// to an outfit commit share it, because the client zeroes its gear table
-/// before applying entries.
+/// to an outfit commit share it, because the client applies both to one table.
 /// </summary>
 public static class GearCatalogue
 {
+    /// <summary>
+    /// Bytes of zeroes the payload opens with, before the count.
+    /// <para>
+    /// The client's parser reaches the count thirty-two bytes into the payload,
+    /// not at its first byte. A capture of the working server's 0x4124 is 750
+    /// bytes and reads as these thirty-two zeroes, a u32 count of 130, its
+    /// records, the sixteen-pair tail and thirty-two bytes it never looks at;
+    /// and the payload that was observed gating the wardrobe here was a
+    /// thirty-five-byte header followed by a one-byte count, whose u32 at this
+    /// offset is exactly that count. Without the block the client reads its
+    /// count out of the middle of a record and the wardrobe is garbage.
+    /// </para>
+    /// </summary>
+    private const int ReservedBytes = 32;
+
     /// <summary>Colour mask of the 21-slot camouflage family.</summary>
     private const uint CamouflageMask = 0x1fffff;
 
@@ -62,6 +76,8 @@ public static class GearCatalogue
         var writer = new PacketWriter();
         var entries = BuildEntries();
 
+        // The count is not the first field on the wire; see ReservedBytes.
+        writer.WritePadding(ReservedBytes);
         writer.WriteUInt32((uint)entries.Count);
         foreach (var (identifier, mask) in entries)
         {

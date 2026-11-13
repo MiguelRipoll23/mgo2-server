@@ -35,9 +35,15 @@ doc: |
   outfit commit. Sending 36 bytes costs nothing.
 doc-ref: dev/docs/PROTOCOL.md "0x4132 — outfit commit"
 seq:
+  - id: reserved
+    size: 32
+    doc: |
+      Zeroes, and the count does not begin until after them, exactly as in `0x4124` — the two
+      parsers are instruction-for-instruction the same shape and the client writes both into one
+      table, so the layout is shared. See `mgo2_cmd_4124_s2c.ksy` for the capture it comes from.
   - id: count
     type: u4
-    doc: "[ELF] Wire 0x00. Entry count. Not an error field — a non-zero value here is read as a count, not a result. We send 0."
+    doc: "[ELF] Wire 0x20, not 0x00. Entry count. Not an error field — a non-zero value here is read as a count, not a result. We send the catalogue, the same payload `0x4124` carries."
   - id: entries
     type: loadout_entry
     repeat: expr

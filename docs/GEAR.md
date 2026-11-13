@@ -24,14 +24,24 @@ one item showed a single swatch.
 ## Packet shape
 
 ```
-u32 count
+32    x zeroes                                the count starts at +32, not +0
+ u32 count
 count x { u8 item_id, u32 colour_mask }      5 bytes each
 16    x { u8 item_id, u8 bit_index }         32 bytes, see below
 ```
 
+**The thirty-two zero bytes are load-bearing.** The parser reaches the count thirty-two bytes in.
+The working server's `0x4124` is **750 bytes** — these zeroes, a `u32` count of 130, its records,
+the sixteen-pair tail, then thirty-two bytes it never reads — captured 2026-11-13 in
+`.pcapngs/character-gears.pcapng`. The payload that was observed gating the wardrobe on
+2026-07-30 was a thirty-five-byte header followed by a **one-byte** count (651 bytes for 123 items,
+41 for one), and a `u32` read at +32 of that is `00 00 00 <count>` — the same count. A payload with
+the count at +0 instead (which this project briefly served) is read as a count taken from the middle
+of a record, so the wardrobe came up broken.
+
 `0x4124` (connect burst) and `0x4133` (reply to `0x4132`) carry the identical structure into the
 **same** client table at `charTable + 9888 + id*12`, so **they must agree** — whichever arrives last
-wins. Both are written by `LoadoutWriter.writeGear`.
+wins. Both are written by `GearCatalogue.Payload`.
 
 The 32-byte tail is **not a terminator and grants nothing**: a pair is ORed into record `+16` only
 if the bit is already set in `+12`, and `+16` drives a wardrobe highlight. Unused slots are `0xff`,
