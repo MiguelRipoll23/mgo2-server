@@ -79,6 +79,13 @@ public sealed class MatchSettingsService(
     public IReadOnlyList<int> RuleTimers => ruleTimers;
 
     /// <summary>
+    /// Whether the room puts joiners on a side itself. Clear is the room whose
+    /// client shows the Red / Blue / Auto selection screen, and whose players'
+    /// choices the lobby stores.
+    /// </summary>
+    public bool AutoAssignTeams => options.GameplayServerAutoAssignTeams;
+
+    /// <summary>
     /// The map the room's own records are written on: the map of the round the room
     /// is on, which is the round it would open next.
     /// </summary>
@@ -154,7 +161,8 @@ public sealed class MatchSettingsService(
             matchIdentifier,
             options.GameplayServerRoomName,
             options.GameplayServerBriefingMinutes,
-            rotation);
+            rotation,
+            options.GameplayServerAutoAssignTeams);
         logger.LogDebug(
             "Room {GameIdentifier} ({GameName}) runs {RoundCount} round(s) on maps {Maps} with a "
             + "{BriefingTime}-minute briefing, from this instance's own settings",

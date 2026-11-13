@@ -88,32 +88,44 @@ internal static class RoomStateRegionUtils
     private const byte NumberOfRounds = 0x03;
 
     /// <summary>
-    /// Body <c>0x4f</c>–<c>0x52</c>: field 7, a word of flags rather than a number.
+    /// Body <c>0x4f</c>–<c>0x52</c>: field 7, the room's settings switches.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The client tests three bits of it: <c>0x20</c> at five call sites, <c>0x04</c> at
-    /// one, and <c>0x40</c> in a getter that returns it as a boolean
-    /// (<c>docs/analysis/rotation-payload-corpus.md</c> §5). The two bits with a reading
-    /// are members of <see cref="RoomCommonSettingsFlag"/> — <c>0x02</c> Drebin Points,
-    /// which the captured word sets, and <c>0x40</c> asking a joiner which team to join,
-    /// which it leaves clear.
+    /// The bits are the ones the single-variable captures in <c>.pcapngs/settings</c>
+    /// move, each against the same baseline word: Auto Assign Teams <c>0x10000</c>,
+    /// Teams Switch Positions <c>0x20000</c>, Lock On (AUTO AIM) <c>0x40000</c> and
+    /// Level Limit <c>0x400000</c>. The Friendly Fire capture moves <c>0x01</c> and
+    /// <c>0x10</c> together and no capture separates them
+    /// (<see cref="RoomCommonSettingsFlag"/>).
     /// </para>
     /// <para>
-    /// <b>It is the client's own common-settings word, written and not only read.</b> The
-    /// gameplay client hosts matches, and its state builder assembles this word from the
-    /// room record's <c>+0x3a0</c> bitfield with <c>ori</c>s of bits 9, 12, 13, 14, 15,
-    /// 16 and 17; the Create Game summary binds exactly those positions to
-    /// <c>Auto Assign Teams</c>, <c>Level Limit</c> (enable), <c>Allow Quick-Join</c>,
-    /// <c>Voice Chat</c>, <c>Team Kill Kick</c>, <c>Idle Kick</c> and one unrendered row,
-    /// and they are the members of <see cref="RoomCommonSettingsFlag"/>. The
-    /// level-limit *base* the enable gates is not on this wire at all — it is a different
-    /// field of the settings block (<c>+96</c>) that this builder never reads. Bits 0-7
-    /// vary per room and no instruction in the image tests them, so they stay part of the
-    /// pinned word.
+    /// <b>Drebin Points is not this word.</b> The Drebin capture leaves field 7 on the
+    /// baseline and writes <c>0x02</c> into the rotation triple's third byte, which is
+    /// <see cref="Mgo2Server.Shared.Types.RoundOption.DrebinPoints"/>. Team switching is
+    /// not carried by this body at all.
+    /// </para>
+    /// <para>
+    /// <b>It is a bitmask, and the bits combine.</b> The single-variable captures
+    /// isolate each switch, while the rooms outside that directory set several at
+    /// once — <c>0x00274022</c> carries Auto Assign Teams, Teams Switch Positions
+    /// and Lock On together, and <c>0x00274033</c> adds the Friendly Fire pair. So
+    /// the field is a set of independent enables, not a one-of-N selection.
+    /// </para>
+    /// <para>
+    /// <b>The pinned value is the room's other switches.</b> <c>0x0006622a</c> sets
+    /// Teams Switch Positions and Lock On; the remaining <c>0x0000622a</c> are
+    /// settings this build does not name. Its level-limit enable is clear while the
+    /// band keeps its <c>2 ± 10</c> values, which is the room's limit switched off
+    /// with the chosen numbers retained. Auto Assign Teams is not pinned here: it is
+    /// <see cref="ServerOptions.GameplayServerAutoAssignTeams"/> and is written by
+    /// <see cref="WriteRoomStateFields"/>.
     /// </para>
     /// </remarks>
-    private const RoomCommonSettingsFlag CommonSettingsSwitches = (RoomCommonSettingsFlag)0x0007622a;
+    private const RoomCommonSettingsFlag RoomSettingsSwitches =
+        RoomCommonSettingsFlag.TeamsSwitchPositions
+        | RoomCommonSettingsFlag.LockOnAutoAim
+        | (RoomCommonSettingsFlag)0x0000_622a;
 
     /// <summary>
     /// Body <c>0x53</c>–<c>0x54</c>: field 8, a whole number of minutes held as seconds.
@@ -252,13 +264,25 @@ internal static class RoomStateRegionUtils
     /// <param name="playerCount">
     /// The room's population, host included, which the cap can never state fewer of.
     /// </param>
-    internal static void WriteRoomStateFields(List<byte> body, byte playerCount)
+    /// <param name="autoAssignTeams">
+    /// Whether the room puts joiners on a side itself. Set writes
+    /// <see cref="RoomCommonSettingsFlag.AutoAssignTeams"/>; clear is the room whose
+    /// client shows the Red / Blue / Auto selection screen.
+    /// </param>
+    internal static void WriteRoomStateFields(
+        List<byte> body,
+        byte playerCount,
+        bool autoAssignTeams)
     {
         body.Add((byte)Math.Max(MinimumMaximumCharacters, playerCount));
         WriteUInt16LittleEndian(body, ClientFixedValue);
         body.Add(Field5);
         body.Add(NumberOfRounds);
-        WriteUInt32LittleEndian(body, (uint)CommonSettingsSwitches);
+
+        var switches = autoAssignTeams
+            ? RoomSettingsSwitches | RoomCommonSettingsFlag.AutoAssignTeams
+            : RoomSettingsSwitches;
+        WriteUInt32LittleEndian(body, (uint)switches);
         WriteUInt16LittleEndian(body, (ushort)MinuteLimitSeconds);
     }
 

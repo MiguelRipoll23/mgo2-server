@@ -59,7 +59,8 @@ internal static class RoomRotationPayloadUtils
             (RoomState)ReferenceRoundNumber,
             ReferenceRotationIndex,
             ReferencePlayerCount,
-            ruleTimers: null);
+            ruleTimers: null,
+            autoAssignTeams: true);
 
     /// <summary>
     /// The body for a room this host serves: its rotation, its state, the slot it
@@ -83,18 +84,20 @@ internal static class RoomRotationPayloadUtils
         IReadOnlyList<MatchRotationEntry> rotation,
         RoomState state,
         int currentRotationIndex,
-        byte playerCount) =>
-        BuildCore(rotation, state, currentRotationIndex, playerCount, ruleTimers: null);
+        byte playerCount,
+        bool autoAssignTeams = true) =>
+        BuildCore(rotation, state, currentRotationIndex, playerCount, ruleTimers: null, autoAssignTeams);
 
     public static byte[] Build(
         IReadOnlyList<MatchRotationEntry> rotation,
         RoomState state,
         int currentRotationIndex,
         byte playerCount,
-        IReadOnlyList<int> ruleTimers)
+        IReadOnlyList<int> ruleTimers,
+        bool autoAssignTeams = true)
     {
         ArgumentNullException.ThrowIfNull(ruleTimers);
-        return BuildCore(rotation, state, currentRotationIndex, playerCount, ruleTimers);
+        return BuildCore(rotation, state, currentRotationIndex, playerCount, ruleTimers, autoAssignTeams);
     }
 
     private static byte[] BuildCore(
@@ -102,7 +105,8 @@ internal static class RoomRotationPayloadUtils
         RoomState state,
         int currentRotationIndex,
         byte playerCount,
-        IReadOnlyList<int>? ruleTimers)
+        IReadOnlyList<int>? ruleTimers,
+        bool autoAssignTeams)
     {
         ArgumentNullException.ThrowIfNull(rotation);
 
@@ -137,7 +141,7 @@ internal static class RoomRotationPayloadUtils
         RoomStateRegionUtils.WritePresenceMap(body);
         RoomStateRegionUtils.WriteRoundPhase(body, state);
         RoomStateRegionUtils.WriteRotationTriples(body, rotation);
-        RoomStateRegionUtils.WriteRoomStateFields(body, playerCount);
+        RoomStateRegionUtils.WriteRoomStateFields(body, playerCount, autoAssignTeams);
         RoomStateRegionUtils.WriteCurrentSlotAndPopulation(body, currentRotationIndex, playerCount);
         RoomStateRegionUtils.WriteStateFields17To27(body);
         RoomStateRegionUtils.WriteRuleTimerVector(body, ruleTimers);

@@ -135,10 +135,11 @@ public sealed partial class MatchStartRunService
         // (`0x8c`) and the drum can (`0x71`) — the GE-KO and KEROTAN props the room
         // reported standing between the spawn points of opposite sides — and they
         // are `ItemBoxRecordBodiesUtils.OpeningEventBodies`' pair, not a team
-        // round's. The filler pair still rides the beat, which is what tells the
-        // client a box exists; the events that create these two are what TDM must
-        // not write.
-        if (roundState.RoundSettings?.Rule == Match.MatchRuleUtils.TeamDeathmatch)
+        // round's. Nor does the beat write the group for one: its filler pair is
+        // what says a box exists, so leaving it on the beat kept the boxes alive in
+        // a round that never placed them (`BeatFramePlan.PlacesItemBoxes`).
+        if (!Match.MatchRuleUtils.PlacesItemBoxes(
+            roundState.RoundSettings?.Rule ?? Match.MatchRuleUtils.TeamDeathmatch))
         {
             return null;
         }

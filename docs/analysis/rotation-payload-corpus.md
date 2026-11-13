@@ -163,33 +163,24 @@ client's own arithmetic rather than by inference from captures.
 
 The client hosts matches, so the word at object `0x4c` — body `0x4f`–`0x52` — is not
 only read but **written**, and the code that writes it says which switches it carries.
-The builder expands the room record's `+0x3a0` dword with `ori`s of
-`0x200` (bit 9), `0x1000` (12), `0x2000` (13), `0x4000` (14), `0x8000` (15),
-`0x10000` (16) and `0x20000` (17). Those positions are the ones the Create Game
-summary binds to named rows (`mgo2_cmd_4310_c2s.ksy`, complete bit map read from
-`0x8A8A2C`–`0x8A93C4`):
+The builder expands the room record's `+0x3a0` dword into the word, and the
+single-variable captures in `.pcapngs/settings` name the bits it lands on. Each
+capture flips one Create Game option against the same baseline word `0x00204022`:
 
-| bit | Create Game row |
-| ---: | --- |
-| 9 | Auto Assign Teams |
-| 12 | Level Limit (enable) |
-| 13 | Allow Quick-Join |
-| 14 | Voice Chat allowed |
-| 15 | Team Kill Kick (enable) |
-| 16 | Idle Kick (enable) |
-| 17 | a bit with no rendered row |
+| bit | value | Create Game row |
+| ---: | ---: | --- |
+| 16 | `0x10000` | Auto Assign Teams |
+| 17 | `0x20000` | Teams Switch Positions |
+| 18 | `0x40000` | Lock On (AUTO AIM) |
+| 22 | `0x400000` | Level Limit (enable) |
+| 0 and 4 | `0x11` | Friendly Fire — moved together, not separated |
 
-So field 7 is the room's **common-settings switch word**, and the switches it can
-carry are these rows — the same bit positions the `0x4310` blob carries them at, which
-is what makes the two one word rather than two lookalikes. `Level Limit` being here is
-worth noting against field 3: the *enable* is this bit, so field 3 is the base the
-enable gates.
-
-Two parts of the word stay unnamed. Bits 0–7 vary per room (`0x22`, `0x2a`, `0x33`,
-`0x73` in the corpus) and **no instruction tests any of them** — the sweep behind
-`mgo2_cmd_4310_c2s.ksy`'s `common_flags_lsb` note — so they are switches this build
-writes and never consults; and bits 17, 18, 22, 23 are the four positions with no
-rendered row. Naming those would need a later client, not more reading of this one.
+These are **not** the `0x4310` common-settings positions (`0x142`/`0x143`), where
+the same rows sit at other bits; the two words are not interchangeable. Drebin
+Points is not in this word — the Drebin capture sets the rotation triple's third
+byte and leaves the word on the baseline — and team switching changes no byte at
+all. Bits `0x20`, `0x2000`, `0x4000` and the remaining low bits still have no
+reading.
 
 ### The record the builder reads is the game-settings block
 
@@ -717,7 +708,7 @@ and the client's reader at `0x8eb008` returns one bit of it as a boolean.
 | `0x4d` field 5 | `02`, and `14` in one body | a **state** byte: it moves between bodies of one host while the settings around it do not. `14` = 20 is the shape of a countdown or a count remaining **[U]** |
 | `0x4e` field 6 | `2`, `3`, `6`, per room | `Number of Rounds`: the two rooms that state `2` are the one-rule six-slot rooms, and `6` appears only in the TSNE/SCAP room. **[I]** |
 | `0x53` field 8 | `0`, `180`, `240`, `300` | `Briefing Time` is the leading candidate — the builder multiplies the settings block's `+68` minutes by 60 — but its product lands at object `0x64` and no traced write places that at body `0x53`, so `Round Time` is not excluded. Every value is a whole number of minutes and a room holds its own. **[I]** |
-| `0x4f` field 7 | 4 bytes, bits `0x02` in all 34 bodies | the **common-settings switch word**. Bit `0x02` is Drebin Points (`docs/GATES.md` §2) and is set in every captured room, which is why every room played DP rounds; bit `0x40` is set only in the room whose joins asked which team to join, which is `Auto Assign Teams` showing up as a role-selection screen **[I]** |
+| `0x4f` field 7 | 4 bytes, bit `0x02` in all 34 bodies | the **room's switch word**. The single-variable captures in `.pcapngs/settings` place Auto Assign Teams at `0x10000`, Teams Switch Positions at `0x20000`, Lock On (AUTO AIM) at `0x40000` and the Level Limit enable at `0x400000`; Friendly Fire moves `0x01` and `0x10` together. Bit `0x02` is set in every room including the Drebin-disabled one, so it is not the Drebin flag — that is the rotation triple's third byte. The earlier `0x40` = Auto Assign reading is superseded (`docs/protocol/UDP_SETTINGS_PAYLOAD.md`) |
 | `0x5a`, `0x5e` | `5/5`, `40/40`, `47/35`, `15/33`, … | each team's **remaining tickets**. `0x93` is the room's *starting* count and this pair never exceeds it, so direction is now measured rather than assumed: the pair equals `0x93` in the rooms whose round has not been spent (`40/40` with `0x28`, `50/50` with `0x32`, `55/55` with `0x37`) and sits below it once players have respawned (`30/32` and `5/5` against `50`; `5/5` against `20`). The TDM panel states the mechanic — "Each team starts with a set number of tickets… steal tickets" — and the tooltip at `0x0cee5e` says a ticket is spent on each respawn |
 | `0x93` | `20`, `40`, `50`, `51`, `55` | the round's **ticket allotment** — `Starting Number of Tickets` (`0x0cceed`) — in the rooms that play a ticketed rule: never below the pair at `0x5a`/`0x5e` in any of the 34 bodies, and equal to it in the thirteen whose round is untouched. The SNE/SCAP room carries `51` where no tickets are played, so the reading is a ticket count *where tickets apply* **[I]** and open there **[U]** |
 | `0x9a`, `0x9b` | `7f 7f` in most, `03/02`, `03/06`, `04/09` in one room | the **Sneaking role slots** — the players holding Snake and Metal Gear Mk.II. All fourteen bodies whose rotation holds neither SNE nor TSNE read `0x7f 0x7f`; a real pair appears only in the SNE/SCAP room, while sixteen of the twenty bodies that *do* hold SNE or TSNE still read `0x7f 0x7f`. So the pair is the assignment for the round being played, not a room setting, and it moves between bodies of that one room (`03/02` → `03/06` → `04/09`) |
@@ -740,12 +731,12 @@ points or score, which is why the `0x5a`/`0x5e` pair is read as tickets and the 
 **The level limit is a pair, not a number.** The only numeric format string the settings
 screens use is `%d ± %d` (`0x0d09fd`), and it follows the `Allow`/`Disallow` labels that
 begin the level block, so the client presents `Level-Limit` as a base with a spread.
-That reopens field 3: `13`, `15` and `17` are plausible *bases* for such a range, and
-the byte at `0x64` — `10` in five rooms and `0` in the rest — is the shape of a spread
-half. It is not a resolution: `0x64` is ten bytes away from `0x4a`, and `Idle Kick`
-and `Team Kill Kick` are also small counts. It does add a second, independent test:
-if the lobby's reply carries a level range, it should carry two numbers, and field 3
-should match the larger of the two.
+That pair is now measured: `0x63` is the tolerance and `0x64` the base, in that order.
+The `.pcapngs/settings` capture that enables the limit and selects level 8 ± 2 writes
+`0x02`/`0x08`, a room without the option writes `0x00`/`0x00`, and the working
+server's body keeps `0x02`/`0x0a` with the enable bit clear
+(`docs/protocol/UDP_SETTINGS_PAYLOAD.md`). Field 3 is not the base — it is the
+character cap.
 
 **The room list has no status words at all.** The list screen's column headers are in
 the file — `STATUS` at `0x0b0cdf`, `HOST SCORE` at `0x0b04fb`, `HOST NAME` at

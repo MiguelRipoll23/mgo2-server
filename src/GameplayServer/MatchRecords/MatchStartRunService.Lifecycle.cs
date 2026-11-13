@@ -171,6 +171,16 @@ public sealed partial class MatchStartRunService
         // report the client sends between two rounds is already past the room's
         // briefing time and opens the next round, instead of the room waiting out a
         // briefing nothing shown it.
+        //
+        // The ready set is rewritten between the rounds of one game all the same:
+        // the captures clear it at every round end and the round that follows opens
+        // from the reports of its own (`joined-when-red-team` publishes nothing
+        // between t+423 and t+450 but its countdown). A room that carried the set
+        // over opened the next round on a player who had not reported it, which is
+        // the same defect the stage end clears the set for
+        // (docs/protocol/MATCH_FLOW.md §5).
+        briefingStates.BeginNextBriefing();
+
         if (!closesGame)
         {
             logger.LogInformation(
@@ -183,10 +193,9 @@ public sealed partial class MatchStartRunService
 
         // A game's last round is preceded by the game's briefing: the captures
         // open a round, play it, and then rewrite the ready set for the game after
-        // it (docs/protocol/BRIEFING_FLOW.md). Clearing the states here is what
-        // makes the next game wait for a briefing of its own instead of opening the
-        // moment the last round's clock stopped.
-        briefingStates.BeginNextBriefing();
+        // it (docs/protocol/BRIEFING_FLOW.md). The set was cleared at the close
+        // above; what this briefing adds is the wait for a briefing of its own
+        // instead of opening the moment the last round's clock stopped.
 
         // The next briefing runs on its own count and is ended by the report that
         // follows it, so a client that came back from its screen starts the round

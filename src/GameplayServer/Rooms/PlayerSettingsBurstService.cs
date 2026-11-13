@@ -169,11 +169,12 @@ public sealed partial class PlayerSettingsBurstService(
         RoomState roomState,
         int currentRotationIndex,
         byte playerCount,
-        byte answeringSlot = 0)
+        byte answeringSlot = 0,
+        bool autoAssignTeams = true)
     {
         var rotationBody = rotation is null
             ? RecordedRotationBody()
-            : RoomRotationBody(rotation, roomState, currentRotationIndex, playerCount);
+            : RoomRotationBody(rotation, roomState, currentRotationIndex, playerCount, autoAssignTeams);
         return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
     }
 
@@ -195,14 +196,16 @@ public sealed partial class PlayerSettingsBurstService(
         int currentRotationIndex,
         byte playerCount,
         IReadOnlyList<int> ruleTimers,
-        byte answeringSlot = 0)
+        byte answeringSlot = 0,
+        bool autoAssignTeams = true)
     {
         var rotationBody = RoomRotationPayloadUtils.Build(
             rotation,
             roomState,
             currentRotationIndex,
             playerCount,
-            ruleTimers);
+            ruleTimers,
+            autoAssignTeams);
         return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
     }
 
@@ -318,13 +321,15 @@ public sealed partial class PlayerSettingsBurstService(
         IReadOnlyList<MatchRotationEntry> rotation,
         RoomState state,
         int currentRotationIndex,
-        byte playerCount)
+        byte playerCount,
+        bool autoAssignTeams = true)
     {
         return RoomRotationPayloadUtils.BuildReferenceBody(
             rotation,
             state,
             currentRotationIndex,
-            playerCount);
+            playerCount,
+            autoAssignTeams);
     }
 
     /// <summary>

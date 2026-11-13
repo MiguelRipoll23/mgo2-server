@@ -78,12 +78,12 @@ do not move a marker.
   the point described to it — it needs to be told which of the stage's points it
   is using. That is what kind `0x04` (a team, a direction, a point) and kind
   `0x03` (a point written twice behind a tag) look like from the wire side.
-* **The wire's units are tenths of the stage's world units, and the stage's own
-  bounds check it. [I]** `MapSpawnUtils` records n001a's spawn at (−3625, 2500)
-  in wire units; ×10 is (−36250, 25000), inside Haven's `PRP_STAGE_SIZE` box for
-  n001a of (−37000, −117000)–(78000, −9000). The other rows of that table sit in
-  the same box as their stage's markers, which is the first independent check of
-  `PlayerPosition.CoordinateScale` outside the captures.
+* **The wire's units are the stage's own world units. [V]** Blood Bath's recorded
+  entry is `HOMEGATE_A01 (-23750, 0, 20750)` and its `x` is written as `-23750`,
+  so the entry carries stage units and not tenths. The earlier tenths reading came
+  from the replay decoder's `SCALE = 10` and is corrected here. `MapSpawnUtils`
+  now reads each row from the same `A01`/`B01` placement in the stage's GEOM, and
+  every row sits inside Haven's `PRP_STAGE_SIZE` box for its stage.
 * **A stage has no "checkpoint" object.** Haven's format has no checkpoint type;
   what a stage carries is its spawn and site set, and choosing which one a
   player returns to is the supervisor's (`sv_respawn.cc`, `SV_GetInitialPosDir`

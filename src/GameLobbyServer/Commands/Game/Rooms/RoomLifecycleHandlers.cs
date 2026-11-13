@@ -153,7 +153,18 @@ public sealed class JoinGameHandler(
             return;
         }
 
-        await gameService.AddPlayerAsync(game.Identifier, session.CharacterIdentifier ?? 0, cancellationToken);
+        var added = await gameService.AddPlayerAsync(game.Identifier, session.CharacterIdentifier ?? 0, cancellationToken);
+        if (added)
+        {
+            // The joining player's Auto selection. The client's Red / Blue screen
+            // can override this through 0x4440 once it opens, and a player who
+            // leaves the screen on Auto keeps the balanced side assigned here.
+            await gameService.AssignBalancedTeamAsync(
+                game.Identifier,
+                session.CharacterIdentifier ?? 0,
+                cancellationToken);
+        }
+
         session.GameIdentifier = game.Identifier;
 
         // Announced up the coordination stream, where the HTTP API turns it into

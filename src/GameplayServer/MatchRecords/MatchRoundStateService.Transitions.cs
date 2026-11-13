@@ -199,6 +199,16 @@ public sealed partial class MatchRoundStateService
             openedAt = null;
             clockStartsAt = 0;
             clockFrozenAt = null;
+
+            // The close writes the clock as zero and holds it there until the next
+            // round opens: `joined-when-red-team` writes `01 00 00` at t+423.051,
+            // one millisecond before its result write, and the round that follows
+            // opens on its whole `01 60 09` again (BRIEFING_FLOW.md §4). A round
+            // that ends inside its game has no briefing to set the value, so
+            // leaving it alone kept the played round's clock on the wire through
+            // the gap and into the next round's first frames.
+            briefingClockUnits = 0;
+
             logger.LogInformation(
                 "Round {RoundNumber} ended{Result}",
                 roundNumber,

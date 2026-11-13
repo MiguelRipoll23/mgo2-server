@@ -10,9 +10,11 @@ namespace Mgo2Server.GameplayServer.Match;
 /// <para>
 /// <b>A rotation is what a room plays, so it is parsed once and read by every
 /// caller.</b> The setting is written the way the client's own room screen writes
-/// it — one <c>RULE@Map</c> pair per round — and this file is where a pair becomes
-/// the two ids a rotation triple carries, through <see cref="MatchRuleUtils"/> and
-/// <see cref="MatchMapUtils"/> rather than a second spelling of either table.
+/// it — one <c>RULE@Map</c> pair per round, with an optional <c>:DREBIN</c> suffix
+/// for a round played for Drebin Points — and this file is where a pair becomes
+/// the ids and the option byte a rotation triple carries, through
+/// <see cref="MatchRuleUtils"/> and <see cref="MatchMapUtils"/> rather than a
+/// second spelling of either table.
 /// </para>
 /// <para>
 /// <b>The bank is where a round's length and kill limit come from.</b> The
@@ -36,6 +38,9 @@ public static class MatchRotationUtils
 
     /// <summary>Separates a round's rule name from its map name.</summary>
     private const char PairSeparator = '@';
+
+    /// <summary>Separates a round's map name from its optional option suffix.</summary>
+    private const char OptionSeparator = ':';
 
     /// <summary>Separates two of the bank's words.</summary>
     private const char WordSeparator = ',';
@@ -75,12 +80,16 @@ public static class MatchRotationUtils
     /// The rotation a setting states, with each round's length and kill limit
     /// resolved from the bank.
     /// </summary>
-    /// <param name="rotation">The rounds, as <c>RULE@Map</c> pairs separated by commas.</param>
+    /// <param name="rotation">
+    /// The rounds, as <c>RULE@Map</c> pairs separated by commas, each optionally
+    /// suffixed <c>:DREBIN</c>.
+    /// </param>
     /// <param name="ruleTimers">The seventeen per-rule words, resolved already.</param>
     /// <returns>The rotation, entry zero first.</returns>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when the setting names no round, when a name is no rule or no map, or
-    /// when a round would play for no time at all.
+    /// Thrown when the setting names no round, when a name is no rule or no map,
+    /// when an option is not <c>DREBIN</c>, or when a round would play for no time
+    /// at all.
     /// </exception>
     public static IReadOnlyList<MatchRotationEntry> Parse(
         string? rotation,
@@ -101,8 +110,19 @@ public static class MatchRotationUtils
                     + $"'{PairSeparator}', as in TDM@{MatchMapUtils.Name(MatchMapUtils.Parse("Blood Bath"))}.");
             }
 
+            // The option is a suffix after the map, so the last ':' is the one that
+            // separates it. A map name has no ':' of its own.
+            var optionSeparator = round.LastIndexOf(OptionSeparator);
+            var option = RoundOption.Normal;
+            var mapEnd = round.Length;
+            if (optionSeparator > separator)
+            {
+                option = ParseRoundOption(round[(optionSeparator + 1)..], round);
+                mapEnd = optionSeparator;
+            }
+
             var rule = MatchRuleUtils.Parse(round[..separator]);
-            var map = MatchMapUtils.Parse(round[(separator + 1)..]);
+            var map = MatchMapUtils.Parse(round[(separator + 1)..mapEnd]);
             var minutes = TimeLimitMinutes(ruleTimers, rule);
 
             if (minutes <= 0)
@@ -112,7 +132,7 @@ public static class MatchRotationUtils
                     + "time at all; GAMEPLAY_SERVER_RULE_TIMERS must state a positive time for its rule.");
             }
 
-            entries.Add(new MatchRotationEntry(rule, map, RoundOption.Normal, minutes, Tickets(ruleTimers, rule)));
+            entries.Add(new MatchRotationEntry(rule, map, option, minutes, Tickets(ruleTimers, rule)));
         }
 
         if (entries.Count == 0)
@@ -123,6 +143,24 @@ public static class MatchRotationUtils
 
         return entries;
     }
+
+    /// <summary>
+    /// The round option a suffix states. Only <c>DREBIN</c> is a setting this
+    /// server can write: it is the measured Drebin Points value of the triple's
+    /// third byte, and the only option the room's configuration names.
+    /// </summary>
+    /// <param name="option">Text after the map's colon.</param>
+    /// <param name="round">The whole round, for the refusal to name.</param>
+    /// <returns>The option the suffix states.</returns>
+    /// <exception cref="InvalidOperationException">The suffix is not a known option.</exception>
+    private static RoundOption ParseRoundOption(string option, string round) =>
+        option.Trim().ToUpperInvariant() switch
+        {
+            "DREBIN" => RoundOption.DrebinPoints,
+            _ => throw new InvalidOperationException(
+                $"'{option}' in '{round}' is not a round option; the only one is DREBIN, written "
+                + "after the map as in TDM@Blood Bath:DREBIN."),
+        };
 
     /// <summary>
     /// The seventeen per-rule words a setting states.

@@ -184,6 +184,15 @@ public sealed class ServerOptions
     /// </summary>
     public int GameplayServerBriefingMinutes { get; set; } = 1;
 
+    /// <summary>
+    /// Whether the room puts joiners on a side itself. Clear writes the room's
+    /// <c>Auto Assign Teams</c> switch off, which is what makes the client show its
+    /// Red / Blue / Auto selection screen; a player's Red or Blue choice is then
+    /// stored from <c>0x4440</c>, and a player who leaves the screen on Auto keeps
+    /// the balanced side the room assigned on join.
+    /// </summary>
+    public bool GameplayServerAutoAssignTeams { get; set; } = true;
+
     /// <summary>Display name of the account the gameplay server logs in with.</summary>
     public string GameplayServerAccountName { get; set; } = "server";
 

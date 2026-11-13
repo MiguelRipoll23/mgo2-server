@@ -110,6 +110,15 @@ public static class MatchSettingsUtils
             MaxPlayers = (short)options.GameplayServerMaxPlayers,
             BriefingTime = options.GameplayServerBriefingMinutes,
             LevelLimitBase = options.GameplayServerLevelLimitBase,
+            AutoAssign = options.GameplayServerAutoAssignTeams,
+
+            // Every weapon is offered. The 16 bytes at block 0xd5 are one lock bit
+            // per item (1 = locked), and byte 0 bit 0 is the master enable, so all
+            // zero is "Weapon Restrictions off". The row is what 0x4305 replays
+            // through HostSettingsCodec, and 0x4313 states the same all-zero
+            // 16-byte field; the mapping is measured in docs/OBSERVED.md's
+            // per-weapon sweep.
+            WeaponRestrictions = new byte[16],
 
             // The rotation as the client's own room screen holds it: one entry per
             // round, rule then map then flags, which is the shape the 0x4310 block

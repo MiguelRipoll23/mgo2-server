@@ -18,9 +18,11 @@ internal static class RoomStateReferenceBodyUtils
     /// <remarks>
     /// <para>
     /// The first byte is the selector flag, which field 53 repeats. The rest move with
-    /// the room — <c>0x60</c> is <c>2</c> in most rooms and <c>0</c> in the all-default
-    /// ones, <c>0x63</c> is <c>2</c>, <c>3</c>, <c>6</c> or <c>0</c>, <c>0x64</c> is
-    /// <c>10</c> or <c>0</c> — and keep the working capture's bytes.
+    /// the room and keep the working capture's bytes, except the level band: <c>0x63</c>
+    /// is its tolerance and <c>0x64</c> its base, in the same order as the host-settings
+    /// block's <c>0xF7</c>/<c>0xF8</c>. The <c>.pcapngs/settings</c> capture that enables
+    /// the limit writes <c>0x02</c>/<c>0x08</c> for level 8 ± 2; a room without it writes
+    /// <c>0x00</c>/<c>0x00</c>.
     /// </para>
     /// <para>
     /// <b>The client fetches two bytes of this block, not one word.</b> The eight-byte
@@ -42,8 +44,25 @@ internal static class RoomStateReferenceBodyUtils
     internal static readonly byte[] StateFields17To27 =
     [
         0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x28,
-        0x00, 0x02, 0x01, 0x00, 0x02, 0x0a,
+        0x00, 0x02, 0x01, 0x00, LevelLimitTolerance, LevelLimitBase,
     ];
+
+    /// <summary>Body <c>0x63</c>: the level band's ± half-width, in levels.</summary>
+    /// <remarks>
+    /// Measured by the capture that switches the limit on and fills the Create Game
+    /// box with level 8 ± 2: the byte reads <c>0x02</c> there and <c>0x00</c> in every
+    /// room that leaves the option off. The working server's body carries <c>0x02</c>
+    /// with the enable bit clear, its selected band retained while the limit is off.
+    /// </remarks>
+    internal const byte LevelLimitTolerance = 0x02;
+
+    /// <summary>Body <c>0x64</c>: the level band's centre, in levels.</summary>
+    /// <remarks>
+    /// <c>0x08</c> in the 8 ± 2 capture, <c>0x00</c> in a room that leaves the option
+    /// off, and <c>0x0a</c> in the working server's body — the band it had chosen while
+    /// the enable bit was clear.
+    /// </remarks>
+    internal const byte LevelLimitBase = 0x0a;
 
     /// <summary>
     /// The ticket count each side's word of <see cref="StateFields17To27"/> holds —

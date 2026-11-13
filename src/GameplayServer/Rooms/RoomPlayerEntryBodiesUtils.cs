@@ -59,13 +59,12 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// the client's briefing camera outside the map when the room plays another —
 /// so the pair is resolved from the map the room plays, not from one recording.
 /// </para>
-/// <para>
-/// <b>Each stage's pair is measured from a Survival replay.</b>
-/// <see cref="MapSpawnUtils"/> holds the map id to spawn table and the replay
-/// each row was read from; a map with no measured replay falls back to Blood
-/// Bath. <c>docs/analysis/join-stall-after-mode2.md</c> §4 carries the original
-/// measurement of the tail and the map 5 body that put a Blood Bath room's camera
-/// out of bounds.
+/// <para>    /// <b>Each stage's pair is its <c>PRP_HOMEGATE_A01</c>/<c>B01</c> placement.</b>
+    /// <see cref="MapSpawnUtils"/> holds the map id to spawn table and the gate each
+    /// row was read from; a map with no gate falls back to Blood Bath.
+    /// <c>docs/analysis/join-stall-after-mode2.md</c> §4 carries the original
+    /// measurement of the tail and the map 5 body that put a Blood Bath room's camera
+    /// out of bounds.
 /// </para>
 /// </remarks>
 public static class RoomPlayerEntryBodiesUtils

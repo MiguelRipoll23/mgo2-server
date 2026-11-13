@@ -159,6 +159,23 @@ public static class MatchRuleUtils
         rule is TeamDeathmatch or Rescue or Capture or Base or Bomb or TeamSneaking
             or SneakingCapture;
 
+    /// <summary>
+    /// Whether a rule places item boxes on the map.
+    /// </summary>
+    /// <remarks>
+    /// <b>The rule texts say it, and the captures agree.</b> Capture's is "Race to
+    /// capture KEROTAN and GA-KO" (`docs/analysis/rule-instruction-texts.md`) and
+    /// Team Deathmatch's names no box at all: it is tickets, and a round of it is
+    /// won by the side that runs the other out of them. The boxes the host spawns
+    /// are the ENVG (`0x8c`) and the drum can (`0x71`)
+    /// (<see cref="ItemBoxRecordBodiesUtils"/>), the GE-KO and KEROTAN props, so a
+    /// team round that wrote the item-box group would be telling its client about
+    /// two boxes the rule never placed.
+    /// </remarks>
+    /// <param name="rule">Rule id from a rotation triple.</param>
+    /// <returns><c>true</c> when the rule places item boxes.</returns>
+    public static bool PlacesItemBoxes(int rule) => rule != TeamDeathmatch;
+
     /// <summary>Every rule name, for an error message that tells a reader what to write.</summary>
     private static string Names => string.Join(", ", Rules.Select(entry => entry.Name));
 }

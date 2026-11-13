@@ -133,10 +133,10 @@ are not established retain their values from
 | 0 | `0x09` | `u8` | `02` | Round-phase value, matching standalone field-0 updates. **[I]** |
 | 1 | `0x0a` | 16 bytes | all zero | Meaning unresolved. |
 | 2 | `0x1a` | 48 bytes | 16 rotation triples | Map, rule, third byte as above. |
-| 3–8 | `0x4a`–`0x54` | `u8`, `u16`, `u8`, `u8`, `u32`, `u16` | `11 b4 00 02 03 22 40 27 00 00 00` | Meanings unresolved; native readers test bits `0x20` and `0x40` of field 7. |
+| 3–8 | `0x4a`–`0x54` | `u8`, `u16`, `u8`, `u8`, `u32`, `u16` | `11 b4 00 02 03 22 40 27 00 00 00` | Field 3 is the character cap, 4 a client constant, 5 state, 6 the round count, 7 the room's switch word and 8 a minute limit — see below. |
 | 9 | `0x55` | `u8` | `04` | Current rotation-slot index; native readers use it to select a triple. **[V]** |
 | 10 | `0x56` | `u8` | `02` | Room population, host included, inferred from matched joins. **[I]** |
-| 13, 17–23, 25–27 | `0x57`–`0x64` | `u8` / `u16` | `00 00 00 05 00 00 00 05 00 00 01 00 00 00` | Meanings unresolved. Field 13 at `0x57` carries the same byte as field 53 at `0xa0` in all fifteen captured bodies. |
+| 13, 17–23, 25–27 | `0x57`–`0x64` | `u8` / `u16` | `00 00 00 05 00 00 00 05 00 00 01 00 00 00` | Mostly unresolved. Field 13 at `0x57` carries the same byte as field 53 at `0xa0` in all fifteen captured bodies; `0x63`/`0x64` are the level band (below); `0x5a`/`0x5e` are the teams' remaining tickets. |
 | 29 | `0x65`–`0x86` | 17 little-endian `u16`s | See below. | Eight standard timers verified; higher rule-index entries partly identified. |
 | 30–53 | `0x87`–`0xa0` | `u8` / `u16` | `02 02 02 02 02 02 02 02 01 02 02 02 32 1e 05 03 00 00 00 7f 7f ff 8c 28 01 00` | Fields 50 and 53 have limited native-use evidence; fields 51–52 remain opaque. |
 
@@ -181,6 +181,43 @@ other five, so the five entries belong to the room and not to the format, while
 elements 8–11 are a per-room-family constant (`53251 44192 9216 34`, `10240` in
 place of `9216`) with no reading as time. `docs/analysis/rotation-payload-corpus.md`
 §1 lists all seven distinct vectors.
+
+### The room's switches and its level band
+
+The `.pcapngs/settings` set is one capture per Create Game option, all of the same
+room except the option under test. Two regions of the body carry them.
+
+`0x4f`–`0x52` is a little-endian 32-bit switch word. Every capture starts from
+`0x00204022`; the option that changed moved exactly one bit:
+
+| bit | value | option | capture |
+| ---: | ---: | --- | --- |
+| 16 | `0x00010000` | **Auto Assign Teams** | `auto-assign-teams-enabled` |
+| 17 | `0x00020000` | **Teams Switch Positions** — the sides swap between rounds | `swap-spawnpoint-side-between-rounds-enabled` |
+| 18 | `0x00040000` | **Lock On (AUTO AIM)** | `auto-aim-enabled` |
+| 22 | `0x00400000` | **Level Limit** enable | `level-limit-enabled-level-8-giveortake-±2` |
+| 0 and 4 | `0x00000011` | **Friendly Fire** — both bits moved in the one capture, and no capture separates them | `friendly-fire-enabled` |
+
+The field is a **bitmask**, not a one-of-N value: the single-variable captures
+isolate each bit, while rooms outside that set set several together —
+`0x00274022` carries Auto Assign Teams, Teams Switch Positions and Lock On at
+once, and `0x00274033` adds the Friendly Fire pair. `GAMEPLAY_SERVER_AUTO_ASSIGN_TEAMS`
+controls bit 16 for a dedicated host.
+
+This is **not** the `0x4310` common-settings word at `0x142`/`0x143`. That block
+carries the same rows at its own positions (Friendly Fire is `0x142` bit 3 there),
+so the two words are not interchangeable.
+
+**Drebin Points is not a switch here.** The Drebin capture leaves this word on the
+baseline and writes `0x02` into the rotation triple's third byte, which is
+`RoundOption.DrebinPoints` (`docs/GATES.md` §2). **Team switching is not carried by
+this body at all:** its capture changed no byte.
+
+`0x63` and `0x64` are the level band — tolerance first, base second, the same order
+the `0x4310` block states at `0xF7`/`0xF8`, and the enable is bit 22 above. The
+level-limit capture writes `0x02`/`0x08` (level 8 ± 2); every room without the
+option writes `0x00`/`0x00`. The working server's body keeps `0x02`/`0x0a` with the
+enable clear, which is a band retained while the limit is switched off.
 
 Other native consumers narrow, but do not fully resolve, a few fields:
 

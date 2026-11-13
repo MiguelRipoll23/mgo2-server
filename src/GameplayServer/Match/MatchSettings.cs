@@ -71,11 +71,16 @@ public sealed record MatchRotationEntry(
 /// rotation is served its own one configured round, so every round a host opens
 /// has a rule, a map and a length.
 /// </param>
+/// <param name="AutoAssignTeams">
+/// Whether the room puts joiners on a side itself. Clear is the room whose client
+/// shows the Red / Blue / Auto selection screen.
+/// </param>
 public sealed record MatchSettings(
     int GameIdentifier,
     string Name,
     int BriefingTimeMinutes,
-    IReadOnlyList<MatchRotationEntry> Rotation)
+    IReadOnlyList<MatchRotationEntry> Rotation,
+    bool AutoAssignTeams = true)
 {
     /// <summary>
     /// The entry a round plays: the rotation is walked in order, so the first

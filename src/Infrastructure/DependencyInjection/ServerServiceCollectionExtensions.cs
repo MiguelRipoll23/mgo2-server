@@ -81,6 +81,11 @@ public static class ServerServiceCollectionExtensions
             options.GameplayServerBriefingMinutes = configuration.ReadNumber(
                 "GAMEPLAY_SERVER_BRIEFING_MINUTES",
                 options.GameplayServerBriefingMinutes);
+            var autoAssignTeams = configuration.ReadText("GAMEPLAY_SERVER_AUTO_ASSIGN_TEAMS");
+            if (bool.TryParse(autoAssignTeams, out var parsedAutoAssignTeams))
+            {
+                options.GameplayServerAutoAssignTeams = parsedAutoAssignTeams;
+            }
             options.GameplayServerAccountName = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_NAME")
                 ?? options.GameplayServerAccountName;
             options.GameplayServerAccountPassword = configuration.ReadText("GAMEPLAY_SERVER_ACCOUNT_PASSWORD")

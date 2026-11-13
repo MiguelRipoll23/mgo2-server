@@ -22,9 +22,12 @@ same finding with the tooltips.
 The `0x20` bit is **[U]**; it is not one of the three radio values, and it is present in
 the two rooms whose triples were captured with non-zero flags.
 
-**Where the server writes it:** `RoomStateRegionUtils.WriteRotationTriples` writes each
-triple's third byte from the room's own `MatchRotationEntry.Flags`, so a room that turns
-Drebin points on states `2` there. Nothing in this change alters that path.
+**Where the server writes it:** `MatchRotationUtils.Parse` reads a round's `:DREBIN`
+suffix into `MatchRotationEntry.RoundOptions`, and
+`RoomStateRegionUtils.WriteRotationTriples` writes each triple's third byte from it;
+`MatchSettingsUtils.HostSettings` stores the same value in `RotationFlags` for the
+lobby's `0x4313`. A room that turns Drebin points on therefore states `2` on every
+round it configured so.
 
 ## 2. The figures travel in their own `0x1001` records — **superseded 2026-11-08**
 

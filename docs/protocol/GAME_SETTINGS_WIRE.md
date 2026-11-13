@@ -29,10 +29,12 @@ from one source.
 | --- | --- | --- |
 | game id | `games.id`, the row this host publishes | none: the row is the room |
 | game name | this instance's own, and `server-<port>` when unset | `GAMEPLAY_SERVER_GAME_NAME` |
-| rotation (rule and map, one pair per round) | this instance's own, by the decoder's rule names and the room's map names | `GAMEPLAY_SERVER_ROTATION` — `TDM@Blood Bath, CAP@Coppertown, …` |
+| rotation (rule, map and optional Drebin flag, one per round) | this instance's own, by the decoder's rule names and the room's map names | `GAMEPLAY_SERVER_ROTATION` — `TDM@Blood Bath:DREBIN, CAP@Coppertown, …` |
 | briefing time | this instance's own | `GAMEPLAY_SERVER_BRIEFING_MINUTES` |
 | max players | this instance's own | `GAMEPLAY_SERVER_MAX_PLAYERS` |
+| weapon restrictions | this instance's own; all zero, so every weapon is offered | none: the room unlocks the full roster |
 | level-limit base | this instance's own | `GAMEPLAY_SERVER_LEVEL_LIMIT_BASE` |
+| auto assign teams | this instance's own; clear makes the client show its Red / Blue / Auto screen | `GAMEPLAY_SERVER_AUTO_ASSIGN_TEAMS` |
 | round length and kill limit, per rule | this instance's own bank, at the round's rule's own index | `GAMEPLAY_SERVER_RULE_TIMERS` — the reply's seventeen words |
 
 Both names are mapped through the replay console's own tables — `MODE_NAMES` and
@@ -125,9 +127,12 @@ and RACE, but no direct client reader of that field has been found. See
 [`UDP_SETTINGS_PAYLOAD.md`](UDP_SETTINGS_PAYLOAD.md) for the evidence and
 confidence limits; the timer source and effect for these rules remain open.
 
-**[U]** what the flags byte of a rotation triple means: `0x02` on every round of
-`Best TDM [EU]`, `0x00` on most of `MAFIA TSNE`'s and `0x20` on its last two (the
-two stages it repeats). No record on either channel repeats it.
+**The flags byte is the round's mode.** `0x02` is Drebin Points and `0x04` is
+Headshots Only (`RoundOption`), which the client draws pink and light blue
+(`docs/GATES.md` §2). `pcapng1` carries `0x02` on all of its configured triples and
+the Drebin-disabled room carries `0x00` on all of its own, so the byte is a setting
+the host states. `0x20` rides beside the radio on two of one room's triples and is
+still unnamed. `GAMEPLAY_SERVER_ROTATION` writes `0x02` with a `:DREBIN` suffix.
 
 **[U]** the meaning of the raw 14-byte tail at `0x166`–`0x173`. The native
 `0x4313` parser does not expose fields within it, and no field-level consumer

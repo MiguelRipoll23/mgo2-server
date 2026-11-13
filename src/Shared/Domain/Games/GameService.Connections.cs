@@ -64,24 +64,24 @@ public sealed partial class GameService
     /// <param name="gameIdentifier">Identifier of the room.</param>
     /// <param name="characterIdentifier">Identifier of the character.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    public async Task AddPlayerAsync(
+    public async Task<bool> AddPlayerAsync(
         int gameIdentifier,
         int characterIdentifier,
         CancellationToken cancellationToken = default)
     {
         if (characterIdentifier <= 0)
         {
-            return;
+            return false;
         }
 
         await using var context = await CreateContextAsync(cancellationToken);
-        await context.Database.ExecuteSqlAsync(
+        return await context.Database.ExecuteSqlAsync(
             $"""
              INSERT INTO game_players (game_id, character_id)
              VALUES ({gameIdentifier}, {characterIdentifier})
              ON CONFLICT (game_id, character_id) DO NOTHING
              """,
-            cancellationToken);
+            cancellationToken) > 0;
     }
 
     /// <summary>

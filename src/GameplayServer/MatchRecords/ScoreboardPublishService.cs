@@ -70,7 +70,17 @@ public sealed class ScoreboardPublishService(
     /// written again at 47.05, 47.63 and 48.30), so a client that missed the first still
     /// reads the number.
     /// </summary>
-    private readonly List<(long Due, byte[] Body)> repeats = [];
+    /// <remarks>
+    /// <b>A copy is the same record, so it keeps its ordinal.</b> Measured on
+    /// <c>.pcapngs/actions/actions.pcapng</c>: slot 12's death is written at t+43.78,
+    /// 44.43 and 45.10 and all three carry ordinal <c>0xac</c>; slot 16's kill at
+    /// t+48.55 and 49.23 carries <c>0xb1</c> both times. This host took a fresh value
+    /// from the room's exchange for every copy — <c>myserver.pcapng</c>'s slot 6 death
+    /// reads <c>0xbe</c>, <c>0xc5</c>, <c>0xc9</c> and <c>0xcb</c> on its four writes —
+    /// which spends three values of a byte-wide counter per change and makes the
+    /// client read one change as four records.
+    /// </remarks>
+    private readonly List<(long Due, byte Ordinal, byte[] Body)> repeats = [];
 
     private const int RepeatCount = 3;
 
@@ -97,20 +107,18 @@ public sealed class ScoreboardPublishService(
         var records = new List<RosterRecord>(deltas.Count + tickets.Count);
         foreach (var delta in deltas)
         {
-            var copy = MatchScoreboardFramesUtils.BuildBody(delta);
+            var body = MatchScoreboardFramesUtils.BuildBody(delta);
+            var ordinal = roster.TakeRunOrdinal();
             var due = Environment.TickCount64;
             lock (repeats)
             {
                 for (var index = 1; index <= RepeatCount; index++)
                 {
-                    repeats.Add((due + index * RepeatIntervalMilliseconds, copy));
+                    repeats.Add((due + index * RepeatIntervalMilliseconds, ordinal, body));
                 }
             }
 
-            records.Add(new RosterRecord(
-                MatchScoreboardFramesUtils.RecordType,
-                MatchScoreboardFramesUtils.BuildBody(delta),
-                roster.TakeRunOrdinal()));
+            records.Add(new RosterRecord(MatchScoreboardFramesUtils.RecordType, body, ordinal));
         }
 
         // The ticket record rides behind the scoreboard delta the death queued, in
@@ -145,11 +153,11 @@ public sealed class ScoreboardPublishService(
     public async Task PublishRepeatsAsync(PeerContext context)
     {
         var now = Environment.TickCount64;
-        List<byte[]> due;
+        List<(byte Ordinal, byte[] Body)> due;
         lock (repeats)
         {
             repeats.RemoveAll(entry => entry.Due < now - StaleRepeatMilliseconds);
-            due = [.. repeats.Where(entry => entry.Due <= now).Select(entry => entry.Body)];
+            due = [.. repeats.Where(entry => entry.Due <= now).Select(entry => (entry.Ordinal, entry.Body))];
             repeats.RemoveAll(entry => entry.Due <= now);
         }
 
@@ -159,7 +167,10 @@ public sealed class ScoreboardPublishService(
         }
 
         var records = due
-            .Select(body => new RosterRecord(MatchScoreboardFramesUtils.RecordType, body, roster.TakeRunOrdinal()))
+            .Select(copy => new RosterRecord(
+                MatchScoreboardFramesUtils.RecordType,
+                copy.Body,
+                copy.Ordinal))
             .ToList();
         await RosterRunSendUtils.SendAsync(context, records);
         foreach (var record in records)

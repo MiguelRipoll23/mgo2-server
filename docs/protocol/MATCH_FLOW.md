@@ -146,21 +146,31 @@ a rotation change). What **is** settled: a briefing is not owed to every round
 
 ## 6. What this host does
 
-`MatchStartRunService.End` closes the round and then **always** begins a
-briefing (`briefingStates.BeginNextBriefing()` + `BeginBriefing()`), which makes
-every round its own game: a room whose rotation repeats an entry — the wire's
-form of a multi-round game — is briefed between two rounds that the reference
-plays back to back.
+`MatchStartRunService.End` closes the round, clears the ready set
+(`briefingStates.BeginNextBriefing()`) and then decides the boundary from the
+rotation. The close writes the clock as `0` (`MatchRoundStateService.Close`), so
+the `01 00 00` of §4 is on the wire from the end of the round whether or not a
+briefing follows it, and the next round's open writes its whole clock again.
+
+**A stage is what this file's "game" calls a map's run of rounds.** It is a
+maximal run of identical rotation triples — same rule, map and options — so a
+map played for three rounds is three consecutive copies of its entry, and the
+briefing that follows its last round is the room waiting for the next map's
+rounds.
 
 The model this file supports, and that the host now follows:
 
-- a **game** is a maximal run of identical rotation triples, so
+- a **stage** is a maximal run of identical rotation triples, so
   `MatchSettings.IsLastRoundOfGame(n)` is "the entry after this round names a
   different rule or map";
-- a round that is **not** its game's last leaves the ready set standing and opens
-  the next round on it, with no briefing, no countdown and no `0` clock;
-- a round that **is** its game's last returns the room to a briefing, whether or
-  not a round has played before (the clock it is held on is `0` once one has).
+- a round that is **not** its stage's last opens the next round on the report
+  that follows it, with no briefing, no countdown and no briefing run
+  (`MatchStartRunService.WriteBriefingRunAsync` returns between rounds); the
+  ready set is cleared at the close either way, so the next round opens from its
+  own reports and not from the played round's;
+- a round that **is** its stage's last returns the room to a briefing, whether or
+  not a round has played before (the clock it is held on is `0` once one has),
+  and that briefing precedes the next map's first round.
 
 ## 7. Open
 

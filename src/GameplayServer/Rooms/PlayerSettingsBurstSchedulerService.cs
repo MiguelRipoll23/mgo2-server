@@ -126,7 +126,14 @@ public sealed class PlayerSettingsBurstSchedulerService(
         var playerCount = checked((byte)(roster.JoinerCount + 1));
 
         var settingsBurst = rotation is null
-            ? burst.BuildSettingsBurst(rotation, loadouts, roomState, rotationIndex, playerCount, answeringSlot)
+            ? burst.BuildSettingsBurst(
+                rotation,
+                loadouts,
+                roomState,
+                rotationIndex,
+                playerCount,
+                answeringSlot,
+                matchSettings.AutoAssignTeams)
             : burst.BuildSettingsBurst(
                 rotation,
                 loadouts,
@@ -134,7 +141,8 @@ public sealed class PlayerSettingsBurstSchedulerService(
                 rotationIndex,
                 playerCount,
                 matchSettings.RuleTimers,
-                answeringSlot);
+                answeringSlot,
+                matchSettings.AutoAssignTeams);
 
         // The burst's own bytes, at the level a run is read at. The wire dump they
         // used to appear in is Trace now (TrafficLogger), and the room's settings
