@@ -97,7 +97,16 @@ public sealed class ScoreboardPublishService(
     /// <param name="context">Context the change arrived through.</param>
     public async Task PublishAsync(PeerContext context)
     {
-        var deltas = score.TakeDeltas();
+        // **A record says a number moved, so a record of zeroes says nothing moved.**
+        // Measured on `.pcapngs/actions/actions.pcapng`: not one of its 451 non-zero
+        // scoreboard deltas carries a value of zero, and the reference writes no
+        // delta at all for a player whose numbers have not left their starting point.
+        // This host wrote sixteen of them for the whole room at t+17.85 of
+        // `myserver.pcapng` — one per slot, every value zero — which is sixteeen
+        // records a client reads as "back to nothing" for rows it already knows.
+        var deltas = score.TakeDeltas()
+            .Where(delta => delta.Values.Any(value => value.Value != 0))
+            .ToList();
         var tickets = await TicketRecordsAsync();
         if (deltas.Count == 0 && tickets.Count == 0)
         {
