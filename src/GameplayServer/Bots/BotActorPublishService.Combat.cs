@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Combat;
 using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Shared.Constants;
@@ -73,6 +74,13 @@ public sealed partial class BotActorPublishService
             humanSides.Clear();
             humanHealth.Clear();
             humanRespawn.Clear();
+            humanStunnedUntil.Clear();
+            humanStunnedBy.Clear();
+            humanStamina.Clear();
+            humanStaminaTickedAt.Clear();
+            humanStaminaCredit.Clear();
+            humanStaminaDue.Clear();
+            humanSleepUntil.Clear();
             nextSideRead = 0;
             stateBlobOrdinal = 2;
             nextStateBlobMilliseconds = 0;
@@ -211,6 +219,7 @@ public sealed partial class BotActorPublishService
         }
 
         records.AddRange(PlayerRespawns(generation, now));
+        records.AddRange(RecoverPlayerStamina(generation, now));
 
         // The copies that follow a player's changed health, which the working host
         // writes four of for one change (BotActorPublishService.Players.cs).
@@ -237,7 +246,7 @@ public sealed partial class BotActorPublishService
             // its health is zero — its 350 host-written hits name only a living
             // actor — and a bot that kept firing at one would write damage on a
             // body the client is drawing as dead.
-            if (body.IsDead)
+            if (body.IsDead || body.Sleeping)
             {
                 continue;
             }
@@ -305,7 +314,7 @@ public sealed partial class BotActorPublishService
     /// </summary>
     /// <param name="identifier">Identifier the hit arrived under.</param>
     /// <param name="body">The hit's fifteen bytes.</param>
-    public void NoteDamageEcho(ushort identifier, byte[] body, BotHitKind kind)
+    public void NoteDamageEcho(ushort identifier, byte[] body, DamageKind kind)
     {
         ArgumentNullException.ThrowIfNull(body);
 
@@ -323,7 +332,7 @@ public sealed partial class BotActorPublishService
             // damage: the reference answers one whose victim its own earlier blast had
             // already put at zero (`actions.pcapng`, the t+167.38 record on a slot at 0
             // since t+160.68, written back at t+167.57).
-            var blast = kind == BotHitKind.Blast;
+            var blast = kind is DamageKind.Explosive or DamageKind.ExplosiveStun;
             if (BotActorRecordUtils.SlotOfDamageIdentifier(identifier) is { } victim
                 && !blast
                 && IsVictimDownLocked(victim))

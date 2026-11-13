@@ -28,7 +28,10 @@ public static class CqcHoldUtils
     /// <returns>The held slot, or <c>null</c> when the record is not a hold.</returns>
     public static byte? HeldSlotOf(ReadOnlySpan<byte> body)
     {
-        if (body.Length < 2)
+        // The hold is the nine-byte acting state, never an aim body. A six-byte
+        // class-0x05 aim body also starts `57` in this capture, and reading it as
+        // a hold named a random slot on every aim beat.
+        if (body.Length != 9 || (body[0] & 0x40) == 0)
         {
             return null;
         }
@@ -39,6 +42,6 @@ public static class CqcHoldUtils
         }
 
         // `0xff` is the standing form's "no target", which names no actor.
-        return body[1] == BotBodyState.NoTarget ? null : body[1];
+        return body[1] is > 0 and < 24 ? body[1] : null;
     }
 }

@@ -108,6 +108,10 @@ public sealed class BotLocomotionService(
         body.HitReacting = false;
         body.HitReactUntilMilliseconds = 0;
         body.StunnedUntilMilliseconds = 0;
+        body.Sleeping = false;
+        body.SleepUntilMilliseconds = 0;
+        body.LastStaminaRecoveryMilliseconds = 0;
+        body.StaminaRecoveryCredit = 0;
         body.PatrolIndex = 0;
     }
 

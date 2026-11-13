@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Combat;
 using Mgo2Server.Shared.Types;
 
 namespace Mgo2Server.GameplayServer;
@@ -23,12 +24,12 @@ public sealed partial class GameplayServerService
     {
         // A client's hit is a class-0x00 damage record: the identifier names the
         // victim's slot and the subtype says what the blow is — a body hit, a
-        // headshot, a stun, a knife, or a grenade's blast (`Bots.BotHitUtils`). The
+        // headshot, a stun, a knife, CQC or a grenade's blast (`Combat.DamageRecordUtils`). The
         // rest of that class is the operations and objective streams, whose first
         // byte is a count and not a subtype, so the record is decoded here and a rule
         // body is never read as damage.
         if (message.Flags == Bots.BotActorRecordUtils.DamageAttributeClass &&
-            Bots.BotHitUtils.Decode(message.Type, message.Body) is { } hit)
+            DamageRecordUtils.Decode(message.Type, message.Body) is { } hit)
         {
             // The echo carries the hit's subtype, and so the death drawn. It is taken
             // before the hit is applied: the echo drops a hit on an actor that is
@@ -42,6 +43,12 @@ public sealed partial class GameplayServerService
             // player's health is the actor writer's — which is the half that was
             // missing: a player damaging a teammate, or putting itself down with a
             // grenade, had its bar moved by nobody and its death counted by nothing.
+            // **The peer that reported the record is the shooter.** The damage word's
+            // low field is not a slot this host can credit: every client record in
+            // both captures reads `16` there, and in both the client itself holds
+            // slot 16, so nothing distinguishes "the shooter's slot" from a constant;
+            // a live run whose player held another slot credited that player's kills
+            // to slot 16. A placed device is not worth guessing the field for.
             var shooter = roster.Find(remoteAddress)?.SessionSlot;
             if (!botSimulation.NoteIncomingDamage(hit, shooter))
             {
@@ -50,9 +57,9 @@ public sealed partial class GameplayServerService
         }
 
         // A client's CQC hold is its own state record and not a hit: the only thing
-        // it names is the slot it holds. Our bots kept aiming, firing and walking
-        // through a grab, which is a target the client's grab could never settle on —
-        // that is the grab this server refused (`Bots.CqcHoldUtils`).
+        // it names is the slot it holds. It is the nine-byte acting state under
+        // class 0x01; the six-byte class-0x05 body `57 05 78 00 7d f9` is an aim
+        // record, not a hold.
         if (message.Flags == Bots.BotActorRecordUtils.StateAttributeClass &&
             Bots.CqcHoldUtils.HeldSlotOf(message.Body) is { } heldSlot)
         {

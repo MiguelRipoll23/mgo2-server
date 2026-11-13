@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Combat;
 using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.Shared.Domain.Characters;
@@ -94,20 +95,21 @@ public sealed partial class BotActorPublishService
     /// and the player's bar the only thing that moved.
     /// </para>
     /// <para>
-    /// <b>The blast is the one that names no shooter, and it names its own victim.</b>
-    /// A grenade's 28-byte record carries the thrower nowhere in the body, so the
-    /// peer that reported it is the attacker; a blast that lands on the reporter's
-    /// own slot is a suicide, and the kill-feed record that answers it names the same
-    /// slot twice — which the replay parser reads as a death and not a kill
+    /// <b>A blast's damage word names its shooter too.</b> The 28-byte record's word
+    /// packs points and slot the same way a bullet's does, including for a claymore
+    /// or C4 the victim's own client reported: the low five bits name the player who
+    /// placed it. Only a word that encodes no slot falls back to the reporter, and a
+    /// blast that lands on that slot is then a suicide — the kill-feed record names
+    /// the same slot twice, which the replay parser reads as a death and not a kill
     /// (<see cref="MatchScoreService.NoteKill"/>).
     /// </para>
     /// </remarks>
     /// <param name="hit">The hit as decoded.</param>
     /// <param name="shooterSlot">
-    /// Slot the reporting peer holds, or <c>null</c> when the roster does not name it.
+    /// Slot the damage word names, or the reporting peer when it names none.
     /// </param>
     /// <returns><c>true</c> when the victim is a player this host holds the health of.</returns>
-    public bool NoteClientHit(BotHit hit, byte? shooterSlot)
+    public bool NoteClientHit(DamageHit hit, byte? shooterSlot)
     {
         ArgumentNullException.ThrowIfNull(hit);
 
@@ -116,20 +118,16 @@ public sealed partial class BotActorPublishService
             return false;
         }
 
-        // A stun spends the victim's whole stun bar and takes no health, so nothing
-        // is counted here: the round's own stats count a stun, and the client draws
-        // the fall. Read as damage, it put the teammate it was aimed at down as if it
-        // had been shot.
+        var now = Environment.TickCount64;
+
+        // A stun, a CQC impact and a sleeping device's blast spend the victim's
+        // stamina and take no health, so nothing is counted here: the round's own
+        // stats count a knock-out, and the client draws the fall. Read as damage,
+        // each of them put the teammate it was aimed at down as if it had been shot.
         if (hit.IsStun)
         {
-            logger.LogDebug(
-                "The player in slot {ShooterSlot} stunned the player in slot {VictimSlot}",
-                shooterSlot,
-                hit.VictimSlot);
-            return true;
+            return StunPlayer(hit.VictimSlot, shooterSlot, hit.Damage, hit.Kind, now);
         }
-
-        var now = Environment.TickCount64;
         if (!TakePlayerHealth(
                 hit.VictimSlot,
                 hit.Damage,
@@ -212,6 +210,7 @@ public sealed partial class BotActorPublishService
             }
 
             humanRespawn[slot] = now + BotSimulationService.RespawnMilliseconds;
+            ClearPlayerStun(slot);
 
             // The reference announces the player's own death on the kill feed too
             // (`09 02 08` at t+311.03, slot 8's health reaching zero at 310.81).
@@ -316,6 +315,7 @@ public sealed partial class BotActorPublishService
 
                 humanRespawn.Remove(slot);
                 humanHealth[slot] = BotBodyState.MaximumVitals;
+                ClearPlayerStun(slot);
                 if (HumanEndpoint(slot) is { } respawnEndpoint)
                 {
                     vitals.Restore(respawnEndpoint);
@@ -359,7 +359,15 @@ public sealed partial class BotActorPublishService
         }
 
         var map = roundState.RoundSettings?.Map ?? matchSettings.Map;
-        return bots.Bots.Any(bot => bot.SessionSlot == slot && simulation.BodyOf(bot, map).IsDead);
+        return bots.Bots.Any(bot =>
+        {
+            if (bot.SessionSlot != slot)
+            {
+                return false;
+            }
+
+            return simulation.BodyOf(bot, map).IsDead;
+        });
     }
 
     /// <summary>

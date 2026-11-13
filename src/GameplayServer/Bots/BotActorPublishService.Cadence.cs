@@ -46,6 +46,7 @@ public sealed partial class BotActorPublishService
         // and nothing on the body moves.
         var acting = body.TargetSlot != BotBodyState.NoTarget
             || body.HeldBySlot != BotBodyState.NoTarget
+            || body.Sleeping
             || body.HitReacting;
         if (!acting && now < body.NextStateMilliseconds)
         {

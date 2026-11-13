@@ -23,15 +23,20 @@ A slot owns a block of identifiers, ten apart (`0x0a`). The block's base is the 
 | position | state + 2 | `BotActorRecordUtils.Build` |
 | weapon pair, weapon byte | state + 4 | `BotActorRecordUtils.Build` |
 | aim | state + 6 | `BotActorRecordUtils.Build` |
-| **damage** | **state + 7** | `BotActorRecordUtils.DamageIdentifierOf` |
+| **damage** | **state − 3** | `BotActorRecordUtils.DamageIdentifierOf` |
 | vitals | state + 1 | `PlayerVitalsFramesUtils.IdentifierFor` (constant `0x090c` is only the recorded room's slot-20 value) |
 
 Two forms of every identifier are on the wire: the base and the base XOR `0x800`
 (`MatchRecordGenerationUtils.SiblingBit`). A decoder must accept both.
 
-**`state − 3` is not a hole in the block.** It is the *previous* slot's `state + 7`. This
-host wrote every hit three below its victim's state and every hit landed on the slot
-before it (`myserver.pcapng`, 2026-11-11).
+**`state − 3` is the damage record, and `state + 7` is the next slot's — the same number.**
+Blocks are ten apart, so `state(n) − 3 == state(n + 1) + 7`, and the arithmetic alone
+cannot say which slot a record belongs to. The client's own state body does: on
+`myserver.pcapng` (2026-11-13 13:34) it aims at slot 4 — its state's target byte reads
+`4` — while writing eight hits under `0x0868`, which is `state(4) 0x086b − 3`. Reading
+that record as `state + 7` filed the player's fire on slot 3, one slot below the bot he
+was shooting: the bot took nothing, the slot on his own side went down, and the feed
+read as a teammate kill.
 
 ---
 
@@ -44,7 +49,7 @@ the body is 15). Measured on every class-`0x00` record the working host's client
 |---|---|---|
 | `+0` | 1 | subtype — what the blow is (§3) |
 | `+1` | 1 | marker: `01` on every blow but the stun stab, `00` there |
-| `+2` | 2 | damage, `u16` LE, in **128ths of a health point** (`0x4710` = 18192 = 142.1) |
+| `+2` | 2 | damage word, `u16` LE: **points in bits 7–15, shooter slot in bits 0–4** — `points = word >> 7`, `shooter = word & 0x1F` (one point is 1/128 health). `0x4710` = 142 points, shooter 16 |
 | `+4` | 1 | weapon id (item table, `rpdt.js` `ITEM_NAMES`) |
 | `+5` | 2 | impact `x`, `i16` LE, wire tenths |
 | `+7` | 2 | impact `y`, `i16` LE |
@@ -53,9 +58,10 @@ the body is 15). Measured on every class-`0x00` record the working host's client
 | `+13` | 2 | bearing the shot came from, `u16` LE |
 
 `BotActorRecordUtils.BuildShot` writes this layout. A **blast** is the same record 13 bytes
-longer: body **28**, weapon `0x34` (52, the grenade), the explosion's own point as three
-`f32` at `+14`, and **no shooter anywhere in the body** — the peer that reported it is the
-thrower (`BotHitUtils.BlastBodyLength`, `BlastPointOffset`).
+longer: body **28**, weapon `0x34` (52, the grenade), and the explosion's own point as three
+`f32` at `+14`. Its damage word names the thrower or the player who placed the device in
+bits 0–4 just as a bullet's does; the reporting peer is only the fallback when those bits
+are zero (`DamageRecordUtils.BlastBodyLength`, `BlastPointOffset`).
 
 A victim at zero takes no more hits; the only record still answered on a corpse is the
 blast, because it carries the victim's animation rather than a relay of damage
@@ -82,8 +88,9 @@ Readings that matter to a host:
   vitals read `68` a beat earlier, so the client's bar reaches zero whatever it held. A
   host that writes the tracked remainder leaves the client alive and then contradicts it
   with the zero the vitals record carries.
-- **A stun takes no health.** Read as damage, the `42` word kills the actor the client was
-  told was knocked out, and announces a kill for a stun.
+- **A stun takes stamina, not health.** Its points are the part of the stun bar the blow
+  spends. Read as health damage, the `42` word kills the actor the client was told was
+  knocked out, and announces a kill for a stun.
 - **The knife's marker byte decides.** `91 00` is a knockdown: two of them in the working
   capture, neither in any feed, neither victim's vitals at zero.
 

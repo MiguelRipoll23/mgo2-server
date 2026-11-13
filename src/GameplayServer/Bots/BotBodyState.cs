@@ -53,6 +53,22 @@ public sealed class BotBodyState
     /// <summary>Stamina the vitals record reports.</summary>
     public short Stamina { get; set; } = BotBodyState.MaximumVitals;
 
+    /// <summary>
+    /// Whether the body is asleep on the floor: stamina reached zero and the
+    /// body has not got up yet. A sleeping body keeps its health, its position
+    /// and the 32-byte lying position record the capture writes.
+    /// </summary>
+    public bool Sleeping { get; set; }
+
+    /// <summary>When a sleeping body stands up, in monotonic milliseconds.</summary>
+    public long SleepUntilMilliseconds { get; set; }
+
+    /// <summary>Last time stamina recovery was ticked, in monotonic milliseconds.</summary>
+    public long LastStaminaRecoveryMilliseconds { get; set; }
+
+    /// <summary>Fractional stamina recovery carried between ticks, in point-milliseconds.</summary>
+    public long StaminaRecoveryCredit { get; set; }
+
     /// <summary>Where the bot is looking, in stage units.</summary>
     public float AimX { get; set; }
 
@@ -180,10 +196,18 @@ public sealed class BotBodyState
     public long LastAdvanceMilliseconds { get; set; }
 
     /// <summary>
-    /// Deaths this slot has taken in the round, which the corpse body's header
-    /// counts: the capture's word at <c>+4</c> is odd and rises by two a death.
+    /// Times this slot has gone down in the round — a death or a knock-out — which is
+    /// what the lying body's word at <c>+4</c> counts.
     /// </summary>
-    public int Deaths { get; set; }
+    /// <remarks>
+    /// <b>Every down counts, not every death.</b> `actions.pcapng` slot 16 lies dead at
+    /// t+43.29 with <c>1</c>, then sleeps twice at t+511.95 and t+547.92 with <c>9</c>
+    /// and <c>11</c> while its health stays 250: the word climbs by two on a knock-out
+    /// exactly as on a death. Counted from deaths alone, a sleeper repeated the marker
+    /// its last death wrote, and a client that keys the fall on the new word never
+    /// played it.
+    /// </remarks>
+    public int Downs { get; set; }
 
     /// <summary>
     /// Slot this bot has just put down and keeps naming until its feed is written,

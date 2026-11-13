@@ -79,7 +79,6 @@ public sealed partial class BotSimulationService(
     /// about 47 degrees.
     /// </remarks>
     private const int HoldTurnPerBeat = 0x888;
-
     /// <summary>Deaths the room owes the client a kill-feed record for.</summary>
     private readonly Queue<BotKill> kills = new();
 
@@ -92,8 +91,7 @@ public sealed partial class BotSimulationService(
     public BotBodyState BodyOf(BotParticipant bot, int map) => locomotion.BodyOf(bot, map);
 
     /// <summary>
-    /// Takes one bot's tick: it picks the enemy it holds, walks towards it, aims
-    /// at it and fires when it is in range.
+    /// Takes one bot's tick: it picks an enemy, walks, aims and fires.
     /// </summary>
     /// <param name="bot">The bot being advanced.</param>
     /// <param name="map">The round's map.</param>
@@ -109,6 +107,7 @@ public sealed partial class BotSimulationService(
         IReadOnlyList<BotActorView> actors)
     {
         var body = locomotion.BodyOf(bot, map);
+        RecoverStamina(body, now);
 
         if (body.IsDead)
         {
@@ -130,9 +129,9 @@ public sealed partial class BotSimulationService(
             locomotion.Respawn(bot, body, map);
         }
 
-        // A stunned bot stays where the blow put it and gets up when the stun runs
-        // out: no target, no trigger, and its health untouched (`BotHitUtils`).
-        if (body.StunnedUntilMilliseconds > now)
+        if (body.Sleeping && now >= body.SleepUntilMilliseconds) { body.Sleeping = false; }
+        // A stunned or sleeping bot stays where the blow put it: no target, no trigger.
+        if (body.StunnedUntilMilliseconds > now || body.Sleeping)
         {
             body.Moving = false;
             body.TargetSlot = BotBodyState.NoTarget;
@@ -140,6 +139,7 @@ public sealed partial class BotSimulationService(
             body.BurstRemaining = 0;
             return new BotAdvance(body, false, null);
         }
+        if (body.StunnedUntilMilliseconds != 0) { EndStun(body); }
 
         // A bot a client has grabbed stands where the grab put it: the hold is the
         // grabber's client's and the host's only part is to stop writing a body that

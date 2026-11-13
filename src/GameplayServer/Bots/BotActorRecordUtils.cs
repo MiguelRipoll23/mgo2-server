@@ -14,8 +14,8 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <para>
 /// <b>It is an identifier block, not one record.</b> Six records per actor per
 /// tick share one base: state at it, vitals at <c>+1</c>, position at <c>+2</c>,
-/// the weapon pair and byte at <c>+4</c>, aim at <c>+6</c>, and a hit seven above
-/// it at <c>+7</c>.
+/// the weapon pair and byte at <c>+4</c>, aim at <c>+6</c>, and a hit three below
+/// the state (<see cref="DamageIdentifierOf"/>).
 /// </para>
 /// <para>
 /// <b>The base follows the round's identifier generation.</b> Slot one is
@@ -118,18 +118,21 @@ public static class BotActorRecordUtils
 
     /// <summary>
     /// The identifier a hit on a session slot travels under: three below the
-    /// state record, which is where the captures' damage records sit.
+    /// state record.
     /// </summary>
     /// <remarks>
-    /// <b>Not three below it.</b> Slot 4 of <c>.pcapngs/actions/actions.pcapng</c>
-    /// writes its state at <c>0x086b</c> and its hits at <c>0x0872</c>; slot 12
-    /// writes <c>0x08bb</c> and <c>0x08c2</c>. The stride between slots is ten, so
-    /// <c>state − 3</c> is not a hole in the block — it is the *previous* slot's
-    /// <c>state + 7</c>, and every hit this host wrote for slot <c>n</c> arrived on
-    /// the victim record of slot <c>n − 1</c>: a blow that killed slot 12 went out
-    /// as <c>0x08b8</c>, slot 11's damage identifier. The client files the death
-    /// against the record's victim, so no death matched the feed that named the
-    /// real one and every bot kill was drawn on the row it fell back to.
+    /// <b>The arithmetic cannot settle this on its own, and the target byte does.</b>
+    /// A slot's damage record is three below its state record, which is the *same
+    /// number* as the state record before it plus seven: <c>0x0868</c> is slot 4's
+    /// (<c>state(4) 0x086b − 3</c>) and equally slot 3's <c>state(3) 0x0861 + 7</c>.
+    /// Reading it as <c>state + 7</c> is what filed a live player's fire on the slot
+    /// before the one it was shooting. The client's own state body says which: on
+    /// <c>.pcapngs/myserver.pcapng</c> it aims at slot 4 (its state's target byte
+    /// reads <c>4</c>) while writing eight hits under <c>0x0868</c>, and its target
+    /// byte reads <c>0xff</c> on the beat it writes <c>0x0890</c> — slot 8's
+    /// <c>state(8) 0x0893 − 3</c>. A player who shot bot 4 instead killed slot 3,
+    /// which stands on his own side, so the feed read as a teammate kill and the bot
+    /// he was aiming at never took a point of damage.
     /// </remarks>
     /// <param name="generation">Identifier set of the round being played.</param>
     /// <param name="sessionSlot">Key the player holds in the room's player table.</param>
@@ -145,8 +148,10 @@ public static class BotActorRecordUtils
         for (var generation = 0; generation < 2; generation++)
         {
             var value = (ushort)(identifier ^ (generation * MatchRecordGenerationUtils.SiblingBit));
-            // **Three below the state, for every family.** On `actions.pcapng`, 415 of
-            // 415 host hits and 22 of 22 client hits land on the vitals that move.
+            // **Three below the state, for every family.** The next slot's
+            // `state + 7` is the same identifier, so the client's own target byte is
+            // what settles it (`DamageIdentifierOf`). On `actions.pcapng`, 415 of 415
+            // host hits and 22 of 22 client hits land on the vitals that move.
             var offset = (int)value - (StateIdentifierOf(MatchRecordGenerationUtils.First, 0) - 3);
             if (offset < SlotStride)
             {
@@ -282,11 +287,12 @@ public static class BotActorRecordUtils
         var body = new byte[DamageBodyLength];
         body[0] = headshot ? HeadshotDamageSubtype : DamageSubtype;
 
-        // The damage word encodes both damage points and the shooter's actor slot:
-        // (points << 7) | shooterSlot.
-        // The client extracts the shooter slot using word & 0x1F.
-        var points = headshot ? BotBodyState.MaximumVitals : damage;
-        var damageWord = (Math.Clamp(points, 0, 0x1FF) << 7) | (shooterSlot & 0x1F);
+        // The damage word encodes both the damage quantity and the shooter's actor
+        // slot: (damage << 7) | shooterSlot. Measured, not inferred: every one of the
+        // capture's client-written hits decodes to slot 16, its own, whatever victim it
+        // names, and the high field equals the health or stamina the bar loses.
+        var damageQuantity = headshot ? BotBodyState.MaximumVitals : damage;
+        var damageWord = (Math.Clamp(damageQuantity, 0, 0x1FF) << 7) | (shooterSlot & 0x1F);
 
         WriteUInt16(body, 2, (ushort)damageWord);
 

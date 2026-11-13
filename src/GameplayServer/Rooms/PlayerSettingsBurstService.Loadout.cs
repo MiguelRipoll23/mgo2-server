@@ -58,25 +58,43 @@ public sealed partial class PlayerSettingsBurstService
     /// <returns>The record body.</returns>
     public byte[] BuildLoadoutBody(LobbyLoadout loadout)
     {
+        // A character's skills are saved in four slots and a record carries three.
+        // The three a record carries are the first three the character loads out
+        // with, so a fourth is dropped rather than every one of them: the record
+        // written is then the fifty-six-byte shape the captures hold, where the
+        // shape for four pairs is the rule's arithmetic and no capture confirms it
+        // (<see cref="LoadoutFramesUtils.MaximumSkills"/>).
+        if (loadout.Skills.Count > LoadoutFramesUtils.MaximumSkills)
+        {
+            logger.LogWarning(
+                "Player in slot {Slot} has {SkillCount} equipped skill(s); the loadout record carries {Carried} "
+                + "and the {Dropped} beyond them are not announced",
+                loadout.Slot,
+                loadout.Skills.Count,
+                LoadoutFramesUtils.MaximumSkills,
+                loadout.Skills.Count - LoadoutFramesUtils.MaximumSkills);
+
+            loadout = loadout with
+            {
+                Skills = [.. loadout.Skills.Take(LoadoutFramesUtils.MaximumSkills)],
+            };
+        }
+
         var template = LoadoutBodiesUtils.RecordedLoadoutFor(loadout.Skills.Count);
         if (template is not null && LoadoutFramesUtils.TryWrite(loadout, template, out var body))
         {
             return body;
         }
 
-        // A skill count no shape is written for. Every count from none to three
-        // has one — the captured bodies for none, two and three, and the built
-        // one for a single pair, which the captures never held — so this is a
-        // player with four equipped skills, whose length the rule gives and no
-        // capture confirms. A body written at the wrong length is one the peer
-        // reads as nothing, and the decoder's own skill reader stops at three
-        // pairs, so the player is still named, in its own slot, with the recorded
-        // no-pairs body behind that one byte.
+        // A body this record cannot carry: an appearance block that is not the
+        // record's length, which is the only reason left once the pair count has a
+        // shape. The player is still named, in its own slot, with the recorded
+        // no-pairs body behind that one byte — the alternative is a slot the burst
+        // never mentions.
         logger.LogWarning(
-            "Player in slot {Slot} has {SkillCount} equipped skill(s), which no loadout body is written for; "
+            "Player in slot {Slot} has an appearance the loadout record cannot carry; "
             + "the recorded no-pairs body is written behind its own slot byte instead",
-            loadout.Slot,
-            loadout.Skills.Count);
+            loadout.Slot);
 
         var fallback = LoadoutBodiesUtils.PlayerLoadout();
         fallback[LoadoutFramesUtils.SlotByteOffset] = (byte)(loadout.Slot + 1);

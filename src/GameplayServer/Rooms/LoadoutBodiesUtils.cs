@@ -173,10 +173,11 @@ public static class LoadoutBodiesUtils
     /// </summary>
     /// <remarks>
     /// The room is what the length rule says the region holds, not a value read
-    /// anywhere: the header and the leading marker stay put, the pair slots open up
-    /// between them and the closing list end, the list end moves to the body's new
-    /// end, and the unnamed run behind it and the appearance block move with it
-    /// unchanged. The opened slots are the pair bytes themselves, which
+    /// anywhere: the header stays put, the region opens with the byte a body that
+    /// carries pairs opens with, the pair slots open up behind it and the closing
+    /// list end, the list end moves to the body's new end, and the unnamed run
+    /// behind it and the appearance block move with it unchanged. The opened slots
+    /// are the pair bytes themselves, which
     /// <see cref="LoadoutFramesUtils.TryWrite"/> overwrites with the player's own
     /// pairs, so nothing is invented.
     /// </remarks>
@@ -191,6 +192,15 @@ public static class LoadoutBodiesUtils
 
         // The header and the region's leading marker.
         Array.Copy(recorded, 0, grown, 0, marker + 1);
+
+        // The leading marker of a region that carries pairs. The fifty-four- and
+        // fifty-six-byte bodies read `0xff` at SkillRegionOffset and the fifty-byte
+        // no-pairs body reads `0xfe` there, so a region grown from the no-pairs body
+        // opens with the byte a body carrying pairs opens with rather than with the
+        // empty region's. Without this the one-pair record, which is the only grown
+        // body the host writes, is a shape no capture holds in either its length or
+        // its leading byte.
+        grown[marker] = LoadoutFramesUtils.SkillListEnd;
 
         // The pair slots are the body's own zero bytes; only the list end is set.
         var listEnd = marker + 1 + (LoadoutFramesUtils.BytesPerPair * pairs);

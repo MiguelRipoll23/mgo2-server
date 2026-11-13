@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Combat;
 using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameplayServer.Bots;
@@ -27,6 +28,27 @@ public sealed partial class BotSimulationService
     public const int StunMilliseconds = 3_000;
 
     /// <summary>
+    /// How long a body whose stamina reached zero lies asleep, in milliseconds.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured on <c>.pcapngs/actions/cqc.pcapng</c>.</b> The CQC combo that
+    /// takes the slot's stamina to zero writes the 32-byte lying position body at
+    /// t+483.50 and the body stands again at t+491.53, about eight seconds later.
+    /// Its health is still 250 throughout: this is sleep, not death.
+    /// </remarks>
+    public const int SleepMilliseconds = 8_000;
+
+    /// <summary>
+    /// Stamina recovered per second, measured from the working host's vitals.
+    /// </summary>
+    /// <remarks>
+    /// Seven runs in <c>cqc.pcapng</c> climb at 18.0 to 18.9 points a second, for
+    /// example 16 to 25 in 0.496 s and 72 to 206 over 4.900 s. The recovery is not
+    /// a reset when the stun ends.
+    /// </remarks>
+    public const int StaminaRecoveryPerSecond = 18;
+
+    /// <summary>
     /// Takes a hit a client wrote against a bot.
     /// </summary>
     /// <remarks>
@@ -39,10 +61,11 @@ public sealed partial class BotSimulationService
     /// — the headshot — which is exactly the report this fixes.
     /// </para>
     /// <para>
-    /// <b>A stun takes no health.</b> The record spends the victim's whole stun bar
-    /// in the same word a headshot uses (<see cref="BotHitUtils.StunSubtype"/>), so a
-    /// host reading it as damage killed the actor it had just been told was knocked
-    /// out, and announced a kill for a stun.
+    /// <b>A stun takes stamina and no health.</b> The record's points are the part of
+    /// the victim's stun bar the blow spends; a word decoded as health instead killed
+    /// the actor it had just been told was knocked out, and announced a kill for a
+    /// stun. The same holds for a CQC impact, a sleeping device's blast and the short
+    /// stun stab. The bar is given back when the stun ends.
     /// </para>
     /// </remarks>
     /// <param name="hit">The hit as decoded.</param>
@@ -51,7 +74,7 @@ public sealed partial class BotSimulationService
     /// the record. A death nobody is named for is counted and not credited.
     /// </param>
     /// <returns><c>true</c> when the hit named one of the room's bots.</returns>
-    public bool NoteIncomingDamage(BotHit hit, byte? shooterSlot)
+    public bool NoteIncomingDamage(DamageHit hit, byte? shooterSlot)
     {
         ArgumentNullException.ThrowIfNull(hit);
 
@@ -63,7 +86,14 @@ public sealed partial class BotSimulationService
         var now = Environment.TickCount64;
         if (hit.IsStun)
         {
-            Stun(body, now);
+            // **A tranquilliser empties the bar; it does not lay the body out.** The
+            // working host's stunned bot keeps its feet: `actions.pcapng` slot 6 takes
+            // a 250-point `0x42` at t+221.45 and writes none of its 128 lying bodies,
+            // while its two 8-second sleeps at t+511.95 and t+547.92 follow CQC blows.
+            // A dart that wrote the 32-byte lying body at health 250 is a corpse drawn
+            // over a living bar, which is the death pose this report names.
+            var putsDown = hit.Kind is DamageKind.Knockout or DamageKind.ExplosiveStun;
+            Stun(body, hit.Damage, now, putsDown);
             return true;
         }
 
@@ -79,8 +109,13 @@ public sealed partial class BotSimulationService
     /// and pulls no trigger until the stun runs out, and its health does not move.
     /// </summary>
     /// <param name="body">The body the blow landed on.</param>
+    /// <param name="points">Stamina points the blow spends.</param>
     /// <param name="now">Monotonic milliseconds.</param>
-    public void Stun(BotBodyState body, long now)
+    /// <param name="putsDown">
+    /// Whether an emptied bar lays the body on the floor, which the CQC family does and
+    /// a tranquilliser does not.
+    /// </param>
+    public void Stun(BotBodyState body, int points, long now, bool putsDown)
     {
         ArgumentNullException.ThrowIfNull(body);
 
@@ -90,6 +125,17 @@ public sealed partial class BotSimulationService
         }
 
         body.StunnedUntilMilliseconds = now + StunMilliseconds;
+        body.Stamina = (short)Math.Clamp(body.Stamina - points, 0, BotBodyState.MaximumVitals);
+        body.LastStaminaRecoveryMilliseconds = now;
+        body.StaminaRecoveryCredit = 0;
+        if (putsDown && body.Stamina == 0 && !body.Sleeping)
+        {
+            body.Sleeping = true;
+            body.Downs++;
+            body.SleepUntilMilliseconds = Math.Max(body.SleepUntilMilliseconds, now + SleepMilliseconds);
+        }
+
+        body.NextVitalsMilliseconds = 0;
         BotLocomotionService.NoteHit(body, now);
 
         // The stun holds the `c1 81` head for as long as it lasts, rather than the
@@ -99,9 +145,61 @@ public sealed partial class BotSimulationService
         body.HitReactUntilMilliseconds = body.StunnedUntilMilliseconds;
         body.BurstRemaining = 0;
         logger.LogDebug(
-            "Bot in slot {BotSlot} was stunned and gets up in {StunMilliseconds} ms",
+            "Bot in slot {BotSlot} was stunned with {Stamina} stamina and gets up in {StunMilliseconds} ms",
             body.SessionSlot,
+            body.Stamina,
             StunMilliseconds);
+    }
+
+    /// <summary>Ends a stun, leaving stamina to recover at its measured rate.</summary>
+    /// <param name="body">The body whose stun has expired.</param>
+    public void EndStun(BotBodyState body)
+    {
+        body.StunnedUntilMilliseconds = 0;
+        body.NextVitalsMilliseconds = 0;
+    }
+
+    /// <summary>
+    /// Refills a body's stamina at the capture's rate, rather than resetting it
+    /// when a stun ends.
+    /// </summary>
+    /// <param name="body">The body recovering.</param>
+    /// <param name="now">Monotonic milliseconds.</param>
+    public static void RecoverStamina(BotBodyState body, long now)
+    {
+        if (body.IsDead)
+        {
+            return;
+        }
+
+        if (body.LastStaminaRecoveryMilliseconds == 0)
+        {
+            body.LastStaminaRecoveryMilliseconds = now;
+            return;
+        }
+
+        var elapsed = now - body.LastStaminaRecoveryMilliseconds;
+        if (elapsed <= 0)
+        {
+            return;
+        }
+
+        body.LastStaminaRecoveryMilliseconds = now;
+        if (body.Stamina >= BotBodyState.MaximumVitals)
+        {
+            body.StaminaRecoveryCredit = 0;
+            return;
+        }
+
+        body.StaminaRecoveryCredit += elapsed * StaminaRecoveryPerSecond;
+        var recovered = (int)(body.StaminaRecoveryCredit / 1000);
+        if (recovered <= 0)
+        {
+            return;
+        }
+
+        body.StaminaRecoveryCredit -= recovered * 1000L;
+        body.Stamina = (short)Math.Min(BotBodyState.MaximumVitals, body.Stamina + recovered);
     }
 
     /// <summary>
@@ -221,7 +319,7 @@ public sealed partial class BotSimulationService
         body.HeldBySlot = BotBodyState.NoTarget;
 
         kills.Enqueue(new BotKill(killerSlot, body.SessionSlot, headshot));
-        body.Deaths++;
+        body.Downs++;
         body.RespawnMilliseconds = now + RespawnMilliseconds;
         body.StunnedUntilMilliseconds = 0;
 
