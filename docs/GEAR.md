@@ -30,6 +30,16 @@ count x { u8 item_id, u32 colour_mask }      5 bytes each
 16    x { u8 item_id, u8 bit_index }         32 bytes, see below
 ```
 
+**The catalogue is the item table, and the weapons live in it.** The working server's 130 records are
+keyed by the protocol's own item ids — `0..7`, `11..19`, `22`, `28..44`, `46..53`, `57..64`,
+`68..83`, `86..100`, `102..119`, `128..143`, `160..162`, `176`, `192..196`, `240..244` — whose
+first fifty-four rows are the knives, the firearms and the launchers. The wardrobe reads the 67 ids
+of its category windows back out of this table; the **loadout screen reads the weapons out of the
+same records**. A payload that carries only the wardrobe ids therefore offers only the handful of
+weapons that are always present, which is the short weapon list this table replaces: serve the 130
+ids and every weapon, garment and attachment is offered, each at `0xffffffff` so every colour and
+attachment slot is open (bit indexes an item's own slot, so bits past its count are unreadable).
+
 **The thirty-two zero bytes are load-bearing.** The parser reaches the count thirty-two bytes in.
 The working server's `0x4124` is **750 bytes** — these zeroes, a `u32` count of 130, its records,
 the sixteen-pair tail, then thirty-two bytes it never reads — captured 2026-11-13 in
@@ -50,7 +60,8 @@ which the parser skips because item 255 exceeds its 128-entry bound. See `gear_c
 ## Categories
 
 The wardrobe enumerates fixed `{base, count}` windows from a 9-arm table at `0x9270AC`. **67 ids,
-maximum 116** — we hold 122 in `gear_item`, so 55 are phantom (`POST_LAUNCH.md`).
+maximum 116** (`POST_LAUNCH.md`). The catalogue carries 130 ids, the measured working-server set:
+the wardrobe's 67 plus the weapons, pickups and faces the other screens enumerate.
 
 **The empty-category fallback matters.** A category with nothing owned does **not** render empty:
 `0x92751C`-`0x927568` force-equips the category's **base id** and draws one colourless row. Observed

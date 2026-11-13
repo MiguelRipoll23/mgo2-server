@@ -27,10 +27,19 @@ doc: |
   PROTOCOL.md documents `0x26b: 32 bytes of 0xff` as a "terminator" and flags "whether the 32
   `0xff` bytes are a terminator or a fixed-size trailing field is also a guess". Neither: they are
   **16 `{u8 item_id, u8 bit_index}` pairs**, read by a fixed 16-iteration loop. `0xff` works as a
-  no-op only because item id 255 > 128 makes every pair skip. The size we send (403 =
-  32 + 4 + 67*5 + 32) is what the capture shows; the 651-byte payload this project served in July
-  (35-byte header, one-byte count, 123 records) is read the same way, because a `u32` at +32 of it
-  is `00 00 00 <count>`.
+  no-op only because item id 255 > 128 makes every pair skip. The size we send (750 =
+  32 + 4 + 130*5 + 16*2 + 32) is the working server's own; the 651-byte payload this project served
+  in July (35-byte header, one-byte count, 123 records) is read the same way, because a `u32` at +32
+  of it is `00 00 00 <count>`.
+
+  ### The records are the item table, weapons included
+
+  The ids are not a gear-only list. The working server's 130 records run
+  `0..7, 11..19, 22, 28..44, 46..53, 57..64, 68..83, 86..100, 102..119, 128..143, 160..162, 176,
+  192..196, 240..244` — the protocol's own item ids, whose first 54 rows are the knives, the
+  firearms and the launchers. The wardrobe reads the 67 ids of its category windows back out of
+  this table and ignores the rest; the loadout screen reads the weapons from the same records.
+  That is why a payload carrying only the wardrobe ids offers only a handful of weapons.
 doc-ref: dev/docs/GEAR.md
 seq:
   - id: reserved
@@ -55,7 +64,7 @@ seq:
     type: item_record
     repeat: expr
     repeat-expr: count
-    doc: "[ELF] 5 wire bytes each. The 123 item ids are a data table (`LoadoutWriter.GEAR_ITEMS`), not a derivable sequence; PROTOCOL.md flags that `0x86` appears twice in our copy and that this is unchecked."
+    doc: "[ELF] 5 wire bytes each. The ids are the protocol's item table (`ItemIdentifier`), measured from the working server's capture: 130 records over `0..244`, weapons (`0..53`) included, with `134` written twice. Our catalogue is that measured sequence at `GearCatalogue.Items`."
   - id: unlock_bits
     type: unlock_pair
     repeat: expr
