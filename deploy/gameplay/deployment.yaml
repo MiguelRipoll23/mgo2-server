@@ -54,7 +54,7 @@ spec:
         # many consecutive copies of its entry — a stage is a run of identical
         # triples on the wire (`MatchSettings.IsLastRoundOfGame`).
         - name: GAMEPLAY_SERVER_ROTATION
-          value: 'TDMBlood Bath'
+          value: 'TDM@Blood Bath'
         # The Free Battle room plays itself when nobody is in it. FILL hands a
         # bot's seat to a joining player, so the room is never advertised full;
         # BOTH is what puts the bots on either side, so a player who joins has a
