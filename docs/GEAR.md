@@ -53,6 +53,24 @@ of a record, so the wardrobe came up broken.
 **same** client table at `charTable + 9888 + id*12`, so **they must agree** — whichever arrives last
 wins. Both are written by `GearCatalogue.Payload`.
 
+### There is no weapon list anywhere else
+
+Searched for, and measured, while chasing a short weapon list in 2026-11-13: the gameplay channel
+carries no item catalogue and no unlock mask. Comparing every host→client record of
+`different-explosives-mines-grenades-on-me.pcapng` with `myserver.pcapng` across the round's open,
+two things look like candidates and neither is one:
+
+- The four bytes at `state[40..43]` of the 90-byte `0x00` state block — `ff ff ff ff` in that
+  capture against this host's `1e 1e 1e 1e`. They are the two objective holders and the two capture
+  clocks, and another working capture (`briefing-then-solo-game`) writes `1e` there, so the value
+  is the match's, not an unlock.
+- `0x0a61`, which does carry short lists (`18 01 02 03 04 05 06 fe ff 07 fe fe`). It is the
+  rules-roster record; the ids in it are rule numbers, and the weapons the player chose travel as
+  the three `0x12e2`–`0x12e4` rows and nothing else.
+
+So the loadout screen's list is read from the gear table above: serve the 130 ids and every weapon
+is offered, serve the 67 wardrobe ids and it is not.
+
 The 32-byte tail is **not a terminator and grants nothing**: a pair is ORed into record `+16` only
 if the bit is already set in `+12`, and `+16` drives a wardrobe highlight. Unused slots are `0xff`,
 which the parser skips because item 255 exceeds its 128-entry bound. See `gear_colour_highlight`.
