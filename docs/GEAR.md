@@ -30,15 +30,26 @@ count x { u8 item_id, u32 colour_mask }      5 bytes each
 16    x { u8 item_id, u8 bit_index }         32 bytes, see below
 ```
 
-**The catalogue is the item table, and the weapons live in it.** The working server's 130 records are
-keyed by the protocol's own item ids — `0..7`, `11..19`, `22`, `28..44`, `46..53`, `57..64`,
-`68..83`, `86..100`, `102..119`, `128..143`, `160..162`, `176`, `192..196`, `240..244` — whose
-first fifty-four rows are the knives, the firearms and the launchers. The wardrobe reads the 67 ids
-of its category windows back out of this table; the **loadout screen reads the weapons out of the
-same records**. A payload that carries only the wardrobe ids therefore offers only the handful of
-weapons that are always present, which is the short weapon list this table replaces: serve the 130
-ids and every weapon, garment and attachment is offered, each at `0xffffffff` so every colour and
-attachment slot is open (bit indexes an item's own slot, so bits past its count are unreadable).
+**The catalogue is the item table, and the weapons live in it.** Records are keyed by the protocol's
+own item ids, whose first fifty-four rows are the knives, the firearms and the launchers. The
+wardrobe reads the 67 ids of its category windows back out of this table; the **loadout screen and
+the in-match weapon select read the weapons out of the same records**, one list per category.
+
+**The reference payload is one account's owned ids, not the whole table.** The working server's 750
+bytes carry 130 records — `0..7`, `11..19`, `22`, `28..44`, `46..53`, `57..64`, `68..83`, `86..100`,
+`102..119`, `128..143`, `160..162`, `176`, `192..196`, `240..244` — and the gaps in them are the
+items **that account had not unlocked**: no record for the Desert Eagle (`8`, `9`), THOR (`10`),
+P90 (`20`), BIZON (`21`), SKORPION (`23`), M4 (`24`), AK102 (`25`), G3A3 (`26`), AN94 (`27`), VSS
+(`39`), RAILGUN (`45`), the stun/chaff/smoke grenades (`54`–`56`), the sleep claymore and both C4s
+(`65`–`67`), the scope and dot sight (`84`, `85`), XM8 Long (`101`) or `120`–`127` — **29 of the
+ids below 128**. Serving that list verbatim is a short weapon list, and it is what the loadout and
+the in-match select showed: every weapon whose id was missing from it was missing from both.
+
+So every id below **128** is served, because 128 is where the client's parser stops
+(`0xD3CF00`, `cmplwi r9,128; bgt` — an id above it is silently dropped), and the reference's own ids
+above it are carried behind them as measured. That is **158 records and an 890-byte payload**, each
+record at `0xffffffff` so every colour and attachment slot is open (a bit indexes an item's own
+slot, so bits past its count are unreadable and harmless).
 
 **The thirty-two zero bytes are load-bearing.** The parser reaches the count thirty-two bytes in.
 The working server's `0x4124` is **750 bytes** — these zeroes, a `u32` count of 130, its records,

@@ -27,8 +27,11 @@ doc: |
   PROTOCOL.md documents `0x26b: 32 bytes of 0xff` as a "terminator" and flags "whether the 32
   `0xff` bytes are a terminator or a fixed-size trailing field is also a guess". Neither: they are
   **16 `{u8 item_id, u8 bit_index}` pairs**, read by a fixed 16-iteration loop. `0xff` works as a
-  no-op only because item id 255 > 128 makes every pair skip. The size we send (750 =
-  32 + 4 + 130*5 + 16*2 + 32) is the working server's own; the 651-byte payload this project served
+  no-op only because item id 255 > 128 makes every pair skip. The working server's payload is 750 =
+  32 + 4 + 130*5 + 16*2 + 32 and ours is 890 = 32 + 4 + 158*5 + 16*2 + 32: every id below 128,
+  which is where the reader stops (`i == 129`), then the reference's own tail above it. Its 130
+  records are one account's owned ids, so the 29 ids it leaves out below 128 are the weapons a
+  copied list does not offer; the 651-byte payload this project served
   in July (35-byte header, one-byte count, 123 records) is read the same way, because a `u32` at +32
   of it is `00 00 00 <count>`.
 
@@ -64,7 +67,7 @@ seq:
     type: item_record
     repeat: expr
     repeat-expr: count
-    doc: "[ELF] 5 wire bytes each. The ids are the protocol's item table (`ItemIdentifier`), measured from the working server's capture: 130 records over `0..244`, weapons (`0..53`) included, with `134` written twice. Our catalogue is that measured sequence at `GearCatalogue.Items`."
+    doc: "[ELF] 5 wire bytes each. The ids are the protocol's item table (`ItemIdentifier`), measured from the working server's capture: 130 records over `0..244`, weapons (`0..53`) included, with `134` written twice. Our catalogue is every id below 128 at `GearCatalogue.Items`, then the reference's tail above it: the reader applies at most 129 records (`i == 129`), which in ascending order is `0`-`128`."
   - id: unlock_bits
     type: unlock_pair
     repeat: expr
