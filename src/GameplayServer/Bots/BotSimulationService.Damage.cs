@@ -71,6 +71,44 @@ public sealed partial class BotSimulationService
     }
 
     /// <summary>
+    /// Applies one bot's landed hit by the kind its weapon makes it.
+    /// </summary>
+    /// <param name="shooter">The bot that fired.</param>
+    /// <param name="victim">The bot the hit landed on.</param>
+    /// <param name="kind">Whether the hit stuns, sleeps or takes health.</param>
+    /// <param name="damage">Health or stamina points it carries.</param>
+    /// <param name="headshot">Whether a firearm or dart hit the head.</param>
+    /// <param name="now">Monotonic milliseconds.</param>
+    private void ApplyBotShot(
+        BotBodyState shooter,
+        BotBodyState victim,
+        BotWeaponKind kind,
+        int damage,
+        bool headshot,
+        long now)
+    {
+        if (kind is BotWeaponKind.StunDart or BotWeaponKind.StunKnife)
+        {
+            Stun(
+                victim,
+                damage,
+                now,
+                BotWeaponUseUtils.Sleeps(kind),
+                BotWeaponUseUtils.ShowsStunPose(kind),
+                deviceSleep: false);
+            return;
+        }
+
+        ApplyDamage(
+            victim,
+            damage,
+            shooter.SessionSlot,
+            kind is BotWeaponKind.LethalKnife || headshot,
+            headshot,
+            now);
+    }
+
+    /// <summary>
     /// Knocks a bot out: it keeps its feet where the blow put it, holds no target
     /// and pulls no trigger until the stun runs out, and its health does not move.
     /// </summary>
@@ -233,9 +271,6 @@ public sealed partial class BotSimulationService
     /// target whose client-side grab check could never settle, which is the grab this
     /// server refused.
     /// </remarks>
-    /// <param name="slot">Slot the client's hold names as the actor it holds.</param>
-    /// <param name="now">Monotonic milliseconds.</param>
-    /// <returns><c>true</c> when a living bot holds the slot.</returns>
     /// <param name="slot">Slot the client's hold names as the actor it holds.</param>
     /// <param name="holder">Slot of the client that wrote the hold, which the body turns on.</param>
     /// <param name="now">Monotonic milliseconds.</param>

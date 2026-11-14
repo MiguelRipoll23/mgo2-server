@@ -1,4 +1,5 @@
 using Mgo2Server.GameplayServer.Gameplay;
+using Mgo2Server.Shared.Types;
 
 namespace Mgo2Server.GameplayServer.Bots;
 
@@ -25,6 +26,12 @@ public sealed class BotBodyState
 {
     /// <summary>Slot the bot holds in the room's player table.</summary>
     public required byte SessionSlot { get; init; }
+
+    /// <summary>
+    /// Item id of the weapon it carries, chosen once from its role's set and
+    /// written to the weapon pair and every hit (<see cref="BotWeaponLoadoutUtils"/>).
+    /// </summary>
+    public ItemIdentifier Weapon { get; set; } = ItemIdentifier.M4;
 
     /// <summary>Stage <c>x</c>, in stage units.</summary>
     public float X { get; set; }

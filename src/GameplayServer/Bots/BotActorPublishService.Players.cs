@@ -43,10 +43,15 @@ public sealed partial class BotActorPublishService
         MatchRecordGenerationUtils generation,
         long now)
     {
+        if (shot.Kind is BotWeaponKind.StunDart or BotWeaponKind.StunKnife)
+        {
+            return PlayerStun(shot, killerSlot, generation, now);
+        }
+
         if (!TakePlayerHealth(
                 shot.VictimSlot,
                 shot.Damage,
-                shot.Headshot,
+                shot.Kind is BotWeaponKind.LethalKnife || shot.Headshot,
                 killerSlot,
                 shot.Headshot,
                 now,
@@ -75,7 +80,8 @@ public sealed partial class BotActorPublishService
                 shot.ImpactZ,
                 shot.Bearing,
                 shot.Headshot,
-                shot.Pitch),
+                shot.Pitch,
+                shot.Kind),
             vitalsRecord,
         ];
     }

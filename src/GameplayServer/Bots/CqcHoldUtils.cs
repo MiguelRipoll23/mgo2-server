@@ -63,19 +63,28 @@ public static class CqcHoldUtils
     /// Turns a held body towards the client holding it, by at most one beat's turn.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The body keeps its feet and its aim point; only the heading moves, which is
     /// what the capture's held slot does — <c>0x200c</c> through <c>0x3da4</c> at
     /// <c>+0x888</c> a beat until it faces the holder.
+    /// </para>
+    /// <para>
+    /// <b>The holder is usually a player, not a bot.</b> Searching the simulation's
+    /// own bodies found the held bot and every other bot, so a human grab left the
+    /// victim facing wherever it was aiming — the heading the capture's hold settles
+    /// is the one from the grabber's position stream, which is the other direction of
+    /// the exchange.
+    /// </para>
     /// </remarks>
     /// <param name="body">The body being held.</param>
-    /// <param name="bodies">Every body in the room, which holds the holder's.</param>
-    public static void TurnTowardsHolder(BotBodyState body, IReadOnlyList<BotBodyState> bodies)
+    /// <param name="actors">Every actor in the room, the player holding it included.</param>
+    public static void TurnTowardsHolder(BotBodyState body, IReadOnlyList<BotActorView> actors)
     {
         ArgumentNullException.ThrowIfNull(body);
-        ArgumentNullException.ThrowIfNull(bodies);
+        ArgumentNullException.ThrowIfNull(actors);
 
         if (body.HeldBySlot == BotBodyState.NoTarget
-            || bodies.FirstOrDefault(other => other.SessionSlot == body.HeldBySlot) is not { } holder)
+            || actors.FirstOrDefault(other => other.SessionSlot == body.HeldBySlot) is not { } holder)
         {
             return;
         }

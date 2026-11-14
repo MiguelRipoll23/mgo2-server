@@ -31,6 +31,24 @@ public sealed record BotActorView(byte SessionSlot, short Side, float X, float Y
 public sealed record BotAdvance(BotBodyState Body, bool Fired, BotShot? Shot);
 
 /// <summary>
+/// The way a bot's carried weapon writes its hit.
+/// </summary>
+public enum BotWeaponKind
+{
+    /// <summary>An ordinary bullet.</summary>
+    Firearm,
+
+    /// <summary>A Mk.2 dart: stamina, and sleep when the bar empties.</summary>
+    StunDart,
+
+    /// <summary>The ST KNIFE: a stun stab with no health loss.</summary>
+    StunKnife,
+
+    /// <summary>A lethal blade: the whole health bar.</summary>
+    LethalKnife,
+}
+
+/// <summary>
 /// One hit a bot landed on another actor: what the damage record carries.
 /// </summary>
 /// <param name="VictimSlot">Slot the hit landed on.</param>
@@ -55,6 +73,12 @@ public sealed record BotShot(
     /// headshot for; a kill that ran the victim's health out is an ordinary <c>0x11</c>.
     /// </summary>
     public bool Headshot { get; init; }
+
+    /// <summary>
+    /// What the carried weapon makes this hit: a bullet, a tranquilliser dart, a
+    /// stun stab or a lethal blade.
+    /// </summary>
+    public BotWeaponKind Kind { get; init; } = BotWeaponKind.Firearm;
 
     /// <summary>
     /// The shot's vertical angle as the record carries it: a sixteen-bit turn,

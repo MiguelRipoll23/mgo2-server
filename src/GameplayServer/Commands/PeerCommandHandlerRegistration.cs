@@ -72,8 +72,10 @@ public static class PeerCommandHandlerRegistration
         // Chat macros share 0x1a58 with the room count. The four-byte macro body
         // was relayed without a handler, so the sender never received the host's
         // kind-2 confirmation and its macro did not appear. Registering both
-        // generations makes that confirmation a decision; a two-byte room count
-        // under the same identifier stays on the relay.
+        // generations and both class-bit forms makes that confirmation a
+        // decision: the capture's first macro is `0x1a58` and every later one is
+        // `0x9a58`. A two-byte room count under the same identifiers stays on the
+        // relay.
         foreach (var identifier in MatchRecordGenerationUtils.ChatMacroIdentifiers)
         {
             registry.Register<ChatMacroHandler>(identifier);

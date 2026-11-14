@@ -119,16 +119,10 @@ public sealed partial class BotActorPublishService
         {
             var advance = simulation.Advance(bot, map, rule, now, views);
 
-            // The vitals record rides on a change and once a second, which is the
-            // capture's cadence for a bot — slot 1 writes 719 of them against
-            // 15 900 position records — and not on every beat.
-            var publishVitals = advance.Body.Health != advance.Body.LastPublishedHealth
-                || now >= advance.Body.NextVitalsMilliseconds;
-            if (publishVitals)
-            {
-                advance.Body.LastPublishedHealth = advance.Body.Health;
-                advance.Body.NextVitalsMilliseconds = now + VitalsIntervalMilliseconds;
-            }
+            // The vitals record rides on a change and once a second, except while
+            // the body is knocked out: then the reference writes it continuously as
+            // the stun bar climbs (BotActorPublishService.Cadence).
+            var publishVitals = PublishesVitals(advance.Body, now);
 
             // A death's feed is written inside its victim's turn, in the reference's
             // order (`BotActorPublishService.Cadence`).
@@ -175,7 +169,8 @@ public sealed partial class BotActorPublishService
                         shot.ImpactZ,
                         shot.Bearing,
                         shot.Headshot,
-                        shot.Pitch));
+                        shot.Pitch,
+                        shot.Kind));
                 }
                 else
                 {

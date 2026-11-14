@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Mgo2Server.GameplayServer.Combat;
 using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.MatchRecords;
@@ -169,9 +170,6 @@ public static class BotActorRecordUtils
         return null;
     }
 
-    /// <summary>Weapon a live bot carries: <c>0x18</c> in the capture's pairs.</summary>
-    public const byte CarriedWeapon = (byte)ItemIdentifier.M4;
-
     /// <summary>Magazine count the capture writes beside the weapon.</summary>
     public const byte CarriedAmmo = 0x0f;
 
@@ -244,21 +242,22 @@ public static class BotActorRecordUtils
     }
 
     /// <summary>
-    /// The weapon pair a bot carries, <c>00 18 00 00 0f</c>, which a corpse keeps.
+    /// The weapon pair a bot carries, which a corpse keeps.
     /// </summary>
     /// <remarks>
     /// <b>A dead bot still carries its gun.</b> Across `actions.pcapng`'s 231 dead
     /// beats the pair is `00 18 00 00 0f` on 197 and `00 19 00 00 0f` on 26, and zero
-    /// only eight times; this host blanked it on all 2,449 of its own. The last byte
-    /// is the magazine: `shooting-and-reloading.pcapng` falls it `0F -> 0E -> … ->
-    /// 00` as the trigger spends rounds and refills it on the reload's last beat.
+    /// only eight times; this host blanked it on all 2,449 of its own. The second
+    /// byte is the item id the bot's role chose and the last is the magazine:
+    /// `shooting-and-reloading.pcapng` falls it `0F -> 0E -> … -> 00` as the trigger
+    /// spends rounds and refills it on the reload's last beat.
     /// </remarks>
-    /// <param name="body">The bot whose magazine the pair reports.</param>
+    /// <param name="body">The bot whose weapon and magazine the pair reports.</param>
     /// <returns>The pair's five bytes.</returns>
     private static byte[] BuildWeaponPair(BotBodyState body) =>
     [
         WeaponPairUtils.NoFlag,
-        CarriedWeapon,
+        (byte)body.Weapon,
         0x00,
         0x00,
         (byte)Math.Clamp(body.MagazineRounds, 0, CarriedAmmo),
@@ -281,6 +280,7 @@ public static class BotActorRecordUtils
     /// runs the last health out is an ordinary one.
     /// </param>
     /// <param name="pitch">The shot's vertical angle, as <see cref="BotShot.Pitch"/> states it.</param>
+    /// <param name="kind">What the carried weapon makes the hit.</param>
     /// <returns>The fifteen-byte damage record.</returns>
     public static UdpMessage BuildShot(
         byte victimSlot,
@@ -293,18 +293,29 @@ public static class BotActorRecordUtils
         float impactZ,
         ushort bearing,
         bool headshot = false,
-        short pitch = 0)
+        short pitch = 0,
+        BotWeaponKind kind = BotWeaponKind.Firearm)
     {
         ArgumentNullException.ThrowIfNull(generation);
 
         var body = new byte[DamageBodyLength];
-        body[0] = headshot ? HeadshotDamageSubtype : DamageSubtype;
+        body[0] = kind switch
+        {
+            BotWeaponKind.StunDart => headshot
+                ? DamageRecordUtils.HeadStunSubtype
+                : DamageRecordUtils.BodyStunSubtype,
+            BotWeaponKind.StunKnife or BotWeaponKind.LethalKnife =>
+                DamageRecordUtils.MeleeSubtype,
+            _ => headshot ? HeadshotDamageSubtype : DamageSubtype,
+        };
 
+        // The knife's marker tells the stun stab from the critical stab.
+        body[1] = kind is BotWeaponKind.LethalKnife ? (byte)0x01 : (byte)0x00;
         // The damage word encodes both the damage quantity and the shooter's actor
         // slot: (damage << 7) | shooterSlot. Measured, not inferred: every one of the
         // capture's client-written hits decodes to slot 16, its own, whatever victim it
         // names, and the high field equals the health or stamina the bar loses.
-        var damageQuantity = headshot ? BotBodyState.MaximumVitals : damage;
+        var damageQuantity = kind is BotWeaponKind.StunKnife or BotWeaponKind.LethalKnife || headshot ? BotBodyState.MaximumVitals : damage;
         var damageWord = (Math.Clamp(damageQuantity, 0, 0x1FF) << 7) | (shooterSlot & 0x1F);
 
         WriteUInt16(body, 2, (ushort)damageWord);

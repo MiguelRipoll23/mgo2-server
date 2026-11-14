@@ -1,4 +1,3 @@
-using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Utils;
@@ -120,9 +119,7 @@ public sealed partial class BotPopulationService
                     .Where(RoomSideUtils.IsSide)
                     .Select(side => side!.Value)
                     .ToList();
-                var rotation = MatchSettingsUtils.Rotation(serverOptions);
-                var entry = rotation[Math.Max(0, roundState.RoundNumber) % rotation.Count];
-                await SpawnAsync(target, policy, humanSides, entry.Rule, cancellationToken);
+                await SpawnAsync(target, policy, humanSides, cancellationToken);
             }
 
             return Bots.Count != before;
@@ -176,13 +173,11 @@ public sealed partial class BotPopulationService
     /// <param name="target">Bots the room should hold.</param>
     /// <param name="policy">Which sides bots may hold.</param>
     /// <param name="humanSides">Sides the room's humans hold.</param>
-    /// <param name="rule">The round's rule, which tilts the roles.</param>
     /// <param name="cancellationToken">Token that cancels the reads.</param>
     private async Task SpawnAsync(
         int target,
         BotTeamPolicy policy,
         IReadOnlyList<short> humanSides,
-        int rule,
         CancellationToken cancellationToken)
     {
         while (Bots.Count < target)
@@ -225,13 +220,15 @@ public sealed partial class BotPopulationService
             }
 
             var member = roster.RegisterBot(identity.Name, characterIdentifier);
-            var role = roleAssignment.Choose(identity.Number, rule);
+            var role = roleAssignment.Choose();
+            var weapon = BotWeaponLoadoutUtils.Choose(role);
             var participant = new BotParticipant(
                 identity,
                 member.SessionSlot,
                 member.RosterIndex,
                 side,
                 role,
+                weapon,
                 BotConfiguration.Default.WithRole(role));
 
             lock (gate)
@@ -250,12 +247,13 @@ public sealed partial class BotPopulationService
 
             logger.LogInformation(
                 "Added bot {BotName} as character {CharacterIdentifier} in slot {BotSlot} on side {Side} as "
-                + "{Role}",
+                + "{Role} carrying {Weapon}",
                 participant.Name,
                 characterIdentifier,
                 participant.SessionSlot,
                 side,
-                role);
+                role,
+                weapon);
         }
     }
 

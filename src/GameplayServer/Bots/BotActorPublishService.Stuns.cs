@@ -70,7 +70,7 @@ public sealed partial class BotActorPublishService
             humanStamina[slot] = stamina;
             humanStaminaTickedAt[slot] = now;
             humanStaminaCredit[slot] = 0;
-            humanStaminaDue[slot] = now + 1000;
+            humanStaminaDue[slot] = now;
 
             // The blow that empties the bar decides what the player is; the shared
             // rule keeps the last such blow's choice for a player and a bot alike.
@@ -125,6 +125,56 @@ public sealed partial class BotActorPublishService
             shooterSlot,
             downMilliseconds);
         return true;
+    }
+
+    /// <summary>
+    /// The records one bot's stun weapon writes on a player: its hit, while
+    /// <see cref="StunPlayer"/> queues the vitals that show the stun bar move.
+    /// </summary>
+    /// <param name="shot">The landed hit.</param>
+    /// <param name="killerSlot">The bot that fired.</param>
+    /// <param name="generation">Identifier set of the round being played.</param>
+    /// <param name="now">Monotonic milliseconds.</param>
+    /// <returns>The damage record, or none when the player is already down.</returns>
+    private IReadOnlyList<UdpMessage> PlayerStun(
+        BotShot shot,
+        byte killerSlot,
+        MatchRecordGenerationUtils generation,
+        long now)
+    {
+        var subtype = shot.Kind is BotWeaponKind.StunDart
+            ? (shot.Headshot
+                ? DamageRecordUtils.HeadStunSubtype
+                : DamageRecordUtils.BodyStunSubtype)
+            : DamageRecordUtils.MeleeSubtype;
+        var hit = new DamageHit(
+            shot.VictimSlot,
+            DamageKind.Stun,
+            shot.Damage,
+            shot.Weapon,
+            killerSlot,
+            subtype);
+        if (!StunPlayer(hit, killerSlot, now))
+        {
+            return [];
+        }
+
+        return
+        [
+            BotActorRecordUtils.BuildShot(
+                shot.VictimSlot,
+                killerSlot,
+                generation,
+                shot.Damage,
+                shot.Weapon,
+                shot.ImpactX,
+                shot.ImpactY,
+                shot.ImpactZ,
+                shot.Bearing,
+                shot.Headshot,
+                shot.Pitch,
+                shot.Kind),
+        ];
     }
 
     /// <summary>
@@ -189,7 +239,12 @@ public sealed partial class BotActorPublishService
                     continue;
                 }
 
-                humanStaminaDue[slot] = now + 1000;
+                // The reference writes a knocked-out player's vitals continuously
+                // as stamina climbs, just as it does for a bot; a standing player
+                // keeps the once-a-second cadence.
+                var knockedOut = humanStunnedUntil.GetValueOrDefault(slot) > now
+                    || humanSleepUntil.GetValueOrDefault(slot) > now;
+                humanStaminaDue[slot] = knockedOut ? now : now + 1000;
                 records.Add(new UdpMessage(
                     PlayerVitalsFramesUtils.IdentifierFor(generation, slot),
                     3,

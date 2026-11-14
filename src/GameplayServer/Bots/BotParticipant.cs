@@ -1,3 +1,5 @@
+using Mgo2Server.Shared.Types;
+
 namespace Mgo2Server.GameplayServer.Bots;
 
 /// <summary>
@@ -10,7 +12,8 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// owns the name and the slots (a bot is a member like any other, filed under
 /// <see cref="BotRosterKeyUtils"/>), and this object is what the population keeps
 /// beside that member so a decision can be taken for it: which side it holds,
-/// which role it plays and which preferences it was created with.
+/// which role it plays, which weapon it carries and which preferences it was
+/// created with.
 /// </para>
 /// <para>
 /// <see cref="Team"/> is <c>null</c> while no side has been resolved for the
@@ -24,6 +27,7 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <param name="RosterIndex">Slot the bot fills in the roster run, counted from zero.</param>
 /// <param name="Team">Side the bot stands on, or <c>null</c> while none is resolved.</param>
 /// <param name="Role">Tactical archetype the bot plays.</param>
+/// <param name="Weapon">Item id of the weapon it carries for that role.</param>
 /// <param name="Configuration">The bot's own preferences.</param>
 public sealed record BotParticipant(
     BotIdentity Identity,
@@ -31,6 +35,7 @@ public sealed record BotParticipant(
     sbyte RosterIndex,
     short? Team,
     BotRole Role,
+    ItemIdentifier Weapon,
     BotConfiguration Configuration)
 {
     /// <summary>The bot's character name, which is its identity's name.</summary>

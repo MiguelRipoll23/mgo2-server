@@ -266,13 +266,18 @@ public sealed record MatchRecordGenerationUtils(
     /// <b>The body length tells them apart.</b> A two-byte <c>00 &lt;count&gt;</c>
     /// body is the room count; a four-byte
     /// <c>[kind, slot, macro, 0x02]</c> body is a chat macro
-    /// (<see cref="ChatMacroBodiesUtils"/>). Both round generations are listed
-    /// because a client writes the macro under the generation it is playing on.
+    /// (<see cref="ChatMacroBodiesUtils"/>). Both round generations are listed,
+    /// and both class-bit forms with them: the first macro of
+    /// <c>sending-chat-macros.pcapng</c> arrives under <c>0x1a58</c> and every
+    /// later one under <c>0x9a58</c>. A handler registered on the base alone
+    /// answers the first and never sees the rest.
     /// </remarks>
     public static IReadOnlyList<ushort> ChatMacroIdentifiers { get; } =
     [
         First.RoomCount,
+        (ushort)(First.RoomCount | PeerAcknowledgementUtils.PayloadClassBit),
         First.Sibling.RoomCount,
+        (ushort)(First.Sibling.RoomCount | PeerAcknowledgementUtils.PayloadClassBit),
     ];
 
 

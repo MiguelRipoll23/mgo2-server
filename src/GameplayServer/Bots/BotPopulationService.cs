@@ -304,7 +304,7 @@ public sealed partial class BotPopulationService : PeriodicWorker
         if (!roundState.IsOpen)
         {
             Trim(target, mode, humans.Count, waitingForPlayer);
-            await SpawnAsync(target, policy, humanSides, entry.Rule, cancellationToken);
+            await SpawnAsync(target, policy, humanSides, cancellationToken);
         }
 
         ResolveSides(policy, humanSides);

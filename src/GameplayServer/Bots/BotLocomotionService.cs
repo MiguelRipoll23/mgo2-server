@@ -77,10 +77,15 @@ public sealed class BotLocomotionService(
         {
             if (bodies.TryGetValue(bot.Name, out var existing) && existing.SessionSlot == bot.SessionSlot)
             {
+                existing.Weapon = bot.Weapon;
                 return existing;
             }
 
-            var body = new BotBodyState { SessionSlot = bot.SessionSlot };
+            var body = new BotBodyState
+            {
+                SessionSlot = bot.SessionSlot,
+                Weapon = bot.Weapon,
+            };
             Place(body, bot, map);
             bodies[bot.Name] = body;
             return body;

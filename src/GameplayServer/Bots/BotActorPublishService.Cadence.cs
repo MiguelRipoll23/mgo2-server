@@ -37,17 +37,13 @@ public sealed partial class BotActorPublishService
     /// <returns><c>true</c> when the state record rides this beat.</returns>
     private static bool PublishesState(BotBodyState body, long now)
     {
-        // **A body taking a hit is acting, and the gate must say so.** The flinch is
-        // the `c1 81` head the position record carries for the 200 ms after a blow
-        // (`BotLocomotionService.NoteHit`), and a bot standing idle holds no target —
-        // so gating its records to one a second left the blow written on the beat
-        // after the head had already expired, which is a bot that takes the damage and
-        // never flinches. `myserver.pcapng` of 2026-11-12 is that report: health drops
-        // and nothing on the body moves.
+        // **A hit's own beat is forced, not the whole flinch.** `NoteHit` zeroes
+        // `NextStateMilliseconds`, so the blow's beat carries a state even though a
+        // sleeping or stunned body otherwise keeps the reference's once-a-second
+        // standing record: `sleep-by-sgmines` writes 25 states against 983 vitals
+        // records for the same 24 seconds.
         var acting = body.TargetSlot != BotBodyState.NoTarget
             || body.HeldBySlot != BotBodyState.NoTarget
-            || body.Sleeping
-            || body.HitReacting
             || body.ReloadUntilMilliseconds > now
             || body.RecoverUntilMilliseconds > now;
         if (!acting && now < body.NextStateMilliseconds)
@@ -56,6 +52,35 @@ public sealed partial class BotActorPublishService
         }
 
         body.NextStateMilliseconds = now + StateIntervalMilliseconds;
+        return true;
+    }
+
+    /// <summary>
+    /// Whether this beat writes a body's vitals, and advances their deadline.
+    /// </summary>
+    /// <remarks>
+    /// <b>A knocked-out body's vitals are continuous.</b> The reference writes the
+    /// victim's two-byte vitals as stamina climbs: <c>sleep-by-sgmines</c> writes 983
+    /// of them for slot 2 between t+121 and t+146, and <c>stun-by-knife</c> writes
+    /// 828 for slot 1 between t+76 and t+93, against one state record a second. This
+    /// host wrote one vitals record a second, so the client saw the stun bar move
+    /// only once a second while the body was down.
+    /// </remarks>
+    /// <param name="body">The actor whose vitals are due.</param>
+    /// <param name="now">Monotonic milliseconds.</param>
+    /// <returns><c>true</c> when the vitals record rides this beat.</returns>
+    private static bool PublishesVitals(BotBodyState body, long now)
+    {
+        var knockedOut = body.Sleeping || body.StunnedUntilMilliseconds > now;
+        if (!knockedOut
+            && body.Health == body.LastPublishedHealth
+            && now < body.NextVitalsMilliseconds)
+        {
+            return false;
+        }
+
+        body.LastPublishedHealth = body.Health;
+        body.NextVitalsMilliseconds = knockedOut ? now : now + VitalsIntervalMilliseconds;
         return true;
     }
 

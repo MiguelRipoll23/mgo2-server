@@ -41,6 +41,24 @@ public static class ChatMacroBodiesUtils
         && body[0] is ClientKind or HostKind;
 
     /// <summary>
+    /// The identifier a host confirmation travels under: the request's own with
+    /// the reliable bit clear.
+    /// </summary>
+    /// <remarks>
+    /// <b>The first macro is unreliable and every later one is reliable.</b> In
+    /// <c>.pcapngs/actions/sending-chat-macros.pcapng</c> the client's first
+    /// request is <c>0x1a58</c> and each later one is <c>0x9a58</c> with the class
+    /// ordinal climbing <c>01..3e</c>; the host answers every one under
+    /// <c>0x1a58</c> carrying the request's ordinal. Answering under the reliable
+    /// identifier instead makes the confirmation a numbered record the peer's own
+    /// window has to answer, and the macro after the first is never accepted.
+    /// </remarks>
+    /// <param name="identifier">Identifier the client's macro arrived under.</param>
+    /// <returns>The base identifier the host writes its confirmation under.</returns>
+    public static ushort ConfirmedIdentifier(ushort identifier) =>
+        (ushort)(identifier & ~Mgo2Server.GameplayServer.PeerAcknowledgementUtils.PayloadClassBit);
+
+    /// <summary>
     /// Builds a chat macro body.
     /// </summary>
     /// <param name="kind">Client or host kind.</param>

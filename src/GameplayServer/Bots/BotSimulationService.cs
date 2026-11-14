@@ -44,9 +44,6 @@ public sealed partial class BotSimulationService(
     /// </summary>
     public const int ShotDamage = 50;
 
-    /// <summary>Weapon id the capture's bot hits carry, <c>0x18</c>.</summary>
-    public const byte ShotWeapon = BotActorRecordUtils.CarriedWeapon;
-
     /// <summary>
     /// Distance a bot holds its trigger within: the capture's bots fire at 282 to
     /// 6 043 units.
@@ -132,14 +129,16 @@ public sealed partial class BotSimulationService(
 
         // A bot a client has grabbed stands where the grab put it: the hold is the
         // grabber's client's and the host's only part is to stop writing a body that
-        // aims, fires or walks out of it (`CqcHoldUtils`, `HoldSlot`).
+        // aims, fires or walks out of it, and to turn it on the holder
+        // (`CqcHoldUtils`, `HoldSlot`). The holder is in the actor views and not in
+        // the simulation's bodies, because a bot has no client to grab with.
         if (body.HeldUntilMilliseconds > now)
         {
             body.Moving = false;
             body.TargetSlot = BotBodyState.NoTarget;
             body.ShotThisBeat = false;
             body.BurstRemaining = 0;
-            CqcHoldUtils.TurnTowardsHolder(body, Bodies());
+            CqcHoldUtils.TurnTowardsHolder(body, actors);
             return new BotAdvance(body, false, null);
         }
 
@@ -225,9 +224,12 @@ public sealed partial class BotSimulationService(
                 // recorded `0x47` records beside a run of hits are.
                 body.ShotThisBeat = true;
 
-                // An ordinary hit, or a headshot that ends its victim at once (BotShotUtils).
-                var headshot = BotShotUtils.RollHeadshot();
-                var damage = headshot ? BotBodyState.MaximumVitals : BotShotUtils.RollDamage();
+                // The weapon's kind decides the record and the effect: a bullet or a
+                // dart can be a headshot, while a blade writes its own subtype.
+                var weaponKind = BotWeaponUseUtils.KindOf(body.Weapon);
+                var headshot = BotWeaponUseUtils.CanHeadshot(weaponKind)
+                    && BotShotUtils.RollHeadshot();
+                var damage = BotWeaponUseUtils.DamageOf(weaponKind, headshot);
                 var victim = target.IsBot
                     ? Bodies().FirstOrDefault(other => other.SessionSlot == target.SessionSlot)
                     : null;
@@ -240,11 +242,12 @@ public sealed partial class BotSimulationService(
                 var landed = !target.IsBot || victim is { IsDead: false };
                 if (landed && victim is not null)
                 {
-                    ApplyDamage(victim, damage, bot.SessionSlot, headshot, headshot, now);
+                    ApplyBotShot(body, victim, weaponKind, damage, headshot, now);
                 }
 
-                shot = BotShotUtils.Build(body, target, damage, ShotWeapon, headshot) with
+                shot = BotShotUtils.Build(body, target, damage, (byte)body.Weapon, headshot) with
                 {
+                    Kind = weaponKind,
                     Landed = landed,
                 };
             }

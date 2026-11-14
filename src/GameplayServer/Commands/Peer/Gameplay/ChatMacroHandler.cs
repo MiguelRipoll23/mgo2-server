@@ -23,6 +23,15 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 /// <b>The identifier also carries the room count.</b> Only the four-byte body is
 /// a chat macro; a two-byte count is relayed unchanged.
 /// </para>
+/// <para>    /// <b>The request's class bit is not part of the confirmation.</b> The
+    /// captured client sends its first macro under <c>0x1a58</c> and every later one
+    /// under <c>0x9a58</c>, with the class ordinal climbing; the host answers each
+    /// request under <c>0x1a58</c> with that same ordinal. The handler is
+    /// registered on both forms, because a registry keyed on the base alone never
+    /// sees the later requests. Answering a reliable request under the reliable
+    /// identifier would also make the confirmation a numbered record the client
+    /// must answer, and only the first macro is ever accepted.
+    /// </para>
 /// </remarks>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class ChatMacroHandler(ILogger<ChatMacroHandler> logger) : IPeerCommandHandler
@@ -52,9 +61,14 @@ public sealed class ChatMacroHandler(ILogger<ChatMacroHandler> logger) : IPeerCo
             body[2],
             body[1]);
 
-        // Broadcast excludes the sender, so the sender gets its own confirmation
-        // through Send and the rest of the room gets the same host record.
-        await context.Send(context.Message.Type, confirmed, context.Message.Flags);
-        await context.Broadcast(context.Message.Type, confirmed, context.Message.Flags);
+        // The confirmation keeps the request's ordinal but drops its reliable bit:
+        // the capture's answer is `0x1a58` for a `0x9a58` request. The handler is
+        // registered on the class-bit form as well, so that request arrives here
+        // instead of falling through to the relay. Broadcast excludes the sender,
+        // so the sender gets its own confirmation through Send and the rest of the
+        // room gets the same host record.
+        var confirmedType = ChatMacroBodiesUtils.ConfirmedIdentifier(context.Message.Type);
+        await context.Send(confirmedType, confirmed, context.Message.Flags);
+        await context.Broadcast(confirmedType, confirmed, context.Message.Flags);
     }
 }

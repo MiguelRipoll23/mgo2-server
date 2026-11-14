@@ -1,5 +1,4 @@
 using Mgo2Server.GameplayServer.Bots;
-using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Shared.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -160,28 +159,13 @@ public sealed class BotFoundationTests
     }
 
     [Fact]
-    public void FiveBotsHoldFiveRoles()
-    {
-        var roles = new BotRoleAssignmentService();
-        var chosen = Enumerable
-            .Range(1, 5)
-            .Select(number => roles.Choose(number, MatchRuleUtils.TeamDeathmatch))
-            .ToList();
-
-        Assert.Equal(5, chosen.Distinct().Count());
-        Assert.Equal(chosen, Enumerable
-            .Range(1, 5)
-            .Select(number => roles.Choose(number, MatchRuleUtils.TeamDeathmatch)));
-    }
-
-    [Fact]
-    public void ASneakingRoundLeansTowardsReconnaissance()
+    public void EveryNewBotGetsAKindFromTheCatalog()
     {
         var roles = new BotRoleAssignmentService();
 
-        Assert.Equal(BotRole.Recon, roles.Choose(1, MatchRuleUtils.Sneaking));
-        Assert.Equal(BotRole.Recon, roles.Choose(1, MatchRuleUtils.TeamSneaking));
-        Assert.Equal(BotRole.Assault, roles.Choose(1, MatchRuleUtils.TeamDeathmatch));
+        Assert.All(
+            Enumerable.Range(0, 100).Select(_ => roles.Choose()),
+            role => Assert.Contains(role, BotRoleCatalogUtils.All));
     }
 
     [Fact]
@@ -216,5 +200,6 @@ public sealed class BotFoundationTests
         (sbyte)(slot - 1),
         Team: 0,
         role,
+        BotWeaponLoadoutUtils.Choose(role),
         BotConfiguration.Default.WithRole(role));
 }

@@ -89,7 +89,8 @@ to oppose, and no bot is placed.
 BotPopulationService        reconciles the room: count, sides, roster, ready state, ticks
   BotIdentityService        BOT-<nn>, monotonic; a released number is never reissued
   BotTeamAssignmentService  ENEMY/BOTH resolved against the sides the players hold
-  BotRoleAssignmentService  round-robin archetypes, ordered by the round's rule
+  BotRoleAssignmentService  a uniformly random archetype for each new bot
+  BotWeaponLoadoutUtils     that archetype's weapon set, from the wire item table
   BotCharacterService       get-or-create the character a bot plays as, and its captured appearance
   RoomRosterService         RegisterBot: a member with the short layout and that character, no exchange ordinal
   BotRosterPublishService   the mid-briefing announcement: entry, close, count, the bot's own loadout
