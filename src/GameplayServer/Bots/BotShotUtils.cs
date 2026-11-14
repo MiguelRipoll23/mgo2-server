@@ -113,7 +113,7 @@ public static class BotShotUtils
     /// <param name="body">The shooter's body.</param>
     /// <param name="target">The enemy it hit.</param>
     /// <param name="damage">Health points the hit takes.</param>
-    /// <param name="weapon">Item id the damage record carries.</param>
+    /// <param name="weapon">Weapon id the damage record carries.</param>
     /// <param name="headshot">Whether the hit is a headshot.</param>
     /// <returns>The hit.</returns>
     public static BotShot Build(BotBodyState body, BotActorView target, int damage, byte weapon, bool headshot)

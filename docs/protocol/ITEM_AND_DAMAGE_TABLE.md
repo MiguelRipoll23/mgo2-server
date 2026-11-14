@@ -107,10 +107,12 @@ and diverge on the low knife byte `0x02`, which is `ST KNIFE` in the console's t
 its parser has validated against recorded replays, so a new **damage-record** constant should
 come from `ItemIdentifier`.
 
-The actor's **weapon pair is not a damage-record weapon byte**. Its second byte names the
-carried model and comes from the ELF's weapon table; the two tables agree for firearms and
-diverge on the knives, which is why `docs/WEAPONS.md` records both sides. A bot carries a
-`WeaponIdentifier` for the actor pair and converts it to an `ItemIdentifier` with
-`BotDamageWeaponUtils.DamageIdOf` when it writes a damage record. Putting the item id `89`
-(`AK KNIFE` in this table) into the actor pair instead names `LIGHT` in the ELF table and
-produces the `dg_model.cpp` null-header assertion.
+The actor's pair and a damage record's weapon byte are **the same field in two places**, and
+both name the carried weapon from the ELF's weapon table — the table the client loads the
+model from. The two tables agree for firearms and diverge on the knives, which is why
+`docs/WEAPONS.md` records both sides. A bot therefore writes its own `WeaponIdentifier`
+into both, and `BotDamageWeaponUtils.DamageIdOf` — which crossed the damage record's byte
+into this table — is gone: its item id `89` (`AK KNIFE` here) names the attachment row
+`LIGHT` in the ELF table, and that lookup is the `dg_model.cpp` null-header assertion. The
+capture reads the same way: a knife blow's record carries `0x01`, which is `ST KNIFE`
+there and `NONE` here.

@@ -125,12 +125,12 @@ carries for a player who reported nothing. Repeated table strings keep every
 member distinct by suffixing the later rows; the table's own spelling remains in
 a comment.
 
-**Use `WeaponIdentifier` for an actor's carried weapon pair and its model.** The
-client resolves the pair's second byte against this table. It does not resolve it
-against the replay console's item table, and at the low ids the two tables are
-not interchangeable:
+**Use `WeaponIdentifier` for every byte that names a carried weapon** — the
+actor's pair and the weapon byte a damage record carries. The client resolves
+both against this table. It does not resolve either against the replay console's
+item table, and at the low ids the two tables are not interchangeable:
 
-| carried weapon | ELF weapon id (actor pair) | protocol item id (damage record) |
+| carried weapon | ELF weapon id (pair and damage record) | console item table's row of that name |
 |---|---:|---:|
 | ST KNIFE | 1 | 2 |
 | RUGER | 2 | 3 |
@@ -140,16 +140,20 @@ not interchangeable:
 
 The console's item table has an extra `NONE` row at 1, which shifts the first
 sixteen rows; from id 17 (`MP7`) upward the two agree. `ItemIdentifier` remains
-the table for the byte a **damage record** carries and for world-object items.
-`BotDamageWeaponUtils.DamageIdOf` is the explicit bridge for bots: the bot body
-carries a `WeaponIdentifier` for the actor pair, and a damage record receives the
-corresponding `ItemIdentifier`.
+the table for **world-object** items — what a box or a dropped object holds — and
+for nothing a bot writes.
 
-This distinction is not cosmetic. Announcing a bot with item id `89` made the
-client look for the weapon model named `LIGHT`, an attachment row, instead of
-`AK KNIFE` at `96`; the model header was null and `dg_model.cpp` asserted. The
-same byte is a valid item id for a damage record, which is why the two wire
-fields need the two different tables.
+This distinction is not cosmetic, and it has cost two crashes. Announcing a bot
+with item id `89` made the client look for the weapon model named `LIGHT`, an
+attachment row, instead of `AK KNIFE` at `96`; the model header was null and
+`dg_model.cpp` asserted. Converting the bot's *damage*-record byte the same way
+repeated the lookup — `BotDamageWeaponUtils.DamageIdOf` turned the carried `96`
+into `89` — so the crash returned the moment an infiltrator bot landed a hit.
+The captures read one table for both fields: a knife blow's record carries
+`0x01` in the same capture where the client's own actor pair reads
+`00 01 00 00 00`, and `0x01` is `ST KNIFE` here and `NONE` in the item table. A
+carried weapon is named by this table wherever it is written, and the two-table
+bridge is gone.
 
 See [`protocol/ITEM_AND_DAMAGE_TABLE.md`](protocol/ITEM_AND_DAMAGE_TABLE.md) for
 the measured damage-record ids, and [`BOTS.md`](BOTS.md) for how the gameplay

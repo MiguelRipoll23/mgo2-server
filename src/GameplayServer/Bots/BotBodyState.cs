@@ -31,9 +31,9 @@ public sealed class BotBodyState
     /// Weapon id it carries, chosen once from its role's set and written to the
     /// weapon pair and every hit (<see cref="BotWeaponLoadoutUtils"/>). It is a
     /// <see cref="WeaponIdentifier"/> because that is the table the client loads a
-    /// carried weapon's model from; the item table is not interchangeable. Damage
-    /// records cross to <see cref="ItemIdentifier"/> through
-    /// <see cref="BotDamageWeaponUtils"/>.
+    /// carried weapon's model from; the item table is not interchangeable. The
+    /// damage record carries this same id, because the client resolves that byte
+    /// against the weapon table too.
     /// </summary>
     public WeaponIdentifier Weapon { get; set; } = WeaponIdentifier.M4;
 

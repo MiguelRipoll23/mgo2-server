@@ -269,7 +269,7 @@ public static class BotActorRecordUtils
     /// <param name="victimSlot">Player the hit landed on.</param>
     /// <param name="generation">Identifier set of the round being played.</param>
     /// <param name="damage">Health points the hit takes.</param>
-    /// <param name="weapon">Item id the hit carries.</param>
+    /// <param name="weapon">Weapon id the hit carries, from the actor pair's own table.</param>
     /// <param name="impactX">Impact <c>x</c>, in stage units.</param>
     /// <param name="impactY">Impact height, in stage units.</param>
     /// <param name="impactZ">Impact <c>z</c>, in stage units.</param>

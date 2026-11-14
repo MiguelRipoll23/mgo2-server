@@ -146,11 +146,11 @@ what a bot leans towards and never becomes a second implementation.
   names (`BotSimulationService.NoteIncomingDamage`) so a bot's vitals fall and it
   goes down. The actor block carries the weapon pair for the weapon id its role
   chose, from the ELF weapon table; `00 18 00 00 0f` is the M4 the capture's own
-  bots carry. The item table's ids are not used for the model: its knife rows name
-  different models (`AK KNIFE` is item `89`/`LIGHT`, weapon `96`). A damage record
-  keeps the protocol item id — `BotDamageWeaponUtils` maps the blade back — so the
-  model and the hit are each named by the table that owns them. Reloading has no
-  measured record and is not written.
+  bots carry. The item table's ids are not used anywhere a bot writes a weapon:
+  its knife rows name different things (`AK KNIFE` is item `89`/`LIGHT`, weapon
+  `96`), and an id that names an attachment asks the client for a model that is
+  not a weapon. The damage record carries the same weapon id as the pair for that
+  reason. Reloading has no measured record and is not written.
 * **Positions and health in perception.** Not read on this path, so
   `BotPerceptionSnapshot.PositionsKnown` is false and `OwnHealth` is null.
 * **Most weapon classes.** Four ids are classified; the rest are `Unknown` until
