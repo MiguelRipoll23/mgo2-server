@@ -35,48 +35,26 @@ public static class BotWeaponLoadoutUtils
     private static readonly WeaponIdentifier[] AssaultWeapons =
     [
         WeaponIdentifier.M4,
-        WeaponIdentifier.AK102,
-        WeaponIdentifier.G3A3,
-        WeaponIdentifier.Fal,
-        WeaponIdentifier.MK17,
-        WeaponIdentifier.XM8,
     ];
 
     private static readonly WeaponIdentifier[] SupportWeapons =
     [
         WeaponIdentifier.M4,
-        WeaponIdentifier.Lmg,
-        WeaponIdentifier.HK21E,
-        WeaponIdentifier.Pk,
-        WeaponIdentifier.M60E4,
     ];
 
     private static readonly WeaponIdentifier[] SniperWeapons =
     [
-        WeaponIdentifier.Vss,
-        WeaponIdentifier.M82A2,
-        WeaponIdentifier.DSR1,
-        WeaponIdentifier.M14EBR,
-        WeaponIdentifier.MosinN,
-        WeaponIdentifier.Dragnov,
+        WeaponIdentifier.M4,
     ];
 
     private static readonly WeaponIdentifier[] ReconWeapons =
     [
-        WeaponIdentifier.MP7,
-        WeaponIdentifier.MP5,
-        WeaponIdentifier.Ingram,
-        WeaponIdentifier.P90,
-        WeaponIdentifier.Bizon,
-        WeaponIdentifier.Patriot,
-        WeaponIdentifier.Skorpion,
+        WeaponIdentifier.M4,
     ];
 
     private static readonly WeaponIdentifier[] InfiltratorWeapons =
     [
-        WeaponIdentifier.StKnife,
-        WeaponIdentifier.Ruger,
-        WeaponIdentifier.AkKnife,
+        WeaponIdentifier.M4,
     ];
 
     /// <summary>The weapons a role may carry.</summary>
