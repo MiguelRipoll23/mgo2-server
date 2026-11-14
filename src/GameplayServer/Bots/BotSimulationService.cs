@@ -68,17 +68,6 @@ public sealed partial class BotSimulationService(
     /// <summary>Interval between <c>0x47</c> fire beats while engaged: 1.3 a second.</summary>
     public const int FireBeatIntervalMilliseconds = 750;
 
-    /// <summary>
-    /// Heading a held body turns through in one beat, as the working capture states
-    /// it.
-    /// </summary>
-    /// <remarks>
-    /// <c>.pcapngs/actions/actions.pcapng</c> slot 15 runs <c>0x200c</c>, <c>0x2894</c>,
-    /// <c>0x311c</c>, <c>0x3da4</c> while held — <c>+0x888</c> a beat — until it faces
-    /// the client that holds it. A stage heading is a sixteenth of a turn, so that is
-    /// about 47 degrees.
-    /// </remarks>
-    private const int HoldTurnPerBeat = 0x888;
     /// <summary>Deaths the room owes the client a kill-feed record for.</summary>
     private readonly Queue<BotKill> kills = new();
 
@@ -150,7 +139,7 @@ public sealed partial class BotSimulationService(
             body.TargetSlot = BotBodyState.NoTarget;
             body.ShotThisBeat = false;
             body.BurstRemaining = 0;
-            TurnTowardsHolder(body);
+            CqcHoldUtils.TurnTowardsHolder(body, Bodies());
             return new BotAdvance(body, false, null);
         }
 
@@ -165,6 +154,7 @@ public sealed partial class BotSimulationService(
         if (body.HitReacting && now >= body.HitReactUntilMilliseconds)
         {
             body.HitReacting = false;
+            body.StunAnimation = false;
         }
 
         body.ShotThisBeat = false;
@@ -187,6 +177,13 @@ public sealed partial class BotSimulationService(
         }
 
         body.KillAimSlot = BotBodyState.NoTarget;
+
+        // A spent magazine starts its reload, and the reload and the recovery beat
+        // behind it hold the trigger (`BotReloadService`, `BotStateBodiesUtils`).
+        if (BotReloadService.ShouldHoldFire(body, now))
+        {
+            return new BotAdvance(body, false, null);
+        }
 
         // A bot's first shot is its own beat of the twelve seconds. A room that
         // arms eight triggers on the same millisecond fires as one volley, which
@@ -253,6 +250,9 @@ public sealed partial class BotSimulationService(
             }
         }
 
+        // A fire beat spends a round of the magazine the weapon pair reports.
+        BotReloadService.SpendRound(body);
+
         BotPosition? destination = null;
         if (target is not null && BotEngagementUtils.Distance(body, target) <= EngagementDistance)
         {
@@ -278,39 +278,19 @@ public sealed partial class BotSimulationService(
             body.Yaw = shot?.Bearing ?? BotEngagementUtils.Bearing(body, target);
         }
 
+        // An engagement's last beat is followed by the capture's `0x48` recovery.
+        // `stun-by-throwing-to-ground` slot 6 holds `44` on target 8 from t+45.07 to
+        // 46.17 and writes the three-byte `48 FF 00` standing from t+46.22, before it
+        // walks off at 46.46. The reload's own recovery uses the same window.
+        if (body.WasFiring && !firing)
+        {
+            body.RecoverUntilMilliseconds = now + BotBurstUtils.RecoverMilliseconds;
+            body.Moving = false;
+            body.TargetSlot = BotBodyState.NoTarget;
+        }
+
+        body.WasFiring = firing;
         return new BotAdvance(body, firing, shot);
-    }
-
-    /// <summary>
-    /// Turns a held body towards the client holding it, by at most one beat's turn.
-    /// </summary>
-    /// <remarks>
-    /// The body keeps its feet and its aim point; only the heading moves, which is
-    /// what the capture's held slot does — <c>0x200c</c> through <c>0x3da4</c> at
-    /// <c>+0x888</c> a beat until it faces the holder.
-    /// </remarks>
-    /// <param name="body">The body being held.</param>
-    private void TurnTowardsHolder(BotBodyState body)
-    {
-        if (body.HeldBySlot == BotBodyState.NoTarget
-            || Bodies().FirstOrDefault(other => other.SessionSlot == body.HeldBySlot) is not { } holder)
-        {
-            return;
-        }
-
-        var wanted = BotLocomotionService.YawTowards(holder.X - body.X, holder.Z - body.Z);
-        var delta = (int)wanted - body.Yaw;
-        if (delta > 0x8000)
-        {
-            delta -= 0x10000;
-        }
-        else if (delta < -0x8000)
-        {
-            delta += 0x10000;
-        }
-
-        var step = Math.Clamp(delta, -HoldTurnPerBeat, HoldTurnPerBeat);
-        body.Yaw = (ushort)((body.Yaw + step + 0x10000) % 0x10000);
     }
 
     /// <summary>Drops every body and owed death, because the room has emptied.</summary>

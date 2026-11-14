@@ -66,12 +66,19 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// The room's own count: a two-byte record carrying how many players the room
 /// holds, written when a peer is answered and again when that count moves
 /// (<c>docs/protocol/DATA_PHASE_DELIVERY.md</c> §"The two records a briefing is
-/// sent"). Its second byte is the room's
-/// population and not its limit, which the lobby's own details settle:
-/// <c>mgo2-game-started-on-briefing</c> joins a room whose <c>0x4313</c> says one
-/// player of a limit of seventeen, and the host writes <c>00 01</c> beside the
-/// join and <c>00 02</c> once a second player arrives.
-/// </param>
+/// sent"). Its second byte is the room's    /// population and not its limit, which the lobby's own details settle:
+    /// <c>mgo2-game-started-on-briefing</c> joins a room whose <c>0x4313</c> says one
+    /// player of a limit of seventeen, and the host writes <c>00 01</c> beside the
+    /// join and <c>00 02</c> once a second player arrives.
+    /// <para>
+    /// <b>The same identifier carries a different four-byte body.</b> A chat macro
+    /// is <c>[kind, slot, macro, 0x02]</c> under <c>0x1a58</c>: a client sends kind
+    /// <c>0x01</c>, the host broadcasts the same slot and macro as kind <c>0x02</c>,
+    /// and macro <c>0x00</c> is idle (<c>sending-chat-macros.pcapng</c>). Only the
+    /// two-byte body is the room count; a reader must check the length before
+    /// reading the population.
+    /// </para>
+    /// </param>
 /// <param name="ReportedByte">
 /// Byte the capture's round start carried — the one the client carried in its
 /// join report and the one the run's payload record hands back. It is the
@@ -251,6 +258,23 @@ public sealed record MatchRecordGenerationUtils(
         First.Sibling.Operations,
         First.Sibling.OperationsClassBit,
     ];
+
+    /// <summary>
+    /// Identifiers that carry both the room count and a four-byte chat macro.
+    /// </summary>
+    /// <remarks>
+    /// <b>The body length tells them apart.</b> A two-byte <c>00 &lt;count&gt;</c>
+    /// body is the room count; a four-byte
+    /// <c>[kind, slot, macro, 0x02]</c> body is a chat macro
+    /// (<see cref="ChatMacroBodiesUtils"/>). Both round generations are listed
+    /// because a client writes the macro under the generation it is playing on.
+    /// </remarks>
+    public static IReadOnlyList<ushort> ChatMacroIdentifiers { get; } =
+    [
+        First.RoomCount,
+        First.Sibling.RoomCount,
+    ];
+
 
     /// <summary>
     /// Whether a record identifier is one a client's join report arrives

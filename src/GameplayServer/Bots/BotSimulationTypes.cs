@@ -1,3 +1,5 @@
+using Mgo2Server.GameplayServer.Gameplay;
+
 namespace Mgo2Server.GameplayServer.Bots;
 
 /// <summary>
@@ -10,7 +12,14 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <param name="Y">Stage height.</param>
 /// <param name="Z">Stage <c>z</c>.</param>
 /// <param name="IsBot">Whether it is one of the room's bots.</param>
-public sealed record BotActorView(byte SessionSlot, short Side, float X, float Y, float Z, bool IsBot);
+public sealed record BotActorView(byte SessionSlot, short Side, float X, float Y, float Z, bool IsBot)
+{
+    /// <summary>
+    /// The stance the actor's own position record reports, so a bot shoots a
+    /// crouched, prone or lying player at the height that player actually holds.
+    /// </summary>
+    public ActorStance Stance { get; init; } = ActorStance.Standing;
+}
 
 /// <summary>
 /// What one bot's tick did: the body it now holds, whether it fired, and the hit

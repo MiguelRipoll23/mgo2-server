@@ -151,7 +151,8 @@ public sealed partial class BotActorPublishService
                 advance.Fired,
                 advance.Body.ShotThisBeat,
                 publishVitals,
-                PublishesState(advance.Body, now)));
+                PublishesState(advance.Body, now),
+                now));
 
             // A shot at a body that was already down is not a hit and carries no
             // record: the reference writes no damage on a corpse, and a word written
@@ -251,7 +252,10 @@ public sealed partial class BotActorPublishService
                 continue;
             }
 
-            views.Add(new BotActorView(bot.SessionSlot, bot.Team ?? 0, body.X, body.Y, body.Z, IsBot: true));
+            views.Add(new BotActorView(bot.SessionSlot, bot.Team ?? 0, body.X, body.Y, body.Z, IsBot: true)
+            {
+                Stance = BotPositionBodiesUtils.StanceOf(body),
+            });
         }
 
         var sides = await HumanSidesAsync(now);
@@ -277,7 +281,10 @@ public sealed partial class BotActorPublishService
                 reported.X * 10f,
                 reported.Y * 10f,
                 reported.Z * 10f,
-                IsBot: false));
+                IsBot: false)
+            {
+                Stance = reported.Stance,
+            });
         }
 
         return views;

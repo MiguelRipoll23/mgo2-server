@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.Shared.Types;
@@ -66,7 +67,8 @@ public static class BotActorRecordUtils
     /// </summary>
     /// <remarks>
     /// <b>A dead actor's position record is thirty-two bytes and opens on
-    /// <c>0x22</c></b> — see <see cref="BotPositionBodiesUtils"/>; a living one is sixteen.
+    /// <c>22 1A</c> or <c>21 1A</c></b> — see <see cref="BotPositionBodiesUtils"/>;
+    /// a living one is sixteen.
     /// </remarks>
     public const int CorpsePositionBodyLength = 32;
 
@@ -190,6 +192,7 @@ public static class BotActorRecordUtils
     /// is written about once a second; an acting one's is written on every beat
     /// (<see cref="BotBodyState.NextStateMilliseconds"/>).
     /// </param>
+    /// <param name="now">Monotonic milliseconds, which decides a reload or recovery beat.</param>
     /// <returns>The block's records, or an empty list for a slot of zero.</returns>
     public static IReadOnlyList<UdpMessage> Build(
         byte sessionSlot,
@@ -198,7 +201,8 @@ public static class BotActorRecordUtils
         bool firing,
         bool fireBeat,
         bool vitals,
-        bool publishState = true)
+        bool publishState = true,
+        long now = 0)
     {
         if (sessionSlot == 0)
         {
@@ -213,7 +217,7 @@ public static class BotActorRecordUtils
         var records = new List<UdpMessage>(6);
         if (publishState)
         {
-            records.Add(new(state, 4, StateAttributeClass, BuildStateBody(body, firing, fireBeat)));
+            records.Add(new(state, 4, StateAttributeClass, BuildStateBody(body, firing, fireBeat, now)));
         }
 
         records.Add(new(
@@ -221,7 +225,7 @@ public static class BotActorRecordUtils
             (byte)(position.Length + 1),
             PositionAttributeClass,
             position));
-        records.Add(new((ushort)(state + 4), 6, WeaponPairAttributeClass, BuildWeaponPair()));
+        records.Add(new((ushort)(state + 4), 6, WeaponPairAttributeClass, BuildWeaponPair(body)));
         records.Add(new((ushort)(state + 4), 2, WeaponAttributeClass, [0x00]));
         records.Add(new((ushort)(state + 6), 7, AimAttributeClass, BuildAimBody(body)));
 
@@ -245,11 +249,20 @@ public static class BotActorRecordUtils
     /// <remarks>
     /// <b>A dead bot still carries its gun.</b> Across `actions.pcapng`'s 231 dead
     /// beats the pair is `00 18 00 00 0f` on 197 and `00 19 00 00 0f` on 26, and zero
-    /// only eight times; this host blanked it on all 2,449 of its own.
+    /// only eight times; this host blanked it on all 2,449 of its own. The last byte
+    /// is the magazine: `shooting-and-reloading.pcapng` falls it `0F -> 0E -> … ->
+    /// 00` as the trigger spends rounds and refills it on the reload's last beat.
     /// </remarks>
+    /// <param name="body">The bot whose magazine the pair reports.</param>
     /// <returns>The pair's five bytes.</returns>
-    private static byte[] BuildWeaponPair() =>
-        [0x00, CarriedWeapon, 0x00, 0x00, CarriedAmmo];
+    private static byte[] BuildWeaponPair(BotBodyState body) =>
+    [
+        WeaponPairUtils.NoFlag,
+        CarriedWeapon,
+        0x00,
+        0x00,
+        (byte)Math.Clamp(body.MagazineRounds, 0, CarriedAmmo),
+    ];
 
     /// <summary>
     /// The damage record one bot's hit travels under, on the slot it hit.
@@ -312,52 +325,20 @@ public static class BotActorRecordUtils
 
     /// <summary>
     /// The state body: the capture's three-byte standing form, or the nine-byte
-    /// acting form when the actor is walking, aiming or firing.
+    /// acting form when the actor aims, fires or is held.
     /// </summary>
     /// <remarks>
-    /// The acting form is <c>42 ff 00 bd 08 78 00 d9 ff</c>: the first byte's low
-    /// six bits are the action (<c>2</c> walking and aiming, <c>4</c> the held
-    /// trigger, <c>7</c> the shot's beat), the second the target slot or
-    /// <c>0xff</c>, the third a one exactly on the firing records, and the rest the
-    /// point looked at. <b>The acting form is written only while an enemy is
-    /// held</b>: the capture writes the standing <c>00 ff 00</c> on about eight
-    /// beats in ten, its walking bots included, where this host wrote the acting
-    /// form whenever a bot moved — a bot aiming down every corridor it patrolled.
+    /// The bytes and the <c>ActorAction</c> values they carry are measured in
+    /// <see cref="BotStateBodiesUtils"/>; the body is built there so this file keeps
+    /// to the repository's size limit.
     /// </remarks>
     /// <param name="body">The bot's body.</param>
     /// <param name="firing">Whether it holds its trigger this tick.</param>
     /// <param name="fireBeat">Whether this tick is one a shot animation rides on.</param>
+    /// <param name="now">Monotonic milliseconds, which decides a reload or recovery beat.</param>
     /// <returns>The three- or nine-byte body.</returns>
-    private static byte[] BuildStateBody(BotBodyState body, bool firing, bool fireBeat)
-    {
-        if (body.TargetSlot == BotBodyState.NoTarget && body.HeldBySlot == BotBodyState.NoTarget)
-        {
-            return [0x00, 0xff, 0x00];
-        }
-
-        // A body a client holds writes the aim form with `0xff` for the target and
-        // a zero trigger — the capture's `42 ff 00 63 08 8c 00 d8 07` on slot 15 for
-        // the whole of t+392.19's grab, after the single standing `00 ff 00` beat
-        // that opens it. It is still `0x42`, not the standing form, and the tail is
-        // the point it was looking at when the grab took it.
-        var held = body.HeldBySlot != BotBodyState.NoTarget;
-        var state = new byte[ActingStateBodyLength];
-
-        // A firing beat's action cycles `46 47 47` — the round that opens a burst
-        // writes `0x46`, the ones behind it `0x47` (3,006 against 9,434 measured).
-        var opening = fireBeat && body.BurstSize > 0 && body.BurstRemaining >= body.BurstSize;
-        state[0] = held
-            ? (byte)0x42
-            : opening
-                ? (byte)0x46
-                : (byte)(0x40 | (fireBeat ? 7 : firing ? 4 : 2));
-        state[1] = held ? BotBodyState.NoTarget : body.TargetSlot;
-        state[2] = (byte)(!held && firing ? 1 : 0);
-        WriteInt16(state, 3, ToTenths(body.AimX));
-        WriteInt16(state, 5, ToTenths(body.AimY));
-        WriteInt16(state, 7, ToTenths(body.AimZ));
-        return state;
-    }
+    private static byte[] BuildStateBody(BotBodyState body, bool firing, bool fireBeat, long now) =>
+        BotStateBodiesUtils.Build(body, firing, fireBeat, now);
 
     /// <summary>Writes one float little-endian.</summary>
     /// <param name="body">Body to write into.</param>

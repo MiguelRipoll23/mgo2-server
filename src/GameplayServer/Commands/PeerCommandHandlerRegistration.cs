@@ -69,6 +69,16 @@ public static class PeerCommandHandlerRegistration
             registry.Register<WeaponSelectionHandler>(identifier);
         }
 
+        // Chat macros share 0x1a58 with the room count. The four-byte macro body
+        // was relayed without a handler, so the sender never received the host's
+        // kind-2 confirmation and its macro did not appear. Registering both
+        // generations makes that confirmation a decision; a two-byte room count
+        // under the same identifier stays on the relay.
+        foreach (var identifier in MatchRecordGenerationUtils.ChatMacroIdentifiers)
+        {
+            registry.Register<ChatMacroHandler>(identifier);
+        }
+
         // The players' vitals, the two identifiers that carry one player's health
         // and stamina each. They are tick records the relay would otherwise pass
         // on unread, and reading them is what gives the host a value to know: the
@@ -108,6 +118,7 @@ public static class PeerCommandHandlerRegistration
         services.AddSingleton<JoinReportHandler>();
         services.AddSingleton<JoinStateHandler>();
         services.AddSingleton<WeaponSelectionHandler>();
+        services.AddSingleton<ChatMacroHandler>();
         services.AddSingleton<PlayerVitalsHandler>();
         services.AddSingleton<OperationsStreamHandler>();
         return services;

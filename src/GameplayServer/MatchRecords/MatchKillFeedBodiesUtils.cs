@@ -20,11 +20,14 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// (<c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>, <c>OperationsOpcode.KillFeed</c>).
 /// </para>
 /// <para>
-/// **The four-byte <c>02 &lt;killer&gt; &lt;victim&gt; 02</c> body this class used
-/// to build, under <c>0x1a58</c>, is a chat macro.** The room of 2026-11-10 21:00
-/// wrote one per kill and the client announced <i>Roger that</i> instead of the
-/// death — the same body the reference writes twice in ten minutes as its own
-/// chatter. It is not a kill feed and this host no longer writes it.
+/// **The four-byte body this class used to build under <c>0x1a58</c> is a chat
+/// macro, not a kill feed.** It is <c>[kind, slot, macro, 0x02]</c>: a client
+/// sends kind <c>0x01</c>, the host broadcasts the same actor and macro as kind
+/// <c>0x02</c>, and macro <c>0x00</c> is idle. The room of 2026-11-10 21:00 wrote
+/// one per kill; the client read its third byte as a macro and announced
+/// <i>Roger that</i> instead of the death. The two slots the old writer meant as
+/// killer and victim were the chat macro's slot and phrase index. It is not a
+/// kill feed and this host no longer writes it.
 /// </para>
 /// </remarks>
 public static class MatchKillFeedBodiesUtils

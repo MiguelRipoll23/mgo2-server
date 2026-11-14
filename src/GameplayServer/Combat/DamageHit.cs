@@ -69,7 +69,8 @@ public sealed record DamageHit(
     DamageKind Kind,
     int Damage,
     byte Weapon,
-    byte? ShooterSlot = null)
+    byte? ShooterSlot = null,
+    byte Subtype = 0)
 {
     /// <summary>
     /// Whether the blow knocks the victim out instead of wounding it. A stun, a
@@ -78,6 +79,23 @@ public sealed record DamageHit(
     public bool IsStun => Kind is DamageKind.Stun
         or DamageKind.Knockout
         or DamageKind.ExplosiveStun;
+
+    /// <summary>
+    /// Whether the blow is the tranquilliser pistol's body or head hit, which
+    /// sleeps an emptied stamina bar rather than leaving the short stun.
+    /// </summary>
+    public bool IsTranquilliser => Subtype is DamageRecordUtils.BodyStunSubtype
+        or DamageRecordUtils.HeadStunSubtype;
+
+    /// <summary>Whether an emptied bar sleeps the victim: a device or a tranquilliser.</summary>
+    public bool SleepsWhenEmpty => Kind is DamageKind.ExplosiveStun || IsTranquilliser;
+
+    /// <summary>
+    /// Whether an emptied bar shows the stun pose rather than lying asleep: CQC
+    /// and the knife family.
+    /// </summary>
+    public bool ShowsStunPose => Kind is DamageKind.Knockout
+        || (Kind is DamageKind.Stun && !IsTranquilliser);
 
     /// <summary>Whether the blow is a headshot, which the score counts.</summary>
     public bool IsHeadshot => Kind == DamageKind.Headshot;

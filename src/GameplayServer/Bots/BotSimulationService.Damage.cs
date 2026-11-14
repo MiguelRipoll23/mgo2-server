@@ -1,4 +1,5 @@
 using Mgo2Server.GameplayServer.Combat;
+using Mgo2Server.GameplayServer.Gameplay;
 using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameplayServer.Bots;
@@ -13,41 +14,6 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// </remarks>
 public sealed partial class BotSimulationService
 {
-    /// <summary>
-    /// How long a stunned bot stays down, in milliseconds.
-    /// </summary>
-    /// <remarks>
-    /// <b>Not measured, and stated as such.</b> The stun's own record says what it
-    /// costs and not how long it lasts: the capture's <c>42</c> at t+221.45 spends
-    /// the whole bar in its damage word and the victim's vitals never move, and the
-    /// beats after it do not carry the recovery — a knocked-out body still stands in
-    /// the actor block, and there is no record that says "up". Three seconds is the
-    /// port's own knockdown, and it is the one number in this path that a capture
-    /// here does not state.
-    /// </remarks>
-    public const int StunMilliseconds = 3_000;
-
-    /// <summary>
-    /// How long a body whose stamina reached zero lies asleep, in milliseconds.
-    /// </summary>
-    /// <remarks>
-    /// <b>Measured on <c>.pcapngs/actions/cqc.pcapng</c>.</b> The CQC combo that
-    /// takes the slot's stamina to zero writes the 32-byte lying position body at
-    /// t+483.50 and the body stands again at t+491.53, about eight seconds later.
-    /// Its health is still 250 throughout: this is sleep, not death.
-    /// </remarks>
-    public const int SleepMilliseconds = 8_000;
-
-    /// <summary>
-    /// Stamina recovered per second, measured from the working host's vitals.
-    /// </summary>
-    /// <remarks>
-    /// Seven runs in <c>cqc.pcapng</c> climb at 18.0 to 18.9 points a second, for
-    /// example 16 to 25 in 0.496 s and 72 to 206 over 4.900 s. The recovery is not
-    /// a reset when the stun ends.
-    /// </remarks>
-    public const int StaminaRecoveryPerSecond = 18;
-
     /// <summary>
     /// Takes a hit a client wrote against a bot.
     /// </summary>
@@ -86,20 +52,20 @@ public sealed partial class BotSimulationService
         var now = Environment.TickCount64;
         if (hit.IsStun)
         {
-            // **A tranquilliser empties the bar; it does not lay the body out.** The
-            // working host's stunned bot keeps its feet: `actions.pcapng` slot 6 takes
-            // a 250-point `0x42` at t+221.45 and writes none of its 128 lying bodies,
-            // while its two 8-second sleeps at t+511.95 and t+547.92 follow CQC blows.
-            // A dart that wrote the 32-byte lying body at health 250 is a corpse drawn
-            // over a living bar, which is the death pose this report names.
-            var putsDown = hit.Kind is DamageKind.Knockout or DamageKind.ExplosiveStun;
-            Stun(body, hit.Damage, now, putsDown);
+            // **The stun family is not one behaviour.** A tranquilliser sleeps an
+            // emptied bar, a sleeping device sleeps it for its measured 26 s, and
+            // CQC or a knife leaves the stun pose while stamina refills. Reading a
+            // dart as a death is what drew a body at health 250 as a corpse.
+            var sleeps = hit.SleepsWhenEmpty;
+            var stunPose = hit.ShowsStunPose;
+            var deviceSleep = hit.Kind is DamageKind.ExplosiveStun;
+            Stun(body, hit.Damage, now, sleeps, stunPose, deviceSleep);
             return true;
         }
 
         // Slot zero is this host's own seat, which is not a player of the round: a
         // hit credited to it would put the kill on server-99999's row.
-        var killer = shooterSlot is > 0 ? shooterSlot.Value : (byte)0;
+        var killer = ActorKillUtils.CreditSlot(shooterSlot);
         ApplyDamage(body, hit.Damage, killer, hit.TakesWholeBar, hit.IsHeadshot, now);
         return true;
     }
@@ -111,11 +77,25 @@ public sealed partial class BotSimulationService
     /// <param name="body">The body the blow landed on.</param>
     /// <param name="points">Stamina points the blow spends.</param>
     /// <param name="now">Monotonic milliseconds.</param>
-    /// <param name="putsDown">
-    /// Whether an emptied bar lays the body on the floor, which the CQC family does and
-    /// a tranquilliser does not.
+    /// <param name="sleeps">
+    /// Whether this blow's family sleeps the body when it empties the bar: the
+    /// `0x40` device and the tranquilliser do, CQC and the knife do not.
     /// </param>
-    public void Stun(BotBodyState body, int points, long now, bool putsDown)
+    /// <param name="stunPose">
+    /// Whether an emptied bar draws the <c>C1 1A</c> stun animation rather than
+    /// lying asleep.
+    /// </param>
+    /// <param name="deviceSleep">
+    /// Whether the sleep is the device's measured 26 s rather than the time the
+    /// tranquilliser's stamina takes to refill.
+    /// </param>
+    public void Stun(
+        BotBodyState body,
+        int points,
+        long now,
+        bool sleeps,
+        bool stunPose,
+        bool deviceSleep)
     {
         ArgumentNullException.ThrowIfNull(body);
 
@@ -124,16 +104,39 @@ public sealed partial class BotSimulationService
             return;
         }
 
-        body.StunnedUntilMilliseconds = now + StunMilliseconds;
-        body.Stamina = (short)Math.Clamp(body.Stamina - points, 0, BotBodyState.MaximumVitals);
+        body.Stamina = ActorStaminaUtils.Spend(body.Stamina, points);
         body.LastStaminaRecoveryMilliseconds = now;
         body.StaminaRecoveryCredit = 0;
-        if (putsDown && body.Stamina == 0 && !body.Sleeping)
+
+        // The blow that empties the bar decides what the body is; the shared rule
+        // keeps the last such blow's choice for a bot and a player alike. A
+        // tranquilliser sleeps until its bar is full; CQC and the knife hold the
+        // stun animation for the same recovery time.
+        var emptied = body.Stamina == 0;
+        var stunMilliseconds = emptied && stunPose
+            ? ActorStaminaUtils.RecoveryMilliseconds(body.Stamina)
+            : ActorStunUtils.StunMilliseconds;
+        var sleepMilliseconds = deviceSleep
+            ? ActorStunUtils.SleepDeviceMilliseconds
+            : ActorStaminaUtils.RecoveryMilliseconds(body.Stamina);
+        var stun = ActorStunUtils.Apply(
+            body.Stamina,
+            body.Sleeping,
+            sleeps,
+            now,
+            body.StunnedUntilMilliseconds,
+            body.SleepUntilMilliseconds,
+            stunMilliseconds,
+            sleepMilliseconds);
+        if (stun.Sleeping && !body.Sleeping)
         {
-            body.Sleeping = true;
             body.Downs++;
-            body.SleepUntilMilliseconds = Math.Max(body.SleepUntilMilliseconds, now + SleepMilliseconds);
         }
+
+        body.Sleeping = stun.Sleeping;
+        body.StunnedUntilMilliseconds = stun.StunnedUntilMilliseconds;
+        body.SleepUntilMilliseconds = stun.SleepUntilMilliseconds;
+        body.StunAnimation = emptied && stunPose && !stun.Sleeping;
 
         body.NextVitalsMilliseconds = 0;
         BotLocomotionService.NoteHit(body, now);
@@ -148,7 +151,7 @@ public sealed partial class BotSimulationService
             "Bot in slot {BotSlot} was stunned with {Stamina} stamina and gets up in {StunMilliseconds} ms",
             body.SessionSlot,
             body.Stamina,
-            StunMilliseconds);
+            ActorStunUtils.StunMilliseconds);
     }
 
     /// <summary>Ends a stun, leaving stamina to recover at its measured rate.</summary>
@@ -156,6 +159,7 @@ public sealed partial class BotSimulationService
     public void EndStun(BotBodyState body)
     {
         body.StunnedUntilMilliseconds = 0;
+        body.StunAnimation = false;
         body.NextVitalsMilliseconds = 0;
     }
 
@@ -185,21 +189,12 @@ public sealed partial class BotSimulationService
         }
 
         body.LastStaminaRecoveryMilliseconds = now;
-        if (body.Stamina >= BotBodyState.MaximumVitals)
-        {
-            body.StaminaRecoveryCredit = 0;
-            return;
-        }
-
-        body.StaminaRecoveryCredit += elapsed * StaminaRecoveryPerSecond;
-        var recovered = (int)(body.StaminaRecoveryCredit / 1000);
-        if (recovered <= 0)
-        {
-            return;
-        }
-
-        body.StaminaRecoveryCredit -= recovered * 1000L;
-        body.Stamina = (short)Math.Min(BotBodyState.MaximumVitals, body.Stamina + recovered);
+        var recovery = ActorStaminaUtils.Recover(
+            body.Stamina,
+            body.StaminaRecoveryCredit,
+            elapsed);
+        body.Stamina = recovery.Stamina;
+        body.StaminaRecoveryCredit = recovery.Credit;
     }
 
     /// <summary>
@@ -306,8 +301,9 @@ public sealed partial class BotSimulationService
             return false;
         }
 
-        body.Health = takesWholeBar ? (short)0 : (short)Math.Max(0, body.Health - damage);
-        if (body.Health != 0)
+        var change = ActorHealthUtils.Apply(body.Health, damage, takesWholeBar);
+        body.Health = change.Health;
+        if (!change.Fatal)
         {
             BotLocomotionService.NoteHit(body, now);
             return false;

@@ -1,3 +1,5 @@
+using Mgo2Server.GameplayServer.Gameplay;
+
 namespace Mgo2Server.GameplayServer.Bots;
 
 /// <summary>
@@ -52,12 +54,39 @@ public static class BotShotUtils
     /// <summary>Height a headshot lands at above the victim: 200 on a victim at 120.</summary>
     private const float HeadHeight = 800f;
 
+    /// <summary>Height a body hit lands at above a crouching victim.</summary>
+    private const float CrouchedBodyHeight = 250f;
+
+    /// <summary>Height a body hit lands at above a prone, crawling or lying victim.</summary>
+    private const float LoweredBodyHeight = 150f;
+
     /// <summary>
     /// Height of a standing shooter's eye above its position, in stage units: the pitch
     /// the reference writes puts it 79 wire tenths up (a pitch of 126 over 1 840 tenths
     /// from a shooter at 100 to an impact at 157).
     /// </summary>
     private const float EyeHeight = 790f;
+
+    /// <summary>
+    /// The height a hit lands at above the victim, from the stance its own
+    /// position record reports.
+    /// </summary>
+    /// <remarks>
+    /// <b>The reference aims at a standing body.</b> The measured heights above a
+    /// standing victim are kept for every stance the capture never put in front of
+    /// a shooter; a crouched or prone player is the one case a stance changes the
+    /// point, and aiming over such a player is a hit the client draws in the air.
+    /// </remarks>
+    /// <param name="stance">The victim's stance.</param>
+    /// <param name="headshot">Whether the hit is a headshot.</param>
+    /// <returns>The height above the victim's position, in stage units.</returns>
+    private static float ImpactHeightOf(ActorStance stance, bool headshot) => stance switch
+    {
+        ActorStance.Crouching => headshot ? 550f : CrouchedBodyHeight,
+        ActorStance.Prone or ActorStance.Crawling => headshot ? 300f : LoweredBodyHeight,
+        ActorStance.Lying or ActorStance.KnockedDown => headshot ? 250f : LoweredBodyHeight,
+        _ => headshot ? HeadHeight : BodyHeight,
+    };
 
     /// <summary>Whether the next hit is a headshot.</summary>
     /// <returns><c>true</c> on the share of hits the reference makes headshots.</returns>
@@ -93,7 +122,7 @@ public static class BotShotUtils
         ArgumentNullException.ThrowIfNull(target);
 
         var impactX = target.X - ImpactOffset;
-        var impactY = target.Y + (headshot ? HeadHeight : BodyHeight);
+        var impactY = target.Y + ImpactHeightOf(target.Stance, headshot);
         var impactZ = target.Z - ImpactOffset;
         var deltaX = impactX - body.X;
         var deltaZ = impactZ - body.Z;

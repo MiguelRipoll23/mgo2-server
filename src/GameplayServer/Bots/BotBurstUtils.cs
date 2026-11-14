@@ -35,6 +35,36 @@ public static class BotBurstUtils
     public const int RoundIntervalMilliseconds = 200;
 
     /// <summary>
+    /// Rounds a magazine holds: the <c>0x0F</c> the weapon pair starts at in
+    /// <c>shooting-and-reloading.pcapng</c> and returns to after every reload.
+    /// </summary>
+    public const int MagazineRounds = 0x0f;
+
+    /// <summary>
+    /// How long a reload runs, in milliseconds.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured on <c>.pcapngs/actions/shooting-and-reloading.pcapng</c>.</b>
+    /// The nine-byte <c>0x0B</c> runs t+19.88 to 23.34, t+25.48 to 28.94 and
+    /// t+41.81 to 45.27 — 3.43 to 3.47 s — with the weapon pair's ammo at
+    /// <c>00</c> at the start and <c>0F</c> at the end.
+    /// </remarks>
+    public const int ReloadMilliseconds = 3_460;
+
+    /// <summary>
+    /// How long the <c>0x48</c> recovery beat holds, after a reload and after an
+    /// engagement's last firing beat.
+    /// </summary>
+    /// <remarks>
+    /// <c>shooting-and-reloading</c> writes the three-byte <c>08 FF 00</c> for six
+    /// records, 0.17 s, at t+35.71 to 35.87 after one firing run;
+    /// <c>stun-by-throwing-to-ground</c> slot 6 writes it from t+46.22, standing,
+    /// the beat its trigger stops. Other runs go straight back to firing, so this
+    /// is the beat behind an attack and not a second reload.
+    /// </remarks>
+    public const int RecoverMilliseconds = 170;
+
+    /// <summary>
     /// Whether a round leaves the barrel this beat, and when the next one may.
     /// </summary>
     /// <remarks>

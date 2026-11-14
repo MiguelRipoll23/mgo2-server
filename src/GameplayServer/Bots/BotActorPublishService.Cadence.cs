@@ -47,7 +47,9 @@ public sealed partial class BotActorPublishService
         var acting = body.TargetSlot != BotBodyState.NoTarget
             || body.HeldBySlot != BotBodyState.NoTarget
             || body.Sleeping
-            || body.HitReacting;
+            || body.HitReacting
+            || body.ReloadUntilMilliseconds > now
+            || body.RecoverUntilMilliseconds > now;
         if (!acting && now < body.NextStateMilliseconds)
         {
             return false;

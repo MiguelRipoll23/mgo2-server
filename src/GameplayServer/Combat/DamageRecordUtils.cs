@@ -72,8 +72,9 @@ public static class DamageRecordUtils
     public const byte ExplosiveSubtype = 0x13;
 
     /// <summary>
-    /// Subtype of a non-lethal blast: a sleeping claymore or sleeping C4. Its
-    /// eleven-byte body spends stamina and takes no health.
+    /// Subtype of a non-lethal blast: a sleeping claymore, sleeping C4 or S.G.
+    /// mine. Its eleven- or fifteen-byte body spends stamina and takes no health,
+    /// and an emptied bar sleeps the victim rather than killing it.
     /// </summary>
     public const byte NonLethalExplosiveSubtype = 0x40;
 
@@ -166,7 +167,8 @@ public static class DamageRecordUtils
             kind,
             Math.Max(damage, 1),
             body[4],
-            shooter is > 0 and < 24 ? shooter : null);
+            shooter is > 0 and < 24 ? shooter : null,
+            body[0]);
     }
 
     /// <summary>
@@ -187,10 +189,12 @@ public static class DamageRecordUtils
             AlternateBodySubtype when body.Length == BodyLength => DamageKind.Body,
             HeadshotSubtype when body.Length == BodyLength => DamageKind.Headshot,
             ExplosiveSubtype when body.Length == BlastBodyLength => DamageKind.Explosive,
-            NonLethalExplosiveSubtype when body.Length == ShortBodyLength => DamageKind.ExplosiveStun,
+            NonLethalExplosiveSubtype when body.Length is ShortBodyLength or BodyLength
+                => DamageKind.ExplosiveStun,
             GasSubtype when body.Length == ShortBodyLength => DamageKind.Gas,
             CriticalKnifeSubtype when body.Length == ShortBodyLength => DamageKind.MeleeKill,
-            CqcSubtype or CqcImpactSubtype when body.Length == BodyLength => DamageKind.Knockout,
+            CqcSubtype or CqcImpactSubtype when body.Length is ShortBodyLength or BodyLength
+                => DamageKind.Knockout,
             BodyStunSubtype or HeadStunSubtype when body.Length == BodyLength => DamageKind.Stun,
             NonLethalSubtype when body.Length == BodyLength => DamageKind.Stun,
             StunStabSubtype or StunStabAlternativeSubtype when body.Length == ShortBodyLength

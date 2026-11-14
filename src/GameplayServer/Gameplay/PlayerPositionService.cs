@@ -3,8 +3,9 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Gameplay;
 
 /// <summary>
-/// One actor's position as a client writes it: the three coordinates at a tenth
-/// of a stage unit and the heading, read from the sixteen-byte position record.
+/// One actor's position and pose as a client writes them: the three coordinates
+/// at a tenth of a stage unit, the heading and the stance, read from the
+/// sixteen-byte position record.
 /// </summary>
 /// <param name="X">Stage <c>x</c> at a tenth of a unit, at body offset <c>+6</c>.</param>
 /// <param name="Y">Height at a tenth of a unit, at body offset <c>+8</c>.</param>
@@ -12,6 +13,14 @@ namespace Mgo2Server.GameplayServer.Gameplay;
 /// <param name="Heading">The heading, at body offset <c>+12</c>.</param>
 public sealed record PlayerPosition(short X, short Y, short Z, short Heading)
 {
+    /// <summary>
+    /// The stance the client's position head names, which the bot writer reads so
+    /// a crouched, prone or sleeping player is aimed at where it actually is.
+    /// </summary>
+    public ActorStance Stance { get; init; } = ActorStance.Standing;
+
+    /// <summary>Whether the client's pose byte says the player is armed.</summary>
+    public bool Armed { get; init; }
     /// <summary>Attribute class the position record carries, which is also its kind.</summary>
     public const byte AttributeClass = 2;
 
@@ -28,12 +37,20 @@ public sealed record PlayerPosition(short X, short Y, short Z, short Heading)
     /// <c>800</c> at a tenth of a unit, and the spawn's own heading <c>24575</c>.
     /// </remarks>
     /// <param name="body">The sixteen-byte body.</param>
-    /// <returns>The position it carries.</returns>
-    public static PlayerPosition FromBody(ReadOnlySpan<byte> body) => new(
-        ReadInt16(body, 6),
-        ReadInt16(body, 8),
-        ReadInt16(body, 10),
-        ReadInt16(body, 12));
+    /// <returns>The position and pose it carries.</returns>
+    public static PlayerPosition FromBody(ReadOnlySpan<byte> body)
+    {
+        var pose = ActorPoseUtils.Decode(body);
+        return new(
+            ReadInt16(body, 6),
+            ReadInt16(body, 8),
+            ReadInt16(body, 10),
+            ReadInt16(body, 12))
+        {
+            Stance = pose?.Stance ?? ActorStance.Standing,
+            Armed = pose?.Armed ?? false,
+        };
+    }
 
     /// <summary>Reads one signed sixteen-bit value little-endian.</summary>
     /// <param name="body">Body to read.</param>

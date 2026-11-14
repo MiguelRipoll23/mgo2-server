@@ -43,24 +43,19 @@ public sealed partial class BotActorPublishService
     /// Knocks a player out without taking health, and reports whether the record
     /// named a living player.
     /// </summary>
-    /// <param name="slot">Player the blow landed on.</param>
+    /// <param name="hit">The knock-out blow, whose subtype decides sleep or stun.</param>
     /// <param name="shooterSlot">Slot the blow is credited to, or <c>null</c> for nobody.</param>
-    /// <param name="points">Stamina points the blow spends.</param>
-    /// <param name="kind">Which knock-out blow it was.</param>
     /// <param name="now">Monotonic milliseconds.</param>
     /// <returns><c>true</c> when a living player holds the slot.</returns>
-    public bool StunPlayer(
-        byte slot,
-        byte? shooterSlot,
-        int points,
-        DamageKind kind,
-        long now)
+    public bool StunPlayer(DamageHit hit, byte? shooterSlot, long now)
     {
+        var slot = hit.VictimSlot;
         if (HumanEndpoint(slot) is null)
         {
             return false;
         }
 
+        var downMilliseconds = 0;
         lock (combatGate)
         {
             if (humanHealth.TryGetValue(slot, out var held) && held <= 0)
@@ -68,31 +63,47 @@ public sealed partial class BotActorPublishService
                 return false;
             }
 
-            var health = humanHealth.GetValueOrDefault(slot, BotBodyState.MaximumVitals);
-            var stamina = (short)Math.Clamp(
-                humanStamina.GetValueOrDefault(slot, BotBodyState.MaximumVitals) - points,
-                0,
-                BotBodyState.MaximumVitals);
+            var health = humanHealth.GetValueOrDefault(slot, ActorHealthUtils.MaximumHealth);
+            var stamina = ActorStaminaUtils.Spend(
+                humanStamina.GetValueOrDefault(slot, ActorStaminaUtils.MaximumStamina),
+                hit.Damage);
             humanStamina[slot] = stamina;
             humanStaminaTickedAt[slot] = now;
             humanStaminaCredit[slot] = 0;
             humanStaminaDue[slot] = now + 1000;
 
-            // Only the CQC family lays an emptied bar on the floor. A tranquilliser's
-            // 250 points at `actions.pcapng` t+221.45 write no lying body, and the
-            // capture's two 8-second sleeps follow CQC blows.
-            if (stamina == 0 && kind is DamageKind.Knockout or DamageKind.ExplosiveStun)
+            // The blow that empties the bar decides what the player is; the shared
+            // rule keeps the last such blow's choice for a player and a bot alike.
+            // A tranquilliser sleeps until stamina refills, CQC/knife holds the
+            // stun pose for the same time, and a device keeps its measured sleep.
+            var emptied = stamina == 0;
+            var stunMilliseconds = emptied && hit.ShowsStunPose
+                ? ActorStaminaUtils.RecoveryMilliseconds(stamina)
+                : ActorStunUtils.StunMilliseconds;
+            var sleepMilliseconds = hit.Kind is DamageKind.ExplosiveStun
+                ? ActorStunUtils.SleepDeviceMilliseconds
+                : ActorStaminaUtils.RecoveryMilliseconds(stamina);
+            var stun = ActorStunUtils.Apply(
+                stamina,
+                humanSleepUntil.GetValueOrDefault(slot) > now,
+                hit.SleepsWhenEmpty,
+                now,
+                humanStunnedUntil.GetValueOrDefault(slot),
+                humanSleepUntil.GetValueOrDefault(slot),
+                stunMilliseconds,
+                sleepMilliseconds);
+            downMilliseconds = (int)Math.Max(0, stun.StunnedUntilMilliseconds - now);
+            if (stun.Sleeping)
             {
-                humanSleepUntil[slot] = Math.Max(
-                    humanSleepUntil.GetValueOrDefault(slot),
-                    now + BotSimulationService.SleepMilliseconds);
+                humanSleepUntil[slot] = stun.SleepUntilMilliseconds;
+            }
+            else
+            {
+                humanSleepUntil.Remove(slot);
             }
 
-            var until = now + BotSimulationService.StunMilliseconds;
-            humanStunnedUntil[slot] = Math.Max(
-                humanStunnedUntil.GetValueOrDefault(slot),
-                Math.Max(until, humanSleepUntil.GetValueOrDefault(slot)));
-            humanStunnedBy[slot] = shooterSlot ?? 0;
+            humanStunnedUntil[slot] = stun.StunnedUntilMilliseconds;
+            humanStunnedBy[slot] = ActorKillUtils.CreditSlot(shooterSlot);
 
             // The stun bar is stamina, and the damage word is the part of it the
             // blow spends. The reference's body hit (0x41) spends 36 of 250 and its
@@ -110,9 +121,9 @@ public sealed partial class BotActorPublishService
         logger.LogDebug(
             "The player in slot {VictimSlot} was knocked out with {Kind} by slot {ShooterSlot} and gets up in {StunMilliseconds} ms",
             slot,
-            kind,
+            hit.Kind,
             shooterSlot,
-            BotSimulationService.StunMilliseconds);
+            downMilliseconds);
         return true;
     }
 
@@ -147,7 +158,7 @@ public sealed partial class BotActorPublishService
             foreach (var slot in humanStamina.Keys.ToList())
             {
                 var stamina = humanStamina[slot];
-                if (stamina >= BotBodyState.MaximumVitals)
+                if (stamina >= ActorStaminaUtils.MaximumStamina)
                 {
                     humanStamina.Remove(slot);
                     humanStaminaTickedAt.Remove(slot);
@@ -161,14 +172,14 @@ public sealed partial class BotActorPublishService
                 if (elapsed > 0)
                 {
                     humanStaminaTickedAt[slot] = now;
-                    humanStaminaCredit[slot] += elapsed * BotSimulationService.StaminaRecoveryPerSecond;
-                    var recovered = (int)(humanStaminaCredit[slot] / 1000);
-                    if (recovered > 0)
+                    var recovery = ActorStaminaUtils.Recover(
+                        stamina,
+                        humanStaminaCredit.GetValueOrDefault(slot),
+                        elapsed);
+                    humanStaminaCredit[slot] = recovery.Credit;
+                    if (recovery.Stamina != stamina)
                     {
-                        humanStaminaCredit[slot] -= recovered * 1000L;
-                        stamina = (short)Math.Min(
-                            BotBodyState.MaximumVitals,
-                            stamina + recovered);
+                        stamina = recovery.Stamina;
                         humanStamina[slot] = stamina;
                     }
                 }
@@ -184,7 +195,7 @@ public sealed partial class BotActorPublishService
                     3,
                     BotActorRecordUtils.VitalsAttributeClass,
                     [
-                        (byte)humanHealth.GetValueOrDefault(slot, BotBodyState.MaximumVitals),
+                        (byte)humanHealth.GetValueOrDefault(slot, ActorHealthUtils.MaximumHealth),
                         (byte)stamina,
                     ]));
             }

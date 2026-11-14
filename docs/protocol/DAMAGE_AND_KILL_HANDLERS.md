@@ -116,7 +116,7 @@ that stream — the same identifier pair as the round clock
   roster's slot-to-player map (`rpdt.js` `slotPlayer`/`slot2idx`); a byte no entry names
   resolves to index `0`, which is why a feed for an unknown slot is drawn on the host's row.
 - The reference's feed names killers `1`–`16` and never slot `0`.
-- The four-byte `02 <killer> <victim> 02` body under `0x1a58` is a **chat macro**, not a
+- The four-byte `[kind, slot, macro, 0x02]` body under `0x1a58` is a **chat macro**, not a
   feed; the client answers it with the voice line.
 - **The body carries no icon and no weapon, and does not need to.** The in-game feed
   shows *killer name · icon · victim name · [ weapon ]*, and only the two names come from

@@ -105,8 +105,13 @@ public sealed class BotLocomotionService(
         body.RouteKey = string.Empty;
         body.LastAdvanceMilliseconds = 0;
         body.ShotThisBeat = false;
+        body.MagazineRounds = BotBurstUtils.MagazineRounds;
+        body.ReloadUntilMilliseconds = 0;
+        body.RecoverUntilMilliseconds = 0;
+        body.WasFiring = false;
         body.HitReacting = false;
         body.HitReactUntilMilliseconds = 0;
+        body.StunAnimation = false;
         body.StunnedUntilMilliseconds = 0;
         body.Sleeping = false;
         body.SleepUntilMilliseconds = 0;

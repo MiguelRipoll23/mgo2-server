@@ -1,3 +1,5 @@
+using Mgo2Server.GameplayServer.Gameplay;
+
 namespace Mgo2Server.GameplayServer.Bots;
 
 /// <summary>
@@ -54,9 +56,10 @@ public sealed class BotBodyState
     public short Stamina { get; set; } = BotBodyState.MaximumVitals;
 
     /// <summary>
-    /// Whether the body is asleep on the floor: stamina reached zero and the
-    /// body has not got up yet. A sleeping body keeps its health, its position
-    /// and the 32-byte lying position record the capture writes.
+    /// Whether the body is asleep on the floor: a non-lethal device or a
+    /// tranquilliser emptied its stamina bar and it has not got up yet. A sleeping body keeps its health,
+    /// its position and the capture's lying pose; it is not a corpse and carries
+    /// no corpse body.
     /// </summary>
     public bool Sleeping { get; set; }
 
@@ -88,7 +91,7 @@ public sealed class BotBodyState
     /// The vitals both bytes open at, measured over the working-server capture:
     /// <c>fa fa</c> on every living actor.
     /// </summary>
-    public const short MaximumVitals = 250;
+    public const short MaximumVitals = ActorHealthUtils.MaximumHealth;
 
     /// <summary>Whether the body is walking this tick, which the position head shows.</summary>
     public bool Moving { get; set; }
@@ -101,6 +104,13 @@ public sealed class BotBodyState
     public bool ShotThisBeat { get; set; }
 
     /// <summary>
+    /// Whether the bot held its trigger on the previous tick. The beat it stops
+    /// firing is the one the capture closes on <c>48 FF 00</c>, which
+    /// <see cref="RecoverUntilMilliseconds"/> then holds.
+    /// </summary>
+    public bool WasFiring { get; set; }
+
+    /// <summary>
     /// Whether the body is in the hit reaction the capture's <c>c1 81</c> position
     /// head marks, which lasts <see cref="BotLocomotionService.HitReactionMilliseconds"/>.
     /// </summary>
@@ -108,6 +118,12 @@ public sealed class BotBodyState
 
     /// <summary>When the hit reaction ends, in monotonic milliseconds.</summary>
     public long HitReactUntilMilliseconds { get; set; }
+
+    /// <summary>
+    /// Whether the knock-out draws the stun animation <c>C1 1A</c> rather than
+    /// the ordinary hit reaction <c>C1 81</c> or the sleep pose <c>01 1C</c>.
+    /// </summary>
+    public bool StunAnimation { get; set; }
 
     /// <summary>
     /// When the standing state record may be written again, in monotonic
@@ -151,6 +167,26 @@ public sealed class BotBodyState
 
     /// <summary>Rounds the burst in hand was started with, which sets the pause behind it.</summary>
     public int BurstSize { get; set; }
+
+    /// <summary>
+    /// Rounds left in the magazine, which the weapon pair's last byte reports
+    /// and which starts a reload at zero (<see cref="BotBurstUtils.MagazineRounds"/>).
+    /// </summary>
+    public int MagazineRounds { get; set; } = BotBurstUtils.MagazineRounds;
+
+    /// <summary>
+    /// When a reload ends, in monotonic milliseconds; zero when the body is not
+    /// reloading. The state record writes the nine-byte <c>0x0B</c> form for the
+    /// whole of it (<see cref="BotBurstUtils.ReloadMilliseconds"/>).
+    /// </summary>
+    public long ReloadUntilMilliseconds { get; set; }
+
+    /// <summary>
+    /// When the <c>0x48</c> recovery beat ends, in monotonic milliseconds; zero
+    /// when no recovery is due. It follows a reload and the firing run that just
+    /// stopped, which are the capture's two places for it.
+    /// </summary>
+    public long RecoverUntilMilliseconds { get; set; }
 
     /// <summary>
     /// When the next <c>0x47</c> fire beat may ride, in monotonic milliseconds. The

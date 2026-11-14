@@ -59,7 +59,7 @@ public sealed partial class BotActorPublishService
             PlayerVitalsFramesUtils.IdentifierFor(generation, shot.VictimSlot),
             3,
             BotActorRecordUtils.VitalsAttributeClass,
-            [(byte)health, (byte)BotBodyState.MaximumVitals]);
+            [(byte)health, (byte)ActorStaminaUtils.MaximumStamina]);
         QueueVitalsRepeats(vitalsRecord, now);
 
         return
@@ -126,7 +126,7 @@ public sealed partial class BotActorPublishService
         // each of them put the teammate it was aimed at down as if it had been shot.
         if (hit.IsStun)
         {
-            return StunPlayer(hit.VictimSlot, shooterSlot, hit.Damage, hit.Kind, now);
+            return StunPlayer(hit, shooterSlot, now);
         }
         if (!TakePlayerHealth(
                 hit.VictimSlot,
@@ -145,7 +145,7 @@ public sealed partial class BotActorPublishService
                 PlayerVitalsFramesUtils.IdentifierFor(roundState.Generation, hit.VictimSlot),
                 3,
                 BotActorRecordUtils.VitalsAttributeClass,
-                [(byte)health, (byte)BotBodyState.MaximumVitals]),
+                [(byte)health, (byte)ActorStaminaUtils.MaximumStamina]),
             now);
         return true;
     }
@@ -182,15 +182,16 @@ public sealed partial class BotActorPublishService
         {
             if (!humanHealth.TryGetValue(slot, out var held))
             {
-                held = BotBodyState.MaximumVitals;
+                held = ActorHealthUtils.MaximumHealth;
             }
 
-            if (held == 0)
+            if (ActorHealthUtils.IsFatal(held))
             {
                 return false;
             }
 
-            health = takesWholeBar ? (short)0 : (short)Math.Max(0, held - damage);
+            var change = ActorHealthUtils.Apply(held, damage, takesWholeBar);
+            health = change.Health;
             humanHealth[slot] = health;
 
             // The beat writes the peer's vitals record under this player's own
@@ -201,10 +202,10 @@ public sealed partial class BotActorPublishService
             {
                 vitals.NoteDamage(
                     hitEndpoint,
-                    new PlayerVitals(health, BotBodyState.MaximumVitals));
+                    new PlayerVitals(health, ActorStaminaUtils.MaximumStamina));
             }
 
-            if (health > 0)
+            if (!change.Fatal)
             {
                 return true;
             }
@@ -216,7 +217,8 @@ public sealed partial class BotActorPublishService
             // (`09 02 08` at t+311.03, slot 8's health reaching zero at 310.81).
             // A death with nobody to credit is still a death; a death credited to
             // this host's own seat is a kill the room cannot resolve.
-            if (killerSlot is { } killer && killer > 0)
+            var killer = ActorKillUtils.CreditSlot(killerSlot);
+            if (killer != ActorKillUtils.NoKiller)
             {
                 simulation.NoteKill(killer, slot, headshot);
             }
@@ -314,7 +316,7 @@ public sealed partial class BotActorPublishService
                 }
 
                 humanRespawn.Remove(slot);
-                humanHealth[slot] = BotBodyState.MaximumVitals;
+                humanHealth[slot] = ActorHealthUtils.MaximumHealth;
                 ClearPlayerStun(slot);
                 if (HumanEndpoint(slot) is { } respawnEndpoint)
                 {
@@ -324,7 +326,7 @@ public sealed partial class BotActorPublishService
                     PlayerVitalsFramesUtils.IdentifierFor(generation, slot),
                     3,
                     BotActorRecordUtils.VitalsAttributeClass,
-                    [(byte)BotBodyState.MaximumVitals, (byte)BotBodyState.MaximumVitals]));
+                    [(byte)ActorHealthUtils.MaximumHealth, (byte)ActorStaminaUtils.MaximumStamina]));
             }
         }
 
@@ -353,7 +355,7 @@ public sealed partial class BotActorPublishService
     /// <returns><c>true</c> when the slot is a corpse.</returns>
     private bool IsVictimDownLocked(byte slot)
     {
-        if (humanHealth.TryGetValue(slot, out var health) && health <= 0)
+        if (humanHealth.TryGetValue(slot, out var health) && ActorHealthUtils.IsFatal(health))
         {
             return true;
         }
