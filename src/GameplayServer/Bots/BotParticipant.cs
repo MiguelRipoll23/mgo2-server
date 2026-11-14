@@ -27,7 +27,7 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <param name="RosterIndex">Slot the bot fills in the roster run, counted from zero.</param>
 /// <param name="Team">Side the bot stands on, or <c>null</c> while none is resolved.</param>
 /// <param name="Role">Tactical archetype the bot plays.</param>
-/// <param name="Weapon">Item id of the weapon it carries for that role.</param>
+/// <param name="Weapon">Weapon id it carries for that role.</param>
 /// <param name="Configuration">The bot's own preferences.</param>
 public sealed record BotParticipant(
     BotIdentity Identity,
@@ -35,7 +35,7 @@ public sealed record BotParticipant(
     sbyte RosterIndex,
     short? Team,
     BotRole Role,
-    ItemIdentifier Weapon,
+    WeaponIdentifier Weapon,
     BotConfiguration Configuration)
 {
     /// <summary>The bot's character name, which is its identity's name.</summary>

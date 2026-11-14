@@ -2111,7 +2111,7 @@ headshots count here though not in the scoreboard's lethal-bullets-only slot); a
 three-scorer round each player's packet carried exactly their own kills. Semantics proven
 alongside: entries require a terminal event (wounding shots tally nothing) and melee/CQC
 events never appear (they live in the `0x4390` stun pair). Weapon names: the ELF's
-141-entry master table, `dev/docs/WEAPONS.md`. It carries **no token, no game/room id, and
+141-entry master table, `docs/WEAPONS.md`. It carries **no token, no game/room id, and
 no round counter** (the caller references none of the token storage; see the
 reporting-model note under `0x4390`). **Stored since 2026-07-28** in `round_weapon_tally`
 (one row per weapon per report, `rule` copied at write time like `round_report`), which is

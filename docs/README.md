@@ -13,6 +13,7 @@ depends on, some is documentation, and some is a tool you run once and forget.
 | `CRYPTO.md` | Every cipher, key and hash, where each is applied, and how to obtain them. |
 | `OBSERVED.md` | What was observed and verified against a real client, including the hypotheses that turned out wrong. Read before re-testing anything. |
 | `GAMEPLAY_SERVER.md` | The UDP gameplay host: the join, the briefing gate, the round and the beat — and how much of what a client receives is still a replay of a capture. |
+| `WEAPONS.md` | The ELF's 141-row weapon master table: its address and row layout, every id and name, and how it differs from the protocol item table. |
 | `protocol/STATE_VECTOR.md` | The operations stream's opcode language and its 89-byte state vector: which of the eighty-nine bytes are constants of the layout, which are the room's own, and which are still unread. |
 | `protocol/DAMAGE_AND_KILL_HANDLERS.md` | The damage record and the kill feed: their shapes and field offsets, the identifier a slot's records sit at, the subtypes and what each takes, and the `system.dll` handlers that resolve a slot to a player — the player table, its handle fields, and the null dereference a slot no session spawned causes. |
 | `analysis/udp-protocol-patterns.md` | The gameplay channel read as a design: replication and per-stream acks, the phase's identifier pair, the two stop-and-wait handshakes, ticks and the host's clock, and why a missing state is a stall rather than an error. |

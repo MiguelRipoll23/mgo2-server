@@ -245,7 +245,7 @@ public sealed partial class BotSimulationService(
                     ApplyBotShot(body, victim, weaponKind, damage, headshot, now);
                 }
 
-                shot = BotShotUtils.Build(body, target, damage, (byte)body.Weapon, headshot) with
+                shot = BotShotUtils.Build(body, target, damage, BotDamageWeaponUtils.DamageIdOf(body.Weapon), headshot) with
                 {
                     Kind = weaponKind,
                     Landed = landed,

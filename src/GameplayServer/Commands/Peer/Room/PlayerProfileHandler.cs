@@ -44,6 +44,9 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// </para>
 /// </remarks>
 /// <param name="roster">Roster of the room this host is playing.</param>
+/// <param name="announcements">
+/// Appender that names a newly seated member to the peers already in the room.
+/// </param>
 /// <param name="rosterAnswers">
 /// Decider of which copy of a peer's profile is answered: the re-sent one in the
 /// pass it arrives in, or the first one when the client never re-sends.
@@ -67,6 +70,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// <param name="logger">Logger of this handler.</param>
 public sealed class PlayerProfileHandler(
     RoomRosterService roster,
+    RoomMemberAnnouncementService announcements,
     RosterAnswerService rosterAnswers,
     PlayerSettingsBurstService burst,
     LobbyLoadoutService loadoutReader,
@@ -175,6 +179,14 @@ public sealed class PlayerProfileHandler(
             return;
         }
 
+        // A profile from an endpoint the roster does not hold is a join; a re-sent
+        // profile is the same member still waiting for its answer. Only the former
+        // is announced to the room. The comparison is exact because the roster's
+        // lookup falls back to the host address, which two players behind one NAT
+        // share.
+        var knownMember = roster.Snapshot()
+            .Any(member => member.RemoteAddress == context.Remote.ToString());
+
         // The room's bots are seated before this player is filed, so the run that
         // answers it names them first: the game-with-bots capture writes `BOT-01`…
         // `BOT-07` at ordinals 1–7 in the table's slots 1–7 and the player at 8. The
@@ -232,7 +244,7 @@ public sealed class PlayerProfileHandler(
         // copy (`RosterAnswerService`). The first copy is therefore held, and a
         // client that does not re-send is answered when the hold's deadline
         // passes rather than never.
-        var answer = () => SendRosterAsync(context);
+        var answer = () => SendRosterAsync(context, member, !knownMember);
 
         if (rosterAnswers.AnswerNowOrHold(context.Remote.ToString(), context, answer))
         {
@@ -298,11 +310,9 @@ public sealed class PlayerProfileHandler(
     /// is — and the run is built with the peer the answer is addressed to.
     /// </remarks>
     /// <param name="context">Context of the profile this roster answers.</param>
-    private async Task SendRosterAsync(PeerContext context)
+    private async Task SendRosterAsync(PeerContext context, RosterMember member, bool newMember)
     {
-        var answeringSlot = roster.Find(context.Session.RemoteAddress) is { } answered
-            ? (byte)(answered.SessionSlot + 1)
-            : (byte)0;
+        var answeringSlot = (byte)(member.SessionSlot + 1);
 
         // The room's rows are read here, and a read that fails must not cost the
         // join its answer: the roster run is the one message a joiner cannot be
@@ -338,9 +348,8 @@ public sealed class PlayerProfileHandler(
         // The run is packed, not written as one datagram: seventeen entries came to
         // 1,151 bytes and a peer drops anything past 512
         // (<see cref="RosterRunSendUtils"/>).
-        var run = roster.BuildRosterRun(
-            answeringLoadout,
-            includeEndpointPairs: context.Session.PeerHandshakeShape != HandshakeShape.Native);
+        var includeEndpointPairs = context.Session.PeerHandshakeShape != HandshakeShape.Native;
+        var run = roster.BuildRosterRun(answeringLoadout, includeEndpointPairs);
 
         logger.LogDebug(
             "UDP {LocalPort}: built roster response for {RemoteAddress}: {RecordCount} records, "
@@ -382,14 +391,9 @@ public sealed class PlayerProfileHandler(
         matchStart.Start(context);
         matchRecords.Start(context);
 
-        logger.LogDebug(
-            "UDP {LocalPort}: announcing {RecordCount} roster records from {RemoteAddress} to other peers",
-            context.LocalPort,
-            context.Remote,
-            run.Count);
-        foreach (var record in run)
+        if (newMember)
         {
-            await context.Broadcast(record.Type, record.Body, record.Ordinal);
+            await announcements.AnnounceAsync(context, member, includeEndpointPairs);
         }
     }
 }

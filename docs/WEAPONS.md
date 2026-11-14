@@ -1,35 +1,70 @@
 # The weapon master table (ELF-extracted 2026-07-23)
 
-Static table in `MGO2.elf` at vaddr `0x1035834` (file `0x1025834`), stride `0x2C` (11 BE u32
-columns), **141 records, 0-based — the array position IS the weapon id**. Columns: w0 =
-display-name pointer; w1 low u16 = category bitmask (1 knife, 2 pistol, 4 SMG, 8 AR, 0x10
-LMG, 0x20 shotgun, 0x40 sniper, 0x80 GL, 0x100 launcher, 0x200 grenade, 0x400 placeable,
-0x800 attachment, 0x1000 shield); w2 = flags|id with **bit 0x8000 = non-lethal** (ST KNIFE,
-MOSIN N, SLEEP CLAYMORE, SLEEP C4); w3–w8 numeric params (unlabelled); w9 model/hash; w10 ~0.
-A separate ammo-name table (`WP_Bul*`, 67 entries, stride 8) lives at vaddr `0x1037d80`.
+The game's static weapon table lives in `MGO2.elf`. The image is not vendored here,
+but the table is reproduced below and mirrored by
+[`WeaponIdentifier`](../src/Shared/Types/WeaponIdentifier.cs), whose member values
+are the ids in the first column.
 
-Anchored live via the `0x43a2` round-end tally list (slot = weapon id): 1 = ST KNIFE (knife
-kill), 43 = MOSIN N (tranq darts; non-lethal flag agrees). Ids 0–126 are the tally-eligible
-damage sources; 127–140 are boss/environment sources.
+## Where it lives
 
-**Name-column caveat (2026-07-24):** these are the ELF table's strings; ids and behaviours
-are the confirmed layer, names one tier below. UI-correspondence verified so far: AK102
-(id 25) and RUGER (id 2 — initially suspected as a divergence because the player called it
-"the Mk.2", which turned out to be MGS4 habit for the same gun). No known divergences, but
-unverified names should still be read as [INFERRED] until seen on the live UI — oddities
-like the duplicate SBS (36/74) and TANE (29) suggest at least some rows are internal-only.
+| property | value |
+|---|---|
+| virtual address | `0x1035834` |
+| file offset | `0x1025834` |
+| stride | `0x2C` — 11 big-endian `u32` columns |
+| records | **141**, ids `0`–`140`, zero-based: the array position **is** the weapon id |
 
-Tally triple **confirmed and refined** 2026-07-24: per-weapon {kills, headshots, faints},
-where the headshot field is a **terminal-event qualifier**, not a hit counter — a helmeted
-target headshot-wounded twice with the GSR produced NO GSR entry at all (and no scoreboard
-headshot): headshots register only attached to the kill or faint they cause. Entries appear
-only for weapons with terminal events; pure damage never creates a row. The Mosin
-dart-to-head counts (it caused the faint) even though the scoreboard headshot counter
-(lethal bullets only) refuses darts. Anchors exact: ST KNIFE 1, **RUGER 2 = the Mk.2 tranq
-pistol** (one dart-faint on an awake target → {2: 0,0,1}; 30 darts into an already-fainted
-body → no entry, so the field counts faints CAUSED), AK102 25, MOSIN N 43. CQC knockouts
-never appear in this list at all (id 112 stays silent) — melee stuns live only in the
-scoreboard stun pair.
+A separate ammo-name table (`WP_Bul*`, 67 entries, stride 8) lives at vaddr
+`0x1037d80`.
+
+### Row layout
+
+| word | meaning |
+|---|---|
+| `w0` | pointer to the row's NUL-terminated display name |
+| `w1` | category bitmask in the low `u16` |
+| `w2` | flags and id; **bit `0x8000` = non-lethal** |
+| `w3`–`w8` | numeric parameters, unlabelled |
+| `w9` | model/hash |
+| `w10` | approximately zero |
+
+The name is a pointer into the image's string data, not an inline string. The
+category bits are:
+
+| bit | class | bit | class |
+|---|---|---|---|
+| `0x0001` | knife | `0x0100` | launcher |
+| `0x0002` | pistol | `0x0200` | grenade |
+| `0x0004` | SMG | `0x0400` | placeable |
+| `0x0008` | assault rifle | `0x0800` | attachment |
+| `0x0010` | LMG | `0x1000` | shield |
+| `0x0020` | shotgun | | |
+| `0x0040` | sniper rifle | | |
+| `0x0080` | grenade launcher | | |
+
+## What anchors the ids
+
+The `0x43a2` round-end tally list is indexed by weapon id. Its live anchors are
+`1 = ST KNIFE` for a knife kill and `43 = MOSIN N` for a tranquilliser faint; the
+non-lethal flag on row 43 agrees. Ids `0`–`126` are the tally-eligible damage
+sources, while `127`–`140` are boss and environment sources.
+
+**Name-column caveat (2026-07-24).** The ids and behaviours are the confirmed
+layer; the names sit one tier below. UI correspondence has been verified for
+AK102 (25) and RUGER (2) — the latter was initially suspected of diverging
+because players call it "the Mk.2", which is MGS4 habit for the same gun. The
+duplicate SBS (36/74), TANE (29) and the repeated `SURPRESSOR` rows suggest some
+rows are internal-only, so an unverified name should be read as [INFERRED] until
+seen on the live UI.
+
+The tally triple is per weapon `{kills, headshots, faints}`. The headshot field is
+a terminal-event qualifier, not a hit counter: headshots register only on the
+kill or faint they cause. A weapon with no terminal event gets no row, and CQC
+knockouts never enter this list at all — melee stuns live only in the `0x4390`
+stun pair. Confirmed anchors: `1 = ST KNIFE`, `2 = RUGER` (the Mk.2
+tranquilliser, counting faints caused), `25 = AK102`, `43 = MOSIN N`.
+
+## The full table
 
 | id | name | id | name | id | name |
 |---|---|---|---|---|---|
@@ -80,3 +115,52 @@ scoreboard stun pair.
 | 44 | DRAGNOV | 91 | GRIP B | 138 | RAY BODY |
 | 45 | RAILGUN | 92 | REX VULCAN | 139 | BINOCULAR |
 | 46 | MGL-140 | 93 | REX MISSILE | 140 | ENVG |
+
+## Using the table in code
+
+`WeaponIdentifier` mirrors the rows one for one. A row's position is the enum's
+value, so the enum is `byte`-backed and stops at `Envg = 140`. `Unreported = 0xFF`
+is the one member that is not a row: it is the value a weapon-select family
+carries for a player who reported nothing. Repeated table strings keep every
+member distinct by suffixing the later rows; the table's own spelling remains in
+a comment.
+
+**Use `WeaponIdentifier` for an actor's carried weapon pair and its model.** The
+client resolves the pair's second byte against this table. It does not resolve it
+against the replay console's item table, and at the low ids the two tables are
+not interchangeable:
+
+| carried weapon | ELF weapon id (actor pair) | protocol item id (damage record) |
+|---|---:|---:|
+| ST KNIFE | 1 | 2 |
+| RUGER | 2 | 3 |
+| AK KNIFE | 96 | 89 |
+| M4 | 24 | 24 |
+| AK102 | 25 | 25 |
+
+The console's item table has an extra `NONE` row at 1, which shifts the first
+sixteen rows; from id 17 (`MP7`) upward the two agree. `ItemIdentifier` remains
+the table for the byte a **damage record** carries and for world-object items.
+`BotDamageWeaponUtils.DamageIdOf` is the explicit bridge for bots: the bot body
+carries a `WeaponIdentifier` for the actor pair, and a damage record receives the
+corresponding `ItemIdentifier`.
+
+This distinction is not cosmetic. Announcing a bot with item id `89` made the
+client look for the weapon model named `LIGHT`, an attachment row, instead of
+`AK KNIFE` at `96`; the model header was null and `dg_model.cpp` asserted. The
+same byte is a valid item id for a damage record, which is why the two wire
+fields need the two different tables.
+
+See [`protocol/ITEM_AND_DAMAGE_TABLE.md`](protocol/ITEM_AND_DAMAGE_TABLE.md) for
+the measured damage-record ids, and [`BOTS.md`](BOTS.md) for how the gameplay
+server chooses a bot's carried weapon.
+
+## Re-reading the image
+
+Read 141 records of 11 big-endian `u32` words at the address above, then follow
+each row's `w0` pointer to its display string. The read is anchored by
+`0 NONE`, `24 M4`, `96 AK KNIFE` and `140 ENVG`, and by the tally anchors
+`1 ST KNIFE` and `43 MOSIN N`. The table is static; a different image should be
+checked against those rows before its ids are trusted. Captures validate the
+rows they exercise, but they do not define the table — `WeaponIdentifier` comes
+from the image, not from a replay parser.

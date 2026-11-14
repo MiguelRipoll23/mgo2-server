@@ -7,11 +7,12 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// stun knife, or a lethal blade.
 /// </summary>
 /// <remarks>
-/// <b>The id is the item table's, not the ELF's weapon table.</b> The infiltrator
-/// carries <see cref="ItemIdentifier.StKnife"/> and <see cref="ItemIdentifier.Ruger"/>
-/// — the ST KNIFE and the Mk.2 — and <see cref="ItemIdentifier.AkKnife"/> as its
+/// <b>The id is the ELF weapon table's.</b> The infiltrator carries
+/// <see cref="WeaponIdentifier.StKnife"/> and <see cref="WeaponIdentifier.Ruger"/> —
+/// the ST KNIFE and the Mk.2 — and <see cref="WeaponIdentifier.AkKnife"/> as its
 /// lethal option. The two knife ids use the recorded <c>0x91</c> record; the
-/// tranquilliser uses the recorded <c>0x41</c>/<c>0x42</c> pair.
+/// tranquilliser uses the recorded <c>0x41</c>/<c>0x42</c> pair. The item table's
+/// ids are not used here: its knife rows do not name the models the client loads.
 /// </remarks>
 public static class BotWeaponUseUtils
 {
@@ -19,13 +20,13 @@ public static class BotWeaponUseUtils
     public const int TranquilliserBodyPoints = 36;
 
     /// <summary>What a carried weapon does when it lands.</summary>
-    /// <param name="weapon">The item id the bot carries.</param>
+    /// <param name="weapon">The weapon id the bot carries.</param>
     /// <returns>The kind of blow its hit writes.</returns>
-    public static BotWeaponKind KindOf(ItemIdentifier weapon) => weapon switch
+    public static BotWeaponKind KindOf(WeaponIdentifier weapon) => weapon switch
     {
-        ItemIdentifier.StKnife => BotWeaponKind.StunKnife,
-        ItemIdentifier.Ruger => BotWeaponKind.StunDart,
-        ItemIdentifier.AkKnife => BotWeaponKind.LethalKnife,
+        WeaponIdentifier.StKnife => BotWeaponKind.StunKnife,
+        WeaponIdentifier.Ruger => BotWeaponKind.StunDart,
+        WeaponIdentifier.AkKnife => BotWeaponKind.LethalKnife,
         _ => BotWeaponKind.Firearm,
     };
 

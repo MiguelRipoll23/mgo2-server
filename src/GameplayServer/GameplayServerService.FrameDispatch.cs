@@ -335,9 +335,11 @@ public sealed partial class GameplayServerService
             // it is relayed below and, until now, forgotten. Keeping it is what lets
             // the room's bots be written where the player actually is
             // (PlayerPositionService).
+            var firstPosition = false;
             if (message.Flags == PlayerPosition.AttributeClass &&
                 message.Body.Length == PlayerPosition.BodyLength)
             {
+                firstPosition = !positions.TryGet(session.RemoteAddress, out _);
                 positions.Note(session.RemoteAddress, PlayerPosition.FromBody(message.Body));
             }
 
@@ -373,6 +375,11 @@ public sealed partial class GameplayServerService
                         message.Flags,
                         Convert.ToHexString(message.Body).ToLowerInvariant());
                     SendToOthers(session, message.Type, message.Body, message.Flags, ofThisHost: false);
+
+                    // A player's first position is the evidence that the player
+                    // has spawned; its entry follows the relay
+                    // (`pcapng2` t+265.622, t+312.506).
+                    await AnnounceSpawnIfFirstAsync(session, firstPosition);
                 }
 
                 continue;

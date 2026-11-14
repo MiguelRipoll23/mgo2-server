@@ -53,7 +53,7 @@ public enum BotWeaponKind
 /// </summary>
 /// <param name="VictimSlot">Slot the hit landed on.</param>
 /// <param name="Damage">Health points it takes.</param>
-/// <param name="Weapon">Weapon id the record carries.</param>
+/// <param name="Weapon">Item id the damage record carries.</param>
 /// <param name="ImpactX">Impact <c>x</c>, in stage units.</param>
 /// <param name="ImpactY">Impact height, in stage units.</param>
 /// <param name="ImpactZ">Impact <c>z</c>, in stage units.</param>

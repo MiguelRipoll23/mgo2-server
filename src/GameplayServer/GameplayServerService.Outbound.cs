@@ -15,10 +15,10 @@ namespace Mgo2Server.GameplayServer;
 public sealed partial class GameplayServerService
 {
     /// <summary>
-    /// Writes a message to every established peer except the one it came from.
-    /// Peers are skipped rather than removed: a peer that has not finished its
-    /// handshake is not in the room yet, and the session is dropped when it goes
-    /// quiet.
+    /// Writes a message to every established peer of the room except the one it
+    /// came from. A session that is established but still has no roster entry is
+    /// skipped: it has contacted the host but has not joined, and a record sent to
+    /// it before its own roster answer is a record it has no player table to place.
     /// </summary>
     /// <param name="origin">Session the message came from, which is left out.</param>
     /// <param name="messageType">Type of the message.</param>
@@ -33,7 +33,10 @@ public sealed partial class GameplayServerService
         bool ofThisHost = true)
     {
         var recipients = sessions.Snapshot()
-            .Where(session => session.Established && !ReferenceEquals(session, origin))
+            .Where(session => session.Established
+                && !ReferenceEquals(session, origin)
+                && (roster.Find(session.RemoteAddress) is not null
+                    || roster.Find(session.DialBack.ToString()) is not null))
             .ToList();
         logger.LogTrace(
             "[{LogPrefix}] Broadcasting 0x{MessageType:x4} ({BodyLength} body bytes, ordinal={Ordinal}) " +

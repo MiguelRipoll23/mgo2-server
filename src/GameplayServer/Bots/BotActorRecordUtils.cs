@@ -248,7 +248,7 @@ public static class BotActorRecordUtils
     /// <b>A dead bot still carries its gun.</b> Across `actions.pcapng`'s 231 dead
     /// beats the pair is `00 18 00 00 0f` on 197 and `00 19 00 00 0f` on 26, and zero
     /// only eight times; this host blanked it on all 2,449 of its own. The second
-    /// byte is the item id the bot's role chose and the last is the magazine:
+    /// byte is the weapon id the bot's role chose and the last is the magazine:
     /// `shooting-and-reloading.pcapng` falls it `0F -> 0E -> … -> 00` as the trigger
     /// spends rounds and refills it on the reload's last beat.
     /// </remarks>
@@ -269,7 +269,7 @@ public static class BotActorRecordUtils
     /// <param name="victimSlot">Player the hit landed on.</param>
     /// <param name="generation">Identifier set of the round being played.</param>
     /// <param name="damage">Health points the hit takes.</param>
-    /// <param name="weapon">Weapon id the hit carries.</param>
+    /// <param name="weapon">Item id the hit carries.</param>
     /// <param name="impactX">Impact <c>x</c>, in stage units.</param>
     /// <param name="impactY">Impact height, in stage units.</param>
     /// <param name="impactZ">Impact <c>z</c>, in stage units.</param>

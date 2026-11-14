@@ -3,14 +3,19 @@ using Mgo2Server.Shared.Types;
 namespace Mgo2Server.GameplayServer.Bots;
 
 /// <summary>
-/// The weapons a bot of each role carries, chosen from the item table the wire
-/// uses.
+/// The weapons a bot of each role carries, chosen from the ELF's weapon table.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The ids are the replay console's <c>ITEM_NAMES</c> rows</b>
-/// (<c>.gametools/replay-console/rpdt.js</c>), which
-/// <see cref="ItemIdentifier"/> ports and which a record's weapon byte names.
+/// <b>The ids are the ELF's weapon master table</b> (<see cref="WeaponIdentifier"/>,
+/// <c>docs/WEAPONS.md</c>), which is the table the client loads a carried weapon's
+/// model from. The replay console's item table is not interchangeable: the two
+/// agree for firearms but not for the knives — its <c>AK KNIFE</c> is item <c>89</c>
+/// and weapon <c>96</c>, and item <c>89</c> is the attachment row <c>LIGHT</c>. A bot
+/// announced with item ids therefore asked the client for a weapon model that is
+/// not a weapon, which is the null model header that crashed it.
+/// </para>
+/// <para>
 /// The sets follow each role's weapon categories: assault rifles for
 /// <see cref="BotRole.Assault"/>, machine guns for <see cref="BotRole.Support"/>,
 /// sniper rifles for <see cref="BotRole.Sniper"/>, submachine guns for
@@ -27,57 +32,57 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// </remarks>
 public static class BotWeaponLoadoutUtils
 {
-    private static readonly ItemIdentifier[] AssaultWeapons =
+    private static readonly WeaponIdentifier[] AssaultWeapons =
     [
-        ItemIdentifier.M4,
-        ItemIdentifier.Ak102,
-        ItemIdentifier.G3a3,
-        ItemIdentifier.Fal,
-        ItemIdentifier.Mk17,
-        ItemIdentifier.Xm8,
+        WeaponIdentifier.M4,
+        WeaponIdentifier.AK102,
+        WeaponIdentifier.G3A3,
+        WeaponIdentifier.Fal,
+        WeaponIdentifier.MK17,
+        WeaponIdentifier.XM8,
     ];
 
-    private static readonly ItemIdentifier[] SupportWeapons =
+    private static readonly WeaponIdentifier[] SupportWeapons =
     [
-        ItemIdentifier.M4,
-        ItemIdentifier.Lmg,
-        ItemIdentifier.Hk21e,
-        ItemIdentifier.Pk,
-        ItemIdentifier.M60e4,
+        WeaponIdentifier.M4,
+        WeaponIdentifier.Lmg,
+        WeaponIdentifier.HK21E,
+        WeaponIdentifier.Pk,
+        WeaponIdentifier.M60E4,
     ];
 
-    private static readonly ItemIdentifier[] SniperWeapons =
+    private static readonly WeaponIdentifier[] SniperWeapons =
     [
-        ItemIdentifier.Vss,
-        ItemIdentifier.M82a2,
-        ItemIdentifier.Dsr1,
-        ItemIdentifier.M14ebr,
-        ItemIdentifier.MosinN,
-        ItemIdentifier.Dragnov,
+        WeaponIdentifier.Vss,
+        WeaponIdentifier.M82A2,
+        WeaponIdentifier.DSR1,
+        WeaponIdentifier.M14EBR,
+        WeaponIdentifier.MosinN,
+        WeaponIdentifier.Dragnov,
     ];
 
-    private static readonly ItemIdentifier[] ReconWeapons =
+    private static readonly WeaponIdentifier[] ReconWeapons =
     [
-        ItemIdentifier.Mp7,
-        ItemIdentifier.Mp5,
-        ItemIdentifier.Ingram,
-        ItemIdentifier.P90,
-        ItemIdentifier.Bizon,
-        ItemIdentifier.Patriot,
-        ItemIdentifier.Skorpion,
+        WeaponIdentifier.MP7,
+        WeaponIdentifier.MP5,
+        WeaponIdentifier.Ingram,
+        WeaponIdentifier.P90,
+        WeaponIdentifier.Bizon,
+        WeaponIdentifier.Patriot,
+        WeaponIdentifier.Skorpion,
     ];
 
-    private static readonly ItemIdentifier[] InfiltratorWeapons =
+    private static readonly WeaponIdentifier[] InfiltratorWeapons =
     [
-        ItemIdentifier.StKnife,
-        ItemIdentifier.Ruger,
-        ItemIdentifier.AkKnife,
+        WeaponIdentifier.StKnife,
+        WeaponIdentifier.Ruger,
+        WeaponIdentifier.AkKnife,
     ];
 
     /// <summary>The weapons a role may carry.</summary>
     /// <param name="role">The role the bot plays.</param>
-    /// <returns>The item ids its weapons are chosen from.</returns>
-    public static IReadOnlyList<ItemIdentifier> WeaponsFor(BotRole role) => role switch
+    /// <returns>The weapon ids its weapons are chosen from.</returns>
+    public static IReadOnlyList<WeaponIdentifier> WeaponsFor(BotRole role) => role switch
     {
         BotRole.Assault => AssaultWeapons,
         BotRole.Support => SupportWeapons,
@@ -92,8 +97,8 @@ public static class BotWeaponLoadoutUtils
 
     /// <summary>Chooses one of a role's weapons for a bot.</summary>
     /// <param name="role">The role the bot plays.</param>
-    /// <returns>The item id the bot carries.</returns>
-    public static ItemIdentifier Choose(BotRole role)
+    /// <returns>The weapon id the bot carries.</returns>
+    public static WeaponIdentifier Choose(BotRole role)
     {
         var weapons = WeaponsFor(role);
         return weapons[Random.Shared.Next(weapons.Count)];

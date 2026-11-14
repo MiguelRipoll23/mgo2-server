@@ -115,6 +115,7 @@ public static class PeerCommandHandlerRegistration
         services.AddSingleton<AcceptHandshakeHandler>();
         services.AddSingleton<PeerKeepAliveHandler>();
         services.AddSingleton<RosterAnswerService>();
+        services.AddSingleton<RoomMemberAnnouncementService>();
         services.AddSingleton<PlayerProfileHandler>();
         services.AddSingleton<JoinProbeHandler>();
         services.AddSingleton<JoinReportHandler>();

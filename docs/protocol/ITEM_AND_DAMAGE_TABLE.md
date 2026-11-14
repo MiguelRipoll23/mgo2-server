@@ -101,7 +101,16 @@ is 297 rows and a record's item field is one byte, so `0`–`255` are addressabl
 `WP_Bul*` bullet rows at `256`–`296` are not. `0xff` is `WP_BulVss` in that table — the one id
 where the console's listing and our `WeaponIdentifier.Unreported` describe the same byte. `WeaponIdentifier` remains the ELF's own 141-row read and stops at `Envg`
 — which it numbers 140 and the console's table numbers **130**: the two tables agree on the
-weapons a capture has been read on (`0x18` M4, `0x19` AK102, `0x34` GRENADE, `0x02` ST KNIFE)
-and drift apart below and above them. Where they disagree, the console's numbering is the one
-its parser has validated against recorded replays, so a new wire constant should come from
-`ItemIdentifier`.
+firearm and grenade rows a capture has been read on (`0x18` M4, `0x19` AK102, `0x34` GRENADE)
+and diverge on the low knife byte `0x02`, which is `ST KNIFE` in the console's table and
+`RUGER` in the ELF's. Where they disagree, the console's numbering is the one
+its parser has validated against recorded replays, so a new **damage-record** constant should
+come from `ItemIdentifier`.
+
+The actor's **weapon pair is not a damage-record weapon byte**. Its second byte names the
+carried model and comes from the ELF's weapon table; the two tables agree for firearms and
+diverge on the knives, which is why `docs/WEAPONS.md` records both sides. A bot carries a
+`WeaponIdentifier` for the actor pair and converts it to an `ItemIdentifier` with
+`BotDamageWeaponUtils.DamageIdOf` when it writes a damage record. Putting the item id `89`
+(`AK KNIFE` in this table) into the actor pair instead names `LIGHT` in the ELF table and
+produces the `dg_model.cpp` null-header assertion.

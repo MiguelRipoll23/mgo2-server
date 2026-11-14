@@ -48,7 +48,7 @@ opponent — a bot perceives, decides and changes state, and sends nothing.
 | A bot's stream starts after the peer's **opening run for that round**, never at the round's open alone | `pcapng1` writes the bot append six seconds before its run at t+491.58; the live run of 2026-11-09 had the round open at 12:45:21 and the run at 12:45:31, and the blocks written in between left the client on a black screen — `MatchRoundStateService.HasRunWritten` is the gate |
 | The map's players come from the room's **entry records**, one per player, written when a client asks to be placed in a round | `pcapng1` t+10.19: fourteen 25-byte `07 12 00 04` entries with the close behind them, indices 0–13, one per slot the arrays mark; `TeamArrayService.EnterRoomAsync` writes one per member — the bot included, since no client asks for a bot's own |
 | The game has its own bot AI, by mode and weapon | `docs/strings/codepaths.txt`: `pl_bot_loc_tdm_{ar,sm,sr,sg,rpg,mg,gr}.cc`, `pl_bot_mis_sne_{patrol,watch}.cc`, `pl_bot_mis_{def,mat,sup}.cc` and a `think_layer` per behaviour. It is the **port's**, and it names weapon classes and mission families rather than the five archetypes here |
-| Weapon ids, and some classes | `docs/WEAPONS.md`: 141 rows at `0x1035834`, stride `0x2c`; the per-id category bitmask is in the table, **which is not in this repository** |
+| Weapon ids, and some classes | `docs/WEAPONS.md`: 141 rows at `0x1035834`, stride `0x2c`; the per-id category bitmask is in the table. The **ELF image** is not in this repository; the table and its layout are documented here. |
 | The five roles | the task's design, not the game's — the port's families are evidence for roles existing, not for these five |
 
 ## Settings
@@ -144,8 +144,13 @@ what a bot leans towards and never becomes a second implementation.
   host's 362 hits over its 640 s round, none beyond 336 units, about five a
   minute on a given victim — and applies a client's damage record to the bot it
   names (`BotSimulationService.NoteIncomingDamage`) so a bot's vitals fall and it
-  goes down. The actor block carries the weapon pair `00 18 00 00 0f` the capture
-  writes for a live bot. Reloading has no measured record and is not written.
+  goes down. The actor block carries the weapon pair for the weapon id its role
+  chose, from the ELF weapon table; `00 18 00 00 0f` is the M4 the capture's own
+  bots carry. The item table's ids are not used for the model: its knife rows name
+  different models (`AK KNIFE` is item `89`/`LIGHT`, weapon `96`). A damage record
+  keeps the protocol item id — `BotDamageWeaponUtils` maps the blade back — so the
+  model and the hit are each named by the table that owns them. Reloading has no
+  measured record and is not written.
 * **Positions and health in perception.** Not read on this path, so
   `BotPerceptionSnapshot.PositionsKnown` is false and `OwnHealth` is null.
 * **Most weapon classes.** Four ids are classified; the rest are `Unknown` until

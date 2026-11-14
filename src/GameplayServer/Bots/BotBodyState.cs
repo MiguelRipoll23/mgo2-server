@@ -28,10 +28,14 @@ public sealed class BotBodyState
     public required byte SessionSlot { get; init; }
 
     /// <summary>
-    /// Item id of the weapon it carries, chosen once from its role's set and
-    /// written to the weapon pair and every hit (<see cref="BotWeaponLoadoutUtils"/>).
+    /// Weapon id it carries, chosen once from its role's set and written to the
+    /// weapon pair and every hit (<see cref="BotWeaponLoadoutUtils"/>). It is a
+    /// <see cref="WeaponIdentifier"/> because that is the table the client loads a
+    /// carried weapon's model from; the item table is not interchangeable. Damage
+    /// records cross to <see cref="ItemIdentifier"/> through
+    /// <see cref="BotDamageWeaponUtils"/>.
     /// </summary>
-    public ItemIdentifier Weapon { get; set; } = ItemIdentifier.M4;
+    public WeaponIdentifier Weapon { get; set; } = WeaponIdentifier.M4;
 
     /// <summary>Stage <c>x</c>, in stage units.</summary>
     public float X { get; set; }
