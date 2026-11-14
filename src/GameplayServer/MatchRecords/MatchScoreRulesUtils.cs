@@ -7,14 +7,18 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <remarks>
 /// <para>
 /// <b>The table is the game's, read off the disc.</b> The client's
-/// <c>ComputeScore</c> walks a 37-column × 11-row table of <c>s8</c> coefficients,
-/// row = game rule, filled at runtime from the <c>-rule N -score &lt;37 ints&gt;</c>
-/// directives in the stage script; the rows were read out of
-/// <c>stage/n002a|n003a|n004a/scenerio.gcx</c> and are byte-identical across
-/// stages. It recomputes the whole total from the player's live counters every
-/// tick and clamps it to <c>[0, 65535]</c> before storing it, so a score is never
-/// banked and a round that takes a player below zero states zero
-/// (<c>docs/PROTOCOL.md</c>, "SETTLED 2026-07-27"; <c>docs/proto/inbound/mgo2_cmd_4390_c2s.ksy</c>).
+/// <c>ComputeScore</c> walks a table of <c>s8</c> coefficients, row = game rule,
+/// filled at runtime from the stage script's own directives: every gameplay stage's
+/// <c>proc 24</c> switches on <c>COM_svGetRule</c> and writes the rule's row as
+/// <c>[ede912] -score &lt;14 ints&gt;</c> plus a shorter <c>[adb9e7] -score</c> row, and
+/// the rows are identical across the stages. The client's table is wider than the
+/// fourteen values the script writes, but **column 0 is the kill value and column 1
+/// the death value** in both, which is what this file uses. It recomputes the whole
+/// total from the player's live counters every tick and clamps it to
+/// <c>[0, 65535]</c> before storing it, so a score is never banked and a round that
+/// takes a player below zero states zero (<c>docs/PROTOCOL.md</c>, "SETTLED
+/// 2026-07-27"; <c>docs/proto/inbound/mgo2_cmd_4390_c2s.ksy</c>;
+/// <c>docs/analysis/gameplay-data-functions.md</c> §3).
 /// </para>
 /// <para>
 /// <b>Only the two counters this host measures are here.</b> The other
@@ -36,13 +40,22 @@ public static class MatchScoreRulesUtils
     public const int ScoreCeiling = 65_535;
 
     /// <summary>
-    /// Kills coefficient per rule, indexed by the rule id the room states: DM
-    /// <c>0</c>, TDM <c>1</c>, Rescue <c>2</c>, Capture <c>3</c>, Sneaking
-    /// <c>4</c>, Base <c>5</c>, Team Sneaking <c>7</c>. Rule <c>6</c> is emitted by
-    /// no stage script and scores nothing, and neither do <c>8</c>, <c>9</c> and
-    /// <c>10</c>.
+    /// Kills coefficient per rule, indexed by the rule id the room states. The
+    /// values are **column 0** of the stage script's own <c>-score</c> row for that
+    /// rule: DM <c>3</c>, TDM <c>3</c>, Rescue <c>7</c>, Capture <c>3</c>, Sneaking
+    /// <c>3</c>, Base <c>3</c>, Bomb <c>3</c>, Team Sneaking <c>5</c>, SDM <c>7</c>,
+    /// SCAP <c>3</c>; <c>8</c>–<c>11</c>, <c>13</c>–<c>15</c> state none.
     /// </summary>
-    private static readonly int[] KillsCoefficients = [3, 3, 7, 5, 3, 3, 0, 5, 0, 0, 0];
+    /// <remarks>
+    /// <b>Capture's 5 and Bomb's 0 were wrong, and Bomb's "no stage script emits
+    /// 6" was too.</b> `n001a`'s <c>proc 24</c> has a <c>case 6</c> — Bomb — and
+    /// writes <c>3 0 3 0 0 5 -5 7 5 0 1 0 0 2</c>, whose column 0 is <c>3</c>; the
+    /// Capture row is <c>3 0 3 0 0 5 -5 7 5 0 1 0 7 2</c>, also <c>3</c>. The other
+    /// rows this file already carried agree with the script's column 0, which is
+    /// why only those two moved.
+    /// </remarks>
+    private static readonly int[] KillsCoefficients =
+        [3, 3, 7, 3, 3, 3, 3, 5, 0, 0, 0, 0, 7, 0, 0, 0, 3];
 
     /// <summary>
     /// Deaths coefficient per rule, indexed the same way. A rule whose row states
@@ -50,7 +63,8 @@ public static class MatchScoreRulesUtils
     /// clamped to zero by <see cref="Score"/> — the measurement behind a scoreless
     /// round wiring <c>0</c> against a raw negative.
     /// </summary>
-    private static readonly int[] DeathsCoefficients = [-2, -2, 0, 0, -2, 0, 0, 0, 0, 0, 0];
+    private static readonly int[] DeathsCoefficients =
+        [-2, -2, 0, 0, -2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     /// <summary>
     /// Headshot coefficient per rule. DM and TDM pay <c>1</c> on the reference host:

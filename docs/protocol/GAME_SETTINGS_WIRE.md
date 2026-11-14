@@ -82,7 +82,7 @@ SNE LOBBY       round 0..14  rule 15 SCAP then 7×14 SNE            maps Blood B
 ```
 
 Rule ids are the replay decoder's set (`MODE_NAMES` in `rpdt.js`): `0` DM, `1`
-TDM, `2` RES, `3` CAP, `4` SNE, `5` BASE, `6` BOMB, `7` TSNE, `12` SDM, `13`
+TDM, `2` RES, `3` CAP, `4` SNE, `5` BASE, `6` BOMB, `7` TSNE, `8` COOP, `9` TRA, `10` OFFICER_TRA, `11` CLANROOM, `12` SDM, `13`
 INTERVAL, `15` SCAP, `16` RACE. Map ids are its `MAPS` table: `1` `n001a` Forest
 Firefight … `15` `n015a` Outer Outlet, `17` `sm_dd` Desert Duel, `19` Perilous
 Palace, `22` `n020a` Eastern Europe. Both tables were checked against the game's

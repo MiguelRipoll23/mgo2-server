@@ -17,15 +17,21 @@ namespace Mgo2Server.GameplayServer.Bots;
 public static class BotBurstUtils
 {
     /// <summary>
-    /// Rounds one burst holds, drawn in the shares <c>working-server-v2</c> writes them:
-    /// of its 173 runs of hits on one victim 134 are a single hit, 29 are two and 8 are
-    /// three, so a bot mostly fires once and the old fixed three was a bot that never did.
+    /// Rounds one burst holds.
     /// </summary>
+    /// <remarks>
+    /// <b>The capture's own shares are 134 single hits, 29 pairs and 8 triples</b>
+    /// of 173 runs in <c>working-server-v2</c>, which the first cut of this wrote
+    /// as 0.78 / 0.17 / 0.05. A bot that mostly fires one round reads as a bot that
+    /// cannot shoot, so the shares are raised to 0.45 / 0.35 / 0.20 at the
+    /// operator's call: the ceiling is still the capture's three, and the long
+    /// silence behind a burst is still <see cref="BotSimulationService.ShotIntervalMilliseconds"/>.
+    /// </remarks>
     /// <returns>One, two or three.</returns>
     public static int RollRounds()
     {
         var roll = Random.Shared.NextDouble();
-        return roll < 0.78 ? 1 : roll < 0.95 ? 2 : 3;
+        return roll < 0.45 ? 1 : roll < 0.80 ? 2 : 3;
     }
 
     /// <summary>

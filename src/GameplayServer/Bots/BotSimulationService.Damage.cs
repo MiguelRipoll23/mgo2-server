@@ -227,10 +227,16 @@ public sealed partial class BotSimulationService
         }
 
         body.LastStaminaRecoveryMilliseconds = now;
+        // A body on its feet creeps back; only a knocked-out one refills at the
+        // capture's eighteen a second (ActorStaminaUtils.StandingRecoveryPerSecond).
+        var knockedOut = body.Sleeping || body.StunnedUntilMilliseconds > now;
         var recovery = ActorStaminaUtils.Recover(
             body.Stamina,
             body.StaminaRecoveryCredit,
-            elapsed);
+            elapsed,
+            knockedOut
+                ? ActorStaminaUtils.RecoveryPerSecond
+                : ActorStaminaUtils.StandingRecoveryPerSecond);
         body.Stamina = recovery.Stamina;
         body.StaminaRecoveryCredit = recovery.Credit;
     }

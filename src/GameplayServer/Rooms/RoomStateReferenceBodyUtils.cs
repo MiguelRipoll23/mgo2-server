@@ -88,16 +88,39 @@ internal static class RoomStateReferenceBodyUtils
     internal static int TicketAllotment => StateFields17To27[FirstTeamTicketOffset];
 
     /// <summary>
+    /// Body <c>0x58</c>–<c>0x64</c>: the reference fields, with the round's own
+    /// ticket allotment in place of the reference pair at <c>0x5a</c>/<c>0x5e</c>.
+    /// </summary>
+    /// <remarks>
+    /// The ticket panel counts down from this pair, so a body that states the
+    /// capture's forty while the round's own rule states fifty leaves the panel
+    /// holding a number the per-death records never move
+    /// (<see cref="MatchRecords.TeamTicketBodiesUtils"/>).
+    /// </remarks>
+    /// <param name="teamTickets">The round's ticket allotment, both sides.</param>
+    /// <returns>The bytes the body carries.</returns>
+    internal static byte[] StateFields17To27For(int teamTickets)
+    {
+        var fields = (byte[])StateFields17To27.Clone();
+        var allotment = (byte)Math.Clamp(teamTickets, 0, byte.MaxValue);
+        fields[FirstTeamTicketOffset] = allotment;
+        fields[SecondTeamTicketOffset] = allotment;
+        return fields;
+    }
+
+    /// <summary>
     /// Body <c>0x65</c>–<c>0x86</c>: state field 29, seventeen rule times in seconds.
     /// </summary>
     /// <remarks>
     /// Elements 0 to 7 are the eight standard rules out of the room's timer bank;
-    /// elements 8 to 11 are the room family's own four words (here <c>0xd003</c>,
-    /// <c>0xaca0</c>, <c>0x2400</c> and <c>0x0022</c>) whose meaning is open; elements 12
-    /// to 16 are the times of rules 12 to 16 by rule id (SDM, INTERVAL, ANEST, SCAP,
-    /// RACE), which the lobby states in a reply this server never receives. The working
-    /// capture's vector is below, and a live room's first eight elements come from its
-    /// bank instead.
+    /// elements 8 to 11 are the bank's slots for rule ids 8 to 11, which no shipped rule
+    /// uses, so they carry no room fact: they are the only four of the seventeen that are
+    /// not whole minutes, they are identical in every room that sets them while their
+    /// neighbours move per room, and the two known variants differ in one bit
+    /// (<c>0x2400</c> against <c>0x2800</c>); elements 12 to 16 are the times of rules 12
+    /// to 16 by rule id (SDM, INTERVAL, ANEST, SCAP, RACE), which the lobby states in a
+    /// reply this server never receives. The working capture's vector is below, and a live
+    /// room's first eight elements come from its bank instead.
     /// </remarks>
     internal static readonly ushort[] TimerVector =
     [

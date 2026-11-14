@@ -120,7 +120,10 @@ public static class MatchStateBodiesUtils
     /// <c>state[45..48]</c>. Two of the seven are constants of the layout; this
     /// one is at an offset a capture moves, so it is written here.
     /// </summary>
-    public const byte StateTwentyFour = 0x18;
+    /// <remarks>Twenty-four is the room's session slot count
+    /// (<c>RoomRosterService.SessionSlotCount</c>, the table the client's lookup
+    /// <c>0x26d5a8</c> walks); see <c>docs/protocol/STATE_VECTOR.md</c> §5.</remarks>
+    public const byte StateSessionSlotCount = 0x18;
 
     /// <summary>
     /// The 0xfe the four bytes at <c>state[53..56]</c> carry, and which the
@@ -175,11 +178,11 @@ public static class MatchStateBodiesUtils
 
     /// <summary>
     /// Value the two objective holders and the two capture clocks carry while
-    /// nothing has claimed them: <c>0x1e</c> at <c>state[40..43]</c> in all three
-    /// blocks `briefing-then-solo-game` writes. The parser's <c>HOLDER_NONE</c> is
-    /// <c>0xff</c>, which is its own reading rather than the recording's.
+    /// nothing has claimed them: <c>0xff</c>, the parser's <c>HOLDER_NONE</c>, which
+    /// a live working server writes. `briefing-then-solo-game` had <c>0x1e</c> —
+    /// slot 30 of a 24-slot table, naming nobody.
     /// </summary>
-    public const byte StateUnclaimed = 0x1e;
+    public const byte StateUnclaimed = 0xff;
 
     /// <summary>
     /// Value a state field carries before the host writes it, which the parser
@@ -298,9 +301,9 @@ public static class MatchStateBodiesUtils
         // state[14..37], the long zero run up to the first twenty-four.
         (14, 24, 0x00),
         // state[38..39], twenty-four.
-        (38, 2, StateTwentyFour),
+        (38, 2, StateSessionSlotCount),
         // state[45..48], the other five twenty-fours.
-        (45, 4, StateTwentyFour),
+        (45, 4, StateSessionSlotCount),
         // state[49..52], zero again, between the twenty-fours and the sentinels.
         (49, 4, 0x00),
         // state[53..56], the sentinel run — the same byte the destabilizer coding
@@ -343,7 +346,7 @@ public static class MatchStateBodiesUtils
         vector[StateObjectiveHolderSecondIndex] = StateUnclaimed;
         vector[StateCaptureClockFirstIndex] = StateUnclaimed;
         vector[StateCaptureClockSecondIndex] = StateUnclaimed;
-        vector[StateSecondCountdownIndex] = StateTwentyFour;
+        vector[StateSecondCountdownIndex] = StateSessionSlotCount;
         for (var index = StateCountdownSeedIndex; index <= StateCountdownSeedLastIndex; index++)
         {
             vector[index] = StateCountdownSeed;

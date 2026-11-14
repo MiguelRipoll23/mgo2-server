@@ -14,8 +14,20 @@ public static class ActorStaminaUtils
     /// <summary>Stamina a living actor opens with, and the bar's ceiling.</summary>
     public const short MaximumStamina = 250;
 
-    /// <summary>Stamina recovered per second, in points.</summary>
+    /// <summary>Stamina a knocked-out actor recovers per second, in points.</summary>
     public const int RecoveryPerSecond = 18;
+
+    /// <summary>
+    /// Stamina a standing actor recovers per second, in points.
+    /// </summary>
+    /// <remarks>
+    /// <b>Every run of <c>cqc.pcapng</c> is a body that is down, so eighteen a
+    /// second is the rate of a knocked-out actor standing back up.</b> A player who
+    /// took a stun round and kept walking recovered the bar in seconds under that
+    /// rate, which is the fast recovery the stun pistol showed. On its feet the bar
+    /// creeps, and only a sleep or a stun refills it quickly.
+    /// </remarks>
+    public const int StandingRecoveryPerSecond = 6;
 
     /// <summary>
     /// What one recovery tick leaves behind.
@@ -51,14 +63,19 @@ public static class ActorStaminaUtils
     /// <param name="credit">Fraction carried from the last tick.</param>
     /// <param name="elapsedMilliseconds">Time since the last tick.</param>
     /// <returns>The stamina and the new carried fraction.</returns>
-    public static Recovery Recover(short stamina, long credit, long elapsedMilliseconds)
+    /// <param name="perSecond">Points a second this body recovers at.</param>
+    public static Recovery Recover(
+        short stamina,
+        long credit,
+        long elapsedMilliseconds,
+        int perSecond = RecoveryPerSecond)
     {
         if (stamina >= MaximumStamina)
         {
             return new(stamina, 0);
         }
 
-        credit += elapsedMilliseconds * RecoveryPerSecond;
+        credit += elapsedMilliseconds * perSecond;
         var recovered = (int)(credit / 1000);
         if (recovered <= 0)
         {

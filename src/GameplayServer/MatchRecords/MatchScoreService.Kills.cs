@@ -64,7 +64,7 @@ public sealed partial class MatchScoreService
             {
                 victim.Deaths++;
                 Queue(victimSlot, MatchScoreboardFramesUtils.DeathsBit, victim.Deaths);
-                QueueScore(victimSlot, victim);
+                QueueScore(victimSlot, victim, force: true);
             }
 
             // A death ends the victim's run, and the reference restates the

@@ -176,11 +176,14 @@ vector's use by the client remains unproven. The builder continues to preserve
 the reference values for these entries rather than inventing a source mapping.
 
 The corpus of fifteen bodies backs both halves of that: index 14 is `0` in exactly
-the ten rooms that state an INTERVAL or SCAP time other than 300 and 300 in the
-other five, so the five entries belong to the room and not to the format, while
-elements 8–11 are a per-room-family constant (`53251 44192 9216 34`, `10240` in
-place of `9216`) with no reading as time. `docs/analysis/rotation-payload-corpus.md`
-§1 lists all seven distinct vectors.
+the ten rooms that state an INTERVAL or SCAP time other than 300 and 300 inthe other five, so the five entries belong to the room and not to the format, while
+elements 8–11 (`0x75`–`0x7c`) are the slots for rule ids 8–11, which no shipped rule
+uses (`53251 44192 9216 34`, `10240` in place of `9216`, or zero). They carry no room
+fact and no reading as time: they are identical in every room that sets them across
+nine hosts while their neighbours move per room, they are the only four of the
+seventeen that are not whole minutes, and the two variants differ in one bit
+(`0x2400`/`0x2800`). `docs/analysis/rotation-payload-corpus.md` §1 lists all seven
+distinct vectors and the readings that fail.
 
 ### The room's switches and its level band
 

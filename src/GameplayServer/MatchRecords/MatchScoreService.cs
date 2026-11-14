@@ -93,7 +93,7 @@ public sealed partial class MatchScoreService(
             var row = RowOf(slot);
             row.Deaths++;
             Queue(slot, MatchScoreboardFramesUtils.DeathsBit, row.Deaths);
-            QueueScore(slot, row);
+            QueueScore(slot, row, force: true);
             logger.LogDebug(
                 "Player in slot {Slot} is dead; the round's scoreboard now reads {Deaths} death(s)",
                 slot,
@@ -250,7 +250,14 @@ public sealed partial class MatchScoreService(
     /// </remarks>
     /// <param name="slot">Key in the room's 24-entry player table.</param>
     /// <param name="row">The player's counters, already updated.</param>
-    private void QueueScore(byte slot, Row row)
+    /// <param name="force">
+    /// Whether to state the total even when it has not moved. The reference does
+    /// this with a death: its victim record is <c>40 01</c> — deaths, then the
+    /// score — and it carries a <c>00 00</c> the victim already held
+    /// (<c>working-server-log</c> t+12.375), so a row whose death moved and whose
+    /// clamped total did not is still told what it now scores.
+    /// </param>
+    private void QueueScore(byte slot, Row row, bool force = false)
     {
         if (roundState.RoundSettings is not { } settings)
         {
@@ -258,7 +265,7 @@ public sealed partial class MatchScoreService(
         }
 
         var score = MatchScoreRulesUtils.Score(settings.Rule, row.Kills, row.Deaths, row.Headshots, row.Combo);
-        if (row.ScoreKnown ? row.Score == score : score == 0)
+        if (!force && (row.ScoreKnown ? row.Score == score : score == 0))
         {
             return;
         }

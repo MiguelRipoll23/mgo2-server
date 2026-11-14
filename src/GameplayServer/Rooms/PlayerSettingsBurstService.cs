@@ -173,7 +173,7 @@ public sealed partial class PlayerSettingsBurstService(
         bool autoAssignTeams = true)
     {
         var rotationBody = rotation is null
-            ? RecordedRotationBody()
+            ? RecordedRotationBody(playerCount, RoomStateReferenceBodyUtils.TicketAllotment)
             : RoomRotationBody(rotation, roomState, currentRotationIndex, playerCount, autoAssignTeams);
         return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
     }
@@ -205,6 +205,7 @@ public sealed partial class PlayerSettingsBurstService(
             currentRotationIndex,
             playerCount,
             ruleTimers,
+            RoomRotationPayloadUtils.TeamTickets(rotation, currentRotationIndex),
             autoAssignTeams);
         return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
     }
@@ -280,8 +281,11 @@ public sealed partial class PlayerSettingsBurstService(
         new(UdpCommandConstants.InGameControl, [ClosingControlByte]);
 
     /// <summary>The working capture's settings body, built field by field.</summary>
-    /// <returns>The captured reference values.</returns>
-    public static byte[] RecordedRotationBody() => RoomRotationPayloadUtils.BuildReferenceBody();
+    /// <param name="playerCount">The room's population, host included.</param>
+    /// <param name="teamTickets">The round's ticket allotment, both sides.</param>
+    /// <returns>The captured reference values, with the room's own population.</returns>
+    public static byte[] RecordedRotationBody(byte playerCount, int teamTickets) =>
+        RoomRotationPayloadUtils.BuildReferenceBody(playerCount, teamTickets);
 
     /// <summary>
     /// A settings body with this room's rotation and the state of the room it is
@@ -329,8 +333,10 @@ public sealed partial class PlayerSettingsBurstService(
             state,
             currentRotationIndex,
             playerCount,
+            RoomRotationPayloadUtils.TeamTickets(rotation, currentRotationIndex),
             autoAssignTeams);
     }
+
 
     /// <summary>
     /// Builds a settings-record body: the type byte, the slot, and zeros for the

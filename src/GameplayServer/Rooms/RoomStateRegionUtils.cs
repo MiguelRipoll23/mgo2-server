@@ -133,10 +133,11 @@ internal static class RoomStateRegionUtils
     /// <remarks>
     /// Every captured room writes one of <c>0</c>, <c>180</c>, <c>240</c> or <c>300</c>
     /// and holds it across all of that room's own bodies
-    /// (<see cref="RoomMinuteLimit"/>), so it is a limit the room set on something the
-    /// wire does not name. The screen's minutes are <c>Round Time</c> and
-    /// <c>Briefing Time</c>, and the gameplay bytes cannot separate the two. Field 4 is
-    /// the only other offset here that never leaves a minute boundary.
+    /// (<see cref="RoomMinuteLimit"/>). It is the **briefing time**: the builder that
+    /// fills the object reads the settings block's <c>+68</c> — the field
+    /// <c>mgo2_cmd_4313_s2c.ksy</c> names <c>briefing_time</c>, <c>[CONFIRMED]</c> — and
+    /// multiplies it by 60 into a two-byte slot. The round's own times are the bank at
+    /// <c>0x65</c>; field 4 is the only other offset that never leaves a minute boundary.
     /// </remarks>
     private const RoomMinuteLimit MinuteLimitSeconds = RoomMinuteLimit.ThreeMinutes;
 
@@ -305,13 +306,11 @@ internal static class RoomStateRegionUtils
 
     /// <summary>Body <c>0x57</c>–<c>0x64</c>: state fields 13 and 17 to 27, the room's own.</summary>
     /// <param name="body">The body being built.</param>
-    internal static void WriteStateFields17To27(List<byte> body)
+    /// <param name="teamTickets">The round's ticket allotment, both sides.</param>
+    internal static void WriteStateFields17To27(List<byte> body, int teamTickets)
     {
         body.Add(SelectorFlag);
-        foreach (var value in RoomStateReferenceBodyUtils.StateFields17To27)
-        {
-            body.Add(value);
-        }
+        body.AddRange(RoomStateReferenceBodyUtils.StateFields17To27For(teamTickets));
     }
 
     /// <summary>Body <c>0x65</c>–<c>0x86</c>: state field 29, seventeen rule times in seconds.</summary>
@@ -343,9 +342,9 @@ internal static class RoomStateRegionUtils
             WriteUInt16LittleEndian(body, minutes * 60);
         }
 
-        // Elements 8-11 are the room family's own four words; elements 12-16 are the
-        // times of rules 12-16, which the lobby states in a reply this server never
-        // receives, so a live room writes zero and the reference 300 respectively.
+        // Elements 8-11 are the slots for rule ids 8-11, which no shipped rule uses and
+        // which are no room fact; elements 12-16 are rules 12-16's times from a reply
+        // this server never receives, so a live room writes zero and the reference 300.
         for (var index = 0; index < 4; index++)
         {
             WriteUInt16LittleEndian(body, 0);

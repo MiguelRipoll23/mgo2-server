@@ -204,9 +204,11 @@ public sealed partial class BotSimulationService(
         {
             body.TargetSlot = target.SessionSlot;
             // The state record names the point the hit lands on (BotShotUtils).
-            body.AimX = target.X - BotShotUtils.ImpactOffset;
-            body.AimY = target.Y + BotShotUtils.BodyHeight;
-            body.AimZ = target.Z - BotShotUtils.ImpactOffset;
+            // The aim point wanders: a bot that wrote the same coordinates every beat
+            // was the perfect shot no capture shows (BotAimJitterUtils).
+            body.AimX = target.X - BotShotUtils.ImpactOffset + BotAimJitterUtils.Horizontal();
+            body.AimY = target.Y + BotShotUtils.BodyHeight + BotAimJitterUtils.Vertical();
+            body.AimZ = target.Z - BotShotUtils.ImpactOffset + BotAimJitterUtils.Horizontal();
 
             // The trigger, not the hit: the capture holds the firing byte on seven
             // beats in ten while an enemy is in range and lands hits far less often.

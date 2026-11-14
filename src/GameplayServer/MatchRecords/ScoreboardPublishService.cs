@@ -221,11 +221,21 @@ public sealed class ScoreboardPublishService(
         // panel counts down from what the room states, forty, while the bank's
         // fifty is the kill limit the round ends on. Counting from fifty wrote a
         // count the panel was not holding, so it never moved.
-        var allotment = RoomStateReferenceBodyUtils.TicketAllotment;
+        // The room's own allotment, which is what the settings body states at
+        // 0x5a/0x5e (RoomStateRegionUtils.WriteStateFields17To27): the panel holds
+        // that number and a record below it is a count it can draw. The reference
+        // pair is only the fallback for a round whose entry states no limit.
+        var allotment = roundState.RoundSettings?.Tickets ?? RoomStateReferenceBodyUtils.TicketAllotment;
         var bodies = new List<byte[]>(2);
         foreach (var team in score.TeamScores(await lobbySlots.ReadAsync()))
         {
-            if (publishedDeaths.TryGetValue(team.Team, out var held) && held == team.Deaths)
+            // A side no death has touched is a side at zero, and zero is where the
+            // cache starts: reading a missing entry as "already published" is what
+            // wrote both sides on the round's first death of `myserver.pcapng`
+            // (`0x08` 39 and `0x40` 40 at t+31.66), a record per side no capture of
+            // the reference sends.
+            var held = publishedDeaths.TryGetValue(team.Team, out var published) ? published : 0;
+            if (held == team.Deaths)
             {
                 continue;
             }

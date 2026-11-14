@@ -62,12 +62,49 @@ across all fifteen: element 14 is `0` in exactly the ten rooms that state an
 INTERVAL or SCAP time other than 300, and 300 in the other five — so element 14
 (ANEST) is not a constant but moves with the extended rules a room configures.
 
-Elements 8–11 are **not** timers: every room that sets them writes the same four
-words (`53251 44192 9216 34`, or `10240` in place of `9216`) and the seven rooms
-whose payload is otherwise all-default write zero. A count of 53 251 seconds or of
-44 192 has no reading as a rule time, and no rule in any captured rotation owns
-those minutes. What they carry stays **[U]**; the corpus only says they are a
-per-room-family constant and not a clock.
+Elements 8–11 (`0x75`–`0x7c`) are **not** timers, and not the room's either. They
+are the four slots for **rule ids 8–11**, the ids no rotation in the corpus uses,
+while the ids on both sides are the ones that do: element `k` is rule id `k`
+throughout the vector's two inhabited stretches, `0`–`7` and `12`–`16`. Four
+readings of the values fail on the numbers themselves — as seconds they are
+14 h 47 m, 12 h 16 m, 2 h 33 m and 34 s; as operations-clock units (480 a minute,
+125 ms) 110.9, 92.1, 19.2 and 0.07 minutes. No rule owns any of them.
+
+They are also not room data. The same eight bytes appear in **every** body that
+sets them — eleven rooms on nine hosts, with different slots, populations, rules
+and maps — while each neighbouring element of the very same vector moves per room,
+and the seven all-default rooms write zero. What holds still across rooms, hosts
+and sessions while moving with no room option belongs to the client build, so the
+four slots are what the client's bank carries for the rule ids it does not ship,
+written through without scaling — which is also why they are the only four of the
+seventeen that are not whole minutes.
+
+**The four ids have names.** The client's own rule table,
+`game/stage/<stage>/scenerio/resources.gcl` (the same block in `n001a`, `n010a`,
+`n013a` and `lobby`), lists the seventeen in id order — DM, TDM, RESCUE, CAP,
+SNEAK, BASE, BOMB, TSNE, **COOP, TRA, OFFICER_TRA, CLANROOM**, SDM, INTERVAL,
+ANEST, SCAP, RACE — and every id this corpus already knows lands where it should
+(`0` DM, `1` TDM, `2` RESCUE, `3` CAP, `4` SNEAK, `5` BASE, `6` BOMB, `7` TSNE,
+`12` SDM, `13` INTERVAL, `14` ANEST, `15` SCAP, `16` RACE). So ids 8–11 are
+**Co-op, Training, Officer Training and Clan Room**: the four modes the client
+ships a name for and no rotation can hold, which is why their slots carry no room
+time — a mode without a round has no timer to configure.
+
+The single part that does move is one bit:
+`0x2400` in the five bodies of the `mgo2-game1` family, `0x2800` in the four of
+the other two families and in `.pcapngs/pcapng3` (the one capture in this
+checkout that sets them, whose vector is `900 300 420 240 480 300 420 300 53251
+44192 10240 34 900 1200 0 300 300`). A bit that follows a capture family follows
+a code path, not a setting.
+
+No copy of the eight bytes exists in the game files or in `MGO2.ELF`: searching
+the install and the ELF for `03 d0 a0 ac`, `00 24 22 00`, `00 28 22 00` and the
+big-endian pair `d0 03 ac a0` finds them in speech and sprite archives only,
+never in the ELF or a table resource, so the words are assembled rather than
+read from the disc. The reading is **[I]**: the slots carry no meaning a room can
+state. Its discriminator is a capture from a second client build — if the four
+words change with the client while the rest of the vector keeps changing with the
+room, the slots are build data and the question closes.
 
 ## 2. The bytes `BuildCore` writes as literals, and what the corpus says about each
 
@@ -215,7 +252,12 @@ appeared anywhere in the gameplay wire.
 **Field 8 narrows to `Briefing Time`, and stops short of closing.** The builder loads
 the block's `+68` minutes, multiplies by 60 and stores the result as a two-byte value
 four bytes before the seventeen-word timer bank — the shape field 8 has, and the only
-minutes-as-seconds slot in the object. What keeps it an inference is the repack: that
+minutes-as-seconds slot in the object. **That block field is the settings map's
+`briefing_time`** — `[CONFIRMED]` in `mgo2_cmd_4313_s2c.ksy`, wire `0x0ec`, block
+`+68` — so the field's name is the client's own and not a guess between the two
+minutes the Create Game screen shows. The round's own times are the seventeen-word
+bank at `0x65`, filled from the block's `+100`–`+164`. What stays open is the repack
+from object `0x64` to body `0x53`, not the name. What keeps it an inference is the repack: that
 `×60` lands at object `0x64`, and no traced write places object `0x64` at body `0x53`.
 If it does, `180`, `240` and `300` are three-, four- and five-minute briefings; the
 corpus already leans that way — three minutes is an ordinary briefing and a short round

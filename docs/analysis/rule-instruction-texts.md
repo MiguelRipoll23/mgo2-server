@@ -215,6 +215,21 @@ Both are shown when the round's third triple byte carries `2` or `4`
 (`docs/analysis/rotation-payload-corpus.md` §2), which is the radio those two facts
 describe from opposite ends: the client's text here, the reader at `0x6A9948` there.
 
+## The result banners sit in the same table
+
+The stage resource table that carries these panels also carries the text a round
+ends on. `game/stage/<stage>/scenerio/resources.gcl` declares it once, at ids
+`3432`–`3477`, in the same five languages and the same
+English-then-French-then-German-then-Italian-then-Spanish order:
+`MISSION COMPLETE!` (`3432`), `RED TEAM WON!` (`3437`), `BLUE TEAM WON!`
+(`3442`), `DRAW!` (`3447`), `RED GOAL` / `BLUE GOAL` (`3452`/`3457`),
+`SNAKE WON!` (`3462`), `SNAKE LOST!` (`3467`), `ROUND SET` (`3472`) and
+`GAME SET` (`3477`). Every one of the twenty-one gameplay stages carries the
+block at those ids; the lobby, boot and init stages do not, because no round is
+played in them. The wire coding those banners are drawn for is `state[2]` and
+`state[3]` of the operations state block, read in
+[`gameplay-data-functions.md`](gameplay-data-functions.md) §5b.
+
 ## What this settles, and what it does not
 
 * **It settles the wording.** The sentences are now read from the client's own data

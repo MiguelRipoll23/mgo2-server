@@ -54,10 +54,13 @@ public static class RoomStateRecordBodiesUtils
     /// t+11.579, t+13.379 and again in the round's opening run at t+147.650, byte
     /// for byte, and <c>mgo2-game2</c> writes other points on the stage it plays
     /// (<c>docs/analysis/briefing-room-state.md</c> §1). The client hands the payload
-    /// to its stage object's kind-<c>0x03</c> node, and the port names that module
-    /// <c>sv_custom_point</c> — one point, one action
-    /// (<c>docs/analysis/roster-record-kinds.md</c> §4 and §7). What the point states
-    /// is still **[U]**, so it is the recording's.
+    /// to its stage object's kind-<c>0x03</c> node, whose module is
+    /// <c>.\online\supervisor\cp\sv_custom_point.cc</c>: its own strings log
+    /// <c>"action %d"</c>, <c>"over action %d"</c> and <c>"over custom point %d"</c> and
+    /// it bounds-checks the two collections separately, so the payload is **one custom
+    /// point of the room's stage and one action on it**, the point written twice
+    /// (<c>docs/analysis/roster-record-kinds.md</c> §4 and §7). What the point and the
+    /// action state is still **[U]**, so it is the recording's.
     /// </remarks>
     /// <returns>The record body.</returns>
     public static byte[] RoomStateRecord() =>

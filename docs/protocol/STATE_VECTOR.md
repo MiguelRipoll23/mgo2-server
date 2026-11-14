@@ -209,8 +209,8 @@ reporting. The earlier reading as a set of the room's own objectives is cleared.
 | offset | what the captures do |
 | --- | --- |
 | `state[11..13]` | `01 01 04` in one capture, zero in the other five — the one round-specific triple |
-| `state[40..41]` | the two objective holders; `0x3f` for a dropped objective, otherwise `value & 0x3f` is the slot and `& 0x40` a flag. `briefing-then-solo-game` writes `0x1e` in all three of its blocks, which is the value this host writes; the parser's own table reads `0xff` as "nobody" |
-| `state[42..43]` | the two capture clocks, `0xff` in every non-Capture room and `0x1e` in `briefing-then-solo-game` — the same four bytes as the holders above, which is why this host writes one value at `state[40..43]` |
+| `state[40..41]` | the two objective holders; `0x3f` for a dropped objective, otherwise `value & 0x3f` is the slot and `& 0x40` a flag. The parser's table reads `0xff` as "nobody", and a live working server writes `ff ff ff ff` across `state[40..43]` (`working-server-log`, clock `0x03dd`); `briefing-then-solo-game` writes `0x1e`, which is **slot 30 of a 24-slot table** and so names nobody. This host wrote `0x1e` and now writes `0xff` |
+| `state[42..43]` | the two capture clocks, `0xff` in every non-Capture room and `0x1e` in `briefing-then-solo-game` — the same four bytes as the holders above, which is why this host writes one value at `state[40..43]`. **A wrong holder is the first thing to check when a client's score HUD stays empty**: `myserver` carried `1e 1e 1e 1e` through a whole 5-minute round while the live working server carried `ff ff ff ff` |
 | `state[44]` | `0x18` in five captures, `1` in the sixth — moves with the seed at `state[57..60]` |
 | `state[57..84]` | seeded `0x3c` in five captures and `0x28` in the sixth; 4 bytes in five, 28 in the 30-minute room |
 | `state[87..88]` | the round clock, little-endian, 125 ms units |
@@ -231,6 +231,72 @@ vector's index 0. [V]** The port's builder appends the `count` bytes at
 `briefing-then-solo-game`'s opening `02 2a 04 1e 1e 1e 1e` names `state[40..43]`
 — the four unclaimed bytes of the table above.
 
+**The result write is the one place the naming and the offset disagree.**
+`joined-when-red-team` writes `02 02 01 02` and `02 02 02 02 02` at its round
+ends, and §3 below and `BRIEFING_FLOW.md` §4 read those as `state[2]` and
+`state[2..3]` — the direct base. Under the `offset − 2` reading just stated they
+name `state[0]` and `state[0..1]` instead. **Both readings are of the same
+bytes**, and neither the captures nor the client's table say which byte a banner
+is drawn from; so what to send is settled and what to call it is not (§6). Our
+host writes the capture's own body either way.
+
+## 5b. The clock is a plain count, and the score is not in it
+
+**The record is one `u16` and nothing else.** Opcode `0x01` is the opcode, then
+two bytes: `MGO2.ELF` `P2P_PublishRoundClock` (`0x754848`) opens a cursor, appends
+the byte `1`, appends the two bytes the word pointer at `param_1 + 0x104` points
+at, sends through `param_1 + 4`, and remembers the value it sent at
+`param_1 + 0x108`. There is no mask, no flag byte and no second field — the
+record is a copy of one word, and the word is the same one the state vector
+carries at `state[87..88]` little-endian (§5).
+
+**Measured, over five rooms:** `2400` (5:00), `3360` (7:00), `3840` (8:00 twice)
+and `14400` (30:00), dropping `32` units every four seconds — 8 a second, 480 a
+minute, 125 ms a unit — to zero, which is the round's end. The values are whole
+minutes of the rule's own time, which is the property that rules a packed field
+out: a mode bitfield would not land on `480 × minutes` in five rooms of five
+different rules.
+
+**Kills and deaths do not travel here, and the record that carries them was
+measured against the feed.** They are the scoreboard delta — `0b <slot + 1>
+<21-byte mask> <values>` on the roster identifiers — with **bit 5 kills** and
+**bit 6 deaths**. In `working-server-log` every one of the first six kill feeds
+(`09 <killer> <victim>`) has its delta on the wire in the **same millisecond**:
+
+| feed | delta | what it carries |
+| --- | --- | --- |
+| `t+12.375 09 07 02` | `t+12.375` slot `2` | deaths (bit 6) |
+| `t+20.961 09 10 14` | `t+20.961` slot `16` | kills, headshots, score |
+| `t+34.308 09 02 10` | `t+34.308` slot `2` | deaths, score |
+
+The killer's slot takes bit 5 and the victim's bit 6, both at clock values in the
+`0x09xx` range — the first at `t+12.3` of a 5-minute round. A room whose score
+starts counting late is therefore not reading a masked clock: the clock carries
+no flag, and the delta that carries a kill was on the wire at that instant.
+
+**What our own host's capture shows instead.** `myserver.pcapng`'s clock opens on
+`0x0954` (2 388, 4:58.5) — the capture begins mid-round — and passes `0x0780`
+(4:00) at `t+65.193`. Its kill/death deltas are present from `t+31.7` and are
+*byte-identical across consecutive frames* (`t+31.664`, `32.282`, `32.850`,
+`33.466`: slot `5` mask `40 00 00`, slot `10` mask `20 01 00`) with the right
+slots for their feeds — so the values are on the wire before any 4:00 crossing,
+and what to look at when a client shows none is the stream's repeat and the
+room's own rule time, not the clock's encoding.
+
+**The T‑03:55 reading does not survive the measurement.** The hypothesis was that
+a room whose settings say four minutes opens its clock at five, so the client only
+starts counting when the count falls to the rule's own `4:00` — and our clock does
+cross `4:00` 65 s in. Two measurements refuse it. First, **no measured room opens
+above its rule**: the clock is the rule's own minutes × 480 in all five rooms of
+five rules above, and `myserver`'s room states 300 s in its own body while its
+clock runs the same `300 × 480` (`2 388` is merely the first value the capture
+sees, because it begins mid-round), so there is no one-minute lead to fall through. Second, **nothing on the wire gates the count at 4:00**: in
+`myserver` the first kill feed (`09 06 64 00 09 f7`) arrives at `t+18.383` with the
+clock still at `2 388`, **79 of its 95 feeds** arrive while the clock is above
+`1 920`, and the clock only reaches `4:00` at `t+76.066`; `working-server-log`
+feeds from `t+12.3` at clock `0x09xx`. A scoreboard that starts late is therefore
+a client display matter, not something the clock or the feed withholds.
+
 ## 6. Open
 
 * **`state[0..1]` and `state[4..6]`** — one decided match. §3.
@@ -242,8 +308,16 @@ vector's index 0. [V]** The port's builder appends the `count` bytes at
   2. The seed value (`0x3c` against `0x28`) moves with `state[44]` (`0x18` against
   `1`) in the same capture, so the two are read together and neither is written
   as a constant.
-* **What `0x18` and `0x3c` mean.** Seven bytes of twenty-four and a seed of
-  sixty, in every room, of every rule. §2.
+* **What `0x18` is: the client's player-slot count.** The entry table is twenty-four
+  records of `0x74` bytes at `instance + 0xD4`, and every walker loops twenty-four
+  times (`P2P_RemovePlayerEntry` `0x26FC80`, `P2P_PublishPlayerRecord` `0x2753C8`,
+  the run opener `0x270E00`). Six bytes of 24 in the state block are that number
+  [I]; nothing on the wire names the field. **`0x3c` is still open** — sixty in
+  every room of every rule. §2.
+* **Which vector index the round result sits at.** Every capture writes
+  `02 02 01 02`, so the body is settled; whether that offset names `state[2]`
+  (direct base) or `state[0]` (`offset − 2`) is still open, because both readings
+  are of the same bytes. §5.
 * **Whether the 128-unit clock is the result screen's or a briefing's.** §3,
   §4.
 * **`0x04`, `0x1d`, `0x1f`, `0x22`, `0x26`** — present in the captures, not read.

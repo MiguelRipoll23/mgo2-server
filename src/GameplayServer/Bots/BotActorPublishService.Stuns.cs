@@ -192,9 +192,15 @@ public sealed partial class BotActorPublishService
     }
 
     /// <summary>
-    /// Refills every stunned player's stamina at the measured rate, and writes
-    /// the vitals record once a second while it climbs.
+    /// Refills every damaged player's stamina and writes the vitals record once a
+    /// second while it climbs.
     /// </summary>
+    /// <remarks>
+    /// <b>Only a knocked-out player refills at the capture's eighteen a second.</b>
+    /// A player on its feet creeps at <see cref="ActorStaminaUtils.StandingRecoveryPerSecond"/>,
+    /// so a stun round no longer hands the bar back in seconds while the player
+    /// keeps playing; the fast rate is the one a sleeping or stunned body has.
+    /// </remarks>
     /// <param name="generation">Identifier set of the round being played.</param>
     /// <param name="now">Monotonic milliseconds.</param>
     /// <returns>One vitals record per player whose bar is due.</returns>
@@ -222,10 +228,15 @@ public sealed partial class BotActorPublishService
                 if (elapsed > 0)
                 {
                     humanStaminaTickedAt[slot] = now;
+                    var knockedOut = humanStunnedUntil.GetValueOrDefault(slot) > now
+                        || humanSleepUntil.GetValueOrDefault(slot) > now;
                     var recovery = ActorStaminaUtils.Recover(
                         stamina,
                         humanStaminaCredit.GetValueOrDefault(slot),
-                        elapsed);
+                        elapsed,
+                        knockedOut
+                            ? ActorStaminaUtils.RecoveryPerSecond
+                            : ActorStaminaUtils.StandingRecoveryPerSecond);
                     humanStaminaCredit[slot] = recovery.Credit;
                     if (recovery.Stamina != stamina)
                     {
@@ -242,9 +253,9 @@ public sealed partial class BotActorPublishService
                 // The reference writes a knocked-out player's vitals continuously
                 // as stamina climbs, just as it does for a bot; a standing player
                 // keeps the once-a-second cadence.
-                var knockedOut = humanStunnedUntil.GetValueOrDefault(slot) > now
+                var isKnockedOut = humanStunnedUntil.GetValueOrDefault(slot) > now
                     || humanSleepUntil.GetValueOrDefault(slot) > now;
-                humanStaminaDue[slot] = knockedOut ? now : now + 1000;
+                humanStaminaDue[slot] = isKnockedOut ? now : now + 1000;
                 records.Add(new UdpMessage(
                     PlayerVitalsFramesUtils.IdentifierFor(generation, slot),
                     3,
