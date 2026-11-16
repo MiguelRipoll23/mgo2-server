@@ -21,7 +21,7 @@ public sealed class GetGameListHandler(
     private const int GameElementSize = 55;
 
     /// <summary>Player cap the browser's entry can carry.</summary>
-    private const int MaximumPlayers = 18;
+    private const int MaximumPlayers = 16;
 
     /// <summary>Bit marking a password-locked room.</summary>
     private const int HostPasswordBit = 0b1;
@@ -219,7 +219,7 @@ public sealed class GetGameDetailsHandler(
     private const int PlayerNameLength = 16;
 
     /// <summary>Maximum number of player entries.</summary>
-    private const int MaximumPlayers = 18;
+    private const int MaximumPlayers = 16;
 
     /// <summary>Number of rotation entries.</summary>
     private const int RotationRounds = 16;
@@ -311,7 +311,7 @@ public sealed class GetGameDetailsHandler(
         writer.WriteUInt8(0);
         writer.WriteUInt8(0);
         writer.WritePadding(16);
-        writer.WriteUInt8(game.MaximumPlayers);
+        writer.WriteUInt8(Math.Min(game.MaximumPlayers, MaximumPlayers));
         writer.WriteUInt8(roster.Count);
 
         // 0x0ec is the room's briefing, which is the minutes a client is told its
