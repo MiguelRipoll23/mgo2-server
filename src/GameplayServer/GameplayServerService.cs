@@ -32,6 +32,17 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly AccountService accountService;
     private readonly MatchService matchService;
     private readonly RoomRosterService roster;
+    private readonly MatchRecords.MatchRecordNumberingService numbering;
+
+    /// <summary>
+    /// The records each peer has not answered yet, which are the ones its stream cannot
+    /// move past.
+    /// </summary>
+    private readonly StreamRetransmitService retransmit;
+
+    /// <summary>The timed exchange a peer's answer measures, and the cadence it paces.</summary>
+    private readonly TimedExchangeService timedExchange;
+    private readonly RetransmitPacingService pacing;
     private readonly RoomMemberAnnouncementService roomMembers;
     private readonly MatchRecords.MatchStartRunService matchStart;
     private readonly MatchRecords.MatchRoundStateService roundStates;
@@ -85,6 +96,10 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         accountService = serviceProvider.GetRequiredService<AccountService>();
         matchService = serviceProvider.GetRequiredService<MatchService>();
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
+        numbering = serviceProvider.GetRequiredService<MatchRecords.MatchRecordNumberingService>();
+        retransmit = serviceProvider.GetRequiredService<StreamRetransmitService>();
+        timedExchange = serviceProvider.GetRequiredService<TimedExchangeService>();
+        pacing = serviceProvider.GetRequiredService<RetransmitPacingService>();
         roomMembers = serviceProvider.GetRequiredService<RoomMemberAnnouncementService>();
         matchStart = serviceProvider.GetRequiredService<MatchRecords.MatchStartRunService>();
         roundStates = serviceProvider.GetRequiredService<MatchRecords.MatchRoundStateService>();
@@ -298,6 +313,8 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         // exchange from the run it is served.
         teamArrays.Forget(session.RemoteAddress);
         teamArrays.Forget(session.DialBack.ToString());
+
+        ForgetPeerPendingState(session);
 
         // The briefing state the peer reported goes with it. A ready state kept
         // for a player who has left would hold a round shut on somebody who is

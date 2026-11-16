@@ -77,9 +77,21 @@ public sealed class MatchRecordSequenceService(ILogger<MatchRecordSequenceServic
     /// and advances the stream past it.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// There is a take and no way to read a value without taking one, as in
     /// <see cref="Rooms.RoomRosterService"/>: a caller that read the counter and
     /// then wrote would write a value the record before it has already taken.
+    /// </para>
+    /// <para>
+    /// <b>The turn at <c>0xff → 0x00</c> is a plain wrap, with no repeat in front of
+    /// it.</b> A repeat looks like the way across and does the opposite: the client takes
+    /// an <c>0xff</c> only while it expects one — the reader compares the record's byte
+    /// to the stream's expected byte for equality — so a second repeat is refused and the
+    /// stream stops, and a guard that hands the repeat out again without clearing itself
+    /// emits <c>0xff</c> for the rest of the session.
+    /// `docs/analysis/ordinal-turn-repeat-deadlock.md` has the reader and the run that
+    /// measured it.
+    /// </para>
     /// </remarks>
     /// <param name="identifier">Identifier the record travels under.</param>
     /// <returns>The fourth byte the record takes.</returns>
@@ -123,26 +135,70 @@ public sealed class MatchRecordSequenceService(ILogger<MatchRecordSequenceServic
     }
 
     /// <summary>
-    /// Restarts a stream: its next record takes zero.
+    /// Opens a stream at zero, and only one that has not handed a value out yet.
     /// </summary>
     /// <remarks>
-    /// Called where the recorded host opens a stream of its own rather than
-    /// continuing one — a round opening its operations stream on the values its
-    /// run takes, a briefing opening the clock its peers are sent, or an empty
-    /// room starting a fresh roster exchange for its next join.
+    /// <para>
+    /// Called where the recorded host opens a stream of its own rather than continuing
+    /// one — a round opening its operations stream on the values its run takes, a
+    /// briefing opening the clock its peers are sent, or an empty room starting a fresh
+    /// roster exchange for its next join.
+    /// </para>
+    /// <para>
+    /// <b>A stream already counting is left counting, and that guard is not an
+    /// optimisation.</b> The peer's expectation only ever advances: it takes a stream's
+    /// records one after another and has no way to be told to go back
+    /// (<c>read_queued_p2p_message</c> drops on a mismatch). Measured on
+    /// <c>myserver.pcapng</c> — where this method rewound streams a live client was still
+    /// reading — the operations stream <c>0xa54</c> runs <c>00 01 02 03 02 03 03 01</c>,
+    /// only 14.3% of whose steps are +1, and <c>0x250</c> runs
+    /// <c>00 01 02 03 04 05 01 02</c> at 76.5% against the working capture's 98.2%. Every
+    /// value written after such a rewind is refused until the byte-wide counter comes
+    /// round again. A round that genuinely wants a fresh stream gets one from its
+    /// generation's identifier, whose low twelve bits differ and whose expectation on the
+    /// peer therefore starts at zero without this call.
+    /// </para>
     /// </remarks>
-    /// <param name="identifier">Identifier whose stream restarts.</param>
+    /// <param name="identifier">Identifier whose stream is opened at zero.</param>
     public void Restart(ushort identifier)
     {
         var stream = StreamOf(identifier);
         lock (gate)
         {
-            nextOrdinals.Remove(stream);
+            if (nextOrdinals.ContainsKey(stream))
+            {
+                logger.LogDebug(
+                    "The 0x{Stream:x3} record stream is already at 0x{Value:x2}; it keeps counting, because "
+                    + "the peer's expectation cannot be rewound",
+                    stream,
+                    nextOrdinals[stream]);
+                return;
+            }
         }
 
         logger.LogDebug(
-            "The 0x{Stream:x3} record stream restarts; its next record takes 0x00",
+            "The 0x{Stream:x3} record stream opens; its first record takes 0x00",
             stream);
+    }
+
+    /// <summary>
+    /// Restarts the streams a round opens, so each of them takes zero next.
+    /// </summary>
+    /// <remarks>
+    /// <b>The set restarts together, which is what the working host does.</b>
+    /// <see cref="MatchRecordGenerationUtils.OpenedStreams"/> is the operations stream
+    /// and the two item-box streams. Restarting only the operations stream leaves the
+    /// item boxes counting the previous round's values into this one, and a peer that
+    /// reads them by stream has no way to be told which round a value belongs to.
+    /// </remarks>
+    /// <param name="generation">The set the round or briefing opens.</param>
+    public void Restart(MatchRecordGenerationUtils generation)
+    {
+        ArgumentNullException.ThrowIfNull(generation);
+        foreach (var identifier in generation.OpenedStreams)
+        {
+            Restart(identifier);
+        }
     }
 
     /// <summary>

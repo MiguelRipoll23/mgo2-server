@@ -47,7 +47,12 @@ public sealed partial class RoomRosterService
     /// </para>
     /// </remarks>
     /// <returns>The fourth byte the record takes.</returns>
-    public byte TakeRunOrdinal() => sequences.Take(ExchangeIdentifier);
+    public byte TakeRunOrdinal()
+    {
+        var value = sequences.Take(ExchangeIdentifier);
+        logger.LogDebug("UDP: the roster exchange takes 0x{Ordinal:x2}", value);
+        return value;
+    }
 
     /// <summary>
     /// Opens the exchange's counter at a value, for a room whose join has just
@@ -69,5 +74,13 @@ public sealed partial class RoomRosterService
     /// </remarks>
     /// <param name="count">How many records the caller is about to write.</param>
     /// <returns>The values, in the order the records take them.</returns>
-    public byte[] TakeRunOrdinals(int count) => sequences.Take(ExchangeIdentifier, count);
+    public byte[] TakeRunOrdinals(int count)
+    {
+        var values = sequences.Take(ExchangeIdentifier, count);
+        logger.LogDebug(
+            "UDP: the roster exchange takes {Count} value(s): {Ordinals}",
+            count,
+            string.Join(", ", values.Select(value => $"0x{value:x2}")));
+        return values;
+    }
 }

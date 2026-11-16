@@ -35,9 +35,6 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <param name="roundState">The room's round, which says when one is playing and on which map.</param>
 /// <param name="matchSettings">This host's room settings, which name the map before a round opens.</param>
 /// <param name="roster">The room's roster, which hands out the run's ordinals.</param>
-/// <param name="sequences">
-/// The round's record sequences, which the kill feed takes its fourth byte from.
-/// </param>
 /// <param name="score">The host's own score, which a kill a bot lands feeds.</param>
 /// <param name="scoreboard">Publisher of the scoreboard a kill changes.</param>
 /// <param name="logger">Logger of this service.</param>
@@ -50,7 +47,6 @@ public sealed partial class BotActorPublishService(
     MatchRoundStateService roundState,
     MatchSettingsService matchSettings,
     RoomRosterService roster,
-    MatchRecordSequenceService sequences,
     MatchScoreService score,
     ScoreboardPublishService scoreboard,
     Rooms.TeamArrayService teamArrays,
@@ -209,10 +205,12 @@ public sealed partial class BotActorPublishService(
         var run = new List<RosterRecord>(seated.Count);
         foreach (var bot in seated)
         {
+            // Numbered at write, from the profile stream the announcement travels on:
+            // a state the writer drops before it goes out spends nothing.
             run.Add(new RosterRecord(
                 UdpCommandConstants.PlayerProfile,
                 BotRoundStateBodiesUtils.Build(bot.SessionSlot),
-                roster.TakeRunOrdinal()));
+                AutoNumbered: true));
         }
 
         await RosterRunSendUtils.SendAsync(context, run);

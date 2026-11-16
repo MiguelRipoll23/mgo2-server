@@ -106,6 +106,30 @@ public sealed class RosterAnswerService(ILogger<RosterAnswerService> logger)
     }
 
     /// <summary>
+    /// Drops a peer's held profile, because the peer has left.
+    /// </summary>
+    /// <remarks>
+    /// <b>The hold answers out of the context of the copy that armed it, and that context
+    /// belongs to a session that is gone.</b> Until the deadline it would write a roster to an
+    /// endpoint nothing is listening on — and on a rejoin it would take the returning client's
+    /// first profile for the re-send of the copy it already holds, answering a run built for the
+    /// session before. It is cancelled the way the re-send path cancels it, so the deadline's
+    /// own removal finds no key and returns without writing.
+    /// </remarks>
+    /// <param name="key">Endpoint the peer is filed under.</param>
+    public void Forget(string key)
+    {
+        lock (gate)
+        {
+            if (held.Remove(key, out var cancellation))
+            {
+                cancellation.Cancel();
+                cancellation.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
     /// Answers a held profile once the hold's deadline passes, unless the client's
     /// re-send took it first.
     /// </summary>

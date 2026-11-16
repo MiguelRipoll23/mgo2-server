@@ -120,28 +120,31 @@ public sealed record BeatFramePlan(
     /// none at this index.
     /// </summary>
     /// <remarks>
-    /// <b>The fourth byte is taken here and not passed in.</b> A clock record and a
-    /// control record are numbered on different streams — the round's operations
-    /// id and the room's exchange id — so the value is taken at the moment the
-    /// record is written, from the counter of the identifier it travels under
-    /// (<see cref="MatchRecordSequenceService"/>). Taking it for a frame that
-    /// carries no such insertion would spend a value the capture never writes.
+    /// <b>The fourth byte is stamped where the frame is written, not here.</b> A clock
+    /// record and a control record are numbered on different streams — the round's
+    /// operations id and the room's exchange id — and the frame that carries one is the
+    /// act that spends its value, so a beat that carries no insertion spends nothing.
+    /// The record is marked for numbering and the write path takes its value
+    /// (<see cref="MatchRecordSequenceService"/>).
     /// </remarks>
-    /// <param name="sequences">The stream counters the record's fourth byte comes from.</param>
+    /// <param name="sequences">Unused: the write path numbers the record.</param>
     /// <returns>The insertion record, or <c>null</c>.</returns>
     public MatchRecordFramesUtils.RecordMessage? Insertion(MatchRecordSequenceService sequences) =>
         InsertionKind switch
         {
+            // The insertion is marked for numbering, not handed a value: the frame
+            // that carries it is the one that spends it, and a frame the beat skips
+            // spends nothing.
             BeatInsertion.Operations => MatchRecordFramesUtils.OperationsInsertion(
                 Generation,
                 alternate: false,
-                sequences.Take(Generation.Operations),
-                RoundClockUnits),
+                0,
+                RoundClockUnits) with { AutoNumbered = true },
             BeatInsertion.OperationsClassBit => MatchRecordFramesUtils.OperationsInsertion(
                 Generation,
                 alternate: true,
-                sequences.Take(Generation.OperationsClassBit),
-                RoundClockUnits),
+                0,
+                RoundClockUnits) with { AutoNumbered = true },
 
             // The first recorded insertion is the zero-valued 40-byte frame
             // (hdr 0x8648), followed by the 100-valued 41-byte frame; preserve
@@ -153,7 +156,7 @@ public sealed record BeatFramePlan(
             // records that share it.
             BeatInsertion.Control => MatchRecordFramesUtils.ControlInsertion(
                 MatchRecordFramesUtils.SteadyControlBody(),
-                sequences.Take(Shared.Constants.UdpCommandConstants.InGameControl)),
+                0) with { AutoNumbered = true },
 
             _ => null,
         };
@@ -265,7 +268,7 @@ public sealed record BeatFramePlan(
     /// <summary>
     /// The records of this frame, in send order.
     /// </summary>
-    /// <param name="sequences">The stream counters the insertions' fourth bytes come from.</param>
+    /// <param name="sequences">Unused: the write path numbers the insertions.</param>
     /// <remarks>
     /// <b>The item-box group rides behind the rules pair.</b> game1's round-1
     /// item-box frames read <c>0a61 0a61 1a50 … 1a5a …</c> with the pair first,

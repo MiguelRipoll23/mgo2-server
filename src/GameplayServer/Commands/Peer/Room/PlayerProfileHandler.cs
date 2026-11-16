@@ -365,6 +365,8 @@ public sealed class PlayerProfileHandler(
             context.LocalPort,
             run.Count,
             answeringSlot);
+
+        // The join's roster is the one run whose close is seated in its first datagram:
         await RosterRunSendUtils.SendAsync(context, run);
 
         // The recorded host does not stop at the roster. 2.52 s later it writes

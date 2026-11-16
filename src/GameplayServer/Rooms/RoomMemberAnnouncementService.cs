@@ -65,6 +65,39 @@ public sealed class RoomMemberAnnouncementService(
         bool includeEndpointPairs,
         CancellationToken cancellationToken = default)
     {
+        // **A room with no other peer to write to spends no ordinals.** The four
+        // records are numbered on the roster exchange, and the exchange is the one
+        // stream the joining client is reading: a value taken and never written is
+        // a hole, and the client steps over no hole — it takes a record only while
+        // its byte is the one it expects (`read_queued_p2p_message`) — so every
+        // record behind the hole is refused and the join stops there. In a room of
+        // one, `Broadcast` reaches nobody (the bots have no session), which is what
+        // measured 2026-11-16: the announcement took 0x14-0x17, the roster run ended
+        // at 0x13 and the settings burst opened at 0x18, the client acknowledged the
+        // run's records and refused the burst. The run itself is numbered by
+        // position and takes nothing from the counter, so the seed the join leaves
+        // (`RoomRosterService.Register`) is only correct when nothing spends it
+        // between the run and the burst.
+        // Both endpoints are excluded, for the reason the other writers give: a peer is
+        // filed under the endpoint its profile arrived from, while the session answers at
+        // the one the peer advertised, and the broadcast leaves out the session either way.
+        var answering = context.Remote.ToString();
+        var dialBack = context.Session.DialBack.ToString();
+        var otherPeers = roster.Snapshot()
+            .Where(member => !member.IsBot
+                && member.RemoteAddress != answering
+                && member.RemoteAddress != dialBack)
+            .ToList();
+        if (otherPeers.Count == 0)
+        {
+            logger.LogDebug(
+                "UDP {LocalPort}: {RemoteAddress} is the room's only peer, so its join is announced to "
+                + "nobody and takes no exchange ordinal",
+                context.LocalPort,
+                context.Remote);
+            return;
+        }
+
         var records = new List<RosterRecord>(4)
         {
             new(

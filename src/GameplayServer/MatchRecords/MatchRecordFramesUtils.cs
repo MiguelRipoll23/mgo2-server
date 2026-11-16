@@ -234,8 +234,12 @@ public static class MatchRecordFramesUtils
     /// <summary>One message of the stream, with the fourth byte it travels with.</summary>
     /// <param name="Type">Message identifier.</param>
     /// <param name="Body">Message body.</param>
-    /// <param name="FourthByte">Value of the record's fourth byte.</param>
-    public sealed record RecordMessage(ushort Type, byte[] Body, byte FourthByte = 0);
+    /// <param name="FourthByte">Value of the record's fourth byte, when it is known at build.</param>
+    /// <param name="AutoNumbered">
+    /// Whether the fourth byte is stamped at write, from its identifier's stream
+    /// (<see cref="MatchRecordNumberingService"/>).
+    /// </param>
+    public sealed record RecordMessage(ushort Type, byte[] Body, byte FourthByte = 0, bool AutoNumbered = false);
     /// <summary>
     /// The beat frame: an optional head insertion, the vitals record once the
     /// capture's round reaches it, the rules-roster pair, and — behind the pair —
@@ -388,7 +392,9 @@ public static class MatchRecordFramesUtils
 
     /// <summary>Converts one stream message into the codec's message type.</summary>
     /// <param name="message">Message to convert.</param>
-    /// <returns>The message the frame builder serializes.</returns>
+    /// <returns>The message the frame builder serializes, still to be numbered if the builder asked for that.</returns>
     public static UdpMessage ToUdpMessage(RecordMessage message) =>
-        FrameBuilderUtility.MessageOf(message.Type, message.Body, message.FourthByte);
+        message.AutoNumbered
+            ? UdpMessage.CreateAutoNumbered(message.Type, message.Body)
+            : FrameBuilderUtility.MessageOf(message.Type, message.Body, message.FourthByte);
 }

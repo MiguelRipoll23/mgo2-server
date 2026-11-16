@@ -63,30 +63,11 @@ public static class FrameBuilderUtility
     public static IReadOnlyList<IReadOnlyList<UdpMessage>> SplitByFrameSize(
         IReadOnlyList<UdpMessage> messages)
     {
-        var groups = new List<IReadOnlyList<UdpMessage>>();
-        var group = new List<UdpMessage>();
-        var used = 0;
-
-        foreach (var message in messages)
-        {
-            var size = UdpCommandConstants.MessageHeaderSize + message.Body.Length;
-            if (group.Count > 0 && used + size > UdpCommandConstants.MaximumContentSize)
-            {
-                groups.Add(group);
-                group = [];
-                used = 0;
-            }
-
-            group.Add(message);
-            used += size;
-        }
-
-        if (group.Count > 0)
-        {
-            groups.Add(group);
-        }
-
-        return groups;
+        // **One packing rule, and it is the image's.** This used to add each record's own
+        // size and compare the sum with the content region, while the write path appended
+        // records under the four-byte alignment the image's buffer keeps — two figures for
+        // one decision, and the aligned one is the larger.
+        return Mgo2Server.Shared.Udp.OutboundDatagramBufferService.Split(messages);
     }
 
     /// <summary>Creates a message whose declared length matches its body.</summary>

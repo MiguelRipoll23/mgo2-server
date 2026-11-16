@@ -42,6 +42,25 @@ public sealed partial class MatchRoundStateService
     }
 
     /// <summary>
+    /// Forgets that a peer's run has been written, because the peer has left.
+    /// </summary>
+    /// <remarks>
+    /// <b>The flag is keyed by the session and read as "this peer's run already went out".</b>
+    /// A round's open and the room's reset both clear the whole set, but neither happens on a
+    /// drop: a client that starts its handshake over keeps its session object, so a flag left
+    /// behind makes the beat skip the wait for the run the rejoin is owed and start writing a
+    /// round's records ahead of it.
+    /// </remarks>
+    /// <param name="session">Session whose peer has left.</param>
+    public void Forget(PeerSession session)
+    {
+        lock (gate)
+        {
+            writtenRuns.Remove(session);
+        }
+    }
+
+    /// <summary>
     /// Waits for the run the beat's offsets are counted from to have been written
     /// to a peer.
     /// </summary>

@@ -139,10 +139,11 @@ public sealed partial class MatchStartRunService
     {
         try
         {
-            await context.Send(
-                generation.Operations,
-                MatchStateBodiesUtils.RoundStartStateWrite(),
-                sequences.Take(generation.Operations, 1)[0]);
+            // The value is not taken here: the record is marked for numbering and the
+            // write path stamps it, so a write that is not sent spends nothing.
+            await MatchRecordSendUtils.SendAsync(
+                context,
+                [new(generation.Operations, MatchStateBodiesUtils.RoundStartStateWrite(), AutoNumbered: true)]);
         }
         catch (Exception exception)
         {

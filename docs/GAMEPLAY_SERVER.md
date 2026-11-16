@@ -415,7 +415,7 @@ steps to the next entry of the room's rotation. It also clears the round's score
 | **the vitals each player last reported: health and stamina, kept per player and cleared when it leaves** | `PlayerVitalsHandler` → `PlayerVitalsService`, cleared by the session reaper |
 | **the round's score: a death when a player's health reaches zero, a kill and a death when a kill feed names one, and a side's total over the slots the room puts it on** | `PlayerVitalsHandler`/`OperationsStreamHandler` → `MatchScoreService`, reset when the round opens |
 | **the scoreboard each player's own numbers changed for** (`0b <slot+1> <21-byte mask> <values>` on the roster identifier) | `MatchScoreService` → `MatchScoreboardFramesUtils` → `ScoreboardPublishService` |
-| **the fourth byte of every session record: one counter per twelve-bit identifier, the class bits included, consumed in the order the records are written** | `MatchRecordSequenceService`, behind `RoomRosterService.TakeRunOrdinal` and read by `PlayerSettingsBurstService`, `MatchStartRunFramesUtils.BuildRun`, `TeamArrayService`, `ScoreboardPublishService`, the sparse phase's and the beat's controls, the round clock and the item-box group |
+| **the fourth byte of every session record: one counter per twelve-bit identifier, the class bits included, spent where the record is written** | `MatchRecordSequenceService` behind `MatchRecordNumberingService`, which the write path calls (`GameplayServerService.NumberAtWrite`) for every record built to be numbered there; `RoomRosterService.TakeRunOrdinal` remains the route for the records whose value is taken at build because they are written more than once — the roster run's positions, the scoreboard's copies, the confirmation run — and a record written again carries the byte it was first given |
 | **the briefing countdown** | `BriefingCountdownService`, `BriefingCountdownBodiesUtils`: the operations clock opened on 128 units, dropping 32 every four seconds and holding at zero from sixteen seconds in |
 | **the ready set while a briefing waits** | `JoinReportHandler` on every report, and `BriefingReadyPublishService` repeating the room's set every briefing tick until the round opens |
 | **how long each briefing writer sleeps, and that they share one period** | `MatchRoundStateService.BriefingTickMilliseconds` (2.35 s, measured: the reference writes the rules pair and the countdown in the same pass), read by the pair, the countdown and the ready set; `WaitBriefingTickAsync` ends the tick when the round opens, so no writer holds the beat behind a timer |
@@ -730,7 +730,8 @@ record should be sent.
 | `MatchRecords/MatchScoreService.cs`, `MatchScoreService.Teams.cs`, `MatchScoreService.Wins.cs`, `MatchScoreRulesUtils.cs`, `MatchScoreboardFramesUtils.cs`, `ScoreboardPublishService.cs` | the round's score (computed from the rule's table over the host's own kills and deaths), the per-side totals, the winning side's rounds-won step at each round's end, the scoreboard body, and its publication |
 | `MatchRecords/MatchResultService.cs` | the round's winner, the kill-limit check, and the result write — the round's, with the game's when the round decides it |
 | `Commands/Peer/Gameplay/OperationsStreamHandler.cs` | the operations stream's two records: the kill feed, and the score it feeds, and a client's briefing ready state, which opens the round |
-| `MatchRecords/MatchRecordSequenceService.cs` | the fourth byte of every session record: one counter per twelve-bit identifier, restarted where a round or a briefing opens a stream of its own |
+| `MatchRecords/MatchRecordSequenceService.cs` | the fourth byte of every session record: one counter per twelve-bit identifier, restarted where a round or a briefing opens the three streams it opens together (operations, item boxes, item-box state) |
+| `MatchRecords/MatchRecordNumberingService.cs` | the same byte spent at write: a record that has never been written takes the next value of its stream, a record written again keeps the byte it was first given |
 | `MatchRecords/MatchStartRunService.cs`, `MatchStartRunService.Runs.cs` | the round opener, its briefing deadline and its clock, and the per-peer run watcher |
 | `MatchRecords/BriefingCountdownService.cs`, `BriefingCountdownBodiesUtils.cs` | the briefing's countdown to each peer, and the 128-unit clock body it writes |
 | `MatchRecords/BriefingReadyPublishService.cs` | the room's ready set repeated to a peer for as long as its briefing waits |
@@ -868,3 +869,31 @@ record should be sent.
   briefing time is up. The second half is what the room's deadline is set to (§2.4),
   and what a client does at the end of its own timer in a room that has not opened a
   round is not captured.
+
+## The timed exchange, and the cadence it paces
+
+A record whose identifier carries the `0x8000` class bit opens a round-trip
+measurement, and its answer closes it. Both halves are `decode_p2p_datagram`
+(`0x2666c8`), and `TimedExchangeService` is the implementation:
+
+- **The stamp.** A sequenced record carrying the bit is stamped with the time base
+  when it is written (`session + 0x18`; a received one is stamped at `session + 0x1a`),
+  with its fourth byte copied to `session + 0x55` and its handle to `session + 0x20`.
+  The image does this only while `P2P_SessionTickNumber()` is under `200`; this host's
+  analogue is the session's inbound frame counter.
+- **The answer.** Same identifier with `0x4000` set, the same fourth byte, a one-byte
+  body that is not `0xff`. `P2P_ElapsedMillisecondsSince` gives the elapsed
+  milliseconds, the answer's byte is subtracted, and the remainder lands at
+  `session + 0xc2`. That byte is the peer's own duration, which is why the exchange is
+  timed at all: the wire carries the peer's clock, not this host's.
+- **What the margin buys.** A remainder of `600` ms or less is a peer keeping up and
+  changes nothing. Above it, the image either sets `session[5] |= 0x20` (remainder
+  under `0x3e9`) or shrinks the interval at `session[0x24]` by two `750/1000` steps,
+  clamped to `16 000` of its unit. Here the flag is `RetransmitPacingService`'s fast
+  cadence (50 ms, the receive path's own age) and the shrink floors at 16 ms. The
+  default interval is the recorded host's 0.6 s delta cadence, 700 ms.
+
+Every `0x8000` record in the working captures is answered with exactly one body byte
+(`0x9001` → `0xd001`, `0x92de` → `0xd2de`). The record's *own* body is never read by
+either branch, so what it carries is not part of the measurement — the timing rides on
+the fourth byte and the answer alone.

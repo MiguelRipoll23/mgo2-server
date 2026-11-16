@@ -198,18 +198,28 @@ public static class UdpCommandConstants
     public const ushort CounterMask = 0x7fff;
 
     /// <summary>
-    /// First record identifier read under the in-game framing. A record below
-    /// this is a tick record, whose length byte counts the body plus the
-    /// attribute class; a record at or above it is a session record, whose
-    /// length byte is the body length. Both share the wire and the header
-    /// shape, and the identifier is what tells them apart.
+    /// Boundary between the game's own tick traffic and this host's session
+    /// records, used to decide what is relayed and what is answered.
     /// </summary>
     /// <remarks>
-    /// Established from a live dedicated-server game
-    /// (docs/protocol/UDP_GAME_CAPTURE.md §2): reading every length as a body
-    /// length walks 291 of 19018 frames to their last byte, reading every
-    /// length as body+1 walks 17423, and partitioning on this threshold walks
-    /// 18728.
+    /// <para>
+    /// <b>This is not the codec's framing rule any more.</b>
+    /// <c>MessageCodecUtility.ReadBodyLength</c> reads the identifier's class bits
+    /// (<c>RecordClassBits.Sequenced</c> and <c>RecordClassBits.ExtendedLength</c>),
+    /// because the threshold is wrong for records it would step one byte too far through:
+    /// on thirty working captures (354 455 frames, 408 identifiers, 2 854 346 records)
+    /// eighteen identifiers at or above this value carry no <c>0x10</c> bit — 0x889f,
+    /// 0x88e5, 0x8859, 0x8863 and fourteen others — and 0x68bd and 0xe702 declare the
+    /// sixteen-bit length, which a threshold cannot express.
+    /// </para>
+    /// <para>
+    /// The value is kept for the gameplay decisions that partition the same way: the
+    /// relay branch in <c>GameplayServerService.FrameDispatch</c> and the acknowledgement
+    /// rule in <c>PeerAcknowledgementUtils</c>. It was established from a live
+    /// dedicated-server game (docs/protocol/UDP_GAME_CAPTURE.md §2): reading every length
+    /// as a body length walks 291 of 19018 frames to their last byte, reading every length
+    /// as body+1 walks 17423, and partitioning on this threshold walks 18728.
+    /// </para>
     /// </remarks>
     public const int TickRecordThreshold = 0x1000;
 

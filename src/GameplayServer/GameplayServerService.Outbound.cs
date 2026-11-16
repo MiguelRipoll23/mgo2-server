@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
+using Mgo2Server.Shared.Udp;
 using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.Logging;
 
@@ -94,13 +95,12 @@ public sealed partial class GameplayServerService
     /// exchange it reads.
     /// </para>
     /// <para>
-    /// <b>Together, but only as far as a datagram reaches.</b> A frame past
-    /// <see cref="UdpCommandConstants.MaximumDatagramSize"/> is dropped by the
-    /// client whole, so a run that does not fit is written as consecutive frames
-    /// under that cap, in order, each on its own counter
-    /// (<see cref="FrameBuilderUtility.SplitByFrameSize"/>). The whole run is
-    /// written under the session's one gate, so no other write can land between
-    /// the frames of a run.
+    /// <b>Together, but only as far as a datagram reaches.</b> The records are appended to
+    /// the datagram under construction while the next one's aligned size still fits, and the
+    /// rest start the next frame, in order, each on its own counter — the image's own rule
+    /// (<c>append_udp_datagram_to_send_buffer</c>, <c>0x2696d8</c>, reproduced by
+    /// <see cref="OutboundDatagramBufferService"/>). The whole run is written under the
+    /// session's one gate, so no other write can land between the frames of a run.
     /// </para>
     /// </remarks>
     /// <param name="session">Session to write through.</param>
@@ -120,14 +120,49 @@ public sealed partial class GameplayServerService
             return;
         }
 
+        // A record the peer has not answered is a hole in its stream, and the peer takes
+        // a stream's records only in order: the window's re-sends are put in front of
+        // this write so the frame carries them in the order the peer reads them.
+        messages = retransmit.NoteWriting(session, messages);
+
+        // The fourth byte is stamped here, where the record is written, and not by
+        // the builder that made it: a record that is built and then not written —
+        // a frame the beat skips, a feed the writer drops — spends nothing.
+        messages = NumberAtWrite(messages);
+
+        // A record carrying the timed class opens an exchange whose answer says how far
+        // behind the peer is, and that margin is what paces this peer's re-sends.
+        timedExchange.NoteWritten(session, messages);
+
         lock (session.OutboundGate)
         {
-            foreach (var group in FrameBuilderUtility.SplitByFrameSize(messages))
+            // The image's own packing: each record appended while its aligned size still fits,
+            // the rest starting the next datagram (`append_udp_datagram_to_send_buffer`).
+            foreach (var group in OutboundDatagramBufferService.Split(messages))
             {
                 SendFrame(session, group);
             }
         }
     }
+
+    /// <summary>
+    /// Stamps the fourth byte of every record that was built to be numbered at
+    /// write, from the stream its identifier is counted on, and leaves the rest
+    /// alone.
+    /// </summary>
+    /// <remarks>
+    /// <b>A value and the record that carries it are the same act.</b> A builder
+    /// that took its own value could take one for a record that never left — a
+    /// control the beat skipped, a kill feed for a slot nobody holds — and the
+    /// stream would then have spent a value its peer never saw, so the next record
+    /// arrives at the wrong byte. Taking here, in write order, makes the two one
+    /// step, and a record written a second time carries the byte it was first given
+    /// (<see cref="MatchRecordNumberingService"/>).
+    /// </remarks>
+    /// <param name="messages">Records of one write, in order.</param>
+    /// <returns>The records, numbered where they asked to be.</returns>
+    private IReadOnlyList<UdpMessage> NumberAtWrite(IReadOnlyList<UdpMessage> messages) =>
+        numbering.Number(messages);
 
     /// <summary>
     /// Writes one group of messages as one datagram on the session's next
@@ -154,6 +189,38 @@ public sealed partial class GameplayServerService
             foreach (var message in messages)
             {
                 session.NoteSent(message.Type, message.Flags);
+            }
+
+            // Every record of every frame, at the level a run is read at. Without this the
+            // only writes visible at Debug are the roster stream's, so a join that stalls
+            // cannot be told from a join whose records are simply not logged.
+            logger.LogDebug(
+                "[{LogPrefix}] OUT {RemoteAddress} frame {Counter} carries {Count} record(s): {Records}",
+                LogPrefix,
+                session.DialBack,
+                counter,
+                messages.Count,
+                string.Join(
+                    ", ",
+                    messages.Select(message =>
+                        $"0x{message.Type:x4}/{message.Flags:x2} ({message.Body.Length}B)")));
+
+            // The roster stream's writes are logged with their identifiers, because every
+            // scoreboard, ticket and array record rides it: a value the peer never answers
+            // can only be found by putting what was written beside what was acknowledged.
+            // A stream that has spent a value it never wrote refuses everything until its
+            // counter comes round to the missing byte, which is minutes at this rate.
+            foreach (var message in messages)
+            {
+                if (MatchRecords.MatchRecordSequenceService.StreamOf(message.Type) == 0x001)
+                {
+                    logger.LogDebug(
+                        "[{LogPrefix}] OUT {RemoteAddress} roster write 0x{MessageType:x4} ordinal 0x{Ordinal:x2}",
+                        LogPrefix,
+                        session.DialBack,
+                        message.Type,
+                        message.Flags);
+                }
             }
             logger.LogTrace(
                 "[{LogPrefix}] OUT {RemoteAddress} building frame counter={Counter}, compression=uncompressed, " +

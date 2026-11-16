@@ -221,14 +221,16 @@ public sealed partial class MatchStartRunService(
             return false;
         }
 
-        // The round opens its own operations stream. The run's three records take
-        // the first values and the beat's clocks go on from there — the recorded
-        // run carries 00 01 02 and its beat 03 — and the briefing's clock, which
-        // wrote under the same identifier, is behind this point. A round whose
-        // generation is the other one opens a stream of its own, because the
-        // sibling bit is inside the keyed twelve
+        // The round opens its own streams. The run's three records take the first
+        // values of the operations stream and the beat's clocks go on from there —
+        // the recorded run carries 00 01 02 and its beat 03 — and the briefing's
+        // clock, which wrote under the same identifier, is behind this point. The
+        // item-box pair restarts with it, because the working host opens the group
+        // as one act (<see cref="MatchRecordGenerationUtils.OpenedStreams"/>). A
+        // round whose generation is the other one opens streams of its own, because
+        // the sibling bit is inside the keyed twelve
         // (<see cref="MatchRecordSequenceService.StreamOf"/>).
-        sequences.Restart(generation.Operations);
+        sequences.Restart(generation);
 
         // The round's score starts empty: the previous round's kills and deaths
         // are not this one's, and the scoreboard is a per-round board.
@@ -280,5 +282,28 @@ public sealed partial class MatchStartRunService(
             round.TimeLimitMinutes,
             settings.BriefingTimeMinutes);
         return round;
+    }
+
+    /// <summary>
+    /// Forgets a peer's entry, whether or not the run that answers it was ever written.
+    /// </summary>
+    /// <remarks>
+    /// <b>The note outlives a run nobody wrote.</b> The worker drops its own peer's note in its
+    /// `finally`, which only a peer whose run it reached ever gets to
+    /// (<see cref="MatchStartRunService.Runs"/>): a peer reaped inside the entry's dwell leaves
+    /// `entered` behind, and that set is keyed by the session object. A client that starts its
+    /// handshake over is handed the same object back
+    /// (<see cref="GameplayServerService.ReopenHandshake"/>), so its next echo is read as the
+    /// duplicate of an entry this host still holds — <see cref="OnRoomEntry"/> returns
+    /// <c>false</c> and the run the client waits for is never written.
+    /// </remarks>
+    /// <param name="session">Session whose peer has left.</param>
+    public void ForgetPeer(PeerSession session)
+    {
+        lock (gate)
+        {
+            entered.Remove(session);
+            ForgetEntry(session);
+        }
     }
 }

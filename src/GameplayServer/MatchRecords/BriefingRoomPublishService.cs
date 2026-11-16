@@ -51,10 +51,6 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </remarks>
 /// <param name="roster">The room's roster, whose count is what the count record carries.</param>
 /// <param name="roundState">The room's round, whose opening ends the publication.</param>
-/// <param name="sequences">
-/// The stream counters a session record's fourth byte comes from: the room's
-/// count is one of those and takes its own stream's next value.
-/// </param>
 /// <param name="lobbySlots">
 /// The room's players, by the key each holds in its 24-entry player table: every
 /// player is announced in a state blob of its own.
@@ -67,7 +63,6 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class BriefingRoomPublishService(
     RoomRosterService roster,
     MatchRoundStateService roundState,
-    MatchRecordSequenceService sequences,
     LobbySlotService lobbySlots,
     MatchStartRunService matchStart,
     ILogger<BriefingRoomPublishService> logger)
@@ -363,10 +358,10 @@ public sealed partial class BriefingRoomPublishService(
             count,
             generation.RoomCount);
 
-        await context.Send(
-            generation.RoomCount,
-            MatchRecordBodiesUtils.RoomCount((byte)count),
-            sequences.Take(generation.RoomCount));
+        // Numbered at write, from the room count's stream.
+        await MatchRecordSendUtils.SendAsync(
+            context,
+            [new(generation.RoomCount, MatchRecordBodiesUtils.RoomCount((byte)count), AutoNumbered: true)]);
         return count;
     }
 }

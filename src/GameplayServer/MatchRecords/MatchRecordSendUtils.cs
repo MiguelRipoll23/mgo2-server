@@ -30,6 +30,10 @@ public static class MatchRecordSendUtils
             return;
         }
 
+        // A record marked for numbering cannot be numbered here: this is the path for a
+        // context without a batching delegate, and every context this host builds carries
+        // one (`GameplayServerService.MessageDispatch`), where the write path stamps the
+        // fourth byte (<see cref="MatchRecordNumberingService"/>).
         foreach (var message in messages)
         {
             await context.Send(message.Type, message.Body, message.Flags);

@@ -1,5 +1,6 @@
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
+using Mgo2Server.Shared.Udp;
 
 namespace Mgo2Server.Shared.Utils;
 
@@ -48,9 +49,19 @@ public static class MessageCodecUtility
         while (offset + UdpCommandConstants.MessageHeaderSize <= buffer.Length)
         {
             var type = BinaryUtility.ReadUInt16LittleEndian(buffer, offset);
-            var declaredLength = buffer[offset + 2];
+            var extended = RecordEntryFramingUtils.DeclaresExtendedLength(type);
+            var sequenced = RecordEntryFramingUtils.DeclaresSequenced(type);
+            var declaredLength = extended
+                ? BinaryUtility.ReadUInt16LittleEndian(buffer, offset + 2)
+                : buffer[offset + 2];
             var bodyLength = ReadBodyLength(type, declaredLength);
-            if (bodyLength < 0 || offset + UdpCommandConstants.MessageHeaderSize + bodyLength > buffer.Length)
+
+            // The fourth header byte is the record's place in its stream when the
+            // identifier declares the sequenced class, and the first byte of the body
+            // when it does not; a record declaring the sixteen-bit length carries its
+            // ordinal one byte later, because its length takes two bytes.
+            var headerSize = UdpCommandConstants.MessageHeaderSize + (extended && sequenced ? 1 : 0);
+            if (bodyLength < 0 || offset + headerSize + bodyLength > buffer.Length)
             {
                 // A length that runs past the end means the region is not walking
                 // under the framing this record claims, and everything after it
@@ -58,10 +69,10 @@ public static class MessageCodecUtility
                 break;
             }
 
-            var flags = buffer[offset + 3];
-            var bodyStart = offset + UdpCommandConstants.MessageHeaderSize;
+            var flags = buffer[offset + headerSize - 1];
+            var bodyStart = offset + headerSize;
 
-            messages.Add(new UdpMessage(type, declaredLength, flags, buffer[bodyStart..(bodyStart + bodyLength)].ToArray()));
+            messages.Add(new UdpMessage(type, (byte)Math.Min(declaredLength, byte.MaxValue), flags, buffer[bodyStart..(bodyStart + bodyLength)].ToArray()));
             offset = bodyStart + bodyLength;
         }
 
@@ -69,21 +80,36 @@ public static class MessageCodecUtility
     }
 
     /// <summary>
-    /// Reads a record's length byte under the framing its identifier selects.
+    /// Reads a record's body length under the class its identifier declares.
     /// </summary>
     /// <remarks>
-    /// Two framings share this wire and the fourth header byte means different
-    /// things in each. A session record counts the body alone; a tick record
-    /// counts the body plus the attribute class, which is why its body is one
-    /// byte shorter than the byte says. Reading every record the session way
-    /// desynchronises a frame at its first tick record - see
-    /// docs/protocol/UDP_GAME_CAPTURE.md §2.
+    /// <para>
+    /// <b>The class bits decide, not the identifier's size.</b> A record whose identifier
+    /// declares <see cref="RecordClassBits.Sequenced"/> spends its fourth header byte on its
+    /// place in the stream, so its declared length is the body alone. A record that does not
+    /// declare it has no such byte: the fourth byte is the body's first, and the declared
+    /// length covers it, which is why this host's four-byte header reads one byte less than
+    /// the byte says.
+    /// </para>
+    /// <para>
+    /// <b>Measured on the working captures: the old threshold is wrong for eighteen
+    /// identifiers.</b> Partitioning on <c>type &lt; 0x1000</c>
+    /// (<see cref="UdpCommandConstants.TickRecordThreshold"/>) instead of on the class bit
+    /// reads 0x889f, 0x88e5, 0x8859, 0x8863 and fourteen more as session records, when they
+    /// carry no <c>0x10</c> bit and so have no ordinal: the threshold then steps one byte too
+    /// far and loses the rest of the frame. Over 354 455 frames of thirty working captures,
+    /// 408 distinct identifiers and 2 854 346 records, 0x68bd and 0xe702 also declare the
+    /// sixteen-bit length, which the threshold rule cannot express at all.
+    /// </para>
     /// </remarks>
     /// <param name="type">Record identifier.</param>
-    /// <param name="lengthByte">The record's length byte.</param>
+    /// <param name="declaredLength">The record's length field, already read at its own width.</param>
     /// <returns>Body length in bytes.</returns>
-    public static int ReadBodyLength(ushort type, byte lengthByte) =>
-        type < UdpCommandConstants.TickRecordThreshold ? lengthByte - 1 : lengthByte;
+    public static int ReadBodyLength(ushort type, int declaredLength) =>
+        RecordEntryFramingUtils.DeclaresSequenced(type) ||
+        RecordEntryFramingUtils.DeclaresExtendedLength(type)
+            ? declaredLength
+            : declaredLength - 1;
 
     /// <summary>Serializes messages into a content region payload.</summary>
     /// <remarks>
@@ -119,15 +145,18 @@ public static class MessageCodecUtility
     }
 
     /// <summary>
-    /// Writes a record's length byte under the framing its identifier selects:
-    /// the body alone for a session record, the body plus the attribute class for
-    /// a tick record.
+    /// Writes a record's length byte under the class its identifier declares: the body
+    /// alone when the record is sequenced, the body plus the byte this host puts where the
+    /// ordinal would be when it is not.
     /// </summary>
     /// <param name="type">Record identifier.</param>
     /// <param name="bodyLength">Length of the record's body.</param>
     /// <returns>The value the length byte carries.</returns>
     public static byte WriteBodyLength(ushort type, int bodyLength) =>
-        type < UdpCommandConstants.TickRecordThreshold ? (byte)(bodyLength + 1) : (byte)bodyLength;
+        RecordEntryFramingUtils.DeclaresSequenced(type) ||
+        RecordEntryFramingUtils.DeclaresExtendedLength(type)
+            ? (byte)bodyLength
+            : (byte)(bodyLength + 1);
 
     /// <summary>
     /// Builds the packet-log bytes for a frame: the header word followed by the

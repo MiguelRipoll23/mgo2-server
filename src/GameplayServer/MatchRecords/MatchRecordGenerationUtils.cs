@@ -102,6 +102,38 @@ public sealed record MatchRecordGenerationUtils(
     public const ushort SiblingBit = 0x0800;
 
     /// <summary>
+    /// The streams a round opens: the operations stream its run and beat write, and
+    /// the two item-box streams its beat inserts into.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>They open together, because the item-box pair is one publication.</b> A group
+    /// carries two records under <see cref="ItemBox"/> and one under
+    /// <see cref="ItemBoxState"/> for each box, built as one act
+    /// (<see cref="ItemBoxFramesUtils.ItemBoxGroup"/>), so the two streams are numbered
+    /// from zero in the same breath.
+    /// </para>
+    /// <para>
+    /// <b>Measured on the largest capture</b> (<c>.pcapngs/pcapng2/pcapng2.pcapng</c>:
+    /// 526 s, 384 890 datagrams). Its session restarts once, at t+378.03 — <c>0xa50</c>
+    /// <c>0x17 → 0x00</c> and <c>0xa54</c> <c>0x01 → 0x00</c> ten milliseconds apart.
+    /// <c>0xa5a</c> is absent there because that boundary wrote no item-box state
+    /// record: a boundary where a stream is missing is a boundary with no publication
+    /// of it, not a stream that keeps counting. The round-end capture pairs them where
+    /// both publish — <c>0xa54</c> and <c>0xa5a</c> restart together at t+208.389 of
+    /// <c>rounded-ended-by-reaching-tickets-limit.pcapng</c>.
+    /// </para>
+    /// <para>
+    /// <b>Resetting a stream the reference is still counting is worse than resetting
+    /// one it is not.</b> The peer holds the value it is waiting on, so a byte taken back
+    /// to zero is refused until the stream has turned all the way round to it again —
+    /// which is why this is the set read off boundaries that publish a group, and not
+    /// every stream a run touches.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<ushort> OpenedStreams => [Operations, ItemBox, ItemBoxState];
+
+    /// <summary>
     /// The first round's set, as the capture's own first run and beat frames
     /// carry it.
     /// </summary>

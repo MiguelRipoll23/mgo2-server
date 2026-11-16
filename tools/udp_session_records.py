@@ -138,8 +138,26 @@ def main() -> None:
 
     if flags2_only:
         # The host's own session records, in order: (time, id, length, fourth byte).
+        #
+        # **Values are counted per stream, not read off the wire order.** The
+        # counter belongs to the stream — `0x1001` and the `0x9001` and `0xd001`
+        # records that answer it carry one run — so an identifier of another
+        # stream neither continues it nor breaks it, and a record that carries
+        # `0x00` is where the run is rather than a record to hide.
+        #
+        # **Wire order is not byte order.** The host writes one instant's records
+        # over two or three datagrams and the bytes are not ascending between
+        # them: at t+0.6 of `pcapng1` the host writes `0x00`, then `0x10` and
+        # `0x11`, and only then `0x01`. Read as a run, the listing therefore
+        # accused a working session of skipping nine values it wrote a moment
+        # later. What is counted here is what the capture shows: how many
+        # distinct values a stream wrote, and how many of its writes repeat a
+        # value it had already written. A missing value is printed only for a
+        # stream that filled most of the byte, where the absence is a fact and
+        # not a stream that is merely short.
         print(f"{'time':>10}  {'id':>6} {'len':>4} {'4th':>4}")
-        last = None
+        written: dict[int, set[int]] = defaultdict(set)
+        writes: dict[int, int] = defaultdict(int)
         for ts, local, remote, payload in datagrams:
             pair = frozenset((local, remote))
             at = ts - origins.get(pair, ts)
@@ -159,13 +177,32 @@ def main() -> None:
 
                 content = lzss_decompress(content)
             for message_type, length, flags2, _ in parse(content):
-                if message_type < 0x1000 or flags2 == 0:
+                if message_type < 0x1000:
                     continue
-                mark = ""
-                if last is not None and flags2 != last + 1:
-                    mark = f"  <- was 0x{last:02x}"
+                if only is not None and message_type != only:
+                    continue
+                stream = message_type & 0x0FFF
+                again = flags2 in written[stream]
+                writes[stream] += 1
+                written[stream].add(flags2)
+                mark = "  <- the stream had already written this value" if again else ""
                 print(f"{at:10.3f}  0x{message_type:04x} {length:4d} 0x{flags2:02x}{mark}")
-                last = flags2
+
+        for stream, values in sorted(written.items()):
+            repeated = writes[stream] - len(values)
+            print(
+                f"stream 0x{stream:03x}: {writes[stream]} write(s), "
+                f"{len(values)} distinct value(s), {repeated} repeat(s)"
+            )
+            if len(values) >= 200:
+                missing = [value for value in range(256) if value not in values]
+                if missing:
+                    print(
+                        f"    never written: {len(missing)} value(s), "
+                        f"first 0x{missing[0]:02x}"
+                    )
+                else:
+                    print("    every value of the byte was written")
         return
 
     shown = 0

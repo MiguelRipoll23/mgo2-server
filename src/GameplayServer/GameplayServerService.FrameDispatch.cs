@@ -4,6 +4,7 @@ using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
+using Mgo2Server.Shared.Udp;
 using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.GameplayServer;
@@ -15,6 +16,31 @@ namespace Mgo2Server.GameplayServer;
 /// </summary>
 public sealed partial class GameplayServerService
 {
+    /// <summary>
+    /// The record queue each peer's inbound records are read out of.
+    /// </summary>
+    /// <remarks>
+    /// <b>The image receives into a queue and dispatches out of it.</b>
+    /// <c>P2P_QueueInboundRecord</c> (<c>0x269b00</c>) writes each record into the channel's
+    /// entry buffer and the tick walks it with <c>P2P_InboundQueueBegin</c>/
+    /// <c>Current</c>/<c>Next</c>, so a frame's records are handled one at a time. This host
+    /// reads a frame's records into the same queue first and drains it below, which keeps the
+    /// arrival order and makes a full queue visible instead of dropping the record.
+    /// </remarks>
+    private readonly InboundRecordQueueService inboundRecords = new();
+
+    /// <summary>
+    /// The gate a queued record passes before its handler sees it.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is <c>read_queued_p2p_message</c>'s comparison.</b> A sequenced record is handed
+    /// out only when its fourth byte is the one its stream waits for, and the stream then
+    /// advances; any other byte is dropped and the stream does not move, which is why the peer
+    /// writes the value again. Applying it is what makes this host read its streams the way the
+    /// image does rather than accepting whatever arrives.
+    /// </remarks>
+    private readonly InboundRecordGateService inboundGate = new();
+
     private async Task HandleDatagramAsync(byte[] wire, IPEndPoint remote)
     {
         var remoteAddress = $"{remote.Address}:{remote.Port}";
@@ -140,125 +166,6 @@ public sealed partial class GameplayServerService
         return counter;
     }
 
-    private async Task DispatchPreKeyedAsync(byte[] decoded, ushort counter, IPEndPoint remote, string remoteAddress)
-    {
-        var frame = MessageCodecUtility.DecodeFrame(decoded);
-        var first = frame.Messages.Count > 0 ? frame.Messages[0] : null;
-
-        // A handshake is the one frame a peer may open with, and it can arrive
-        // with a session already held: the client re-sending a handshake this
-        // host has not answered yet, or the same client starting its session
-        // over. The counter base it carries is what tells those two apart, and a
-        // peer starting over is retired here rather than served on a key its
-        // client has forgotten (`GameplayServerService.SessionRestart.cs`).
-        var isHandshake =
-            first is not null &&
-            first.Type == UdpCommandConstants.Handshake &&
-            HandshakeShapeUtils.IsHandshakeBody(first.Body);
-        var session = sessions.Get(remoteAddress);
-        if (isHandshake && first is not null)
-        {
-            session = RestartPeerIfHandshakeStartsOver(first, remote, remoteAddress, session);
-        }
-
-        // An unknown peer sending a handshake gets its session provisioned
-        // before the message reaches its handler. A draining host takes none: the
-        // peers in the match it is still hosting are the ones it waits for, and a
-        // new one would only be a joiner whose host is about to leave.
-        if (session is null && isHandshake)
-        {
-            if (draining)
-            {
-                logger.LogDebug(
-                    "[{LogPrefix}] IN {RemoteAddress} handshake dropped: this host is draining",
-                    LogPrefix,
-                    remoteAddress);
-            }
-            else
-            {
-                ProvisionSession(decoded, remote, remoteAddress);
-                session = sessions.Get(remoteAddress);
-            }
-        }
-
-        if (session is null)
-        {
-            var note = first is null ? string.Empty : $" type={first.Type:x4}";
-            logger.LogDebug(
-                "[{LogPrefix}] IN {RemoteAddress} pre-keyed frame{note}; dropped, no session for it",
-                LogPrefix,
-                remoteAddress,
-                note);
-            return;
-        }
-
-        // The frame as it decoded, with its messages: the same shape the TCP
-        // lobbies log, so a gameplay session reads like a lobby session.
-        TrafficLogger.LogUdpInboundPacket(
-            logger,
-            LogPrefix,
-            $"frame counter={counter}{(isHandshake ? " handshake" : " pre-keyed")} " +
-            $"compression={(frame.Compressed ? "compressed" : "uncompressed")} from {remoteAddress}",
-            decoded);
-
-        foreach (var message in frame.Messages)
-        {
-            logger.LogDebug(
-                "[{LogPrefix}] IN {RemoteAddress} dispatching pre-keyed message 0x{MessageType:x4} ({BodyLength} body bytes)",
-                LogPrefix,
-                remoteAddress,
-                message.Type,
-                message.Body.Length);
-            await DispatchMessageAsync(message, remote, session);
-        }
-
-        // Pre-keyed frames advance the cumulative window but are not
-        // acknowledged; the first keyed acknowledgement covers them.
-        if (!isHandshake)
-        {
-            TrackInbound(session, counter);
-        }
-    }
-
-    /// <summary>
-    /// Whether a record is the client's join report, which this pass does
-    /// not answer.
-    /// </summary>
-    /// <remarks>
-    /// The answer a report gets depends on whether it opens the round, and that
-    /// is not known until it reaches <c>JoinReportHandler</c>: the report that
-    /// opens the round is answered by the round's own marker, which is the same
-    /// record, and answering it here as well puts two markers on the wire
-    /// (<c>docs/protocol/DATA_PHASE_DELIVERY.md</c> §2). A report that does not
-    /// open the round is answered by the handler itself, beside its publication.
-    /// </remarks>
-    /// <param name="message">Record to test.</param>
-    /// <returns><c>true</c> when the record is a join report.</returns>
-    private static bool IsJoinReport(UdpMessage message) =>
-        MatchRecordGenerationUtils.IsJoinReportIdentifier(message.Type) &&
-        MatchStartBodiesUtils.IsJoinReport(message.Body);
-
-    /// <summary>
-    /// Records how far the peer's frame counter has got, without transmitting.
-    /// </summary>
-    /// <remarks>
-    /// The counter a frame travels under is not the sequence a peer's record is
-    /// numbered by, and tracking it is what makes a stale or replayed frame
-    /// visible before its records reach their handlers.
-    ///
-    /// The comparison is wrap-aware. A plain <c>&gt;</c> would report every
-    /// frame as stale once the fifteen-bit counter had gone past 32 767.
-    /// </remarks>
-    /// <param name="session">Session to advance.</param>
-    /// <param name="counter">Counter of the frame that arrived.</param>
-    private static void TrackInbound(PeerSession session, ushort counter)
-    {
-        var sequence = FrameCounterUtility.Value(counter);
-        if (FrameCounterUtility.IsNewer(sequence, session.LastInboundSequence))
-        {
-            session.LastInboundSequence = sequence;
-        }
-    }
 
     private async Task DispatchKeyedAsync(
         byte[] decoded,
@@ -281,111 +188,192 @@ public sealed partial class GameplayServerService
         // answer and the measurement behind each (`GameplayServerService.Answers.cs`).
         AnswerReliableRecords(frame, session);
 
-        foreach (var message in frame.Messages)
+        // Receive before send, which is the order the game's own tick keeps
+        // (`P2P_PhaseTick_SendOperations` calls `receive_p2p_datagrams()` first): every
+        // record this peer has left unanswered is written again here, so a stream that
+        // lost a value recovers on the next frame rather than on its next write.
+        var unanswered = retransmit.NoteReceived(session);
+        if (unanswered.Count > 0)
         {
-            // The client's own leave notice, and the last thing it writes. It is
-            // below the tick threshold, so without this it would be relayed as an
-            // unnamed gameplay record; it closes the session here instead, which is
-            // what lets the player join again at once
-            // (UdpCommandConstants.LeaveGame).
-            if (IsLeaveNotice(message))
+            SendMessages(session, unanswered);
+        }
+
+        // **The frame's records go into the channel's queue, and are read back out of it.**
+        // The image's receive path does exactly this (`P2P_QueueInboundRecord`, `0x269b00`)
+        // and its tick drains the entries one per turn, so a record is handled where it sits
+        // in arrival order rather than in the order a frame happened to list it.
+        var accepted = 0;
+        var ended = false;
+        while (accepted < frame.Messages.Count && !ended)
+        {
+            var next = frame.Messages[accepted];
+            if (!inboundRecords.TryQueue(
+                    session.RemoteAddress,
+                    new QueuedRecord(next.Type, next.Flags, next.Body)))
             {
-                LeavePeer(session);
+                // The queue is the image's own back-pressure: it holds what its capacity
+                // holds and refuses past it. A record that does not fit is refused rather
+                // than allocated for, and the peer re-sends it because it went unanswered.
+                logger.LogWarning(
+                    "[{LogPrefix}] IN {RemoteAddress} inbound record queue is full; {Remaining} record(s) of this frame are refused",
+                    LogPrefix,
+                    session.RemoteAddress,
+                    frame.Messages.Count - accepted);
                 break;
             }
 
-            // A frame acknowledgement closes an outbound frame and must not
-            // itself receive a record-level answer.
-            if (PeerAcknowledgementUtils.IsFrameAcknowledgement(message))
+            accepted++;
+
+            // **The tick drains what it has queued, one record at a time.** The image's
+            // receive path queues a record and its tick reads the queue before the next
+            // one arrives, so its buffer holds a record and never a whole burst: queueing
+            // a frame first and draining it afterwards filled the 0x578 buffer and refused
+            // 74 and 160 records of the client's join burst (2026-11-16), which are records
+            // it then had to write again to be heard at all.
+            while (inboundRecords.TryDequeue(session.RemoteAddress, out var queued))
             {
-                if (session.SeenAcknowledgements.Add(message.Type))
+                // The reader's own gate, before any handler runs: a sequenced record whose byte is
+                // not the one this stream is waiting for is dropped where it sits.
+                if (!inboundGate.TryTake(session.RemoteAddress, queued.Type, queued.Flags))
                 {
                     logger.LogDebug(
-                        "[{LogPrefix}] IN {RemoteAddress} acknowledgement naming sequence {Sequence} (flags={Flags})",
+                        "[{LogPrefix}] IN {RemoteAddress} refused 0x{MessageType:x4} ordinal 0x{Ordinal:x2}: the stream is waiting for a different byte",
                         LogPrefix,
                         session.RemoteAddress,
-                        message.Type & UdpCommandConstants.AcknowledgementIdentifierMask,
-                        message.Flags);
+                        queued.Type,
+                        queued.Flags);
+                    continue;
                 }
 
-                continue;
-            }
+                var message = new UdpMessage(
+                    queued.Type,
+                    (byte)(queued.Body.Length + 1),
+                    queued.Flags,
+                    queued.Body);
 
-            // A record-level answer is the peer saying it has one of ours, and
-            // needs no reply. It used to reach the dispatcher as an unhandled
-            // record, so the one acknowledgement that says a roster was
-            // accepted was logged as a dropped message.
-            if (PeerAcknowledgementUtils.IsRecordAcknowledgement(message))
-            {
-                var recordType = (ushort)(message.Type & ~PeerAcknowledgementUtils.AcknowledgementBit);
-                if (session.NoteAcknowledgement(recordType, message.Flags))
+                // The client's own leave notice, and the last thing it writes. It is
+                // below the tick threshold, so without this it would be relayed as an
+                // unnamed gameplay record; it closes the session here instead, which is
+                // what lets the player join again at once
+                // (UdpCommandConstants.LeaveGame).
+                if (IsLeaveNotice(message))
                 {
-                    logger.LogDebug(
-                        "[{LogPrefix}] IN {RemoteAddress} acknowledged record 0x{RecordType:x4} ordinal {Ordinal}",
-                        LogPrefix,
-                        session.RemoteAddress,
-                        recordType,
-                        message.Flags);
+                    LeavePeer(session);
+                    ended = true;
+                    break;
                 }
 
-                continue;
-            }
-
-            // A client's own position is a tick record with no handler of its own:
-            // it is relayed below and, until now, forgotten. Keeping it is what lets
-            // the room's bots be written where the player actually is
-            // (PlayerPositionService).
-            var firstPosition = false;
-            if (message.Flags == PlayerPosition.AttributeClass &&
-                message.Body.Length == PlayerPosition.BodyLength)
-            {
-                firstPosition = !positions.TryGet(session.RemoteAddress, out _);
-                positions.Note(session.RemoteAddress, PlayerPosition.FromBody(message.Body));
-            }
-
-            if (message.Type < UdpCommandConstants.TickRecordThreshold &&
-                registry.ResolveHandlerType(message.Type) is null)
-            {
-                // Records in the gameplay range are the live game's tick
-                // traffic — a player's position, vitals and the host's own
-                // stream. A dedicated host has no handler of its own for them
-                // and relays them to the room's other players unchanged, which
-                // is how one client sees another move; dropping them is what
-                // left two joined clients unable to see each other. The relay
-                // keeps the type, body and fourth byte, and forwards the
-                // identifiers no handler names as well, because the capture has
-                // more tick types than this server decodes. Nothing is answered
-                // in return, and a peer that has not finished its handshake is
-                // not a recipient yet.
-
-                // A client's hit and the actor its CQC hold names are the two tick
-                // records this host acts on rather than relays; the relay below writes
-                // them on to the room either way (`GameplayServerService.TickCombat.cs`).
-                NoteCombatTickRecord(message, session.RemoteAddress);
-
-                if (session.Established)
+                // A frame acknowledgement closes an outbound frame and must not
+                // itself receive a record-level answer.
+                if (PeerAcknowledgementUtils.IsFrameAcknowledgement(message))
                 {
-                    logger.LogTrace(
-                        "[{LogPrefix}] IN {RemoteAddress} relayed tick record 0x{MessageType:x4} " +
-                        "({BodyLength} bytes, ordinal={Ordinal}, body={Body}) to the other established peers",
-                        LogPrefix,
-                        session.RemoteAddress,
-                        message.Type,
-                        message.Body.Length,
-                        message.Flags,
-                        Convert.ToHexString(message.Body).ToLowerInvariant());
-                    SendToOthers(session, message.Type, message.Body, message.Flags, ofThisHost: false);
+                    if (session.SeenAcknowledgements.Add(message.Type))
+                    {
+                        logger.LogDebug(
+                            "[{LogPrefix}] IN {RemoteAddress} acknowledgement naming sequence {Sequence} (flags={Flags})",
+                            LogPrefix,
+                            session.RemoteAddress,
+                            message.Type & UdpCommandConstants.AcknowledgementIdentifierMask,
+                            message.Flags);
+                    }
 
-                    // A player's first position is the evidence that the player
-                    // has spawned; its entry follows the relay
-                    // (`pcapng2` t+265.622, t+312.506).
-                    await AnnounceSpawnIfFirstAsync(session, firstPosition);
+                    continue;
                 }
 
-                continue;
-            }
+                // A record-level answer is the peer saying it has one of ours, and
+                // needs no reply. It used to reach the dispatcher as an unhandled
+                // record, so the one acknowledgement that says a roster was
+                // accepted was logged as a dropped message.
+                if (PeerAcknowledgementUtils.IsRecordAcknowledgement(message))
+                {
+                    var recordType = (ushort)(message.Type & ~PeerAcknowledgementUtils.AcknowledgementBit);
+                    var firstAnswer = session.NoteAcknowledgement(recordType, message.Flags);
+                    if (firstAnswer)
+                    {
+                        logger.LogDebug(
+                            "[{LogPrefix}] IN {RemoteAddress} acknowledged record 0x{RecordType:x4} ordinal {Ordinal}",
+                            LogPrefix,
+                            session.RemoteAddress,
+                            recordType,
+                            message.Flags);
+                    }
 
-            await DispatchMessageAsync(message, remote, session);
+                    // An answer is cumulative, so whatever the window still holds behind the
+                    // byte it names is a record the peer refused. Those are written again at
+                    // once: the peer cannot move past them, and the byte-wide counter only
+                    // comes round to them after 256 values.
+                    // A timed answer carries the peer's own duration in its one body byte; the
+                    // margin left over is what its re-send cadence is paced by.
+                    if (timedExchange.NoteAnswer(session, message) is { } margin)
+                    {
+                        pacing.PaceFromRemainder(session, margin);
+                    }
+
+                    var refused = retransmit.NoteAnswered(session, recordType, message.Flags);
+                    if (refused.Count > 0)
+                    {
+                        SendMessages(session, refused);
+                    }
+
+                    continue;
+                }
+
+                // A client's own position is a tick record with no handler of its own:
+                // it is relayed below and, until now, forgotten. Keeping it is what lets
+                // the room's bots be written where the player actually is
+                // (PlayerPositionService).
+                var firstPosition = false;
+                if (message.Flags == PlayerPosition.AttributeClass &&
+                    message.Body.Length == PlayerPosition.BodyLength)
+                {
+                    firstPosition = !positions.TryGet(session.RemoteAddress, out _);
+                    positions.Note(session.RemoteAddress, PlayerPosition.FromBody(message.Body));
+                }
+
+                if (message.Type < UdpCommandConstants.TickRecordThreshold &&
+                    RecordDispatcherService.Resolve(registry, message.Type) is null)
+                {
+                    // Records in the gameplay range are the live game's tick
+                    // traffic — a player's position, vitals and the host's own
+                    // stream. A dedicated host has no handler of its own for them
+                    // and relays them to the room's other players unchanged, which
+                    // is how one client sees another move; dropping them is what
+                    // left two joined clients unable to see each other. The relay
+                    // keeps the type, body and fourth byte, and forwards the
+                    // identifiers no handler names as well, because the capture has
+                    // more tick types than this server decodes. Nothing is answered
+                    // in return, and a peer that has not finished its handshake is
+                    // not a recipient yet.
+
+                    // A client's hit and the actor its CQC hold names are the two tick
+                    // records this host acts on rather than relays; the relay below writes
+                    // them on to the room either way (`GameplayServerService.TickCombat.cs`).
+                    NoteCombatTickRecord(message, session.RemoteAddress);
+
+                    if (session.Established)
+                    {
+                        logger.LogTrace(
+                            "[{LogPrefix}] IN {RemoteAddress} relayed tick record 0x{MessageType:x4} " +
+                            "({BodyLength} bytes, ordinal={Ordinal}, body={Body}) to the other established peers",
+                            LogPrefix,
+                            session.RemoteAddress,
+                            message.Type,
+                            message.Body.Length,
+                            message.Flags,
+                            Convert.ToHexString(message.Body).ToLowerInvariant());
+                        SendToOthers(session, message.Type, message.Body, message.Flags, ofThisHost: false);
+
+                        // A player's first position is the evidence that the player
+                        // has spawned; its entry follows the relay
+                        // (`pcapng2` t+265.622, t+312.506).
+                        await AnnounceSpawnIfFirstAsync(session, firstPosition);
+                    }
+
+                    continue;
+                }
+
+                await DispatchMessageAsync(message, remote, session);
+            }
         }
 
         // The frame counter is tracked as well as the records being

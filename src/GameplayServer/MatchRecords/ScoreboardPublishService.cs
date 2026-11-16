@@ -142,11 +142,17 @@ public sealed class ScoreboardPublishService(
                 roster.TakeRunOrdinal()));
         }
 
+        // The ordinals are logged as written, because they are the one part of this
+        // publication the client answers: a run whose records all carry a byte the peer
+        // has already passed is silent on the wire and looks like a score that never
+        // arrived.
         logger.LogDebug(
-            "UDP {LocalPort}: publishing {RecordCount} scoreboard record(s) to {RemoteAddress} and the room",
+            "UDP {LocalPort}: publishing {RecordCount} scoreboard record(s) to {RemoteAddress} and the room, "
+            + "carrying {Ordinals}",
             context.LocalPort,
             records.Count,
-            context.Remote);
+            context.Remote,
+            string.Join(", ", records.Select(record => $"0x{record.Ordinal:x2}")));
 
         await RosterRunSendUtils.SendAsync(context, records);
         foreach (var record in records)

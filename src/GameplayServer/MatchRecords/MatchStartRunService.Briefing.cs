@@ -135,12 +135,13 @@ public sealed partial class MatchStartRunService
             return;
         }
 
-        // The briefing opens the operations stream of the set its first report
-        // named: the capture's countdown begins the stream and the run behind it
-        // takes the same stream's first values, so the restart belongs to the
+        // The briefing opens the set's streams, its operations stream and its item
+        // boxes: the capture's countdown begins the operations stream and the run
+        // behind it takes that stream's first values, so the restart belongs to the
         // report and not to the briefing's preparation, which happens before any
-        // report names a set.
-        sequences.Restart(generation.Operations);
+        // report names a set. The item boxes restart with it because the working host
+        // opens them as one group (<see cref="MatchRecordGenerationUtils.OpenedStreams"/>).
+        sequences.Restart(generation);
 
         // The countdown goes to the peers the briefing is shown to, so it is armed
         // with it: a client waiting out its own briefing timer is told how much of

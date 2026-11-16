@@ -23,13 +23,30 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// writes no record here shows every side its starting allotment for the whole
 /// round, which is the room of 2026-11-11: forty for both sides, with seven kills
 /// in the feed and neither count moved.
-/// </para>
-/// <para>
-/// The two side markers are the capture's own and are recorded rather than
-/// derived: <c>0x08</c> on the team the room stores as <c>0</c> and <c>0x40</c>
-/// on the one it stores as <c>1</c>. Nothing else on the channel names a side with
-/// a word this small, and the count is what the panel is measured to move.
-/// </para>
+/// </para>    /// <para>
+    /// <b>What the eleven bytes most plausibly are, and what is certain.</b> The first
+    /// byte is the settings family's discriminator, not a patch opcode: under <c>0x1001</c>
+    /// the working capture writes it on bodies of seven, eleven, twenty-four, twenty-five,
+    /// twenty-six, twenty-seven and thirty-three bytes (<c>pcapng1</c>: 1 113 of them),
+    /// while the player-profile record's own version is <c>0x07</c> and opens the other
+    /// eighty-nine. Byte one is the address inside that family — <c>0x00</c> for the room's
+    /// own, a lobby slot on the records beside it.
+    /// <para>
+    /// Behind that address the binary has a field-transfer layer over the operations state
+    /// block: <c>P2P_GetOperationStateBlock</c> (<c>0x27e2b0</c>), <c>P2P_ReadOperationStateField</c>
+    /// (<c>0x27e480</c>), <c>P2P_WriteOperationStateField</c> (<c>0x27e578</c>). A write copies the
+    /// field and then sets its code to <c>3</c> in a two-bit-per-field map,
+    /// <c>block[descriptor[3]][index &gt;&gt; 2] |= 3 &lt;&lt; ((index &amp; 3) &lt;&lt; 1)</c>, and raises the block's
+    /// dirty word; a read accepts a field only where the block's ten-byte-entry table
+    /// declares that offset at that width, and silently drops anything else. **That the
+    /// eleven bytes are this map is an inference, not yet proven.** It fits — <c>0x08</c> in
+    /// the fourth byte after the address is code <c>3</c> at field 13 and <c>0x40</c> is code
+    /// <c>3</c> at field 15, one per side, with the count as the sixteen-bit value behind
+    /// them, and it explains why the scoreboard record beside it carries a twenty-one-byte
+    /// run of the same shape — but no function in the image has yet been found that packs
+    /// these bytes, and until one is, the field indices are the reading that fits rather
+    /// than the reading the binary states.
+    /// </para>
 /// </remarks>
 public static class TeamTicketBodiesUtils
 {
@@ -45,16 +62,25 @@ public static class TeamTicketBodiesUtils
     /// </summary>
     public const byte RoomSlot = 0x00;
 
-    /// <summary>Offset of the side's marker byte.</summary>
+    /// <summary>
+    /// Offset of the mask byte that carries the side's transfer code: mask byte three
+    /// of eight, which covers fields twelve to fifteen at two bits each.
+    /// </summary>
     public const int SideOffset = 4;
 
     /// <summary>Offset of the remaining count, a little-endian sixteen-bit word.</summary>
     public const int RemainingOffset = 9;
 
-    /// <summary>Marker the capture writes for raw team <c>0</c>.</summary>
+    /// <summary>
+    /// Code <c>3</c> at field 13, the first team's ticket word: the mask's low pair of
+    /// the third byte's second nibble.
+    /// </summary>
     public const byte FirstSide = 0x08;
 
-    /// <summary>Marker the capture writes for raw team <c>1</c>.</summary>
+    /// <summary>
+    /// Code <c>3</c> at field 15, the second team's ticket word: the top pair of the
+    /// same mask byte.
+    /// </summary>
     public const byte SecondSide = 0x40;
 
     /// <summary>

@@ -52,11 +52,6 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </para>
 /// </remarks>
 /// <param name="roundState">The room's round, whose opening is the countdown's end.</param>
-/// <param name="sequences">
-/// The stream counters the countdown's ordinal comes from: the briefing writes on
-/// the operations stream, the same one the round's own clock uses.
-/// </param>
-/// <param name="roster">The room's roster, whose ordinals the room-state records take.</param>
 /// <param name="ready">
 /// The room's readied players, whose bit set the countdown carries on every tick
 /// (<see cref="Rooms.BriefingStateService.ReadyMask"/>).
@@ -64,8 +59,6 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class BriefingCountdownService(
     MatchRoundStateService roundState,
-    MatchRecordSequenceService sequences,
-    Rooms.RoomRosterService roster,
     Rooms.BriefingStateService briefingStates,
     ILogger<BriefingCountdownService> logger)
 {
@@ -107,11 +100,12 @@ public sealed partial class BriefingCountdownService(
             return;
         }
 
-        var ordinals = roster.TakeRunOrdinals(2);
+        // Both records are numbered where they are written, in this order, so the pair is
+        // consecutive without the builder holding either value.
         var state = new List<Rooms.RosterRecord>
         {
-            new(UdpCommandConstants.PlayerProfile, RoomStateRecordBodiesUtils.RoomStateRecord(), ordinals[0]),
-            new(UdpCommandConstants.PlayerProfile, RoomStateRecordBodiesUtils.RoomStateRecordSecond(), ordinals[1]),
+            new(UdpCommandConstants.PlayerProfile, RoomStateRecordBodiesUtils.RoomStateRecord(), AutoNumbered: true),
+            new(UdpCommandConstants.PlayerProfile, RoomStateRecordBodiesUtils.RoomStateRecordSecond(), AutoNumbered: true),
         };
 
         await Rooms.RosterRunSendUtils.SendAsync(context, state);
@@ -219,10 +213,14 @@ public sealed partial class BriefingCountdownService(
                 // the zero and then re-sent 60 every tick beside it.
                 if (IsCounting || !heldCountSent)
                 {
-                    await context.Send(
-                        countdownIdentifier,
-                        BriefingCountdownBodiesUtils.CountdownBody(seconds, briefingStates.ReadyMask),
-                        sequences.Take(countdownIdentifier));
+                    await MatchRecordSendUtils.SendAsync(
+                        context,
+                        [
+                            new(
+                                countdownIdentifier,
+                                BriefingCountdownBodiesUtils.CountdownBody(seconds, briefingStates.ReadyMask),
+                                AutoNumbered: true),
+                        ]);
 
                     heldCountSent = true;
                 }
@@ -321,12 +319,16 @@ public sealed partial class BriefingCountdownService(
     {
         try
         {
-            await context.Send(
-                countdownIdentifier,
-                BriefingCountdownBodiesUtils.CountdownBody(
-                    seconds: 0,
-                    readySet: briefingStates.ReadyMask),
-                sequences.Take(countdownIdentifier));
+            await MatchRecordSendUtils.SendAsync(
+                context,
+                [
+                    new(
+                        countdownIdentifier,
+                        BriefingCountdownBodiesUtils.CountdownBody(
+                            seconds: 0,
+                            readySet: briefingStates.ReadyMask),
+                        AutoNumbered: true),
+                ]);
 
             // The zero is the briefing's end for every writer that reads it, and it
             // is written once: the round's opener does not wait out a briefing whose
@@ -381,11 +383,13 @@ public sealed partial class BriefingCountdownService(
             return null;
         }
 
+        // The value is taken where the answer is written, from the countdown's own
+        // stream, so the record carries the byte a tick of the same second would have.
         return new Rooms.RosterRecord(
             countdownIdentifier,
             BriefingCountdownBodiesUtils.CountdownBody(
                 BriefingCountdownBodiesUtils.CountdownSeconds(remaining),
                 briefingStates.ReadyMask),
-            sequences.Take(countdownIdentifier));
+            AutoNumbered: true);
     }
 }

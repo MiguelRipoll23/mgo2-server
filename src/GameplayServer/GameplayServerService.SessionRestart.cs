@@ -181,6 +181,52 @@ public sealed partial class GameplayServerService
     }
 
     /// <summary>
+    /// Drops the work this host still holds for a peer, on the events that drop its session.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Every service here files its state against the endpoint or against the session
+    /// object, and neither is released by dropping the session.</b> The gate's expectation per
+    /// container and the queue's buffered entries are keyed by endpoint; the entry note and the
+    /// round's written-run flag are keyed by the session itself; the held roster answer is keyed
+    /// by the endpoint of the copy that armed it. Each one read after the peer is gone is a
+    /// record written to nobody, and each one read after the peer comes back is worse.
+    /// </para>
+    /// <para>
+    /// <b>The entry note is the one that stalls a rejoin.</b> A client that starts its handshake
+    /// over keeps the session object it had (<see cref="ReopenHandshake"/> only resets the
+    /// transport), so a note that outlives the drop makes the client's next echo read as the
+    /// duplicate of an entry this host already holds: `OnRoomEntry` returns <c>false</c>, the run
+    /// that answers the entry is never written, and the client waits on its briefing screen for a
+    /// briefing that is never sent. The run worker's own `finally` drops the note, but only for a
+    /// peer whose run it reached — a peer reaped during the dwell never gets there.
+    /// </para>
+    /// <para>
+    /// <b>The inbound half was the same omission one layer down, and the outbound half is not.</b>
+    /// The counters are let go by <see cref="MatchRecords.MatchRecordSequenceService.Reset"/> and
+    /// the retransmit, pacing and timed-exchange maps are weak tables, so a session takes them
+    /// with it. These are the ones it does not. Both endpoints are cleared for the reason the
+    /// roster gives: a peer is filed under the endpoint its profile arrived from and answers at
+    /// the one it advertised.
+    /// </para>
+    /// </remarks>
+    /// <param name="session">Session being dropped.</param>
+    private void ForgetPeerPendingState(PeerSession session)
+    {
+        inboundGate.Forget(session.RemoteAddress);
+        inboundGate.Forget(session.DialBack.ToString());
+        inboundRecords.Forget(session.RemoteAddress);
+        inboundRecords.Forget(session.DialBack.ToString());
+        rosterAnswers.Forget(session.RemoteAddress);
+        rosterAnswers.Forget(session.DialBack.ToString());
+
+        // These two are keyed by the session rather than by an endpoint, so the session is what
+        // is named; the entry note's own map is dropped with `ForgetEntry` behind it.
+        matchStart.ForgetPeer(session);
+        roundStates.Forget(session);
+    }
+
+    /// <summary>
     /// Returns a session's transport to the state its handshake opened it in,
     /// so the answer goes out pre-keyed.
     /// </summary>
