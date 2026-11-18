@@ -1,3 +1,4 @@
+using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Udp;
 using Microsoft.Extensions.Logging;
 
@@ -9,6 +10,130 @@ namespace Mgo2Server.GameplayServer;
 /// </summary>
 public sealed partial class StreamRetransmitService
 {
+    /// <summary>
+    /// One stream's outstanding records, held in the order the peer reads them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The list is ordered by the stream, not by the socket.</b> A record's fourth byte is
+    /// its place in an ordered channel, but two writers can number their records and then
+    /// reach the send path in the other order — the round-start run of 2026-11-18 does
+    /// exactly that, writing <c>0x67</c>/<c>0x68</c> one frame before the <c>0x5e…0x66</c>
+    /// they follow. A list in call order would put those two ahead of the hole they belong
+    /// behind, and the cumulative free below would take them for records the peer had
+    /// accepted. Placing every entry by its sequence keeps the head the byte the peer is
+    /// waiting for, which is the byte a re-send has to start at.
+    /// </para>
+    /// <para>
+    /// <b>The sequence is the byte, unwrapped.</b> The stream's counter is one byte wide, so
+    /// the place of a new record is read from its distance to the newest one already held:
+    /// a small forward distance extends the sequence, a large one is a record from before
+    /// it. That is enough for a window the size of this one — a drain keeps it near a
+    /// dozen — and it survives the wrap, which a plain comparison of bytes cannot.
+    /// </para>
+    /// </remarks>
+    private sealed class StreamWindow
+    {
+        /// <summary>Records held, oldest first: the order the peer reads and a re-send keeps.</summary>
+        public List<Pending> Pending { get; } = [];
+
+        private bool started;
+        private byte newestOrdinal;
+        private long newestSequence;
+        private long answeredThrough = long.MinValue;
+
+        /// <summary>
+        /// Holds one written record, placed by its stream position, unless the peer has
+        /// already taken that position.
+        /// </summary>
+        /// <remarks>
+        /// A copy of a held record keeps the byte it already carries rather than entering
+        /// the window a second time: the peer answers a byte, and two entries under one byte
+        /// would make that answer ambiguous. A copy whose position the peer has already
+        /// answered — a scoreboard delta's later copy, written after its answer arrived — is
+        /// not held at all. Holding it would put a byte the peer has already passed at the
+        /// head of the window, where every re-send would start with it and the attempts it
+        /// spends would end a stream that has nothing wrong with it.
+        /// </remarks>
+        /// <param name="message">Record just written.</param>
+        /// <param name="now">Instant of the write, in milliseconds since boot.</param>
+        public void Hold(UdpMessage message, long now)
+        {
+            var held = Pending.Find(entry => entry.Type == message.Type && entry.Ordinal == message.Flags);
+            if (held is not null)
+            {
+                held.WrittenAt = now;
+                return;
+            }
+
+            var sequence = SequenceOf(message.Flags);
+            if (sequence <= answeredThrough)
+            {
+                return;
+            }
+
+            var at = Pending.FindIndex(entry => entry.Sequence > sequence);
+            Pending.Insert(
+                at < 0 ? Pending.Count : at,
+                new Pending(message.Type, message.Flags, message.Body, now, sequence));
+        }
+
+        /// <summary>
+        /// Frees everything the peer's answer proves it took: the answered record and every
+        /// record held before it in the stream.
+        /// </summary>
+        /// <remarks>
+        /// <b>The free is by sequence and not by list position.</b> An answer is cumulative —
+        /// the peer takes a stream in order — so everything before the answered byte is
+        /// taken and can go. What sits after it was refused, whatever its place in the call
+        /// order, and stays held so the next re-send writes it again.
+        /// </remarks>
+        /// <param name="ordinal">Fourth byte the answer echoes.</param>
+        public void FreeThrough(byte ordinal)
+        {
+            var index = Pending.FindIndex(entry => entry.Ordinal == ordinal);
+            if (index < 0)
+            {
+                return;
+            }
+
+            answeredThrough = Math.Max(answeredThrough, Pending[index].Sequence);
+            Pending.RemoveAll(entry => entry.Sequence <= answeredThrough);
+        }
+
+        /// <summary>
+        /// The unwrapped place of a record carrying this byte, advancing the stream when it
+        /// is a new record and not when it is one from before the newest.
+        /// </summary>
+        /// <param name="ordinal">Fourth byte the record carries.</param>
+        /// <returns>Its sequence, counted across the byte's wrap.</returns>
+        private long SequenceOf(byte ordinal)
+        {
+            if (!started)
+            {
+                started = true;
+                newestOrdinal = ordinal;
+                newestSequence = 0;
+                return 0;
+            }
+
+            var delta = (ordinal - newestOrdinal) & 0xff;
+            if (delta == 0)
+            {
+                return newestSequence;
+            }
+
+            if (delta < 0x80)
+            {
+                newestSequence += delta;
+                newestOrdinal = ordinal;
+                return newestSequence;
+            }
+
+            return newestSequence - (0x100 - delta);
+        }
+    }
+
     /// <summary>
     /// Capacity of one stream's window, in bytes: the record queue's own capacity word.
     /// </summary>

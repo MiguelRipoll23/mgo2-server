@@ -19,7 +19,11 @@ public sealed partial class StreamRetransmitService
     /// <param name="ordinal">Fourth byte it was given when it was first written.</param>
     /// <param name="body">Body it carries.</param>
     /// <param name="writtenAt">Instant of its last write, in milliseconds since boot.</param>
-    private sealed class Pending(ushort type, byte ordinal, byte[] body, long writtenAt)
+    /// <param name="sequence">
+    /// Its place in the stream, counted across the byte's wrap: the window's own order, which
+    /// is the order the peer reads and therefore the order a re-send has to use.
+    /// </param>
+    private sealed class Pending(ushort type, byte ordinal, byte[] body, long writtenAt, long sequence)
     {
         /// <summary>Identifier the record travels under.</summary>
         public ushort Type { get; } = type;
@@ -35,5 +39,11 @@ public sealed partial class StreamRetransmitService
 
         /// <summary>Times it has been written, the first one included.</summary>
         public int Attempts { get; set; }
+
+        /// <summary>
+        /// Its place in the stream, counted across the byte's wrap. Two records that carry
+        /// the same fourth byte in different wraps are told apart by this and nothing else.
+        /// </summary>
+        public long Sequence { get; } = sequence;
     }
 }

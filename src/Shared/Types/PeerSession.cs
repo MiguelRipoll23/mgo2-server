@@ -24,6 +24,34 @@ public sealed class PeerSession
     /// <summary>Serializes outbound counter allocation and writes for this session.</summary>
     public Lock OutboundGate { get; } = new();
 
+    /// <summary>
+    /// Fourth byte each numbered stream of this session will carry next, keyed by the
+    /// identifier's low twelve bits.
+    /// </summary>
+    private readonly Dictionary<ushort, byte> streamOrdinals = [];
+
+    /// <summary>
+    /// Takes the fourth byte a record of a numbered stream travels with, and advances
+    /// that stream.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the image's own counter, and the send path owns it.</b>
+    /// <c>P2P_ChannelStateInit</c> (<c>0x26b178</c>) starts each stream's byte at zero, and
+    /// <c>P2P_SendRecord</c> (<c>0x26b778</c>) reads it from the record's channel entry, stamps
+    /// it into the record it is about to queue, and increments it in the same call — so a
+    /// record is numbered when it is sent and never when it is built (`docs/GHIDRA.md`).
+    /// Calling this under <see cref="OutboundGate"/> is what keeps the numbering and the wire
+    /// order one sequence, however many publishers write to the session.
+    /// </remarks>
+    /// <param name="stream">Identifier's low twelve bits.</param>
+    /// <returns>The byte the record travels with.</returns>
+    public byte TakeStreamOrdinal(ushort stream)
+    {
+        streamOrdinals.TryGetValue(stream, out var ordinal);
+        streamOrdinals[stream] = (byte)(ordinal + 1);
+        return ordinal;
+    }
+
     /// <summary>Session key: the peer's counter base exclusive-ORed with the host's counter base.</summary>
     public required uint SessionKey { get; set; }
 

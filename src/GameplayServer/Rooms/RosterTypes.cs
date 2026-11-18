@@ -12,9 +12,10 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// rather than restart it.
 /// </param>
 /// <param name="Ordinal">
-/// Fourth byte, taken where the record is built: a value of the stream its type is counted
-/// on, or — in a roster run — the record's own place in the run. The send path assigns
-/// nothing, as in the image (<c>docs/GHIDRA.md</c>).
+/// Fourth byte the record was built with. It is a placeholder on a host-built record: the
+/// session's write gate stamps the stream's own next value as the record leaves
+/// (<c>docs/GHIDRA.md</c>, <c>P2P_SendRecord</c>), which is what keeps numbering and wire
+/// order one sequence.
 /// </param>
 public sealed record RosterRecord(ushort Type, byte[] Body, byte Ordinal = 0);
 

@@ -58,9 +58,9 @@ public static class RosterRunSendUtils
 
         if (context.SendRecords is not { } sendRecords)
         {
-            // Every record carries the byte it was built with, so this path writes what the
-            // batching one would: the value is taken where the record is built, and no
-            // writer assigns one afterwards (<c>docs/GHIDRA.md</c>, <c>P2P_SendRecord</c>).
+            // This path only carries the run's records; the session's write gate stamps the
+            // fourth byte as each one leaves, so a fallback write is numbered exactly like a
+            // batched one (`docs/GHIDRA.md`, <c>P2P_SendRecord</c>).
             foreach (var record in run)
             {
                 await context.Send(record.Type, record.Body, record.Ordinal);

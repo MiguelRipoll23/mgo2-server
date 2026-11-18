@@ -120,24 +120,28 @@ public sealed partial class GameplayServerService
             return;
         }
 
-        // **Nothing is assigned here.** The fourth byte is part of the record before it
-        // reaches this path: the image's builders stamp it and `P2P_SendRecord` (0x26b778)
-        // only tests the sequenced bit, compares `writes − acked` with 0xff, advances the
-        // retry byte at `+0xb`, and copies the record's bytes out (see `docs/GHIDRA.md`).
-        // A window therefore holds the byte the peer will answer, because the entry it was
-        // handed already carried it.
-
-        // A record the peer has not answered is a hole in its stream, and the peer takes
-        // a stream's records only in order: the window's re-sends are put in front of
-        // this write so the frame carries them in the order the peer reads them.
-        messages = retransmit.NoteWriting(session, messages);
-
         // A record carrying the timed class opens an exchange whose answer says how far
         // behind the peer is, and that margin is what paces this peer's re-sends.
         timedExchange.NoteWritten(session, messages);
 
         lock (session.OutboundGate)
         {
+            // **The fourth byte is stamped here, under the one gate the session writes
+            // through.** `P2P_SendRecord` (0x26b778) reads the stream's byte from the
+            // record's channel entry, stores it in the record it is about to queue, and
+            // increments it in the same call — the number and the wire order are one
+            // sequence because both happen inside that call. Taking the number where a run
+            // is built instead lets two publishers number one stream in the order they
+            // happened to build and write it in another, which is the hole the client
+            // refuses everything behind (`docs/GHIDRA.md`, `stream-sequencing.md` D3).
+            messages = NumberOwnRecords(session, messages, ofThisHost);
+
+            // A record the peer has not answered is a hole in its stream, and the peer takes
+            // a stream's records only in order: the window's re-sends are put in front of
+            // this write so the frame carries them in the order the peer reads them. The
+            // window sees stamped records, so the byte it holds is the byte the peer answers.
+            messages = retransmit.NoteWriting(session, messages);
+
             // The image's own packing: each record appended while its aligned size still fits,
             // the rest starting the next datagram (`append_udp_datagram_to_send_buffer`).
             foreach (var group in OutboundDatagramBufferService.Split(messages))
@@ -145,6 +149,71 @@ public sealed partial class GameplayServerService
                 SendFrame(session, group);
             }
         }
+    }
+
+    /// <summary>
+    /// Stamps this host's numbered records with the fourth byte their stream will carry,
+    /// in the order they are about to be written.
+    /// </summary>
+    /// <remarks>
+    /// <p>
+    /// <b>Only this host's own records are numbered.</b> An answer already carries the byte
+    /// of the record it answers and must echo it, and a relayed record is the peer's, not
+    /// this host's — its stream is the peer's own and renumbering it would hand the room a
+    /// byte the peer never sent.
+    /// </p>
+    /// <p>
+    /// <b>The roster exchange is the stream stamped here.</b> Its records come from several
+    /// publishers — the join's run, the scoreboard, the ticket count, the team arrays — and
+    /// its counter is read before this gate, so a record can be numbered in build order and
+    /// written in another. That is the run the client refuses with everything behind it, and
+    /// the reason the number belongs to the send path. The other streams are numbered by
+    /// <c>MatchRecordSequenceService</c> when their frames are built, and are left as they
+    /// are.
+    /// </p>
+    /// <p>
+    /// <b>A record below the numbered range or already carrying the answer bit is left
+    /// alone.</b> The tick is numbered by its class rather than by a counter, the handshake
+    /// has no place in a stream, and the frame acknowledgement is not a record. The image
+    /// gates on the same bit and descriptor (`P2P_SendRecord`, 0x26b778).
+    /// </p>
+    /// </remarks>
+    /// <param name="session">Session the records are written through.</param>
+    /// <param name="messages">Records of the write, in order.</param>
+    /// <param name="ofThisHost">Whether this host built the records.</param>
+    /// <returns>The records with their fourth bytes stamped, or the same list when none needed one.</returns>
+    private static IReadOnlyList<UdpMessage> NumberOwnRecords(
+        PeerSession session,
+        IReadOnlyList<UdpMessage> messages,
+        bool ofThisHost)
+    {
+        if (!ofThisHost)
+        {
+            return messages;
+        }
+
+        List<UdpMessage>? numbered = null;
+        for (var index = 0; index < messages.Count; index++)
+        {
+            var message = messages[index];
+            if (message.FixedOrdinal
+                || MatchRecords.MatchRecordSequenceService.StreamOf(message.Type)
+                    != MatchRecords.MatchRecordSequenceService.StreamOf(
+                        UdpCommandConstants.PlayerProfile)
+                || !PeerAcknowledgementUtils.WaitsForAcknowledgement(message))
+            {
+                continue;
+            }
+
+            numbered ??= [.. messages];
+            numbered[index] = message with
+            {
+                Flags = session.TakeStreamOrdinal(
+                    MatchRecords.MatchRecordSequenceService.StreamOf(message.Type)),
+            };
+        }
+
+        return numbered ?? messages;
     }
 
     /// <summary>

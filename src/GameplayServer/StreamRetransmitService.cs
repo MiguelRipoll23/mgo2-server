@@ -77,7 +77,7 @@ public sealed partial class StreamRetransmitService(
     /// Stream windows by peer and by the identifier's low twelve bits. Held weakly, so a
     /// peer that is gone takes its window with it.
     /// </summary>
-    private readonly ConditionalWeakTable<PeerSession, Dictionary<ushort, List<Pending>>> windows = [];
+    private readonly ConditionalWeakTable<PeerSession, Dictionary<ushort, StreamWindow>> windows = [];
 
     private readonly Lock gate = new();
 
@@ -110,11 +110,13 @@ public sealed partial class StreamRetransmitService(
                 }
 
                 var stream = MatchRecordSequenceService.StreamOf(message.Type);
-                if (!byStream.TryGetValue(stream, out var pending))
+                if (!byStream.TryGetValue(stream, out var window))
                 {
-                    pending = [];
-                    byStream[stream] = pending;
+                    window = new StreamWindow();
+                    byStream[stream] = window;
                 }
+
+                var pending = window.Pending;
 
                 // What is still held is what the peer has not taken, and the oldest of
                 // them is the one it is waiting for.
@@ -127,16 +129,11 @@ public sealed partial class StreamRetransmitService(
                 // entering the window a second time: the peer answers a byte, and two
                 // entries under one byte would make that answer ambiguous. Its attempt
                 // count is kept too, or a re-send would reset the budget it is spending
-                // and a peer that stopped reading would draw copies forever.
-                var held = pending.Find(entry => entry.Type == message.Type && entry.Ordinal == message.Flags);
-                if (held is null)
-                {
-                    pending.Add(new Pending(message.Type, message.Flags, message.Body, now));
-                }
-                else
-                {
-                    held.WrittenAt = now;
-                }
+                // and a peer that stopped reading would draw copies forever. The window
+                // places a record by its stream position, so a run that reaches the socket
+                // out of numbering order still sits behind the hole it belongs behind
+                // (`StreamWindow.Hold`).
+                window.Hold(message, now);
 
                 // The image's drain, in the image's unit: see `DrainIfFull`.
                 DrainIfFull(stream, pending);
@@ -232,20 +229,16 @@ public sealed partial class StreamRetransmitService(
     /// <param name="recordType">Identifier the answered record travelled under.</param>
     /// <param name="ordinal">Fourth byte the answer echoes.</param>
     private static void FreeAnswered(
-        Dictionary<ushort, List<Pending>> byStream,
+        Dictionary<ushort, StreamWindow> byStream,
         ushort recordType,
         byte ordinal)
     {
-        if (!byStream.TryGetValue(MatchRecordSequenceService.StreamOf(recordType), out var pending))
+        if (!byStream.TryGetValue(MatchRecordSequenceService.StreamOf(recordType), out var window))
         {
             return;
         }
 
-        var answered = pending.FindIndex(entry => entry.Ordinal == ordinal);
-        if (answered >= 0)
-        {
-            pending.RemoveRange(0, answered + 1);
-        }
+        window.FreeThrough(ordinal);
     }
 
     /// <summary>
@@ -304,8 +297,9 @@ public sealed partial class StreamRetransmitService(
             // The frame's answers have already been freed (`NoteAnswers`, called at decode),
             // so this walk re-appends only what the peer has not taken — which is what the
             // image's flush does with the queue the decode left behind.
-            foreach (var (stream, pending) in byStream)
+            foreach (var (stream, window) in byStream)
             {
+                var pending = window.Pending;
                 if (!named.Contains(stream)
                     || pending.Count == 0
                     || now - pending[0].WrittenAt < pacing.IntervalFor(session))
@@ -368,7 +362,10 @@ public sealed partial class StreamRetransmitService(
 
             entry.Attempts++;
             entry.WrittenAt = now;
-            due.Add(FrameBuilderUtility.MessageOf(entry.Type, entry.Body, entry.Ordinal));
+            // The byte is the one the record went out with and the peer is waiting for; the
+            // send path must not stamp a fresh one over it.
+            due.Add(FrameBuilderUtility.MessageOf(entry.Type, entry.Body, entry.Ordinal)
+                with { FixedOrdinal = true });
             attempts++;
         }
 

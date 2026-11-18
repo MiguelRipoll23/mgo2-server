@@ -19,10 +19,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <para>
 /// <b>The fourth wire byte is not one of the four, and that is not an omission.</b> The
 /// decompiled setter writes no such field: selector 0 only owns the low nibble of
-/// <c>+0xa</c>, and neither <c>P2P_SendRecord</c> nor <c>gate_p2p_record_send</c> writes
-/// the ordinal — so where the image assigns the byte its peer answers is still open
-/// (<c>docs/GHIDRA.md</c>). This entry therefore carries it as data on the way out
-/// (<see cref="ToMessage"/>) and does not pretend a selector sets it.
+/// <c>+0xa</c>, and the byte is stamped by the send path instead — <c>P2P_SendRecord</c>
+/// (<c>0x26b778</c>) reads the stream's counter from the entry, writes it into the record
+/// it queues, and increments it in the same call (<c>docs/GHIDRA.md</c>). This entry
+/// therefore carries a placeholder on the way out (<see cref="ToMessage"/>) and the host's
+/// write path replaces it under the session gate.
 /// </para>
 /// <para>
 /// <b>The offsets are the entry's own, not the wire's.</b> The wire header is identifier,
@@ -66,8 +67,8 @@ public sealed class RecordHeaderEntry
     /// <remarks>
     /// <b>Every record this host builds comes through here.</b> The state, flags and channel
     /// bytes are left clear because this server does not model them on the wire — the
-    /// identifier is the one field both sides share — and the fourth byte is taken by the
-    /// builder and passed, since the image's setter has no selector for it.
+    /// identifier is the one field both sides share — and the fourth byte passed here is a
+    /// placeholder: the sender stamps the stream's own value, as the image does.
     /// </remarks>
     /// <param name="identifier">Record's identifier, class bits included.</param>
     /// <param name="body">Body the record carries.</param>

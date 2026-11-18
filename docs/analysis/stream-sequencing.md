@@ -77,13 +77,25 @@ that makes a hole survivable.
 `RoomRosterService.TakeRunOrdinal()` and only then hand the records to
 `RosterRunSendUtils.SendAsync`. Two publishers can take `0x32` and `0x33` between one
 another and then reach the socket in the other order; the peer refuses the second
-arrival and the first never recovers. The write path has a per-session gate
-(`PeerSession.OutboundGate`) — the numbering has to happen inside it, not before it.
+arrival and the first never recovers. The image's answer is narrower than holding the
+write gate around the take: `P2P_SendRecord` stamps the wire byte inside the send call,
+from the same counter it increments (`lbz r9,0xb(r31)` / `stb r9,0x7a(r1)` before
+`stb r11,0xb(r31)`; `docs/GHIDRA.md`, "The sender"), so numbering and appending are one
+step.
+
+The host now does the same. `GameplayServerService.NumberOwnRecords` runs inside
+`lock (session.OutboundGate)` and stamps every own record of stream `0x001` from
+`PeerSession.TakeStreamOrdinal` in send order, immediately before the retransmit window
+sees it; the window's re-sends carry `UdpMessage.FixedOrdinal` and keep the byte the peer
+is waiting for. Every roster builder's value is therefore a placeholder, and the ordering
+defect cannot recur however many publishers write to the session. Records of the other
+streams are still numbered by `MatchRecordSequenceService` when their frames are built.
 
 **D4 — the scoreboard's copies cannot do what they are asked to do.** Three copies at
-600 ms are written for a delta, and a copy keeps its byte (correctly). The peer takes a
-copy only when that byte is the one it expects, so the copies recover the *newest*
-value's loss and nothing else. That is a reasonable optimisation on top of a window. It
+600 ms are written for a delta. A copy the stream window re-sends keeps its byte, and the
+peer takes it only when that is the byte it expects; a copy rebuilt and stamped afresh
+takes the next value, which the peer refuses while it waits for the hole. Either way the
+copies recover the *newest* value's loss and nothing else. That is a reasonable optimisation on top of a window. It
 is not one here, where it is the only recovery there is.
 
 **D5 — the exchange was reset while a reader could still hold it.** The room-reset path
@@ -151,8 +163,9 @@ paths:
   which covers the record whose answer never comes at all;
 * attempts are bounded, so a peer that has genuinely stopped reading is not flooded.
 
-Ordering (D3) and the reset (D5) are separate changes: numbering belongs under the
-session's write gate, and a stream is not restarted under a live peer.
+Ordering (D3) is now the write path's: it stamps the byte it writes, as `P2P_SendRecord`
+does, under the same gate it appends through. The reset (D5) is a separate change: a stream
+is not restarted under a live peer.
 
 ## The queue the drain is measured against
 

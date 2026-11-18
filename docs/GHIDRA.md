@@ -117,7 +117,7 @@ would have been a guess is left as `FUN_`.
 | `0x26b178` | `P2P_ChannelStateInit` | builds a stream state: `+0xe = 0` (the first byte it expects), `+9 = 0x80`, `+0xb = 0` |
 | `0x26b1c8` | `P2P_ChannelStateRelease` | drops one reference to a stream state and clears `+0xa` with the last one |
 | `0x2666c8` | `decode_p2p_datagram` | the datagram decoder; its `type & 0x4000` branch is the answer reader, which walks the send window and marks the entry whose `+0xa` matches |
-| `0x26b778` | `P2P_SendRecord` | the sender: copies the entry's header word out (`lwz r0,0x0(r31)` / `stw r0,0x70(r1)`), sets the datagram's byte `9`, refuses the write that would leave `writes − acked == 0xff`, and otherwise advances the retry byte at `+0xb` — decompiled on 2026-11-18, it writes no sequence byte |
+| `0x26b778` | `P2P_SendRecord` | the sender: builds the queued entry on its stack from the descriptor — handle word at `+0`, the `u16` at `+4`, the size from the cursor at `+6`, state `1` at `+9`, and **the fourth wire byte at `+10` from the descriptor's `+0xb`** — then refuses the write that would leave `writes − acked == 0xff`, advances `+0xb`, and hands the entry to the gate. The sequence byte is stamped in this call (`lbz r9,0xb(r31)` / `stb r9,0x7a(r1)` before `stb r11,0xb(r31)`) |
 | `0x26b2b0` | `P2P_SetRecordHeaderField` | writes one field of a record header; called with field `0` and value `3` where a channel is first registered |
 | `0x2692c0` | `P2P_MessageIdentifier` | the record's 16-bit identifier, class bits included |
 | `0x2692e0` | `P2P_MessageBodyLength` | the record's body length |
@@ -183,7 +183,7 @@ the functions on that side.
 
 | address | name | what the body does |
 | --- | --- | --- |
-| `0x26b778` | `P2P_SendRecord` | sends **one** record: `+0xa & 1` marks it sequenced; `retries(+0xb) − acknowledged(+0xc)` equal to `0xff` is refused (the peer already took it), otherwise `+0xb++`; then hands it to the gate |
+| `0x26b778` | `P2P_SendRecord` | sends **one** record: `+0xa & 1` marks it sequenced; the fourth wire byte is stamped from `+0xb`; `retries(+0xb) − acknowledged(+0xc)` equal to `0xff` is refused (the peer already took it), otherwise `+0xb++`; then hands it to the gate |
 | `0x263530` | `gate_p2p_record_send` | zeroes the retry byte and appends the record to the datagram buffer at `peer+0xd·4`; refuses while the channel byte at `peer+4` is `<= 1` (not ready) |
 | `0x2696d8` | `append_udp_datagram_to_send_buffer` | the packer: write position `+= (3 + len) & 0xfffc`, returns `-1` when the datagram has no room (that is how a run is split), and zeroes `+0xb` on every successful append |
 | `0x2729d8` | `P2P_PhaseTick_SendOperations` | the per-frame tick: `receive_p2p_datagrams()` **first**, then the phase's own records, walking a 24-slot (`0x18`) record table |
@@ -199,7 +199,7 @@ here can be found in the code by its name rather than reconstructed from a log.
 | image | server |
 | --- | --- |
 | `P2P_SetRecordHeaderField` `0x26b2b0` | `MatchRecords/RecordHeaderFieldService` (`Set`, the four selectors and their width refusals), over `MatchRecords/RecordHeaderEntry`; every record is built through `RecordHeaderEntry.Build` |
-| `P2P_SendRecord` `0x26b778` | `GameplayServerService.SendMessages`: it assigns nothing — the fourth byte is on the record before the write — spends no value, and the `0xff` guard is `StreamRetransmitService.AddRetries` |
+| `P2P_SendRecord` `0x26b778` | `GameplayServerService.SendMessages`: it assigns nothing — here the fourth byte was stamped by the builder, where the image stamps it in the send call — and the `0xff` guard is `StreamRetransmitService.AddRetries` |
 | `gate_p2p_record_send` `0x263530` | `Shared/Udp/RecordSendGateService`: refuses a channel that is not ready, then appends |
 | `append_udp_datagram_to_send_buffer` `0x2696d8` | `Shared/Udp/OutboundDatagramBufferService.AppendToBuffer` (`-1` on no room) and `Split` built on it |
 | `P2P_QueueInboundRecord` `0x269b00` | `Shared/Udp/InboundRecordQueueService`: twelve-byte entry, ordinal zeroed for an unsequenced record, `false` when the queue is full |
@@ -225,39 +225,14 @@ from the record's class when it builds it. Every wire-side filter tried against 
 working captures failed for that reason (`body == 63` takes 0 records in `pcapng1`), and
 that is why the analysis reasons from answers rather than from a guessed gate.
 
-**Where the wire ordinal itself is written is still open, and the selector-`1` candidate is now
-refuted.** The three senders (`0x26b778`, the entry-taking `P2P_SendRecordByEntry` `0x26b048`, and
-`0x26b8b8`, whose only difference is its gate) write nothing but `+0xb`. `P2P_SetRecordHeaderField`
-has four selectors, but **selector `1` — the only one that writes a whole byte, at `+0xd` — has no
-caller in the image**: `analyze call_graph` reports twenty distinct caller functions, and every
-`SetRecordHeaderField(` line in all twenty passes selector `0`, `2` or `3`, never `1`. Selector `0`
-also cannot produce a whole byte, because it preserves the high nibble (`& 0xf0`), and every call
-passes either a literal `3` or a runtime value that the mask cuts to four bits. So the stamp is not
-a counter the header setter keeps and not a store on the send path; the remaining candidates are
-the whole-entry copies on the queue path — `P2P_QueueInboundRecord` (`0x269b00`) for the receive
-side and `P2P_DrainRecordQueues` (`0x277e78`) for the send side.
+**The wire ordinal is stamped by the sender, inside the send call.** The disassembly settles what the decompiler's variable naming hid. `P2P_SendRecord` builds the twelve-byte queued entry on its own stack at `r1+0x70`: the handle word at `+0` (`lwz r0,0x0(r31)` / `stw r0,0x70(r1)`), the descriptor's `u16` at `+4`, the size at `+6` (cursor bytes + `0xc`), `1` at `+9`, and at `+10` — the entry's fourth wire byte — the descriptor's `+0xb` (`lbz r9,0xb(r31)` / `stb r9,0x7a(r1)`), before `addi r11,r9,1` / `stb r11,0xb(r31)` advances that byte. `P2P_SendRecordByEntry` (`0x26b048`) and `0x26b8b8` do the same, so all three senders stamp it. The header setter is not involved: selector `1`, the only selector that writes a whole byte, still has no caller, and the byte it writes at `+0xd` is not the wire byte. **The send path cannot separate numbering from appending**: the byte is assigned by the same call that hands the entry to `gate_p2p_record_send` and `append_udp_datagram_to_send_buffer`, and there is no lock, yield or callback between the stamp and the append — the gate and the packer are called directly.
 
 The four callers that pass a **runtime** value to selector `0` settle what that value is: it is
 bits `0` and `1` of the object's flag byte at `+0x11` — `uVar = byte[0x11] & 1`, then `uVar |= 2`
 when bit `1` is set (`_opd_FUN_00277848` `0x277848` and its siblings `0x278eb8`, `0x278aa8`,
 `0x2792f8`) — so it is a two-bit class the entry is created with, not a counter.
 
-**The receive-side copy is settled.** `P2P_QueueInboundRecord` (`0x269b00`) is the one store that
-puts the wire's fourth byte into a queue entry: `entry[+10] = record[+3]`, or `record[+4]` when the
-record's `0x20` bit widens the length field, and `0` for a record without the `0x10` bit (which
-also zeroes `entry[+9]`). The send side is still not: `P2P_DrainRecordQueues` (`0x277e78`) reads
-and re-sends queue entries and never writes `+0xa`, so an outbound record carries whatever it was
-given when it was queued, and the site that gives it its sequence byte remains unlocated. Selector `0` only marks the
-entry; `register_p2p_channel_record` builds the entry's header word as
-`[index][id bits 11..4][id bits 3..0][0]`, with the fourth byte zero, and neither
-`P2P_SendRecord` nor `gate_p2p_record_send` writes `+0xa` — the sender copies the header
-out unchanged and spends only the retry byte. So the value the peer compares is stamped
-before the send, by whoever builds the record, and the build site for the host's own
-session records has not been read yet. This host stamps it in the write path
-(`GameplayServerService.NumberAtWrite`), *before* the record enters the send window — the
-same invariant the image holds, and the reason the order matters: a held entry must
-already carry the byte an answer will name (`decode_p2p_datagram`'s `0x4000` branch, marked
-by matching `+0xa`), or no answer can ever free it.
+**The receive-side copy is settled, and so is the send's stamp.** `P2P_QueueInboundRecord` (`0x269b00`) is the one store that puts the wire's fourth byte into a queue entry: `entry[+10] = record[+3]`, or `record[+4]` when the record's `0x20` bit widens the length field, and `0` for a record without the `0x10` bit (which also zeroes `entry[+9]`). Outbound, `P2P_SendRecord` stamps `entry[+10]` from the descriptor it is sending (above), so the record carries its stream byte before it enters the window and the answer branch can name it (`decode_p2p_datagram`'s `0x4000` branch matches `+0xa`). The difference that matters for this host is *where* that stamp happens: here the number is taken by the builder and the record is sent later, so two builders can number in one order and write in another. The image has no such gap — the take and the append are one call. This host has no equivalent: the number is taken by the builder (`RoomRosterService.TakeRunOrdinal`, `MatchRecordSequenceService.Take`) and the record is written later.
 
 ## When Ghidra is not the tool for the question
 
@@ -397,7 +372,7 @@ with the refcount and the two answer bytes, and it runs when a channel state is 
 | --- | --- |
 | `read_queued_p2p_message` `0x26b5c8` | compares the inbound record's `+0xa` with it, advances it by one on equality, and drops the record **without** advancing on a mismatch |
 | `P2P_ChannelStateRelease` `0x26b1c8` | drops a reference; it never writes the expectation |
-| `P2P_SendRecord` `0x26b778`, `P2P_SendRecordByEntry` `0x26b048`, `0x26b8b8` | spend only the retry byte at `+0xb`; none of them touches `+0xe` or the wire's sequence byte |
+| `P2P_SendRecord` `0x26b778`, `P2P_SendRecordByEntry` `0x26b048`, `0x26b8b8` | stamp the wire byte from `+0xb` and advance `+0xb`; none of them touches `+0xe`, so the peer's expectation is never rewound |
 
 So a live stream cannot be renumbered by the image. The one way a stream starts again at `00` is
 a new channel state, which is exactly what happens at a round boundary on the client's side — it
