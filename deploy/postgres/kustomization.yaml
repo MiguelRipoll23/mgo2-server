@@ -1,16 +1,11 @@
-# The in-cluster database.
+# The database's cluster-side wiring.
 #
-# The image carries the EF Core migration bundle and the pod applies it on
-# startup, so this `newTag` is both the database's version and its schema's.
-# The postgres pipeline rewrites it; see the `gitops` step in
-# .github/workflows/service.yml.
+# The database itself is not a workload in this cluster: it runs as a Docker
+# container on the node. What remains here is the name the servers dial; the
+# endpoint that points at the container follows once its data directory has
+# been copied off the cluster.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
   - service.yaml
-  - statefulset.yaml
-
-images:
-  - name: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres
-    newTag: 5f4b1211854b935f93b6f494afbea3c47fbed8f5
