@@ -233,9 +233,13 @@ public static partial class MatchStartRunFramesUtils
         // `briefing-then-solo-game` publishes at t+147.650. A fresh briefing's run is
         // all free there and the mark arrives in the pair three seconds later
         // (t+12.887), so it belongs to the publications and not to this run.
-        var (teams, occupancy) = Rooms.TeamArrayFramesUtils.BuildPair(
-            teamArraySequence,
-            carriesRoundState ? slots : Array.Empty<Rooms.LobbyTeamSlot>());
+        // The pair names whatever the room holds now, briefing or round. A briefing a
+        // player is already seated in is a pair that marks that seat and its side —
+        // `cqc` does it at t+9.347 and `auto-assign-teams-enabled` at t+9.210 — and a
+        // fresh briefing whose seats are empty is the all-free pair of
+        // `briefing-then-solo-game` because the list is empty, not because the run is a
+        // briefing. Dropping the list here left every seat white until the next pair.
+        var (teams, occupancy) = Rooms.TeamArrayFramesUtils.BuildPair(teamArraySequence, slots);
 
         // The run does not open on empty <c>0x5001</c> heads, because the reference
         // writes none: every empty <c>0x5001</c> on its wire is the record-level

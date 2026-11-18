@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 
@@ -9,8 +10,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </summary>
 /// <remarks>
 /// A partial of <see cref="BriefingCountdownService"/>, split out to keep each file under
-/// the repository's size limit. The records belong to the countdown's tick — that is what
-/// writes them — so they stay in this service rather than in a writer of their own.
+/// the repository's size limit. The countdown's loop is the writer that carries them, but
+/// their cadence is the room's own tick rather than the countdown's second.
 /// </remarks>
 public sealed partial class BriefingCountdownService
 {
@@ -25,8 +26,9 @@ public sealed partial class BriefingCountdownService
     /// sends.</b> The reference hosts write the two 22-byte room-state records
     /// through a briefing in groups 2.2 to 2.6 s apart —
     /// `mgo2-game1` t+466.0, 470.5, 472.6, `mgo2-game2` t+62.2, 64.4, 224.6 and
-    /// `mgo2-started-briefing-then-solo-game` t+57.6, 60.0 — which is the cadence
-    /// of this tick (<see cref="BriefingCountdownBodiesUtils.PublishPeriodMilliseconds"/>).
+    /// `mgo2-started-briefing-then-solo-game` t+57.6, 60.0 — which is the room's own
+    /// tick (<see cref="MatchRoundStateService.BriefingTickMilliseconds"/>), kept by a
+    /// gate because the countdown it rides beside now writes once a second.
     /// The records themselves are the pair the run writes
     /// (<see cref="RoomStateRecordBodiesUtils.RoomStateRecord"/> and
     /// <see cref="RoomStateRecordBodiesUtils.RoomStateRecordSecond"/>), so a peer is told
@@ -45,6 +47,23 @@ public sealed partial class BriefingCountdownService
     /// before the first round opens.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// When each peer was last sent the room-state pair, in milliseconds since boot.
+    /// </summary>
+    /// <remarks>
+    /// The pair has its own 2.2 to 2.6 s cadence, which is the room's tick, while the
+    /// countdown's tick is one second. Sharing the countdown's loop without this gate
+    /// would write the pair twice as often as the captures do.
+    /// </remarks>
+    private readonly ConditionalWeakTable<PeerSession, RoomStateClock> roomStateClocks = [];
+
+    /// <summary>Instant one peer was last sent the room-state pair.</summary>
+    private sealed class RoomStateClock
+    {
+        /// <summary>Milliseconds since boot, the unit the write paths pace in.</summary>
+        public long LastWrittenAt { get; set; } = long.MinValue;
+    }
+
     /// <param name="context">Context the pair is written through.</param>
     private async Task PublishRoomStateAsync(PeerContext context)
     {
@@ -52,6 +71,17 @@ public sealed partial class BriefingCountdownService
         {
             return;
         }
+
+        // The countdown writes every second; the pair it rides beside is a 2.35 s
+        // record, so it is only built when its own period has elapsed for this peer.
+        var clock = roomStateClocks.GetOrCreateValue(context.Session);
+        var now = Environment.TickCount64;
+        if (now - clock.LastWrittenAt < MatchRoundStateService.BriefingTickMilliseconds)
+        {
+            return;
+        }
+
+        clock.LastWrittenAt = now;
 
         // Both values are taken here, in this order, so the pair is consecutive: the
         // record is built with its byte, as the image's builders build theirs.

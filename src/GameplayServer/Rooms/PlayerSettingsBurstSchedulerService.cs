@@ -6,23 +6,23 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
-/// Sends the settings burst the recorded host writes once, a measured pause
-/// after it has answered a joiner with the roster.
+/// Sends the settings burst once, as soon as a joiner has been answered with the
+/// roster.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The capture holds exactly one burst in the whole round — t+4.9929, outbound
-/// counter 5, six records, 2.52 s after the roster answer — and the peers that
-/// join at t+154, t+385 and t+493 do not each get one. So it is scheduled on
-/// the first roster answer and never again
+/// counter 5, six records — and the peers that join at t+154, t+385 and t+493 do
+/// not each get one. So it is scheduled on the first roster answer and never again
 /// (<c>docs/protocol/UDP_GAME_CAPTURE.md</c> §4).
 /// </para>
 /// <para>
-/// The send is not awaited. The pause is longer than the accept path should hold
-/// the dispatch loop open, and a host that blocked on it would stop reading every
-/// other peer for two and a half seconds. The counter is still the session's:
-/// the burst goes out on the sequence after the roster trailer because nothing
-/// else is written in between, which is what the capture shows.
+/// <b>The reference's 2.52 s pause is not reproduced.</b> Those seconds are the
+/// briefing's player rows still missing: the burst's loadouts and the seat rows
+/// behind it are what put a name, a side and gear on every seat, and holding them
+/// back leaves the rows blank while the countdown is already running. The burst is
+/// still one per host; it simply follows the roster answer instead of waiting out
+/// the recording's pause.
 /// </para>
 /// <para>
 /// <b>The room's rotation and loadouts are resolved here, not replayed.</b> The
@@ -31,9 +31,8 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// room's players look like, so both are taken from this host and handed to the
 /// builder: the rotation from this instance's own settings
 /// (<see cref="MatchSettingsService"/>) and the loadouts from the room's rows
-/// (<see cref="LobbyLoadoutService"/>). What is resolved here is resolved 2.52 s
-/// before the burst goes out, which is where the capture's pause is, so the one
-/// read costs the join nothing.
+/// (<see cref="LobbyLoadoutService"/>). Both are read as the burst is built, so they
+/// cost the join only the reads.
 /// </para>
 /// </remarks>
 /// <param name="burst">Builder of the settings burst and the control record that follows it.</param>
@@ -51,12 +50,6 @@ public sealed class PlayerSettingsBurstSchedulerService(
     RoomRosterService roster,
     ILogger<PlayerSettingsBurstSchedulerService> logger)
 {
-    /// <summary>
-    /// Pause the recorded host leaves between the roster answer and the burst,
-    /// measured at 2.52 s on outbound counter 5.
-    /// </summary>
-    public static readonly TimeSpan Delay = TimeSpan.FromMilliseconds(2520);
-
     /// <summary>Set once the burst has been scheduled, so it leaves one time.</summary>
     private int scheduled;
 
@@ -77,23 +70,17 @@ public sealed class PlayerSettingsBurstSchedulerService(
         }
 
         logger.LogDebug(
-            "UDP {LocalPort}: scheduled settings burst for {RemoteAddress} after {Delay}",
+            "UDP {LocalPort}: sending the settings burst for {RemoteAddress} with the roster answer",
             context.LocalPort,
-            context.Remote,
-            Delay);
-        _ = SendAsync(context, wait: true);
+            context.Remote);
+        _ = SendAsync(context);
     }
 
     /// <summary>Allows the next room to send its one settings burst.</summary>
     public void Reset() => Interlocked.Exchange(ref scheduled, 0);
 
-    private async Task SendAsync(PeerContext context, bool wait)
+    private async Task SendAsync(PeerContext context)
     {
-        if (wait)
-        {
-            await Task.Delay(Delay);
-        }
-
         var rotation = ReadRotation(context);
 
         // The room's own players are read beside its rotation, in the same pause:

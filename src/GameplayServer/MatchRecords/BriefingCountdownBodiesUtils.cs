@@ -63,18 +63,24 @@ public static class BriefingCountdownBodiesUtils
     public const int RecordLength = 7;
 
     /// <summary>
-    /// Spacing between countdown records: the briefing's one tick, which the rules
-    /// pair and the ready set are written on in the same pass.
+    /// Spacing between countdown records: one second, the resolution the count is
+    /// displayed at.
     /// </summary>
     /// <remarks>
-    /// <b>It is the room's tick and not this record's.</b> The reference writes
-    /// the countdown in a datagram of its own a millisecond beside the rules pair at
-    /// 28 of <c>started-on-briefing</c>'s 31 countdown instants, so the two cannot
-    /// be given different periods without drifting off each other:
-    /// <see cref="MatchRoundStateService.BriefingTickMilliseconds"/> carries the
-    /// measurement and the reason it is 2.35 s rather than the 2.5 s this held.
+    /// <para>
+    /// <b>The countdown has its own period and does not share the room's 2.35 s
+    /// tick.</b> The reference's ticking records measure a median gap of 0.974 s in
+    /// <c>working-server-log.pcapng</c>, carrying 59 down to 51 one second at a
+    /// time. Written on the room's tick instead, each record drops two or three
+    /// seconds and the screen visibly skips them — which is what this host did at
+    /// 2.35 s.
+    /// </para>
+    /// <para>
+    /// The rules pair and the ready set keep <see cref="MatchRoundStateService.BriefingTickMilliseconds"/>:
+    /// their 2.35 s is measured separately, and they are not this record.
+    /// </para>
     /// </remarks>
-    public const int PublishPeriodMilliseconds = MatchRoundStateService.BriefingTickMilliseconds;
+    public const int PublishPeriodMilliseconds = 1000;
 
     /// <summary>Seconds in one minute, the factor between a briefing's minutes and its count.</summary>
     public const int SecondsPerMinute = 60;
@@ -121,6 +127,28 @@ public static class BriefingCountdownBodiesUtils
     /// <returns>A value in <c>0</c>…<see cref="MaxCountSeconds"/>.</returns>
     public static int CountdownSeconds(TimeSpan remaining) =>
         Math.Clamp((int)Math.Ceiling(remaining.TotalSeconds), 0, MaxCountSeconds);
+
+    /// <summary>
+    /// Milliseconds from now until <see cref="CountdownSeconds"/> changes, so a
+    /// countdown record is written on the briefing clock's own second rather than on
+    /// a timer that drifts against it.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is what keeps the count from skipping.</b> A fixed period accumulates
+    /// the loop's overhead, and once a tick lands more than a second late the next
+    /// value is two below the one before it. Waiting for the instant the ceiling
+    /// drops makes every tick one value, whatever the loop spent on its work; the
+    /// reference's own ticking records are 1.02 s and 0.92 s apart and always drop
+    /// exactly one.
+    /// </remarks>
+    /// <param name="remaining">Time left in the briefing.</param>
+    /// <returns>The wait to the next value, 1 to 1000 milliseconds.</returns>
+    public static int MillisecondsToNextSecond(TimeSpan remaining)
+    {
+        var seconds = CountdownSeconds(remaining);
+        var boundary = Math.Max(remaining.TotalSeconds - (seconds - 1), 0.001);
+        return Math.Clamp((int)Math.Ceiling(boundary * 1000), 1, PublishPeriodMilliseconds);
+    }
 
     /// <summary>
     /// The countdown record's body: the <c>0x0b</c> opcode, the seconds left, the

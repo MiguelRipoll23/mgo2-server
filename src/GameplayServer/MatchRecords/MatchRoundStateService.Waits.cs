@@ -157,21 +157,18 @@ public sealed partial class MatchRoundStateService
     }
 
     /// <summary>
-    /// Spacing between two ticks of a briefing: 2.35 s, the period every record of
-    /// a briefing is written on.
+    /// Spacing between two ticks of a briefing: 2.35 s, the period the rules pair and
+    /// the ready set are written on.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>One tick, not three.</b> The rules pair, the countdown and the ready set
-    /// are three writers here and one tick in the reference: measured over the ten
-    /// reference captures, a briefing writes the pair 813 times at a median gap of
-    /// 2.336 s and the seven-byte countdown 78 times at 2.372 s, and where both are
-    /// on the wire they are written in the **same pass** — separate datagrams a
-    /// millisecond apart, <c>mgo2-game-started-on-briefing</c> at 28 of 31 countdown
-    /// instants and <c>mgo2-game-joined-when-red-team</c> at 21 of 39. Writers that
-    /// kept their own periods drifted apart instead, which is the difference these
-    /// captures can see: a pair at 2.25 s beside a countdown at 2.5 s meets the
-    /// countdown on one tick in nine and none after that.
+    /// <b>The pair and the ready set share this tick; the countdown does not.</b>
+    /// Measured over the ten reference captures, a briefing writes the pair 813
+    /// times at a median gap of 2.336 s. The seven-byte countdown carries a count of
+    /// remaining seconds and is written once a second instead
+    /// (<c>working-server-log.pcapng</c>: 59 down to 51 at a median 0.974 s;
+    /// <see cref="BriefingCountdownBodiesUtils.PublishPeriodMilliseconds"/>), because on
+    /// this tick the count drops two or three at a time and the client's screen skips.
     /// </para>
     /// <para>
     /// <b>Why 2.35 and not 2.5.</b> The 2.5 s came from the ready set's own timer
@@ -262,22 +259,32 @@ public sealed partial class MatchRoundStateService
     }
 
     /// <summary>
-    /// Waits out one briefing tick, or until the room's ready set moves, or until
+    /// Waits out one countdown tick, or until the room's ready set moves, or until
     /// the round opens: the countdown's wait, which a ready cuts short.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <b>Only the countdown wakes on a ready.</b> The ready set's own repeat and the
     /// room's rules pair keep the plain tick: the reference writes the set with the
     /// run and once more on the next tick and not beside the countdown a ready draws
     /// (<see cref="BriefingReadyPublishService"/>), so a publication woken here would
     /// put 2N records on the wire where the captures hold one 7-byte record.
+    /// </para>
+    /// <para>
+    /// <b>The wait is the caller's, to the instant the count changes.</b> The countdown
+    /// passes <see cref="BriefingCountdownBodiesUtils.MillisecondsToNextSecond"/> so the
+    /// record is written on the briefing clock's own second; sleeping a fixed period
+    /// would accumulate the loop's overhead and eventually drop two seconds at once.
+    /// The reference's ticking records are 1.02 s and 0.92 s apart and always drop one.
+    /// </para>
     /// </remarks>
     /// <param name="session">Session the waiting writer writes to.</param>
-    public async Task WaitBriefingCountdownTickAsync(PeerSession session)
+    /// <param name="milliseconds">Longest wait, which the countdown sets to its next whole second.</param>
+    public async Task WaitBriefingCountdownTickAsync(PeerSession session, int milliseconds)
     {
         var version = ReadySetVersion;
         var waited = 0;
-        while (!IsOpen && waited < BriefingTickMilliseconds)
+        while (!IsOpen && waited < milliseconds)
         {
             if (!MatchRecordPeerUtils.IsAlive(session) || ReadySetVersion != version)
             {

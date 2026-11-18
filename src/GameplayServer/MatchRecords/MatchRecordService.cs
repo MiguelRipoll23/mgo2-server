@@ -158,12 +158,7 @@ public sealed partial class MatchRecordService(
                     return;
                 }
 
-                if (step.DelayMilliseconds > 0)
-                {
-                    await Task.Delay(step.DelayMilliseconds);
-                }
-
-                await SendAsync(context, step.Records);
+                await SendAsync(context, step);
                 playedSteps++;
 
                 // The round's own run is what the beat follows: the reference writes

@@ -3,60 +3,34 @@ using Mgo2Server.Shared.Constants;
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The sparse phase: the records a peer is written before any round exists, one
-/// step per set of them and the measured wait between two steps.
+/// The sparse phase: the records a peer is written before any round exists, in the
+/// order the recorded host wrote them.
 /// </summary>
 /// <remarks>
 /// <para>
-    /// <b>It is split from the beat because it is replayed and the beat is not.</b>
-    /// The steps below are the recorded host's own draw of its channel while it waits
-    /// for the room to report ready — the timings and bodies are read off
-    /// <c>mgo2-game1.pcapng</c> and nothing here is derived — whereas the beat is
-    /// written against a round that is running, with a clock that counts. Keeping
-    /// both in one file is how a constant of one becomes a literal in the other.
-    /// </para>
-    /// <para>
-    /// <b>A step is not a frame.</b> A frame of the capture is a datagram and the
-    /// phase is sparse: 4.9 s of nothing follows the first record, and the steps that
-    /// carry no wait are the records the capture put in one datagram.
-    /// </para>
-    /// </remarks>
+/// <b>It is split from the beat because it is replayed and the beat is not.</b>
+/// The steps below are the recorded host's own draw of its channel while it waits
+/// for the room to report ready — the bodies are read off <c>mgo2-game1.pcapng</c>
+/// and nothing here is derived — whereas the beat is written against a round that
+/// is running, with a clock that counts. Keeping both in one file is how a constant
+/// of one becomes a literal in the other.
+/// </para>
+/// <para>
+/// <b>The capture's waits are not reproduced.</b> The recorded host spread these
+/// records over 42.2 s because it had nothing else to say; every one of them is a
+/// control byte or a full state block the client can take at once, and holding them
+/// back only postpones state the briefing is already waiting on. They are written in
+/// order as soon as the roster answer has gone out, and the briefing's own writers —
+/// the countdown, the ready set and the room's pair — are what pace the channel from
+/// there.
+/// </para>
+/// </remarks>
 public static class SparsePhaseFramesUtils
 {
     /// <summary>
-    /// How long the sparse phase lasts: the sum of the delays
-    /// <see cref="SparseSteps"/> itself carries, 42 240 ms — 42.2 s, the
-    /// capture's own close of the phase. It is the point on this clock at which
-    /// the match-start run follows, and it is derived from the steps rather than
-    /// restated so the two cannot drift apart.
-    /// </summary>
-    public static int SparsePhaseMilliseconds => SparsePhaseLengthMilliseconds;
-
-    private static readonly int SparsePhaseLengthMilliseconds =
-        SparseSteps().Sum(step => step.DelayMilliseconds);
-
-    /// <summary>One step of the stream: records to write together, then the wait before the next.</summary>
-    /// <param name="DelayMilliseconds">Delay before this step, in milliseconds.</param>
-    /// <param name="Records">Records written together as one datagram.</param>
-    public sealed record RecordStep(
-        int DelayMilliseconds,
-        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> Records);
-
-    /// <summary>
-    /// The sparse phase, counted from the roster answer. Each delay is measured
-    /// between consecutive captured frames, so a zero means the two went out back
-    /// to back.
+    /// The sparse phase, in send order: each entry is written as one datagram.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <b>The phase ends at the last state blob and the run does not follow it.</b>
-    /// The run is not a step of this list: it waits for the client's join
-    /// report, and the captured client sent it 1.66 s after the phase closed — so
-    /// the run lands at the capture's t+46.4 s rather than the phase's t+42.2 s,
-    /// and only because the client asked. <see cref="MatchStartRunService"/> writes
-    /// it on that report.
-    /// </para>
-    /// <para>
     /// <b>The controls' fourth bytes are the capture's own values and not the
     /// exchange's counter.</b> They read <c>02</c>…<c>09</c> across the phase, and
     /// those values overlap the ones the join's run and its burst take from the
@@ -65,27 +39,26 @@ public static class SparsePhaseFramesUtils
     /// <see cref="MatchRecordSequenceService"/> would number them differently from
     /// the capture. They are pinned for that reason, not by oversight; what the
     /// values mean is **[U]**.
-    /// </para>
     /// </remarks>
     /// <returns>The steps in send order, ending at the last state blob.</returns>
-    public static List<RecordStep> SparseSteps() =>
+    public static List<IReadOnlyList<MatchRecordFramesUtils.RecordMessage>> SparseSteps() =>
     [
-        new(4930, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x02)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
-        new(0, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x02)]),
-        new(4800, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x03)]),
-        new(2400, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x03)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
-        new(2370, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x04)]),
-        new(2750, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
-        new(2370, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x05)]),
-        new(4750, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
-        new(0, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x06)]),
-        new(4770, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x07)]),
-        new(110, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
-        new(4250, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x08)]),
-        new(2490, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
-        new(6250, [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x09)]),
-        new(0, [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)]),
+        [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x02)],
+        [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)],
+        [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x02)],
+        [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x03)],
+        [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x03)],
+        [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)],
+        [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x04)],
+        [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)],
+        [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x05)],
+        [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)],
+        [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x06)],
+        [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x07)],
+        [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)],
+        [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.EarlyControl(), 0x08)],
+        [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)],
+        [new(UdpCommandConstants.InGameControl, MatchRecordBodiesUtils.AlternateControl(), 0x09)],
+        [new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), MatchRecordFramesUtils.StateBlobSparseAttributeClass)],
     ];
 }

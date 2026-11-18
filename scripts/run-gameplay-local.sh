@@ -19,13 +19,12 @@
 # after the local port unless the environment names them.
 #
 # Two settings are this run's own and never the cluster's. GAMEPLAY_LOG_LEVEL is
-# the level the run logs at — Trace by default, which writes every record's body
-# beside the frame it travelled in, so a run's wire can be read back from its log
-# without a capture; Debug is what a run is watched at and turns that off — and it
-# is exported as LOG_LEVEL before the ConfigMap is merged, so the level a pod logs
-# at stays on the pod. GAMEPLAY_SERVER_ROTATION is one round, TDM on Blood
-# Bath, because a local run is played to watch a round and not the deployed
-# rotation of nine.
+# the level the run logs at — Debug by default, which is what a run is watched at,
+# and Trace adds every datagram with its hex so a run's wire can be read back from
+# its log without a capture — and it is exported as LOG_LEVEL before the ConfigMap
+# is merged, so the level a pod logs at stays on the pod. GAMEPLAY_SERVER_ROTATION
+# is one round, TDM on Blood Bath, because a local run is played to watch a round
+# and not the deployed rotation of nine.
 #
 # The output is written to a log file as it arrives, through tee, so the run can be
 # read back after the terminal has scrolled or the process has stopped. The file is
@@ -139,7 +138,7 @@ export GAMEPLAY_SERVER_PORT="$gameplay_port"
 # has not set, so the level a pod logs at never reaches a local run. Debug is what
 # a run is read at: what each service made of a payload, and the decisions between
 # them. Trace adds the wire — every datagram in and out, with its hex.
-export LOG_LEVEL="${GAMEPLAY_LOG_LEVEL:-Trace}"
+export LOG_LEVEL="${GAMEPLAY_LOG_LEVEL:-Debug}"
 
 export GAMEPLAY_SERVER_CHARACTER_NAME="${GAMEPLAY_SERVER_CHARACTER_NAME:-server-$gameplay_port}"
 export GAMEPLAY_SERVER_GAME_NAME="${GAMEPLAY_SERVER_GAME_NAME:-server-$gameplay_port}"

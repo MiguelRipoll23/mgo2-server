@@ -64,14 +64,15 @@ public sealed partial class BriefingCountdownService(
     ILogger<BriefingCountdownService> logger)
 {
     /// <summary>
-    /// Spacing between countdown records: the briefing's one tick.
+    /// Spacing between countdown records: one second.
     /// </summary>
     /// <remarks>
-    /// <b>It is the tick the rules pair and the ready set are written on, in the
-    /// same pass.</b> The reference writes the countdown and the pair a millisecond
-    /// apart at most of its countdown instants (28 of 31 in
-    /// <c>started-on-briefing</c>), so the periods are one number:
-    /// <see cref="MatchRoundStateService.BriefingTickMilliseconds"/>.
+    /// <b>The countdown is written once a second and not on the room's 2.35 s tick.</b>
+    /// The record carries the briefing's remaining seconds, so a longer period drops a
+    /// second between records and the client shows the count skipping — the symptom
+    /// this period fixes. The reference's ticking records measure a median gap of
+    /// 0.974 s in <c>working-server-log.pcapng</c>
+    /// (<see cref="BriefingCountdownBodiesUtils.PublishPeriodMilliseconds"/>).
     /// </remarks>
     public const int PublishPeriodMilliseconds = BriefingCountdownBodiesUtils.PublishPeriodMilliseconds;
 
@@ -224,7 +225,9 @@ public sealed partial class BriefingCountdownService(
             // (`working-server-log.pcapng` t+516.559, beside the 1 s tick it sits
             // between). This task is awaited before the beat, and a period slept out
             // after the run was written would hold the beat's first frame behind it.
-            await roundState.WaitBriefingCountdownTickAsync(session);
+            await roundState.WaitBriefingCountdownTickAsync(
+                session,
+                BriefingCountdownBodiesUtils.MillisecondsToNextSecond(remaining));
         }
 
         // A briefing's last word to a peer is a zero, and it carries the room's

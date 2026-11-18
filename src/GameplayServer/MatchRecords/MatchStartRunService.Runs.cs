@@ -322,8 +322,7 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
-    /// Writes a peer the run's records again, one briefing tick after the run
-    /// itself, which is the second instant every capture writes.
+    /// Writes a peer the run's records again, one room tick after the run.
     /// </summary>
     /// <remarks>
     /// <b>Only while the room is still in the phase the run was written for.</b>
@@ -348,7 +347,8 @@ public sealed partial class MatchStartRunService
     {
         try
         {
-            await Task.Delay(BriefingCountdownBodiesUtils.PublishPeriodMilliseconds);
+            // The room's tick: the captures repeat the run 2.1 to 2.4 s after it.
+            await Task.Delay(MatchRoundStateService.BriefingTickMilliseconds);
 
             if (!MatchRecordPeerUtils.IsAlive(context.Session))
             {

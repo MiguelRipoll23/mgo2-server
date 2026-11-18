@@ -12,8 +12,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The order, the frame counts and the delays below are the capture's; the
-/// bodies are <see cref="MatchRecordBodiesUtils"/>'. What the replay console's
+/// The order and the frame counts below are the capture's; its waits between
+/// them are not reproduced. The bodies are <see cref="MatchRecordBodiesUtils"/>'. What the replay console's
 /// own parser adds (<c>docs/analysis/replay-console/rpdt.js</c>, mapped in
 /// <c>docs/protocol/RPDT_REPLAY_RECORDS.md</c>) is a reading of those bodies: a
 /// session identifier's low eleven bits name a stream and the payload's first
@@ -27,10 +27,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </para>
 /// <list type="number">
 /// <item>
-/// The <b>sparse phase</b> (t+4.9 s to t+42.2 s): a <c>0xd001</c> control byte
-/// and a <c>0x0002</c> state blob, several seconds apart. Its own length is
-/// <see cref="SparsePhaseMilliseconds"/>, the sum of the delays
-/// <see cref="SparseSteps"/> itself carries, and what follows it is the beat.
+/// The <b>sparse phase</b>: a <c>0xd001</c> control byte and a <c>0x0002</c> state
+/// blob, written in the capture's order as soon as the roster answer has gone out.
+/// The capture spread them over 42.2 s, but those waits are not reproduced
+/// (<see cref="SparsePhaseFramesUtils"/>), and what follows is the beat.
 /// </item>
 /// <item>
 /// The <b>match-start run</b> is not one of this file's phases: it is written
