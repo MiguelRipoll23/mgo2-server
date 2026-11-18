@@ -1,0 +1,28 @@
+# The Service's one backend: the Docker container on the node.
+#
+# An EndpointSlice rather than an Endpoints object, because Endpoints is
+# deprecated. `managed-by: external` is what tells the EndpointSlice controller
+# that this slice is not its to reconcile; without it, a Service with no
+# selector has no endpoints at all and nothing would create this one.
+#
+# The address is the node's own, where compose.yaml publishes the container.
+# Nothing discovers it, so moving the database to another host means changing
+# this line as well as the port binding.
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: mgo2-postgres
+  namespace: mgo2
+  labels:
+    kubernetes.io/service-name: mgo2-postgres
+    endpointslice.kubernetes.io/managed-by: external
+addressType: IPv4
+ports:
+  - name: postgres
+    port: 5432
+    protocol: TCP
+endpoints:
+  - addresses:
+      - 192.168.1.15
+    conditions:
+      ready: true

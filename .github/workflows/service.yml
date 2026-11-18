@@ -380,11 +380,21 @@ jobs:
           SHA: ${{ github.sha }}
           SERVICE: ${{ inputs.service }}
           MANIFESTS: ${{ inputs.manifests }}
+          IMAGE: ${{ inputs.image }}
         run: |
           set -euo pipefail
           file="deploy/${MANIFESTS}/kustomization.yaml"
 
-          pinned="$(sed -n 's/^ *newTag: *//p' "$file")"
+          # The database runs on the node rather than in the cluster, so its pin
+          # is the image line of the host's compose file. The rule below is the
+          # same one for a different line: record the SHA, and never let an
+          # older run overwrite a newer pin.
+          if [ -f "deploy/${MANIFESTS}/compose.yaml" ]; then
+            file="deploy/${MANIFESTS}/compose.yaml"
+            pinned="$(sed -n "s|^ *image: .*/${IMAGE}:\(.*\)$|\1|p" "$file" | head -n 1)"
+          else
+            pinned="$(sed -n 's/^ *newTag: *//p' "$file")"
+          fi
 
           # A run that finished late must not overwrite a newer pin. If the
           # commit already recorded there is a descendant of this one, a later
@@ -395,7 +405,11 @@ jobs:
             exit 0
           fi
 
-          sed -i "s|^\( *newTag: \).*$|\1${SHA}|" "$file"
+          if [ "${file##*/}" = "compose.yaml" ]; then
+            sed -i "s|^\( *image: .*/${IMAGE}:\).*$|\1${SHA}|" "$file"
+          else
+            sed -i "s|^\( *newTag: \).*$|\1${SHA}|" "$file"
+          fi
 
           if git diff --quiet -- $file; then
             echo "Already pinned to $SHA."

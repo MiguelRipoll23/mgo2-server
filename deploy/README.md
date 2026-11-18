@@ -1,15 +1,17 @@
 # deploy/
 
-The source of truth for the cluster. This folder is what ArgoCD reconciles, and
-it is the only thing that changes the running stack: CI builds images and writes
-an image tag here, and Argo does the rest. No workflow runs `kubectl apply`.
+The source of truth for the deployment. ArgoCD reconciles everything here
+except the database's host file (`postgres/compose.yaml`, which runs on the
+node), and it is the only thing that changes the running stack: CI builds images
+and writes an image tag here, and Argo does the rest. No workflow runs
+`kubectl apply`.
 
 ## Layout
 
 | Folder             | Reconciles                                             | Image                     |
 | ------------------ | ------------------------------------------------------ | ------------------------- |
 | `cluster/`         | the namespace, GatewayClass, Gateway and HTTPRoute      | —                         |
-| `postgres/`        | the in-cluster database                                 | `mgo2-postgres`           |
+| `postgres/`        | the database's Service and endpoint, and the host's compose file | `mgo2-postgres`   |
 | `gate/`            | the gate lobby                                          | `mgo2-gate-lobby-server`  |
 | `account/`         | the account lobby                                       | `mgo2-account-lobby-server` |
 | `game-lobby/`      | the ten lobby roles                                     | `mgo2-game-lobby-server`  |
@@ -22,6 +24,8 @@ an image tag here, and Argo does the rest. No workflow runs `kubectl apply`.
 Each service folder is a kustomization with exactly one `images:` entry, and
 that entry's `newTag` is the only thing a deploy changes there. Ten lobby
 deployments share one image, so they share one tag and move together.
+`postgres/` is the exception: its pin is the `image:` line in `compose.yaml`,
+because the database runs on the node rather than in the cluster.
 
 ## How a change reaches the cluster
 
@@ -38,6 +42,11 @@ deployments share one image, so they share one tag and move together.
    resource to compare.
 4. ArgoCD notices the commit and syncs the Application for that folder. Sync is
    automated and self-healing, so the folder and the cluster cannot drift.
+
+The database is the one thing outside that loop. Its pin is committed like the
+others, but nothing Argo reconciles runs it: the container on the node has to
+pull the new image itself. That is the price of the data outliving the cluster,
+and it is one command on the node — see [Migrations](#migrations).
 
 Nothing in that sequence reads anything a previous run wrote. A run that failed
 a week ago cannot stop this one, and two services never wait on each other.
@@ -60,7 +69,7 @@ are ordered by sync wave:
 | Wave | Application  | Why                                                          |
 | ---- | ------------ | ------------------------------------------------------------ |
 | 0    | `mgo2-cluster`  | the namespace and Gateway API resources everything needs    |
-| 1    | `mgo2-postgres` | the database, which applies the schema and must be ready before anything rolls out |
+| 1    | `mgo2-postgres` | the database's Service, which a server needs before it starts |
 | 2    | the services    | the workloads, none of which may roll out before the schema is ready |
 
 Three things are prerequisites and are deliberately **not** in this folder,
@@ -70,10 +79,12 @@ because they carry environment-specific values that do not belong in git:
   their whole environment from. Its `DATABASE_CONNECTION_STRING` names the
   database by its Service (`Host=mgo2-postgres;Port=5432;...`), which is what
   pointed at the external instance before this folder had a database in it;
-- the `mgo2-postgres` Secret, which the database pod alone reads:
+- the `mgo2-postgres` Secret, which the database container alone reads:
   `POSTGRES_DB`, `POSTGRES_USER` and `POSTGRES_PASSWORD` for the server itself,
   and a `DATABASE_CONNECTION_STRING` naming `localhost`, because that is the
-  instance the entrypoint's migration bundle connects to before the pod serves;
+  instance the entrypoint's migration bundle connects to before the server
+  starts. On the node it is written to `~/.mgo2-postgres.env`, which
+  `postgres/compose.yaml` reads;
 - the `mgo2-appsettings` ConfigMap, which every deployment mounts as
   `/app/appsettings.json`;
 - the `mgo2-tls` Secret, which the HTTP API alone mounts, as the certificate its
@@ -192,14 +203,22 @@ at startup — so the mount being current is not the same as the listener being.
 
 The database applies its own schema. `mgo2-postgres` is PostgreSQL 18 with the
 EF Core bundle in it, and its entrypoint runs the bundle against a temporary
-instance before it starts the server; the readiness probe passes only once the
-migration history table exists. A pod that is Ready is therefore a pod whose
-schema is current, and publishing a new bundle and pinning it in `deploy/postgres`
-is the whole of a schema change. What orders it against the workloads is the
-wave: nothing at wave 2 begins until this Application is Healthy.
+instance before it starts the server, so a container that is healthy is one
+whose schema is current. Publishing a new bundle and pinning it in
+`deploy/postgres/compose.yaml` is the whole of a schema change, but unlike the
+other pins this one is not applied by Argo: the container runs on the node, and
+the operator pulls it there.
+
+```sh
+docker compose -f deploy/postgres/compose.yaml pull
+docker compose -f deploy/postgres/compose.yaml up -d
+```
+
+The healthcheck makes the wait observable: it passes only once PostgreSQL is
+accepting connections and the migration history table exists.
 
 One consequence is worth stating plainly. **A schema change is a database
-restart.** The pod holds the only copy of the data directory, so its
+restart.** The container holds the only copy of the data directory, so its
 replacement cannot start until the old one has stopped, and the servers see a
 database that is away while the bundle runs. Expand-then-contract is what keeps
 that window from also being a breaking one.
@@ -207,9 +226,8 @@ that window from also being a breaking one.
 The schema rules the migration has to obey:
 
 1. **The servers never migrate, and cannot.** No server image carries the
-   bundle. It lives in `mgo2-postgres`, the database pod runs it on startup,
-   and nothing else applies a schema — which is why the database is a wave of
-   its own rather than one more workload.
+   bundle. It lives in `mgo2-postgres`, the database container runs it on
+   startup, and nothing else applies a schema.
 2. **The bundle is versioned with the commit that built it.** `mgo2-postgres`
    carries the EF Core bundle built from that revision, and `deploy/postgres/`
    pins the image tag, so the schema a release applies is the schema its code
@@ -523,9 +541,10 @@ beside. Diagnosing that by deleting logs is the wrong half of the answer.
 **node**, and neither substitutes for the other: a registry that still holds a
 version is precisely what makes pruning the node safe.
 
-`node/` is the node's half. It is the only folder here that Argo does not
-reconcile — there is nothing to apply — and it is deliberately absent from the
-table above for that reason.
+`node/` is the node's half. It is not reconciled by Argo — there is nothing to
+apply — and it is deliberately absent from the table above for that reason.
+`postgres/compose.yaml` is the other host-side file, kept beside the Service it
+feeds rather than here.
 
 | File                      | Role                                              |
 | ------------------------- | ------------------------------------------------- |
@@ -565,7 +584,7 @@ pruned node costs that rollback one pull it would otherwise have skipped.
 
 ## What is not here
 
-- **No `latest` in a tag Argo deploys.** The registry may still carry `latest`
+- **No `latest` in a deployed tag.** The registry may still carry `latest`
   for convenience; nothing in this folder names it.
 - **No CI step that applies anything.** The pipelines stop at a commit.
 - **No `kubectl.kubernetes.io/restartedAt` annotations.** They used to be how a

@@ -1,10 +1,11 @@
-# How the servers reach the database. ClusterIP and nothing else: the database
-# is never reachable from outside the cluster, and no traffic needs its source
-# address preserved, so the source-address rules in deploy/README.md do not
-# apply to it.
+# How the servers reach the database. The name is the host in their
+# DATABASE_CONNECTION_STRING (`Host=mgo2-postgres;Port=5432;...`), which lives
+# in the mgo2-secrets Secret, so it has to stay.
 #
-# The name is the host in the servers' DATABASE_CONNECTION_STRING
-# (`Host=mgo2-postgres;Port=5432;...`), which lives in the mgo2-secrets Secret.
+# There is no selector: the backend is a container on the node, not a pod, and
+# endpoints.yaml names it by hand. ClusterIP and nothing else, so the Service
+# remains the only path from inside the cluster and the container's published
+# port is not what a server dials.
 apiVersion: v1
 kind: Service
 metadata:
@@ -20,7 +21,5 @@ spec:
     port: 5432
     protocol: TCP
     targetPort: 5432
-  selector:
-    app: mgo2-postgres
   sessionAffinity: None
   type: ClusterIP

@@ -304,10 +304,11 @@ The five checks that matter, and how to run each:
   publish and pin. Break a `Shared`-tagged test instead and every pipeline
   fails, correctly — nothing can be deployed against code that is broken.
 - **A migration runs end-to-end.** Push a change under `src/Shared/Persistence`
-  (which rebuilds the bundle and re-pins `deploy/postgres`) and watch Argo: the
-  `mgo2-postgres` Application must reach Healthy — its readiness probe passes
-  only once the migration history table exists — before any wave-2 Application
-  begins to sync.
+  (which rebuilds the bundle and re-pins `deploy/postgres/compose.yaml`), then
+  pull it on the node:
+  `docker compose -f deploy/postgres/compose.yaml pull && docker compose -f deploy/postgres/compose.yaml up -d`.
+  The entrypoint applies the bundle before the server accepts a connection, and
+  its healthcheck passes only once the migration history table exists.
 - **The purge keeps what it should.** Dispatch `purge-images.yml` with
   `dry_run: true`, and read the log: every `newTag` in `deploy/` and the last
   `keep` release tags must appear on a `keep` line, and nothing carrying
@@ -325,11 +326,12 @@ The spec this implements left four questions open. They are settled:
   plain kustomizations rather than Kustomization objects, and because an
   ordered sync — a wave that must be healthy before the next one starts — is
   what a schema change needs to stay ahead of the workloads.
-- **Database**: PostgreSQL 18, in the cluster, as the `mgo2-postgres`
-  StatefulSet in `deploy/postgres` — the same image the migration hook runs, so
-  the database a release starts and the schema that release applies are one
-  artifact. The bundle is `dotnet ef migrations bundle`, verified in the
-  `postgres` Dockerfile stage.
+- **Database**: PostgreSQL 18, outside the cluster, as a Docker container on
+  the node — defined in `deploy/postgres/compose.yaml` and reached inside the
+  cluster through the `mgo2-postgres` Service and its EndpointSlice. It is the
+  same image the migration hook runs, so the database a release starts and the
+  schema that release applies are one artifact. The bundle is
+  `dotnet ef migrations bundle`, verified in the `postgres` Dockerfile stage.
 - **Replicas**: one per service (`replicas: 1` in every deployment). Expand and
   contract still applies: a rollout runs the old and the new pod together even
   at one replica, so the discipline is about the rollout window, not about

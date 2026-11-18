@@ -3,7 +3,7 @@
 # those in sync-wave order.
 #
 #   wave 0  cluster   the namespace and the Gateway API resources
-#   wave 1  postgres  the database, which applies the schema and must be ready first
+#   wave 1  postgres  the database's Service, which a server needs before it starts
 #   wave 2  services  every workload, which may not roll out before it is
 #
 # Apply it once, after ArgoCD is installed on the cluster:

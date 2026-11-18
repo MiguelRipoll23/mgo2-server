@@ -1,0 +1,53 @@
+# The database, as a container on the node rather than a workload in k3s.
+#
+# It runs outside the cluster so that a cluster upgrade, a k3s restart or a lost
+# PersistentVolume cannot take the data with it, and so the database is up while
+# the cluster is not. `service.yaml` and `endpoints.yaml` are what make the name
+# `mgo2-postgres`, which the servers already dial, reach this container.
+#
+# The image is the project's own: PostgreSQL 18 with the EF Core migration
+# bundle. Its entrypoint applies the bundle against a temporary instance before
+# the server starts, so the container never serves a schema the bundle has not
+# applied. The tag is pinned to the commit that built the bundle, and the
+# service pipeline rewrites it the way it rewrites a kustomization's `newTag`.
+#
+# First run on the node, after writing the credentials file from the
+# mgo2-postgres Secret (POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD and the
+# entrypoint's DATABASE_CONNECTION_STRING):
+#
+#   docker compose -f deploy/postgres/compose.yaml up -d
+#
+# After a bundle bump, Argo does not apply this one; pull it here:
+#
+#   docker compose -f deploy/postgres/compose.yaml pull
+#   docker compose -f deploy/postgres/compose.yaml up -d
+name: mgo2-postgres
+
+services:
+  postgres:
+    image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:5f4b1211854b935f93b6f494afbea3c47fbed8f5
+    container_name: mgo2-postgres
+    restart: unless-stopped
+    env_file:
+      - ${HOME}/.mgo2-postgres.env
+    ports:
+      # Published on the node's own address, which is what endpoints.yaml names.
+      # The password still gates the connection, but this is a host port: it is
+      # reachable from the node's network, not only from pods.
+      - "192.168.1.15:5432:5432"
+    volumes:
+      # PostgreSQL 18's PGDATA is /var/lib/postgresql/18/docker, so the volume
+      # covers the version directory above it rather than the data directory
+      # itself.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/local/bin/healthcheck-postgres.sh"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  # Named explicitly: this is the volume the database has used since it moved
+  # off the cluster, and compose must not derive a different name for it.
+  postgres-data:
+    name: mgo2-postgres-data

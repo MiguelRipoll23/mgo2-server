@@ -1,11 +1,13 @@
 # The database's cluster-side wiring.
 #
-# The database itself is not a workload in this cluster: it runs as a Docker
-# container on the node. What remains here is the name the servers dial; the
-# endpoint that points at the container follows once its data directory has
-# been copied off the cluster.
+# The database itself is not a workload in this cluster. It runs as a Docker
+# container on the node, defined by compose.yaml beside this file, so its data
+# outlives the cluster's storage and it stays reachable while the cluster is
+# down. What remains here is the name the servers dial and the endpoint that
+# points at the container.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
+  - endpoints.yaml
   - service.yaml

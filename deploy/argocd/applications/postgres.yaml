@@ -1,14 +1,12 @@
-# Wave 1: the database itself, which has to be accepting connections with its
-# schema applied before any wave-2 workload rolls out.
+# Wave 1: the database's name, which every wave-2 workload needs before it
+# starts.
 #
-# It is the only thing that applies the schema. The image's entrypoint runs the
-# bundle against a temporary instance before it starts the server, and the
-# readiness probe passes only once the migration history table exists, so this
-# wave is what orders a schema change against the workloads that need it.
-#
-# It is a workload rather than a prerequisite like `mgo2-secrets`, because
-# nothing in it is environment-specific: the credentials it reads come from that
-# Secret, and what this folder declares is the shape of the database.
+# The database itself is not a workload in this cluster. It runs as a Docker
+# container on the node (deploy/postgres/compose.yaml), and this Application
+# carries only the selector-less Service and the EndpointSlice that point at
+# it. The container's entrypoint runs the migration bundle before it accepts a
+# connection, so the schema is applied there rather than by this sync; Argo no
+# longer has a readiness probe that could prove it.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -29,9 +27,10 @@ spec:
     namespace: mgo2
   syncPolicy:
     automated:
-      # prune is left on, and is safe here because the data directory is a
-      # volumeClaimTemplate rather than a tracked resource: nothing Argo prunes
-      # in this folder can take the database's storage with it.
+      # prune is left on. What this folder declares is a Service and an
+      # EndpointSlice; the StatefulSet was pruned when the database moved to the
+      # node, and the PersistentVolumeClaim it created is not a tracked resource,
+      # so a prune could not take the data with it either.
       prune: true
       selfHeal: true
     retry:
