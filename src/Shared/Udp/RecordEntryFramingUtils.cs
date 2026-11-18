@@ -29,8 +29,9 @@ namespace Mgo2Server.Shared.Udp;
 /// A record whose header byte 1 has bit <c>0x20</c> set carries a sixteen-bit length in
 /// bytes 2 and 3 and its ordinal in byte 4; without the flag the length is byte 2 alone
 /// and the ordinal is byte 3. Bit <c>0x10</c> is what makes the record sequenced at all:
-/// with it clear the queue zeroes the state code and the ordinal, so an unsequenced record
-/// carries no place in its stream and is read whatever the stream is waiting for.
+/// with it clear the queue zeroes the state code, so an unsequenced record carries no place
+/// in its stream and is read whatever the stream is waiting for; its fourth byte is kept as
+/// the attribute class this host's codec separates from the body.
 /// </para>
 /// </remarks>
 public static class RecordEntryFramingUtils
@@ -59,7 +60,10 @@ public static class RecordEntryFramingUtils
     /// <summary>Entry offset of the record's state code, one byte; zero when unsequenced.</summary>
     public const int StateOffset = 9;
 
-    /// <summary>Entry offset of the fourth wire byte, one byte; zero when unsequenced.</summary>
+    /// <summary>
+    /// Entry offset of the fourth wire byte, one byte: the ordinal when the record is
+    /// sequenced, and the attribute class when it is not.
+    /// </summary>
     public const int OrdinalOffset = 10;
 
     /// <summary>Entry offset of the retransmit flag, one byte; a send clears it.</summary>

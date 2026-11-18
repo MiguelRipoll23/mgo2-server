@@ -132,16 +132,18 @@ public sealed class InboundRecordQueueService
                 entries[at + RecordEntryFramingUtils.ContainerIdOffset] =
                     (byte)(record.Type & RecordEntryFramingUtils.ContainerByteMask);
 
-                // The code the reader tests, `(state & 5) == 5`: both of its bits mean the
-                // entry's fourth byte is compared before the record is handed out. An
-                // unsequenced record has no place in a stream, and the image writes **zero**
-                // to both fields for it (`P2P_QueueInboundRecord`, `0x269b00`); keeping the
-                // body's class byte there would make the entry look answered by a stream that
-                // is not reading it.
+                // The state is the only thing that says whether the fourth byte is a place
+                // in a stream: both of its bits (`(state & 5) == 5`) make the reader compare
+                // it. An unsequenced record has no place, but its fourth byte is still its
+                // attribute class — the codec has already separated it from the body as
+                // UdpMessage.Flags — and the dispatcher needs it. Zeroing it here left every
+                // unsequenced tick record with no class: a client's 0x08e5 position record
+                // (class 2, sixteen-byte body) never reached PlayerPositionService, so the
+                // bots had no human target.
                 var sequenced = RecordEntryFramingUtils.DeclaresSequenced(record.Type);
                 entries[at + RecordEntryFramingUtils.StateOffset] = (byte)(
                     sequenced ? RecordEntryState.QueuedSequenced : RecordEntryState.None);
-                entries[at + RecordEntryFramingUtils.OrdinalOffset] = sequenced ? record.Flags : (byte)0;
+                entries[at + RecordEntryFramingUtils.OrdinalOffset] = record.Flags;
                 entries[at + RecordEntryFramingUtils.RetransmitOffset] = 0;
                 record.Body.CopyTo(entries, at + RecordEntryFramingUtils.BodyOffset);
 

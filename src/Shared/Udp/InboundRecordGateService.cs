@@ -20,9 +20,10 @@ namespace Mgo2Server.Shared.Udp;
 /// </para>
 /// <para>
 /// <b>An unsequenced record carries no ordinal and is never compared.</b> The entry's state
-/// byte is zero for one of those — the queue zeroes the ordinal when the sequenced bit is
-/// clear — so <c>(state &amp; 5) == 5</c> is false and the body is handed out whatever the
-/// stream is waiting for. That bit is the identifier's own high byte, not a separate flag:
+/// byte is zero for one of those, so <c>(state &amp; 5) == 5</c> is false and the body is
+/// handed out whatever the stream is waiting for; the fourth byte the queue keeps for it is
+/// its attribute class, not a place. That bit is the identifier's own high byte, not a
+/// separate flag:
 /// <c>0x1001</c> carries <c>0x10</c> and is sequenced, <c>0x0001</c> carries <c>0x00</c> and is
 /// not (<see cref="RecordEntryFramingUtils.DeclaresSequenced"/>).
 /// </para>
