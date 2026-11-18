@@ -53,8 +53,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// operations record carries, and that length is the room's own: the round the
 /// rotation names, timed by this instance's settings for it
 /// (<see cref="MatchSettingsService"/>, and
-/// <c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §2 for the measurement). A goal is
-/// not visible on this channel — the objective is scored in the round's own state
+/// <c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §2 for the measurement). The
+/// round's kill limit is the other end: a kill feed that takes a side to the
+/// rule's tickets closes the round through <see cref="End"/>
+/// (<c>Commands.Peer.Gameplay.OperationsStreamHandler</c>). A goal is not
+/// visible on this channel — the objective is scored in the round's own state
 /// block and the end-of-round report travels over the lobby's TCP channel — so
 /// <see cref="End"/> is the seam a goal would use, and no round ends early for
 /// one here.

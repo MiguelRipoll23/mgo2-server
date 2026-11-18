@@ -400,6 +400,9 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
             roundSettings = round;
             roundNumber++;
             isOpen = true;
+            stageEndAt = null;
+            stageEndClockUnits = 0;
+            stageEndVersion++;
             vitalsArrived = false;
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             openedAt = now;

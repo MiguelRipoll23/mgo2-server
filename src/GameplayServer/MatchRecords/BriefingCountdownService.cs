@@ -203,7 +203,11 @@ public sealed partial class BriefingCountdownService(
             // 19 s later, after the client's own records. What it means is stated
             // by the room's set and not by the count, so it is written once per
             // briefing and never in place of the tick.
-            if (!allReadyPublished && briefingStates.AllReady)
+            // The stage's result screens are not a briefing, so a room whose ready
+            // set is already complete does not close this count on them: the zero
+            // is written once the stage end has released the count
+            // (`MatchRoundStateService.StageEndMilliseconds`).
+            if (!allReadyPublished && briefingStates.AllReady && !roundState.IsStageEnding)
             {
                 allReadyPublished = true;
                 await SendBriefingEndAsync(context, session);
@@ -213,7 +217,7 @@ public sealed partial class BriefingCountdownService(
             // tick and the zero is the last record the briefing writes, which is
             // where `briefing-then-solo-game` ends the count stream (its zero at
             // t+145.098, and no count record after it).
-            if (allReadyPublished && !IsCounting)
+            if (allReadyPublished && !IsCounting && !roundState.IsStageEnding)
             {
                 endedBecause = "its briefing closed on the zero";
                 break;

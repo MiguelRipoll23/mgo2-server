@@ -385,6 +385,15 @@ the round before — under a fresh briefing deadline of its own — and the roun
 steps to the next entry of the room's rotation. It also clears the round's score
 (`MatchScoreService.Reset`), which is what makes the scoreboard a per-round board.
 
+At a stage's last round the room does not go straight back to its briefing. The
+capture's client spends the next 44.8 s on its own round result, score graph and
+stage result screens (`rounded-ended-by-reaching-tickets-limit.pcapng`: its result
+at t+163.597, the next stage's `0x0b` count at t+208.389), and the host keeps
+writing the played clock where it stopped through them. `MatchStartRunService.End`
+arms the next briefing at the close but holds its count until
+`MatchRoundStateService.StageEndMilliseconds` has passed; a round inside a stage
+still closes on the zero clock and opens the next round on the report that follows.
+
 ## 3. What is live, and what is still a replay
 
 ### 3.1 Live
@@ -728,7 +737,7 @@ record should be sent.
 | `Rooms/LobbyLoadoutService.cs`, `LoadoutFramesUtils.cs` | the room's own players' appearances and skills, and the loadout records that name them |
 | `Gameplay/PlayerVitalsService.cs`, `Commands/Peer/Gameplay/PlayerVitalsHandler.cs` | the health and stamina each player last reported, and the death when health reaches zero |
 | `MatchRecords/MatchScoreService.cs`, `MatchScoreService.Teams.cs`, `MatchScoreService.Wins.cs`, `MatchScoreRulesUtils.cs`, `MatchScoreboardFramesUtils.cs`, `ScoreboardPublishService.cs` | the round's score (computed from the rule's table over the host's own kills and deaths), the per-side totals, the winning side's rounds-won step at each round's end, the scoreboard body, and its publication |
-| `MatchRecords/MatchResultService.cs` | the round's winner, the kill-limit check, and the result write — the round's, with the game's when the round decides it |
+| `MatchRecords/MatchResultService.cs`, `MatchResultService.StageResult.cs` | the round's winner, the kill-limit check, the result write — the round's, with the game's when the round decides it — and the stage's result pair 21.133 s behind it |
 | `Commands/Peer/Gameplay/OperationsStreamHandler.cs` | the operations stream's two records: the kill feed, and the score it feeds, and a client's briefing ready state, which opens the round |
 | `MatchRecords/MatchRecordSequenceService.cs` | the fourth byte of every session record: one counter per twelve-bit identifier, restarted where a round or a briefing opens the three streams it opens together (operations, item boxes, item-box state) |
 | `MatchRecords/MatchStartRunService.cs`, `MatchStartRunService.Runs.cs` | the round opener, its briefing deadline and its clock, and the per-peer run watcher |
@@ -839,7 +848,14 @@ record should be sent.
   `state[4]` (a `0`, then the match's two `2`s). The first two rounds write
   `02 02 01 02`, the count-one form this host already sends, so the count-two write
   and the triple behind it are the *match's* and arrive once the match is decided.
-  What `state[4]`–`state[6]` name is **[U]**; the shape and the order are not.
+  `state[4]` is the winning raw team and `state[5]` its rounds won in the newer
+  stage-end captures: `rounded-ended-by-reaching-tickets-limit` and
+  `swap-spawnpoint-side-between-rounds-enabled` write `02 04 02 01 02` and
+  `02 07 01 02` 21.133 s and 21.136 s after their team-1 result. `state[7]`
+  repeats the rounds as the stage's total, and this host writes that pair
+  (`MatchResultService.WriteStageResultAsync`); the older sample's third value at
+  `state[6]` is left as measured rather than written, because the two shapes are
+  not reconciled.
 * **Measured: the scoreboard's index byte is the roster counter's next value.**
   Its fourth byte is not its own numbering and not the roster run's: in
   `joined-when-red-team` the 2 606 `0x1001` records carry one ascending sequence,

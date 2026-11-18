@@ -30,12 +30,14 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="lobbySlots">Reader of the room's players, by slot and side.</param>
 /// <param name="roundState">The room's round, which holds the result once it ends.</param>
 /// <param name="publisher">Writer of the scoreboard the winning side's step goes out on.</param>
+/// <param name="sequences">The streams the result writes take their fourth bytes from.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed class MatchResultService(
+public sealed partial class MatchResultService(
     MatchScoreService score,
     LobbySlotService lobbySlots,
     MatchRoundStateService roundState,
     ScoreboardPublishService publisher,
+    MatchRecordSequenceService sequences,
     ILogger<MatchResultService> logger)
 {
     /// <summary>
@@ -142,6 +144,7 @@ public sealed class MatchResultService(
     {
         awardedRound = 0;
         settledResult = null;
+        stageResult = null;
     }
 
     /// <summary>
@@ -195,6 +198,7 @@ public sealed class MatchResultService(
         {
             return;
         }
+        var ordinal = sequences.Take(generation.Operations);
         var record = new MatchRecordFramesUtils.RecordMessage(
             generation.Operations,
             matchResult is { } decided
@@ -202,7 +206,8 @@ public sealed class MatchResultService(
                     MatchRecordBodiesUtils.StateRoundResultIndex,
                     result,
                     decided)
-                : MatchRecordBodiesUtils.StateWrite(MatchRecordBodiesUtils.StateRoundResultIndex, result));
+                : MatchRecordBodiesUtils.StateWrite(MatchRecordBodiesUtils.StateRoundResultIndex, result),
+            ordinal);
 
         logger.LogInformation(
             "UDP {LocalPort}: writing round {RoundNumber}'s result to {RemoteAddress}: state[{Offset}] = {Result}"
@@ -217,6 +222,14 @@ public sealed class MatchResultService(
                 : string.Empty);
 
         await MatchRecordSendUtils.SendAsync(context, [record]);
+
+        // The stage's own result screen is drawn from fields written 21.1 s
+        // behind this record. The wait runs beside the caller's round watcher,
+        // so the briefing it goes on to serve is not held behind the screen.
+        if (roundState.LastRoundClosedGame && roundState.IsStageEnding)
+        {
+            _ = WriteStageResultAsync(context, generation, roundState.StageEndVersion);
+        }
     }
 
     /// <summary>
@@ -254,6 +267,7 @@ public sealed class MatchResultService(
 
             awardedRound = roundState.RoundsClosed;
             settledResult = null;
+            stageResult = null;
 
             if (MatchRecordBodiesUtils.TeamOfResult(roundResult) is { } winningTeam)
             {
@@ -276,6 +290,31 @@ public sealed class MatchResultService(
             }
 
             settledResult = await DecideMatchResultAsync();
+
+            // The stage's score is read from the rounds-won counters before the
+            // reset below clears them. A split game names no side, so its stage
+            // has no result to write; the target's result is a 2–0 sweep.
+            if (roundState.LastRoundClosedGame
+                && settledResult is { } matchCode
+                && MatchRecordBodiesUtils.TeamOfResult(matchCode) is { } matchWinner)
+            {
+                var rounds = (await lobbySlots.ReadAsync(CancellationToken.None))
+                    .Where(slot => slot.Team == matchWinner)
+                    .Select(slot => score.RoundsWon(slot.Slot))
+                    .DefaultIfEmpty(0)
+                    .Max();
+                if (rounds > 0)
+                {
+                    stageResult = new StageResult(
+                        (byte)matchWinner,
+                        (byte)Math.Clamp(rounds, 0, byte.MaxValue));
+                    logger.LogInformation(
+                        "UDP {LocalPort}: the stage's result is team {Team}, {Rounds} round(s)",
+                        context.LocalPort,
+                        matchWinner,
+                        rounds);
+                }
+            }
 
             // A game's last round is where the screen that states the game's score
             // is drawn, so the counters start over once that number has been

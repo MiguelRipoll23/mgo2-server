@@ -199,22 +199,55 @@ public sealed partial class MatchStartRunService
             return true;
         }
 
-        // A game's last round is preceded by the game's briefing: the captures
-        // open a round, play it, and then rewrite the ready set for the game after
-        // it (docs/protocol/BRIEFING_FLOW.md). The set was cleared at the close
-        // above; what this briefing adds is the wait for a briefing of its own
-        // instead of opening the moment the last round's clock stopped.
-
-        // The next briefing runs on its own count and is ended by the report that
-        // follows it, so a client that came back from its screen starts the round
-        // however many of the room's players readied.
+        // A stage's last round is followed by the stage's own result screens —
+        // the round result, the score graph and the stage result — and only then by
+        // the next stage's briefing. The briefing is armed now, so its run is ready
+        // when a client leaves those screens, but its count is held at the whole
+        // briefing time until the stage end releases it
+        // (`MatchRoundStateService.StageEndMilliseconds`).
         BeginBriefing();
+        _ = ReleaseStageEndAsync(roundState.StageEndVersion, ended.Value);
+
         logger.LogInformation(
-            "Round {RoundNumber} ended because {Reason}; the room is back in its briefing and the next "
-            + "round opens on the report that follows its briefing",
+            "Round {RoundNumber} ended because {Reason}; its stage is over, so the next briefing is armed "
+            + "and its count is held for the stage's result screens ({StageEndMilliseconds} ms)",
             ended,
-            reason);
+            reason,
+            MatchRoundStateService.StageEndMilliseconds);
         return true;
+    }
+
+    /// <summary>
+    /// Releases the briefing the stage's result screens are holding, once they have
+    /// run: the stage end closes and the played round's clock goes to zero.
+    /// </summary>
+    /// <remarks>
+    /// It runs beside the round's own waits rather than inside the handler that
+    /// closed the round, because the kill feed behind that handler must not wait out
+    /// a result screen. A room that emptied, or a round that closed after this one,
+    /// is not this stage end: <see cref="MatchRoundStateService.EndStageEnd"/> checks
+    /// the identity and leaves it alone.
+    /// </remarks>
+    /// <param name="version">The stage end's version, as the close numbered it.</param>
+    /// <param name="roundNumber">The stage's last round, for the log.</param>
+    private async Task ReleaseStageEndAsync(int version, int roundNumber)
+    {
+        try
+        {
+            await Task.Delay(MatchRoundStateService.StageEndMilliseconds);
+            roundState.EndStageEnd(version);
+            logger.LogInformation(
+                "The stage that closed with round {RoundNumber} has shown its result screens, so the "
+                + "next briefing's count starts moving",
+                roundNumber);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "The stage end that followed round {RoundNumber} ended without releasing the next briefing",
+                roundNumber);
+        }
     }
 
     /// <summary>

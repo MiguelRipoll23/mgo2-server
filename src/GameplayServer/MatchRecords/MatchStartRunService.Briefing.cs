@@ -78,10 +78,13 @@ public sealed partial class MatchStartRunService
         // `mgo2-started-on-game-round1` is the measurement: every round end of it
         // writes `01 00 00` through the briefing that follows, and the next round
         // opens on its whole 2 400 only when it opens
-        // (`MatchRoundStateService.BriefingClockUnits`).
+        // (`MatchRoundStateService.BriefingClockUnits`). A stage's last round is
+        // the exception: its clock stays where it stopped through the stage's
+        // result screens, and only the stage end writes the zero
+        // (`MatchRoundStateService.StageEndClockUnits`).
         roundState.NoteBriefingClock(
             roundState.HasRoundEnded
-                ? 0
+                ? roundState.StageEndClockUnits
                 : settings.Round(roundState.RoundNumber + 1).TimeLimitUnits);
 
         logger.LogDebug(

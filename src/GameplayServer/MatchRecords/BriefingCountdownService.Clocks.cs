@@ -83,6 +83,14 @@ public sealed partial class BriefingCountdownService
     /// <param name="now">The moment the second player reported.</param>
     public void StartCounting(DateTimeOffset now)
     {
+        // A stage's result screens hold the next briefing's count. The report that
+        // completes the room may arrive while the client is still on them, so the
+        // count starts at the stage-end instant and not at the report: the capture's
+        // next count opens at t+208.389, 44.8 s after the result, with 60 s on it.
+        var start = roundState.StageEndAt is { } stageEnd && stageEnd > now
+            ? stageEnd
+            : now;
+
         lock (gate)
         {
             if (startedAt is null || length <= TimeSpan.Zero || countingFrom is not null)
@@ -90,11 +98,15 @@ public sealed partial class BriefingCountdownService
                 return;
             }
 
-            countingFrom = now;
+            countingFrom = start;
         }
 
         logger.LogDebug(
-            "A second player has reported, so the room's briefing countdown starts moving from now");
+            start > now
+                ? "The room's reports are complete; the stage's result screens hold its briefing count until "
+                    + "{StageEnd}, and it moves from there"
+                : "A second player has reported, so the room's briefing countdown starts moving from now",
+            start);
     }
 
     /// <summary>
@@ -132,7 +144,7 @@ public sealed partial class BriefingCountdownService
         {
             lock (gate)
             {
-                return countingFrom is not null;
+                return countingFrom is { } from && from <= DateTimeOffset.UtcNow;
             }
         }
     }
@@ -167,6 +179,14 @@ public sealed partial class BriefingCountdownService
             // peer is sent does not move until the room has someone to count for
             // (StartCounting).
             if (countingFrom is not { } counting)
+            {
+                remaining = length;
+                return true;
+            }
+
+            // A count armed for the end of a stage is still held at the whole
+            // briefing time until that instant, and not above it.
+            if (now < counting)
             {
                 remaining = length;
                 return true;
@@ -215,6 +235,12 @@ public sealed partial class BriefingCountdownService
             {
                 remaining = TimeSpan.Zero;
                 return false;
+            }
+
+            if (now < counting)
+            {
+                remaining = length;
+                return true;
             }
 
             remaining = (counting + length) - now;

@@ -52,6 +52,39 @@ public sealed partial class MatchRoundStateService
     private bool lastRoundClosedGame;
 
     /// <summary>
+    /// How long a stage's result screens run before the next stage's briefing
+    /// count starts moving.
+    /// </summary>
+    /// <remarks>
+    /// Measured on <c>rounded-ended-by-reaching-tickets-limit.pcapng</c>: its
+    /// final round's result is written at t+163.597 and the next stage's
+    /// <c>0x0b</c> count opens at t+208.389, 44.792 s later. The client's own
+    /// screens fill that stretch — the round result, the score graph and the stage
+    /// result — so the room arms the next briefing at the close and holds its count
+    /// at the whole briefing time until they have run. One capture is one sample,
+    /// which is why the value is rounded to the nearest tenth of a second.
+    /// </remarks>
+    public const int StageEndMilliseconds = 44_800;
+
+    /// <summary>
+    /// When the stage now ending releases the next briefing, or <c>null</c> while
+    /// no stage end runs.
+    /// </summary>
+    private long? stageEndAt;
+
+    /// <summary>
+    /// Units the last round's clock stopped at, held on the wire while the stage's
+    /// result screens run.
+    /// </summary>
+    private int stageEndClockUnits;
+
+    /// <summary>
+    /// Identity of the stage end: a monotonic version, so a release armed for one
+    /// stage cannot act on a later one, and a reset or a new open invalidates it.
+    /// </summary>
+    private int stageEndVersion;
+
+    /// <summary>
     /// Rounds this room has closed, counted from one and reset only when the room
     /// empties: it is the identity a writer uses to award a round's win exactly once,
     /// which a round number cannot be, because an emptied room returns to its first
@@ -68,6 +101,93 @@ public sealed partial class MatchRoundStateService
             {
                 return hasRoundEnded;
             }
+        }
+    }
+
+    /// <summary>
+    /// Whether the stage's result screens are running: the round is closed, the
+    /// next briefing is armed, and its count is held until those screens are done.
+    /// </summary>
+    public bool IsStageEnding
+    {
+        get
+        {
+            lock (gate)
+            {
+                return stageEndAt is not null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// When the stage end releases the next briefing, or <c>null</c> while no stage
+    /// end runs.
+    /// </summary>
+    public DateTimeOffset? StageEndAt
+    {
+        get
+        {
+            lock (gate)
+            {
+                return stageEndAt is { } milliseconds
+                    ? DateTimeOffset.FromUnixTimeMilliseconds(milliseconds)
+                    : null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Units of the last round's clock while the stage's result screens run: the
+    /// capture keeps writing the value the round stopped at, and not a zero, until
+    /// the next briefing begins. Zero once no stage end runs.
+    /// </summary>
+    public int StageEndClockUnits
+    {
+        get
+        {
+            lock (gate)
+            {
+                return stageEndClockUnits;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The stage end now armed, for the release that belongs to it.
+    /// </summary>
+    public int StageEndVersion
+    {
+        get
+        {
+            lock (gate)
+            {
+                return stageEndVersion;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Releases the next briefing after the stage's result screens have run: the
+    /// clock the room held goes to zero and the briefing's count may move.
+    /// </summary>
+    /// <param name="version">
+    /// The stage end's version, as <see cref="StageEndVersion"/> numbered it. A room
+    /// that emptied, a round that closed afterwards, or a new open is not this stage
+    /// end and is left alone.
+    /// </param>
+    public void EndStageEnd(int version)
+    {
+        lock (gate)
+        {
+            if (stageEndVersion != version)
+            {
+                return;
+            }
+
+            stageEndAt = null;
+            stageEndClockUnits = 0;
+            stageEndVersion++;
+            briefingClockUnits = 0;
         }
     }
 
@@ -122,6 +242,9 @@ public sealed partial class MatchRoundStateService
             isOpen = false;
             lastRoundResult = null;
             lastRoundClosedGame = false;
+            stageEndAt = null;
+            stageEndClockUnits = 0;
+            stageEndVersion++;
             roundsClosed = 0;
             roundSettings = null;
             openedAt = null;
@@ -190,6 +313,15 @@ public sealed partial class MatchRoundStateService
                 return null;
             }
 
+            var closedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            stageEndVersion++;
+            var clockAtClose = roundSettings is { } settings
+                ? RoundClockUtils.RemainingUnits(
+                    settings,
+                    clockStartsAt,
+                    clockFrozenAt ?? closedAt)
+                : 0;
+
             isOpen = false;
             hasRoundEnded = true;
             lastRoundResult = roundResult;
@@ -200,19 +332,35 @@ public sealed partial class MatchRoundStateService
             clockStartsAt = 0;
             clockFrozenAt = null;
 
-            // The close writes the clock as zero and holds it there until the next
-            // round opens: `joined-when-red-team` writes `01 00 00` at t+423.051,
-            // one millisecond before its result write, and the round that follows
-            // opens on its whole `01 60 09` again (BRIEFING_FLOW.md §4). A round
-            // that ends inside its game has no briefing to set the value, so
-            // leaving it alone kept the played round's clock on the wire through
-            // the gap and into the next round's first frames.
-            briefingClockUnits = 0;
+            // A round inside a stage writes its clock as zero and holds it there
+            // until the next round opens: `joined-when-red-team` writes `01 00 00`
+            // at t+423.051, one millisecond before its result write, and the round
+            // that follows opens on its whole `01 60 09` again (BRIEFING_FLOW.md §4).
+            // A round that ends its stage is followed by the stage's own result
+            // screens, and the played clock stays where it stopped through them:
+            // `rounded-ended-by-reaching-tickets-limit` writes `01 8c 07` (1 932
+            // units) from t+164.479 to t+204.480, where the round ended at t+163.597.
+            // Only the stage end writes the zero.
+            if (closesGame)
+            {
+                stageEndAt = closedAt + StageEndMilliseconds;
+                stageEndClockUnits = clockAtClose;
+                briefingClockUnits = clockAtClose;
+            }
+            else
+            {
+                stageEndAt = null;
+                stageEndClockUnits = 0;
+                briefingClockUnits = 0;
+            }
 
             logger.LogInformation(
-                "Round {RoundNumber} ended{Result}",
+                "Round {RoundNumber} ended{Result}{StageEnd}",
                 roundNumber,
-                roundResult is { } result ? $" with result code {result}" : " with no result to write");
+                roundResult is { } result ? $" with result code {result}" : " with no result to write",
+                closesGame
+                    ? $"; its stage's result screens hold the next briefing for {StageEndMilliseconds} ms"
+                    : string.Empty);
             return roundNumber;
         }
     }

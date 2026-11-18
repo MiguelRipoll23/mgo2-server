@@ -136,6 +136,20 @@ whole clock. The three zero-clock stretches of
 `mgo2-started-on-game-round1` are these, and `BRIEFING_FLOW.md` reads the same
 shape out of `joined-when-red-team` (two briefings and two games in 930 s).
 
+**A stage's result screens are not a briefing.** The final round of a stage is
+followed by the client's own round result, score graph and stage result screens
+before the next stage's briefing. In
+`rounded-ended-by-reaching-tickets-limit.pcapng` the winning result is written at
+t+163.597, the stage's two state writes at t+184.730 — `02 04 02 01 02`
+(`state[4]` = winning raw team 1, `state[5]` = its 2 rounds) and `02 07 01 02`
+(`state[7]` = the stage's 2 rounds) — and the next stage's
+first `0x0b` count at t+208.389 — 44.792 s after the result. Through that stretch
+the played round's clock stays where it stopped (`01 8c 07`, 1 932 units, from
+t+164.479 to t+204.480) instead of the `01 00 00` a briefing after a round writes.
+The host arms the next briefing at the close but holds its count at the whole
+briefing time for `MatchRoundStateService.StageEndMilliseconds` (44.8 s); the
+count then moves from 60, and the clock returns to zero.
+
 **What the corpus does not settle [U].** The largest capture's briefings do not
 fall on a strict every-third-round grid — one of them follows a single 5-minute
 round (t+522.0) — so a room can also re-brief inside a game, which the capture
@@ -148,9 +162,10 @@ a rotation change). What **is** settled: a briefing is not owed to every round
 
 `MatchStartRunService.End` closes the round, clears the ready set
 (`briefingStates.BeginNextBriefing()`) and then decides the boundary from the
-rotation. The close writes the clock as `0` (`MatchRoundStateService.Close`), so
-the `01 00 00` of §4 is on the wire from the end of the round whether or not a
-briefing follows it, and the next round's open writes its whole clock again.
+rotation. A round inside a stage closes on the `01 00 00` of §4; a round that is
+its stage's last keeps the clock it stopped on through the stage's result
+screens, and only the stage end writes the zero — the same `01 00 00` on the wire
+once the screens are over. The next round's open writes its whole clock again.
 
 **A stage is what this file's "game" calls a map's run of rounds.** It is a
 maximal run of identical rotation triples — same rule, map and options — so a
@@ -168,9 +183,10 @@ The model this file supports, and that the host now follows:
   (`MatchStartRunService.WriteBriefingRunAsync` returns between rounds); the
   ready set is cleared at the close either way, so the next round opens from its
   own reports and not from the played round's;
-- a round that **is** its stage's last returns the room to a briefing, whether or
-  not a round has played before (the clock it is held on is `0` once one has),
-  and that briefing precedes the next map's first round.
+- a round that **is** its stage's last arms the next briefing and holds its count
+  for the stage's result screens (`StageEndMilliseconds`, 44.8 s), then returns
+  the room to that briefing; the clock it is held on is `0` once one has played,
+  and the briefing precedes the next map's first round.
 
 ## 7. Open
 

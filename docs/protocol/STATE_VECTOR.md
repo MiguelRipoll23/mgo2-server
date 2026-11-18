@@ -162,8 +162,15 @@ already known. What the corpus adds:
   `state[2..3] = 06 01` and, 21.9 s later, `state[4..5] = fe 05` — five values,
   not three, and `fe` where the other capture has `00`.
 
-**`state[0..1]` and `state[4..6]` are `[U]`.** One capture decides a match. That
-is the whole of the evidence and it is not enough to name them.
+**The stage's own result is written 21.1 s behind the match's.** Two later
+captures of the same flow — `rounded-ended-by-reaching-tickets-limit.pcapng`
+and `swap-spawnpoint-side-between-rounds-enabled.pcapng` — write
+`02 04 02 01 02` and `02 07 01 02` 21.133 s and 21.136 s after the result
+`02 02 02 03 03`. The winning side is raw team 1, `state[5] = 2` is its rounds
+won, and `state[7] = 2` repeats the stage's total. The older `pcapng1` writes a
+team-0 win 21.132 s after its result as `02 04 03 00 02 02`, with the third
+value at `state[6]`; the two shapes are not reconciled. `state[0..1]`, the exact
+meaning of the repeated total, and which shape a team-0 win takes are `[U]`.
 
 ## 4. The briefing countdown is the `0x0b` count — and the 128-unit clock is not it
 
