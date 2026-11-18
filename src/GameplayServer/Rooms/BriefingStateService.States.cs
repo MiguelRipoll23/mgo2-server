@@ -317,10 +317,10 @@ public sealed partial class BriefingStateService
             // reads it as a sequenced record, and a sequenced record's fourth byte is the place
             // its stream expects: the peer compares it and advances by one
             // (`read_queued_p2p_message`, `0x26b5c8`). A publication that pinned the index wrote
-            // `00..0f` on every pass — `myserver.pcapng` (2026-11-18) holds four of them — and
-            // every pass after the first carries bytes the client has already passed, which is
-            // why 45 of the stream's 64 writes landed on an already-answered byte. The index
-            // stays the ordering key and the slot stays in the body.
+            // `00..0f` on every pass — the 2026-11-18 17:21 capture holds four of them, 16
+            // distinct bytes over 64 writes — and every pass after the first repeats values the
+            // peer has already taken. The index stays the ordering key, the slot stays in the
+            // body, and the next capture shows the set advancing `00..3f` over 48 writes.
             records.Add(new RosterRecord(
                 generation.ReadyState,
                 MatchRecords.BriefingReadyStateBodiesUtils.Body(state.Value, roundUnits),

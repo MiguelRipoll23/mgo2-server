@@ -117,7 +117,7 @@ would have been a guess is left as `FUN_`.
 | `0x26b178` | `P2P_ChannelStateInit` | builds a stream state: `+0xe = 0` (the first byte it expects), `+9 = 0x80`, `+0xb = 0` |
 | `0x26b1c8` | `P2P_ChannelStateRelease` | drops one reference to a stream state and clears `+0xa` with the last one |
 | `0x2666c8` | `decode_p2p_datagram` | the datagram decoder; its `type & 0x4000` branch is the answer reader, which walks the send window and marks the entry whose `+0xa` matches |
-| `0x26b778` | `P2P_SendRecord` | the sender: copies the entry's header word out (`lwz r0,0x0(r31)` / `stw r0,0x70(r1)`), sets the datagram's byte `9`, writes the retry byte at `+0xb` into byte `0xa`, advances `+0xb`, and refuses the write that would leave `writes − acked == 0xff` |
+| `0x26b778` | `P2P_SendRecord` | the sender: copies the entry's header word out (`lwz r0,0x0(r31)` / `stw r0,0x70(r1)`), sets the datagram's byte `9`, refuses the write that would leave `writes − acked == 0xff`, and otherwise advances the retry byte at `+0xb` — decompiled on 2026-11-18, it writes no sequence byte |
 | `0x26b2b0` | `P2P_SetRecordHeaderField` | writes one field of a record header; called with field `0` and value `3` where a channel is first registered |
 | `0x2692c0` | `P2P_MessageIdentifier` | the record's 16-bit identifier, class bits included |
 | `0x2692e0` | `P2P_MessageBodyLength` | the record's body length |
@@ -225,7 +225,29 @@ from the record's class when it builds it. Every wire-side filter tried against 
 working captures failed for that reason (`body == 63` takes 0 records in `pcapng1`), and
 that is why the analysis reasons from answers rather than from a guessed gate.
 
-**Where the wire ordinal itself is written is still open.** Selector `0` only marks the
+**Where the wire ordinal itself is written is still open, and the selector-`1` candidate is now
+refuted.** The three senders (`0x26b778`, the entry-taking `P2P_SendRecordByEntry` `0x26b048`, and
+`0x26b8b8`, whose only difference is its gate) write nothing but `+0xb`. `P2P_SetRecordHeaderField`
+has four selectors, but **selector `1` — the only one that writes a whole byte, at `+0xd` — has no
+caller in the image**: `analyze call_graph` reports twenty distinct caller functions, and every
+`SetRecordHeaderField(` line in all twenty passes selector `0`, `2` or `3`, never `1`. Selector `0`
+also cannot produce a whole byte, because it preserves the high nibble (`& 0xf0`), and every call
+passes either a literal `3` or a runtime value that the mask cuts to four bits. So the stamp is not
+a counter the header setter keeps and not a store on the send path; the remaining candidates are
+the whole-entry copies on the queue path — `P2P_QueueInboundRecord` (`0x269b00`) for the receive
+side and `P2P_DrainRecordQueues` (`0x277e78`) for the send side.
+
+The four callers that pass a **runtime** value to selector `0` settle what that value is: it is
+bits `0` and `1` of the object's flag byte at `+0x11` — `uVar = byte[0x11] & 1`, then `uVar |= 2`
+when bit `1` is set (`_opd_FUN_00277848` `0x277848` and its siblings `0x278eb8`, `0x278aa8`,
+`0x2792f8`) — so it is a two-bit class the entry is created with, not a counter.
+
+**The receive-side copy is settled.** `P2P_QueueInboundRecord` (`0x269b00`) is the one store that
+puts the wire's fourth byte into a queue entry: `entry[+10] = record[+3]`, or `record[+4]` when the
+record's `0x20` bit widens the length field, and `0` for a record without the `0x10` bit (which
+also zeroes `entry[+9]`). The send side is still not: `P2P_DrainRecordQueues` (`0x277e78`) reads
+and re-sends queue entries and never writes `+0xa`, so an outbound record carries whatever it was
+given when it was queued, and the site that gives it its sequence byte remains unlocated. Selector `0` only marks the
 entry; `register_p2p_channel_record` builds the entry's header word as
 `[index][id bits 11..4][id bits 3..0][0]`, with the fourth byte zero, and neither
 `P2P_SendRecord` nor `gate_p2p_record_send` writes `+0xa` — the sender copies the header
@@ -273,10 +295,10 @@ all, and an unsequenced record is queued with its ordinal zeroed.
 | `0x274f60` | `P2P_CountBlockField90` | reads field `0x90` of a player's block, counts it up and writes it back under a latch |
 | `0x754b50` … `0x757798`, `0x71caf8`, `0x737cd0` | `P2P_PublishOpcode*`, `P2P_PublishBlockByte` | the per-opcode publishers: open a cursor, append the opcode and its fields, hand it to `P2P_SendBuiltRecord` |
 
-**A publisher is not a packer of the eleven-byte settings record.** Every `P2P_PublishOpcode*`
-function appends the literal opcode it is named for, and the settings family's `0x0b` is not
-among them; a byte scan of the publish cluster for `addi …, r0, 11` finds nothing either. The
-function that packs the `0x0b` body is still unidentified.
+**A publisher is not a packer of the eleven-byte settings record, but the `0x0b` builder is
+`P2P_PublishOpcode0B` (`0x755228`).** Its body is the opcode, a `u16` and a `u32` — seven bytes,
+exactly the countdown record's wire shape (`0b 39 00 e0 a8 1d 00`). It was missed because it sits
+outside the `0x754b50`–`0x757798` run the earlier scan walked, not because the opcode is absent.
 
 ## The receive buffer, the arena and the record index (renamed 2026-11-16, second pass)
 
@@ -360,3 +382,146 @@ record before each write, and the response to spending it is to end that channel
 copying the stream. `src/GameplayServer/StreamRetransmitService.cs` keeps the counter as
 `Pending.Attempts`, tests it at `0xff`, and drops the stream's window when it fires; it does not
 tear the session down, which is the one deliberate difference.
+
+## The stream counter is never taken backwards (2026-11-18)
+
+This is the image's half of the round-start question, and it is why the counters in
+`MatchRecordSequenceService` are never cleared.
+
+**The only store that zeroes a sequence is the one that builds a stream state.**
+`P2P_ChannelStateInit` (`0x26b178`) writes `+0xe = 0` — the byte the stream expects next — along
+with the refcount and the two answer bytes, and it runs when a channel state is built
+(`register_p2p_channel_record`, `0x261ab0`). After that:
+
+| function | what it does to `+0xe` |
+| --- | --- |
+| `read_queued_p2p_message` `0x26b5c8` | compares the inbound record's `+0xa` with it, advances it by one on equality, and drops the record **without** advancing on a mismatch |
+| `P2P_ChannelStateRelease` `0x26b1c8` | drops a reference; it never writes the expectation |
+| `P2P_SendRecord` `0x26b778`, `P2P_SendRecordByEntry` `0x26b048`, `0x26b8b8` | spend only the retry byte at `+0xb`; none of them touches `+0xe` or the wire's sequence byte |
+
+So a live stream cannot be renumbered by the image. The one way a stream starts again at `00` is
+a new channel state, which is exactly what happens at a round boundary on the client's side — it
+opens its own stream at `00` and the host answers the values, while the host's own series carries
+on (`docs/analysis/stream-sequencing.md`, D5, and the `pcapng1` measurement there). Clearing the
+map instead renumbers a live reader, which is the defect that file records.
+
+## The operation-stream builders, named 2026-11-18
+
+Each function below appends the literal opcode it is named for — read off its decompiled body, not
+its caller — then its fields, then hands the cursor to `P2P_SendBuiltRecord` (`0x2784b0`). Where
+one opcode has several copies the extras carry `Second` or `Third`; a function whose first byte is
+the caller's is named for its shape instead.
+
+| address | name | body after the opcode |
+| --- | --- | --- |
+| `0x7540f8` | `P2P_PublishOpcode13` | a `u32` slot mask, then one `u16` per set bit |
+| `0x7541f0` | `P2P_PublishOpcode12` | three bytes, the first carrying the caller's flag in bit 7 |
+| `0x754570` | `P2P_PublishOpcode11` | two bytes |
+| `0x754620` | `P2P_PublishOpcode10` | a `u32` built from `0x7448e8(slot)` over the twenty-four slots |
+| `0x754710` | `P2P_PublishOpcode0F` | one byte |
+| `0x7547b0` | `P2P_PublishOpcode24` | one byte |
+| `0x7548f0` | `P2P_PublishOpcode26` | two bytes |
+| `0x7549a0` | `P2P_PublishOpcode03Or17` | `03` or `17` by `0x26d540()`, the writer's own slot, a byte and a `u16` |
+| `0x754a90` | `P2P_PublishOpcode1BOr1C` | `1b` or `1c` by the caller's argument, then the writer's own slot |
+| `0x754c38` | `P2P_PublishOpcode19` | two bytes, guest side only (`0x26d540() == 0`) |
+| `0x754de8` | `P2P_PublishOpcode23` | one byte, on the handle at `+0x84` |
+| `0x754f18` | `P2P_PublishOpcode0E` | one byte, then script event `0x160023` |
+| `0x755168` | `P2P_PublishOpcode1F` | the writer's own slot and a state byte |
+| `0x755228` | `P2P_PublishOpcode0B` | a `u16` and a `u32` — the seven-byte countdown record |
+| `0x7552d8` | `P2P_PublishOpcode0A` | one byte with the caller's flag in bit 7 |
+| `0x755390` | `P2P_PublishOpcode1E` | two bytes |
+| `0x755440` | `P2P_PublishSixFieldRecord` | the opcode is the caller's first byte, then five bytes and a `u16` |
+| `0x755530` | `P2P_PublishOpcode09Second` | two bytes |
+| `0x7555e0` | `P2P_PublishOpcode06` | one byte |
+| `0x755680` | `P2P_PublishOpcode08Third` | two bytes clamped to `0xff` |
+| `0x755868` | `P2P_PublishOpcode05Second` | one byte when the caller is not this host, otherwise script event `0x15000f` |
+| `0x7559b8` | `P2P_PublishOpcode04Second` | two bytes, remapped to `12` or `13` |
+| `0x755af8` | `P2P_PublishOpcode02Second` | a byte, a count, then that many bytes of a buffer |
+| `0x755c90` | `P2P_PublishOpcode15` | one byte |
+| `0x755d30` | `P2P_PublishOpcode14` | nothing |
+| `0x755db0` | `P2P_PublishOpcode06Second` | one byte |
+| `0x755f00` | `P2P_ForwardOpcode26` | reads a slot and a value off an inbound record and sends `26` about them as the host |
+| `0x756070` | `P2P_PublishOpcode00StateBlock` | `0x57` bytes from the state block, then its `u16` clock |
+| `0x756238` | `P2P_PublishOpcode07Second` | three bytes |
+| `0x756420` | `P2P_PublishOpcode1DSecond` | the writer's own slot, three bytes and a `u16` |
+| `0x756550` | `P2P_PublishOpcode00StateBlockSecond` | the same body, and clears the word at `+0x164` first |
+| `0x7569c8` | `P2P_DispatchQueuedRecords` | drains a peer's queue and jumps through the table for opcodes under `0x27` |
+| `0x7574d0` | `P2P_DispatchQueuedRecordsBoth` | the same dispatch for the object's two sub-channels |
+| `0x757520` | `P2P_PublishOpcode02Writes` | `02` writes for the bytes that differ between two buffers |
+| `0x7578c8` | `P2P_ApplyOpcode1DRecord` | reads a `1d` body into state `slot * 2 + 0x148` |
+| `0x7579f8` | `P2P_PublishOpcode02WritesSecond` | the second differ-and-write publisher |
+| `0x757c58` | `P2P_DispatchQueuedRecordsSecond` | dispatch for opcodes `14` to `26` |
+
+The receive side names the same set from the other end: `P2P_DispatchQueuedRecords` reads one byte
+off a drained record and indexes `*(0x121b714 - 0x7ff4)`, and `P2P_ApplyOpcode1DRecord` is one of
+the handlers behind that table.
+
+## The two dispatch tables behind `P2P_DispatchQueuedRecords` (2026-11-18)
+
+Both dispatchers do the same thing: drain the peer's queue, read one byte, and tail-call
+`base + *(int *)(base + opcode * 4)`. The base is not a constant in the code — it comes from the
+singleton at `0x121b714`: the word at `*(0x121b714) - 0x7ff4` is the first table's base and
+`*(0x121b714) - 0x7ff0` is the second's. Read from the image, those words are `0x756a84` and
+`0x757d24`.
+
+Both tables store **signed offsets from their own base**, and their targets are `case` labels
+inside the dispatcher's function rather than functions of their own — which is why analysis had
+never made functions of them, why the decompiler shows `unaff_r*` on the register arguments, and
+why the names below were applied to freshly created functions at the table's own targets. Every
+case ends by draining the queue again and jumping through the table, so a case handles one record
+and returns to the dispatch loop; the names are the table index, which is a fact, not a reading of
+the body.
+
+**Table 1 — base `0x756a84`, opcodes `00`–`26`:**
+
+| opcode | case address | name |
+| --- | --- | --- |
+| `00` | `0x756c2c` | `P2P_HandleQueuedOpcode00` — applies the `0x57`-byte state block and its `u16` before looping |
+| `01` | `0x756c7c` | `P2P_HandleQueuedOpcode01` |
+| `02` | `0x756cf4` | `P2P_HandleQueuedOpcode02` |
+| `03` | `0x756d5c` | `P2P_HandleQueuedOpcode03` |
+| `04` | `0x756b20` | `P2P_HandleQueuedOpcode04` |
+| `05` | `0x756ddc` | `P2P_HandleQueuedOpcode05` |
+| `06` | `0x756e70` | `P2P_HandleQueuedOpcode06` |
+| `07` | `0x756ebc` | `P2P_HandleQueuedOpcode07` |
+| `08` | `0x756f28` | `P2P_HandleQueuedOpcode08` |
+| `09` | `0x756f7c` | `P2P_HandleQueuedOpcode09` |
+| `0a` | `0x756fd8` | `P2P_HandleQueuedOpcode0A` |
+| `0b` | `0x757020` | `P2P_HandleQueuedOpcode0B` |
+| `0c` | `0x757078` | `P2P_HandleQueuedOpcode0C` |
+| `0d` | `0x7570cc` | `P2P_HandleQueuedOpcode0D` |
+| `0e` | `0x75715c` | `P2P_HandleQueuedOpcode0E` |
+| `0f` | `0x7571a0` | `P2P_HandleQueuedOpcode0F` |
+| `10` | `0x7571e0` | `P2P_HandleQueuedOpcode10` |
+| `11` | `0x757248` | `P2P_HandleQueuedOpcode11` |
+| `12` | `0x75729c` | `P2P_HandleQueuedOpcode12` |
+| `13` | `0x757340` | `P2P_HandleQueuedOpcode13` |
+| `14`–`25` | `0x756bd0` | `P2P_HandleQueuedOpcode14To25` — one case for all eighteen opcodes |
+| `26` | `0x7573d0` | `P2P_HandleQueuedOpcode26` |
+
+**Table 2 — base `0x757d24`, opcodes `14`–`26`:**
+
+| opcode | case address | name |
+| --- | --- | --- |
+| `14` | `0x757e00` | `P2P_HandleQueuedOpcode14Second` — the state block again, clearing `+0x164` first |
+| `15` | `0x757f58` | `P2P_HandleQueuedOpcode15Second` |
+| `16` | `0x757f88` | `P2P_HandleQueuedOpcode16Second` |
+| `17` | `0x757fac` | `P2P_HandleQueuedOpcode17Second` |
+| `18` | `0x75802c` | `P2P_HandleQueuedOpcode18Second` |
+| `19` | `0x758078` | `P2P_HandleQueuedOpcode19Second` |
+| `1a` | `0x7580fc` | `P2P_HandleQueuedOpcode1ASecond` |
+| `1b` | `0x758168` | `P2P_HandleQueuedOpcode1BSecond` |
+| `1c` | `0x7581a4` | `P2P_HandleQueuedOpcode1CSecond` |
+| `1d` | `0x7581e0` | `P2P_HandleQueuedOpcode1DSecond` — writes `slot * 2 + 0x148`/`0x149` |
+| `1e` | `0x7582f4` | `P2P_HandleQueuedOpcode1ESecond` |
+| `1f` | `0x758364` | `P2P_HandleQueuedOpcode1FSecond` |
+| `20` | `0x7583c0` | `P2P_HandleQueuedOpcode20Second` |
+| `21` | `0x758450` | `P2P_HandleQueuedOpcode21Second` |
+| `22` | `0x7584d0` | `P2P_HandleQueuedOpcode22Second` |
+| `23` | `0x7581e4` | **not a case of its own** — the offset lands four bytes into the `1d` case, so `23` reuses that body from its second instruction; left unnamed |
+| `24` | `0x7586ac` | `P2P_HandleQueuedOpcode24Second` |
+| `25` | `0x758718` | `P2P_HandleQueuedOpcode25Second` |
+| `26` | `0x758754` | `P2P_HandleQueuedOpcode26Second` |
+
+The `0x23` entry is the one thing in either table that is not a clean case start, and it is
+recorded rather than named: naming it would claim a function the image does not have.

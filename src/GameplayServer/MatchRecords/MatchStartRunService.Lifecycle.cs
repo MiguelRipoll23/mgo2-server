@@ -69,7 +69,15 @@ public sealed partial class MatchStartRunService
         score.ResetRoundWins();
         results.Reset();
         countdown.Reset();
-        sequences.Reset();
+
+        // **The record counters are not cleared, and that is the reference's own
+        // behaviour.** Its host keeps counting across a room that empties and rejoins:
+        // `pcapng1`'s `0x1254` runs 416 values in one ascending line from start to
+        // finish and its `0x1a54` `00..11` across two round markers, with no backward
+        // step in either. A cleared counter hands a live client bytes its reader has
+        // already passed, and a strict-equality reader refuses those for the rest of the
+        // wrap; `myserver.pcapng` shows this host's `0x1254` going `05 -> 00` where the
+        // reference never goes back (`docs/analysis/stream-sequencing.md`, D5).
         lock (gate)
         {
             briefingDeparted.Clear();

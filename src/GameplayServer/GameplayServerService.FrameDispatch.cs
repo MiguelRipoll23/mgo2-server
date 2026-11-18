@@ -184,6 +184,12 @@ public sealed partial class GameplayServerService
             $"compression={(frame.Compressed ? "compressed" : "uncompressed")} from {session.DialBack}",
             decoded);
 
+        // **The frame's answers free the window before anything this frame makes the host
+        // write.** Decoding is where the image marks the sent entry (`decode_p2p_datagram`,
+        // `0x2666c8`); the answer pass below writes records of its own, and a free taken after
+        // it re-sends entries the same frame is about to acknowledge.
+        retransmit.NoteAnswers(session, frame.Messages);
+
         // The answer pass, with the three records it deliberately does not
         // answer and the measurement behind each (`GameplayServerService.Answers.cs`).
         AnswerReliableRecords(frame, session);

@@ -1,5 +1,6 @@
 using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
+using Mgo2Server.Shared.Udp;
 using Mgo2Server.Shared.Utils;
 
 namespace Mgo2Server.Tests;
@@ -83,7 +84,7 @@ public sealed class LiveGameFrameTests
         // Every record is accounted for: the sum of the headers and bodies is
         // the whole content region, with nothing left over and nothing read
         // twice. This is the assertion that fails under the old parser.
-        var consumed = frame.Messages.Sum(message => UdpCommandConstants.MessageHeaderSize + message.Body.Length);
+        var consumed = frame.Messages.Sum(ConsumedBytes);
         Assert.Equal(frame.Content.Length, consumed);
 
         // It really is a mixed frame, or the assertion above would prove nothing.
@@ -105,7 +106,7 @@ public sealed class LiveGameFrameTests
         Assert.Equal((ushort)0x0024, counter);
         Assert.False(frame.Compressed);
 
-        var consumed = frame.Messages.Sum(message => UdpCommandConstants.MessageHeaderSize + message.Body.Length);
+        var consumed = frame.Messages.Sum(ConsumedBytes);
         Assert.Equal(frame.Content.Length, consumed);
 
         // Two session records, then five tick records, and the last of those
@@ -147,7 +148,45 @@ public sealed class LiveGameFrameTests
         // At and above it: the byte is the body length.
         Assert.Equal(16, MessageCodecUtility.ReadBodyLength(0x1001, 16));
         Assert.Equal(0, MessageCodecUtility.ReadBodyLength(0x9001, 0));
+
+        // A sixteen-bit length moves where the class byte sits, not whether it is one:
+        // 0x68bd and 0xe702 are the identifiers that carry the 0x20 bit in the corpus and
+        // neither has the 0x10 bit, so both still spend a byte on the class.
+        Assert.Equal(15, MessageCodecUtility.ReadBodyLength(0x68bd, 16));
+        Assert.Equal(0, MessageCodecUtility.ReadBodyLength(0xe702, 1));
     }
+
+    /// <summary>
+    /// A record with a sixteen-bit length that is not sequenced: the length field takes two
+    /// bytes, so the class byte sits fifth, and the declared length still counts it.
+    /// </summary>
+    /// <remarks>
+    /// Before this rule, the header was four bytes for every record without the sequenced
+    /// bit, and the extended record's body started on its own second length byte.
+    /// </remarks>
+    [Fact]
+    public void A_sixteen_bit_length_moves_the_class_byte_without_losing_it()
+    {
+        byte[] content = [0xbd, 0x68, 0x04, 0x00, 0x07, 0xaa, 0xbb, 0xcc];
+
+        var record = Assert.Single(MessageCodecUtility.ParseMessages(content));
+
+        Assert.Equal((ushort)0x68bd, record.Type);
+        Assert.Equal((byte)0x07, record.Flags);
+        Assert.Equal(new byte[] { 0xaa, 0xbb, 0xcc }, record.Body);
+    }
+
+    /// <summary>
+    /// The wire size of a parsed record: its identifier, its length field at its own width,
+    /// the place-or-class byte and the body. A sixteen-bit length makes the header one byte
+    /// wider, so this is not the fixed <see cref="UdpCommandConstants.MessageHeaderSize"/>.
+    /// </summary>
+    /// <param name="message">Record to size.</param>
+    /// <returns>Bytes the record occupies in the content region.</returns>
+    private static int ConsumedBytes(UdpMessage message) =>
+        UdpCommandConstants.MessageHeaderSize
+        + (RecordEntryFramingUtils.DeclaresExtendedLength(message.Type) ? 1 : 0)
+        + message.Body.Length;
 
     /// <summary>
     /// A record whose length runs past the end of the region ends the walk

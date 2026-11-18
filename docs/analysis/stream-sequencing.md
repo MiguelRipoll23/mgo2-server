@@ -86,11 +86,19 @@ copy only when that byte is the one it expects, so the copies recover the *newes
 value's loss and nothing else. That is a reasonable optimisation on top of a window. It
 is not one here, where it is the only recovery there is.
 
-**D5 — the exchange is reset while a reader may still hold it.**
-`MatchRecordSequenceService.Reset()` clears every stream, and the room-reset path calls
-it while the session is still up. A reader that is at `0x97` and a host that restarts
-the stream at `0x00` refuses every record for the rest of the wrap. Item 6 above is the
-reason professional stacks never do this: the peer cannot be told.
+**D5 — the exchange was reset while a reader could still hold it.** The room-reset path
+used to clear every stream (`MatchRecordSequenceService.Reset()`), so a reader at `0x97` met
+a host restarting at `0x00` and refused everything for the rest of the wrap — item 6 above is
+why professional stacks never renumber under a live reader.
+
+Both halves of the measurement say the reference does not do it. Its host keeps counting
+across a room that empties and rejoins: `pcapng1`'s `0x1254` runs 416 values in one ascending
+line from start to finish and its `0x1a54` `00..11` across two round markers at t+281.97 and
+t+337.74, with no backward step in either, while the *client* is the side that opens its own
+stream at `00` for a new round (t+491.285, answered `0x5a54` `00..05` by the host, whose own
+series went on `0c → 0d → 0e`). `myserver.pcapng` shows this host doing the opposite — its
+`0x1254` goes `05 → 00` mid-session — which is the renumbering D5 describes. The clear has
+been removed from the room-reset path; the counters now run on as the reference's do.
 
 **D6 — the failure period is a property of the sequence space.** A byte-wide number
 with equality comparison means the worst case is 256 values of dead stream, and every
@@ -182,14 +190,21 @@ quarters before a datagram is decoded, one half before the flush starts freeing.
 state itself is the `0x20000` arena `P2P_InitializeNetwork` gives to `sceNpInit`, so the
 capacity's value is not recoverable from the file.
 
-**An answer is applied before the flush that follows it.** `receive_p2p_datagrams`
-(`0x2622a0`) decodes each arriving datagram — and that decode is where an answer frees the
-sender's queue — while the flush runs from the phase tick afterwards. This host took the
-frame's re-sends first and applied its answers second, so every answer frame wrote the prefix
-it was about to answer and then dropped it: `myserver.pcapng` (2026-11-18) carries 122 of 542
-room-stream writes whose byte the client had already answered, and 45 of 64 on `0x306`. With
-the answers freed first, a flush re-appends only what is still unanswered, which is what the
-queue walk gives the image.
+**An answer is applied before anything the frame makes this host write.**
+`receive_p2p_datagrams` (`0x2622a0`) decodes each arriving datagram, and that decode is where
+an answer frees the sender's queue — `decode_p2p_datagram` (`0x2666c8`) marks the entry the
+byte names — while the flush runs from the phase tick afterwards. This host freed late twice:
+first after its own flush, then after the dispatch's answer pass, which writes records of its
+own. Both re-sent entries the same frame was acknowledging. The free now happens at decode
+time, before every writer.
+
+**The check on that order is the answer list, not a frontier count.** Every write of the room
+stream draws one answer carrying the same byte in the same position: the 2026-11-18 17:25
+session carries 949 writes and 947 answers, all 947 aligned byte for byte, with no answer
+timestamped before its write and only the final two writes unanswered. Counting "writes behind
+the answered frontier" gave 122–270 per session, and that figure is an artefact — the frontier
+was advanced across same-instant frames and across the byte-wide wrap — so it is not evidence
+and is not quoted from here on.
 
 `StreamRetransmitService` now accounts the window the same way: an entry costs its
 12-byte header plus body, aligned by `(3 + size) & 0xfffc` — 40 bytes for the 26-byte team

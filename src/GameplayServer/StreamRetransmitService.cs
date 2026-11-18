@@ -191,6 +191,41 @@ public sealed partial class StreamRetransmitService(
     }
 
     /// <summary>
+    /// Frees every stream this frame's answers name, at the point the frame is decoded.
+    /// </summary>
+    /// <remarks>
+    /// <b>Decoding is where the image frees a sent entry.</b> An answer is read by
+    /// <c>decode_p2p_datagram</c> (<c>0x2666c8</c>), whose <c>0x4000</c> branch marks the entry
+    /// the byte names, and the receive path's writers all run after that decode. Here the host
+    /// answers the frame's own records in the dispatch that follows, and that answer pass
+    /// writes — so a free taken after it re-sends entries the frame is about to acknowledge,
+    /// and a peer answers a byte once. The order the capture checks is the answer list: the
+    /// 2026-11-18 17:25 session carries 949 room-stream writes and 947 answers, aligned byte
+    /// for byte in order, none before its write.
+    /// </remarks>
+    /// <param name="session">Peer that answered.</param>
+    /// <param name="inboundMessages">Records the frame carried; its answers are the ones with
+    /// <see cref="PeerAcknowledgementUtils.AcknowledgementBit"/> set.</param>
+    public void NoteAnswers(PeerSession session, IReadOnlyCollection<UdpMessage> inboundMessages)
+    {
+        lock (gate)
+        {
+            if (!windows.TryGetValue(session, out var byStream))
+            {
+                return;
+            }
+
+            foreach (var message in inboundMessages)
+            {
+                if (PeerAcknowledgementUtils.IsRecordAcknowledgement(message))
+                {
+                    FreeAnswered(byStream, message.Type, message.Flags);
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Frees one stream of everything up to the byte an answer names, without taking the gate.
     /// </summary>
     /// <param name="byStream">The peer's windows, by stream.</param>
@@ -257,6 +292,8 @@ public sealed partial class StreamRetransmitService(
         var named = inboundMessages
             .Select(message => MatchRecordSequenceService.StreamOf(message.Type))
             .ToHashSet();
+
+        NoteAnswers(session, inboundMessages);
         lock (gate)
         {
             if (!windows.TryGetValue(session, out var byStream))
@@ -264,21 +301,9 @@ public sealed partial class StreamRetransmitService(
                 return due;
             }
 
-            // **The frame's answers are applied first, which is the image's order.**
-            // `receive_p2p_datagrams` (0x2622a0) decodes each arriving datagram, and that is
-            // where an answer frees the sent queue; the phase tick calls the flush only
-            // afterwards, so `P2P_FlushChannelQueues` (0x285b58) re-appends what the peer has
-            // *not* answered. Freeing after the flush instead wrote the prefix the frame was
-            // answering and then dropped it — `myserver.pcapng` (2026-11-18) carries 122 of
-            // 542 room-stream writes on a byte the client had already answered.
-            foreach (var message in inboundMessages)
-            {
-                if (PeerAcknowledgementUtils.IsRecordAcknowledgement(message))
-                {
-                    FreeAnswered(byStream, message.Type, message.Flags);
-                }
-            }
-
+            // The frame's answers have already been freed (`NoteAnswers`, called at decode),
+            // so this walk re-appends only what the peer has not taken — which is what the
+            // image's flush does with the queue the decode left behind.
             foreach (var (stream, pending) in byStream)
             {
                 if (!named.Contains(stream)

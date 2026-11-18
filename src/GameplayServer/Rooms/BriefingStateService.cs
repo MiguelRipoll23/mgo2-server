@@ -43,10 +43,10 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// identifier declares the sequenced class (bit `0x10` of its high byte), so the peer
 /// compares the byte with what its stream expects and advances by one
 /// (`read_queued_p2p_message`, `0x26b5c8`). A publication that pinned the place repeated
-/// `00..0f` on every pass — `myserver.pcapng` (2026-11-18) holds four of them, and 45 of
-/// its 64 writes land on a byte the client had already answered — so the place lives in
-/// the body's slot byte and the fourth byte comes from the counter. What the body carries
-/// is the player's own reported byte, and the set is rewritten on every report.
+/// `00..0f` on every pass — 16 distinct bytes over 64 writes in the 2026-11-18 17:21 capture,
+/// and the set advancing `00..3f` over 48 writes in the 17:25 one — so the place lives in the
+/// body's slot byte and the fourth byte comes from the counter. What the body carries is the
+/// player's own reported byte, and the set is rewritten on every report.
 /// </para>
 /// </remarks>
 /// <param name="roster">Roster of the room, which owns who is in it.</param>

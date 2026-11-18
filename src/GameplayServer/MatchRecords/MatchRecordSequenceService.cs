@@ -37,8 +37,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// low twelve bits. The room's own exchange (id <c>0x001</c>) counts for the
 /// current room: the join's records, its burst, the round's arrays and the
 /// controls the beat and the sparse phase insert are one ascending sequence.
-/// When the last client leaves, the room is reset and this exchange restarts for
-/// its next join. A round's operations stream is keyed by its own generation's
+/// It is never cleared, because the reference host keeps counting across a room
+/// that empties and rejoins. A round's operations stream is keyed by its own generation's
 /// id and is restarted where the round opens, because the recorded host's run
 /// opens the operations stream on <c>00 01 02</c> and its beat's clocks go on
 /// from <c>03</c> (game1's round-1 run and beat, in
@@ -123,15 +123,6 @@ public sealed class MatchRecordSequenceService(ILogger<MatchRecordSequenceServic
         }
 
         return values;
-    }
-
-    /// <summary>Drops every stream, because the room has emptied.</summary>
-    public void Reset()
-    {
-        lock (gate)
-        {
-            nextOrdinals.Clear();
-        }
     }
 
     /// <summary>

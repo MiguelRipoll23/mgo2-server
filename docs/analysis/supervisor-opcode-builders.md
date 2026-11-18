@@ -45,7 +45,7 @@ the fields the body carries even where their meaning is still open.
 | `0x08` | `0x7556FC`, sibling `0x75639C` | `0x101efd00` | `08` + one byte that **packs two fields**: `(a << 4) \| (b & 0x0f)`, host-only, two arguments | `08 04 02` |
 | `0x09` | — | `0x101efe60` | `09` + two single bytes, host-only — killer and victim | `09 <killer> <victim>` |
 | `0x0a` | — | `0x101f00e0` | `0a` + one byte | — |
-| `0x0b` | — | `0x101f01e0` | `0b` + two single bytes | `0b 3c 00 00 00 00 00` |
+| `0x0b` | `0x755228` | `0x101f01e0` | the PS3 body is `0b` + a `u16` and a `u32`; the port appends two bytes | `0b 3c 00 00 00 00 00` |
 | `0x0c` | — | `0x101f0350` | `0c` + six single bytes; the same function builds `0x0d` and `0x1d` on other arms | — |
 | `0x0e` | — | `0x101f0510` | `0e` + one byte | — |
 | `0x0f` | `0x754710` | `0x101f0670` | `0f` + one byte | `0f 00` |

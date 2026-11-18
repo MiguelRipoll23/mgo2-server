@@ -60,7 +60,7 @@ public static class MessageCodecUtility
             // identifier declares the sequenced class, and the first byte of the body
             // when it does not; a record declaring the sixteen-bit length carries its
             // ordinal one byte later, because its length takes two bytes.
-            var headerSize = UdpCommandConstants.MessageHeaderSize + (extended && sequenced ? 1 : 0);
+            var headerSize = UdpCommandConstants.MessageHeaderSize + (extended ? 1 : 0);
             if (bodyLength < 0 || offset + headerSize + bodyLength > buffer.Length)
             {
                 // A length that runs past the end means the region is not walking
@@ -89,7 +89,11 @@ public static class MessageCodecUtility
     /// place in the stream, so its declared length is the body alone. A record that does not
     /// declare it has no such byte: the fourth byte is the body's first, and the declared
     /// length covers it, which is why this host's four-byte header reads one byte less than
-    /// the byte says.
+    /// the byte says. **A sixteen-bit length does not change that rule** — it widens the
+    /// length field, so the identifier and length together take one more byte before the
+    /// place-or-class byte, and that byte is still the body's first when the record is not
+    /// sequenced (`P2P_QueueInboundRecord`, `0x269b00`: the body starts at
+    /// `2 + length width + sequenced`).
     /// </para>
     /// <para>
     /// <b>Measured on the working captures: the old threshold is wrong for eighteen
@@ -106,8 +110,7 @@ public static class MessageCodecUtility
     /// <param name="declaredLength">The record's length field, already read at its own width.</param>
     /// <returns>Body length in bytes.</returns>
     public static int ReadBodyLength(ushort type, int declaredLength) =>
-        RecordEntryFramingUtils.DeclaresSequenced(type) ||
-        RecordEntryFramingUtils.DeclaresExtendedLength(type)
+        RecordEntryFramingUtils.DeclaresSequenced(type)
             ? declaredLength
             : declaredLength - 1;
 
@@ -153,8 +156,7 @@ public static class MessageCodecUtility
     /// <param name="bodyLength">Length of the record's body.</param>
     /// <returns>The value the length byte carries.</returns>
     public static byte WriteBodyLength(ushort type, int bodyLength) =>
-        RecordEntryFramingUtils.DeclaresSequenced(type) ||
-        RecordEntryFramingUtils.DeclaresExtendedLength(type)
+        RecordEntryFramingUtils.DeclaresSequenced(type)
             ? (byte)bodyLength
             : (byte)(bodyLength + 1);
 

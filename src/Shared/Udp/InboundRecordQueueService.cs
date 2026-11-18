@@ -133,12 +133,15 @@ public sealed class InboundRecordQueueService
                     (byte)(record.Type & RecordEntryFramingUtils.ContainerByteMask);
 
                 // The code the reader tests, `(state & 5) == 5`: both of its bits mean the
-                // entry's fourth byte is compared before the record is handed out.
+                // entry's fourth byte is compared before the record is handed out. An
+                // unsequenced record has no place in a stream, and the image writes **zero**
+                // to both fields for it (`P2P_QueueInboundRecord`, `0x269b00`); keeping the
+                // body's class byte there would make the entry look answered by a stream that
+                // is not reading it.
+                var sequenced = RecordEntryFramingUtils.DeclaresSequenced(record.Type);
                 entries[at + RecordEntryFramingUtils.StateOffset] = (byte)(
-                    RecordEntryFramingUtils.DeclaresSequenced(record.Type)
-                        ? RecordEntryState.QueuedSequenced
-                        : RecordEntryState.None);
-                entries[at + RecordEntryFramingUtils.OrdinalOffset] = record.Flags;
+                    sequenced ? RecordEntryState.QueuedSequenced : RecordEntryState.None);
+                entries[at + RecordEntryFramingUtils.OrdinalOffset] = sequenced ? record.Flags : (byte)0;
                 entries[at + RecordEntryFramingUtils.RetransmitOffset] = 0;
                 record.Body.CopyTo(entries, at + RecordEntryFramingUtils.BodyOffset);
 
