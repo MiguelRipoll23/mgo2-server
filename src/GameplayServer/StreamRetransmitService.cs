@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.Shared.Types;
+using Mgo2Server.Shared.Udp;
 using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.Logging;
 
@@ -44,18 +45,10 @@ namespace Mgo2Server.GameplayServer;
 /// </remarks>
 /// <param name="logger">Logger of this service.</param>
 /// <param name="pacing">The age at which each peer's records are written again.</param>
-public sealed class StreamRetransmitService(
+public sealed partial class StreamRetransmitService(
     ILogger<StreamRetransmitService> logger,
     RetransmitPacingService pacing)
 {
-    /// <summary>
-    /// Records held per stream, which is the size of the sender's own record table: the
-    /// image walks twenty-four slots (`0x18`) per tick and its send guard is `0x17`, the
-    /// last index of that table. A byte repeats only every 256 values, so a window this
-    /// far under that holds no duplicate and an answer names at most one entry.
-    /// </summary>
-    private const int WindowLimit = 24;
-
     /// <summary>
     /// Writes one record may spend before its stream is abandoned: the image's own guard,
     /// <c>0xff</c>, and not a number of this host's choosing.
@@ -79,32 +72,6 @@ public sealed class StreamRetransmitService(
     private const int AttemptLimit = 0xff;
 
 
-
-    /// <summary>
-    /// One record of a stream's window: the record as written, so a re-send repeats the
-    /// body and the byte and not just the number.
-    /// </summary>
-    /// <param name="type">Identifier the record travels under.</param>
-    /// <param name="ordinal">Fourth byte it was given when it was first written.</param>
-    /// <param name="body">Body it carries.</param>
-    /// <param name="writtenAt">Instant of its last write, in milliseconds since boot.</param>
-    private sealed class Pending(ushort type, byte ordinal, byte[] body, long writtenAt)
-    {
-        /// <summary>Identifier the record travels under.</summary>
-        public ushort Type { get; } = type;
-
-        /// <summary>Fourth byte it was given when it was first written.</summary>
-        public byte Ordinal { get; } = ordinal;
-
-        /// <summary>Body it carries.</summary>
-        public byte[] Body { get; } = body;
-
-        /// <summary>Instant of its last write, which is what the age is measured from.</summary>
-        public long WrittenAt { get; set; } = writtenAt;
-
-        /// <summary>Times it has been written, the first one included.</summary>
-        public int Attempts { get; set; }
-    }
 
     /// <summary>
     /// Stream windows by peer and by the identifier's low twelve bits. Held weakly, so a
@@ -171,16 +138,8 @@ public sealed class StreamRetransmitService(
                     held.WrittenAt = now;
                 }
 
-                if (pending.Count > WindowLimit)
-                {
-                    logger.LogDebug(
-                        "Stream 0x{Stream:x3} drops {Count} unanswered record(s): the peer is more than "
-                        + "{Limit} values behind and the window cannot hold them",
-                        stream,
-                        pending.Count - WindowLimit,
-                        WindowLimit);
-                    pending.RemoveRange(0, pending.Count - WindowLimit);
-                }
+                // The image's drain, in the image's unit: see `DrainIfFull`.
+                DrainIfFull(stream, pending);
             }
         }
 
@@ -222,27 +181,36 @@ public sealed class StreamRetransmitService(
     {
         lock (gate)
         {
-            if (!windows.TryGetValue(session, out var byStream))
+            if (windows.TryGetValue(session, out var byStream))
             {
-                return [];
+                FreeAnswered(byStream, recordType, ordinal);
             }
-
-            var stream = MatchRecordSequenceService.StreamOf(recordType);
-            if (!byStream.TryGetValue(stream, out var pending))
-            {
-                return [];
-            }
-
-            var answered = pending.FindIndex(entry => entry.Ordinal == ordinal);
-            if (answered < 0)
-            {
-                return [];
-            }
-
-            pending.RemoveRange(0, answered + 1);
         }
 
         return [];
+    }
+
+    /// <summary>
+    /// Frees one stream of everything up to the byte an answer names, without taking the gate.
+    /// </summary>
+    /// <param name="byStream">The peer's windows, by stream.</param>
+    /// <param name="recordType">Identifier the answered record travelled under.</param>
+    /// <param name="ordinal">Fourth byte the answer echoes.</param>
+    private static void FreeAnswered(
+        Dictionary<ushort, List<Pending>> byStream,
+        ushort recordType,
+        byte ordinal)
+    {
+        if (!byStream.TryGetValue(MatchRecordSequenceService.StreamOf(recordType), out var pending))
+        {
+            return;
+        }
+
+        var answered = pending.FindIndex(entry => entry.Ordinal == ordinal);
+        if (answered >= 0)
+        {
+            pending.RemoveRange(0, answered + 1);
+        }
     }
 
     /// <summary>
@@ -263,13 +231,32 @@ public sealed class StreamRetransmitService(
     /// record of its own. The recorded host's copies of a delta are 0.6 s apart, which is what
     /// the default interval is.
     /// </para>
+    /// <para>
+    /// <b>And only the streams the peer's own frame names are considered.</b> That is the
+    /// walk <c>P2P_FlushChannelQueues</c> (<c>0x285b58</c>) makes: it indexes the records of
+    /// the peer's incoming datagram, takes each identifier's low twelve bits, and for each one
+    /// walks the sent queue and re-appends the entries of <em>that</em> stream. A stream the
+    /// frame says nothing about is never re-sent, however old its window is — which is the
+    /// difference between the image and a timer over every stream at once, and the reason
+    /// <c>myserver.pcapng</c> carried six copies of a pair whose first copy the peer had
+    /// already answered.
+    /// </para>
     /// </remarks>
     /// <param name="session">Peer a frame just arrived from.</param>
+    /// <param name="inboundMessages">
+    /// Records the frame carried: their answers free the window first, and only the streams
+    /// they name are considered for a re-send.
+    /// </param>
     /// <returns>The records to write again, oldest stream first.</returns>
-    public IReadOnlyList<UdpMessage> NoteReceived(PeerSession session)
+    public IReadOnlyList<UdpMessage> NoteReceived(
+        PeerSession session,
+        IReadOnlyCollection<UdpMessage> inboundMessages)
     {
         var due = new List<UdpMessage>();
         var now = Environment.TickCount64;
+        var named = inboundMessages
+            .Select(message => MatchRecordSequenceService.StreamOf(message.Type))
+            .ToHashSet();
         lock (gate)
         {
             if (!windows.TryGetValue(session, out var byStream))
@@ -277,9 +264,26 @@ public sealed class StreamRetransmitService(
                 return due;
             }
 
+            // **The frame's answers are applied first, which is the image's order.**
+            // `receive_p2p_datagrams` (0x2622a0) decodes each arriving datagram, and that is
+            // where an answer frees the sent queue; the phase tick calls the flush only
+            // afterwards, so `P2P_FlushChannelQueues` (0x285b58) re-appends what the peer has
+            // *not* answered. Freeing after the flush instead wrote the prefix the frame was
+            // answering and then dropped it — `myserver.pcapng` (2026-11-18) carries 122 of
+            // 542 room-stream writes on a byte the client had already answered.
+            foreach (var message in inboundMessages)
+            {
+                if (PeerAcknowledgementUtils.IsRecordAcknowledgement(message))
+                {
+                    FreeAnswered(byStream, message.Type, message.Flags);
+                }
+            }
+
             foreach (var (stream, pending) in byStream)
             {
-                if (pending.Count == 0 || now - pending[0].WrittenAt < pacing.IntervalFor(session))
+                if (!named.Contains(stream)
+                    || pending.Count == 0
+                    || now - pending[0].WrittenAt < pacing.IntervalFor(session))
                 {
                     continue;
                 }

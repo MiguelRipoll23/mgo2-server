@@ -145,3 +145,54 @@ paths:
 
 Ordering (D3) and the reset (D5) are separate changes: numbering belongs under the
 session's write gate, and a stream is not restarted under a live peer.
+
+## The queue the drain is measured against
+
+The image's outstanding set is a byte-counted record queue, and the sender's drain is a
+fraction of that queue — so the thresholds are numbers of *bytes*, not of records.
+
+| queue offset | field |
+| --- | --- |
+| `+0` | capacity, halfword |
+| `+2` | used, halfword |
+| `+8` | the `0x600`-byte handle table, 256 six-byte entries |
+| `+0xc` | first entry: twelve-byte header then body |
+| each entry | `(3 + size) & 0xfffc` |
+
+`P2P_QueueRecordHandles` (`0x269ca8`) refuses with `0xffffffff` when
+`capacity < used + size`, `P2P_CompactRecordQueue` (`0x269ea8`) rebuilds used as it drops
+delivered entries, and `P2P_FlushChannelQueues` (`0x285b58`) starts freeing once
+`used >= capacity >> 1`, walking from the oldest entry and subtracting each entry's size
+until what remains is under `capacity >> 2`.
+
+**No function writes the capacity.** `P2P_ResetRecordHandleTable` (`0x269808`) sets the
+used halfword to `0xc` and clears the handle table; `initialize_p2p_session` (`0x268148`)
+calls it on the three queues at `slot + 0x34`, `+0x38` and `+0x3c` and stores no capacity;
+`create_p2p_session` (`0x261fe0`) only scans the 24 static slots (stride `0x6d8`) for one
+whose byte `+4` is zero. The capacity therefore arrives with the queue buffer's own layout,
+before any of that code runs, and the image's value for it was not read — `0x578` is the
+receive path's buffer size (`receive_p2p_datagrams`, `0x2622a0`), and this host uses it as
+the capacity of the same header.
+
+**Where the queue sits.** A slot's three queues are pointers (`slot + 0x34`, `+0x38`,
+`+0x3c`), not inline storage. `receive_p2p_datagrams` (`0x2622a0`) loads the one at `+0x3c`
+and reads it as a header — capacity in halfword `[0]`, used in `[1]` — and ticks the session
+when `used > (capacity * 3) >> 2`. That is a second threshold above the flush's half: three
+quarters before a datagram is decoded, one half before the flush starts freeing. The network
+state itself is the `0x20000` arena `P2P_InitializeNetwork` gives to `sceNpInit`, so the
+capacity's value is not recoverable from the file.
+
+**An answer is applied before the flush that follows it.** `receive_p2p_datagrams`
+(`0x2622a0`) decodes each arriving datagram — and that decode is where an answer frees the
+sender's queue — while the flush runs from the phase tick afterwards. This host took the
+frame's re-sends first and applied its answers second, so every answer frame wrote the prefix
+it was about to answer and then dropped it: `myserver.pcapng` (2026-11-18) carries 122 of 542
+room-stream writes whose byte the client had already answered, and 45 of 64 on `0x306`. With
+the answers freed first, a flush re-appends only what is still unanswered, which is what the
+queue walk gives the image.
+
+`StreamRetransmitService` now accounts the window the same way: an entry costs its
+12-byte header plus body, aligned by `(3 + size) & 0xfffc` — 40 bytes for the 26-byte team
+pair — the window drains at 700 bytes and keeps freeing oldest-first until it is under 350.
+That is roughly 18 held copies before a drain and 8 after, which is the image's own
+backpressure rather than a record count chosen here.

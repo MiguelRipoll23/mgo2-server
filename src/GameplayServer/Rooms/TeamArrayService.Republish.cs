@@ -30,28 +30,6 @@ public sealed partial class TeamArrayService
     /// </remarks>
     public const int RepublishIntervalMilliseconds = 650;
 
-    /// <summary>
-    /// Copies of one pair before a new sequence — and so a new fourth byte — is spent.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Measured on the largest capture</b> (<c>.pcapngs/pcapng2/pcapng2.pcapng</c>,
-    /// 526 s, 384 890 datagrams): the roster stream <c>0x001</c> writes 1 424 own
-    /// records under 256 distinct fourth bytes, so each value is written about 5.6
-    /// times and only 0.49 values a second are spent. This host took two new values on
-    /// every tick — 3.1 a second, six times the reference — which turns the byte inside
-    /// a round of a session the capture runs for 526 s.
-    /// </para>
-    /// <para>
-    /// Six writes per pair, which is two values every 3.9 s at the 650 ms tick — 0.51
-    /// values a second against the reference's 0.49, and six writes per value against
-    /// its 5.6. The safe direction is more copies and not fewer: a peer that is behind
-    /// waits for a value, while a peer handed a byte it has already passed refuses the
-    /// record.
-    /// </para>
-    /// </remarks>
-    private const int RepublishCopies = 6;
-
     /// <summary>Guards the clock, the sequence and the pairs already written.</summary>
     private readonly object republishGate = new();
 
@@ -111,7 +89,6 @@ public sealed partial class TeamArrayService
         var key = context.Remote.ToString();
         var slots = await lobbySlots.ReadAsync();
 
-        IReadOnlyList<RosterRecord>? repeat = null;
         byte sequence = 0;
         lock (republishGate)
         {
@@ -122,35 +99,16 @@ public sealed partial class TeamArrayService
 
             nextRepublish[key] = now + RepublishIntervalMilliseconds;
 
-            if (republished.TryGetValue(key, out var held) && held.Writes < RepublishCopies)
-            {
-                var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(held.Sequence, slots);
-                if (teams.AsSpan().SequenceEqual(held.Pair[0].Body)
-                    && occupancy.AsSpan().SequenceEqual(held.Pair[1].Body))
-                {
-                    republished[key] = held with { Writes = held.Writes + 1 };
-                    repeat = held.Pair;
-                }
-            }
-
-            if (repeat is null)
-            {
-                sequence = nextSequence.TryGetValue(key, out var next)
-                    ? next
-                    : TeamArrayFramesUtils.OpeningSequence;
-                nextSequence[key] = TeamArrayFramesUtils.NextSequence(sequence);
-            }
-        }
-
-        if (repeat is not null)
-        {
-            logger.LogDebug(
-                "UDP {LocalPort}: repeating the lobby-slot arrays under the byte they already carry to "
-                + "{RemoteAddress}",
-                context.LocalPort,
-                context.Remote);
-            await RosterRunSendUtils.SendAsync(context, repeat);
-            return;
+            // **The pair is written when its content is news, and a copy is not written
+            // by this host at all.** The image has one re-sender — `P2P_FlushChannelQueues`
+            // (`0x285b58`) — and it repeats a record only while the peer has not answered
+            // it, under the byte that record already carries. A tick that wrote a held pair
+            // again produced six copies of each pair in `myserver.pcapng`, all under one
+            // byte the client had answered on the first, which the image cannot produce.
+            sequence = nextSequence.TryGetValue(key, out var next)
+                ? next
+                : TeamArrayFramesUtils.OpeningSequence;
+            nextSequence[key] = TeamArrayFramesUtils.NextSequence(sequence);
         }
 
         var (newTeams, newOccupancy) = TeamArrayFramesUtils.BuildPair(sequence, slots);

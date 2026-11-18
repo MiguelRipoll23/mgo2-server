@@ -39,17 +39,23 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// per-peer answer.
 /// </para>
 /// <para>
-/// The <em>fourth byte</em> is read as the player's place in the publication:
-/// the recorded host numbers them from zero and keeps a player's number while
-/// the briefing lasts, so the set reads as a list that grows as players report
-/// (<c>docs/protocol/BRIEFING_FLOW.md</c>). Nothing on the wire names it, so the
-/// assignment is **[I]**; what is **[V]** is that each record carries one
-/// player's own byte and that the set is rewritten on every report.
+/// The <em>fourth byte</em> is the stream's next value, not the player's place. The
+/// identifier declares the sequenced class (bit `0x10` of its high byte), so the peer
+/// compares the byte with what its stream expects and advances by one
+/// (`read_queued_p2p_message`, `0x26b5c8`). A publication that pinned the place repeated
+/// `00..0f` on every pass — `myserver.pcapng` (2026-11-18) holds four of them, and 45 of
+/// its 64 writes land on a byte the client had already answered — so the place lives in
+/// the body's slot byte and the fourth byte comes from the counter. What the body carries
+/// is the player's own reported byte, and the set is rewritten on every report.
 /// </para>
 /// </remarks>
 /// <param name="roster">Roster of the room, which owns who is in it.</param>
+/// <param name="sequences">The record streams' counters, which give each publication its fourth byte.</param>
 /// <param name="logger">Logger of this service.</param>
-public sealed partial class BriefingStateService(RoomRosterService roster, ILogger<BriefingStateService> logger)
+public sealed partial class BriefingStateService(
+    RoomRosterService roster,
+    MatchRecordSequenceService sequences,
+    ILogger<BriefingStateService> logger)
 {
     /// <summary>
     /// One player's map-loaded report: the byte it reported and its place in the
@@ -61,7 +67,7 @@ public sealed partial class BriefingStateService(RoomRosterService roster, ILogg
     /// arrived from an endpoint the roster has no entry for.
     /// </param>
     /// <param name="Value">Byte the player reported, which is its own slot.</param>
-    /// <param name="PublicationIndex">Fourth byte its record travels under.</param>
+    /// <param name="PublicationIndex">Its place in the publication, which orders the set.</param>
     public sealed record JoinReport(
         string RemoteAddress,
         sbyte? RosterIndex,
@@ -81,12 +87,6 @@ public sealed partial class BriefingStateService(RoomRosterService roster, ILogg
     private readonly Lock gate = new();
     private readonly Dictionary<string, JoinReport> joinReports = [];
     private readonly Dictionary<string, BriefingReady> readies = [];
-
-    /// <summary>
-    /// The place in the publication each bot's two records take, handed out once
-    /// per briefing so a repeat repeats the same fourth byte.
-    /// </summary>
-    private readonly Dictionary<string, int> botPublicationIndexes = [];
 
     private int nextPublicationIndex;
 

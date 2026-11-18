@@ -32,7 +32,6 @@ public sealed partial class BriefingStateService
 
             joinReports.Clear();
             readies.Clear();
-            botPublicationIndexes.Clear();
             nextPublicationIndex = 0;
             if (kept is not null)
             {
@@ -253,7 +252,6 @@ public sealed partial class BriefingStateService
             if (joinReports.Count == 0 && readies.Count == kept)
             {
                 nextPublicationIndex = 0;
-                botPublicationIndexes.Clear();
                 return;
             }
 
@@ -269,7 +267,6 @@ public sealed partial class BriefingStateService
             }
 
             nextPublicationIndex = 0;
-            botPublicationIndexes.Clear();
         }
     }
 
@@ -315,14 +312,19 @@ public sealed partial class BriefingStateService
         var records = new List<RosterRecord>(ordered.Count * 2);
         foreach (var state in ordered)
         {
-            var ordinal = (byte)state.PublicationIndex;
-
-            // The player's state record first, at the publication's own fourth
-            // byte: that is the order the one capture holding both writes them in.
+            // **The fourth byte is the stream's next value, not the publication index.**
+            // `0x1306`'s high byte carries `0x10`, so `RecordEntryFramingUtils.DeclaresSequenced`
+            // reads it as a sequenced record, and a sequenced record's fourth byte is the place
+            // its stream expects: the peer compares it and advances by one
+            // (`read_queued_p2p_message`, `0x26b5c8`). A publication that pinned the index wrote
+            // `00..0f` on every pass — `myserver.pcapng` (2026-11-18) holds four of them — and
+            // every pass after the first carries bytes the client has already passed, which is
+            // why 45 of the stream's 64 writes landed on an already-answered byte. The index
+            // stays the ordering key and the slot stays in the body.
             records.Add(new RosterRecord(
                 generation.ReadyState,
                 MatchRecords.BriefingReadyStateBodiesUtils.Body(state.Value, roundUnits),
-                ordinal));
+                sequences.Take(generation.ReadyState)));
         }
 
         // One round-start payload per publication, and not one per player.
@@ -339,7 +341,7 @@ public sealed partial class BriefingStateService
             records.Add(new RosterRecord(
                 generation.MatchStartPayload,
                 MatchStartBodiesUtils.MatchStartPayload(ordered[0].Value),
-                (byte)ordered[0].PublicationIndex));
+                sequences.Take(generation.MatchStartPayload)));
         }
 
         // The bots are in the publication too, and the room a client is briefed in
@@ -348,9 +350,8 @@ public sealed partial class BriefingStateService
         // named one row per client and left every bot's roster entry with no row of
         // its own — the briefing that showed one of eight. The value byte is the
         // seat the bot holds, which is the byte a client's own report carries for
-        // itself, and the fourth byte is a place in this publication handed out
-        // once per briefing so a repeat repeats it rather than numbering a second
-        // set.
+        // itself, and the fourth byte comes from the same stream the reporters'
+        // records take theirs from, for the reason the loop above gives.
         lock (gate)
         {
             foreach (var member in roster.Snapshot().Where(member => member.IsBot))
@@ -360,16 +361,10 @@ public sealed partial class BriefingStateService
                     continue;
                 }
 
-                if (!botPublicationIndexes.TryGetValue(member.RemoteAddress, out var index))
-                {
-                    index = nextPublicationIndex++;
-                    botPublicationIndexes[member.RemoteAddress] = index;
-                }
-
                 records.Add(new RosterRecord(
                     generation.ReadyState,
                     MatchRecords.BriefingReadyStateBodiesUtils.Body(ready.Slot, roundUnits),
-                    (byte)index));
+                    sequences.Take(generation.ReadyState)));
             }
         }
 

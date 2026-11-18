@@ -163,11 +163,24 @@ public static class PeerAcknowledgementUtils
     /// <summary>
     /// Whether a record waits for this host to answer it.
     /// </summary>
+    /// <remarks>
+    /// <b>The handshake is not a session record and is never answered this way.</b> In the
+    /// image it is the connect path's own message: it never reaches <c>P2P_SendRecord</c>
+    /// (<c>0x26b778</c>) and has no place in a stream, so there is nothing for an answer to
+    /// name and nothing for a window to hold. Reading it as one costs a re-send per pacing
+    /// tick for the whole session — <c>myserver.pcapng</c> carries 106 of them against the
+    /// working host's one (<c>briefing-then-solo-game</c> t+0.84), because the peer answers
+    /// a handshake by answering the connect, not by echoing a fourth byte.
+    /// </remarks>
     /// <param name="message">Decoded record to test.</param>
-    /// <returns><c>true</c> when the record is a session record carrying no answer bit yet.</returns>
+    /// <returns>
+    /// <c>true</c> when the record is a session record carrying no answer bit yet, and not
+    /// the handshake.
+    /// </returns>
     public static bool WaitsForAcknowledgement(UdpMessage message) =>
         IsNumberedRecord(message) &&
         (message.Type & AcknowledgementBit) == 0 &&
+        message.Type != UdpCommandConstants.Handshake &&
         !IsFrameAcknowledgement(message);
 
     /// <summary>

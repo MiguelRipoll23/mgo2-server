@@ -204,7 +204,7 @@ here can be found in the code by its name rather than reconstructed from a log.
 | `append_udp_datagram_to_send_buffer` `0x2696d8` | `Shared/Udp/OutboundDatagramBufferService.AppendToBuffer` (`-1` on no room) and `Split` built on it |
 | `P2P_QueueInboundRecord` `0x269b00` | `Shared/Udp/InboundRecordQueueService`: twelve-byte entry, ordinal zeroed for an unsequenced record, `false` when the queue is full |
 | `read_queued_p2p_message` `0x26b5c8` | `Shared/Udp/InboundRecordGateService`: `(state & 5) == 5`, compare the container's expectation, advance on equality, drop without advancing on a mismatch |
-| `P2P_FlushChannelQueues` `0x285b58` | `GameplayServerService/StreamRetransmitService`: a window of 24 per stream, Go-Back-N re-send, the same `0xff` abandon |
+| `P2P_FlushChannelQueues` `0x285b58` | `GameplayServerService/StreamRetransmitService`: one window per stream, measured in entry bytes against the record queue's capacity word (`queue + 0`), drained at `capacity >> 1` back under `capacity >> 2`, re-sent only for the streams a peer frame names, the same `0xff` abandon |
 | `decode_p2p_datagram` answer branch `0x2666c8` | `PeerAcknowledgementUtils` / `GameplayServerService.FrameDispatch`: an answer echoes the record's fourth byte and frees the window to it, and is never queued |
 
 Two differences are deliberate and stated in those files: a full datagram starts the next
@@ -306,6 +306,39 @@ allocates and what `recvfrom` is given, so it is the most the receive path can b
 There is no `MTU`, `kbps` or `512` string anywhere in the image, and no bandwidth figure is
 read on this path: the kbps choices in the game's menus are resource labels that never reach
 this code.
+
+**And the queue's own capacity word has no writer.** A record queue begins with a pair of
+halfwords — capacity at `+0`, used at `+2` — and entries from `+0xc`, each advanced by
+`(3 + size) & 0xfffc`. Every function that touches a queue maintains the *used* halfword
+only: `P2P_ResetRecordHandleTable` (`0x269808`) writes `0xc` there, `P2P_QueueRecordHandles`
+(`0x269ca8`) refuses when `capacity < used + size`, `P2P_CompactRecordQueue` (`0x269ea8`)
+shrinks it as it drops delivered entries, and `P2P_FlushChannelQueues` (`0x285b58`) drains
+against it. `initialize_p2p_session` (`0x268148`) resets the three queues at `slot + 0x34`,
+`+0x38` and `+0x3c` through that reset and never stores a capacity, and `create_p2p_session`
+(`0x261fe0`) only scans the 24 static slots (stride `0x6d8`) for one whose byte `+4` is zero.
+So the capacity is laid out with the queue buffer before any of that code runs; the image's
+value for it was not read, and this host uses `0x578` as that size.
+
+### Where a queue actually lives
+
+A slot's queues are **pointers**, not inline storage, and the whole network state is runtime
+arena memory: the singleton is `0x01856c10`, outside every section of the file, so no address
+the queue could occupy is in the ELF. What the code fixes is the layout:
+
+| offset | what it holds |
+| --- | --- |
+| `singleton + 0x28` | first session slot, 24 of them, stride `0x6d8` — `receive_p2p_datagrams` walks them as `+0x1b6` ints, and `register_p2p_channel_record` (`0x261ab0`) divides a slot pointer by `0x6d8` to get its index |
+| `singleton + 0x2c`, `+0x30` | the two class-2 sessions, outside the 24 (`create_p2p_session` uses slot base `+ 0x9d68` for that class) |
+| `singleton + 0x34` | the channel descriptor table: 24 × `0xaa0` in a `0x10000` window, class-2 channels at `0xf460`, entries tagged by the byte at `+0xa` (`0x80` normal, `0x90` a reply) |
+| `slot + 0x34`, `+0x38`, `+0x3c` | the slot's three record-queue pointers — the ones `initialize_p2p_session` resets |
+| `queue + 0` / `+2` | capacity / used, halfwords |
+
+`receive_p2p_datagrams` (`0x2622a0`) is the clearest witness: it loads `slot[0x3c]` and reads
+it as a queue header — `(ushort[0] * 3) >> 2 < ushort[1]` ticks the session before the
+datagram is decoded. So there are two fractions on the same word: **three quarters** before a
+receive, **one half** before the flush starts freeing. The buffers are allocated in the
+`0x20000` block `P2P_InitializeNetwork` hands to `sceNpInit`, which is why the capacity has no
+store instruction anywhere in the module — it belongs to the allocation's layout.
 
 ## The retry bytes (settled 2026-11-16)
 

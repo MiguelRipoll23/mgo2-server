@@ -192,7 +192,10 @@ public sealed partial class GameplayServerService
         // (`P2P_PhaseTick_SendOperations` calls `receive_p2p_datagrams()` first): every
         // record this peer has left unanswered is written again here, so a stream that
         // lost a value recovers on the next frame rather than on its next write.
-        var unanswered = retransmit.NoteReceived(session);
+        // Only the streams this frame names are considered, which is the walk the image's
+        // flush makes over the peer's own incoming datagram (`P2P_FlushChannelQueues`,
+        // 0x285b58): a stream the frame says nothing about keeps its window untouched.
+        var unanswered = retransmit.NoteReceived(session, frame.Messages);
         if (unanswered.Count > 0)
         {
             SendMessages(session, unanswered);
@@ -298,21 +301,14 @@ public sealed partial class GameplayServerService
                             message.Flags);
                     }
 
-                    // An answer is cumulative, so whatever the window still holds behind the
-                    // byte it names is a record the peer refused. Those are written again at
-                    // once: the peer cannot move past them, and the byte-wide counter only
-                    // comes round to them after 256 values.
+                    // The window was freed by this answer before the frame's re-sends were
+                    // taken (`StreamRetransmitService.NoteReceived`), which is the image's
+                    // order: an answer marks, the flush then re-appends only what is left.
                     // A timed answer carries the peer's own duration in its one body byte; the
                     // margin left over is what its re-send cadence is paced by.
                     if (timedExchange.NoteAnswer(session, message) is { } margin)
                     {
                         pacing.PaceFromRemainder(session, margin);
-                    }
-
-                    var refused = retransmit.NoteAnswered(session, recordType, message.Flags);
-                    if (refused.Count > 0)
-                    {
-                        SendMessages(session, refused);
                     }
 
                     continue;
