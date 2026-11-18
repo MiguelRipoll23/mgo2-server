@@ -63,6 +63,22 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 kubectl apply -f deploy/argocd/root.yaml
 ```
 
+ArgoCD excludes `EndpointSlice` from the resources it tracks by default, and
+that exclusion has to go: the database's Service has no selector, so its
+EndpointSlice is the only thing naming the host container. Without this, the
+Application syncs the Service and silently leaves it with no endpoint.
+
+```sh
+kubectl --namespace argocd patch configmap argocd-cm --type merge --patch \
+  '{"data":{"resource.exclusions":"- apiGroups:\n  - coordination.k8s.io\n  kinds:\n  - Lease\n"}}'
+kubectl --namespace argocd rollout restart statefulset/argocd-application-controller
+kubectl --namespace argocd rollout restart deployment/argocd-server deployment/argocd-repo-server
+```
+
+The patch keeps Argo's other exclusion, `Lease`, and drops only the network one.
+It belongs here rather than in a manifest because `argocd-cm` is part of the
+ArgoCD installation itself, like the Traefik override [below](#https-on-443).
+
 `deploy/argocd/root.yaml` points at `deploy/argocd/applications`, whose children
 are ordered by sync wave:
 
