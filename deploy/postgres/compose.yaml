@@ -25,7 +25,7 @@ name: mgo2-postgres
 
 services:
   postgres:
-    image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:5f4b1211854b935f93b6f494afbea3c47fbed8f5
+    image: ghcr.io/miguelripoll23/mgo2-server/mgo2-postgres:96e5b22de054ad543e03d866436449b0d82de12c
     container_name: mgo2-postgres
     restart: unless-stopped
     env_file:
