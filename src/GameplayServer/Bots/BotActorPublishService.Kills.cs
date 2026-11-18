@@ -134,11 +134,11 @@ public sealed partial class BotActorPublishService
             // numbered on that stream. The item-box identifier an earlier writer
             // used carries a chat macro, which the client played as "Roger that" on
             // every kill.
-            // Numbered at write on the operations stream, so a feed the writer drops
-            // before it goes out spends no value.
-            feeds.Add((kill.Victim, UdpMessage.CreateAutoNumbered(
+            // The value is taken here, on the operations stream, and travels with the feed.
+            feeds.Add((kill.Victim, UdpMessage.Create(
                 generation.Operations,
-                MatchKillFeedBodiesUtils.Build(kill.Killer, kill.Victim))));
+                MatchKillFeedBodiesUtils.Build(kill.Killer, kill.Victim),
+                sequences.Take(generation.Operations))));
         }
 
         scoreboardDue = true;

@@ -50,6 +50,7 @@ public sealed partial class BotActorPublishService(
     MatchScoreService score,
     ScoreboardPublishService scoreboard,
     Rooms.TeamArrayService teamArrays,
+    MatchRecordSequenceService sequences,
     ILogger<BotActorPublishService> logger)
 {
     /// <summary>Milliseconds between bot actor frames on the match beat.</summary>
@@ -205,12 +206,12 @@ public sealed partial class BotActorPublishService(
         var run = new List<RosterRecord>(seated.Count);
         foreach (var bot in seated)
         {
-            // Numbered at write, from the profile stream the announcement travels on:
-            // a state the writer drops before it goes out spends nothing.
+            // The value is taken here, from the profile stream the announcement travels
+            // on, and travels with the record.
             run.Add(new RosterRecord(
                 UdpCommandConstants.PlayerProfile,
                 BotRoundStateBodiesUtils.Build(bot.SessionSlot),
-                AutoNumbered: true));
+                sequences.Take(UdpCommandConstants.PlayerProfile)));
         }
 
         await RosterRunSendUtils.SendAsync(context, run);

@@ -89,7 +89,8 @@ public sealed partial class TeamArrayService
     /// given, which is what the reference's 484 repeated transitions on the roster
     /// stream are. Rebuilding the pair and numbering it again spends a value per tick
     /// and turns the stream inside the round
-    /// (<see cref="MatchRecordNumberingService"/>).
+    /// (<see cref="MatchRecordSequenceService"/>: a value is taken once, where the record
+    /// is built, and the copy carries it).
     /// </remarks>
     private readonly Dictionary<string, HeldPair> republished = [];
 

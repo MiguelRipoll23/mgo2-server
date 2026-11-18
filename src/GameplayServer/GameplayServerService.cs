@@ -32,7 +32,6 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly AccountService accountService;
     private readonly MatchService matchService;
     private readonly RoomRosterService roster;
-    private readonly MatchRecords.MatchRecordNumberingService numbering;
 
     /// <summary>
     /// The records each peer has not answered yet, which are the ones its stream cannot
@@ -96,7 +95,6 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         accountService = serviceProvider.GetRequiredService<AccountService>();
         matchService = serviceProvider.GetRequiredService<MatchService>();
         roster = serviceProvider.GetRequiredService<RoomRosterService>();
-        numbering = serviceProvider.GetRequiredService<MatchRecords.MatchRecordNumberingService>();
         retransmit = serviceProvider.GetRequiredService<StreamRetransmitService>();
         timedExchange = serviceProvider.GetRequiredService<TimedExchangeService>();
         pacing = serviceProvider.GetRequiredService<RetransmitPacingService>();

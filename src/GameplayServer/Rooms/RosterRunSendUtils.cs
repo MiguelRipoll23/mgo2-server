@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 
@@ -57,10 +58,9 @@ public static class RosterRunSendUtils
 
         if (context.SendRecords is not { } sendRecords)
         {
-            // A record marked for numbering is written with the byte it carries here,
-            // which is zero: this is the path for a context with no batching delegate, and
-            // every context this host builds carries one, where the write path numbers it
-            // (<see cref="MatchRecords.MatchRecordNumberingService"/>).
+            // Every record carries the byte it was built with, so this path writes what the
+            // batching one would: the value is taken where the record is built, and no
+            // writer assigns one afterwards (<c>docs/GHIDRA.md</c>, <c>P2P_SendRecord</c>).
             foreach (var record in run)
             {
                 await context.Send(record.Type, record.Body, record.Ordinal);
@@ -69,15 +69,10 @@ public static class RosterRunSendUtils
             return;
         }
 
-        // A record marked for numbering keeps its marker all the way to the write path,
-        // which stamps it from the stream its type is counted on; the roster run's own
-        // records carry their positions here instead.
         var messages = new List<UdpMessage>(run.Count);
         foreach (var record in run)
         {
-            messages.Add(record.AutoNumbered
-                ? UdpMessage.CreateAutoNumbered(record.Type, record.Body)
-                : FrameBuilderUtility.MessageOf(record.Type, record.Body, record.Ordinal));
+            messages.Add(RecordHeaderEntry.Build(record.Type, record.Body, record.Ordinal));
         }
 
         await sendRecords(messages);

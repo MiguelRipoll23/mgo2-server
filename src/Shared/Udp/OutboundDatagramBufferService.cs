@@ -51,6 +51,27 @@ public static class OutboundDatagramBufferService
     public static int Append(int used, int recordSize) =>
         used + RecordEntryFramingUtils.AlignedSize(recordSize);
 
+    /// <summary>The image's refusal answer, <c>0xffffffff</c>.</summary>
+    public const int Refused = -1;
+
+    /// <summary>
+    /// Appends one record if it fits, and answers the image's way: a refusal when the
+    /// datagram has no room, and otherwise where the buffer now ends.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is one call, not two.</b> <c>append_udp_datagram_to_send_buffer</c> tests the
+    /// room and copies in the same body, so a caller that tested with <see cref="Fits"/> and
+    /// then advanced with <see cref="Append"/> would be keeping the same decision in two
+    /// places. The image returns the record's size; what its caller needs is only "taken or
+    /// not", and what this packer needs is where the next record starts, so the answer is the
+    /// new offset — the size plus the alignment, or <see cref="Refused"/>.
+    /// </remarks>
+    /// <param name="used">Bytes already in the datagram.</param>
+    /// <param name="recordSize">Size of the record, its header included.</param>
+    /// <returns>The datagram's new size, or <see cref="Refused"/>.</returns>
+    public static int AppendToBuffer(int used, int recordSize) =>
+        Fits(used, recordSize) ? Append(used, recordSize) : Refused;
+
     /// <summary>
     /// Groups messages into datagrams by that rule: as many as fit, in order, each record's
     /// size being its four-byte header and its body.
@@ -68,7 +89,12 @@ public static class OutboundDatagramBufferService
             // A record's wire size is its identifier, its length byte, its fourth byte and
             // the body; that whole record is what the image's buffer appends.
             var recordSize = UdpCommandConstants.MessageHeaderSize + message.Body.Length;
-            if (!Fits(used, recordSize) && group.Count > 0)
+
+            // The gate's own answer decides the split: a refusal starts the next datagram,
+            // which is the image's append answering -1 and its caller beginning a new
+            // buffer (RecordSendGateService).
+            var appended = RecordSendGateService.TryAppend(used, recordSize);
+            if (appended == Refused && group.Count > 0)
             {
                 groups.Add(group);
                 group = [message];
@@ -77,7 +103,10 @@ public static class OutboundDatagramBufferService
             }
 
             group.Add(message);
-            used = Append(used, recordSize);
+
+            // A record larger than a whole datagram's content region travels alone rather
+            // than being cut, so its refusal is answered with a buffer that starts at it.
+            used = appended == Refused ? Append(0, recordSize) : appended;
         }
 
         if (group.Count > 0)

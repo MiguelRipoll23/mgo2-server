@@ -11,15 +11,12 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// the repeat drops the head and keeps the rest. Later frames continue the count
 /// rather than restart it.
 /// </param>
-/// <param name="AutoNumbered">
-/// Whether the fourth byte is stamped where the record is written, from the stream
-/// its type is counted on, rather than handed in here
-/// (<see cref="MatchRecords.MatchRecordNumberingService"/>). A record built to be
-/// written once marks itself this way; the roster run's own positions do not, because
-/// its fourth byte is a place in the run and not a value of the stream.
+/// <param name="Ordinal">
+/// Fourth byte, taken where the record is built: a value of the stream its type is counted
+/// on, or — in a roster run — the record's own place in the run. The send path assigns
+/// nothing, as in the image (<c>docs/GHIDRA.md</c>).
 /// </param>
-/// <param name="Ordinal">Fourth byte, when the builder knows it.</param>
-public sealed record RosterRecord(ushort Type, byte[] Body, byte Ordinal = 0, bool AutoNumbered = false);
+public sealed record RosterRecord(ushort Type, byte[] Body, byte Ordinal = 0);
 
 /// <summary>
 /// One player of the room as the lobby-slot arrays name it: the key its session

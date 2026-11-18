@@ -44,7 +44,6 @@ builder.Services.AddSingleton<LobbyLoadoutService>();
 builder.Services.AddSingleton<PlayerSettingsBurstService>();
 builder.Services.AddSingleton<PlayerSettingsBurstSchedulerService>();
 builder.Services.AddSingleton<MatchRecordSequenceService>();
-builder.Services.AddSingleton<MatchRecordNumberingService>();
 builder.Services.AddSingleton<TimedExchangeService>();
 builder.Services.AddSingleton<RetransmitPacingService>();
 builder.Services.AddSingleton<Mgo2Server.GameplayServer.StreamRetransmitService>();

@@ -15,7 +15,7 @@ last part, and it is one step, not a layer.
 | 4 | `MatchRecordSequenceService.Take(0x1001)` | stream key `0x001`; returns the current byte and increments it |
 | 5 | `RosterRunSendUtils.SendAsync` → `Pack` | `FrameBuilderUtility.MessageOf(type, body, ordinal)` → `UdpMessage.Create(type, body, flags = ordinal)` |
 | 6 | `PeerContext.SendRecords` | the delegate built in `GameplayServerService.MessageDispatch.cs` → `SendMessages(session, records)` |
-| 7 | `GameplayServerService.SendMessages` | `retransmit.NoteWriting` (window), then `NumberAtWrite` (only `AutoNumbered` records take a value here), then `SplitByFrameSize` |
+| 7 | `GameplayServerService.SendMessages` | `NumberAtWrite` (only `AutoNumbered` records take a value here), then `retransmit.NoteWriting` (window), then `SplitByFrameSize` |
 | 8 | `SendFrame` | takes `session.OutboundCounter` (15-bit, wraps at `0x7fff` because bit 15 is the compression marker) |
 | 9 | `FrameBuilderUtility.BuildMessageFrame` → `MessageCodecUtility.SerializeMessages` | writes the record: `[id lo][id hi][len][flags][body]` — **`flags` is written verbatim at offset 3** |
 | 10 | `FrameCryptoUtility.EncodeFrame` | scrambles the frame and fills the tail digest (the only thing that changes the bytes after step 9) |

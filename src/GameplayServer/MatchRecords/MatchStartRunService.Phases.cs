@@ -139,11 +139,15 @@ public sealed partial class MatchStartRunService
     {
         try
         {
-            // The value is not taken here: the record is marked for numbering and the
-            // write path stamps it, so a write that is not sent spends nothing.
+            // The value is taken here, where the record is built: the image's builders
+            // stamp the fourth byte into the record and the send path only carries it
+            // (docs/GHIDRA.md).
             await MatchRecordSendUtils.SendAsync(
                 context,
-                [new(generation.Operations, MatchStateBodiesUtils.RoundStartStateWrite(), AutoNumbered: true)]);
+                [new(
+                    generation.Operations,
+                    MatchStateBodiesUtils.RoundStartStateWrite(),
+                    sequences.Take(generation.Operations))]);
         }
         catch (Exception exception)
         {

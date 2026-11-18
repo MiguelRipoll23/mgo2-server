@@ -120,14 +120,12 @@ public sealed record BeatFramePlan(
     /// none at this index.
     /// </summary>
     /// <remarks>
-    /// <b>The fourth byte is stamped where the frame is written, not here.</b> A clock
-    /// record and a control record are numbered on different streams — the round's
-    /// operations id and the room's exchange id — and the frame that carries one is the
-    /// act that spends its value, so a beat that carries no insertion spends nothing.
-    /// The record is marked for numbering and the write path takes its value
-    /// (<see cref="MatchRecordSequenceService"/>).
+    /// <b>The fourth byte is taken here, where the record is built.</b> A clock record and
+    /// a control record are numbered on different streams — the round's operations id and
+    /// the room's exchange id — and the image's builders stamp the value into the record
+    /// before the send path ever sees it (<c>docs/GHIDRA.md</c>, <c>P2P_SendRecord</c>).
     /// </remarks>
-    /// <param name="sequences">Unused: the write path numbers the record.</param>
+    /// <param name="sequences">The room's streams, which the insertions' values are taken from.</param>
     /// <returns>The insertion record, or <c>null</c>.</returns>
     public MatchRecordFramesUtils.RecordMessage? Insertion(MatchRecordSequenceService sequences) =>
         InsertionKind switch
@@ -138,13 +136,13 @@ public sealed record BeatFramePlan(
             BeatInsertion.Operations => MatchRecordFramesUtils.OperationsInsertion(
                 Generation,
                 alternate: false,
-                0,
-                RoundClockUnits) with { AutoNumbered = true },
+                sequences.Take(Generation.Operations),
+                RoundClockUnits),
             BeatInsertion.OperationsClassBit => MatchRecordFramesUtils.OperationsInsertion(
                 Generation,
                 alternate: true,
-                0,
-                RoundClockUnits) with { AutoNumbered = true },
+                sequences.Take(Generation.OperationsClassBit),
+                RoundClockUnits),
 
             // The first recorded insertion is the zero-valued 40-byte frame
             // (hdr 0x8648), followed by the 100-valued 41-byte frame; preserve
@@ -156,7 +154,7 @@ public sealed record BeatFramePlan(
             // records that share it.
             BeatInsertion.Control => MatchRecordFramesUtils.ControlInsertion(
                 MatchRecordFramesUtils.SteadyControlBody(),
-                0) with { AutoNumbered = true },
+                sequences),
 
             _ => null,
         };
@@ -268,7 +266,7 @@ public sealed record BeatFramePlan(
     /// <summary>
     /// The records of this frame, in send order.
     /// </summary>
-    /// <param name="sequences">Unused: the write path numbers the insertions.</param>
+    /// <param name="sequences">The room's streams, which the insertions' values are taken from.</param>
     /// <remarks>
     /// <b>The item-box group rides behind the rules pair.</b> game1's round-1
     /// item-box frames read <c>0a61 0a61 1a50 … 1a5a …</c> with the pair first,

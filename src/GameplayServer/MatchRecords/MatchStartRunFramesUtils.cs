@@ -29,8 +29,6 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// captures write the same thirteen, in the same order:
 /// </para>
 /// <code>
-/// 0x5001 len 0            the roster head, twice
-/// 0x5001 len 0
 /// &lt;ops&gt;   len 90           the state block
 /// &lt;ops&gt;   len 2            0f 00
 /// 0x1001  len 26          the team array      (index)
@@ -44,12 +42,23 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// 0x0a61  len 1
 /// </code>
 /// <para>
-/// Two things in that shape were missing here before it was measured: the two
-/// empty roster heads the run opens on, and the roster close that ends its
-/// <c>0x1001</c> tail (<c>PlayerProfileRecordUtility.BuildRosterClose()</c>, the
-/// same seven-byte record a join's roster run closes on). The close pair is
-/// therefore a close <em>triple</em>, and the run is not the twelve records this
-/// file used to write.
+/// The run opens on the state block and not on the two empty <c>0x5001</c> heads
+/// this file used to write there. Those records are on the wire, but they are the
+/// record-level answers to the peer's own <c>0x1001</c> records and carry that
+/// peer's fourth bytes — <c>03</c>/<c>04</c> at `briefing-then-solo-game` t+9.780
+/// behind the peer's pair, <c>22</c>/<c>23</c> at t+147.650, and one behind each
+/// poll at <c>05</c>…<c>18</c> — so they belong to the run's <em>opening answer</em>
+/// and not to its numbered set: they spend nothing on the exchange's
+/// counter and are only written when the peer sent the records they answer. A
+/// builder that pinned them at zero wrote two records whose byte the stream had
+/// already carried, which the peer refuses and never advances past.
+/// </para>
+/// <para>
+/// One thing in that shape was missing here before it was measured: the roster
+/// close that ends the run's <c>0x1001</c> tail
+/// (<c>PlayerProfileRecordUtility.BuildRosterClose()</c>, the same seven-byte
+/// record a join's roster run closes on). The close pair is therefore a close
+/// <em>triple</em>.
 /// </para>
 /// <para>
 /// The companion's answer is not in either capture's run — both write it beside
@@ -118,17 +127,23 @@ public static partial class MatchStartRunFramesUtils
 
     /// <summary>
     /// Records a run that answers the report opens on and its repeat leaves out:
-    /// the marker and the pair behind it, which answer the peer's report and its
-    /// entry.
+    /// the marker alone, which is the answer to the peer's report.
     /// </summary>
-    public const int RunOpeningCount = 3;
+    /// <remarks>
+    /// The marker is the run's only opening. The pair that used to be counted
+    /// here was two empty <c>0x5001</c> heads the builder synthesized, and the
+    /// captures' pair is the answer to the peer's own entry echo — prepended at
+    /// write by <see cref="MatchStartRunService.WithEntryAnswers"/> and not part
+    /// of the built set, so the repeat never held one.
+    /// </remarks>
+    public const int RunOpeningCount = 1;
 
     /// <summary>
-    /// Records a briefing's run opens on and its repeat leaves out: the pair that
-    /// answers the peer's entry, with no marker. The report was already answered
-    /// beside its publication, so a marker here is the same record twice.
+    /// Records a briefing's run opens on and its repeat leaves out: none, because
+    /// its report was already answered beside the publication it drew, so the run
+    /// carries no marker to drop.
     /// </summary>
-    public const int BriefingRunOpeningCount = 2;
+    public const int BriefingRunOpeningCount = 0;
 
     /// <summary>
     /// The run's records, in send order, built for the identifier set the round
@@ -222,29 +237,28 @@ public static partial class MatchStartRunFramesUtils
             teamArraySequence,
             carriesRoundState ? slots : Array.Empty<Rooms.LobbyTeamSlot>());
 
-        // The run opens on the pair of empty roster heads every capture writes,
-        // whether or not the peer's own entry was heard: `briefing-then-solo-game`
-        // writes <c>0x5001</c> twice at t+9.780 — its briefing's run — and twice
-        // again at t+147.650, and the client's echo of the lobby-slot pair is
-        // answered by the arrays below rather than by them. A run that answered the
-        // echo here wrote a single head when one echo had been heard and none when
-        // two had, which is a pair on no capture's wire.
-        IEnumerable<MatchRecordFramesUtils.RecordMessage> heads =
-        [new(UdpCommandConstants.RosterHead, []), new(UdpCommandConstants.RosterHead, [])];
-
+        // The run does not open on empty <c>0x5001</c> heads, because the reference
+        // writes none: every empty <c>0x5001</c> on its wire is the record-level
+        // answer to one of the peer's own <c>0x1001</c> records and carries that
+        // record's fourth byte. `briefing-then-solo-game` writes two at t+9.780,
+        // and the peer had just sent <c>0x1001</c> ordinals <c>03</c>/<c>04</c>;
+        // two at t+147.650, behind ordinals <c>22</c>/<c>23</c>; and one 0.9 s
+        // after each of the peer's polls at ordinals <c>05</c>…<c>18</c>.
+        // `fix-spawn-point-midtown` and `rounded-ended-by-reaching-tickets-limit`
+        // write the same pair behind <c>08</c>/<c>09</c> and <c>35</c>/<c>36</c>.
+        // So those records are the echo's answers and not the run's positions
+        // (<see cref="MatchStartRunService.WithEntryAnswers"/> prepends them), and
+        // a run that invented them wrote two records the peer refuses — the same
+        // byte the stream had already carried — which is what a pinned zero here
+        // was.
         return
         [
-        // The run's opening pair: the answer to the peer's entry echo, which is
-        // the empty 0x5001 record a join's roster run opens on when nothing was
-        // echoed.
-        .. heads,
-
         // The marker the round is opened with, for the run that is the report's
-        // answer — behind the heads, which is where the reference writes it
-        // (`briefing-then-solo-game`'s run opens `0xd001`, the two heads and then
-        // `0x5ade`, t+147.650). A fresh briefing's answer is the publication written
-        // beside the report instead: its run carries no payload, and its marker has
-        // already gone out there.
+        // answer — behind the entry's answers, which is where the reference writes
+        // it (`briefing-then-solo-game`'s run opens `0xd001`, the pair answering
+        // `22`/`23` and then `0x5ade`, t+147.650). A fresh briefing's answer is the
+        // publication written beside the report instead: its run carries no
+        // payload, and its marker has already gone out there.
         .. (answersReport
             ? new MatchRecordFramesUtils.RecordMessage[] { new(generation.MatchStartMarker, []) }
             : []),

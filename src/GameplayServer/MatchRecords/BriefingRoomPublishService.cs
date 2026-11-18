@@ -65,6 +65,7 @@ public sealed partial class BriefingRoomPublishService(
     MatchRoundStateService roundState,
     LobbySlotService lobbySlots,
     MatchStartRunService matchStart,
+    MatchRecordSequenceService sequences,
     ILogger<BriefingRoomPublishService> logger)
 {
     /// <summary>
@@ -358,10 +359,13 @@ public sealed partial class BriefingRoomPublishService(
             count,
             generation.RoomCount);
 
-        // Numbered at write, from the room count's stream.
+        // The value is taken here, from the room count's stream, and travels with the record.
         await MatchRecordSendUtils.SendAsync(
             context,
-            [new(generation.RoomCount, MatchRecordBodiesUtils.RoomCount((byte)count), AutoNumbered: true)]);
+            [new(
+                generation.RoomCount,
+                MatchRecordBodiesUtils.RoomCount((byte)count),
+                sequences.Take(generation.RoomCount))]);
         return count;
     }
 }

@@ -117,7 +117,7 @@ would have been a guess is left as `FUN_`.
 | `0x26b178` | `P2P_ChannelStateInit` | builds a stream state: `+0xe = 0` (the first byte it expects), `+9 = 0x80`, `+0xb = 0` |
 | `0x26b1c8` | `P2P_ChannelStateRelease` | drops one reference to a stream state and clears `+0xa` with the last one |
 | `0x2666c8` | `decode_p2p_datagram` | the datagram decoder; its `type & 0x4000` branch is the answer reader, which walks the send window and marks the entry whose `+0xa` matches |
-| `0x26b778` | `P2P_SendRecord` | increments the byte it stamps per record and refuses the step that would land on `0xff` while the entry leads what was answered |
+| `0x26b778` | `P2P_SendRecord` | the sender: copies the entry's header word out (`lwz r0,0x0(r31)` / `stw r0,0x70(r1)`), sets the datagram's byte `9`, writes the retry byte at `+0xb` into byte `0xa`, advances `+0xb`, and refuses the write that would leave `writes − acked == 0xff` |
 | `0x26b2b0` | `P2P_SetRecordHeaderField` | writes one field of a record header; called with field `0` and value `3` where a channel is first registered |
 | `0x2692c0` | `P2P_MessageIdentifier` | the record's 16-bit identifier, class bits included |
 | `0x2692e0` | `P2P_MessageBodyLength` | the record's body length |
@@ -191,6 +191,26 @@ the functions on that side.
 | `0x2753c8` | `P2P_PublishPlayerRecord` | applies a player-record body and publishes it: `[0]`→state `0x12c`, `[2]`→`0x12e`, `[4]`→`0x126`, `[5]`→`0x130`, `[0xc]`→`0x128`, `[0x10..0x26]`→`0x131` (0x17 bytes), `[0x27]`→five flag/value pairs, `[0x32..0x131]`→`0x152` and `0x252` (0x100 bytes each), and the entry's own 0x18-byte settings header→state `2` |
 | `0x276e88` | `P2P_ReadPlayerSettingsHeader` | the settings-body **parser**, and it refuses everything unless the entry's state word is exactly `0x211` (in the room). Layout, in order: `u16`, `u16`, `byte`, `byte`, `byte`, `u32`, `u32`, `0x17` bytes, five present-flag/value byte pairs, a count byte and that many `u16`s, then `0x30` bytes. It applies the same state writes as the publisher and answers the record |
 
+### Where each of those lives in the server
+
+Every named function above has one counterpart and no second implementation, so a rule read
+here can be found in the code by its name rather than reconstructed from a log.
+
+| image | server |
+| --- | --- |
+| `P2P_SetRecordHeaderField` `0x26b2b0` | `MatchRecords/RecordHeaderFieldService` (`Set`, the four selectors and their width refusals), over `MatchRecords/RecordHeaderEntry`; every record is built through `RecordHeaderEntry.Build` |
+| `P2P_SendRecord` `0x26b778` | `GameplayServerService.SendMessages`: it assigns nothing — the fourth byte is on the record before the write — spends no value, and the `0xff` guard is `StreamRetransmitService.AddRetries` |
+| `gate_p2p_record_send` `0x263530` | `Shared/Udp/RecordSendGateService`: refuses a channel that is not ready, then appends |
+| `append_udp_datagram_to_send_buffer` `0x2696d8` | `Shared/Udp/OutboundDatagramBufferService.AppendToBuffer` (`-1` on no room) and `Split` built on it |
+| `P2P_QueueInboundRecord` `0x269b00` | `Shared/Udp/InboundRecordQueueService`: twelve-byte entry, ordinal zeroed for an unsequenced record, `false` when the queue is full |
+| `read_queued_p2p_message` `0x26b5c8` | `Shared/Udp/InboundRecordGateService`: `(state & 5) == 5`, compare the container's expectation, advance on equality, drop without advancing on a mismatch |
+| `P2P_FlushChannelQueues` `0x285b58` | `GameplayServerService/StreamRetransmitService`: a window of 24 per stream, Go-Back-N re-send, the same `0xff` abandon |
+| `decode_p2p_datagram` answer branch `0x2666c8` | `PeerAcknowledgementUtils` / `GameplayServerService.FrameDispatch`: an answer echoes the record's fourth byte and frees the window to it, and is never queued |
+
+Two differences are deliberate and stated in those files: a full datagram starts the next
+frame here instead of aborting the channel, and an unsequenced record's ordinal is never
+compared because it is never written.
+
 The settings path is where the score and ticket families live, and the parser is strict in
 one more way than the body layout suggests: **it only runs for an entry whose state word
 is `0x211`**, so a record that arrives while the client still holds the player in any other
@@ -204,6 +224,18 @@ records the reader compares cannot be derived from a capture — the sender stam
 from the record's class when it builds it. Every wire-side filter tried against the
 working captures failed for that reason (`body == 63` takes 0 records in `pcapng1`), and
 that is why the analysis reasons from answers rather than from a guessed gate.
+
+**Where the wire ordinal itself is written is still open.** Selector `0` only marks the
+entry; `register_p2p_channel_record` builds the entry's header word as
+`[index][id bits 11..4][id bits 3..0][0]`, with the fourth byte zero, and neither
+`P2P_SendRecord` nor `gate_p2p_record_send` writes `+0xa` — the sender copies the header
+out unchanged and spends only the retry byte. So the value the peer compares is stamped
+before the send, by whoever builds the record, and the build site for the host's own
+session records has not been read yet. This host stamps it in the write path
+(`GameplayServerService.NumberAtWrite`), *before* the record enters the send window — the
+same invariant the image holds, and the reason the order matters: a held entry must
+already carry the byte an answer will name (`decode_p2p_datagram`'s `0x4000` branch, marked
+by matching `+0xa`), or no answer can ever free it.
 
 ## When Ghidra is not the tool for the question
 

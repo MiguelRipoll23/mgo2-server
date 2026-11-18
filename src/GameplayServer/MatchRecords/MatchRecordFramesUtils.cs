@@ -70,7 +70,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// the run, so no fixed period reproduces them.
 /// </para>
 /// </remarks>
-public static class MatchRecordFramesUtils
+public static partial class MatchRecordFramesUtils
 {
     /// <summary>
     /// Measured identifier of the two-byte health/stamina record that rides in
@@ -234,12 +234,12 @@ public static class MatchRecordFramesUtils
     /// <summary>One message of the stream, with the fourth byte it travels with.</summary>
     /// <param name="Type">Message identifier.</param>
     /// <param name="Body">Message body.</param>
-    /// <param name="FourthByte">Value of the record's fourth byte, when it is known at build.</param>
-    /// <param name="AutoNumbered">
-    /// Whether the fourth byte is stamped at write, from its identifier's stream
-    /// (<see cref="MatchRecordNumberingService"/>).
+    /// <param name="FourthByte">
+    /// Value of the record's fourth byte, taken where the record is built — the image's
+    /// builders stamp it into the record and the send path carries it out unchanged
+    /// (<c>docs/GHIDRA.md</c>, <c>P2P_SendRecord</c>).
     /// </param>
-    public sealed record RecordMessage(ushort Type, byte[] Body, byte FourthByte = 0, bool AutoNumbered = false);
+    public sealed record RecordMessage(ushort Type, byte[] Body, byte FourthByte = 0);
     /// <summary>
     /// The beat frame: an optional head insertion, the vitals record once the
     /// capture's round reaches it, the rules-roster pair, and — behind the pair —
@@ -358,13 +358,6 @@ public static class MatchRecordFramesUtils
             ? new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SparseStateBlob(), StateBlobSteadyLiveAttributeClass)
             : new(UdpCommandConstants.GameStateBlob, MatchStateBodiesUtils.SteadyZeroStateBlob(), StateBlobSteadyZeroAttributeClass);
 
-    /// <summary>A control-byte insertion.</summary>
-    /// <param name="body">Control body to carry.</param>
-    /// <param name="fourthByte">Value of the record's fourth byte.</param>
-    /// <returns>The insertion record.</returns>
-    public static RecordMessage ControlInsertion(byte[] body, byte fourthByte) =>
-        new(UdpCommandConstants.InGameControl, body, fourthByte);
-
     /// <summary>Body of the early sparse-phase control record.</summary>
     /// <returns>The body bytes.</returns>
     public static byte[] EarlyControlBody() => MatchRecordBodiesUtils.EarlyControl();
@@ -390,11 +383,5 @@ public static class MatchRecordFramesUtils
     /// <summary>Fourth byte of the rare control record.</summary>
     public const byte RareControlFourthByte = ControlFourthByteRare;
 
-    /// <summary>Converts one stream message into the codec's message type.</summary>
-    /// <param name="message">Message to convert.</param>
-    /// <returns>The message the frame builder serializes, still to be numbered if the builder asked for that.</returns>
-    public static UdpMessage ToUdpMessage(RecordMessage message) =>
-        message.AutoNumbered
-            ? UdpMessage.CreateAutoNumbered(message.Type, message.Body)
-            : FrameBuilderUtility.MessageOf(message.Type, message.Body, message.FourthByte);
+
 }

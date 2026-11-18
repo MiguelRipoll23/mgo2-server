@@ -292,12 +292,10 @@ public sealed partial class MatchStartRunService
         // count taken from the rounds that carry two and three whole runs; those
         // repetitions are spaced — `mgo2-started-briefing-then-solo-game` writes
         // the run's records at t+57.626 and again at t+59.993 — and three copies
-        // inside one pass are not a repeat, they are the same frame three times,
-        // which gives a client that lost the first one nothing
-        // (`docs/analysis/connection-not-stable-disconnect.md` §4). The repeat a
-        // capture does write is the one below: the same set one briefing tick
-        // later, with the marker and the roster heads left out
-        // (`MatchStartRunFramesUtils.RepeatOf`).
+        // inside one pass are not a repeat: they are the same frame three times, which gives
+        // a client that lost the first one nothing (`docs/analysis/connection-not-stable-disconnect.md` §4).
+        // The repeat a capture writes is the one below: the same set one briefing tick later,
+        // with the marker left out (`MatchStartRunFramesUtils.RepeatOf`).
         //
         // The phase the run is being written for is read before it goes out, so
         // the repeat can tell whether the room moved on in the tick between.

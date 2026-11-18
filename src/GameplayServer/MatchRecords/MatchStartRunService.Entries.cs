@@ -55,17 +55,6 @@ public sealed partial class MatchStartRunService
     private readonly Dictionary<PeerSession, byte> entrySequences = [];
 
     /// <summary>
-    /// The record-level answers each peer's entry echo draws, which are the
-    /// records the briefing's run opens on for that peer.
-    /// </summary>
-    /// <remarks>
-    /// The echo is answered by the room's state and not beside it, so its
-    /// answers are held from the pass that heard it until the run is written
-    /// (<see cref="NoteEntryAnswers"/>).
-    /// </remarks>
-    private readonly Dictionary<PeerSession, List<UdpMessage>> entryAnswers = [];
-
-    /// <summary>
     /// When each peer's entry was heard, which is the instant the run that
     /// answers it is spaced from.
     /// </summary>
@@ -212,103 +201,6 @@ public sealed partial class MatchStartRunService
         }
 
         await teamArrays.ConfirmAsync(context, sequence);
-    }
-
-    /// <summary>
-    /// Holds the answers a peer's entry echo draws, so its briefing's run opens
-    /// on them.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The run's two opening records are these answers, and the captures
-    /// write them as the echo's own records answered.</b> A reference briefing's
-    /// run opens on two empty <c>0x5001</c> records whose fourth bytes are the
-    /// ones the client's echo carried: <c>started-briefing-then-solo</c> echoes
-    /// <c>82 7e</c>/<c>84 7e</c> at classes <c>0x0c</c>/<c>0x0d</c> at t+55.312
-    /// and its run opens <c>0x5001</c> classes <c>0x0c</c>/<c>0x0d</c> at
-    /// t+57.626. So the pair is not a recorded head but the answer to that
-    /// peer's entry, matched by identifier and fourth byte
-    /// (<see cref="PeerAcknowledgementUtils"/>).
-    /// </para>
-    /// <para>
-    /// <b>And it is why the pass that hears the echo writes nothing.</b>
-    /// Answering it beside the echo stops the client where it stands
-    /// (<c>myserver20.pcapng</c>), and answering it nowhere leaves a record whose
-    /// window never drains: <c>myserver22.pcapng</c>'s client re-sent the pair
-    /// three seconds after the first copy and tore its session down 32 s after
-    /// its report, raising its modal ten seconds later. Written as the run's opening pair, the answer arrives where
-    /// every capture puts it — 2.3 s behind the entry — and names the records it
-    /// answers.
-    /// </para>
-    /// </remarks>
-    /// <param name="session">Session the echo arrived on.</param>
-    /// <param name="answers">The records its answer draws, in echo order.</param>
-    public void NoteEntryAnswers(PeerSession session, IReadOnlyList<UdpMessage> answers)
-    {
-        lock (gate)
-        {
-            entryAnswers[session] = [.. answers];
-        }
-    }
-
-    /// <summary>
-    /// The answers a peer's entry echo draws, in echo order; empty when the peer
-    /// has not entered.
-    /// </summary>
-    /// <param name="session">Session the peer is on.</param>
-    /// <returns>The records the run opens on for that peer.</returns>
-    public IReadOnlyList<UdpMessage> EntryAnswersOf(PeerSession session)
-    {
-        lock (gate)
-        {
-            return entryAnswers.TryGetValue(session, out var answers) ? answers : [];
-        }
-    }
-
-    /// <summary>
-    /// A run with its opening pair replaced by the answers the peer's entry echo
-    /// drew, which is where every capture puts them.
-    /// </summary>
-    /// <remarks>
-    /// <b>An opening of empty heads leaves the echo's own records unanswered.</b>
-    /// The pass that hears the echo withholds its answers so the run can carry
-    /// them (<see cref="NoteEntryAnswers"/>); a run that opens on the empty heads
-    /// instead never writes them, the client re-sends the pair on its own timer
-    /// and its window never drains, and it tears the session down once its report
-    /// is thirty seconds old. That is the shape `myserver22.pcapng` records, and
-    /// the live run of 2026-11-09 reproduced it: `0x9001 ordinal 9` and
-    /// `0x1001 ordinal 10` re-sent six times from the report on, the client's own
-    /// ticks ending twenty seconds into the round, and `2001:FFFFFF80` behind it.
-    /// </remarks>
-    /// <param name="session">Session the run is written to.</param>
-    /// <param name="run">The run as built, opening on two empty heads.</param>
-    /// <returns>The run, opening on the held answers when the pair was heard.</returns>
-    public List<MatchRecordFramesUtils.RecordMessage> WithEntryAnswers(
-        PeerSession session,
-        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run)
-    {
-        // The echo is a pair: `82 NN` on the team array and `84 NN` on the
-        // occupancy one, each its own record. One heard on its own is a client
-        // part-way through the exchange, and its answer waits for the other.
-        const int echoRecords = 2;
-
-        List<UdpMessage>? held;
-        lock (gate)
-        {
-            entryAnswers.Remove(session, out held);
-        }
-
-        if (held is not { Count: echoRecords })
-        {
-            return [.. run];
-        }
-
-        return
-        [
-            .. held.Select(message =>
-                new MatchRecordFramesUtils.RecordMessage(message.Type, message.Body, message.Flags)),
-            .. run.Skip(echoRecords),
-        ];
     }
 
     /// <summary>

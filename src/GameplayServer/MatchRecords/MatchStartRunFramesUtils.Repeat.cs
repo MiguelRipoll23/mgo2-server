@@ -11,8 +11,8 @@ public static partial class MatchStartRunFramesUtils
 {
     /// <summary>
     /// The run's records as the tick behind it writes them again: everything the
-    /// run carries except its opening — the pair behind the marker, and the
-    /// marker itself when the run is the report's answer.
+    /// run carries except its opening — the marker, when the run is the report's
+    /// answer.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -29,14 +29,16 @@ public static partial class MatchStartRunFramesUtils
     /// </para>
     /// <para>
     /// The marker, where the run carries one, is the answer to the peer's own
-    /// report and there is nothing for it to answer a second time; the pair
-    /// behind it is the peer's entry answered — or the recorded empty heads when
-    /// this host heard no entry. Both are the run's opening rather than its state,
-    /// which is what the tick behind it is for. They are dropped by their place in
-    /// the run and not by their identifier, because the pair is the peer's own
-    /// records answered and so carries that peer's identifiers. A briefing's run
-    /// opens on the pair alone — its marker went out beside the report it answered
-    /// — so the count it drops is the one it was built with.
+    /// report and there is nothing for it to answer a second time, so it is the
+    /// whole of what the repeat drops — by its place in the run and not by its
+    /// identifier. A briefing's run carries no marker (its report was answered
+    /// beside the publication it drew), so its count is zero.
+    /// </para>
+    /// <para>
+    /// <b>The empty <c>0x5001</c> pair is not the repeat's to drop either.</b> It
+    /// is the answer to the peer's entry echo and is placed in front of the run at
+    /// write, not built into it, so a repeat never carries one
+    /// (<see cref="MatchStartRunService.WithEntryAnswers"/>).
     /// </para>
     /// </remarks>
     /// <param name="generation">Identifier set the run was written under.</param>
@@ -46,8 +48,8 @@ public static partial class MatchStartRunFramesUtils
         MatchRecordGenerationUtils generation,
         IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run)
     {
-        // A briefing's run opens on the entry's pair alone, so the marker is not
-        // there to drop: the opening count is the one that run was built with.
+        // A briefing's run opens on its state block, so the marker is not there to
+        // drop: the opening count is the one that run was built with.
         var answersReport = run.Count > 0 && run[0].Type == generation.MatchStartMarker;
 
         // The item-box group is left behind as well, because its bytes are

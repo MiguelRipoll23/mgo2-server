@@ -6180,3 +6180,269 @@ offset}`: `upper` (`+23`/`+26`), `lower` (`+24`/`+27`), `head` (`+34`/`+41`), `c
 materialises lookups and loads no model. The two ways a part can fail to appear are reported
 by `Gear part not loaded: player %d slot %d part %d (%06x), %s` (`0x10474E1D`, this build)
 and `Camo layer on a %s model skipped: …` (`0x10485522`).
+
+## 87. `myserver` of 17 November: the re-sent profile was refused, so the roster waited on a timer
+
+One join into the same bot-filled room (`192.168.1.140:5730` ↔ host
+`192.168.1.140:9999`, 68 datagrams, 17.6 s), read against the server's own log of the
+same session (`mgo2-gameplay-server-9999.log`, 16:31:47–16:32:27) and against two
+working joins: the recorded host (`pcapng1`) and this host's own capture of 15
+November, which is the only one that shares this server's records.
+
+**The client never reports, where every working join does.** Its own ready report —
+`0x12de e1 11` in the reference, `e1 10` in the live ones — lands at **9.1–9.7 s** in
+every capture that joins at all (the join window of all thirty-one captures in
+`.pcapngs/`, pcapng3's 46.9 s the only other value). This one sends it nowhere: its last
+datagram is the third room poll, `0x9001 00`, at **t+10.066**, and it writes nothing
+for the 30 s the log keeps counting after it.
+
+**Where the two joins diverge, before that silence.** The profile is the only record
+the client sends until its poll, so the roster answer's instant is the whole of the
+host's own behaviour:
+
+| | the client's copies | the roster run | gap from the re-send |
+| --- | --- | --- | --- |
+| `pcapng1` | one, t+0.267 | t+0.562 | — (0.3 s from the first) |
+| this host, 15 Nov | t+0.035, **t+1.902** | t+2.151 | **0.25 s** |
+| this host, 17 Nov | t+0.033, **t+1.898** | t+3.070 | **1.17 s** |
+
+**And the log says why.** At 16:31:49 — the instant of the re-sent copy — the server
+wrote
+
+```
+[udp:9999] IN 192.168.1.140:5730 refused 0x1001 ordinal 0x00: the stream is waiting for a different byte
+[16:31:50] 192.168.1.140:5730 has not re-sent its profile in 00:00:02.5000000; answering the copy it first sent
+```
+
+The re-send is the same record byte for byte, fourth byte included, so it carries the
+byte its stream has already taken and `InboundRecordGateService` refused it. That is
+precisely the copy `PlayerProfileHandler` holds the first one to wait for
+(`RosterAnswerService`), so the answer the join is designed around never happened: the
+held copy went out on the 2.5 s deadline, 3.04 s after the client first asked. The
+November capture of this same server answered the re-send in 0.25 s, which is how the
+gate behaved before it was keyed by the stream.
+
+**What was changed.** A record whose fourth byte is the one below its stream's
+expectation is the record just taken — a re-send, not a value out of order — and the
+gate takes it without advancing the stream a second time. A genuine gap still refuses.
+
+**Still open, and what would close it.** Whether a roster answer 3 s late is what stops
+this client is **[U]**: its last datagram is seven seconds after the answer, and nothing
+it sent in between is malformed.
+
+**The run's two shorter records are the player's own, and not the host's.** The
+`0x1001` entry at the answering slot is 61 bytes here and 69 in November's run, and
+the settings payload is 50 and 52; both lengths are per-character data:
+
+* **The entry is 56 fixed bytes and the character's name with its terminator**, and
+  its byte at `[1]` is the length minus seven. This join writes `07 36` on
+  `74 65 73 74 00` — `test` — which is 61; November's `07 3e` is 69, a name eight
+  bytes longer; and the captures hold 61, 65, 67 and 69 for `samp`, `OFF_PAKO`,
+  `kefin nero` and `ANGEL SASAKI` (`pcapng3`, `pcapng1`, `pcapng2`), every one of them
+  56 plus its own name.
+* **The payload is the recorded shape for the character's equipped skill pairs.** The
+  reference hosts write the same `0b 11 02` body at **50, 52 and 54** bytes
+  (`pcapng1` t+489, the Drebin capture, the spawn-points capture), so the count tracks
+  the player rather than the room, and 50 here is a character with one pair where the
+  November one carried two.
+
+What is left of that comparison is one record, not a length: the second copy of the
+`0x1001` room-state head the November host wrote behind the client's first poll (73 B,
+t+3.104) is absent here. What the next capture would show is the profile answered 0.3 s
+after its re-send, and the client's `0x12de` report at about ten seconds.
+
+## 88. The controls are numbered on the exchange, and the audit that shows why
+
+`tools/audit_stream_answers.py` reads a capture the way the client's gate does: every
+record the host wrote, and the answer the client sent for it. On `myserver.pcapng`
+(2026-11-17, 85.6 s, 1 914 records) the answer is two numbers:
+
+| identifier | host wrote | client answered |
+| --- | --- | --- |
+| `0x1001` (the room's records) | 578 | 578 |
+| `0xd001` (the host's controls) | 43 | 22 |
+
+and against `pcapng1`, the same audit reads 1 319 of 1 319 and **86 of 86**. A record the
+client answers is one it took; the 21 controls it did not answer are controls it dropped.
+
+The cause is in the fourth byte, and the ladder makes it plain. On the host's stream
+`0x001`, in wire order, the reference writes one ascending sequence with its controls
+inside it:
+
+`00 00 01 02 03 04 05 06 10 07 08 09 0a … 22 02 23 24 25 …`
+
+This host wrote `… 0x11 0x12 0x13` and then `01`, `00`, `0x14` — the burst's opening
+control pinned at a literal, then the answering control pinned at its own, both landing on
+values the stream had already carried. The client's `read_queued_p2p_message` takes a
+record only when its byte is the one it expects and drops the rest **without advancing**,
+so a pinned control is a control the client never receives, and the room's ladder stalls
+at the value that control should have taken. That is the "only the first reliable records
+work" symptom, and it is why the November run's controls at `00` were answered while
+today's at `01` and `00` were not.
+
+So the controls are numbered where they are written
+(`SparsePhaseFramesUtils.SparseSteps`, the burst's opening and closing control): they
+take the next value of the room's exchange, in wire order, inside the ladder, as the
+reference's do. The burst's own records keep `RoomRosterService.TakeRunOrdinal`, which is
+the numbering the November join was served under.
+
+**What is not done, and why.** An earlier pass numbered *every* record of that change at
+write as well — the burst's rotation body and join header too — and moved the numbering
+ahead of the re-send window in the write path. That wire failed the join at the client's
+third poll (`0x9001` o1 16:49:25, o2 16:49:27, o3 16:49:32, then silence, no `0x12de`
+report), where the November wire reports at t+10.4 s. The controls' numbering is kept and
+the rest of that pass is not; the join is confirmed on the November numbering with the
+client's report at t+10.391 (`myserver.pcapng`, 2026-11-17 16:57), and this change moves
+only the four control records.
+
+## 89. The re-send window was keyed on the byte before it was stamped
+
+The 17:06 run joins and briefs correctly — profile, roster run, settings burst, the
+countdown ticking `0b 3a` down to `0b 05` — and the client answers everything it is
+sent, up to `0x1254` ordinal 25 at 17:07:04. It stops dead at the briefing's end.
+
+The log names why, on one line repeated every few seconds from 17:06:09 onward:
+
+`Stream 0x254 writes 1 unanswered record(s) again, from 0x00: the peer did not take them and cannot move past them`
+
+while the wire shows the client answering that very record — `0x5254` byte `00`, at
+t+53.14, t+55.61 and t+58.91 of the capture. The record being re-sent is not unanswered;
+the window is waiting for a byte the wire never carried. `SendMessages` noted the write
+in the re-send window **before** `NumberAtWrite` stamped it, so an auto-numbered record
+entered the window carrying `00` and left carrying its real value. Every answer then
+named a byte the window was not holding, and the count record the briefing opened with
+was re-sent for the rest of the session — including past the briefing's zero at 17:07:07,
+which is a count written back to a client whose briefing screen has already closed on
+that zero (the case §15 records as a solo client left black).
+
+The numbering now happens before the window sees the write. Nothing on the wire changes;
+what changes is which byte the window remembers. The round's opening run at 17:07:17 drew
+no acknowledgement at all, and the client's last datagram was a `0x9001` poll at 17:07:10,
+three seconds after the zero — the capture ends at 17:07:09, so the wire at the round's
+open is the next thing to record.
+
+Still open, and not changed here: the round opened on the briefing's own timeout rather
+than on the client's report (`no report came from … 10 s after the round opened; writing
+its run anyway`). The reference opens a round on the report that follows the briefing, so
+that fallback is this host's own and should go once the client is seen reporting again.
+
+## 90. The window dropped the byte the peer was waiting for
+
+The 17:12 run joins, writes its briefing run at 17:13:11, and ticks the countdown on
+`0x1254` ordinals `02`–`13` with no pre-stamp copies in front of them — §89's fix holds.
+The client still never shows a briefing, and the log says why 42 times:
+
+`Stream 0x001 drops 1 unanswered record(s): the peer is more than 24 values behind and the window cannot hold them`
+
+Twenty-eight of those drops are the settings burst: fifty-two records written in half a
+second against a window that held twenty-four. Dropping took away the **oldest** entry,
+which is exactly the byte the peer is waiting for, and nothing ever writes that byte
+again. The client's stream is then stuck one value behind our counter until the
+byte-wide space comes round — 256 values, minutes — so none of the briefing's records
+behind it can land.
+
+The window now holds every unanswered record, which the byte space bounds on its own: at
+most 256 distinct values per stream, a wrap reusing an entry the peer has still not
+answered. What ends a stream a peer has stopped reading is the image's own guard, the
+`0xff` writes on the oldest record (`StreamRetransmitService.AttemptLimit`), not a size
+limit of this host's choosing.
+
+## 91. §90 is withdrawn: the twenty-four is the image's, and a full table refuses the record
+
+§90 removed the send window's twenty-four-entry limit. That was wrong and it is reverted:
+`docs/analysis/stream-sequencing.md` records the image's own table — the tick walks 24
+slots (`0x18`) and `P2P_SendRecord` guards on `0x17`, the last index — and
+`gate_p2p_record_send` (`0x263530`) writes the retransmit byte and appends, so a full table
+refuses the record rather than evicting one.
+
+The defect was never the limit; it was what this host did when the limit was reached.
+`NoteWriting` appended the new record and then evicted the oldest to stay at 24, which
+throws away exactly the byte the peer is waiting for — the 17:12 run evicted 28 records
+during the settings burst, and the client's stream could not advance to the briefing's
+records afterwards. The image's own backpressure is to refuse the new record.
+
+So the window keeps its 24 slots and the oldest entry stays: a record that finds the
+window full is held in `StreamDeferredRecordsUtils`, in write order, carrying the fourth
+byte it was already given, and it is written as soon as an answer frees a slot — at the
+next write of that stream or the next datagram the peer sends, whichever comes first. The
+log now reads `holds a N-byte record back: the window of 24 is full and nothing is evicted
+to make room`, and nothing is dropped.
+
+## 92. The briefing's first pass also writes the player's own scoreboard row
+
+The 17:23 run joins, briefs, and ticks its countdown with nothing dropped and nothing
+re-sent stale (§89 and §91 hold), and the client still never leaves the loading screen. What
+it is missing is in the reference's own briefing pass, `briefing-then-solo-game` at t+12.89:
+
+| record | body |
+| --- | --- |
+| `0x1254` b02, 7 B | `0b 3c 00 00 00 00 00` — the briefing's sixty seconds |
+| `0x1001` b10, **24 B** | `0b 0b 02 00 00 … 00` — a scoreboard body, the player's slot, mask bit 1 at zero |
+
+The second record is the briefed player's **own scoreboard row**: the body is the
+`[0x0b, slot + 1, 21-byte mask, values]` shape `MatchScoreboardFramesUtils` builds, with bit
+1 alone set and its one value zero. It is the only scoreboard record in that pass, and the
+host writes it before any score has changed — a row's first statement, not a change, which
+is why `ScoreboardPublishService`'s "skip an all-zero delta" rule does not apply to it.
+
+This host wrote no scoreboard record at all before its first score change, so the client had
+no row for itself in the briefing it was asked to show. `BriefingCountdownService` now
+writes it on the pass that starts the countdown (`BriefingCountdownService.ScoreboardRow`),
+numbered at write like the tick beside it, exactly as the capture puts the two records in
+one pass.
+
+## 93. The ready set and the `e0` marker, against captures that answer a report in a briefing
+
+Every `.pcapngs` capture was scanned for what the reference host writes around a client's
+`0x12de` report during a briefing. Two captures hold one, and both are room-of-one briefings.
+
+**`fix-spawn-point-midtown`, report `e1 02` at t+9.44:**
+
+| t | record | body |
+| --- | --- | --- |
+| t+9.75 | `0x52de` b00, 0 bytes | the empty answer |
+| t+9.75 | `0x12de` b00, **8 bytes** | `e0 02 00 00 00 00 00 00` — the reported byte, then three zeros |
+
+**`briefing-then-solo-game`, reports `e1 0a` at t+8.70, 10.81, 11.83, …:** every report is
+answered with an empty `0x52de` (t+9.53, 12.63, 13.71, 14.33, 17.70, 18.72, 19.80, 20.76,
+22.01, 22.87), and three of them also with a one-byte `0xd2de` carrying a value — `07`
+(t+13.54), `0a` (t+14.70), `0d` (t+15.79).
+
+**The ready-state family is in none of them.** Not one host record of `0x1306`, `0x1b06` or
+`0x9306` exists in any capture in `.pcapngs/` — zero across the whole set, at any time. The
+family this host publishes sixteen of per tick came from
+`briefing/working server/working-server-log.pcapng` (`0x1b06` beside `0x1ade e0 0f …`), which
+is a working server's own session and not a reference host's briefing.
+
+**What this host writes instead.** `0x1306` ×16, nine-byte bodies
+`00 <slot> 02 60 09 06 00 c4 09`, plus `0x12de e0 10 00 00 00` — five bytes where the one
+measured briefing-time marker is eight — plus the empty `0x52de`, and no `0xd2de` answer at
+all.
+
+So the briefing's answer differs from the reference in three ways: a marker shorter than the
+only measured one, sixteen state records no reference host writes, and no value-carrying
+`0xd2de` answer.
+
+## 94. The ticking count is what the client stops taking
+
+Two live runs, both a room of one human and fifteen bots, both with the briefing's ready set
+published and the scoreboard rows behind it:
+
+* `17:39` — report at 17:39:42, opening run behind it, count from `0b 3a`. The client
+  acknowledged `0x1254` up to ordinal **7** at 17:39:54 and not one after it, while the stream
+  re-sent ordinals 8…12 unanswered every tick and kept acking `0x1250`/`0x125a` and `0x1001`.
+* `18:25` — report at 18:25:55, run at 18:25:58, count `0b 3a`, `0b 37`, `0b 35`, `0b 33`,
+  `0b 30`, `0b 2e`, `0b 2b`, `0b 29`. The client acknowledged six `0x1254` records — ordinals
+  0…5 — 83 `0x1001`, 58 `0x1250`, 58 `0x125a`, 16 `0x1306` and one `0x12de`, and then sent
+  nothing for thirty seconds and was reaped.
+
+So the records the client takes are everything but the moving count: it reads six or eight of
+them and then none, and its silence begins there in both runs. The solo references never put a
+moving count in front of it — `briefing-then-solo-game` writes `0b 3c 00 00 00 00 00` once, at
+t+12.887, and no second count for the next 132 s; `fix-spawn-point-midtown` writes
+`0b 3c 00 02 00 00 00` and holds.
+
+The host therefore holds the count for a room of one client, bots or no bots
+(`MatchStartRunService.OnJoinReport` gates the start on the room's clients, and a bot never
+reports), and a held count ends on the briefing's own time (`BriefingCountdownService.Remaining`)
+so the room still writes its zero and opens its round when the minute runs out.

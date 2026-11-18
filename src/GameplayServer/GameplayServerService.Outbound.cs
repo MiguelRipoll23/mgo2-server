@@ -120,15 +120,17 @@ public sealed partial class GameplayServerService
             return;
         }
 
+        // **Nothing is assigned here.** The fourth byte is part of the record before it
+        // reaches this path: the image's builders stamp it and `P2P_SendRecord` (0x26b778)
+        // only tests the sequenced bit, compares `writes − acked` with 0xff, advances the
+        // retry byte at `+0xb`, and copies the record's bytes out (see `docs/GHIDRA.md`).
+        // A window therefore holds the byte the peer will answer, because the entry it was
+        // handed already carried it.
+
         // A record the peer has not answered is a hole in its stream, and the peer takes
         // a stream's records only in order: the window's re-sends are put in front of
         // this write so the frame carries them in the order the peer reads them.
         messages = retransmit.NoteWriting(session, messages);
-
-        // The fourth byte is stamped here, where the record is written, and not by
-        // the builder that made it: a record that is built and then not written —
-        // a frame the beat skips, a feed the writer drops — spends nothing.
-        messages = NumberAtWrite(messages);
 
         // A record carrying the timed class opens an exchange whose answer says how far
         // behind the peer is, and that margin is what paces this peer's re-sends.
@@ -144,25 +146,6 @@ public sealed partial class GameplayServerService
             }
         }
     }
-
-    /// <summary>
-    /// Stamps the fourth byte of every record that was built to be numbered at
-    /// write, from the stream its identifier is counted on, and leaves the rest
-    /// alone.
-    /// </summary>
-    /// <remarks>
-    /// <b>A value and the record that carries it are the same act.</b> A builder
-    /// that took its own value could take one for a record that never left — a
-    /// control the beat skipped, a kill feed for a slot nobody holds — and the
-    /// stream would then have spent a value its peer never saw, so the next record
-    /// arrives at the wrong byte. Taking here, in write order, makes the two one
-    /// step, and a record written a second time carries the byte it was first given
-    /// (<see cref="MatchRecordNumberingService"/>).
-    /// </remarks>
-    /// <param name="messages">Records of one write, in order.</param>
-    /// <returns>The records, numbered where they asked to be.</returns>
-    private IReadOnlyList<UdpMessage> NumberAtWrite(IReadOnlyList<UdpMessage> messages) =>
-        numbering.Number(messages);
 
     /// <summary>
     /// Writes one group of messages as one datagram on the session's next
