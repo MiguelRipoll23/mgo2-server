@@ -101,7 +101,10 @@ public static class MatchScoreboardFramesUtils
     /// <summary>Bit carrying the player's last-result code, one byte wide.</summary>
     public const int LastResultBit = 152;
 
-    /// <summary>Bit carrying the player's streak.</summary>
+    /// <summary>
+    /// Bit carrying the player's streak: the unbroken kill run after a kill, the
+    /// consecutive-death count after a death, and zero at the round's start.
+    /// </summary>
     public const int StreakBit = 153;
 
     /// <summary>

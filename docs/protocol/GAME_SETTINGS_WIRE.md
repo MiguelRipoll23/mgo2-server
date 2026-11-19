@@ -186,7 +186,11 @@ from the live captures it moves exactly as a scoreboard should: in
 `joined-when-red-team`, slot 1's `kills` (bit 5) steps 1, 2, 3, 4, 5 while the
 players it kills (`0x1001 0x0b` on slots 6, 7, 8) take `deaths` (bit 6), and its
 `score` (bit 8) climbs 3, 7, 13, 20, 28. Named bits: **5** kills, **6** deaths,
-**8** score, **11** headshots, **152** last-result code, **153** streak.
+**8** score, **11** headshots, **152** last-result code, **153** streak (the kill
+run after a kill, the consecutive-death count after a death). Bit 8 is the score
+itself — a TDM kill's award is 3, plus 1 for a headshot — so a first kill's
+`KILL COUNT +3` is that award, not the streak (`RULE_WIRE_DATA.md` §8); the death
+side of the same score is the rule's death score penalty.
 
 A team's total is the sum over the slots the lobby-slot arrays assign to it: the
 `0x85`/`0x86` pair (`0x1001`, 26 bytes, `TeamArrayFramesUtils`) says which slot

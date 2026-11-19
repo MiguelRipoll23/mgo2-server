@@ -328,21 +328,26 @@ Ghidra names are descriptive:
 | BOMB `6` | `3 0 3 0 0 5 -5 7 5 0 1 0 0 2` | `15 15 10 1 1` |
 | TSNE `7` | `5 0 5 0 0 5 -5 10 5 0 2 0 3 2` | `3 0 5 0 10` |
 | SDM `12` | `7 0 3 0 1 0 0 0 0 5 0 0 0 2` | `5` |
-| SCAP `16` | `3 0 3 0 0 5 -5 7 5 0 1 0 7 2` | `2 5 3` |
-| INTERVAL `15`, default | fourteen zeros | — |
+| SCAP `15` | fourteen zeros | — |
+| RACE `16` | `3 0 3 0 0 5 -5 7 5 0 1 0 7 2` | `2 5 3` |
+| INTERVAL `13`, default | fourteen zeros | — |
 
-**Column 0 is the kill value and column 1 the death value** — the two the
-gameplay channel can support. They agree with the measured score in a capture (a
-TDM kill is worth 3) and they are what `MatchScoreRulesUtils` reads. The other
-twelve columns read counters this channel does not carry (headshots, stuns,
-wakes, combo, assists, hacks, objectives, the team-win bonus), so their names are
-not claimed here.
+**Column 0 is the kill score award and column 1 the death score penalty** — the
+two the gameplay channel can support. Column 0 is the points a kill adds (a TDM
+kill is worth 3, measured); column 1 is the points a death deducts, negative in
+DM, TDM and SNE and zero in the other rows. They are what
+`MatchScoreRulesUtils.KillScoreAwardCoefficients` and
+`DeathScorePenaltyCoefficients` read. Neither is a streak: scoreboard bit 153
+carries the unbroken kill run after a kill and the consecutive-death count after
+a death. The other twelve columns read counters this channel does not carry
+(headshots, stuns, wakes, combo, assists, hacks, objectives, the team-win bonus),
+so their names are not claimed here.
 
 **Two rows of the server's table disagreed with these and were corrected:**
 Capture pays **3** per kill, not 5, and Bomb pays **3**, not 0 — `proc 24` has a
 `case 6` for Bomb, so the earlier note that "no stage script emits 6" was wrong.
-SDM (`7`) and SCAP (`3`) were missing from the table's range and are now
-covered.
+SDM (`7`) and RACE (`3`) were missing from the table's range and are now
+covered. SCAP (`15`) is scoreless.
 
 ### Action points
 
@@ -428,9 +433,36 @@ six-byte pair is only the "still there" state. Later box events are live-round
 play and are not replayed. The stage's own `PRP_CBOX` effects are the candidate
 positions for a live supervisor, but the selection code is not located yet.
 
-`MatchRuleUtils.PlacesItemBoxes` is the rule gate: Team Deathmatch places no
-boxes, while Capture and the other objective rules do. That is why a TDM beat
-carries no box group even though the group's filler is otherwise periodic.
+The group is not rule-gated: the reference's ticket round writes the same pair in
+Team Deathmatch that Capture writes, and a round sent no group keeps the stage's own
+RES props standing. The pair is generic, not an objective target; the stage script's
+rule branches place those (`proc 51` Capture, `proc 52` Rescue, `proc 53` Team
+Sneaking, `proc 61` Sneaking Capture, `proc 67` Race).
+
+The ELF's own target placements are stage-gated, not rule-gated. Its short rule
+name table at `0x00FEA140` begins `Rule_Short_TDM`, `Rule_Short_RESCUE`,
+`Rule_Short_CAP`, `Rule_Short_BASE`, `Rule_Short_SNEAK`, `Rule_Short_TSNE`,
+`Rule_Short_SDM`, `Rule_Short_INTERVAL`, `Rule_Short_ANEST`, `Rule_Short_BOMB`,
+`Rule_Short_SCAP`, `Rule_Short_RACE`. The target spawners below compare the stage
+getter against `0x7`, `0xD`, `0xF` and `0x11`; those are not that table's rule
+indices, so they are stage gates. The functions are named from the prop strings
+they read:
+
+| entry | Ghidra name | props | stage gate |
+|---:|---|---|---:|
+| `0x00765EA8` | `Gcl_PlaceRugbyTargetObjects` | `PRP_RUGBY_TGT_00` | none |
+| `0x00766CD8` | `Gcl_RefreshRugbyTargetMarkers` | `PRP_RUGBY_TGT_00` | `0x11` |
+| `0x00767118` | `Gcl_PlaceRescueTargetObjects` | `PRP_RES_TGT_00` | none |
+| `0x00768578` | `Gcl_RefreshRescueTargetMarkers` | `PRP_RES_TGT_00` | `0x11` |
+| `0x0076C6F0` | `Gcl_UpdateRugbyTargetMarker` | `PRP_RUGBY_TGT_00` | none |
+| `0x0076CB00` | `Gcl_SpawnRugbyTarget` | `PRP_RUGBY_TGT_00` | `0xD` |
+| `0x0076E010` | `Gcl_ConfigureRugbyTargetTimer` | `PRP_RUGBY_TGT_00` | none |
+| `0x0076F790` | `Gcl_NewTestItemboxManager` | box timers, no prop | `0xF` |
+
+So the host-side rule variation is the room's rule value and the stage script's
+`proc 50` branch, not the item-box group. The group itself is the same generic pair
+in every rule, and a playing round that omits it leaves the stage's Rescue props
+standing.
 
 ### The stage places twelve boxes, and the manager only times them
 

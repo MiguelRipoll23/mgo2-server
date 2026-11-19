@@ -8,13 +8,13 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="Deaths">Deaths the round recorded for the player.</param>
 /// <param name="Score">Score the player finished the round on.</param>
 /// <param name="HeadshotKills">Kills the round credited as headshots.</param>
-/// <param name="BestStreak">Longest consecutive kill run the player had.</param>
+/// <param name="BestKillStreak">Longest consecutive kill run the player had.</param>
 public sealed record PlayerRoundStats(
     int Kills,
     int Deaths,
     int Score,
     int HeadshotKills,
-    int BestStreak);
+    int BestKillStreak);
 
 public sealed partial class MatchScoreService
 {
@@ -39,7 +39,7 @@ public sealed partial class MatchScoreService
                     entry.Value.Deaths,
                     entry.Value.Score,
                     entry.Value.Headshots,
-                    entry.Value.BestStreak));
+                    entry.Value.BestKillStreak));
         }
     }
 }

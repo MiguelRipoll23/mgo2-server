@@ -63,23 +63,6 @@ public sealed partial class MatchScoreService(
     /// </param>
     public sealed record TeamScore(short Team, int Kills, int Deaths, bool KillsKnown);
 
-    private sealed class Row
-    {
-        public int Kills;
-        public int Deaths;
-        public int Score;
-        public bool KillsKnown;
-        public bool ScoreKnown;
-        public int Headshots;
-        public int Streak;
-        public int BestStreak;
-        public int DeathStreak;
-        public int Combo;
-        public bool StreakReset;
-        public int SentLastResult = -1;
-        public int SentStreak = -1;
-    }
-
     /// <summary>
     /// How long a kill report for the same killer and victim is the same death:
     /// the client's feed and the bot simulation's own death can both arrive for
@@ -150,7 +133,7 @@ public sealed partial class MatchScoreService(
             Queue(slot, MatchScoreboardFramesUtils.DeathsBit, row.Deaths);
         }
 
-        EndStreak(slot, row);
+        EndKillStreak(slot, row);
         QueueScore(slot, row, force: true);
         return true;
     }
@@ -250,10 +233,11 @@ public sealed partial class MatchScoreService(
     /// <b>The client's last-result code and streak are reset explicitly.</b> The
     /// reference writes `{152: 0, 153: 0}` for every seated slot as the next round
     /// opens — `pcapng2` at t+376.224, fourteen records in one burst — and a host
-    /// that only cleared its own rows left the client's local streak on the last
-    /// round's value, so its first kill of the new round logged the old run plus one
-    /// (`KILL COUNT +3` for a first kill). The zero-valued delta is the measured
-    /// reset, and `ScoreboardPublishService` lets this one through its zero filter.
+    /// that only cleared its own rows left the client's last result and streak on
+    /// the last round's value. The zero-valued delta is the measured reset, and
+    /// `ScoreboardPublishService` lets this one through its zero filter. (The
+    /// `KILL COUNT +3` a first kill draws is the score bit's award, not this value;
+    /// see `docs/protocol/RULE_WIRE_DATA.md` §8.)
     /// </para>
     /// </remarks>
     public void Reset()
@@ -386,27 +370,5 @@ public sealed partial class MatchScoreService(
                     ? team.Kills
                     : teams.First(other => other.Team != team.Team).Deaths)),
         ];
-    }
-
-    private Row RowOf(byte slot)
-    {
-        if (!rows.TryGetValue(slot, out var row))
-        {
-            row = new Row();
-            rows[slot] = row;
-        }
-
-        return row;
-    }
-
-    private void Queue(byte slot, int bit, int value)
-    {
-        if (!pending.TryGetValue(slot, out var values))
-        {
-            values = [];
-            pending[slot] = values;
-        }
-
-        values[bit] = value;
     }
 }

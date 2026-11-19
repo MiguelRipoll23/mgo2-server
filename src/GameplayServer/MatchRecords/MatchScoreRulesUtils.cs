@@ -12,11 +12,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <c>proc 24</c> switches on <c>COM_svGetRule</c> and writes the rule's row as
 /// <c>[ede912] -score &lt;14 ints&gt;</c> plus a shorter <c>[adb9e7] -score</c> row, and
 /// the rows are identical across the stages. The client's table is wider than the
-/// fourteen values the script writes, but **column 0 is the kill value and column 1
-/// the death value** in both, which is what this file uses. It recomputes the whole
-/// total from the player's live counters every tick and clamps it to
-/// <c>[0, 65535]</c> before storing it, so a score is never banked and a round that
-/// takes a player below zero states zero (<c>docs/PROTOCOL.md</c>, "SETTLED
+/// fourteen values the script writes, but **column 0 is the kill score award and
+/// column 1 the death score penalty** in both, which is what this file uses. It
+/// recomputes the whole total from the player's live counters every tick and clamps
+/// it to <c>[0, 65535]</c> before storing it, so a score is never banked and a
+/// round that takes a player below zero states zero (<c>docs/PROTOCOL.md</c>, "SETTLED
 /// 2026-07-27"; <c>docs/proto/inbound/mgo2_cmd_4390_c2s.ksy</c>;
 /// <c>docs/analysis/gameplay-data-functions.md</c> §3).
 /// </para>
@@ -40,11 +40,12 @@ public static class MatchScoreRulesUtils
     public const int ScoreCeiling = 65_535;
 
     /// <summary>
-    /// Kills coefficient per rule, indexed by the rule id the room states. The
-    /// values are **column 0** of the stage script's own <c>-score</c> row for that
-    /// rule: DM <c>3</c>, TDM <c>3</c>, Rescue <c>7</c>, Capture <c>3</c>, Sneaking
-    /// <c>3</c>, Base <c>3</c>, Bomb <c>3</c>, Team Sneaking <c>5</c>, SDM <c>7</c>,
-    /// SCAP <c>3</c>; <c>8</c>–<c>11</c>, <c>13</c>–<c>15</c> state none.
+    /// Kill score award per rule, indexed by the rule id the room states: the points
+    /// one kill adds to the score. The values are **column 0** of the stage script's
+    /// own <c>-score</c> row for that rule: DM <c>3</c>, TDM <c>3</c>, Rescue
+    /// <c>7</c>, Capture <c>3</c>, Sneaking <c>3</c>, Base <c>3</c>, Bomb <c>3</c>,
+    /// Team Sneaking <c>5</c>, SDM <c>7</c>, SCAP <c>0</c>, RACE <c>3</c>;
+    /// <c>8</c>–<c>11</c> and <c>13</c>–<c>15</c> state none.
     /// </summary>
     /// <remarks>
     /// <b>Capture's 5 and Bomb's 0 were wrong, and Bomb's "no stage script emits
@@ -54,31 +55,37 @@ public static class MatchScoreRulesUtils
     /// rows this file already carried agree with the script's column 0, which is
     /// why only those two moved.
     /// </remarks>
-    private static readonly int[] KillsCoefficients =
+    private static readonly int[] KillScoreAwardCoefficients =
         [3, 3, 7, 3, 3, 3, 3, 5, 0, 0, 0, 0, 7, 0, 0, 0, 3];
 
     /// <summary>
-    /// Deaths coefficient per rule, indexed the same way. A rule whose row states
-    /// none does not deduct for a death, and a total that comes out negative is
-    /// clamped to zero by <see cref="Score"/> — the measurement behind a scoreless
-    /// round wiring <c>0</c> against a raw negative.
+    /// Death score penalty per rule, indexed the same way: the points one death
+    /// deducts from the score, written as the script's negative (or zero)
+    /// coefficient. A rule whose row states none does not deduct for a death, and a
+    /// total that comes out negative is clamped to zero by <see cref="Score"/> — the
+    /// measurement behind a scoreless round wiring <c>0</c> against a raw negative.
     /// </summary>
-    private static readonly int[] DeathsCoefficients =
+    private static readonly int[] DeathScorePenaltyCoefficients =
         [-2, -2, 0, 0, -2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     /// <summary>
-    /// Headshot coefficient per rule. DM and TDM pay <c>1</c> on the reference host:
+    /// Headshot score award per rule. DM and TDM pay <c>1</c> on the reference host:
     /// slot 10 of <c>working-server-v2.pcapng</c> stands at 4 kills, 3 headshots and
     /// combo 6 and scores 21, which is <c>12 + 3 + 6</c>. The other rows are the
-    /// stage script's own column.
+    /// stage script's own column. The row is padded through rule <c>16</c> because
+    /// SDM, INTERVAL, SCAP and RACE use the same indexed lookup; a rule with no
+    /// measured column pays none instead of reading past the array.
     /// </summary>
-    private static readonly int[] HeadshotCoefficients = [1, 1, 3, 3, 2, 0, 0, 0, 0, 0, 0];
+    private static readonly int[] HeadshotScoreAwardCoefficients =
+        [1, 1, 3, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     /// <summary>
-    /// Combo coefficient per rule: one point per combo point in DM and TDM, where the
-    /// loader clamps column 9 to one, and nothing measured elsewhere.
+    /// Combo score award per rule: one point per combo point in DM and TDM, where the
+    /// loader clamps column 9 to one, and nothing measured elsewhere. Indexed through
+    /// rule <c>16</c> for the same reason as the headshot row.
     /// </summary>
-    private static readonly int[] ComboCoefficients = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    private static readonly int[] ComboScoreAwardCoefficients =
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     /// <summary>
     /// A player's score in a rule, from the kills and deaths this host has counted
@@ -88,20 +95,20 @@ public static class MatchScoreRulesUtils
     /// <param name="kills">Kills counted for the player this round.</param>
     /// <param name="deaths">Deaths counted for the player this round.</param>
     /// <param name="headshots">Headshot kills counted for the player this round.</param>
-    /// <param name="combo">The player's combo total: one less than the streak, added on each consecutive kill.</param>
+    /// <param name="combo">The player's combo total: one less than the kill streak, added on each consecutive kill.</param>
     /// <returns>The score, clamped to <c>[0, 65535]</c> as the client clamps it.</returns>
     public static int Score(int rule, int kills, int deaths, int headshots = 0, int combo = 0)
     {
-        if (rule is < 0 || rule >= KillsCoefficients.Length)
+        if (rule is < 0 || rule >= KillScoreAwardCoefficients.Length)
         {
             return 0;
         }
 
         return Math.Clamp(
-            kills * KillsCoefficients[rule]
-            + deaths * DeathsCoefficients[rule]
-            + headshots * HeadshotCoefficients[rule]
-            + combo * ComboCoefficients[rule],
+            kills * KillScoreAwardCoefficients[rule]
+            + deaths * DeathScorePenaltyCoefficients[rule]
+            + headshots * HeadshotScoreAwardCoefficients[rule]
+            + combo * ComboScoreAwardCoefficients[rule],
             0,
             ScoreCeiling);
     }

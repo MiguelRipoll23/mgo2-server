@@ -126,16 +126,13 @@ public sealed partial class MatchRecordService
                 beat.VitalsRepeats--;
             }
 
-            // A team round places no item boxes, and the beat's group is what a
-            // client reads a box from: its filler pair says a box is still there,
-            // so a round that wrote it kept the previous round's GE-KO and KEROTAN
-            // standing on the map. TDM's rule text names no box — it is tickets —
-            // while Capture's is the one that races for KEROTAN and GA-KO
-            // (MatchRuleUtils.PlacesItemBoxes). A briefing's beat is no round's, so
-            // it carries none either.
-            var placesItemBoxes = roundState.IsOpen
-                && roundState.RoundSettings is { } playing
-                && Match.MatchRuleUtils.PlacesItemBoxes(playing.Rule);
+            // Every playing round carries the item-box pair, Team Deathmatch
+            // included: the reference's ticket round writes the same 0x1a50/0x1a5a
+            // group, and a round sent no group keeps the stage's own RES props
+            // standing. The pair is the generic ENVG (0x8c) and drum can (0x71),
+            // not an objective target. A briefing's beat is no round's, so it
+            // carries none.
+            var carriesItemBoxes = roundState.IsOpen;
 
             var plan = new BeatFramePlan(
                 beat.FrameIndex,
@@ -146,7 +143,7 @@ public sealed partial class MatchRecordService
                 beat.ItemBoxSequence,
                 beat.ItemBoxStateSequence,
                 LiveMembers(),
-                placesItemBoxes,
+                carriesItemBoxes,
                 beat.VitalsRepeats > 0 || beat.FrameIndex % VitalsPeriodFrames == 0 ? vitals : null);
 
             // The insertions' fourth bytes are taken inside the plan, from the

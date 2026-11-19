@@ -268,9 +268,9 @@ there: a frame every 33 ms carrying the rules-roster pair, and, on the capture's
 periods, an insertion at its head — the round's **clock, counted down**
 (`RoundClockUtils` → `MatchRoundStateService.RemainingUnits`), a state blob
 alternating zero/live, or a one-byte control — with the vitals record and the
-item-box group in one frame in eight — the group only in a round whose rule places
-boxes, since Team Deathmatch places none and the group's filler is what keeps a
-box standing (`MatchRuleUtils.PlacesItemBoxes`). The clock, the generation (which flips to
+item-box group in one frame in eight — the group in every playing round, Team
+Deathmatch included, since the reference's ticket round writes it and its filler
+is what keeps a box standing (`BeatFramePlan.CarriesItemBoxes`). The clock, the generation (which flips to
 the sibling identifier set each round) and the round number are live, and so is
 the vitals record's **onset**: it rides from the frame the round's spawn is written
 on, which is the round's open. The offsets the captures show between their run and
@@ -463,7 +463,7 @@ candidate for §5. The file names are the ones that own it.
 | the control bodies (`02`, `03`, `04`, `25`) | `MatchRecordBodiesUtils` | unnamed on the wire |
 | the host's vitals record: always full health and stamina (`fa fa`) | `MatchRecordBodiesUtils.Vitals` | the capture measures it constant while `0x0080` reports deaths, and says not to substitute a player's values into it; the players' own values are read and kept instead |
 | the operations state block: an 89-byte vector, **49 bytes of which are constants of the layout** and are now written as named runs; the room's own seven offsets are written by name | `MatchStateBodiesUtils` | the two results, the two objective holders, the two capture clocks, the countdown seed and the round clock. The block is byte-identical to the round-open vector of three of six working-server captures, and the three it differs from differ only at offsets named as the room's own — `docs/protocol/STATE_VECTOR.md` |
-| the item-box group's bodies | `ItemBoxRecordBodiesUtils` | the round's opening event pair, then the filler, and only in a round whose rule places boxes: TDM writes no group at all, because the filler is what keeps a box standing and MGO2's TDM rule is tickets while Capture is the rule that races for KEROTAN and GA-KO (`MatchRuleUtils.PlacesItemBoxes`); the later spawn events are not written at all, and §5 item 7 has what the capture settles about them |
+| the item-box group's bodies | `ItemBoxRecordBodiesUtils` | the round's opening event pair, then the filler, in every playing round: the reference's ticket round writes the same pair, and a client sent no group keeps the stage's own RES props standing; the pair is the generic ENVG and drum can, not an objective target (`BeatFramePlan.CarriesItemBoxes`); the later spawn events are not written at all, and §5 item 7 has what the capture settles about them |
 | the match-start payload's trailing zeros and length | `MatchStartBodiesUtils` | the fresh-room briefing's eight-byte form (`e0 NN 00 00 00 00 00 00`), which is `mgo2-game-started-on-briefing`'s; game1's older six-byte form is one of the lengths the same record holds |
 | the join state answer's first byte | `MatchStartBodiesUtils`, `BriefingStateService.JoinedMask` | **no longer a replay.** The set is the room's reporting players, one bit each in publication order: `02`, `06`, `0e`, `1e` as four players report and `16` when the third of them leaves are bits 1, 1–2, 1–3, 1–4 and 1,2,4. Read as lobby slots the bits do not fit — the same capture's arrays name slots `0x0b`, `0x0f` and `0x14`. The trailing three bytes are **[U]**. A fresh briefing's run writes the four zero bytes `briefing-then-solo-game` writes at t+9.780, nobody being placed yet |
 | the close triple's two 18-byte remainders | `MatchRecordBodiesUtils` | the third record of the triple is the roster close, `07 00 00 00 00 00 03` (`PlayerProfileRecordUtility.BuildRosterClose`), which is read; nothing names the two remainders |

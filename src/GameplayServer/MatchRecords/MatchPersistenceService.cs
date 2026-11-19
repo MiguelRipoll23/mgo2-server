@@ -205,7 +205,7 @@ public sealed class MatchPersistenceService(
                             0,
                             0,
                             0,
-                            Clamped(player.BestStreak))),
+                            Clamped(player.BestKillStreak))),
                     cancellationToken);
             }            logger.LogInformation(
                 "The round in rule {Rule} on map {Map} was written for {PlayerCount} player(s) in room "

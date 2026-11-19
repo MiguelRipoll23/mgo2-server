@@ -49,11 +49,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// frame's rules pair as one group per side. It is empty on a room that holds
 /// none, which is the empty pair the captures' briefing writes.
 /// </param>
-/// <param name="PlacesItemBoxes">
-/// Whether the round places item boxes, which its rule decides
-/// (<see cref="Match.MatchRuleUtils.PlacesItemBoxes"/>). A round that places
-/// none carries no group at all, because the filler is what keeps a client's
-/// boxes alive.
+/// <param name="WritesItemBoxes">
+/// Whether the beat serves a playing round and so writes the item-box group
+/// (<see cref="CarriesItemBoxes"/>). A briefing's beat serves no round and
+/// writes none, because the filler is what keeps a client's boxes alive.
 /// </param>
 public sealed record BeatFramePlan(
     int FrameIndex,
@@ -64,7 +63,7 @@ public sealed record BeatFramePlan(
     byte ItemBoxSequence,
     byte ItemBoxStateSequence,
     IReadOnlyList<Rooms.LobbyTeamSlot> Members,
-    bool PlacesItemBoxes,
+    bool WritesItemBoxes,
     byte[]? VitalsBody = null)
 {
     /// <summary>
@@ -184,14 +183,14 @@ public sealed record BeatFramePlan(
     /// <summary>
     /// Whether the item-box group rides in this frame, behind the rules pair. It
     /// rides in one frame in every eight, the same frame the capture groups, and
-    /// only inside the round's own opening (<see cref="ItemBoxOpeningFrames"/>) —
-    /// and only in a round whose rule places boxes at all. Team Deathmatch places
-    /// none: the filler pair still says a box exists, so a team round that wrote
-    /// it left the Capture round's GE-KO and KEROTAN standing on the map
-    /// (<see cref="Match.MatchRuleUtils.PlacesItemBoxes"/>).
+    /// only inside the round's own opening (<see cref="ItemBoxOpeningFrames"/>).
+    /// Every playing round writes it, Team Deathmatch included: the reference's
+    /// ticket round writes the same 0x1a50/0x1a5a pair, and a round sent no group
+    /// keeps the stage's own RES props standing. A briefing has no round, so its
+    /// beat writes none.
     /// </summary>
     public bool CarriesItemBoxes =>
-        PlacesItemBoxes
+        WritesItemBoxes
         && FrameIndex <= ItemBoxOpeningFrames
         && FrameIndex % ItemBoxFramesUtils.ItemBoxPeriodFrames == ItemBoxFramesUtils.ItemBoxPhaseFrames;
 

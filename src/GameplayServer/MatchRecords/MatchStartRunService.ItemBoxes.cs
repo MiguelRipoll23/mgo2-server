@@ -131,19 +131,11 @@ public sealed partial class MatchStartRunService
             return groups;
         }
 
-        // A team round places no boxes. The two this host spawns are the ENVG
-        // (`0x8c`) and the drum can (`0x71`) — the GE-KO and KEROTAN props the room
-        // reported standing between the spawn points of opposite sides — and they
-        // are `ItemBoxRecordBodiesUtils.OpeningEventBodies`' pair, not a team
-        // round's. Nor does the beat write the group for one: its filler pair is
-        // what says a box exists, so leaving it on the beat kept the boxes alive in
-        // a round that never placed them (`BeatFramePlan.PlacesItemBoxes`).
-        if (!Match.MatchRuleUtils.PlacesItemBoxes(
-            roundState.RoundSettings?.Rule ?? Match.MatchRuleUtils.TeamDeathmatch))
-        {
-            return null;
-        }
-
+        // Every playing round carries the measured pair, Team Deathmatch
+        // included: the reference's ticket capture writes the same 0x1a50/0x1a5a
+        // group, and a round sent no group keeps the stage's own RES props
+        // standing. The pair is the generic ENVG (`0x8c`) and drum can (`0x71`),
+        // not an objective target (`BeatFramePlan.WritesItemBoxes`).
         var boxOrdinals = sequences.Take(
             generation.ItemBox, ItemBoxFramesUtils.OpeningEventRunRecords);
         var stateOrdinals = sequences.Take(
