@@ -26,6 +26,9 @@ builder.Services.AddCommandHandlers();
 builder.Services.AddSingleton<ExternalJoinHintService>();
 builder.Services.AddSingleton<SurvivalTestService>();
 builder.Services.AddSingleton<PublicIpChatCommandService>();
+builder.Services.AddSingleton<GameplayControlClientService>();
+builder.Services.AddSingleton<BotPauseChatCommandService>();
+builder.Services.AddSingleton<ChatCommandHelpService>();
 
 // The other half of the self-test: a run's expectation of an opponent is held
 // here, and the connection that freezes its team is what consumes it.

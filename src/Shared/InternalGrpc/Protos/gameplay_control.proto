@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package mgo2.gameplay.v1;
+
+option csharp_namespace = "Mgo2Server.Shared.InternalGrpc.Contracts";
+
+// The control channel a gameplay lobby uses to reach the gameplay host of one
+// room. It is hosted by the gameplay server on the same port number as its UDP
+// socket, over TCP and HTTP/2, and the lobby dials the host endpoint the room
+// row names. The room identifier is checked by the host, so a command for a
+// room another process hosts cannot change this room's bots.
+service GameplayControl {
+  rpc SetBotsPaused(SetBotsPausedRequest) returns (SetBotsPausedResponse);
+}
+
+// A lobby asking one gameplay room to hold or release every bot's trigger.
+message SetBotsPausedRequest {
+  int32 game_identifier = 1;
+  bool paused = 2;
+}
+
+// Whether the request reached the room it named.
+message SetBotsPausedResponse {
+  bool applied = 1;
+  bool paused = 2;
+  string detail = 3;
+}

@@ -15,10 +15,12 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// </remarks>
 /// <param name="locomotion">Walks and places the bots.</param>
 /// <param name="destinations">Chooses the point a bot without an enemy patrols to.</param>
+/// <param name="pause">The room's trigger and movement gate.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class BotSimulationService(
     BotLocomotionService locomotion,
     BotMovementDestinationService destinations,
+    BotPauseService pause,
     ILogger<BotSimulationService> logger)
 {
     /// <summary>
@@ -93,6 +95,7 @@ public sealed partial class BotSimulationService(
         IReadOnlyList<BotActorView> actors)
     {
         var body = locomotion.BodyOf(bot, map);
+        var botsPaused = pause.IsPaused;
         RecoverStamina(body, now);
 
         if (body.IsDead)
@@ -172,7 +175,7 @@ public sealed partial class BotSimulationService(
             body.AimY = killed.Y + BotLocomotionService.AimHeight;
             body.AimZ = killed.Z;
             body.Yaw = BotLocomotionService.YawTowards(killed.X - body.X, killed.Z - body.Z);
-            return new BotAdvance(body, true, null);
+            return new BotAdvance(body, !botsPaused, null);
         }
 
         body.KillAimSlot = BotBodyState.NoTarget;
@@ -212,7 +215,8 @@ public sealed partial class BotSimulationService(
 
             // The trigger, not the hit: the capture holds the firing byte on seven
             // beats in ten while an enemy is in range and lands hits far less often.
-            firing = BotEngagementUtils.Distance(body, target) <= ShotRange;
+            firing = !botsPaused
+                && BotEngagementUtils.Distance(body, target) <= ShotRange;
 
             if (firing && now >= body.NextFireBeatMilliseconds)
             {
@@ -220,7 +224,7 @@ public sealed partial class BotSimulationService(
                 body.NextFireBeatMilliseconds = now + FireBeatIntervalMilliseconds;
             }
 
-            if (BotBurstUtils.Ready(body, firing, now))
+            if (!botsPaused && BotBurstUtils.Ready(body, firing, now))
             {
                 // Every round of a burst rides its own fire beat, which is what the
                 // recorded `0x47` records beside a run of hits are.
@@ -258,36 +262,13 @@ public sealed partial class BotSimulationService(
         // A fire beat spends a round of the magazine the weapon pair reports.
         BotReloadService.SpendRound(body);
 
-        BotPosition? destination = null;
-        if (target is not null && BotEngagementUtils.Distance(body, target) <= EngagementDistance)
-        {
-            // Close enough to shoot: stand, face it, and keep a route out of it.
-            body.Route = [];
-            body.Moving = false;
-            body.Yaw = BotLocomotionService.YawTowards(target.X - body.X, target.Z - body.Z);
-        }
-        else
-        {
-            destination = target is null
-                ? Patrol(bot, body, map, rule)
-                : BotEngagementUtils.Standoff(body, target);
-        }
-
-        locomotion.PlanRoute(bot, body, map, rule, destination, now);
-        locomotion.Step(body, now);
-
-        // A bot that holds its trigger faces its enemy, whichever way it walks: the
-        // heading its position record carries is the one its hits name (BotShotUtils).
-        if (firing && target is not null)
-        {
-            body.Yaw = shot?.Bearing ?? BotEngagementUtils.Bearing(body, target);
-        }
+        MoveOrHold(bot, body, map, rule, target, shot, firing, botsPaused, now);
 
         // An engagement's last beat is followed by the capture's `0x48` recovery.
         // `stun-by-throwing-to-ground` slot 6 holds `44` on target 8 from t+45.07 to
         // 46.17 and writes the three-byte `48 FF 00` standing from t+46.22, before it
         // walks off at 46.46. The reload's own recovery uses the same window.
-        if (body.WasFiring && !firing)
+        if (!botsPaused && body.WasFiring && !firing)
         {
             body.RecoverUntilMilliseconds = now + BotBurstUtils.RecoverMilliseconds;
             body.Moving = false;
@@ -298,11 +279,23 @@ public sealed partial class BotSimulationService(
         return new BotAdvance(body, firing, shot);
     }
 
+    /// <summary>
+    /// Drops the deaths the round that just closed still owed, because the next
+    /// round's feed list starts empty.
+    /// </summary>
+    /// <remarks>
+    /// A death belongs to the round it happened in. The queue is drained on every
+    /// feed beat, but a boundary can leave entries a stopped writer never took;
+    /// announcing them in the next round is a kill that round never had.
+    /// </remarks>
+    public void ClearKills() => kills.Clear();
+
     /// <summary>Drops every body and owed death, because the room has emptied.</summary>
     public void Reset()
     {
         kills.Clear();
         locomotion.Reset();
+        pause.SetPaused(false);
     }
 
     /// <summary>Forgets a bot's body, because the bot has left the room.</summary>

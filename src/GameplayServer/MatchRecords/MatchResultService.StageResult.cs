@@ -27,15 +27,6 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </remarks>
 public sealed partial class MatchResultService
 {
-    /// <summary>
-    /// Measured delay from the round's result write to the stage's.
-    /// </summary>
-    /// <remarks>
-    /// 21.133 s in the stage-end capture, 21.136 s in the swap-spawn capture,
-    /// and 21.132 s in <c>pcapng1</c> — the same screen delay in all three.
-    /// </remarks>
-    public const int StageResultDelayMilliseconds = 21_133;
-
     /// <summary>Offset of the winning side in the stage result's state block.</summary>
     private const int StageWinnerIndex = 4;
 
@@ -62,7 +53,7 @@ public sealed partial class MatchResultService
 
     /// <summary>
     /// Writes the stage's result to a peer once its result screens have been up
-    /// for <see cref="StageResultDelayMilliseconds"/>.
+    /// for <see cref="MatchScreenTimingsUtils.StageResultMilliseconds"/>.
     /// </summary>
     /// <remarks>
     /// <b>The stage end is the guard.</b> A room that emptied, a round that
@@ -87,7 +78,7 @@ public sealed partial class MatchResultService
 
         try
         {
-            await Task.Delay(StageResultDelayMilliseconds);
+            await Task.Delay(MatchScreenTimingsUtils.StageResultMilliseconds);
 
             if (!MatchRecordPeerUtils.IsAlive(context.Session)
                 || !roundState.IsStageEnding

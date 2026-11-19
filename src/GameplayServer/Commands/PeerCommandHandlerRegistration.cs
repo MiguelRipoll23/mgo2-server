@@ -121,6 +121,7 @@ public static class PeerCommandHandlerRegistration
         services.AddSingleton<JoinReportHandler>();
         services.AddSingleton<JoinStateHandler>();
         services.AddSingleton<WeaponSelectionHandler>();
+        services.AddSingleton<ChatMacroAudienceService>();
         services.AddSingleton<ChatMacroHandler>();
         services.AddSingleton<PlayerVitalsHandler>();
         services.AddSingleton<OperationsStreamHandler>();

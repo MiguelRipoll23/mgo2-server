@@ -18,13 +18,14 @@
 # be tried for one run without editing it. The host character and its game are named
 # after the local port unless the environment names them.
 #
-# Two settings are this run's own and never the cluster's. GAMEPLAY_LOG_LEVEL is
+# Three settings are this run's own and never the cluster's. GAMEPLAY_LOG_LEVEL is
 # the level the run logs at — Debug by default, which is what a run is watched at,
 # and Trace adds every datagram with its hex so a run's wire can be read back from
 # its log without a capture — and it is exported as LOG_LEVEL before the ConfigMap
 # is merged, so the level a pod logs at stays on the pod. GAMEPLAY_SERVER_ROTATION
 # is one round, TDM on Blood Bath, because a local run is played to watch a round
-# and not the deployed rotation of nine.
+# and not the deployed rotation of nine. GAMEPLAY_SERVER_RULE_TIMERS gives that
+# round two minutes and five tickets, so a local run reaches a result quickly.
 #
 # The output is written to a log file as it arrives, through tee, so the run can be
 # read back after the terminal has scrolled or the process has stopped. The file is
@@ -156,15 +157,17 @@ export BOT_POPULATION_INTERVAL_SECONDS="${BOT_POPULATION_INTERVAL_SECONDS:-5}"
 
 # The rotation the room plays is read from the overrides file when there is one,
 # so a rotation is tried by editing that file and never this one. What the file
-# leaves out falls back to the run's own default: one round, TDM on Blood Bath,
-# because a local run is played to watch a round and not the deployed nine.
+# leaves out falls back to the run's own default: two rounds, TDM on Blood Bath,
+# because a game is at least two rounds and a local run is played to watch a game
+# and not the deployed nine.
 if [[ -f "$override_file" ]]; then
     # shellcheck source=/dev/null
     . "$override_file"
     printf 'Read the round overrides from %s.\n' "$override_file"
 fi
 
-export GAMEPLAY_SERVER_ROTATION="${GAMEPLAY_SERVER_ROTATION:-TDM@Blood Bath}"
+export GAMEPLAY_SERVER_ROTATION="${GAMEPLAY_SERVER_ROTATION:-TDM@Blood Bath, TDM@Blood Bath}"
+export GAMEPLAY_SERVER_RULE_TIMERS="${GAMEPLAY_SERVER_RULE_TIMERS:-5,2,5,2,5,2,2,2,5,5,30,5,2,5,2,5,2}"
 
 export DATABASE_CONNECTION_STRING="$database_connection_string"
 unset database_connection_string

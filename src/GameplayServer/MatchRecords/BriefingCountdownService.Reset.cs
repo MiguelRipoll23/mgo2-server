@@ -16,6 +16,7 @@ public sealed partial class BriefingCountdownService
             countingFrom = null;
             length = TimeSpan.Zero;
             ended = false;
+            openingPeers.Clear();
         }
     }
 }

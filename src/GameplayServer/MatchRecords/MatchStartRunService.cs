@@ -54,9 +54,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// rotation names, timed by this instance's settings for it
 /// (<see cref="MatchSettingsService"/>, and
 /// <c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §2 for the measurement). The
-/// round's kill limit is the other end: a kill feed that takes a side to the
-/// rule's tickets closes the round through <see cref="End"/>
-/// (<c>Commands.Peer.Gameplay.OperationsStreamHandler</c>). A goal is not
+/// round's ticket limit is the other end: the death that spends a side's last
+/// ticket closes the round through <see cref="End"/>
+/// (<c>Commands.Peer.Gameplay.OperationsStreamHandler</c>,
+/// <c>Commands.Peer.Gameplay.PlayerVitalsHandler</c> and
+/// <c>Bots.BotActorPublishService</c>). A goal is not
 /// visible on this channel — the objective is scored in the round's own state
 /// block and the end-of-round report travels over the lobby's TCP channel — so
 /// <see cref="End"/> is the seam a goal would use, and no round ends early for
@@ -81,9 +83,14 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <param name="score">
 /// The host's own score for the round, cleared when a round opens.
 /// </param>
+/// <param name="persistence">Writer of the round's report to the room's own rows.</param>
 /// <param name="results">
 /// The round's result: the winner a clock's end is written with, and the state
 /// write that publishes it once the round has closed.
+/// </param>
+/// <param name="scoreboard">
+/// Publisher of the scoreboard, which writes the round-start reset a newly
+/// opened round leaves queued.
 /// </param>
 /// <param name="roster">
 /// The room's roster exchange, whose counter numbers the run's records: the
@@ -100,7 +107,9 @@ public sealed partial class MatchStartRunService(
     Rooms.TeamArrayService teamArrays,
     Rooms.LobbySlotService lobbySlots,
     MatchScoreService score,
+    MatchPersistenceService persistence,
     MatchResultService results,
+    ScoreboardPublishService scoreboard,
     BriefingCountdownService countdown,
     MatchRecordSequenceService sequences,
     ILogger<MatchStartRunService> logger)
@@ -243,6 +252,13 @@ public sealed partial class MatchStartRunService(
             "Opening round {RoundNumber} for the room: {OpenedBy}, so the round plays under that set",
             round,
             openedBy);
+
+        // The reports that belonged to the boundary just crossed are not the next
+        // round's; a round opens once, and its own reports are collected from here.
+        lock (gate)
+        {
+            roundDeparted.Clear();
+        }
 
         _ = EndWhenTimeRunsOutAsync(
             round.Value,

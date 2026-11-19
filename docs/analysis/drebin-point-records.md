@@ -23,7 +23,8 @@ The `0x20` bit is **[U]**; it is not one of the three radio values, and it is pr
 the two rooms whose triples were captured with non-zero flags.
 
 **Where the server writes it:** `MatchRotationUtils.Parse` reads a round's `:DREBIN`
-suffix into `MatchRotationEntry.RoundOptions`, and
+suffix (or `:HEADSHOTS`, the radio's other value) into
+`MatchRotationEntry.RoundOptions`, and
 `RoomStateRegionUtils.WriteRotationTriples` writes each triple's third byte from it;
 `MatchSettingsUtils.HostSettings` stores the same value in `RotationFlags` for the
 lobby's `0x4313`. A room that turns Drebin points on therefore states `2` on every

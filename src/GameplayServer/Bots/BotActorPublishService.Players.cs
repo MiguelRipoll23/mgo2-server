@@ -230,7 +230,11 @@ public sealed partial class BotActorPublishService
             }
             else
             {
+                // The death spends a ticket even with no killer to credit, so the
+                // scoreboard and its ticket record are owed behind this frame just
+                // as a credited death's are.
                 score.NoteDeath(slot);
+                scoreboardDue = true;
             }
 
             return true;

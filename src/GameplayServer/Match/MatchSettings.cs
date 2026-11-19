@@ -122,11 +122,13 @@ public sealed record MatchSettings(
     /// <para>
     /// <b>The walk wraps; a game does not.</b> The last entry the rotation states
     /// ends its game even when it repeats the first one byte for byte, because the
-    /// rounds after it are the next game and not this one: a rotation of one entry
-    /// is a game of one round, and a rotation whose entries are all identical is a
-    /// game of as many rounds as it states. Comparing with
-    /// <see cref="Round"/>'s wrapped successor would read either shape as a game
-    /// with no end.
+    /// rounds after it are the next game and not this one: a rotation whose entries
+    /// are all identical is a game of as many rounds as it states. A rotation of a
+    /// single entry is refused at startup instead of played as a one-round game,
+    /// because a game is at least two rounds
+    /// (<see cref="MatchRotationUtils.MinimumRoundCount"/>). Comparing with
+    /// <see cref="Round"/>'s wrapped successor would read the repeated shape as a
+    /// game with no end.
     /// </para>
     /// </remarks>
     /// <param name="roundNumber">Round counting from one, as the room counts them.</param>

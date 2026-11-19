@@ -6,14 +6,13 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
 /// The result of the round: which side won it, the state write that publishes
-/// that, and the check that ends a round its rule's kill limit has been reached
-/// in.
+/// that, and the check that ends a round whose side has spent its last ticket.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>It is apart from the round's opener because the round has two ends.</b> The
 /// clock ends it — <see cref="ClockResultAsync"/> is the winner that end is
-/// written with — and the rule's kill limit ends it, which is
+/// written with — and the rule's ticket limit ends it, which is
 /// <see cref="TicketsReachedAsync"/>. Both are read off
 /// <see cref="MatchScoreService"/> and the room's own sides, and neither is the
 /// opener's to decide: the caller that saw the round end asks this service what
@@ -63,49 +62,73 @@ public sealed partial class MatchResultService(
     /// </summary>
     private byte? settledResult;
     /// <summary>
-    /// A round that has reached its rule's kill limit: the side that reached it,
-    /// the limit it reached, and the result code its win is written as.
+    /// A round whose tickets have run out: the side that spent its last one, the
+    /// limit it reached, the side that takes the round, and the result code that
+    /// win is written as.
     /// </summary>
-    /// <param name="Team">Raw team value the room's rows hold.</param>
-    /// <param name="Tickets">The rule's kill limit the side reached.</param>
-    /// <param name="ResultCode">Result code the win is written as.</param>
-    public sealed record TicketsReached(short Team, int Tickets, byte ResultCode);
+    /// <param name="Team">Raw team value of the side whose tickets reached zero.</param>
+    /// <param name="WinningTeam">Raw team value of the side that takes the round.</param>
+    /// <param name="Tickets">The rule's ticket limit the side ran out of.</param>
+    /// <param name="ResultCode">Result code the winning side's win is written as.</param>
+    public sealed record TicketsReached(short Team, short WinningTeam, int Tickets, byte ResultCode);
 
     /// <summary>
-    /// Whether one of the room's sides has reached the kill limit the round's
-    /// rule is set to.
+    /// Whether one of the room's sides has spent its last ticket, which ends its
+    /// round.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <b>The count is the side's own deaths and not its opponents' kills.</b> A
+    /// ticket is spent by the death of the side that holds it — the eleven-byte
+    /// ticket record steps a side down once per death of that side
+    /// (<see cref="ScoreboardPublishService"/>) — so a side is out when its deaths
+    /// reach the rule's <c>tickets</c>, and the other side takes the round. Reading
+    /// the killer's kill total instead let a round play on after the panel had
+    /// already reached zero: a suicide or a team kill spends a ticket that no
+    /// opposing kill count accounts for.
+    /// </para>
+    /// <para>
     /// The limit is the rule's own <c>tickets</c>, in the same stored bank as the
     /// time the round opened on (<c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §2,
-    /// §3), and a rule the bank states no limit for never reaches this. The side
-    /// that reached it is the round's winner, because crossing the limit is what
-    /// says the round is over.
+    /// §3). A rule the bank states no limit for never reaches this, and a side the
+    /// room holds no players on is not a side the round can end against.
+    /// </para>
     /// </remarks>
     /// <param name="cancellationToken">Token that cancels the read of the room's sides.</param>
-    /// <returns>The side that reached the limit, or <c>null</c>.</returns>
+    /// <returns>The side that ran out of tickets, or <c>null</c>.</returns>
     public async Task<TicketsReached?> TicketsReachedAsync(CancellationToken cancellationToken = default)
     {
-        if (!roundState.IsOpen || roundState.RoundSettings is not { Tickets: { } tickets })
+        if (!roundState.IsOpen
+            || roundState.RoundSettings is not { Tickets: int tickets }
+            || tickets <= 0)
         {
             return null;
         }
 
-        var reached = score.TeamLimits(await lobbySlots.ReadAsync(cancellationToken))
-            .Where(team => team.Score >= tickets)
-            .OrderByDescending(team => team.Score)
-            .ToList();
-        if (reached.Count == 0)
+        var teams = score.TeamScores(await lobbySlots.ReadAsync(cancellationToken));
+        if (teams.Count < 2)
         {
             return null;
         }
 
-        var winner = reached[0];
+        var exhausted = teams
+            .Where(team => team.Deaths >= tickets)
+            .OrderByDescending(team => team.Deaths)
+            .FirstOrDefault();
+        if (exhausted is null)
+        {
+            return null;
+        }
+
+        var winner = teams.First(team => team.Team != exhausted.Team);
         logger.LogInformation(
-            "Team {Team} has reached the {Tickets} kills its round's rule ends on",
-            winner.Team,
-            tickets);
+            "Team {Team}'s tickets have reached zero after {Deaths} death(s), so team {WinnerTeam} takes "
+            + "the round",
+            exhausted.Team,
+            exhausted.Deaths,
+            winner.Team);
         return new TicketsReached(
+            exhausted.Team,
             winner.Team,
             tickets,
             MatchRecordBodiesUtils.ResultCode(winner.Team));

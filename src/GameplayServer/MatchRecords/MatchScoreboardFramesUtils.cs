@@ -154,6 +154,25 @@ public static class MatchScoreboardFramesUtils
         && body[1] >= 1;
 
     /// <summary>
+    /// Whether a delta is the round-start reset the reference writes: the
+    /// last-result code and the streak, both zero, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured on <c>pcapng2</c> at t+376.224.</b> Fourteen records, one per
+    /// seated slot, each carrying exactly bits <c>152</c> and <c>153</c> with value
+    /// zero — the round that follows starts the client's last result and streak
+    /// again. It is the one zero-valued delta the reference writes, which is why
+    /// the publisher's ordinary zero filter has an exception for this shape.
+    /// </remarks>
+    /// <param name="delta">The delta to test.</param>
+    /// <returns><c>true</c> when the delta is the round-start reset.</returns>
+    public static bool IsRoundReset(ScoreboardDelta delta) =>
+        delta.Values.Count == 2
+        && delta.Values.All(value => value.Value == 0)
+        && delta.Values.Any(value => value.Bit == LastResultBit)
+        && delta.Values.Any(value => value.Bit == StreakBit);
+
+    /// <summary>
     /// Builds a scoreboard body from a player's changed values.
     /// </summary>
     /// <param name="delta">Slot and values to write.</param>

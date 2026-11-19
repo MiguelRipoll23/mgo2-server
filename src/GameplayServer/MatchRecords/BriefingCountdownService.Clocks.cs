@@ -56,6 +56,7 @@ public sealed partial class BriefingCountdownService
             length = TimeSpan.FromMinutes(minutes);
             countdownIdentifier = operationsIdentifier;
             ended = false;
+            openingPeers.Clear();
         }
 
         logger.LogDebug(

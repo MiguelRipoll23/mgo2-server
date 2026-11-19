@@ -12,7 +12,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// stands at <c>5 kills, 3 headshots, combo 6</c> and scores <c>21</c> at t+74.02,
 /// and its next death takes it to <c>19</c>. The combo (bit <c>47</c>) grows by one
 /// less than the killer's streak on each consecutive kill — <c>1, 3, 6</c> for a run
-/// of four — and a death ends the run.
+/// of four. A death resets the streak; the combo total it has paid stays on the
+/// round's score.
 /// </para>
 /// <para>
 /// <b>A headshot is the kill the record says it is.</b> The reference sets the
@@ -59,18 +60,29 @@ public sealed partial class MatchScoreService
     {
         lock (gate)
         {
-            var victim = RowOf(victimSlot);
-            if (countDeath)
+            // A feed for a death the simulation already counted is the same kill,
+            // not another one. The report carries no event id, so the pair and a
+            // beat-sized window are the identity: the same victim cannot go down
+            // twice inside it, while a second kill after a respawn is seconds away.
+            var now = Environment.TickCount64;
+            if (recentKills.TryGetValue((killerSlot, victimSlot), out var killedAt)
+                && now - killedAt < KillDedupMilliseconds)
             {
-                victim.Deaths++;
-                Queue(victimSlot, MatchScoreboardFramesUtils.DeathsBit, victim.Deaths);
-                QueueScore(victimSlot, victim, force: true);
+                logger.LogDebug(
+                    "Ignoring a repeated kill report for slot {VictimSlot} by slot {KillerSlot} within "
+                    + "{Milliseconds} ms",
+                    victimSlot,
+                    killerSlot,
+                    KillDedupMilliseconds);
+                return false;
             }
 
-            // A death ends the victim's run, and the reference restates the
-            // last-result code and streak the player now holds.
-            victim.Streak = 0;
-            QueueResult(victimSlot, victim, DeathResult, 1);
+            recentKills[(killerSlot, victimSlot)] = now;
+
+            // The vitals path and a kill feed can both report one death;
+            // count it once and let the other report only credit the killer.
+            var victim = RowOf(victimSlot);
+            NoteDeathLocked(victimSlot, victim, countDeath);
 
             if (killerSlot == victimSlot)
             {
@@ -97,6 +109,10 @@ public sealed partial class MatchScoreService
             killer.Kills++;
             killer.KillsKnown = true;
             killer.Streak++;
+            killer.DeathStreak = 0;
+            killer.BestStreak = Math.Max(killer.BestStreak, killer.Streak);
+            var restateStreak = killer.StreakReset;
+            killer.StreakReset = false;
             killer.Combo += killer.Streak - 1;
             if (headshot)
             {
@@ -111,7 +127,12 @@ public sealed partial class MatchScoreService
                 Queue(killerSlot, MatchScoreboardFramesUtils.ComboBit, killer.Combo);
             }
 
-            QueueResult(killerSlot, killer, headshot ? HeadshotResult : KillResult, killer.Streak);
+            QueueResult(
+                killerSlot,
+                killer,
+                headshot ? HeadshotResult : KillResult,
+                killer.Streak,
+                forceStreak: restateStreak);
             logger.LogDebug(
                 "Player in slot {KillerSlot} killed the player in slot {VictimSlot}{Headshot}; {Kills} kill(s), "
                 + "{Deaths} death(s)",
@@ -125,6 +146,27 @@ public sealed partial class MatchScoreService
     }
 
     /// <summary>
+    /// Ends a player's unbroken kill run: the streak returns to zero and the
+    /// death's last-result code and streak are stated.
+    /// </summary>
+    /// <remarks>
+    /// <b>The combo total is not rolled back.</b> The reference's combo field
+    /// continues across a death (slot 22's 28 at t+184.35 and t+216.41 in
+    /// <c>pcapng2</c>), while the next kill's streak starts again at one. The
+    /// score is therefore recomputed with the combo it already holds, not with a
+    /// zero.
+    /// </remarks>
+    /// <param name="slot">Slot the player holds.</param>
+    /// <param name="row">The player's row.</param>
+    private void EndStreak(byte slot, Row row)
+    {
+        row.Streak = 0;
+        row.DeathStreak++;
+        row.StreakReset = true;
+        QueueResult(slot, row, DeathResult, row.DeathStreak);
+    }
+
+    /// <summary>
     /// Queues a player's last-result code and streak, each only when it differs from
     /// what the room was last told.
     /// </summary>
@@ -132,7 +174,12 @@ public sealed partial class MatchScoreService
     /// <param name="row">The player's row.</param>
     /// <param name="result">Last-result code to state.</param>
     /// <param name="streak">Streak to state.</param>
-    private void QueueResult(byte slot, Row row, int result, int streak)
+    /// <param name="forceStreak">
+    /// Whether to state the streak even when it equals the last value sent. The
+    /// first kill after a death is the case: its streak is one, which the death
+    /// result already stated, but the client needs the new run's value on the kill.
+    /// </param>
+    private void QueueResult(byte slot, Row row, int result, int streak, bool forceStreak = false)
     {
         if (row.SentLastResult != result)
         {
@@ -140,7 +187,7 @@ public sealed partial class MatchScoreService
             Queue(slot, MatchScoreboardFramesUtils.LastResultBit, result);
         }
 
-        if (row.SentStreak != streak)
+        if (forceStreak || row.SentStreak != streak)
         {
             row.SentStreak = streak;
             Queue(slot, MatchScoreboardFramesUtils.StreakBit, streak);

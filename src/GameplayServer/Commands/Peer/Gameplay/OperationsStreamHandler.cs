@@ -97,7 +97,21 @@ public sealed class OperationsStreamHandler(
                 killer,
                 victim);
 
-            score.NoteKill(killer, victim);
+            // The simulation can have counted this death already. A repeated
+            // report is not a second kill, and relaying it would make every
+            // client's own kill counter advance again for one death.
+            if (!score.NoteKill(killer, victim))
+            {
+                logger.LogDebug(
+                    "UDP {LocalPort}: {RemoteAddress} repeated the kill feed entry for slot {VictimSlot} "
+                    + "by slot {KillerSlot}; the death is already counted",
+                    context.LocalPort,
+                    context.Remote,
+                    victim,
+                    killer);
+                return;
+            }
+
             await publisher.PublishAsync(context);
 
             // A kill is one of the things that can reach a rule's ticket limit,
@@ -156,12 +170,14 @@ public sealed class OperationsStreamHandler(
         }
 
         logger.LogInformation(
-            "UDP {LocalPort}: the kill feed has taken team {Team} to its round's {Tickets}-kill limit",
+            "UDP {LocalPort}: team {Team}'s tickets have reached zero at the round's {Tickets}-ticket "
+            + "limit, so team {WinnerTeam} takes it",
             context.LocalPort,
             reached.Team,
-            reached.Tickets);
+            reached.Tickets,
+            reached.WinningTeam);
         matchStart.End(
-            $"team {reached.Team} reached the round's {reached.Tickets}-kill limit",
+            $"team {reached.Team}'s tickets reached zero at the round's {reached.Tickets}-ticket limit",
             reached.ResultCode);
     }
 }

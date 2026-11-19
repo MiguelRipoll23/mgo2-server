@@ -10,8 +10,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// It is split from <c>MatchScoreService.cs</c> for the size rule, and because the
 /// two answer different questions: the main file is each player's own numbers and
 /// the deltas they queue, and this is what those numbers add up to across a side —
-/// which is what a round that ends on its kill limit is decided on
-/// (<see cref="TeamLimits"/>).
+/// which is what a clock-ended round and a side's ticket count are read from
+/// (<see cref="TeamLimits"/>, <see cref="TeamScores"/>).
 /// </remarks>
 public sealed partial class MatchScoreService
 {

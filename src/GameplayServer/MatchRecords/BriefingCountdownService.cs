@@ -166,14 +166,26 @@ public sealed partial class BriefingCountdownService(
                 // the zero and then re-sent 60 every tick beside it.
                 if (IsCounting || !heldCountSent)
                 {
-                    await MatchRecordSendUtils.SendAsync(
-                        context,
-                        [
-                            new(
-                                countdownIdentifier,
-                                BriefingCountdownBodiesUtils.CountdownBody(seconds, briefingStates.ReadyMask),
-                                sequences.Take(countdownIdentifier)),
-                        ]);
+                    // A stage-end opening wrote this peer's held count before the
+                    // run; this task takes over with the moving count once a second
+                    // player reports, and skips the held copy it already wrote.
+                    bool openingAlreadySent;
+                    lock (gate)
+                    {
+                        openingAlreadySent = openingPeers.Contains(session);
+                    }
+
+                    if (!openingAlreadySent || IsCounting || ticked)
+                    {
+                        await MatchRecordSendUtils.SendAsync(
+                            context,
+                            [
+                                new(
+                                    countdownIdentifier,
+                                    BriefingCountdownBodiesUtils.CountdownBody(seconds, briefingStates.ReadyMask),
+                                    sequences.Take(countdownIdentifier)),
+                            ]);
+                    }
 
                     heldCountSent = true;
                 }
@@ -206,7 +218,7 @@ public sealed partial class BriefingCountdownService(
             // The stage's result screens are not a briefing, so a room whose ready
             // set is already complete does not close this count on them: the zero
             // is written once the stage end has released the count
-            // (`MatchRoundStateService.StageEndMilliseconds`).
+            // (`MatchScreenTimingsUtils.StageEndMilliseconds`).
             if (!allReadyPublished && briefingStates.AllReady && !roundState.IsStageEnding)
             {
                 allReadyPublished = true;

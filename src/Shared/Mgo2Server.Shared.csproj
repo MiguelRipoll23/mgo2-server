@@ -41,6 +41,7 @@
          every server sees the same messages and only the two servers that
          speak the protocol reference the gRPC transport. -->
     <Protobuf Include="InternalGrpc/Protos/lobby_coordination.proto" GrpcServices="Both" />
+    <Protobuf Include="InternalGrpc/Protos/gameplay_control.proto" GrpcServices="Both" />
   </ItemGroup>
 
 </Project>

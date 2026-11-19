@@ -61,6 +61,25 @@ public sealed partial class MatchRoundStateService
     }
 
     /// <summary>
+    /// Forgets every peer's written run, because a new briefing begins and its run
+    /// is not the one those flags were for.
+    /// </summary>
+    /// <remarks>
+    /// <b>A briefing's run is a new run for every peer.</b> A stage-end briefing is
+    /// armed after the played round's screens, and the run flags of that round are
+    /// still set; a writer that read them would write its countdown before the
+    /// briefing's own run existed. The flags are cleared where the briefing is
+    /// armed, before any writer can be restarted on it.
+    /// </remarks>
+    public void ClearRunWrites()
+    {
+        lock (gate)
+        {
+            writtenRuns.Clear();
+        }
+    }
+
+    /// <summary>
     /// Waits for the run the beat's offsets are counted from to have been written
     /// to a peer.
     /// </summary>

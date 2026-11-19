@@ -29,7 +29,7 @@ from one source.
 | --- | --- | --- |
 | game id | `games.id`, the row this host publishes | none: the row is the room |
 | game name | this instance's own, and `server-<port>` when unset | `GAMEPLAY_SERVER_GAME_NAME` |
-| rotation (rule, map and optional Drebin flag, one per round) | this instance's own, by the decoder's rule names and the room's map names | `GAMEPLAY_SERVER_ROTATION` — `TDM@Blood Bath:DREBIN, CAP@Coppertown, …` |
+| rotation (rule, map and optional Drebin or Headshots flag, one per round) | this instance's own, by the decoder's rule names and the room's map names | `GAMEPLAY_SERVER_ROTATION` — `TDM@Blood Bath:DREBIN, TDM@Blood Bath:DREBIN, …` |
 | briefing time | this instance's own | `GAMEPLAY_SERVER_BRIEFING_MINUTES` |
 | max players | this instance's own | `GAMEPLAY_SERVER_MAX_PLAYERS` |
 | weapon restrictions | this instance's own; all zero, so every weapon is offered | none: the room unlocks the full roster |
@@ -93,7 +93,8 @@ reusing rather than re-deriving.
 **The per-rule block**, `0x10c`, is seventeen big-endian u32s in the order
 `PROTOCOL.md` gives: `SNE t, r | CAP t, r | RES t, r | TDM t, r, tickets | DM t,
 tickets | BASE t, r | BOMB t, r | TSNE t, r`. **`t` is minutes and `tickets` is
-the round's kill limit.** Measured:
+the round's ticket limit — the count its panel starts on and the deaths that end
+it reach.** Measured:
 
 | room | rule in play | its `t` | its `tickets` | the gameplay clock |
 | --- | --- | --- | --- | --- |
@@ -132,7 +133,9 @@ Headshots Only (`RoundOption`), which the client draws pink and light blue
 (`docs/GATES.md` §2). `pcapng1` carries `0x02` on all of its configured triples and
 the Drebin-disabled room carries `0x00` on all of its own, so the byte is a setting
 the host states. `0x20` rides beside the radio on two of one room's triples and is
-still unnamed. `GAMEPLAY_SERVER_ROTATION` writes `0x02` with a `:DREBIN` suffix.
+still unnamed. `GAMEPLAY_SERVER_ROTATION` writes `0x02` with a `:DREBIN` suffix and
+`0x04` with `:HEADSHOTS`; a rotation must state at least two rounds, because a game
+is at least two rounds.
 
 **[U]** the meaning of the raw 14-byte tail at `0x166`–`0x173`. The native
 `0x4313` parser does not expose fields within it, and no field-level consumer
@@ -144,9 +147,11 @@ per-rule interpretation of those state entries.
 
 ## 3. Which limits a round ends on — and why a relay cannot end one
 
-`tickets` is the round's kill limit, and a round ends on whichever of the two
-limits comes first: the clock (`0x01` reaching zero) or a team reaching the
-tickets. `vs bots` played three rounds of a 50-ticket, 5-minute TDM and all three
+`tickets` is the round's ticket allotment, and a round ends on whichever of the two
+limits comes first: the clock (`0x01` reaching zero) or a side's tickets reaching
+zero. A ticket is spent by that side's own death, which is the count the
+`0x1001` ticket record steps down (§4), so the side whose deaths reach the rule's
+`tickets` loses and the other side takes the round. `vs bots` played three rounds of a 50-ticket, 5-minute TDM and all three
 ended on the clock — the note's *"40 kills to win"* does not appear on the wire
 for that room (its `tickets` reads 50); the note is the player's recollection and
 the field is the measured value.
@@ -162,8 +167,10 @@ relays the records cannot know a round's winner, which is the finding
 (`MatchScoreService`, `docs/GAMEPLAY_SERVER.md` §3.1): a death when a player's
 own vitals report health `0`, a kill and its death when a kill feed record
 arrives (`OperationsStreamHandler`), and a side's total from the opposing side's deaths
-until a feed names one (`MatchScoreService.TeamLimits`). A round ends on a side reaching the kill limit
-this host is configured with, and a room that states none plays its clock out.
+until a feed names one (`MatchScoreService.TeamLimits`). A round ends when a
+side's deaths reach the ticket limit this host is configured with — the same
+count its ticket panel steps down — and the other side takes it; a room that
+states no limit plays its clock out.
 
 ## 4. The scoreboard, if a host has a score to publish
 
@@ -208,13 +215,13 @@ t+87.88 for team `1` — against the twenty tickets the room's own body states a
 `ScoreboardPublishService` writes it with the deltas; a host that writes none
 leaves both sides on their starting number for the whole round.
 
-**The count starts at the room's pair, not at the rule's ticket word.** The two
-are different numbers in a room whose configuration states fifty: the bank's word
-is where the round ends, and the `0x5a`/`0x5e` pair — forty here, with the `0x93`
-allotment beside it — is what the client's panel holds. A record that counted
-down from fifty states `49` where the panel is showing `40`, and the panel never
-moves; `bots1.pcapng` of 2026-11-11 12:34 is that shape (`0b 00 00 00 08 … 32 00`
-and `… 31 00`, fifty and forty-nine, with the panel still at forty).
+**The count the panel starts on is the count the round ends on.** Both the pair
+at `0x5a`/`0x5e` and the records `TeamTicketBodiesUtils` writes come from the
+round's own ticket limit, and `MatchResultService.TicketsReachedAsync` ends the
+round when a side's deaths reach that same limit. The reference capture's panel
+held forty while its bank's word read fifty (`bots1.pcapng` of 2026-11-11 12:34
+writes `0b 00 00 00 08 … 32 00` and `… 31 00` where the panel shows forty);
+counting from the bank's word there wrote records the panel could not draw.
 
 ## 5. Reading this from a capture
 
@@ -242,8 +249,9 @@ payload as hex, which is what the field offsets above are read against.
   is its rotation's entry four, `CAP @ Blood Bath`), so the recorded room was four
   rounds in when the client joined and the pair is a round and not an index.
 * **[V]** what this host does with the column, since nothing maintained it before:
-  `MatchService` keeps `games.current_game` on the entry it is about to open — the
-  count of rounds opened, modulo the rotation, written when it changes. That entry
+  `MatchService` keeps `games.current_game` on the entry it is playing — one less
+  than the count of rounds opened, modulo the rotation, written when it changes; a
+  stage end stages the next entry when its briefing begins. That entry
   is the one the room list and the join result name — the join answer states its
   rule and map, the list entry the same pair — and the one the host's own records
   are written on, so a browse screen and the map a joiner loads are one round. Left

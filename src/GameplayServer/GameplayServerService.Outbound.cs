@@ -56,6 +56,51 @@ public sealed partial class GameplayServerService
     }
 
     /// <summary>
+    /// Writes a host message to the peers a caller names, each through its own
+    /// session counter. The origin is left out even when its endpoint is named.
+    /// </summary>
+    /// <param name="origin">Session the message came from, which is left out.</param>
+    /// <param name="recipients">Roster endpoints that should receive the record.</param>
+    /// <param name="messageType">Type of the message.</param>
+    /// <param name="body">Body of the message.</param>
+    /// <param name="ordinal">Fourth byte of the record.</param>
+    private void SendToPeers(
+        PeerSession origin,
+        IReadOnlyCollection<string> recipients,
+        ushort messageType,
+        byte[] body,
+        byte ordinal)
+    {
+        if (recipients.Count == 0)
+        {
+            return;
+        }
+
+        var targets = sessions.Snapshot()
+            .Where(session => session.Established
+                && !ReferenceEquals(session, origin)
+                && (recipients.Contains(session.RemoteAddress)
+                    || recipients.Contains(session.DialBack.ToString()))
+                && (roster.Find(session.RemoteAddress) is not null
+                    || roster.Find(session.DialBack.ToString()) is not null))
+            .ToList();
+        logger.LogDebug(
+            "[{LogPrefix}] Sending 0x{MessageType:x4} ({BodyLength} body bytes, ordinal={Ordinal}) " +
+            "from {Origin} to {RecipientCount} named peer(s)",
+            LogPrefix,
+            messageType,
+            body.Length,
+            ordinal,
+            origin.DialBack,
+            targets.Count);
+
+        foreach (var session in targets)
+        {
+            SendMessage(session, messageType, body, ordinal);
+        }
+    }
+
+    /// <summary>
     /// Writes a message to a peer through the session's shared counter, to the
     /// endpoint the session dials back rather than to the address a datagram
     /// happened to arrive from. The two differ whenever the host sits behind a

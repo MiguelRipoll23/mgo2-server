@@ -89,7 +89,9 @@ public readonly record struct MapSpawns(
 /// <b>The heading is the side across, measured on Blood Bath.</b> The side at the
 /// smaller <c>x</c> writes <c>0x5FFF</c> and the other <c>0x0000</c>, which is what
 /// the two captures show; a stage whose sides sit the other way round takes the
-/// same rule, because the turn is half a stage rather than a fixed side.
+/// same rule, because the turn is half a stage rather than a fixed side. Midtown
+/// is the measured exception: its working-server entry carries the gates' own
+/// rotations, <c>0x3FFF</c> and <c>0xC001</c>, and its row uses those.
 /// </para>
 /// <para>    /// <b>Three map ids have no home gate pair to read.</b> <c>sm_dd</c> and
     /// <c>sm_ll</c> (17 and 18) state no <c>HOMEGATE</c> placement, so their rows come
@@ -126,7 +128,7 @@ public static class MapSpawnUtils
         [9] = new(new(24575, -38000), new(0, 40000), new(800, -66000), new(800, -9000)), // n009a Ravaged Riverfront, A01/B01
         [10] = new(new(0, 49500), new(24575, -12000), new(800, -1000), new(800, -18250)), // n010a Silo Sunset, A01/B01
         [11] = new(new(24575, 21500), new(0, 77500), new(800, 20875), new(800, 125250)), // n018a Icebound Inferno, A01/B01
-        [12] = new(new(24575, -41875), new(0, 38250), new(800, -111625), new(800, -94312)), // n012a Midtown, A01/B01
+        [12] = new(new(16383, -41875), new(-16383, 38250), new(800, -111625), new(800, -94312)), // n012a Midtown, A01/B01
         [13] = new(new(0, 50000), new(24575, -49000), new(800, 3000), new(800, -7000)), // n013a Winter Warehouse, A01/B01
         [14] = new(new(0, 1125), new(24575, -53562), new(800, -7875), new(800, 99250)), // n014a Virtuous Vista, A01/B01
         [15] = new(new(0, -3500), new(24575, -37000), new(800, -52500), new(800, 31500)), // n015a Outer Outlet, A01/B01

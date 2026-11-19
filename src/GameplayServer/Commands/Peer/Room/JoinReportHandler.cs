@@ -66,10 +66,15 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// </remarks>
 /// <param name="briefingStates">The room's briefing states, which this report is recorded in.</param>
 /// <param name="matchStart">Writer of the round a room's last report opens.</param>
+/// <param name="scoreboard">
+/// Publisher of the round's scoreboard, which writes the reset a newly opened
+/// round leaves queued.
+/// </param>
 /// <param name="logger">Logger of this handler.</param>
 public sealed class JoinReportHandler(
     BriefingStateService briefingStates,
     MatchStartRunService matchStart,
+    ScoreboardPublishService scoreboard,
     PeerControlByteService controlBytes,
     BotPopulationService bots,
     BotRosterPublishService botPublication,
@@ -191,7 +196,16 @@ public sealed class JoinReportHandler(
                 reported,
                 briefingStates.JoinedCount,
                 briefingStates.PlayerCount);
+            return;
         }
+
+        // The round's score starts empty, and the reset is published here rather
+        // than left until the first kill: the reference writes `{152: 0, 153: 0}`
+        // for every slot as the next round opens (`pcapng2` t+376.224), which is
+        // what keeps a client's kill streak from carrying the last round's value
+        // into this one. The reset is queued by `MatchScoreService.Reset` and this
+        // is the first moment after the round has been opened on this peer.
+        await scoreboard.PublishAsync(context);
     }
 
     /// <summary>

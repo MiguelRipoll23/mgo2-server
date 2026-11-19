@@ -40,12 +40,18 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// record, running alongside it on the same session's counter.
 /// </para>
 /// </remarks>
+/// <param name="matchStart">
+/// The room's round opener, whose stage-end briefings restart the per-peer
+/// writers.
+/// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class MatchRecordService(
     MatchRoundStateService roundState,
+    MatchStartRunService matchStart,
     BriefingCountdownService countdowns,
     BriefingReadyPublishService readyPublications,
     BriefingRoomPublishService roomPublications,
+    BriefingOpeningPublishService opening,
     MatchRecordSequenceService sequences,
     RoomRosterService roster,
     PlayerVitalsService playerVitals,
@@ -118,14 +124,20 @@ public sealed partial class MatchRecordService(
             // the zero it closes a briefing on is written when the briefing's own
             // time is out or the round opens, so it is not awaited here. Awaiting
             // it would put the beat back behind the end of the briefing.
-            _ = countdowns.PublishAsync(context);
+            var countdownPublication = countdowns.PublishAsync(context);
             var readyPublication = readyPublications.PublishAsync(context);
 
             // The room's rules pair runs for the briefing's whole length, up to the
             // round's open and not up to the peer's run (the briefing's own beat,
             // `BriefingRoomPublishService`), so it is not awaited: a beat held
-            // behind it would not start until the round it was waiting for.
-            _ = roomPublications.PublishAsync(context);
+            // behind it would not start until the round it was waiting for. The task
+            // is kept with the other two so a stage-end briefing can start it again.
+            var roomPublication = roomPublications.PublishAsync(context);
+
+            // The join's briefing is written by this trio; a later one is owed a
+            // set of its own, which the stage-briefing watcher starts.
+            NoteBriefingWriters(session, countdownPublication, readyPublication, roomPublication);
+            _ = WatchStageBriefingsAsync(context);
 
             // The steps are the join's own replay — 42.2 s counted from the roster
             // answer — and a briefing can be shorter than that, so a round opens
@@ -237,6 +249,7 @@ public sealed partial class MatchRecordService(
             lock (gate)
             {
                 writing.Remove(session);
+                briefingWriters.Remove(session);
             }
 
             logger.LogDebug(

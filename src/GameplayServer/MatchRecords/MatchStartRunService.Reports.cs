@@ -35,6 +35,22 @@ public sealed partial class MatchStartRunService
     private readonly HashSet<string> briefingDeparted = [];
 
     /// <summary>
+    /// The clients that have reported the round that follows the result screens
+    /// now running. A report is taken while those screens run, because the round
+    /// the report asks for opens only once the room has all of them.
+    /// </summary>
+    /// <remarks>
+    /// <b>A result screen is not a briefing and its report still belongs to the
+    /// boundary.</b> The reference opens the next round on the last client's
+    /// report after the screens, and a host that opened on the screens' clock alone
+    /// started the round over clients still reading the result — which is the
+    /// player that disappears and the reconnect that follows it. The set is
+    /// cleared when the round opens, so a report from the round before cannot
+    /// open the one after it.
+    /// </remarks>
+    private readonly HashSet<string> roundDeparted = [];
+
+    /// <summary>
     /// Takes a client's join report and, when it is the one the room's round waits
     /// for, opens the round under the set that report arrived on. It is also where
     /// a briefing's clock is armed with the room it was given.
@@ -97,8 +113,34 @@ public sealed partial class MatchStartRunService
     {
         var generation = MatchRecordGenerationUtils.OfJoinReport(reportIdentifier);
 
+        // The screens that follow a round are not a briefing and no round opens
+        // over them: a report that arrives while they run is the client still on
+        // its result screen, which sends the report before it has finished
+        // reading. The next round opens at the screens' end, not on this record
+        // (`MatchScreenTimingsUtils.RoundEndScreensMilliseconds`).
+        if (roundState.IsRoundEnding || roundState.IsStageEnding)
+        {
+            int reportedForNextRound;
+            lock (gate)
+            {
+                roundDeparted.Add(reporter);
+                reportedForNextRound = roundDeparted.Count;
+            }
+
+            logger.LogDebug(
+                "A report arrived on 0x{Identifier:x4} from {Reporter} while the screens that followed round "
+                + "{RoundNumber} ran; {Departed} client(s) have reported the round after them, and no round "
+                + "opens over the screens",
+                reportIdentifier,
+                reporter,
+                roundState.RoundNumber,
+                reportedForNextRound);
+            return false;
+        }
+
         int armed;
         bool first;
+        bool stageArmed;
         bool startsBriefing;
         lock (gate)
         {
@@ -106,6 +148,11 @@ public sealed partial class MatchStartRunService
             joinReportCount++;
             armed = briefingNumber;
             first = briefingGeneration is null;
+            stageArmed = stageBriefingArmed;
+            if (first)
+            {
+                stageBriefingArmed = false;
+            }
             if (first)
             {
                 // The briefing's own set: the first report names it, and the run
@@ -150,8 +197,13 @@ public sealed partial class MatchStartRunService
         {
             // The count a peer is sent starts at its first report: held at the
             // room's whole briefing time until a second player reports, and its own
-            // end only once it moves (BriefingCountdownService).
-            BeginBriefingClock(generation);
+            // end only once it moves (BriefingCountdownService). A stage end armed
+            // it and restarted its stream before this report arrived, so this report
+            // names the set without restarting the stream the opening numbers.
+            if (!stageArmed)
+            {
+                BeginBriefingClock(generation);
+            }
 
             logger.LogInformation(
                 "The room's briefing heard its first join report on 0x{Identifier:x4}; the briefing is "

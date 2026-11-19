@@ -132,6 +132,11 @@ public sealed partial class GameplayServerService
             {
                 SendToOthers(session, type, body, ordinal, ofThisHost: false);
                 return Task.CompletedTask;
+            },
+            (recipients, type, body, ordinal) =>
+            {
+                SendToPeers(session, recipients, type, body, ordinal);
+                return Task.CompletedTask;
             });
 
         await handler.HandleAsync(context);

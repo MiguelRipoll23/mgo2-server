@@ -60,6 +60,17 @@ public sealed partial class MatchStartRunService
 
         while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
         {
+            // A stage's result screens are not a briefing: the client sits on the
+            // round and stage results before the next stage is announced, so no
+            // briefing's run is written through them. The briefing is armed by the
+            // stage end, and this wait is what keeps the played round's briefing
+            // from being written again underneath the screens.
+            if (roundState.IsStageEnding || stageBriefingPending)
+            {
+                await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
+                continue;
+            }
+
             // Between two rounds of one game there is no briefing to write: the
             // room plays straight on, the client re-readies on the sibling set and
             // the round's own run answers it (WriteRunAsync). A briefing's run here

@@ -403,6 +403,7 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
             stageEndAt = null;
             stageEndClockUnits = 0;
             stageEndVersion++;
+            ClearRoundScreens();
             vitalsArrived = false;
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             openedAt = now;

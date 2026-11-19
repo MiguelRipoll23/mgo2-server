@@ -16,6 +16,17 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class MatchStartRunService
 {
     /// <summary>
+    /// Whether a stage's last round has closed and its screens are still holding
+    /// the next briefing back.
+    /// </summary>
+    /// <remarks>
+    /// It covers the instant between the stage end closing and the briefing being
+    /// armed behind it, which is where a peer's run watcher would otherwise see
+    /// the screens gone and write the played briefing's run again.
+    /// </remarks>
+    private volatile bool stageBriefingPending;
+
+    /// <summary>
     /// Returns an emptied room to its first round: no round playing, no round
     /// counted, no score or tickets carried, and a fresh briefing running.
     /// </summary>
@@ -86,6 +97,8 @@ public sealed partial class MatchStartRunService
             briefingGeneration = null;
             countStartedBriefing = null;
             joinReportCount = 0;
+            stageBriefingPending = false;
+            stageBriefingNumber = 0;
         }
 
         entered.Clear();
@@ -100,41 +113,6 @@ public sealed partial class MatchStartRunService
             + "{WasPlaying}) and a fresh briefing runs",
             dropped);
         return true;
-    }
-
-    /// <summary>
-    /// Whether the room is between two rounds of one game: the round that just
-    /// ended has more of its game to play.
-    /// </summary>
-    /// <remarks>
-    /// <b>That stretch is not a briefing.</b> A game of several rounds is stated as
-    /// consecutive identical rotation entries (<c>MatchSettings.IsLastRoundOfGame</c>)
-    /// and the captures play it back to back: <c>mgo2-game2</c> re-readies on the
-    /// sibling set at t+107.978 and its round opens at t+109.120 on a whole clock,
-    /// and a client that joined a round in progress was served that round at 1 324
-    /// of 2 400 units with no briefing (<c>mgo2-joined-game-in-progress-last-round</c>
-    /// t+59.200, <c>docs/protocol/MATCH_FLOW.md</c> §5).
-    /// </remarks>
-    private bool IsBetweenRoundsOfGame =>
-        roundState.HasRoundEnded
-        && !roundState.IsOpen
-        && !matchSettings.IsLastRoundOfGame(roundState.RoundNumber);
-
-    /// <summary>
-    /// Begins the briefing a peer entering the room is shown, unless the room is
-    /// inside a game that has not ended.
-    /// </summary>
-    private void BeginBriefingForEntry()
-    {
-        if (roundState.IsOpen || IsBetweenRoundsOfGame)
-        {
-            logger.LogDebug(
-                "The room is inside a game that has not ended, so no briefing begins for the "
-                + "peer entering it: it is served the round");
-            return;
-        }
-
-        BeginBriefing();
     }
 
     /// <summary>
@@ -158,6 +136,8 @@ public sealed partial class MatchStartRunService
         // ends, so it is read before the close names it.
         var playing = roundState.RoundNumber;
         var closesGame = matchSettings.IsLastRoundOfGame(playing);
+        var round = roundState.RoundSettings;
+        var openedAt = roundState.OpenedAt;
 
         // A round that is its game's last states the game's result as well, in the
         // round's own write — `02 02 02 02 02` is "state[2] = 2, state[3] = 2"
@@ -168,19 +148,24 @@ public sealed partial class MatchStartRunService
             return false;
         }
 
-        // A round inside a game is followed by the next round of that game, not
-        // by a briefing. The rotation states a game of several rounds as
+        // The round's rows are written before its report screens and before the
+        // next open clears the score.
+        RecordClosedRound(round, openedAt, roundResult);
+
+        // A round inside a stage is followed by the next round of that stage, not
+        // by a briefing. The rotation states a stage of several rounds as
         // consecutive identical entries (MatchSettings.IsLastRoundOfGame), and the
-        // capture plays those rounds back to back: mgo2-started-on-game-round1
+        // reference plays those rounds back to back: mgo2-started-on-game-round1
         // covers two whole five-minute rounds between t+601.4 and t+1238.2 with no
         // zero-clock stretch anywhere between them (docs/protocol/MATCH_FLOW.md §5).
         //
-        // The briefing instant is left where the game's own briefing put it, so the
-        // report the client sends between two rounds is already past the room's
-        // briefing time and opens the next round, instead of the room waiting out a
-        // briefing nothing shown it.
+        // The round's own result and score graph come first, and they are the
+        // client's: the reference holds the zero clock for 24.0 s between a round's
+        // end and the next round's open, so a host that opened on the next report
+        // drew the next map over the screen the round had just earned
+        // (`MatchScreenTimingsUtils.RoundEndScreensMilliseconds`).
         //
-        // The ready set is rewritten between the rounds of one game all the same:
+        // The ready set is rewritten between the rounds of one stage all the same:
         // the captures clear it at every round end and the round that follows opens
         // from the reports of its own (`joined-when-red-team` publishes nothing
         // between t+423 and t+450 but its countdown). A room that carried the set
@@ -188,32 +173,43 @@ public sealed partial class MatchStartRunService
         // the same defect the stage end clears the set for
         // (docs/protocol/MATCH_FLOW.md §5).
         briefingStates.BeginNextBriefing();
+        lock (gate)
+        {
+            briefingDeparted.Clear();
+            roundDeparted.Clear();
+        }
 
         if (!closesGame)
         {
+            _ = ReleaseRoundScreensAsync(roundState.RoundScreensVersion, ended.Value);
             logger.LogInformation(
-                "Round {RoundNumber} ended because {Reason}; its game has another round, so the room "
-                + "runs no briefing and the next round opens on the report that follows it",
+                "Round {RoundNumber} ended because {Reason}; its stage has another round, so the room "
+                + "runs no briefing, shows the round's result screens for {ScreensMilliseconds} ms and then "
+                + "opens the next round",
                 ended,
-                reason);
+                reason,
+                MatchScreenTimingsUtils.RoundEndScreensMilliseconds);
             return true;
         }
 
         // A stage's last round is followed by the stage's own result screens —
         // the round result, the score graph and the stage result — and only then by
-        // the next stage's briefing. The briefing is armed now, so its run is ready
-        // when a client leaves those screens, but its count is held at the whole
-        // briefing time until the stage end releases it
-        // (`MatchRoundStateService.StageEndMilliseconds`).
-        BeginBriefing();
+        // the next stage's briefing. The briefing is armed by the stage end, so no
+        // run or count of it can reach a client still reading the played round's
+        // result (`MatchScreenTimingsUtils.StageEndMilliseconds`).
+        lock (gate)
+        {
+            stageBriefingPending = true;
+        }
+
         _ = ReleaseStageEndAsync(roundState.StageEndVersion, ended.Value);
 
         logger.LogInformation(
-            "Round {RoundNumber} ended because {Reason}; its stage is over, so the next briefing is armed "
-            + "and its count is held for the stage's result screens ({StageEndMilliseconds} ms)",
+            "Round {RoundNumber} ended because {Reason}; its stage is over, so its result screens run for "
+            + "{StageEndMilliseconds} ms and the next briefing begins after them",
             ended,
             reason,
-            MatchRoundStateService.StageEndMilliseconds);
+            MatchScreenTimingsUtils.StageEndMilliseconds);
         return true;
     }
 
@@ -234,11 +230,26 @@ public sealed partial class MatchStartRunService
     {
         try
         {
-            await Task.Delay(MatchRoundStateService.StageEndMilliseconds);
-            roundState.EndStageEnd(version);
+            await Task.Delay(MatchScreenTimingsUtils.StageEndMilliseconds);
+            if (!roundState.EndStageEnd(version))
+            {
+                return;
+            }
+
+            // The briefing is armed only once the screens are over: its run and its
+            // countdown are the next thing the client is shown, and arming them at
+            // the close let either reach it while the stage result was still up.
+            BeginBriefing(afterStageScreens: true);
+
+            // The row is what a joining client stages, and the briefing behind
+            // these screens is already on the next rotation entry. Waiting for the
+            // heartbeat leaves a window in which the room names the played map while
+            // its entry records carry the next map's spawns.
+            await PublishBriefingStageAsync(roundNumber);
+
             logger.LogInformation(
                 "The stage that closed with round {RoundNumber} has shown its result screens, so the "
-                + "next briefing's count starts moving",
+                + "next briefing begins",
                 roundNumber);
         }
         catch (Exception exception)
@@ -248,6 +259,123 @@ public sealed partial class MatchStartRunService
                 "The stage end that followed round {RoundNumber} ended without releasing the next briefing",
                 roundNumber);
         }
+        finally
+        {
+            lock (gate)
+            {
+                stageBriefingPending = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Opens the next round of a stage once the round that ended has shown its
+    /// result screens.
+    /// </summary>
+    /// <remarks>
+    /// <b>The room continues by itself and not on a report.</b> A solo room's only
+    /// client sends nothing that opens a round between two rounds, and a room of
+    /// several may still be reading its screens when the first report lands; the
+    /// measured boundary is the screens' end, not a record's arrival. The round
+    /// opens under the sibling set, which is the one the reference plays the next
+    /// round under (<c>mgo2-started-on-game-round1</c>: round 1 on <c>0x1254</c>,
+    /// round 2 at t+215.632 on <c>0x1a54</c>). A room that emptied, or a round that
+    /// opened while the screens ran, is not this release and is left alone.
+    /// </remarks>
+    /// <param name="version">The screens' version, as the close numbered it.</param>
+    /// <param name="roundNumber">The round whose screens ended, for the log.</param>
+    private async Task ReleaseRoundScreensAsync(int version, int roundNumber)
+    {
+        try
+        {
+            await Task.Delay(MatchScreenTimingsUtils.RoundEndScreensMilliseconds);
+            if (!roundState.EndRoundScreens(version) || roundState.IsOpen || !roundState.HasRoundEnded)
+            {
+                return;
+            }
+
+            await WaitForRoundReportsAsync(roundNumber);
+            var opened = OpenRound(
+                roundState.Generation.Sibling,
+                "the round result screens finished");
+            if (!opened)
+            {
+                logger.LogWarning(
+                    "Round {RoundNumber}'s result screens finished but the next round of the stage could "
+                    + "not open; the room stays on the closed round until a report opens one",
+                    roundNumber);
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "The round result screens that followed round {RoundNumber} ended without opening the next round",
+                roundNumber);
+        }
+    }
+
+    /// <summary>
+    /// Waits for every client in the room to report the round that follows the
+    /// result screens now ending.
+    /// </summary>
+    /// <remarks>
+    /// <b>The reference opens on the room's last report, not on the screens'
+    /// clock alone.</b> A client that is still reading the result screen sends its
+    /// report before it leaves it; opening the round on the clock starts the map
+    /// over a client that has not reported, and its own player disappears and the
+    /// session drops. A room of one client and its bots has one report to wait
+    /// for, and a solo client sends nothing between rounds in the measured solo
+    /// capture, so that room keeps the screens' own timer; a room of several waits
+    /// for all of them, with a bound so one client that never reports cannot hold
+    /// the room for ever.
+    /// </remarks>
+    /// <param name="roundNumber">The round whose screens just ended, for the log.</param>
+    private async Task WaitForRoundReportsAsync(int roundNumber)
+    {
+        var expected = briefingStates.ClientCount;
+        if (expected <= 1)
+        {
+            return;
+        }
+
+        var waited = 0;
+        int departed;
+        while (true)
+        {
+            lock (gate)
+            {
+                departed = roundDeparted.Count;
+            }
+
+            if (departed >= expected
+                || waited >= MatchScreenTimingsUtils.RoundReportWaitMilliseconds
+                || !roundState.HasRoundEnded)
+            {
+                break;
+            }
+
+            await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
+            waited += MatchRoundStateService.BriefingRunPollMilliseconds;
+        }
+
+        if (departed < expected)
+        {
+            logger.LogWarning(
+                "Round {RoundNumber}'s result screens ended with {Departed} of {Expected} client(s) "
+                + "reporting the round after them; opening it after {Waited} ms rather than holding the room",
+                roundNumber,
+                departed,
+                expected,
+                waited);
+            return;
+        }
+
+        logger.LogDebug(
+            "Round {RoundNumber}'s result screens are over and all {Expected} client(s) have reported the "
+            + "round after them, so it opens",
+            roundNumber,
+            expected);
     }
 
     /// <summary>

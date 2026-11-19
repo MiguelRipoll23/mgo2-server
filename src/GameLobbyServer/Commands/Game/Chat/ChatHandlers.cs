@@ -46,6 +46,8 @@ public sealed class SetTeamHandler(
 /// <param name="gameService">Service the room's teams are read from.</param>
 /// <param name="survivalTest">Service the Survival self-test runs through.</param>
 /// <param name="publicIpChatCommand">Service the public-address command is answered by.</param>
+/// <param name="botPauseChatCommand">Service the room's bot commands are answered by.</param>
+/// <param name="chatCommandHelp">Service the lobby's command list is answered by.</param>
 /// <param name="lobbyIdentity">Service that knows this lobby's own game type.</param>
 /// <param name="sessionHelper">Helper used to write the replies.</param>
 public sealed class SendChatHandler(
@@ -53,6 +55,8 @@ public sealed class SendChatHandler(
     GameService gameService,
     SurvivalTestService survivalTest,
     PublicIpChatCommandService publicIpChatCommand,
+    BotPauseChatCommandService botPauseChatCommand,
+    ChatCommandHelpService chatCommandHelp,
     LobbyIdentityService lobbyIdentity,
     SessionHelper sessionHelper) : ICommandHandler
 {
@@ -88,6 +92,27 @@ public sealed class SendChatHandler(
         if (PublicIpChatCommandService.IsCommand(request.Text))
         {
             await publicIpChatCommand.HandleAsync(session, characterIdentifier, cancellationToken);
+            return;
+        }
+
+        // The help list is the lobby's own, so the Survival-only /test is named
+        // only in a Survival lobby.
+        if (ChatCommandHelpService.IsCommand(request.Text))
+        {
+            await chatCommandHelp.HandleAsync(session, characterIdentifier, cancellationToken);
+            return;
+        }
+
+        // Bot commands are asked of the sender's own room's gameplay host. They
+        // are handled before the ordinary broadcast, so a command is never read
+        // as a chat line by the rest of the room.
+        if (BotPauseChatCommandService.TryRead(request.Text, out var botCommand))
+        {
+            await botPauseChatCommand.HandleAsync(
+                session,
+                characterIdentifier,
+                botCommand,
+                cancellationToken);
             return;
         }
 

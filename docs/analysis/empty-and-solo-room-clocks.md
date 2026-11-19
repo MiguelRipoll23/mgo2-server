@@ -32,8 +32,9 @@ host is to follow.
   room's population that decides: a leaver among others returns `false` and
   nothing moves, while the last client out drops the round
   (`MatchRoundStateService.Reset`: the count back to zero, the clock and settings
-  cleared, the result cleared), clears the host's score — which is what its
-  tickets are counted from, `MatchResultService.TicketsReachedAsync` — clears the
+  cleared, the result cleared), clears the host's score — the deaths it records
+  are what its tickets are counted from, `MatchResultService.TicketsReachedAsync` —
+  clears the
   briefing states and begins a fresh briefing, countdown and deadline. The next
   client into the room therefore arrives at a first round rather than at the one
   that emptied.

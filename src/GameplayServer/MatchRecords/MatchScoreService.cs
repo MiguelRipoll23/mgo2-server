@@ -72,14 +72,32 @@ public sealed partial class MatchScoreService(
         public bool ScoreKnown;
         public int Headshots;
         public int Streak;
+        public int BestStreak;
+        public int DeathStreak;
         public int Combo;
+        public bool StreakReset;
         public int SentLastResult = -1;
         public int SentStreak = -1;
     }
 
+    /// <summary>
+    /// How long a kill report for the same killer and victim is the same death:
+    /// the client's feed and the bot simulation's own death can both arrive for
+    /// one kill, and counting both made one kill advance the streak three times.
+    /// </summary>
+    private const int KillDedupMilliseconds = 500;
+
+    /// <summary>
+    /// How long a death report for the same slot is the same death: a player's
+    /// vitals and a kill feed can both report one death.
+    /// </summary>
+    private const int DeathDedupMilliseconds = 500;
+
     private readonly Lock gate = new();
     private readonly Dictionary<byte, Row> rows = [];
     private readonly Dictionary<byte, Dictionary<int, int>> pending = [];
+    private readonly Dictionary<(byte Killer, byte Victim), long> recentKills = [];
+    private readonly Dictionary<byte, long> recentDeaths = [];
 
     /// <summary>
     /// Records that a player died, and queues the scoreboard change.
@@ -91,15 +109,50 @@ public sealed partial class MatchScoreService(
         lock (gate)
         {
             var row = RowOf(slot);
-            row.Deaths++;
-            Queue(slot, MatchScoreboardFramesUtils.DeathsBit, row.Deaths);
-            QueueScore(slot, row, force: true);
+            if (!NoteDeathLocked(slot, row, countDeath: true))
+            {
+                logger.LogDebug(
+                    "Player in slot {Slot}'s death was already counted by another report",
+                    slot);
+                return false;
+            }
+
             logger.LogDebug(
                 "Player in slot {Slot} is dead; the round's scoreboard now reads {Deaths} death(s)",
                 slot,
                 row.Deaths);
             return true;
         }
+    }
+
+    /// <summary>
+    /// Records a death once, however many reports carry it: counts it when this
+    /// report is the one that counts deaths, ends the kill streak, and queues the
+    /// score delta.
+    /// </summary>
+    /// <param name="slot">Key in the room's 24-entry player table.</param>
+    /// <param name="row">The player's row.</param>
+    /// <param name="countDeath">Whether this report is the one that counts the death.</param>
+    /// <returns><c>true</c> when this call is the first report of the death.</returns>
+    private bool NoteDeathLocked(byte slot, Row row, bool countDeath)
+    {
+        var now = Environment.TickCount64;
+        if (recentDeaths.TryGetValue(slot, out var diedAt)
+            && now - diedAt < DeathDedupMilliseconds)
+        {
+            return false;
+        }
+
+        recentDeaths[slot] = now;
+        if (countDeath)
+        {
+            row.Deaths++;
+            Queue(slot, MatchScoreboardFramesUtils.DeathsBit, row.Deaths);
+        }
+
+        EndStreak(slot, row);
+        QueueScore(slot, row, force: true);
+        return true;
     }
 
     /// <summary>
@@ -188,23 +241,43 @@ public sealed partial class MatchScoreService(
     /// queued changes with them.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// A round's score is the round's, which is why the reset is here and not
     /// with the room: the captures' scoreboard steps back to one kill per round
     /// as each round opens.
+    /// </para>
+    /// <para>
+    /// <b>The client's last-result code and streak are reset explicitly.</b> The
+    /// reference writes `{152: 0, 153: 0}` for every seated slot as the next round
+    /// opens — `pcapng2` at t+376.224, fourteen records in one burst — and a host
+    /// that only cleared its own rows left the client's local streak on the last
+    /// round's value, so its first kill of the new round logged the old run plus one
+    /// (`KILL COUNT +3` for a first kill). The zero-valued delta is the measured
+    /// reset, and `ScoreboardPublishService` lets this one through its zero filter.
+    /// </para>
     /// </remarks>
     public void Reset()
     {
         lock (gate)
         {
-            if (rows.Count > 0)
+            var resetSlots = rows.Keys.ToList();
+            if (resetSlots.Count > 0)
             {
                 logger.LogInformation(
                     "Clearing the score of {PlayerCount} player(s) for the round that is opening",
-                    rows.Count);
+                    resetSlots.Count);
             }
 
             rows.Clear();
             pending.Clear();
+            recentKills.Clear();
+            recentDeaths.Clear();
+
+            foreach (var slot in resetSlots)
+            {
+                Queue(slot, MatchScoreboardFramesUtils.LastResultBit, 0);
+                Queue(slot, MatchScoreboardFramesUtils.StreakBit, 0);
+            }
         }
     }
 

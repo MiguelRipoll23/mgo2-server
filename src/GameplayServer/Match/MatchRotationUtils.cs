@@ -10,11 +10,11 @@ namespace Mgo2Server.GameplayServer.Match;
 /// <para>
 /// <b>A rotation is what a room plays, so it is parsed once and read by every
 /// caller.</b> The setting is written the way the client's own room screen writes
-/// it — one <c>RULE@Map</c> pair per round, with an optional <c>:DREBIN</c> suffix
-/// for a round played for Drebin Points — and this file is where a pair becomes
-/// the ids and the option byte a rotation triple carries, through
-/// <see cref="MatchRuleUtils"/> and <see cref="MatchMapUtils"/> rather than a
-/// second spelling of either table.
+/// it — one <c>RULE@Map</c> pair per round, with an optional <c>:DREBIN</c> or
+/// <c>:HEADSHOTS</c> suffix for a round played under that option — and this file is
+/// where a pair becomes the ids and the option byte a rotation triple carries,
+/// through <see cref="MatchRuleUtils"/> and <see cref="MatchMapUtils"/> rather than
+/// a second spelling of either table.
 /// </para>
 /// <para>
 /// <b>The bank is where a round's length and kill limit come from.</b> The
@@ -24,6 +24,12 @@ namespace Mgo2Server.GameplayServer.Match;
 /// the recorded rooms do. A rule the bank has no pair for — SDM, INTERVAL, SCAP
 /// and RACE, whose times live in a bank nothing has read yet — runs the bank's
 /// first time and ends on its clock alone.
+/// </para>
+/// <para>
+/// <b>A game is at least two rounds.</b> The rotation must state at least
+/// <see cref="MinimumRoundCount"/> entries; a single entry is refused rather than
+/// played as a one-round game, and a game of several rounds is that round stated
+/// once per round it plays.
 /// </para>
 /// <para>
 /// A name that is no rule or no map is refused rather than mapped onto a nearby
@@ -47,6 +53,12 @@ public static class MatchRotationUtils
 
     /// <summary>Words the bank carries, in the reply's own order.</summary>
     public const int RuleTimerCount = 17;
+
+    /// <summary>
+    /// Shortest rotation a room may state. A game is at least two rounds, so a
+    /// single-entry rotation is refused instead of played as a one-round game.
+    /// </summary>
+    public const int MinimumRoundCount = 2;
 
     /// <summary>Index of a rule's time within the bank, or <c>-1</c> when it has none.</summary>
     /// <remarks>
@@ -82,13 +94,14 @@ public static class MatchRotationUtils
     /// </summary>
     /// <param name="rotation">
     /// The rounds, as <c>RULE@Map</c> pairs separated by commas, each optionally
-    /// suffixed <c>:DREBIN</c>.
+    /// suffixed <c>:DREBIN</c> or <c>:HEADSHOTS</c>.
     /// </param>
     /// <param name="ruleTimers">The seventeen per-rule words, resolved already.</param>
     /// <returns>The rotation, entry zero first.</returns>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when the setting names no round, when a name is no rule or no map,
-    /// when an option is not <c>DREBIN</c>, or when a round would play for no time
+    /// Thrown when the setting names fewer than <see cref="MinimumRoundCount"/>
+    /// rounds, when a name is no rule or no map, when an option is neither
+    /// <c>DREBIN</c> nor <c>HEADSHOTS</c>, or when a round would play for no time
     /// at all.
     /// </exception>
     public static IReadOnlyList<MatchRotationEntry> Parse(
@@ -135,19 +148,22 @@ public static class MatchRotationUtils
             entries.Add(new MatchRotationEntry(rule, map, option, minutes, Tickets(ruleTimers, rule)));
         }
 
-        if (entries.Count == 0)
+        if (entries.Count < MinimumRoundCount)
         {
             throw new InvalidOperationException(
-                "GAMEPLAY_SERVER_ROTATION names no round; a room with no rotation has nothing to play.");
+                $"GAMEPLAY_SERVER_ROTATION states {entries.Count} round(s); a game is at least "
+                + $"{MinimumRoundCount} rounds. State the round again for a two-round game, as in "
+                + "TDM@Blood Bath:DREBIN, TDM@Blood Bath:DREBIN.");
         }
 
         return entries;
     }
 
     /// <summary>
-    /// The round option a suffix states. Only <c>DREBIN</c> is a setting this
-    /// server can write: it is the measured Drebin Points value of the triple's
-    /// third byte, and the only option the room's configuration names.
+    /// The round option a suffix states: one of the radio's two non-normal values,
+    /// <c>DREBIN</c> or <c>HEADSHOTS</c>. Any other suffix is refused rather than
+    /// mapped onto a nearby option, because the triple's third byte is a three-way
+    /// radio and the client draws the round from it.
     /// </summary>
     /// <param name="option">Text after the map's colon.</param>
     /// <param name="round">The whole round, for the refusal to name.</param>
@@ -157,9 +173,10 @@ public static class MatchRotationUtils
         option.Trim().ToUpperInvariant() switch
         {
             "DREBIN" => RoundOption.DrebinPoints,
+            "HEADSHOTS" => RoundOption.HeadshotsOnly,
             _ => throw new InvalidOperationException(
-                $"'{option}' in '{round}' is not a round option; the only one is DREBIN, written "
-                + "after the map as in TDM@Blood Bath:DREBIN."),
+                $"'{option}' in '{round}' is not a round option; the options are DREBIN and "
+                + "HEADSHOTS, written after the map as in TDM@Blood Bath:DREBIN."),
         };
 
     /// <summary>

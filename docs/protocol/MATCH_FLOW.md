@@ -147,7 +147,7 @@ first `0x0b` count at t+208.389 — 44.792 s after the result. Through that stre
 the played round's clock stays where it stopped (`01 8c 07`, 1 932 units, from
 t+164.479 to t+204.480) instead of the `01 00 00` a briefing after a round writes.
 The host arms the next briefing at the close but holds its count at the whole
-briefing time for `MatchRoundStateService.StageEndMilliseconds` (44.8 s); the
+briefing time for `MatchScreenTimingsUtils.StageEndMilliseconds` (44.8 s); the
 count then moves from 60, and the clock returns to zero.
 
 **What the corpus does not settle [U].** The largest capture's briefings do not
@@ -178,15 +178,16 @@ The model this file supports, and that the host now follows:
 - a **stage** is a maximal run of identical rotation triples, so
   `MatchSettings.IsLastRoundOfGame(n)` is "the entry after this round names a
   different rule or map";
-- a round that is **not** its stage's last opens the next round on the report
-  that follows it, with no briefing, no countdown and no briefing run
+- a round that is **not** its stage's last opens the next round itself once its
+  result screens have run (`MatchScreenTimingsUtils.RoundEndScreensMilliseconds`, 24.0 s), with no
+  briefing, no countdown and no briefing run
   (`MatchStartRunService.WriteBriefingRunAsync` returns between rounds); the
-  ready set is cleared at the close either way, so the next round opens from its
+  ready set is cleared at the close either way, so the next round starts from its
   own reports and not from the played round's;
-- a round that **is** its stage's last arms the next briefing and holds its count
-  for the stage's result screens (`StageEndMilliseconds`, 44.8 s), then returns
-  the room to that briefing; the clock it is held on is `0` once one has played,
-  and the briefing precedes the next map's first round.
+- a round that **is** its stage's last keeps its result screens up for
+  `MatchScreenTimingsUtils.StageEndMilliseconds` (44.8 s) and only then arms the next briefing; the clock
+  it is held on is `0` once one has played, and the briefing precedes the next
+  map's first round.
 
 ## 7. Open
 

@@ -47,14 +47,13 @@ spec:
           value: Free Battle
         - name: GAMEPLAY_SERVER_ACCOUNT_NAME
           value: server
-        # The room plays the default rotation: one round per map, in the order
-        # `ServerOptions.DefaultRotation` states, and a stage (a map's run of
-        # rounds) ends after each of them, which is what returns the room to its
-        # briefing before the next map. A map played for several rounds is that
-        # many consecutive copies of its entry — a stage is a run of identical
-        # triples on the wire (`MatchSettings.IsLastRoundOfGame`).
+        # Two rounds on Blood Bath: a game is at least two rounds, so the entry
+        # is stated once per round. The game ends after the second round and the
+        # room returns to its briefing; a longer game is more copies of the entry,
+        # and a rotation that names only one round is refused at startup
+        # (`MatchRotationUtils.MinimumRoundCount`).
         - name: GAMEPLAY_SERVER_ROTATION
-          value: 'TDM@Blood Bath:DREBIN'
+          value: 'TDM@Blood Bath:DREBIN, TDM@Blood Bath:DREBIN'
         # The Free Battle room plays itself when nobody is in it. FILL hands a
         # bot's seat to a joining player, so the room is never advertised full;
         # BOTH is what puts the bots on either side, so a player who joins has a

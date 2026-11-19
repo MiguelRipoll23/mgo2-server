@@ -128,19 +128,20 @@ public sealed class PlayerVitalsHandler(
         score.NoteDeath(member.SessionSlot);
         await publisher.PublishAsync(context);
 
-        // A death is the other half of a kill, so it can be what reaches a rule's
-        // kill limit — a room whose feed never arrives still ends on its tickets
-        // from the deaths its players report.
+        // A death is what spends a ticket, so it can be what takes a side's last
+        // one: a room whose kill feed never arrives still ends on the deaths its
+        // players report.
         if (await results.TicketsReachedAsync() is { } reached)
         {
             logger.LogInformation(
-                "UDP {LocalPort}: the deaths reported have taken team {Team} to its round's "
-                + "{Tickets}-kill limit",
+                "UDP {LocalPort}: team {Team}'s tickets have reached zero at the round's "
+                + "{Tickets}-ticket limit, so team {WinnerTeam} takes it",
                 context.LocalPort,
                 reached.Team,
-                reached.Tickets);
+                reached.Tickets,
+                reached.WinningTeam);
             matchStart.End(
-                $"team {reached.Team} reached the round's {reached.Tickets}-kill limit",
+                $"team {reached.Team}'s tickets reached zero at the round's {reached.Tickets}-ticket limit",
                 reached.ResultCode);
         }
     }

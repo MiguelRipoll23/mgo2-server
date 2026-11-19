@@ -37,6 +37,8 @@ namespace Mgo2Server.GameplayServer.Bots;
 /// <param name="roster">The room's roster, which hands out the run's ordinals.</param>
 /// <param name="score">The host's own score, which a kill a bot lands feeds.</param>
 /// <param name="scoreboard">Publisher of the scoreboard a kill changes.</param>
+/// <param name="results">The round's result, whose ticket check a bot's kill can reach.</param>
+/// <param name="matchStart">The round's opener, which closes a round a side's tickets end.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class BotActorPublishService(
     BotPopulationService bots,
@@ -49,6 +51,8 @@ public sealed partial class BotActorPublishService(
     RoomRosterService roster,
     MatchScoreService score,
     ScoreboardPublishService scoreboard,
+    MatchResultService results,
+    MatchStartRunService matchStart,
     Rooms.TeamArrayService teamArrays,
     MatchRecordSequenceService sequences,
     ILogger<BotActorPublishService> logger)
@@ -119,6 +123,12 @@ public sealed partial class BotActorPublishService(
                     await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
                     continue;
                 }
+
+                // The closed round's feeds are not this round's. A death that waited
+                // out the result screens would otherwise be announced in the round
+                // that follows them, and every client's kill count would step once
+                // more for a kill it already read.
+                ResetRoundFeeds();
 
                 // The bots are not named again here. The recorded host appends a
                 // fill's bot entries and loadouts when the fill *seats* them, and
@@ -266,6 +276,22 @@ public sealed partial class BotActorPublishService(
         {
             scoreboardDue = false;
             await scoreboard.PublishAsync(context);
+
+            // A bot's kill is counted in this writer and has no player handler
+            // behind it, so the ticket check the two peer paths make after their
+            // own death runs here, behind the ticket record just written.
+            if (await results.TicketsReachedAsync() is { } reached)
+            {
+                logger.LogInformation(
+                    "Team {Team}'s tickets have reached zero at the round's {Tickets}-ticket limit, so "
+                    + "team {WinnerTeam} takes it",
+                    reached.Team,
+                    reached.Tickets,
+                    reached.WinningTeam);
+                matchStart.End(
+                    $"team {reached.Team}'s tickets reached zero at the round's {reached.Tickets}-ticket limit",
+                    reached.ResultCode);
+            }
         }
 
         await scoreboard.PublishRepeatsAsync(context);

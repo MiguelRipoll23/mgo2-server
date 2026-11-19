@@ -52,21 +52,6 @@ public sealed partial class MatchRoundStateService
     private bool lastRoundClosedGame;
 
     /// <summary>
-    /// How long a stage's result screens run before the next stage's briefing
-    /// count starts moving.
-    /// </summary>
-    /// <remarks>
-    /// Measured on <c>rounded-ended-by-reaching-tickets-limit.pcapng</c>: its
-    /// final round's result is written at t+163.597 and the next stage's
-    /// <c>0x0b</c> count opens at t+208.389, 44.792 s later. The client's own
-    /// screens fill that stretch — the round result, the score graph and the stage
-    /// result — so the room arms the next briefing at the close and holds its count
-    /// at the whole briefing time until they have run. One capture is one sample,
-    /// which is why the value is rounded to the nearest tenth of a second.
-    /// </remarks>
-    public const int StageEndMilliseconds = 44_800;
-
-    /// <summary>
     /// When the stage now ending releases the next briefing, or <c>null</c> while
     /// no stage end runs.
     /// </summary>
@@ -175,19 +160,21 @@ public sealed partial class MatchRoundStateService
     /// that emptied, a round that closed afterwards, or a new open is not this stage
     /// end and is left alone.
     /// </param>
-    public void EndStageEnd(int version)
+    /// <returns><c>true</c> when this stage end was still the room's and is now over.</returns>
+    public bool EndStageEnd(int version)
     {
         lock (gate)
         {
-            if (stageEndVersion != version)
+            if (stageEndVersion != version || stageEndAt is null)
             {
-                return;
+                return false;
             }
 
             stageEndAt = null;
             stageEndClockUnits = 0;
             stageEndVersion++;
             briefingClockUnits = 0;
+            return true;
         }
     }
 
@@ -245,6 +232,7 @@ public sealed partial class MatchRoundStateService
             stageEndAt = null;
             stageEndClockUnits = 0;
             stageEndVersion++;
+            ClearRoundScreens();
             roundsClosed = 0;
             roundSettings = null;
             openedAt = null;
@@ -341,25 +329,15 @@ public sealed partial class MatchRoundStateService
             // `rounded-ended-by-reaching-tickets-limit` writes `01 8c 07` (1 932
             // units) from t+164.479 to t+204.480, where the round ended at t+163.597.
             // Only the stage end writes the zero.
-            if (closesGame)
-            {
-                stageEndAt = closedAt + StageEndMilliseconds;
-                stageEndClockUnits = clockAtClose;
-                briefingClockUnits = clockAtClose;
-            }
-            else
-            {
-                stageEndAt = null;
-                stageEndClockUnits = 0;
-                briefingClockUnits = 0;
-            }
+            ArmScreensEnd(closedAt, clockAtClose, closesGame);
 
             logger.LogInformation(
                 "Round {RoundNumber} ended{Result}{StageEnd}",
                 roundNumber,
                 roundResult is { } result ? $" with result code {result}" : " with no result to write",
                 closesGame
-                    ? $"; its stage's result screens hold the next briefing for {StageEndMilliseconds} ms"
+                    ? $"; its stage's result screens hold the next briefing for "
+                        + $"{MatchScreenTimingsUtils.StageEndMilliseconds} ms"
                     : string.Empty);
             return roundNumber;
         }

@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The server half of the lobby-to-gameplay control channel. The contract
+         itself comes with the shared assembly. -->
+    <PackageReference Include="Grpc.AspNetCore" Version="2.84.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Shared\Mgo2Server.Shared.csproj" />
     <ProjectReference Include="..\Infrastructure\Mgo2Server.Infrastructure.csproj" />
   </ItemGroup>

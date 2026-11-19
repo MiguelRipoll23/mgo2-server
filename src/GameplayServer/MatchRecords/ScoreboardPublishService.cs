@@ -97,15 +97,34 @@ public sealed class ScoreboardPublishService(
     /// <param name="context">Context the change arrived through.</param>
     public async Task PublishAsync(PeerContext context)
     {
-        // **A record says a number moved, so a record of zeroes says nothing moved.**
-        // Measured on `.pcapngs/actions/actions.pcapng`: not one of its 451 non-zero
-        // scoreboard deltas carries a value of zero, and the reference writes no
-        // delta at all for a player whose numbers have not left their starting point.
-        // This host wrote sixteen of them for the whole room at t+17.85 of
-        // `myserver.pcapng` — one per slot, every value zero — which is sixteeen
+        // A new round's score is not the last round's: the deltas queued for the
+        // round that closed are not this one's, and neither are the copies still
+        // waiting to repeat. Clearing them here is what keeps a stale streak from
+        // landing after the reset that opens the round.
+        if (roundState.RoundNumber != publishedRound)
+        {
+            publishedRound = roundState.RoundNumber;
+            publishedDeaths.Clear();
+            lock (repeats)
+            {
+                repeats.Clear();
+            }
+        }
+
+        // **A record says a number moved, so a record of zeroes says nothing
+        // moved — except the round-start reset.** Measured on
+        // `.pcapngs/actions/actions.pcapng`: not one of its 451 non-zero scoreboard
+        // deltas carries a value of zero, and the reference writes no delta at all
+        // for a player whose numbers have not left their starting point. This host
+        // wrote sixteen of them for the whole room at t+17.85 of
+        // `myserver.pcapng` — one per slot, every value zero — which is sixteen
         // records a client reads as "back to nothing" for rows it already knows.
+        // The one measured exception is the reset of bits 152 and 153 at a round's
+        // open (`pcapng2` t+376.224); that shape is kept, because dropping it left
+        // the client's streak on the previous round's value.
         var deltas = score.TakeDeltas()
-            .Where(delta => delta.Values.Any(value => value.Value != 0))
+            .Where(delta => delta.Values.Any(value => value.Value != 0)
+                || MatchScoreboardFramesUtils.IsRoundReset(delta))
             .ToList();
         var tickets = await TicketRecordsAsync();
         if (deltas.Count == 0 && tickets.Count == 0)

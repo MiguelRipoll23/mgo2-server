@@ -88,6 +88,12 @@ public sealed partial class MatchStartRunService
                     return;
                 }
 
+                // The score of the round that closed is not this round's. The reset
+                // is queued by OpenRound and goes out before the run and before the
+                // beat, so the first kill's streak starts from zero rather than from
+                // the last round's number.
+                await scoreboard.PublishAsync(context);
+
                 // The briefing ends on the lobby-slot confirmation, which is
                 // written here and not at the entry (ConfirmEntryAsync).
                 await ConfirmEntryAsync(context);

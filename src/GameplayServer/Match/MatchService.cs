@@ -84,6 +84,9 @@ public sealed class MatchService(
     /// <summary>Identifier of the match this host published, or zero until it exists.</summary>
     public int MatchIdentifier => matchIdentifier;
 
+    /// <summary>Game type of the lobby this host publishes in, or zero before one is found.</summary>
+    public short LobbySubtype { get; private set; }
+
     // The heartbeat of the match row does not back off: the row leaves the window
     // it is listed within on the same interval this worker beats at, so any wait
     // beyond the interval would take the match off the room list before the next
@@ -118,38 +121,60 @@ public sealed class MatchService(
     }
 
     /// <summary>
-    /// Keeps the row's staged rotation entry on the round this host is about to
-    /// open, advancing it as rounds do.
+    /// Keeps the row's staged rotation entry on the round this host is playing.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>It is the entry a joining client stages, so it must be the one the host is
-    /// playing next.</b> A room screen draws that entry's rule and map, the join
+    /// playing.</b> A room screen draws that entry's rule and map, the join
     /// result hands the index to the client, and the client loads the map it names
-    /// while the room's own records are written on the map of the round the host
-    /// will open (<see cref="MatchSettingsService"/>). Left at zero it named the
-    /// rotation's first entry for the life of the container, so from the second round
-    /// on the details screen and the map the joiner loaded were different rounds —
-    /// the room said one map and the client stood on another.
+    /// while the room's own records are written on the map of the round the host is
+    /// playing (<see cref="MatchSettingsService"/>).
     /// </para>
     /// <para>
-    /// The index is the count of rounds opened, taken modulo the rotation: round one
-    /// is entry zero and a rotation that runs out starts again, which is the walk
-    /// <see cref="MatchSettings.Round"/> plays. It is written only when it changes,
-    /// because the beat runs every few seconds and the column is not what keeps the
-    /// row alive.
+    /// The index is one less than the count of rounds opened, taken modulo the
+    /// rotation: round one is entry zero and a rotation that runs out starts again,
+    /// which is the walk <see cref="MatchSettings.Round"/> plays. It is written only
+    /// when it changes, because the beat runs every few seconds and the column is not
+    /// what keeps the row alive. A stage end stages the entry after this one through
+    /// <see cref="PublishNextGameAsync"/> once its briefing begins.
     /// </para>
     /// </remarks>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    private async Task PublishCurrentGameAsync(CancellationToken cancellationToken)
-    {
-        if (rotationRoundCount == 0)
-        {
-            return;
-        }
+    public Task PublishCurrentGameAsync(CancellationToken cancellationToken = default) =>
+        roundState.IsOpen || roundState.RoundNumber == 0
+            ? PublishGameAsync(CurrentRotationIndex(), cancellationToken)
+            : Task.CompletedTask;
 
-        var index = roundState.RoundNumber % rotationRoundCount;
-        if (index == publishedCurrentGame)
+    /// <summary>
+    /// Stages the rotation entry the briefing that follows a stage end plays, so
+    /// the room list and a joiner name the map and rule of that briefing.
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the write.</param>
+    public Task PublishNextGameAsync(CancellationToken cancellationToken = default) =>
+        rotationRoundCount == 0
+            ? Task.CompletedTask
+            : PublishGameAsync(roundState.RoundNumber % rotationRoundCount, cancellationToken);
+
+    /// <summary>
+    /// The rotation entry the room is playing: the round count it has opened,
+    /// counted from zero.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="MatchRoundStateService.RoundNumber"/> counts the rounds opened,
+    /// counting the one playing, so the first round is entry zero and not entry
+    /// one. Reading the count itself staged the round after the one on the wire,
+    /// which is a lobby join naming one map while the entry records carry the
+    /// other.
+    /// </remarks>
+    private int CurrentRotationIndex() =>
+        rotationRoundCount == 0
+            ? 0
+            : (Math.Max(roundState.RoundNumber, 1) - 1) % rotationRoundCount;
+
+    private async Task PublishGameAsync(int index, CancellationToken cancellationToken)
+    {
+        if (rotationRoundCount == 0 || index == publishedCurrentGame)
         {
             return;
         }
@@ -163,7 +188,7 @@ public sealed class MatchService(
             "Room {GameIdentifier} stages rotation entry {RoundIndex} for round {RoundNumber}",
             matchIdentifier,
             index,
-            roundState.RoundNumber + 1);
+            index + 1);
     }
 
     /// <summary>
@@ -184,6 +209,7 @@ public sealed class MatchService(
                 options.GameplayLobbyName);
             return 0;
         }
+        LobbySubtype = (short)lobby.SubtypeIdentifier;
         logger.LogDebug(
             "Found gameplay lobby {LobbyIdentifier} ({LobbyName}, subtype {SubtypeIdentifier})",
             lobby.Identifier,
@@ -272,7 +298,7 @@ public sealed class MatchService(
                     // browse and to fill a join, so a row left at zero told every
                     // client the rotation's first round while this host played
                     // another.
-                    room.CurrentGame = roundState.RoundNumber % rounds.Count;
+                    room.CurrentGame = (Math.Max(roundState.RoundNumber, 1) - 1) % rounds.Count;
                 },
                 cancellationToken);
 
@@ -328,7 +354,7 @@ public sealed class MatchService(
 
             // The same staged round the restated branch writes, so a room created
             // now and a room restated after a restart state one current round.
-            room.CurrentGame = roundState.RoundNumber % rounds.Count;
+            room.CurrentGame = (Math.Max(roundState.RoundNumber, 1) - 1) % rounds.Count;
         }, cancellationToken);
 
         await gameService.AddPlayerAsync(game.Identifier, hostIdentifier, cancellationToken);

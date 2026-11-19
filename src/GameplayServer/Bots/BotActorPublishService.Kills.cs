@@ -62,6 +62,24 @@ public sealed partial class BotActorPublishService
     private readonly List<(long Due, byte Killer, byte Victim, bool Headshot)> pendingFeeds = [];
 
     /// <summary>
+    /// Drops the feeds the round that closed still owed, and clears the flag that
+    /// would publish its scoreboard into the next round.
+    /// </summary>
+    /// <remarks>
+    /// The actor writer stops with the round, so a death in the last frames of the
+    /// result screens can sit in these lists across the boundary. Writing it at the
+    /// next open announces a kill on the wrong round and steps every client's
+    /// count once more for it; the reference starts the new round's feed list
+    /// empty.
+    /// </remarks>
+    private void ResetRoundFeeds()
+    {
+        simulation.ClearKills();
+        pendingFeeds.Clear();
+        scoreboardDue = false;
+    }
+
+    /// <summary>
     /// Whether a kill drained this frame owes the scoreboard a record.
     /// </summary>
     /// <remarks>
@@ -109,7 +127,13 @@ public sealed partial class BotActorPublishService
             // with no victim delta and no ticket for that side, where the working
             // capture answers a player's death with both. A death a client reports
             // on its own, with no feed behind it, is still counted at that report.
-            score.NoteKill(kill.Killer, kill.Victim, headshot: kill.Headshot);
+            // A client's feed can have counted this death already. If it did,
+            // this simulation entry is the same kill: no second credit and no
+            // second feed, or the room's streak advances once per copy.
+            if (!score.NoteKill(kill.Killer, kill.Victim, headshot: kill.Headshot))
+            {
+                continue;
+            }
 
             // A death with nobody to credit is counted and not announced. A feed
             // whose killer is slot zero is drawn on the dedicated host's own

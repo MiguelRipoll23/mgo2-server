@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 
 /// <summary>
-/// Confirms a client's chat macro and passes it to the room as the host's
+/// Confirms a client's chat macro and passes it to its audience as the host's
 /// broadcast rather than the client's request.
 /// </summary>
 /// <remarks>
@@ -20,21 +20,32 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Gameplay;
 /// acknowledged.
 /// </para>
 /// <para>
+/// <b>A macro is side-only while a round is playing.</b> The confirmation is sent
+/// to the sender and, during an open round, to the other peers on the sender's
+/// side; once the round has ended it goes to the whole room
+/// (<see cref="ChatMacroAudienceService"/>). A briefing or a result screen is
+/// therefore room-wide, because no round is open there.
+/// </para>
+/// <para>
 /// <b>The identifier also carries the room count.</b> Only the four-byte body is
 /// a chat macro; a two-byte count is relayed unchanged.
 /// </para>
-/// <para>    /// <b>The request's class bit is not part of the confirmation.</b> The
-    /// captured client sends its first macro under <c>0x1a58</c> and every later one
-    /// under <c>0x9a58</c>, with the class ordinal climbing; the host answers each
-    /// request under <c>0x1a58</c> with that same ordinal. The handler is
-    /// registered on both forms, because a registry keyed on the base alone never
-    /// sees the later requests. Answering a reliable request under the reliable
-    /// identifier would also make the confirmation a numbered record the client
-    /// must answer, and only the first macro is ever accepted.
-    /// </para>
+/// <para>
+/// <b>The request's class bit is not part of the confirmation.</b> The captured
+/// client sends its first macro under <c>0x1a58</c> and every later one under
+/// <c>0x9a58</c>, with the class ordinal climbing; the host answers each request
+/// under <c>0x1a58</c> with that same ordinal. The handler is registered on both
+/// forms, because a registry keyed on the base alone never sees the later
+/// requests. Answering a reliable request under the reliable identifier would also
+/// make the confirmation a numbered record the client must answer, and only the
+/// first macro is ever accepted.
+/// </para>
 /// </remarks>
+/// <param name="audience">Chooser of the peers a confirmed macro is for.</param>
 /// <param name="logger">Logger of this handler.</param>
-public sealed class ChatMacroHandler(ILogger<ChatMacroHandler> logger) : IPeerCommandHandler
+public sealed class ChatMacroHandler(
+    ChatMacroAudienceService audience,
+    ILogger<ChatMacroHandler> logger) : IPeerCommandHandler
 {
     /// <inheritdoc />
     public async Task HandleAsync(PeerContext context)
@@ -55,7 +66,7 @@ public sealed class ChatMacroHandler(ILogger<ChatMacroHandler> logger) : IPeerCo
             body[2]);
         logger.LogDebug(
             "UDP {LocalPort}: {RemoteAddress} sends chat macro {Macro} for slot {Slot}; "
-            + "confirmed as host kind and broadcast",
+            + "confirmed as host kind for its audience",
             context.LocalPort,
             context.Remote,
             body[2],
@@ -69,6 +80,6 @@ public sealed class ChatMacroHandler(ILogger<ChatMacroHandler> logger) : IPeerCo
         // room gets the same host record.
         var confirmedType = ChatMacroBodiesUtils.ConfirmedIdentifier(context.Message.Type);
         await context.Send(confirmedType, confirmed, context.Message.Flags);
-        await context.Broadcast(confirmedType, confirmed, context.Message.Flags);
+        await audience.BroadcastAsync(context, confirmedType, confirmed, context.Message.Flags);
     }
 }

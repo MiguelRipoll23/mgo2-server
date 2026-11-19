@@ -1,24 +1,41 @@
 using Mgo2Server.GameplayServer;
 using Mgo2Server.GameplayServer.Bots;
 using Mgo2Server.GameplayServer.Commands;
+using Mgo2Server.GameplayServer.Commands.Grpc;
 using Mgo2Server.GameplayServer.Gameplay;
 using Mgo2Server.GameplayServer.Identity;
 using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.MatchRecords;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Infrastructure.DependencyInjection;
+using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Options;
 using Mgo2Server.Shared.Telemetry;
 using Mgo2Server.Shared.Udp;
 using Mgo2Server.Shared.Utils;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.AddServerLogging(builder.Configuration);
+
+// The control listener shares the gameplay port's number over TCP. The console
+// reaches the UDP socket on that port and never opens this one; the game lobby
+// is the only client, and it dials the host endpoint the room row already names.
+// HTTP/2 without TLS is enough: this is a server-to-server call on the private
+// network, and adding a certificate would replace one endpoint with two.
+var controlPort = int.TryParse(builder.Configuration["GAMEPLAY_SERVER_PORT"], out var configuredPort)
+    ? configuredPort
+    : PortConstants.GameplayServerPort;
+builder.WebHost.ConfigureKestrel(kestrel =>
+    kestrel.ListenAnyIP(controlPort, listen => listen.Protocols = HttpProtocols.Http2));
+builder.Services.AddGrpc();
 
 builder.Services.AddServerServices(builder.Configuration);
 
@@ -51,9 +68,11 @@ builder.Services.AddSingleton<MatchRecordService>();
 builder.Services.AddSingleton<BriefingCountdownService>();
 builder.Services.AddSingleton<BriefingReadyPublishService>();
 builder.Services.AddSingleton<BriefingRoomPublishService>();
+builder.Services.AddSingleton<BriefingOpeningPublishService>();
 builder.Services.AddSingleton<MatchRoundStateService>();
 builder.Services.AddSingleton<MatchStartRunService>();
 builder.Services.AddSingleton<MatchScoreService>();
+builder.Services.AddSingleton<MatchPersistenceService>();
 builder.Services.AddSingleton<ScoreboardPublishService>();
 builder.Services.AddSingleton<MatchResultService>();
 builder.Services.AddSingleton<BriefingStateService>();
@@ -93,18 +112,20 @@ builder.Services.AddSingleton<BotPopulationService>();
 // a pose that changes between beats, and what a client's hit against a bot is
 // applied to.
 builder.Services.AddSingleton<BotLocomotionService>();
+builder.Services.AddSingleton<BotPauseService>();
 builder.Services.AddSingleton<BotSimulationService>();
 builder.Services.AddSingleton<BotActorPublishService>();
+builder.Services.AddSingleton<BotPauseGrpcService>();
 builder.Services.AddSingleton<PeerCommandRegistry>();
 // The peer command handlers are registered beside the types their messages are
 // bound to, so a handler cannot be mapped without being resolvable.
 builder.Services.AddCommandHandlers();
 builder.Services.AddSingleton<GameplayServerService>();
 
-var host = builder.Build();
+var app = builder.Build();
 
-var options = host.Services.GetRequiredService<IOptions<ServerOptions>>().Value;
-var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("GameplayServer");
+var options = app.Services.GetRequiredService<IOptions<ServerOptions>>().Value;
+var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("GameplayServer");
 
 // The room's rotation is named in this instance's configuration and nowhere
 // else, so a name that is no rule or no map is a round the client cannot play,
@@ -116,7 +137,7 @@ MatchSettingsUtils.Validate(options);
 // The bots are configured the way the room is: a value that names no policy stops
 // the process before a peer is answered, rather than a room that silently holds
 // the population a default happened to name.
-var botSettings = host.Services.GetRequiredService<IOptions<BotOptions>>().Value;
+var botSettings = app.Services.GetRequiredService<IOptions<BotOptions>>().Value;
 var botFaults = BotOptionsUtils.Validate(botSettings);
 if (botFaults.Count > 0)
 {
@@ -143,10 +164,11 @@ logger.LogInformation(
                 + $"{round.TimeLimitMinutes} min"
                 + (round.Tickets is { } limit ? $" to {limit} kills" : string.Empty))));
 
-var registry = host.Services.GetRequiredService<PeerCommandRegistry>();
+var registry = app.Services.GetRequiredService<PeerCommandRegistry>();
 PeerCommandHandlerRegistration.RegisterCommandHandlers(registry);
+app.MapGrpcService<BotPauseGrpcService>();
 
-var GameplayServer = host.Services.GetRequiredService<GameplayServerService>();
+var GameplayServer = app.Services.GetRequiredService<GameplayServerService>();
 
 logger.LogInformation(
     "Starting Gameplay server on port {Port} (lobby {LobbyName})",
@@ -160,6 +182,11 @@ using var cancellation = new CancellationTokenSource();
 // process is gone the moment the signal lands, taking the match with it.
 using var stopSignals = ShutdownSignalUtils.OnStopRequested(cancellation.Cancel, logger);
 
+// The control listener starts before the room so a lobby that finds the room in
+// the database can reach it immediately; the room identifier check still refuses
+// a command until the room itself exists.
+await app.StartAsync(cancellation.Token);
+
 try
 {
     await GameplayServer.RunAsync(cancellation.Token);
@@ -171,4 +198,6 @@ catch (OperationCanceledException)
 finally
 {
     await GameplayServer.DisposeAsync();
+    await app.StopAsync();
+    await app.DisposeAsync();
 }

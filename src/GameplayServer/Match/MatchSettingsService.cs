@@ -67,13 +67,33 @@ public sealed class MatchSettingsService(
     public Rooms.RoomState CurrentRoomState => roundState.State(roster.IsSolo);
 
     /// <summary>
-    /// The rule the room is on: the one the round in front of it plays, resolved
-    /// from the rotation and the round number rather than from a row.
+    /// The rule the room is on: the one the round playing uses, or the one the
+    /// briefing precedes when no round is open.
     /// </summary>
-    public int CurrentRule => rotation[roundState.RoundNumber % rotation.Count].Rule;
+    public int CurrentRule => rotation[ActiveRotationIndex].Rule;
 
     /// <summary>The active rotation slot carried by the room's state transfer.</summary>
-    public int CurrentRotationIndex => roundState.RoundNumber % rotation.Count;
+    public int CurrentRotationIndex => ActiveRotationIndex;
+
+    /// <summary>
+    /// The entry the room is on now: the playing round's while one is open and
+    /// the upcoming round's while a briefing runs.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="MatchRecords.MatchRoundStateService.RoundNumber"/> counts the
+    /// rounds opened, counting the playing one, so the current entry is one less
+    /// than that count. A stage end is still the played round's entry while its
+    /// screens run — the next briefing has not begun and its map is not staged
+    /// yet — and a briefing with no screens names the next entry, which is the
+    /// count itself. Reading the count in both phases put the settings burst and
+    /// the room's spawn records on different maps.
+    /// </remarks>
+    private int ActiveRotationIndex =>
+        rotation.Count == 0
+            ? 0
+            : roundState.IsOpen || roundState.IsStageEnding
+                ? (Math.Max(roundState.RoundNumber, 1) - 1) % rotation.Count
+                : roundState.RoundNumber % rotation.Count;
 
     /// <summary>The room's configured seventeen-word rule timer bank.</summary>
     public IReadOnlyList<int> RuleTimers => ruleTimers;
@@ -86,8 +106,8 @@ public sealed class MatchSettingsService(
     public bool AutoAssignTeams => options.GameplayServerAutoAssignTeams;
 
     /// <summary>
-    /// The map the room's own records are written on: the map of the round the room
-    /// is on, which is the round it would open next.
+    /// The map the room's own records are written on: the playing round's while one
+    /// is open and the upcoming round's while a briefing runs.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -106,7 +126,7 @@ public sealed class MatchSettingsService(
     /// is published and does not wait on <see cref="FindPublished"/>.
     /// </para>
     /// </remarks>
-    public int Map => rotation[roundState.RoundNumber % rotation.Count].Map;
+    public int Map => rotation[ActiveRotationIndex].Map;
 
     /// <summary>
     /// The settings of the room this host publishes, which is the room every writer
@@ -146,6 +166,14 @@ public sealed class MatchSettingsService(
             || current.Map != next.Map
             || current.RoundOptions != next.RoundOptions;
     }
+
+    /// <summary>
+    /// Writes the rotation entry the briefing after a stage end plays into the
+    /// room's row, so a joiner stages the map and rule that briefing is on.
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the write.</param>
+    public Task PublishNextGameAsync(CancellationToken cancellationToken = default) =>
+        match.PublishNextGameAsync(cancellationToken);
 
     public MatchSettings? FindPublished()
     {

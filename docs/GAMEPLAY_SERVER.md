@@ -26,9 +26,13 @@ The room plays a **rotation** — `GameplayServerRotation`, one `RULE@Map` pair 
 round, written the way the client's own room screen writes it — each half named
 the way the replay console names it (`TDM`, `BASE`, `Blood Bath`, `n007a`) and
 mapped to the id a rotation carries by `MatchRuleUtils` and `MatchMapUtils`
-(`GAME_SETTINGS_WIRE.md`). A name neither table holds stops the process at startup
-rather than opening a round no client can play. The default is the recording's own
-nine rounds, across five rules and seven maps.
+(`GAME_SETTINGS_WIRE.md`). A round may name its option with a `:DREBIN` or
+`:HEADSHOTS` suffix, the triple's measured three-way radio. A name neither table
+holds stops the process at startup rather than opening a round no client can play,
+and so does a rotation of fewer than two rounds: a game is at least two rounds, so
+a single-entry rotation is refused instead of played as a one-round game
+(`MatchRotationUtils.MinimumRoundCount`). The default is the recording's own nine
+rounds, across five rules and seven maps.
 
 **The rotation is one list and every reader takes it from there.**
 `MatchSettingsUtils.Rotation` resolves the configured list once, `MatchService`
@@ -366,8 +370,9 @@ A round ends on whichever of its two limits comes first. The clock is the first:
 `MatchStartRunService` waits the round's own time —
 `MatchRotationEntry.TimeLimitMinutes`, which is the round's rule's own word in
 `GAMEPLAY_SERVER_RULE_TIMERS` — and then ends it. The other is the round's **kill
-limit**: with every kill and death counted (`MatchScoreService`), a side that
-reaches `MatchRotationEntry.Tickets` ends the round itself (`TicketsReachedAsync`).
+limit**: with every death counted (`MatchScoreService`), the side that takes its
+`MatchRotationEntry.Tickets`th death has run out of tickets and the other side
+takes the round (`TicketsReachedAsync`).
 That figure is the rule's own ticket word in the same bank — the fifty-ticket TDM
 and thirty-ticket DM of the default — and is absent for every rule the bank states
 none for, because nothing on this channel counts kills for a host (§3.3) and a
@@ -390,9 +395,10 @@ capture's client spends the next 44.8 s on its own round result, score graph and
 stage result screens (`rounded-ended-by-reaching-tickets-limit.pcapng`: its result
 at t+163.597, the next stage's `0x0b` count at t+208.389), and the host keeps
 writing the played clock where it stopped through them. `MatchStartRunService.End`
-arms the next briefing at the close but holds its count until
-`MatchRoundStateService.StageEndMilliseconds` has passed; a round inside a stage
-still closes on the zero clock and opens the next round on the report that follows.
+arms the next briefing once `MatchScreenTimingsUtils.StageEndMilliseconds` has
+passed; a round inside a stage holds the zero clock for
+`MatchScreenTimingsUtils.RoundEndScreensMilliseconds` (24.0 s, the reference's
+t+191.599 → t+215.632) and then opens the next round itself.
 
 ## 3. What is live, and what is still a replay
 
@@ -601,10 +607,11 @@ opened on a deadline no client was waiting on.
 ### 4.3 What ends a round
 
 Three things now, in the order they were measured. The **clock** is first and
-always was: the round's own time, counted down. The **kill limit** is second:
-with the host's own score kept, a side that reaches the limit this instance is
-configured with ends the round (`MatchResultService.TicketsReachedAsync`) and its
-win is written. A **goal** is still invisible on this channel as a cause — the objective
+always was: the round's own time, counted down. The **ticket limit** is second:
+every death spends a ticket from the side that took it, so a side whose deaths
+reach the round's ticket limit ends the round
+(`MatchResultService.TicketsReachedAsync`) and the other side's win is written. A
+**goal** is still invisible on this channel as a cause — the objective
 is scored in the round's state block and the end-of-round report travels over the
 lobby's TCP channel — so `End(reason, result)` remains the seam a goal would
 call, and no round ends early for one here.
@@ -837,9 +844,10 @@ record should be sent.
   re-marks the room with `e0` sides at t+449.0, and names the sides at t+517.5.
   This server marks the room's members on every publication and drops a slot only
   when its player is reaped, so it never writes that empty or `e0` pair.
-* **[U]** what ends a round that reaches its kill limit, because no capture holds
-  one. This host ends it on the kill limit it is configured with, counted from the
-  score it keeps; the write it produces (`state[2]`) is the measured shape, and the
+* **[U]** what ends a round that spends a side's last ticket, because no capture
+  holds one. This host ends it when that side's deaths reach the ticket limit it is
+  configured with — the same count its panel steps down — and writes the other
+  side's win; the write it produces (`state[2]`) is the measured shape, and the
   round it ends is not a measured one.
 * **Measured: what a host writes when a round decides its match.**
   `joined-when-red-team` ends its third round at t+754.040 with

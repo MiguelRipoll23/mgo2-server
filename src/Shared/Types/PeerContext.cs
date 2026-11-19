@@ -39,6 +39,13 @@ namespace Mgo2Server.Shared.Types;
 /// Null where the context was built without it, and a handler falls back to
 /// <paramref name="Broadcast"/>.
 /// </param>
+/// <param name="BroadcastTo">
+/// Writes a message to the peers the caller names, each through its own session
+/// and counter, and not to the peer this message came from. A name is a roster
+/// endpoint ("address:port"); a session is matched by its observed or dial-back
+/// endpoint. Null where the context was built without it, and a caller that needs
+/// a subset falls back to <paramref name="Broadcast"/>.
+/// </param>
 public sealed record PeerContext(
     PeerSession Session,
     UdpMessage Message,
@@ -47,4 +54,5 @@ public sealed record PeerContext(
     Func<ushort, byte[], byte, Task> Send,
     Func<ushort, byte[], byte, Task> Broadcast,
     Func<IReadOnlyList<UdpMessage>, Task>? SendRecords = null,
-    Func<ushort, byte[], byte, Task>? Relay = null);
+    Func<ushort, byte[], byte, Task>? Relay = null,
+    Func<IReadOnlyCollection<string>, ushort, byte[], byte, Task>? BroadcastTo = null);

@@ -65,10 +65,11 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 /// is merged into. The identifier carries the scoreboard as well as the roster,
 /// and the two are told apart by their length (<see cref="MatchScoreboardFramesUtils"/>).
 /// </param>
+/// <param name="persistence">Writer of the player's row and side to the games domain.</param>
 /// <param name="clans">Reader of the clan id a roster entry names.</param>
 /// <param name="bots">The room's bots, which give up a seat before a player is answered.</param>
 /// <param name="logger">Logger of this handler.</param>
-public sealed class PlayerProfileHandler(
+public sealed partial class PlayerProfileHandler(
     RoomRosterService roster,
     RoomMemberAnnouncementService announcements,
     RosterAnswerService rosterAnswers,
@@ -79,6 +80,7 @@ public sealed class PlayerProfileHandler(
     MatchStartRunService matchStart,
     TeamArrayService teamArrays,
     MatchScoreService score,
+    MatchPersistenceService persistence,
     RosterClanLookupService clans,
     BotPopulationService bots,
     ILogger<PlayerProfileHandler> logger) : IPeerCommandHandler
@@ -221,6 +223,11 @@ public sealed class PlayerProfileHandler(
             member.RosterIndex,
             roster.JoinerCount);
 
+        // The lobby writes a join it handled; this covers the peer that reached
+        // the gameplay channel directly. The write is not awaited, so the roster
+        // answer is not held behind the database.
+        _ = persistence.EnsurePlayerAsync(member.CharacterId, CancellationToken.None);
+
         if (context.Session.PeerAddressData.Length != PlayerProfileRecordUtility.AddressDataLength)
         {
             logger.LogWarning(
@@ -249,41 +256,6 @@ public sealed class PlayerProfileHandler(
         if (rosterAnswers.AnswerNowOrHold(context.Remote.ToString(), context, answer))
         {
             await answer();
-        }
-    }
-
-    /// <summary>
-    /// Merges a scoreboard delta a peer wrote into the host's own score: the bits
-    /// this file names, and nothing for the ones it does not.
-    /// </summary>
-    /// <param name="context">Context the delta arrived through.</param>
-    /// <param name="delta">Slot and values the delta carried.</param>
-    private void MergeScoreboard(PeerContext context, MatchScoreboardFramesUtils.ScoreboardDelta delta)
-    {
-        logger.LogDebug(
-            "UDP {LocalPort}: {RemoteAddress} reports a scoreboard delta for slot {Slot} with "
-            + "{ValueCount} value(s)",
-            context.LocalPort,
-            context.Remote,
-            delta.Slot,
-            delta.Values.Count);
-
-        foreach (var value in delta.Values)
-        {
-            switch (value.Bit)
-            {
-                case MatchScoreboardFramesUtils.KillsBit:
-                    score.NoteKills(delta.Slot, value.Value);
-                    break;
-                case MatchScoreboardFramesUtils.DeathsBit:
-                    score.NoteDeaths(delta.Slot, value.Value);
-                    break;
-                case MatchScoreboardFramesUtils.ScoreBit:
-                    score.NoteScore(delta.Slot, value.Value);
-                    break;
-                default:
-                    break;
-            }
         }
     }
 
@@ -386,10 +358,9 @@ public sealed class PlayerProfileHandler(
         // briefing, and the room's next round will open for it too. Its watcher
         // is armed here, in the pass that answered the roster, so the round's
         // opening run reaches this peer whether it readies first or last — and
-        // armed before the match records, because that call begins the briefing's
-        // writers with it: the clock a peer is sent counts against the briefing
-        // this pass begins, and a writer that started first would find no briefing
-        // armed and write the peer nothing.
+        // armed before the match records, because the clock a peer is sent counts
+        // against the briefing this pass begins: a writer that started first would
+        // find no briefing armed and write the peer nothing.
         matchStart.Start(context);
         matchRecords.Start(context);
 

@@ -18,6 +18,30 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class MatchStartRunService
 {
     /// <summary>
+    /// Stage-end briefings this room has begun, counted from one: the identity a
+    /// per-peer briefing writer restarts on.
+    /// </summary>
+    private int stageBriefingNumber;
+
+    /// <summary>
+    /// Whether a stage-end briefing has already armed its count, so the first
+    /// report into it does not restart the stream the opening is numbering.
+    /// </summary>
+    private bool stageBriefingArmed;
+
+    /// <summary>The stage-end briefing now armed, or zero before the first one.</summary>
+    public int StageBriefingNumber
+    {
+        get
+        {
+            lock (gate)
+            {
+                return stageBriefingNumber;
+            }
+        }
+    }
+
+    /// <summary>
     /// Begins the room's briefing: the wait whose count the report that reaches it
     /// arms.
     /// </summary>
@@ -49,7 +73,11 @@ public sealed partial class MatchStartRunService
     /// has neither, which is the one case that is not timed at all.
     /// </para>
     /// </remarks>
-    private void BeginBriefing()
+    /// <param name="afterStageScreens">
+    /// Whether this briefing follows a completed stage, whose countdown and ready
+    /// set are started again for it.
+    /// </param>
+    private void BeginBriefing(bool afterStageScreens = false)
     {
         var settings = matchSettings.FindPublished();
         if (settings is null)
@@ -63,6 +91,15 @@ public sealed partial class MatchStartRunService
 
         lock (gate)
         {
+            if (afterStageScreens)
+            {
+                // The ended round's run flags must not release the restarted
+                // writers before this briefing's own run is written.
+                roundState.ClearRunWrites();
+                stageBriefingNumber++;
+            }
+
+            stageBriefingArmed = afterStageScreens;
             briefingNumber++;
             lastJoinReportIdentifier = null;
             briefingGeneration = null;
@@ -86,6 +123,18 @@ public sealed partial class MatchStartRunService
             roundState.HasRoundEnded
                 ? roundState.StageEndClockUnits
                 : settings.Round(roundState.RoundNumber + 1).TimeLimitUnits);
+
+        // A stage-end briefing is written before any client reports into it: the
+        // reference host opens the next operations stream and writes its held
+        // countdown at the stage end itself (t+208.389 of
+        // `rounded-ended-by-reaching-tickets-limit.pcapng`), and a host that waits
+        // for a report there leaves every client on the result screens, which is
+        // the black screen this arms against. The generation is the closed
+        // round's sibling, the set the client is already reading.
+        if (afterStageScreens)
+        {
+            BeginBriefingClock(roundState.Generation.Sibling);
+        }
 
         logger.LogDebug(
             "A briefing runs for {BriefingTime} minute(s); its count is armed by the report that reaches "
