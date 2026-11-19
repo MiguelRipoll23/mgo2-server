@@ -130,6 +130,15 @@ public sealed partial class BotActorPublishService(
                 // more for a kill it already read.
                 ResetRoundFeeds();
 
+                // The round's own identity is held for the screens that follow it:
+                // the state moves to the next briefing as soon as the round closes,
+                // and a frame written on that set would put the played round's
+                // actors and feeds on the next briefing's stream.
+                var roundGeneration = roundState.Generation;
+                var roundNumber = roundState.RoundNumber;
+                var map = roundState.RoundSettings?.Map ?? matchSettings.Map;
+                var rule = roundState.RoundSettings?.Rule ?? matchSettings.CurrentRule;
+
                 // The bots are not named again here. The recorded host appends a
                 // fill's bot entries and loadouts when the fill *seats* them, and
                 // this host does that on the report that seats them; writing the
@@ -152,11 +161,28 @@ public sealed partial class BotActorPublishService(
 
                 using var period = new PeriodicTimer(TimeSpan.FromMilliseconds(TickMilliseconds));
                 var faultLogged = false;
-                while (roundState.IsOpen && MatchRecordPeerUtils.IsAlive(session))
+                var closed = false;
+
+                // The round's result screens are not a briefing: the actors keep
+                // moving and the scoreboard keeps repeating while the client reads
+                // them, but no shot is fired and no feed is drained. The round's own
+                // generation is held for as long as that takes, because the next
+                // round's set is the briefing's and a record written on it would
+                // remove the played round from the client.
+                while (MatchRecordPeerUtils.IsAlive(session)
+                    && roundState.RoundNumber == roundNumber
+                    && (roundState.IsOpen || roundState.IsRoundEnding || roundState.IsStageEnding))
                 {
+                    var open = roundState.IsOpen;
+                    if (!open && !closed)
+                    {
+                        closed = true;
+                        ResetRoundFeeds();
+                    }
+
                     try
                     {
-                        await PublishAsync(context);
+                        await PublishAsync(context, roundGeneration, map, rule, allowCombat: open);
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     {
@@ -178,6 +204,10 @@ public sealed partial class BotActorPublishService(
 
                     await period.WaitForNextTickAsync();
                 }
+
+                // A writer that leaves through the peer's idle window still owes
+                // the closing round its queue no feed; the next round starts clean.
+                ResetRoundFeeds();
             }
         }
         catch (Exception exception)
@@ -236,16 +266,23 @@ public sealed partial class BotActorPublishService(
     /// Writes every bot's actor block to the peer as one frame.
     /// </summary>
     /// <param name="context">Context the records are written through.</param>
-    private async Task PublishAsync(PeerContext context)
+    private async Task PublishAsync(
+        PeerContext context,
+        MatchRecordGenerationUtils generation,
+        int map,
+        int rule,
+        bool allowCombat)
     {
-        var map = roundState.RoundSettings?.Map ?? matchSettings.Map;
-        var rule = roundState.RoundSettings?.Rule ?? matchSettings.CurrentRule;
-        var generation = roundState.Generation;
-
         // Every bot is advanced before its block is built: the body the simulation
         // leaves is what the position, aim, state and vitals records carry, and a
         // hit it lands this tick is written under its victim's damage identifier.
-        var records = await BuildActorRecordsAsync(context, map, rule, generation, Environment.TickCount64);
+        var records = await BuildActorRecordsAsync(
+            context,
+            map,
+            rule,
+            generation,
+            Environment.TickCount64,
+            allowCombat);
 
         if (records.Count > 0)
         {
@@ -267,7 +304,10 @@ public sealed partial class BotActorPublishService(
         // while a round plays (`TeamArrayService.RepublishAsync`). It is written
         // behind the frame rather than inside it so a pair never splits an actor
         // block.
-        await teamArrays.RepublishAsync(context);
+        if (allowCombat)
+        {
+            await teamArrays.RepublishAsync(context);
+        }
 
         // The scoreboard rides behind the frame the death was announced in: the
         // capture writes the feed first and the side's ticket, the victim's delta

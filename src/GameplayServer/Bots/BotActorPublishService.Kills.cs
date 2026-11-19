@@ -77,6 +77,14 @@ public sealed partial class BotActorPublishService
         simulation.ClearKills();
         pendingFeeds.Clear();
         scoreboardDue = false;
+
+        // A hit the client wrote in the round's last frames is not a hit on the
+        // screen that follows it, and its echo would draw damage on a body the
+        // round has already put down.
+        lock (combatGate)
+        {
+            damageEchoes.Clear();
+        }
     }
 
     /// <summary>

@@ -96,13 +96,15 @@ public sealed partial class BotActorPublishService
     /// <param name="rule">The round's rule.</param>
     /// <param name="generation">Identifier set of the round being played.</param>
     /// <param name="now">Monotonic milliseconds.</param>
+    /// <param name="allowCombat">Whether this beat is still a round's, and so may drain its deaths.</param>
     /// <returns>The records to write, in the order the capture writes them.</returns>
     private async Task<List<UdpMessage>> BuildActorRecordsAsync(
         PeerContext context,
         int map,
         int rule,
         MatchRecordGenerationUtils generation,
-        long now)
+        long now,
+        bool allowCombat)
     {
         var records = new List<UdpMessage>();
         var views = await ActorViewsAsync(context, map, now);
@@ -111,13 +113,14 @@ public sealed partial class BotActorPublishService
         // victim's zero, the feed, then the victim's block — because that is the order
         // the reference writes, and a feed handled before the death it names has
         // nothing to log. A victim this beat carries no block for leaves its feed at
-        // the frame's end instead of waiting for a beat written elsewhere.
-        var feeds = DrainKills(generation);
+        // the frame's end instead of waiting for a beat written elsewhere. The result
+        // screens carry the round's actors and no feeds.
+        var feeds = allowCombat ? DrainKills(generation) : [];
         var placed = new HashSet<byte>();
 
         foreach (var bot in bots.Bots.OrderBy(participant => participant.SessionSlot))
         {
-            var advance = simulation.Advance(bot, map, rule, now, views);
+            var advance = simulation.Advance(bot, map, rule, now, views, allowShooting: allowCombat);
 
             // The vitals record rides on a change and once a second, except while
             // the body is knocked out: then the reference writes it continuously as
@@ -185,9 +188,12 @@ public sealed partial class BotActorPublishService
         // subtype — and with it a headshot's impact point — to the client that
         // draws the death; this host dropped it, so every death was drawn as a
         // body hit.
-        foreach (var echo in DrainDamageEchoes(now))
+        if (allowCombat)
         {
-            records.Add(echo);
+            foreach (var echo in DrainDamageEchoes(now))
+            {
+                records.Add(echo);
+            }
         }
 
         // A feed whose victim this beat carries no block for still leaves, behind the

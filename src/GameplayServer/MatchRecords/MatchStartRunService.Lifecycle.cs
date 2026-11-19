@@ -273,13 +273,13 @@ public sealed partial class MatchStartRunService
     /// result screens.
     /// </summary>
     /// <remarks>
-    /// <b>The room continues by itself and not on a report.</b> A solo room's only
-    /// client sends nothing that opens a round between two rounds, and a room of
-    /// several may still be reading its screens when the first report lands; the
-    /// measured boundary is the screens' end, not a record's arrival. The round
-    /// opens under the sibling set, which is the one the reference plays the next
-    /// round under (<c>mgo2-started-on-game-round1</c>: round 1 on <c>0x1254</c>,
-    /// round 2 at t+215.632 on <c>0x1a54</c>). A room that emptied, or a round that
+    /// <b>The screens' clock ends the screens; the room's reports open the next
+    /// round.</b> A client still reading the result screen reports before it
+    /// leaves, and the room waits for every client's report before it opens the
+    /// next round, with a bound so one client cannot hold it. The round opens
+    /// under the sibling set, which is the one the reference plays the next round
+    /// under (<c>mgo2-started-on-game-round1</c>: round 1 on <c>0x1254</c>, round
+    /// 2 at t+215.632 on <c>0x1a54</c>). A room that emptied, or a round that
     /// opened while the screens ran, is not this release and is left alone.
     /// </remarks>
     /// <param name="version">The screens' version, as the close numbered it.</param>
@@ -313,69 +313,6 @@ public sealed partial class MatchStartRunService
                 "The round result screens that followed round {RoundNumber} ended without opening the next round",
                 roundNumber);
         }
-    }
-
-    /// <summary>
-    /// Waits for every client in the room to report the round that follows the
-    /// result screens now ending.
-    /// </summary>
-    /// <remarks>
-    /// <b>The reference opens on the room's last report, not on the screens'
-    /// clock alone.</b> A client that is still reading the result screen sends its
-    /// report before it leaves it; opening the round on the clock starts the map
-    /// over a client that has not reported, and its own player disappears and the
-    /// session drops. A room of one client and its bots has one report to wait
-    /// for, and a solo client sends nothing between rounds in the measured solo
-    /// capture, so that room keeps the screens' own timer; a room of several waits
-    /// for all of them, with a bound so one client that never reports cannot hold
-    /// the room for ever.
-    /// </remarks>
-    /// <param name="roundNumber">The round whose screens just ended, for the log.</param>
-    private async Task WaitForRoundReportsAsync(int roundNumber)
-    {
-        var expected = briefingStates.ClientCount;
-        if (expected <= 1)
-        {
-            return;
-        }
-
-        var waited = 0;
-        int departed;
-        while (true)
-        {
-            lock (gate)
-            {
-                departed = roundDeparted.Count;
-            }
-
-            if (departed >= expected
-                || waited >= MatchScreenTimingsUtils.RoundReportWaitMilliseconds
-                || !roundState.HasRoundEnded)
-            {
-                break;
-            }
-
-            await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
-            waited += MatchRoundStateService.BriefingRunPollMilliseconds;
-        }
-
-        if (departed < expected)
-        {
-            logger.LogWarning(
-                "Round {RoundNumber}'s result screens ended with {Departed} of {Expected} client(s) "
-                + "reporting the round after them; opening it after {Waited} ms rather than holding the room",
-                roundNumber,
-                departed,
-                expected,
-                waited);
-            return;
-        }
-
-        logger.LogDebug(
-            "Round {RoundNumber}'s result screens are over and all {Expected} client(s) have reported the "
-            + "round after them, so it opens",
-            roundNumber,
-            expected);
     }
 
     /// <summary>

@@ -86,16 +86,22 @@ public sealed partial class BotSimulationService(
     /// <param name="rule">The round's rule, which picks the placement family.</param>
     /// <param name="now">Monotonic milliseconds.</param>
     /// <param name="actors">Every actor in the room: the bots and the players.</param>
+    /// <param name="allowShooting">
+    /// Whether a bot may fire this beat. The result screens keep the bodies moving
+    /// and hold the trigger, so the client still sees the room it played.
+    /// </param>
     /// <returns>Its body, whether it fired, and the hit it landed.</returns>
     public BotAdvance Advance(
         BotParticipant bot,
         int map,
         int rule,
         long now,
-        IReadOnlyList<BotActorView> actors)
+        IReadOnlyList<BotActorView> actors,
+        bool allowShooting = true)
     {
         var body = locomotion.BodyOf(bot, map);
         var botsPaused = pause.IsPaused;
+        var canShoot = !botsPaused && allowShooting;
         RecoverStamina(body, now);
 
         if (body.IsDead)
@@ -175,7 +181,7 @@ public sealed partial class BotSimulationService(
             body.AimY = killed.Y + BotLocomotionService.AimHeight;
             body.AimZ = killed.Z;
             body.Yaw = BotLocomotionService.YawTowards(killed.X - body.X, killed.Z - body.Z);
-            return new BotAdvance(body, !botsPaused, null);
+            return new BotAdvance(body, canShoot, null);
         }
 
         body.KillAimSlot = BotBodyState.NoTarget;
@@ -215,7 +221,7 @@ public sealed partial class BotSimulationService(
 
             // The trigger, not the hit: the capture holds the firing byte on seven
             // beats in ten while an enemy is in range and lands hits far less often.
-            firing = !botsPaused
+            firing = canShoot
                 && BotEngagementUtils.Distance(body, target) <= ShotRange;
 
             if (firing && now >= body.NextFireBeatMilliseconds)
@@ -224,7 +230,7 @@ public sealed partial class BotSimulationService(
                 body.NextFireBeatMilliseconds = now + FireBeatIntervalMilliseconds;
             }
 
-            if (!botsPaused && BotBurstUtils.Ready(body, firing, now))
+            if (canShoot && BotBurstUtils.Ready(body, firing, now))
             {
                 // Every round of a burst rides its own fire beat, which is what the
                 // recorded `0x47` records beside a run of hits are.

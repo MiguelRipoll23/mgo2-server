@@ -74,6 +74,7 @@ namespace Mgo2Server.GameplayServer.Commands.Peer.Room;
 public sealed class JoinReportHandler(
     BriefingStateService briefingStates,
     MatchStartRunService matchStart,
+    MatchRoundStateService roundState,
     ScoreboardPublishService scoreboard,
     PeerControlByteService controlBytes,
     BotPopulationService bots,
@@ -130,8 +131,6 @@ public sealed class JoinReportHandler(
         // stays because a report that does move the room — a human taking a bot's
         // seat, a fill whose player has arrived — is owed to the client before it is
         // answered.
-        await AnnounceBotsAsync(context);
-
         // A bot is on the briefing's roster from the publication above; what puts
         // it in the map is its own actor block, which the round's writer sends for
         // as long as a round is open (BotActorPublishService). Started here because
@@ -139,10 +138,18 @@ public sealed class JoinReportHandler(
         // room.
         botActors.Start(context);
 
-        // The publication goes out on every report and not only on the first: it
-        // is the host's answer to the report, and a client whose report changed
-        // nothing is still waiting to be answered.
-        await PublishAsync(context, generation);
+        // A report that arrives on the result screens is the client still on
+        // them. The join state above and the bare answer below are its reply;
+        // the briefing's run belongs to the screens' end, not over them.
+        if (!roundState.IsRoundEnding && !roundState.IsStageEnding)
+        {
+            await AnnounceBotsAsync(context);
+
+            // The publication goes out on every report and not only on the first: it
+            // is the host's answer to the report, and a client whose report changed
+            // nothing is still waiting to be answered.
+            await PublishAsync(context, generation);
+        }
 
         if (!matchStart.OnJoinReport(context.Message.Type, player))
         {
