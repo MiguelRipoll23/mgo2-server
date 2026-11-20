@@ -64,7 +64,7 @@ internal static class RoomRotationPayloadUtils
     /// <param name="playerCount">The room's population, host included.</param>
     /// <returns>The body.</returns>
     /// <summary>
-    /// The round's ticket allotment, both sides, from the room's own entry.
+    /// The round's ticket limit, both sides, from the room's own entry.
     /// </summary>
     /// <remarks>
     /// The kill limit the room's rotation states is the number the ticket panel
@@ -78,7 +78,7 @@ internal static class RoomRotationPayloadUtils
     internal static int TeamTickets(IReadOnlyList<MatchRotationEntry> rotation, int currentRotationIndex)
     {
         var slot = ((currentRotationIndex % rotation.Count) + rotation.Count) % rotation.Count;
-        return rotation[slot].Tickets ?? RoomStateReferenceBodyUtils.TicketAllotment;
+        return rotation[slot].Tickets ?? RoomStateReferenceBodyUtils.TicketLimit;
     }
 
     public static byte[] BuildReferenceBody(byte playerCount, int teamTickets) =>
@@ -175,7 +175,7 @@ internal static class RoomRotationPayloadUtils
         RoomStateRegionUtils.WriteRotationTriples(body, rotation);
         RoomStateRegionUtils.WriteRoomStateFields(body, playerCount, autoAssignTeams);
         RoomStateRegionUtils.WriteCurrentSlotAndPopulation(body, currentRotationIndex, playerCount);
-        RoomStateRegionUtils.WriteStateFields17To27(body, teamTickets);
+        RoomStateRegionUtils.WriteTeamTickets(body, teamTickets);
         RoomStateRegionUtils.WriteRuleTimerVector(body, ruleTimers);
         RoomStateRegionUtils.WriteSlotReferencesAndFlags(body);
         RoomStateRegionUtils.WriteTailSelector(body);

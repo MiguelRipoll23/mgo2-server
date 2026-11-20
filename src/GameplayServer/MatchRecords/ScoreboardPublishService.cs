@@ -37,7 +37,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </remarks>
 /// <param name="score">The host's own score, which this publishes.</param>
 /// <param name="roster">Roster of the room, whose exchange the index continues.</param>
-/// <param name="roundState">The room's round, whose rule states the ticket allotment.</param>
+/// <param name="roundState">The room's round, whose rule states the ticket limit.</param>
 /// <param name="lobbySlots">Reader of the room's players, by slot and side.</param>
 /// <param name="logger">Logger of this service.</param>
 public sealed class ScoreboardPublishService(
@@ -217,12 +217,12 @@ public sealed class ScoreboardPublishService(
     /// Each side's remaining tickets, for the sides whose count a death has moved.
     /// </summary>
     /// <remarks>
-    /// <b>A ticket is spent on a death, and a side's allotment is the room's own
+    /// <b>A ticket is spent on a death, and a side's limit is the room's own
     /// pair.</b> The record is the capture's, its count the room body's count less
     /// the deaths this host has counted for that side, and it is written only for a
     /// side whose deaths moved — the reference writes one per death, never the same
     /// value twice and never the side that lost nobody (see
-    /// <see cref="TeamTicketBodiesUtils"/>). A rule that states no allotment plays
+    /// <see cref="TeamTicketBodiesUtils"/>). A rule that states no limit plays
     /// no ticketed round and writes nothing.
     /// </remarks>
     /// <returns>The bodies to publish, one per side that moved.</returns>
@@ -246,11 +246,11 @@ public sealed class ScoreboardPublishService(
         // panel counts down from what the room states, forty, while the bank's
         // fifty is the kill limit the round ends on. Counting from fifty wrote a
         // count the panel was not holding, so it never moved.
-        // The room's own allotment, which is what the settings body states at
-        // 0x5a/0x5e (RoomStateRegionUtils.WriteStateFields17To27): the panel holds
+        // The room's own limit, which is what the settings body states at
+        // 0x5a/0x5e (RoomStateRegionUtils.WriteTeamTickets): the panel holds
         // that number and a record below it is a count it can draw. The reference
         // pair is only the fallback for a round whose entry states no limit.
-        var allotment = roundState.RoundSettings?.Tickets ?? RoomStateReferenceBodyUtils.TicketAllotment;
+        var limit = roundState.RoundSettings?.Tickets ?? RoomStateReferenceBodyUtils.TicketLimit;
         var bodies = new List<byte[]>(2);
         foreach (var team in score.TeamScores(await lobbySlots.ReadAsync()))
         {
@@ -266,14 +266,14 @@ public sealed class ScoreboardPublishService(
             }
 
             publishedDeaths[team.Team] = team.Deaths;
-            var remaining = Math.Max(0, allotment - team.Deaths);
+            var remaining = Math.Max(0, limit - team.Deaths);
             bodies.Add(TeamTicketBodiesUtils.Build(team.Team, remaining));
             logger.LogDebug(
-                "Team {Team} has {Remaining} of its round's {Allotment} ticket(s) left after {Deaths} "
+                "Team {Team} has {Remaining} of its round's {Limit} ticket(s) left after {Deaths} "
                 + "death(s)",
                 team.Team,
                 remaining,
-                allotment,
+                limit,
                 team.Deaths);
         }
 

@@ -147,7 +147,7 @@ per-rule interpretation of those state entries.
 
 ## 3. Which limits a round ends on — and why a relay cannot end one
 
-`tickets` is the round's ticket allotment, and a round ends on whichever of the two
+`tickets` is the round's ticket limit, and a round ends on whichever of the two
 limits comes first: the clock (`0x01` reaching zero) or a side's tickets reaching
 zero. A ticket is spent by that side's own death, which is the count the
 `0x1001` ticket record steps down (§4), so the side whose deaths reach the rule's
@@ -211,7 +211,7 @@ room (`GAMEPLAY_SERVER.md` §3.1; what is left of the score is its §5 item 4).
 every death with an eleven-byte `0x1001` body
 `0b 00 00 00 <side> 00 00 00 00 <left> 00`, where `<side>` is `0x08` for raw team
 `0` and `0x40` for raw team `1`, and `<left>` is a little-endian count that steps
-down one per death of that side from the round's allotment. Measured on
+down one per death of that side from the round's limit. Measured on
 `game-with-bots-workingserver`: `19` at t+40.85, `18` at t+45.61, `17` at t+52.01
 and `16` at t+53.75 for team `0`; `19` at t+55.26, `18` at t+80.75 and `17` at
 t+87.88 for team `1` — against the twenty tickets the room's own body states at

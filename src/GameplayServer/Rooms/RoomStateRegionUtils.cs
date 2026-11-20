@@ -304,10 +304,10 @@ internal static class RoomStateRegionUtils
         body.Add(playerCount);
     }
 
-    /// <summary>Body <c>0x57</c>–<c>0x64</c>: state fields 13 and 17 to 27, the room's own.</summary>
+    /// <summary>Body <c>0x57</c>–<c>0x64</c>: state fields 13 and 17 to 27, the room's own, with the team tickets.</summary>
     /// <param name="body">The body being built.</param>
-    /// <param name="teamTickets">The round's ticket allotment, both sides.</param>
-    internal static void WriteStateFields17To27(List<byte> body, int teamTickets)
+    /// <param name="teamTickets">The round's ticket limit, both sides.</param>
+    internal static void WriteTeamTickets(List<byte> body, int teamTickets)
     {
         body.Add(SelectorFlag);
         body.AddRange(RoomStateReferenceBodyUtils.StateFields17To27For(teamTickets));

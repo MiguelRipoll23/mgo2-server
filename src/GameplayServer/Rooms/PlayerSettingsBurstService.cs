@@ -173,7 +173,7 @@ public sealed partial class PlayerSettingsBurstService(
         bool autoAssignTeams = true)
     {
         var rotationBody = rotation is null
-            ? RecordedRotationBody(playerCount, RoomStateReferenceBodyUtils.TicketAllotment)
+            ? RecordedRotationBody(playerCount, RoomStateReferenceBodyUtils.TicketLimit)
             : RoomRotationBody(rotation, roomState, currentRotationIndex, playerCount, autoAssignTeams);
         return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
     }
@@ -282,7 +282,7 @@ public sealed partial class PlayerSettingsBurstService(
 
     /// <summary>The working capture's settings body, built field by field.</summary>
     /// <param name="playerCount">The room's population, host included.</param>
-    /// <param name="teamTickets">The round's ticket allotment, both sides.</param>
+    /// <param name="teamTickets">The round's ticket limit, both sides.</param>
     /// <returns>The captured reference values, with the room's own population.</returns>
     public static byte[] RecordedRotationBody(byte playerCount, int teamTickets) =>
         RoomRotationPayloadUtils.BuildReferenceBody(playerCount, teamTickets);

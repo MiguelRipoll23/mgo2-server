@@ -69,12 +69,20 @@ internal static class RoomStateReferenceBodyUtils
     /// the first team's, then the second's.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <b>It is not the rule's kill limit.</b> The bank's ticket word is where a
     /// ticketed round ends (fifty in this room's configuration); what the client's
     /// panel counts down is this pair, which the room body states as forty for each
-    /// side, and the <c>0x93</c> allotment beside it agrees. A death therefore
+    /// side, and the <c>0x93</c> limit beside it agrees. A death therefore
     /// counts down from forty: a host that counted from the bank's fifty wrote a
     /// count higher than the panel was holding and the panel never moved.
+    /// </para>
+    /// <para>
+    /// <b>First and second, not blue and red.</b> The pair's order is the wire's;
+    /// the room's rows number blue <c>0</c>, the raw team byte numbers red <c>0</c>,
+    /// and the captures do not tie the <c>0x5a</c>/<c>0x5e</c> pair to a coloured
+    /// side.
+    /// </para>
     /// </remarks>
     internal const int FirstTeamTicketOffset = 2;
 
@@ -82,14 +90,14 @@ internal static class RoomStateReferenceBodyUtils
     internal const int SecondTeamTicketOffset = 6;
 
     /// <summary>
-    /// The allotment the room body states for a side, which a death counts down
-    /// from (<see cref="FirstTeamTicketOffset"/>).
+    /// The ticket limit the room body states for a side, which a death counts
+    /// down from (<see cref="FirstTeamTicketOffset"/>).
     /// </summary>
-    internal static int TicketAllotment => StateFields17To27[FirstTeamTicketOffset];
+    internal static int TicketLimit => StateFields17To27[FirstTeamTicketOffset];
 
     /// <summary>
     /// Body <c>0x58</c>–<c>0x64</c>: the reference fields, with the round's own
-    /// ticket allotment in place of the reference pair at <c>0x5a</c>/<c>0x5e</c>.
+    /// ticket limit in place of the reference pair at <c>0x5a</c>/<c>0x5e</c>.
     /// </summary>
     /// <remarks>
     /// The ticket panel counts down from this pair, so a body that states the
@@ -97,14 +105,14 @@ internal static class RoomStateReferenceBodyUtils
     /// holding a number the per-death records never move
     /// (<see cref="MatchRecords.TeamTicketBodiesUtils"/>).
     /// </remarks>
-    /// <param name="teamTickets">The round's ticket allotment, both sides.</param>
+    /// <param name="teamTickets">The round's ticket limit, both sides.</param>
     /// <returns>The bytes the body carries.</returns>
     internal static byte[] StateFields17To27For(int teamTickets)
     {
         var fields = (byte[])StateFields17To27.Clone();
-        var allotment = (byte)Math.Clamp(teamTickets, 0, byte.MaxValue);
-        fields[FirstTeamTicketOffset] = allotment;
-        fields[SecondTeamTicketOffset] = allotment;
+        var limit = (byte)Math.Clamp(teamTickets, 0, byte.MaxValue);
+        fields[FirstTeamTicketOffset] = limit;
+        fields[SecondTeamTicketOffset] = limit;
         return fields;
     }
 
@@ -134,7 +142,7 @@ internal static class RoomStateReferenceBodyUtils
     /// The last two bytes are the Sneaking role slots — the players holding Snake and
     /// Metal Gear Mk.II — with <c>0x7f</c> as their unassigned value, which every body
     /// outside the SNE/TSNE rounds carries. Byte twelve (<c>0x93</c>) is the round's
-    /// ticket allotment in a room that plays a ticketed rule, never below the remaining
+    /// ticket limit in a room that plays a ticketed rule, never below the remaining
     /// counts at <c>0x5a</c>/<c>0x5e</c>. The other bytes move with the room.
     /// </remarks>
     internal static readonly byte[] StateFields30To49 =

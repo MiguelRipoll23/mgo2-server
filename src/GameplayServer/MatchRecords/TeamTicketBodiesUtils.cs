@@ -9,18 +9,18 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <b>Measured on `.pcapngs/game-with-bots-workingserver.pcapng`.</b> Every death
 /// in that capture is followed by a <c>0x1001</c> body
 /// <c>0b 00 00 00 &lt;side&gt; 00 00 00 00 &lt;left&gt; 00</c> whose count steps
-/// down by one per death of that side, from its twenty-ticket allotment. Two
+/// down by one per death of that side, from its twenty-ticket limit. Two
 /// families of record carry it: <c>0b 00 00 00 08 …</c> for raw team <c>0</c>
 /// (<c>19</c> at t+40.85, <c>18</c> at t+45.61, <c>17</c> at t+52.01, <c>16</c> at
 /// t+53.75, <c>15</c> at t+83.21, <c>14</c> at t+89.01) and
 /// <c>0b 00 00 00 40 …</c> for raw team <c>1</c> (<c>19</c> at t+55.26, <c>18</c>
-/// at t+80.75, <c>17</c> at t+87.88). The room's own body states the allotment,
+/// at t+80.75, <c>17</c> at t+87.88). The room's own body states the limit,
 /// twenty, as the pair at <c>0x5a</c>/<c>0x5e</c>.
 /// </para>
 /// <para>
 /// <b>It is the number the ticket panel reads.</b> A ticket is spent when a player
 /// respawns, and the host is the side that knows a death happened; a room that
-/// writes no record here shows every side its starting allotment for the whole
+/// writes no record here shows every side its starting limit for the whole
 /// round, which is the room of 2026-11-11: forty for both sides, with seven kills
 /// in the feed and neither count moved.
 /// </para>    /// <para>

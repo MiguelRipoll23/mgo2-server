@@ -133,27 +133,27 @@ public static class MatchStateBodiesUtils
     public const byte StateSentinel = 0xfe;
 
     /// <summary>
-    /// The sixty the countdown run at <c>state[57..60]</c> is seeded with.
+    /// The briefing's seconds limit at <c>state[57..60]</c>.
     /// </summary>
     /// <remarks>
-    /// <b>The seed, not the value.</b> A working server writes 0x3c here in five
-    /// of six captures and 0x28 in the sixth, and in the one that runs a thirty-
-    /// minute round it writes it across <c>state[57..84]</c> rather than four
-    /// bytes — so the length is a property of the room and the seed is not.
-    /// Whether sixty is seconds, a count or a limit is <b>[U]</b>.
+    /// <b>The limit, not the run's length.</b> A working server writes 0x3c (60)
+    /// here in five of six captures and 0x28 (40) in the sixth, and in the one
+    /// that runs a thirty-minute round it writes it across <c>state[57..84]</c>
+    /// rather than four bytes — so the length is a property of the room and the
+    /// limit is not. Whether the byte is exactly a seconds count is <b>[U]</b>.
     /// </remarks>
-    public const byte StateCountdownSeed = 0x3c;
+    public const byte BriefingSecondsLimit = 0x3c;
 
-    /// <summary>First offset of the countdown run this host seeds with <see cref="StateCountdownSeed"/>.</summary>
-    public const int StateCountdownSeedIndex = 57;
+    /// <summary>First offset of the briefing seconds limit this host writes with <see cref="BriefingSecondsLimit"/>.</summary>
+    public const int BriefingSecondsLimitFirstIndex = 57;
 
-    /// <summary>Last offset of the four-byte countdown run, matching a capture of a seven-minute room.</summary>
-    public const int StateCountdownSeedLastIndex = 60;
+    /// <summary>Last offset of the four-byte briefing seconds limit, matching a capture of a seven-minute room.</summary>
+    public const int BriefingSecondsLimitLastIndex = 60;
 
     /// <summary>
     /// The twenty-four at <c>state[44]</c>, the offset just before the
-    /// twenty-four run. A capture moves it to 1 and seeds the countdown run with
-    /// forty in the same room, so the two are read together and neither is
+    /// twenty-four run. A capture moves it to 1 and sets the briefing seconds
+    /// limit to forty in the same room, so the two are read together and neither is
     /// written as a constant of the layout.
     /// </summary>
     public const int StateSecondCountdownIndex = 44;
@@ -309,7 +309,7 @@ public static class MatchStateBodiesUtils
         // state[53..56], the sentinel run — the same byte the destabilizer coding
         // reads as "lost", and never moved by any capture of a working server.
         (53, 4, StateSentinel),
-        // state[61..85], the twenty-five zero bytes behind the sixty seed.
+        // state[61..85], the twenty-five zero bytes behind the sixty briefing seconds limit.
         (61, 25, 0x00),
         // state[86], the last unnamed byte before the clock.
         (86, 1, StateUnwritten),
@@ -319,7 +319,7 @@ public static class MatchStateBodiesUtils
     /// The operations state block the match-start run carries: the state opcode,
     /// then the state vector with the fields this host knows written into it — the
     /// two results, the two objective holders, the two capture clocks, the
-    /// countdown seed and the round clock.
+    /// briefing seconds limit and the round clock.
     /// </summary>
     /// <remarks>
     /// The round's result is opened as the sentinel, which is what a working
@@ -347,9 +347,9 @@ public static class MatchStateBodiesUtils
         vector[StateCaptureClockFirstIndex] = StateUnclaimed;
         vector[StateCaptureClockSecondIndex] = StateUnclaimed;
         vector[StateSecondCountdownIndex] = StateSessionSlotCount;
-        for (var index = StateCountdownSeedIndex; index <= StateCountdownSeedLastIndex; index++)
+        for (var index = BriefingSecondsLimitFirstIndex; index <= BriefingSecondsLimitLastIndex; index++)
         {
-            vector[index] = StateCountdownSeed;
+            vector[index] = BriefingSecondsLimit;
         }
 
         vector[StateClockLowIndex] = (byte)(roundClockUnits & 0xff);

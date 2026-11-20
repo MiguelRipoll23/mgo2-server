@@ -38,7 +38,7 @@ client takes is a permanent one-value drift, because nothing rewinds it:
    and reach the socket in the other order, and an ordering that inverts one pair
    starts the drift. This is the open item (D3 in `stream-sequencing.md`).
 2. **Taken for a record that is then not written.** A builder that takes a value and
-   drops the record — a delta filtered to zero, a ticket for a round with no allotment,
+   drops the record — a delta filtered to zero, a ticket for a round with no limit,
    a run the beat skips — spends the value and never sends it.
 3. **Written out of order.** Any run whose records are packed in a different order from
    the one they were numbered in. The join's roster did exactly this: measured on

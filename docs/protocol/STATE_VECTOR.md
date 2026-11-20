@@ -130,8 +130,8 @@ offsets this file names as the room's own:
 
 | capture | differs at | why |
 | --- | --- | --- |
-| `…team-selection-selected-blue…` | `state[44]`, `state[57..60]` | `state[44] = 1` and the seed is `0x28` (forty), not `0x3c` |
-| `mgo2-game2` | `state[61..84]` | the seed runs across 28 bytes, not four |
+| `…team-selection-selected-blue…` | `state[44]`, `state[57..60]` | `state[44] = 1` and the briefing seconds limit is `0x28` (forty), not `0x3c` |
+| `mgo2-game2` | `state[61..84]` | the briefing seconds limit runs across 28 bytes, not four |
 | `mgo2-game3` | `state[11..13]`, `state[40]` | `01 01 04` where the others have zero, and a holder of `0x00` |
 
 **What the runs do not claim.** Twenty-four and sixty are the *values* every
@@ -218,8 +218,8 @@ reporting. The earlier reading as a set of the room's own objectives is cleared.
 | `state[11..13]` | `01 01 04` in one capture, zero in the other five — the one round-specific triple |
 | `state[40..41]` | the two objective holders; `0x3f` for a dropped objective, otherwise `value & 0x3f` is the slot and `& 0x40` a flag. The parser's table reads `0xff` as "nobody", and a live working server writes `ff ff ff ff` across `state[40..43]` (`working-server-log`, clock `0x03dd`); `briefing-then-solo-game` writes `0x1e`, which is **slot 30 of a 24-slot table** and so names nobody. This host wrote `0x1e` and now writes `0xff` |
 | `state[42..43]` | the two capture clocks, `0xff` in every non-Capture room and `0x1e` in `briefing-then-solo-game` — the same four bytes as the holders above, which is why this host writes one value at `state[40..43]`. **A wrong holder is the first thing to check when a client's score HUD stays empty**: `myserver` carried `1e 1e 1e 1e` through a whole 5-minute round while the live working server carried `ff ff ff ff` |
-| `state[44]` | `0x18` in five captures, `1` in the sixth — moves with the seed at `state[57..60]` |
-| `state[57..84]` | seeded `0x3c` in five captures and `0x28` in the sixth; 4 bytes in five, 28 in the 30-minute room |
+| `state[44]` | `0x18` in five captures, `1` in the sixth — moves with the briefing seconds limit at `state[57..60]` |
+| `state[57..84]` | the briefing seconds limit is `0x3c` in five captures and `0x28` in the sixth; 4 bytes in five, 28 in the 30-minute room |
 | `state[87..88]` | the round clock, little-endian, 125 ms units |
 
 `state[87..88]` also carries a second, unrelated reading: an `0x02` write at
@@ -309,10 +309,10 @@ a client display matter, not something the clock or the feed withholds.
 * **`state[0..1]` and `state[4..6]`** — one decided match. §3.
 * **`0x0e`'s reason byte** — two samples, `0x00` and `0x07`. §1.
 * **Which player is which bit in `0x0b`'s reporting set** — §1.
-* **The length of the `state[57..84]` seed run, and what its length tracks.** It
+* **The length of the `state[57..84]` briefing seconds limit run, and what its length tracks.** It
   is 4 in five captures and 28 in the only 30-minute room, and it is not the
   player count: the five captures hold 2 to 12 players and the 28-byte one holds
-  2. The seed value (`0x3c` against `0x28`) moves with `state[44]` (`0x18` against
+  2. The limit value (`0x3c` against `0x28`) moves with `state[44]` (`0x18` against
   `1`) in the same capture, so the two are read together and neither is written
   as a constant.
 * **What `0x18` is: the client's player-slot count.** The entry table is twenty-four

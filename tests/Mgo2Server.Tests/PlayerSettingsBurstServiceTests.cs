@@ -79,9 +79,9 @@ public sealed class PlayerSettingsBurstServiceTests
         // The recorded body is what a room that cannot be read falls back to. Its
         // triples are the reference rotation's and not the capture's, because the
         // rotation is the one region the room owns; what it keeps is the shape, a run
-        // of triples followed by zeroed slots. The population and the allotment are
+        // of triples followed by zeroed slots. The population and the limit are
         // the recorded room's own — the two-player room of `mgo2-game1`, and the
-        // forty-ticket allotment its body carries at key 2 (`0x28`) — because the
+        // forty-ticket limit its body carries at key 2 (`0x28`) — because the
         // fallback is that room's body.
         var recorded = PlayerSettingsBurstService.RecordedRotationBody(
             playerCount: 2,

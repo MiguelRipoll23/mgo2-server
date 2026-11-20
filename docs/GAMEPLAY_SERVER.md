@@ -462,7 +462,7 @@ candidate for §5. The file names are the ones that own it.
 | the beat's periods and phases (33 ms, 90/45/181/130 frames, blob alternation, item-box phase) | `MatchRecordFramesUtils`, `ItemBoxFramesUtils`, `BeatFramePlan` | the cadence is the recording, not a simulation; the vitals onset is the exception — it is the round's first vitals, with the recorded 818-frame offset as its floor |
 | the control bodies (`02`, `03`, `04`, `25`) | `MatchRecordBodiesUtils` | unnamed on the wire |
 | the host's vitals record: always full health and stamina (`fa fa`) | `MatchRecordBodiesUtils.Vitals` | the capture measures it constant while `0x0080` reports deaths, and says not to substitute a player's values into it; the players' own values are read and kept instead |
-| the operations state block: an 89-byte vector, **49 bytes of which are constants of the layout** and are now written as named runs; the room's own seven offsets are written by name | `MatchStateBodiesUtils` | the two results, the two objective holders, the two capture clocks, the countdown seed and the round clock. The block is byte-identical to the round-open vector of three of six working-server captures, and the three it differs from differ only at offsets named as the room's own — `docs/protocol/STATE_VECTOR.md` |
+| the operations state block: an 89-byte vector, **49 bytes of which are constants of the layout** and are now written as named runs; the room's own seven offsets are written by name | `MatchStateBodiesUtils` | the two results, the two objective holders, the two capture clocks, the briefing seconds limit and the round clock. The block is byte-identical to the round-open vector of three of six working-server captures, and the three it differs from differ only at offsets named as the room's own — `docs/protocol/STATE_VECTOR.md` |
 | the item-box group's bodies | `ItemBoxRecordBodiesUtils` | the round's opening event pair, then the filler, in every playing round: the reference's ticket round writes the same pair, and a client sent no group keeps the stage's own RES props standing; the pair is the generic ENVG and drum can, not an objective target (`BeatFramePlan.CarriesItemBoxes`); the later spawn events are not written at all, and §5 item 7 has what the capture settles about them |
 | the match-start payload's trailing zeros and length | `MatchStartBodiesUtils` | the fresh-room briefing's eight-byte form (`e0 NN 00 00 00 00 00 00`), which is `mgo2-game-started-on-briefing`'s; game1's older six-byte form is one of the lengths the same record holds |
 | the join state answer's first byte | `MatchStartBodiesUtils`, `BriefingStateService.JoinedMask` | **no longer a replay.** The set is the room's reporting players, one bit each in publication order: `02`, `06`, `0e`, `1e` as four players report and `16` when the third of them leaves are bits 1, 1–2, 1–3, 1–4 and 1,2,4. Read as lobby slots the bits do not fit — the same capture's arrays name slots `0x0b`, `0x0f` and `0x14`. The trailing three bytes are **[U]**. A fresh briefing's run writes the four zero bytes `briefing-then-solo-game` writes at t+9.780, nobody being placed yet |
@@ -520,8 +520,9 @@ bytes hold one value in every round of all six captures of a working server and
 are written as named runs rather than copied, and the block this host builds is
 byte-identical to that server's round-open vector in three of six captures. Its
 room's own offsets — the two results, the two holders, the two capture clocks, the
-countdown seed and the clock — are written by name. What is left unread there is
-`state[0..1]`, `state[4..6]` and what the seed's *length* tracks, all of which
+briefing seconds limit and the clock — are written by name. What is left unread
+there is `state[0..1]`, `state[4..6]` and what the briefing seconds limit's
+*length* tracks, all of which
 rests on one decided match. The briefing countdown, the ready set's repeat and the
 fourth byte of a session record have left this table since it was written, and the
 §5 item that carried the countdown has gone with them: the clock is the capture's
@@ -784,14 +785,14 @@ record should be sent.
   agree about them. One decided match is the whole of the evidence.
   `STATE_VECTOR.md` §3.
 
-* **[U]** what the countdown seed's *length* tracks. `state[57..60]` holds four
+* **[U]** what the briefing seconds limit's *length* tracks. `state[57..60]` holds four
   bytes in five captures and `state[57..84]` holds twenty-eight in the only
-  30-minute room, and it is not the player count. The seed's value (`0x3c`
+  30-minute room, and it is not the player count. The limit's value (`0x3c`
   against `0x28`) moves with `state[44]` (`0x18` against `1`) in the same capture,
   so the two are read together and neither is written as a constant.
   `STATE_VECTOR.md` §6.
 
-* **[U]** what twenty-four and sixty are. Seven bytes of `0x18` and a seed of
+* **[U]** what twenty-four and sixty are. Seven bytes of `0x18` and a value of
   `0x3c` are in every room of every rule; they are the values, not a reading.
   `STATE_VECTOR.md` §2.
 
