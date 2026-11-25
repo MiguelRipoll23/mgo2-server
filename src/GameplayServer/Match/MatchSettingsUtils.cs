@@ -110,6 +110,11 @@ public static class MatchSettingsUtils
             MaxPlayers = (short)options.GameplayServerMaxPlayers,
             BriefingTime = options.GameplayServerBriefingMinutes,
             LevelLimitBase = options.GameplayServerLevelLimitBase,
+            LevelLimitEnabled = options.GameplayServerLevelLimitEnabled,
+
+            // The body's band is two bytes and this row's tolerance is a short, so the
+            // row carries what the wire can hold.
+            LevelLimitTolerance = (short)Math.Clamp(options.GameplayServerLevelLimitTolerance, 0, byte.MaxValue),
             AutoAssign = options.GameplayServerAutoAssignTeams,
 
             // Every weapon is offered. The 16 bytes at block 0xd5 are one lock bit
@@ -128,6 +133,7 @@ public static class MatchSettingsUtils
             RotationFlags = [.. rotation.Select(entry => (short)entry.RoundOptions)],
             RuleTimers = RuleTimers(options),
             Dedicated = true,
+            UniquesEnabled = options.GameplayServerUniqueCharacters,
         };
     }
 
@@ -193,6 +199,43 @@ public static class MatchSettingsUtils
             throw new InvalidOperationException(
                 "GAMEPLAY_SERVER_LEVEL_LIMIT_BASE cannot be negative "
                 + $"(got {options.GameplayServerLevelLimitBase}).");
+        }
+
+        if (options.GameplayServerLevelLimitTolerance is < 0 or > byte.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_LEVEL_LIMIT_TOLERANCE must fit one byte, body 0x63 "
+                + $"(got {options.GameplayServerLevelLimitTolerance}).");
+        }
+
+        if (options.GameplayServerLevelLimitBase > byte.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_LEVEL_LIMIT_BASE must fit one byte, body 0x64 "
+                + $"(got {options.GameplayServerLevelLimitBase}).");
+        }
+
+        if (options.GameplayServerLevelLimitEnabled
+            && options.GameplayServerLevelLimitBase > Rooms.LevelLimitBand.HighestPlayerLevel)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_LEVEL_LIMIT_BASE cannot exceed a player's maximum level "
+                + $"while the limit is enabled (got {options.GameplayServerLevelLimitBase}); "
+                + "no player could satisfy it.");
+        }
+
+        if (options.GameplayServerSneakingDogTags is < 0 or > byte.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_SNEAKING_DOG_TAGS must fit one byte, body 0x8e "
+                + $"(got {options.GameplayServerSneakingDogTags}).");
+        }
+
+        if (options.GameplayServerCheckpoints is < 0 or > byte.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_CHECKPOINTS must fit one byte, body 0x95 "
+                + $"(got {options.GameplayServerCheckpoints}).");
         }
     }
 }

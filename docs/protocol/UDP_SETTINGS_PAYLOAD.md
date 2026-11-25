@@ -128,17 +128,133 @@ three are written from the live room by this server. Other fields whose meanings
 are not established retain their values from
 `.pcapngs/briefing/working-server/briefing-then-solo-game.pcapng` at t+4.712.
 
+#### The presence map and the packing
+
+**This is the arithmetic that turns the descriptor into a body.** With the seven
+map bytes and the 55 records a reader can derive every offset below without a
+capture: the map says which records are on the wire, and the offsets are the
+running sum of their widths.
+
+The map is **one bit per record, in table order, low bit first** — body `0x02`
+bit 0 is record 0, bit 7 is record 7, body `0x03` bit 0 is record 8, and so on to
+record 54 in body `0x08` bit 6. A set bit means the record's bytes follow; a
+clear bit means it contributes nothing.
+
+```
+body  02 03 04 05 06 07 08
+map   ff 27 fe ee ff ff 3f
+```
+
+Packing starts at body `0x09` and walks the records in index order:
+
+```
+offset = 0x09
+for i in 0..54:
+    if bit i is set:
+        record i is at offset, width[i] bytes
+        offset += width[i]
+```
+
+| # | object key | width | stride | map | body |
+| ---: | ---: | ---: | ---: | --- | ---: |
+| 0 | `0x00` | 1 | 1 | set | `0x09` |
+| 1 | `0x01` | 16 | 1 | set | `0x0a` |
+| 2 | `0x15` | 48 | 1 | set | `0x1a` |
+| 3 | `0x45` | 1 | 1 | set | `0x4a` |
+| 4 | `0x46` | 2 | 1 | set | `0x4b` |
+| 5 | `0x48` | 1 | 1 | set | `0x4d` |
+| 6 | `0x49` | 1 | 1 | set | `0x4e` |
+| 7 | `0x4c` | 4 | 1 | set | `0x4f` |
+| 8 | `0x50` | 2 | 1 | set | `0x53` |
+| 9 | `0x52` | 1 | 1 | set | `0x55` |
+| 10 | `0x53` | 1 | 1 | set | `0x56` |
+| 11 | `0x54` | 2 | 1 | **clear** | — |
+| 12 | `0x56` | 2 | 1 | **clear** | — |
+| 13 | `0x58` | 1 | 1 | set | `0x57` |
+| 14 | `0x59` | 1 | 1 | **clear** | — |
+| 15 | `0x5a` | 8 | 1 | **clear** | — |
+| 16 | `0x5a` | 4 | 2 | **clear** | — |
+| 17 | `0x5a` | 1 | 1 | set | `0x58` |
+| 18 | `0x5b` | 1 | 1 | set | `0x59` |
+| 19 | `0x5c` | 2 | 1 | set | `0x5a` |
+| 20 | `0x5e` | 1 | 1 | set | `0x5c` |
+| 21 | `0x5f` | 1 | 1 | set | `0x5d` |
+| 22 | `0x60` | 2 | 1 | set | `0x5e` |
+| 23 | `0x62` | 1 | 1 | set | `0x60` |
+| 24 | `0x63` | 1 | 1 | **clear** | — |
+| 25 | `0x64` | 2 | 1 | set | `0x61` |
+| 26 | `0x66` | 1 | 1 | set | `0x63` |
+| 27 | `0x67` | 1 | 1 | set | `0x64` |
+| 28 | `0x68` | 34 | 1 | **clear** | — |
+| 29 | `0x68` | 2 | 17 | set | `0x65` |
+| 30–44 | `0x8a`–`0x98` | 1 each (15) | 1 | set | `0x87`–`0x95` |
+| 45–48 | `0x9a`–`0x9d` | 1 each (4) | 1 | set | `0x96`–`0x99` |
+| 49 | `0x9e` | 2 | 1 | set | `0x9a` |
+| 50 | `0xa0` | 1 | 1 | set | `0x9c` |
+| 51 | `0xa1` | 1 | 1 | set | `0x9d` |
+| 52 | `0xa2` | 2 | 1 | set | `0x9e` |
+| 53 | `0xa4` | 1 | 1 | set | `0xa0` |
+| 54 | `0xa5` | 1 | 1 | **clear** | — |
+
+The two `0x68` records are the same 34 bytes seen two ways — one declares 34
+bytes at stride 1, the other two bytes at stride 17 — and the map selects the
+second. So the timer bank is **one** 34-byte field, not seventeen fields, and a
+reader who sums the table must take record 29 and not record 28.
+
+Seven records are clear: `0x54` and `0x56` (two bytes each), `0x59`, the 8-byte
+`0x5a`, the stride-2 `0x5a`, `0x63` and `0xa5`. They are why the shift from an
+object key to a body offset is **not a constant**:
+
+| object key | shift | why |
+| --- | ---: | --- |
+| `0x00`–`0x10` | +9 | the nine-byte header |
+| `0x15`–`0x49` | +5 | object `0x11` (4 bytes) is not a record |
+| `0x4c`–`0x53` | +3 | object `0x4a`–`0x4b` (2 bytes) is not a record |
+| `0x58` | −1 | `0x54` and `0x56` dropped |
+| `0x5a`–`0x62` | −2 | `0x59` and the two wide `0x5a` views dropped |
+| `0x64`–`0x98` | −3 | `0x63` dropped |
+| `0x9a`–`0xa4` | −4 | object `0x99` is not a record |
+
+Two keys the builder fills are in the object and not in the table: `0x11` (four
+bytes, which is why the rotation follows the sixteen-byte field directly at
+`0x1a`) and `0x99` (the byte between the fifteen one-byte fields and the four
+that follow, which is why the run is 15 + 4 and starts its second half at
+`0x96`). There is no `0x65` record: the field at `0x64` is two bytes wide, so
+`0x65` is its high byte.
+
+The present records add up to 152 bytes, and `0x09 + 152 = 0xa1` — the 161 bytes
+every capture writes. That total is the check on the table: a width read one byte
+wrong, or a bit read the wrong way round, changes the body's length.
+
+**The band's two bytes follow from the table, not from a convention.** Record 26
+is object `0x66` at body `0x63` — `level_limit_tolerance` — and record 27 is
+object `0x67` at body `0x64` — `level_limit_base`. Body `0x62` is the second byte
+of the two-byte field at object `0x64` (record 25), which the working capture
+writes as `01 00`; it is not the field at `0x66`.
+
+#### The fields, by meaning
+
 | state field | body offset | wire type | working-capture value | finding |
 | ---: | ---: | --- | --- | --- |
 | 0 | `0x09` | `u8` | `02` | Round-phase value, matching standalone field-0 updates. **[I]** |
 | 1 | `0x0a` | 16 bytes | all zero | Meaning unresolved. |
 | 2 | `0x1a` | 48 bytes | 16 rotation triples | Map, rule, third byte as above. |
-| 3–8 | `0x4a`–`0x54` | `u8`, `u16`, `u8`, `u8`, `u32`, `u16` | `11 b4 00 02 03 22 40 27 00 00 00` | Field 3 is the character cap, 4 a client constant, 5 state, 6 the round count, 7 the room's switch word and 8 a minute limit — see below. |
+| 3–8 | `0x4a`–`0x54` | `u8`, `u16`, `u8`, `u8`, `u32`, `u16` | `11 b4 00 02 03 22 40 27 00 00 00` | Field 3 is the character cap, 4 a client constant, 5 the setup state (`0x02` in game, `0x14` at briefing), 6 the team-kill kick, 7 the room's switch word and 8 a minute limit — **not** the briefing time, which is `0x61`–`0x62` — see below. |
 | 9 | `0x55` | `u8` | `04` | Current rotation-slot index; native readers use it to select a triple. **[V]** |
 | 10 | `0x56` | `u8` | `02` | Room population, host included, inferred from matched joins. **[I]** |
-| 13, 17–23, 25–27 | `0x57`–`0x64` | `u8` / `u16` | `00 00 00 05 00 00 00 05 00 00 01 00 00 00` | Mostly unresolved. Field 13 at `0x57` carries the same byte as field 53 at `0xa0` in all fifteen captured bodies; `0x63`/`0x64` are the level band (below); `0x5a`/`0x5e` are the teams' remaining tickets. |
+| 13, 17–23, 25–27 | `0x57`–`0x64` | `u8` / `u16` | `00 00 00 05 00 00 00 05 00 00 01 00 00 00` | Field 13 at `0x57` is the room's unique-character setting and field 53 at `0xa0` repeats it in all fifteen captured bodies; `0x60` is the host stance, `0x61`–`0x62` the briefing time in minutes, `0x63`/`0x64` the level band (below), and `0x5a`/`0x5e` the teams' remaining tickets. |
 | 29 | `0x65`–`0x86` | 17 little-endian `u16`s | See below. | Eight standard timers verified; higher rule-index entries partly identified. |
-| 30–53 | `0x87`–`0xa0` | `u8` / `u16` | `02 02 02 02 02 02 02 02 01 02 02 02 32 1e 05 03 00 00 00 7f 7f ff 8c 28 01 00` | Fields 50 and 53 have limited native-use evidence; fields 51–52 remain opaque. |
+| 30–53 | `0x87`–`0xa0` | `u8` / `u16` | `02 02 02 02 02 02 02 02 01 02 02 02 32 1e 05 03 00 00 00 7f 7f ff 8c 28 01 00` | In fields 30–44: `0x87`–`0x8d` are the per-rule round counts, `0x8e` the SNE dog-tag count, `0x93`/`0x94` the two ticket counts, `0x8f`–`0x92` block tail bytes, `0x95` the checkpoint count, `0x96`/`0x97` the Sneaking kill count and Capture extra time, `0x98`/`0x99` tail flags, and `0x9a`/`0x9b` the unique-character pair; field 51 is the settings generation (below); field 52 remains opaque. |
+
+**Field 51 (`0xa1`, body `0x9d`) is the settings generation.** The client's
+`P2P_ApplyFieldA1Record` (`0x26dd60`) adopts the byte, adds one and writes it
+back, and the role-pair draw at `0x77b628` indexes with it, so the field is a
+counter and not a room constant. This server seeds it at `1` for a room that has
+opened no round and steps it once per round the room opens — the round count is
+the unit of the settings body — so the value a joiner is told names the round's
+generation. It is one byte and wraps: round `255` writes `0` and the next writes
+`1`. The capture's `0x8c`/`0xe8` values are the recorded host's own count, not a
+constant of the format.
 
 Field 29 is not a copy of the lobby timer bank: its widths and units differ.
 Across ten pairs matched by the full rotation, elements 0–7 equal the eight
@@ -237,11 +353,10 @@ Other native consumers narrow, but do not fully resolve, a few fields:
 * Field 51 (`+161`) is initialized from an instance byte, and field 52 (`+162`,
   `u16`) from a global word. Their values vary between captures; neither source
   has a resolved semantic name.
-* Field 53 (`+164`, body offset `0xa0`) is read as a truth value, and three
-  native readers use its low bit to select between two entries in a global
-  table whose purpose is unknown. The state initializer copies it from a local
-  stack byte that is not initialized in the visible routine, so the captured
-  zero does not establish the intended selector or its higher-level meaning.
+* Field 53 (`+164`, body offset `0xa0`) is the room's unique-character setting,
+  repeated at `0x57`. The client's start-round picker `P2P_AssignRoleSlots`
+  (`0x77b628`) assigns the pair at `0x9a`/`0x9b` when the room states the role
+  slots, so the captured zero is the setting off rather than an unread selector.
   Field 54 (`+165`) is written natively but is not selected by this payload's
   presence map.
 

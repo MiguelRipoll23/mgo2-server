@@ -8,25 +8,27 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What is measured.</b> Field 9 (<c>0x55</c>) is the current rotation slot and
-/// field 10 (<c>0x56</c>) the room population, host included; field 29 is the
-/// room's rule times in seconds. The rest are written from the working capture and
-/// named by offset, because no reader in the client names them
-/// (<c>docs/analysis/rotation-payload-corpus.md</c>).
+/// <b>What is measured.</b> Field 9 (<c>0x55</c>) is the current rotation slot,
+/// field 10 (<c>0x56</c>) the room population, host included, field 29 is the
+/// room's rule times in seconds, and <c>0x93</c> the round's starting ticket count.
+/// The rule round counts and the two ticket counts are the room's own bank when one
+/// is given; the reference body writes the capture's values, and the remaining fields
+/// are named by offset (<c>docs/analysis/rotation-payload-corpus.md</c> §5a).
 /// </para>
 /// <para>
 /// <b>What the client confirms.</b> The rotation the two readers select from is a
 /// 48-byte block of sixteen triples plus a one-byte slot index: <c>system.dll</c>'s
 /// getters at <c>0x8eb0c0</c> and <c>0x8eb148</c> fetch 48 bytes at object offset
 /// <c>0x15</c> and one byte at <c>0x52</c> through the same accessor
-/// (<c>0x27e480</c>), then return triple <c>[slot][1]</c> and <c>[slot][2]</c> —
-/// the round's rule and its third component. So a triple is three bytes and the
-/// slot index is one, which is what this writer emits.
+/// (<c>0x27e480</c>), then return triple <c>[slot][0]</c> and <c>[slot][1]</c> —
+/// the map and the rule. So a triple is three bytes and the slot index is one,
+/// which is what this writer emits.
 /// </para>
 /// <para>
-/// This file owns the entry points and the validation; the regions themselves are
-/// written by <see cref="RoomStateRegionUtils"/>, one method per contiguous run of
-/// the body and each documented with its own offsets.
+/// This file owns the entry points and the validation; the body is written by
+/// <see cref="RoomStateRegionUtils"/> for its framed regions and
+/// <see cref="RoomStateFieldUtils"/> for its single-valued fields, one method per
+/// contiguous run and each documented with its own offsets.
 /// </para>
 /// </remarks>
 internal static class RoomRotationPayloadUtils
@@ -62,6 +64,8 @@ internal static class RoomRotationPayloadUtils
     /// constants above are the capture's reported round and slot and stay pinned.
     /// </remarks>
     /// <param name="playerCount">The room's population, host included.</param>
+    /// <param name="sneakingDogTags">The room's SNE dog-tag count, body <c>0x8e</c>.</param>
+    /// <param name="checkpoints">The room's checkpoint count, body <c>0x95</c>.</param>
     /// <returns>The body.</returns>
     /// <summary>
     /// The round's ticket limit, both sides, from the room's own entry.
@@ -78,10 +82,16 @@ internal static class RoomRotationPayloadUtils
     internal static int TeamTickets(IReadOnlyList<MatchRotationEntry> rotation, int currentRotationIndex)
     {
         var slot = ((currentRotationIndex % rotation.Count) + rotation.Count) % rotation.Count;
-        return rotation[slot].Tickets ?? RoomStateReferenceBodyUtils.TicketLimit;
+        return rotation[slot].Tickets ?? RoomStateBodyConstants.TicketLimit;
     }
 
-    public static byte[] BuildReferenceBody(byte playerCount, int teamTickets) =>
+    public static byte[] BuildReferenceBody(
+        byte playerCount,
+        int teamTickets,
+        LevelLimitBand? levelLimit = null,
+        byte settingsGeneration = MatchSettingsService.SettingsGenerationSeed,
+        byte sneakingDogTags = 2,
+        byte checkpoints = 5) =>
         BuildCore(
             ReferenceRotation,
             (RoomState)ReferenceRoundNumber,
@@ -89,7 +99,11 @@ internal static class RoomRotationPayloadUtils
             playerCount,
             teamTickets,
             ruleTimers: null,
-            autoAssignTeams: true);
+            autoAssignTeams: true,
+            levelLimit,
+            settingsGeneration,
+            sneakingDogTags,
+            checkpoints);
 
     /// <summary>
     /// The body for a room this host serves: its rotation, its state, the slot it
@@ -108,6 +122,8 @@ internal static class RoomRotationPayloadUtils
     /// <param name="state">The room state.</param>
     /// <param name="currentRotationIndex">Slot of the round the room is playing.</param>
     /// <param name="playerCount">The room's population, host included.</param>
+    /// <param name="sneakingDogTags">The room's SNE dog-tag count, body <c>0x8e</c>.</param>
+    /// <param name="checkpoints">The room's checkpoint count, body <c>0x95</c>.</param>
     /// <returns>The body.</returns>
     public static byte[] BuildReferenceBody(
         IReadOnlyList<MatchRotationEntry> rotation,
@@ -115,8 +131,29 @@ internal static class RoomRotationPayloadUtils
         int currentRotationIndex,
         byte playerCount,
         int teamTickets,
-        bool autoAssignTeams = true) =>
-        BuildCore(rotation, state, currentRotationIndex, playerCount, teamTickets, ruleTimers: null, autoAssignTeams);
+        bool autoAssignTeams = true,
+        LevelLimitBand? levelLimit = null,
+        byte settingsGeneration = MatchSettingsService.SettingsGenerationSeed,
+        byte sneakingDogTags = 2,
+        byte checkpoints = 5,
+        bool uniqueCharacters = false,
+        byte uniqueRed = RoomStateBodyConstants.UnassignedUniqueCharacterSlot,
+        byte uniqueBlue = RoomStateBodyConstants.UnassignedUniqueCharacterSlot) =>
+        BuildCore(
+            rotation,
+            state,
+            currentRotationIndex,
+            playerCount,
+            teamTickets,
+            ruleTimers: null,
+            autoAssignTeams,
+            levelLimit,
+            settingsGeneration,
+            sneakingDogTags,
+            checkpoints,
+            uniqueCharacters,
+            uniqueRed,
+            uniqueBlue);
 
     public static byte[] Build(
         IReadOnlyList<MatchRotationEntry> rotation,
@@ -125,10 +162,31 @@ internal static class RoomRotationPayloadUtils
         byte playerCount,
         IReadOnlyList<int> ruleTimers,
         int teamTickets,
-        bool autoAssignTeams = true)
+        bool autoAssignTeams = true,
+        LevelLimitBand? levelLimit = null,
+        byte settingsGeneration = MatchSettingsService.SettingsGenerationSeed,
+        byte sneakingDogTags = 2,
+        byte checkpoints = 5,
+        bool uniqueCharacters = false,
+        byte uniqueRed = RoomStateBodyConstants.UnassignedUniqueCharacterSlot,
+        byte uniqueBlue = RoomStateBodyConstants.UnassignedUniqueCharacterSlot)
     {
         ArgumentNullException.ThrowIfNull(ruleTimers);
-        return BuildCore(rotation, state, currentRotationIndex, playerCount, teamTickets, ruleTimers, autoAssignTeams);
+        return BuildCore(
+            rotation,
+            state,
+            currentRotationIndex,
+            playerCount,
+            teamTickets,
+            ruleTimers,
+            autoAssignTeams,
+            levelLimit,
+            settingsGeneration,
+            sneakingDogTags,
+            checkpoints,
+            uniqueCharacters,
+            uniqueRed,
+            uniqueBlue);
     }
 
     private static byte[] BuildCore(
@@ -138,9 +196,20 @@ internal static class RoomRotationPayloadUtils
         byte playerCount,
         int teamTickets,
         IReadOnlyList<int>? ruleTimers,
-        bool autoAssignTeams)
+        bool autoAssignTeams,
+        LevelLimitBand? levelLimit,
+        byte settingsGeneration,
+        byte sneakingDogTags,
+        byte checkpoints,
+        bool uniqueCharacters = false,
+        byte uniqueRed = RoomStateBodyConstants.UnassignedUniqueCharacterSlot,
+        byte uniqueBlue = RoomStateBodyConstants.UnassignedUniqueCharacterSlot)
     {
         ArgumentNullException.ThrowIfNull(rotation);
+
+        // A caller that states no restriction writes the reference body's band with its
+        // enable bit clear, which is what every captured room without the limit carries.
+        var levelBand = levelLimit ?? LevelLimitBand.Disabled;
 
         if (rotation.Count == 0)
         {
@@ -173,12 +242,23 @@ internal static class RoomRotationPayloadUtils
         RoomStateRegionUtils.WritePresenceMap(body);
         RoomStateRegionUtils.WriteRoundPhase(body, state);
         RoomStateRegionUtils.WriteRotationTriples(body, rotation);
-        RoomStateRegionUtils.WriteRoomStateFields(body, playerCount, autoAssignTeams);
+        RoomStateFieldUtils.WriteRoomSettings(body, playerCount, autoAssignTeams, levelBand);
         RoomStateRegionUtils.WriteCurrentSlotAndPopulation(body, currentRotationIndex, playerCount);
-        RoomStateRegionUtils.WriteTeamTickets(body, teamTickets);
+        RoomStateFieldUtils.WriteUniqueCharacterSetting(body, UniqueCharactersByte(uniqueCharacters));
+        RoomStateFieldUtils.WriteTeamTicketBlock(body, teamTickets);
+        RoomStateFieldUtils.WriteHostStance(body);
+        RoomStateFieldUtils.WriteBriefingTime(body);
+        RoomStateFieldUtils.WriteLevelBand(body, levelBand);
         RoomStateRegionUtils.WriteRuleTimerVector(body, ruleTimers);
-        RoomStateRegionUtils.WriteSlotReferencesAndFlags(body);
-        RoomStateRegionUtils.WriteTailSelector(body);
+        RoomStateFieldUtils.WriteRuleStateFields(
+            body,
+            ruleTimers,
+            teamTickets,
+            sneakingDogTags,
+            checkpoints);
+        RoomStateFieldUtils.WriteSneakingStateFields(body);
+        RoomStateFieldUtils.WriteUniqueCharacterSlots(body, uniqueRed, uniqueBlue);
+        RoomStateFieldUtils.WriteTailFields(body, settingsGeneration, UniqueCharactersByte(uniqueCharacters));
 
         if (body.Count != PayloadLength)
         {
@@ -188,4 +268,9 @@ internal static class RoomRotationPayloadUtils
 
         return body.ToArray();
     }
+
+    private static byte UniqueCharactersByte(bool enabled) =>
+        enabled
+            ? RoomStateBodyConstants.UniqueCharactersEnabled
+            : RoomStateBodyConstants.UniqueCharactersDisabled;
 }

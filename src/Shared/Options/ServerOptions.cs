@@ -146,6 +146,31 @@ public sealed class ServerOptions
     public string GameplayServerRuleTimers { get; set; } = DefaultRuleTimers;
 
     /// <summary>
+    /// SNE dog-tag count of the room: the number Snake must collect, written at body
+    /// <c>0x8e</c>. The working capture carries <c>2</c>; a room that plays SNE states
+    /// its own.
+    /// </summary>
+    public int GameplayServerSneakingDogTags { get; set; } = 2;
+
+    /// <summary>
+    /// Checkpoint count of the room: the number a checkpoint rule requires, written at
+    /// body <c>0x95</c>. The working capture carries <c>5</c>.
+    /// </summary>
+    public int GameplayServerCheckpoints { get; set; } = 5;
+
+    /// <summary>
+    /// Whether the room assigns the unique characters — Snake and Metal Gear Mk.II —
+    /// at the start of every Sneaking or Team Sneaking round.
+    /// </summary>
+    /// <remarks>
+    /// The setting is body <c>0x57</c>/<c>0xa0</c> and the assigned pair body
+    /// <c>0x9a</c>/<c>0x9b</c>. The client's own picker (<c>P2P_AssignRoleSlots</c>,
+    /// <c>0x77b628</c>) advances an LCG and writes two distinct player slots; this
+    /// server makes the same draw over the room's player slots.
+    /// </remarks>
+    public bool GameplayServerUniqueCharacters { get; set; }
+
+    /// <summary>
     /// Slots the gameplay server's room admits, the host's own seat among them. It is
     /// the figure the room row and the host's settings row both state, and the one a
     /// browsing client draws as the room's capacity.
@@ -168,7 +193,34 @@ public sealed class ServerOptions
     /// Level-limit base the host's settings row states: the level the room's limit
     /// is centred on, which the recorded room stated as 22.
     /// </summary>
+    /// <remarks>
+    /// It is written whether or not the limit is in force, because the client keeps the
+    /// chosen band while the option is switched off — the working room's body carries a
+    /// band with its enable bit clear.
+    /// </remarks>
     public int GameplayServerLevelLimitBase { get; set; } = 22;
+
+    /// <summary>
+    /// Whether the room's level band is in force: the bit the client tests before it
+    /// refuses a player whose level is outside the band.
+    /// </summary>
+    /// <remarks>
+    /// The band is body <c>0x63</c>/<c>0x64</c> and this is the <c>0x400000</c> bit of
+    /// the switch word at <c>0x4f</c>–<c>0x52</c>. Clear is what every captured room
+    /// that leaves the option off carries, with its band retained.
+    /// </remarks>
+    public bool GameplayServerLevelLimitEnabled { get; set; }
+
+    /// <summary>
+    /// Half-width of the room's level band, in levels: the <c>±</c> around
+    /// <see cref="GameplayServerLevelLimitBase"/>.
+    /// </summary>
+    /// <remarks>
+    /// Body <c>0x63</c>. The capture that switches the limit on and fills the Create
+    /// Game box with level 8 ± 2 carries <c>2</c> there and <c>8</c> at <c>0x64</c>, so
+    /// the two bytes are the width and then the centre.
+    /// </remarks>
+    public int GameplayServerLevelLimitTolerance { get; set; } = 2;
 
     /// <summary>
     /// Briefing time of the gameplay server's room, in minutes: how long the room

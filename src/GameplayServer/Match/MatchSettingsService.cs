@@ -45,6 +45,43 @@ public sealed class MatchSettingsService(
 
     private readonly IReadOnlyList<int> ruleTimers = MatchSettingsUtils.RuleTimers(options.Value);
 
+    /// <summary>The room's live SNE dog-tag count, which a round can raise.</summary>
+    private byte sneakingDogTags =
+        (byte)Math.Clamp(options.Value.GameplayServerSneakingDogTags, 0, byte.MaxValue);
+
+    /// <summary>The room's live checkpoint count, which a round can raise.</summary>
+    private byte checkpoints =
+        (byte)Math.Clamp(options.Value.GameplayServerCheckpoints, 0, byte.MaxValue);
+
+    /// <summary>
+    /// The generation a room that has opened no round writes at body <c>0x9d</c>:
+    /// <c>1</c>.
+    /// </summary>
+    public const byte SettingsGenerationSeed = 1;
+
+    /// <summary>
+    /// The settings generation this room writes at body <c>0x9d</c>: the seed plus the
+    /// rounds the room has opened.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The seed is one and the step is the round.</b> A room that has opened no round
+    /// — the briefing of a fresh room — writes <see cref="SettingsGenerationSeed"/>, and
+    /// each round it opens takes the next value. The increment point is
+    /// <see cref="MatchRecords.MatchRoundStateService.Open"/>, where
+    /// <see cref="MatchRecords.MatchRoundStateService.RoundNumber"/> moves; an emptied
+    /// room resets that count to zero and so returns here to the seed.
+    /// </para>
+    /// <para>
+    /// <b>It is a byte and it wraps.</b> Round <c>255</c> writes <c>0</c> and the next
+    /// writes <c>1</c> again. The client adopts the value and bumps its own copy on each
+    /// applied <c>0xa1</c> record (<c>0x26dd60</c>), and the role-pair draw at
+    /// <c>0x77b628</c> indexes with it, so what matters is that a new round is a new
+    /// value, not that the value never repeats.
+    /// </para>
+    /// </remarks>
+    public byte SettingsGeneration => unchecked((byte)(roundState.RoundNumber + SettingsGenerationSeed));
+
     /// <summary>The round number, carried beside the phase as the room's own count.</summary>
     public byte CurrentRoundNumber => unchecked((byte)roundState.RoundNumber);
 
@@ -99,11 +136,67 @@ public sealed class MatchSettingsService(
     public IReadOnlyList<int> RuleTimers => ruleTimers;
 
     /// <summary>
+    /// The room's current SNE dog-tag count, body <c>0x8e</c>: the number Snake must
+    /// collect. It starts at <see cref="ServerOptions.GameplayServerSneakingDogTags"/>;
+    /// a gameplay change raises it with <see cref="IncreaseSneakingDogTags"/> and the
+    /// next body built carries the new value.
+    /// </summary>
+    public byte SneakingDogTags => Volatile.Read(ref sneakingDogTags);
+
+    /// <summary>Sets the room's SNE dog-tag count.</summary>
+    /// <param name="count">The new count, written to body <c>0x8e</c>.</param>
+    public void SetSneakingDogTags(byte count) => Volatile.Write(ref sneakingDogTags, count);
+
+    /// <summary>Raises the room's SNE dog-tag count, clamped to the body's byte.</summary>
+    /// <param name="amount">How many tags to add.</param>
+    public void IncreaseSneakingDogTags(byte amount = 1) =>
+        SetSneakingDogTags((byte)Math.Clamp(SneakingDogTags + amount, 0, byte.MaxValue));
+
+    /// <summary>
+    /// The room's current checkpoint count, body <c>0x95</c>: the number a checkpoint
+    /// rule requires. It starts at <see cref="ServerOptions.GameplayServerCheckpoints"/>;
+    /// a gameplay change raises it with <see cref="IncreaseCheckpoints"/> and the next
+    /// body built carries the new value.
+    /// </summary>
+    public byte Checkpoints => Volatile.Read(ref checkpoints);
+
+    /// <summary>Sets the room's checkpoint count.</summary>
+    /// <param name="count">The new count, written to body <c>0x95</c>.</param>
+    public void SetCheckpoints(byte count) => Volatile.Write(ref checkpoints, count);
+
+    /// <summary>Raises the room's checkpoint count, clamped to the body's byte.</summary>
+    /// <param name="amount">How many checkpoints to add.</param>
+    public void IncreaseCheckpoints(byte amount = 1) =>
+        SetCheckpoints((byte)Math.Clamp(Checkpoints + amount, 0, byte.MaxValue));
+
+    /// <summary>
+    /// Whether the room assigns the unique characters — Snake and Metal Gear Mk.II —
+    /// at the start of a Sneaking or Team Sneaking round.
+    /// </summary>
+    public bool UniqueCharacters => options.GameplayServerUniqueCharacters;
+
+    /// <summary>
     /// Whether the room puts joiners on a side itself. Clear is the room whose
     /// client shows the Red / Blue / Auto selection screen, and whose players'
     /// choices the lobby stores.
     /// </summary>
     public bool AutoAssignTeams => options.GameplayServerAutoAssignTeams;
+
+    /// <summary>
+    /// The room's level restriction: the band the client tests a joining player's level
+    /// against, and whether it is in force.
+    /// </summary>
+    /// <remarks>
+    /// Both bytes are written whether or not the limit is in force — the client keeps
+    /// the chosen band while the option is off — and only the enable bit at
+    /// <c>0x400000</c> says whether a joining client should apply it. The band is
+    /// clamped to a byte because that is the wire's width, not because a level that
+    /// large is playable.
+    /// </remarks>
+    public Rooms.LevelLimitBand LevelLimit => new(
+        (byte)Math.Clamp(options.GameplayServerLevelLimitTolerance, 0, byte.MaxValue),
+        (byte)Math.Clamp(options.GameplayServerLevelLimitBase, 0, byte.MaxValue),
+        options.GameplayServerLevelLimitEnabled);
 
     /// <summary>
     /// The map the room's own records are written on: the playing round's while one
@@ -190,7 +283,10 @@ public sealed class MatchSettingsService(
             options.GameplayServerRoomName,
             options.GameplayServerBriefingMinutes,
             rotation,
-            options.GameplayServerAutoAssignTeams);
+            options.GameplayServerAutoAssignTeams,
+            SneakingDogTags,
+            Checkpoints,
+            options.GameplayServerUniqueCharacters);
         logger.LogDebug(
             "Room {GameIdentifier} ({GameName}) runs {RoundCount} round(s) on maps {Maps} with a "
             + "{BriefingTime}-minute briefing, from this instance's own settings",

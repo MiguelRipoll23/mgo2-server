@@ -78,6 +78,14 @@ public static class ServerServiceCollectionExtensions
             options.GameplayServerLevelLimitBase = configuration.ReadNumber(
                 "GAMEPLAY_SERVER_LEVEL_LIMIT_BASE",
                 options.GameplayServerLevelLimitBase);
+            options.GameplayServerLevelLimitTolerance = configuration.ReadNumber(
+                "GAMEPLAY_SERVER_LEVEL_LIMIT_TOLERANCE",
+                options.GameplayServerLevelLimitTolerance);
+            var levelLimitEnabled = configuration.ReadText("GAMEPLAY_SERVER_LEVEL_LIMIT_ENABLED");
+            if (bool.TryParse(levelLimitEnabled, out var parsedLevelLimitEnabled))
+            {
+                options.GameplayServerLevelLimitEnabled = parsedLevelLimitEnabled;
+            }
             options.GameplayServerBriefingMinutes = configuration.ReadNumber(
                 "GAMEPLAY_SERVER_BRIEFING_MINUTES",
                 options.GameplayServerBriefingMinutes);

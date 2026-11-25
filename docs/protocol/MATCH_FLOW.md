@@ -192,10 +192,6 @@ The model this file supports, and that the host now follows:
 ## 7. Open
 
 - whether a client inside a game is re-briefed when a player joins mid-game [U];
-- the `0x4e` value the host writes for a rotation whose runs are of different
-  lengths — the wire's `Number of Rounds` is one value per room, while the
-  rotation can state runs of 1, 2 and 3 rounds side by side
-  (`mgo2-started-on-game-round1`) [U];
 - the phase byte at `0x09` for a game boundary as opposed to a round boundary:
   the corpus shows `2`, `3`, `4` and `5` and none of them is tied to a boundary
   yet [U].

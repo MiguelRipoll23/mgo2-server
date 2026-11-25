@@ -75,12 +75,27 @@ public sealed record MatchRotationEntry(
 /// Whether the room puts joiners on a side itself. Clear is the room whose client
 /// shows the Red / Blue / Auto selection screen.
 /// </param>
+/// <param name="SneakingDogTags">
+/// The SNE dog-tag count — the number Snake must collect, written at body <c>0x8e</c>.
+/// The default is the working capture's <c>2</c>.
+/// </param>
+/// <param name="Checkpoints">
+/// The checkpoint count — the number a checkpoint rule requires, written at body
+/// <c>0x95</c>. The default is the working capture's <c>5</c>.
+/// </param>
+/// <param name="UniqueCharacters">
+/// Whether the room assigns the unique characters — Snake and Metal Gear Mk.II — at
+/// the start of a Sneaking or Team Sneaking round.
+/// </param>
 public sealed record MatchSettings(
     int GameIdentifier,
     string Name,
     int BriefingTimeMinutes,
     IReadOnlyList<MatchRotationEntry> Rotation,
-    bool AutoAssignTeams = true)
+    bool AutoAssignTeams = true,
+    byte SneakingDogTags = 2,
+    byte Checkpoints = 5,
+    bool UniqueCharacters = false)
 {
     /// <summary>
     /// The entry a round plays: the rotation is walked in order, so the first

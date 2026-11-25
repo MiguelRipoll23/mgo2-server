@@ -6,7 +6,7 @@ names a record array, and every record is ten bytes:
 
     u16 key    byte offset of the field inside the settings object
     u16 length field width in bytes
-    u16 stride always 1 in every record read so far
+    u16 stride 1, except the per-rule view of the timer bank (0x11)
     u16 flags  a per-field mask (0x125, 0x25, 0x64, ...)
     u16 zero
 
@@ -48,7 +48,7 @@ def record_at(data: bytes, offset: int) -> tuple[int, int, int, int, int]:
 
 def is_record(values: tuple[int, ...]) -> bool:
     key, length, stride, _flags, zero = values
-    return 0 <= key <= 0x1000 and 0 < length <= 0x1000 and stride in (1, 2, 4) and zero == 0
+    return 0 <= key <= 0x1000 and 0 < length <= 0x1000 and 1 <= stride <= 0x40 and zero == 0
 
 
 def main() -> None:
@@ -63,10 +63,14 @@ def main() -> None:
     starts = []
     for anchor in anchors:
         start = anchor
-        while start - RECORD_SIZE >= 0 and is_record(record_at(data, start - RECORD_SIZE)):
+        while (start - RECORD_SIZE >= 0
+               and is_record(record_at(data, start - RECORD_SIZE))
+               and record_at(data, start - RECORD_SIZE)[0] <= record_at(data, start)[0]):
             start -= RECORD_SIZE
         end = anchor + RECORD_SIZE
-        while end + RECORD_SIZE <= len(data) and is_record(record_at(data, end)):
+        while (end + RECORD_SIZE <= len(data)
+               and is_record(record_at(data, end))
+               and record_at(data, end)[0] >= record_at(data, end - RECORD_SIZE)[0]):
             end += RECORD_SIZE
         starts.append((start, end))
 

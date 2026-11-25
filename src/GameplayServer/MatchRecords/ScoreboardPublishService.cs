@@ -247,10 +247,10 @@ public sealed class ScoreboardPublishService(
         // fifty is the kill limit the round ends on. Counting from fifty wrote a
         // count the panel was not holding, so it never moved.
         // The room's own limit, which is what the settings body states at
-        // 0x5a/0x5e (RoomStateRegionUtils.WriteTeamTickets): the panel holds
+        // 0x5a/0x5e (RoomStateFieldUtils.WriteTeamTicketBlock): the panel holds
         // that number and a record below it is a count it can draw. The reference
         // pair is only the fallback for a round whose entry states no limit.
-        var limit = roundState.RoundSettings?.Tickets ?? RoomStateReferenceBodyUtils.TicketLimit;
+        var limit = roundState.RoundSettings?.Tickets ?? RoomStateBodyConstants.TicketLimit;
         var bodies = new List<byte[]>(2);
         foreach (var team in score.TeamScores(await lobbySlots.ReadAsync()))
         {

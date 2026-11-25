@@ -15,7 +15,8 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// (<c>docs/mgo2-game.pcapng</c>, t+4.9929, outbound counter 5, 366 bytes, six
 /// records). It is not resent: no later datagram repeats that shape, and the
 /// three peers that join at t+154, t+385 and t+493 do not each get one. So it
-/// is sent when the first joiner is answered and not again.
+/// is sent when the first joiner is answered and not again: what is one-shot is
+/// the burst, not the payload family, whose <c>0b</c> bodies run 580 times.
 /// </para>
 /// <para>
 /// It opens with a one-byte <see cref="UdpCommandConstants.InGameControl"/>
@@ -65,13 +66,6 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// own entry in its player table — and <c>0x15</c> is its first joiner's, whose
 /// key the same capture's roster records carry as <c>0x14</c>. So the burst names
 /// the room's players, one record each, which is what this builder writes.
-/// </para>
-/// <para>
-/// One thing is worth recording because it is easy to assume otherwise: these
-/// payloads are not a two-player event. <c>0b</c> bodies appear 580 times over
-/// the round, in 470 datagrams, running from t+4.99 to the last second at
-/// t+825.6, and 504 of them go out once four peer handles have been announced.
-/// What is a one-shot is the burst, not the payload family.
 /// </para>
 /// </remarks>
 /// <param name="roster">Roster of the room this host is playing.</param>
@@ -163,6 +157,12 @@ public sealed partial class PlayerSettingsBurstService(
     /// <param name="roomState">The room state.</param>
     /// <param name="currentRotationIndex">Slot of the round the room is playing.</param>
     /// <param name="playerCount">The room's population, host included.</param>
+    /// <param name="settingsGeneration">The room's settings generation at body <c>0x9d</c>.</param>
+    /// <param name="sneakingDogTags">The room's SNE dog-tag count, body <c>0x8e</c>.</param>
+    /// <param name="checkpoints">The room's checkpoint count, body <c>0x95</c>.</param>
+    /// <param name="uniqueCharacters">
+    /// Whether the room assigns the unique characters this round.
+    /// </param>
     public List<RosterRecord> BuildSettingsBurst(
         IReadOnlyList<MatchRotationEntry>? rotation,
         IReadOnlyList<LobbyLoadout>? loadouts,
@@ -170,11 +170,35 @@ public sealed partial class PlayerSettingsBurstService(
         int currentRotationIndex,
         byte playerCount,
         byte answeringSlot = 0,
-        bool autoAssignTeams = true)
+        bool autoAssignTeams = true,
+        LevelLimitBand? levelLimit = null,
+        byte settingsGeneration = MatchSettingsService.SettingsGenerationSeed,
+        byte sneakingDogTags = 2,
+        byte checkpoints = 5,
+        bool uniqueCharacters = false)
     {
+        var unique = UniqueCharacterAssignmentUtils.Assign(
+            loadouts,
+            rotation,
+            currentRotationIndex,
+            uniqueCharacters,
+            settingsGeneration);
+
         var rotationBody = rotation is null
-            ? RecordedRotationBody(playerCount, RoomStateReferenceBodyUtils.TicketLimit)
-            : RoomRotationBody(rotation, roomState, currentRotationIndex, playerCount, autoAssignTeams);
+            ? RoomRotationBodiesUtils.RecordedRotationBody(playerCount, RoomStateBodyConstants.TicketLimit, levelLimit, settingsGeneration, sneakingDogTags, checkpoints)
+            : RoomRotationBodiesUtils.RoomRotationBody(
+                rotation,
+                roomState,
+                currentRotationIndex,
+                playerCount,
+                autoAssignTeams,
+                levelLimit,
+                settingsGeneration,
+                sneakingDogTags,
+                checkpoints,
+                uniqueCharacters,
+                unique.Red,
+                unique.Blue);
         return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
     }
 
@@ -188,6 +212,12 @@ public sealed partial class PlayerSettingsBurstService(
     /// <param name="playerCount">The room population, including the host.</param>
     /// <param name="ruleTimers">The configured seventeen-word timer bank.</param>
     /// <param name="answeringSlot">The answering peer's slot byte.</param>
+    /// <param name="settingsGeneration">The room's settings generation at body <c>0x9d</c>.</param>
+    /// <param name="sneakingDogTags">The room's SNE dog-tag count, body <c>0x8e</c>.</param>
+    /// <param name="checkpoints">The room's checkpoint count, body <c>0x95</c>.</param>
+    /// <param name="uniqueCharacters">
+    /// Whether the room assigns the unique characters this round.
+    /// </param>
     /// <returns>The records in send order, each with the type it travels as.</returns>
     public List<RosterRecord> BuildSettingsBurst(
         IReadOnlyList<MatchRotationEntry> rotation,
@@ -197,8 +227,20 @@ public sealed partial class PlayerSettingsBurstService(
         byte playerCount,
         IReadOnlyList<int> ruleTimers,
         byte answeringSlot = 0,
-        bool autoAssignTeams = true)
+        bool autoAssignTeams = true,
+        LevelLimitBand? levelLimit = null,
+        byte settingsGeneration = MatchSettingsService.SettingsGenerationSeed,
+        byte sneakingDogTags = 2,
+        byte checkpoints = 5,
+        bool uniqueCharacters = false)
     {
+        var unique = UniqueCharacterAssignmentUtils.Assign(
+            loadouts,
+            rotation,
+            currentRotationIndex,
+            uniqueCharacters,
+            settingsGeneration);
+
         var rotationBody = RoomRotationPayloadUtils.Build(
             rotation,
             roomState,
@@ -206,7 +248,14 @@ public sealed partial class PlayerSettingsBurstService(
             playerCount,
             ruleTimers,
             RoomRotationPayloadUtils.TeamTickets(rotation, currentRotationIndex),
-            autoAssignTeams);
+            autoAssignTeams,
+            levelLimit,
+            settingsGeneration,
+            sneakingDogTags,
+            checkpoints,
+            uniqueCharacters,
+            unique.Red,
+            unique.Blue);
         return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
     }
 
@@ -279,63 +328,6 @@ public sealed partial class PlayerSettingsBurstService(
     /// <returns>The record, ready to be sent.</returns>
     public static RosterRecord BuildClosingControl() =>
         new(UdpCommandConstants.InGameControl, [ClosingControlByte]);
-
-    /// <summary>The working capture's settings body, built field by field.</summary>
-    /// <param name="playerCount">The room's population, host included.</param>
-    /// <param name="teamTickets">The round's ticket limit, both sides.</param>
-    /// <returns>The captured reference values, with the room's own population.</returns>
-    public static byte[] RecordedRotationBody(byte playerCount, int teamTickets) =>
-        RoomRotationPayloadUtils.BuildReferenceBody(playerCount, teamTickets);
-
-    /// <summary>
-    /// A settings body with this room's rotation and the state of the room it is
-    /// being written for.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Each triple is the parser's layout — map, then rule, then one more byte
-    /// (<see cref="RotationOffset"/>) — and the room stores the same three values
-    /// the other way round, as <see cref="MatchRotationEntry"/>: a rule, a map and
-    /// the flags byte the client is handed in the room's details over TCP.
-    /// </para>
-    /// <para>
-    /// <b>The third byte is the round's own options, and it is the byte that tells
-    /// a joiner the round is a Drebin Points round.</b> <c>0x02</c> is Drebin
-    /// Points, <c>0x04</c> Headshots Only and <c>0x00</c> neither
-    /// (<see cref="Mgo2Server.Shared.Types.RoundOption"/>): a room with Drebin
-    /// points switched on writes <c>0x02</c> on its configured triples and the same
-    /// room's disabled capture writes <c>0x00</c> on all of its own. Writing the
-    /// room's own byte therefore reproduces the triple the room was published with,
-    /// where writing zero would tell a joiner an ordinary round.
-    /// </para>
-    /// <para>
-    /// <b>Unused entries are zeroed, not repeated.</b> The field has sixteen
-    /// slots, but a shorter room rotation only names its configured rounds. The
-    /// remaining triples are zero, as they are in the lobby's rotation field and
-    /// the working capture. A longer rotation contributes its first sixteen,
-    /// because that is all this field holds.
-    /// </para>
-    /// </remarks>
-    /// <param name="rotation">The room's rotation, in play order.</param>
-    /// <param name="state">The room state.</param>
-    /// <param name="currentRotationIndex">Slot of the round the room is playing.</param>
-    /// <param name="playerCount">The room's population, host included.</param>
-    /// <returns>The body.</returns>
-    public static byte[] RoomRotationBody(
-        IReadOnlyList<MatchRotationEntry> rotation,
-        RoomState state,
-        int currentRotationIndex,
-        byte playerCount,
-        bool autoAssignTeams = true)
-    {
-        return RoomRotationPayloadUtils.BuildReferenceBody(
-            rotation,
-            state,
-            currentRotationIndex,
-            playerCount,
-            RoomRotationPayloadUtils.TeamTickets(rotation, currentRotationIndex),
-            autoAssignTeams);
-    }
 
 
     /// <summary>

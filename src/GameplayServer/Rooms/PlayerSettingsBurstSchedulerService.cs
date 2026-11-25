@@ -1,4 +1,5 @@
 using Mgo2Server.GameplayServer.Match;
+using Mgo2Server.Shared.Constants;
 using Mgo2Server.Shared.Types;
 using Mgo2Server.Shared.Utils;
 using Microsoft.Extensions.Logging;
@@ -34,6 +35,12 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// (<see cref="LobbyLoadoutService"/>). Both are read as the burst is built, so they
 /// cost the join only the reads.
 /// </para>
+/// <para>
+/// <b>The join burst is one-shot; a live count is not.</b> A gameplay change to the
+/// SNE dog-tag or checkpoint count calls <see cref="RepublishCountsAsync"/>, which
+/// patches the rotation body the join wrote and sends it without rebuilding the
+/// loadouts.
+/// </para>
 /// </remarks>
 /// <param name="burst">Builder of the settings burst and the control record that follows it.</param>
 /// <param name="matchSettings">Resolver of the room's own rotation.</param>
@@ -52,6 +59,12 @@ public sealed class PlayerSettingsBurstSchedulerService(
 {
     /// <summary>Set once the burst has been scheduled, so it leaves one time.</summary>
     private int scheduled;
+
+    /// <summary>
+    /// The rotation body the join burst wrote, whose two live rule counts a republish
+    /// replaces.
+    /// </summary>
+    private byte[]? lastRoomRotationBody;
 
     /// <summary>
     /// Schedules the burst for the peer the roster was just sent to, once per
@@ -78,6 +91,51 @@ public sealed class PlayerSettingsBurstSchedulerService(
 
     /// <summary>Allows the next room to send its one settings burst.</summary>
     public void Reset() => Interlocked.Exchange(ref scheduled, 0);
+
+    /// <summary>
+    /// Rewrites the two live rule counts in the room's settings body and sends it to
+    /// the peer the change came through and to the rest of the room.
+    /// </summary>
+    /// <remarks>
+    /// <b>Only the counts move.</b> The body is the rotation body the join burst wrote,
+    /// so the rotation, the settings generation and the unique-character pair stay the
+    /// values the round was opened with; the bytes at <c>0x8e</c> and <c>0x95</c> are
+    /// replaced from <see cref="MatchSettingsService.SneakingDogTags"/> and
+    /// <see cref="MatchSettingsService.Checkpoints"/>. Call it after
+    /// <see cref="MatchSettingsService.IncreaseSneakingDogTags"/> or
+    /// <see cref="MatchSettingsService.IncreaseCheckpoints"/>; no gameplay event is wired
+    /// to it yet.
+    /// </remarks>
+    /// <param name="context">Context the change came through.</param>
+    public async Task RepublishCountsAsync(PeerContext context)
+    {
+        var source = lastRoomRotationBody;
+        if (source is null)
+        {
+            logger.LogDebug(
+                "UDP {LocalPort}: no settings body has been sent yet, so a live count change has nothing to republish",
+                context.LocalPort);
+            return;
+        }
+
+        var body = source.ToArray();
+        body[RoomStateBodyConstants.SneakingDogTagsOffset] = matchSettings.SneakingDogTags;
+        body[RoomStateBodyConstants.CheckpointsOffset] = matchSettings.Checkpoints;
+
+        var record = new RosterRecord(
+            UdpCommandConstants.PlayerProfile,
+            body,
+            roster.TakeRunOrdinal());
+        logger.LogDebug(
+            "UDP {LocalPort}: republishing the settings body to {RemoteAddress} and the room with "
+            + "{SneakingDogTags} SNE dog-tag(s) and {Checkpoints} checkpoint(s)",
+            context.LocalPort,
+            context.Remote,
+            matchSettings.SneakingDogTags,
+            matchSettings.Checkpoints);
+        await RosterRunSendUtils.SendAsync(context, [record]);
+        await context.Broadcast(record.Type, record.Body, record.Ordinal);
+    }
 
     private async Task SendAsync(PeerContext context)
     {
@@ -120,7 +178,12 @@ public sealed class PlayerSettingsBurstSchedulerService(
                 rotationIndex,
                 playerCount,
                 answeringSlot,
-                matchSettings.AutoAssignTeams)
+                matchSettings.AutoAssignTeams,
+                matchSettings.LevelLimit,
+                matchSettings.SettingsGeneration,
+                matchSettings.SneakingDogTags,
+                matchSettings.Checkpoints,
+                matchSettings.UniqueCharacters)
             : burst.BuildSettingsBurst(
                 rotation,
                 loadouts,
@@ -129,7 +192,17 @@ public sealed class PlayerSettingsBurstSchedulerService(
                 playerCount,
                 matchSettings.RuleTimers,
                 answeringSlot,
-                matchSettings.AutoAssignTeams);
+                matchSettings.AutoAssignTeams,
+                matchSettings.LevelLimit,
+                matchSettings.SettingsGeneration,
+                matchSettings.SneakingDogTags,
+                matchSettings.Checkpoints,
+                matchSettings.UniqueCharacters);
+
+        lastRoomRotationBody = settingsBurst
+            .FirstOrDefault(record => record.Body.Length == RoomRotationPayloadUtils.PayloadLength
+                && record.Body[1] == PlayerSettingsBurstService.RoomRotationSlot)
+            ?.Body.ToArray();
 
         // The burst's own bytes, at the level a run is read at. The wire dump they
         // used to appear in is Trace now (TrafficLogger), and the room's settings
