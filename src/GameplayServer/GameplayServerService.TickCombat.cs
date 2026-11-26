@@ -1,4 +1,5 @@
 using Mgo2Server.GameplayServer.Combat;
+using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Shared.Types;
 
 namespace Mgo2Server.GameplayServer;
@@ -50,9 +51,21 @@ public sealed partial class GameplayServerService
             // a live run whose player held another slot credited that player's kills
             // to slot 16. A placed device is not worth guessing the field for.
             var shooter = roster.Find(remoteAddress)?.SessionSlot;
-            if (!botSimulation.NoteIncomingDamage(hit, shooter))
+            var applied = botSimulation.NoteIncomingDamage(hit, shooter);
+            if (!applied)
             {
-                botActors.NoteClientHit(hit, shooter);
+                applied = botActors.NoteClientHit(hit, shooter);
+            }
+
+            // A knock-out is a score event: the client's ComputeScore counts the
+            // ones a player lands and charges the ones it takes, and the stun
+            // family of a damage record is the only place the host sees either.
+            // The reporting peer is the shooter; slot zero is this host's own
+            // seat and never a player of the round.
+            if (applied && hit.IsKnockout && shooter is { } stunShooter && stunShooter > 0
+                && score.NoteKnockout(stunShooter, hit.VictimSlot))
+            {
+                botActors.NoteScoreChanged();
             }
         }
 
@@ -67,7 +80,34 @@ public sealed partial class GameplayServerService
             // the capture's held slot climbs its heading about 47 degrees a beat
             // until it faces the client holding it.
             var holder = roster.Find(remoteAddress)?.SessionSlot ?? (byte)0;
-            botSimulation.HoldSlot(heldSlot, holder, Environment.TickCount64);
+            var now = Environment.TickCount64;
+            if (holder > 0 && botSimulation.HoldSlot(heldSlot, holder, now))
+            {
+                if (score.NoteHoldUp(holder, heldSlot))
+                {
+                    botActors.NoteScoreChanged();
+                }
+
+                // Sneaking's dog tag is a body search, and the channel carries no
+                // such record. The host's one visible moment is the CQC hold-up on
+                // a knocked-out enemy: the mode's own rule is to hold up or take
+                // down a character and collect a tag, and this is that hold. The
+                // counter is only read when the round is actually Sneaking.
+                if (matchSettings.CurrentRule == MatchRuleUtils.Sneaking
+                    && botActors.IsActorKnockedOut(heldSlot, now)
+                    && score.NoteDogTag(holder, heldSlot))
+                {
+                    botActors.NoteScoreChanged();
+                    logger.LogInformation(
+                        "UDP {LocalPort}: slot {Holder} collected a dog tag from slot {HeldSlot}; "
+                        + "{DogTags} of {Target}",
+                        port,
+                        holder,
+                        heldSlot,
+                        score.DogTags(holder),
+                        matchSettings.SneakingDogTags);
+                }
+            }
         }
     }
 }

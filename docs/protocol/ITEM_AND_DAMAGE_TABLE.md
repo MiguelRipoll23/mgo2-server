@@ -15,16 +15,58 @@ Everything below the table headings is either **read from the console's array** 
 |---|---|---|---|
 | `0x11` | body | — | `BotActorRecordUtils.DamageSubtype` (body) |
 | `0x12` | head | — | `BotActorRecordUtils.HeadshotDamageSubtype` |
-| `0x13` | — | — | `BotHitUtils.BlastSubtype` (28-byte body) |
-| `0x41` | body | body | `BotHitUtils.BodyZoneSubtype` |
-| `0x42` | head | head | `BotHitUtils.StunSubtype` |
-| `0x91` | body | — | `BotHitUtils.MeleeSubtype` |
+| `0x13` | — | — | `DamageRecordUtils.ExplosiveSubtype` (28-byte body) |
+| `0x41` | body | body | `DamageRecordUtils.BodyStunSubtype` |
+| `0x42` | head | head | `DamageRecordUtils.HeadStunSubtype` |
+| `0x91` | body | — | `DamageRecordUtils.MeleeSubtype` |
 
 `0x41` is the byte this repository refused until now: `KindOf` recognised five bytes and
 `Decode` returned `null` for everything else, so a client writing it had its report dropped
 whole — no health taken, no record echoed. The console names it a body hit, in both tables.
 Neither capture holds one (measured below), so the gap was latent: it is closed as a
 correct reading of the table, not as a fix for an observed capture.
+
+## Hit zone and effect in code
+
+`DamageHit` exposes the classification on three axes instead of one mixed kind:
+
+| enum | values | what it answers |
+|---|---|---|
+| `HitZone` | `None`, `Body`, `Head` | where the blow landed |
+| `DamageEffect` | `Wound`, `Critical`, `Stun`, `Sleep` | what it does to health or stamina |
+| `DamageKind` | the rows below | which wire record it is |
+
+| wire | `DamageKind` | `HitZone` | `DamageEffect` |
+|---|---|---|---|
+| `0x11`, `0x15` | `BodyShot` | `Body` | `Wound` |
+| `0x12` | `Headshot` | `Head` | `Critical` |
+| `0x13` | `Explosion` | `None` | `Wound` |
+| `0x40` | `SleepingExplosion` | `None` | `Sleep` |
+| `0x41` | `TranquilliserBody` | `Body` | `Sleep` |
+| `0x42` | `TranquilliserHead` | `Head` | `Sleep` |
+| `0x21`, `0x24` | `Cqc` | `Body` | `Stun` |
+| `0x91`, marker `00`, whole bar | `StunStab` | `Body` | `Stun` |
+| `0x91`, marker `01`, whole bar | `CriticalMelee` | `Body` | `Critical` |
+| `0x91`, below a whole bar | `Melee` | `Body` | `Wound` |
+| `0x10` | `CriticalMelee` | `Body` | `Critical` |
+| `0xC1` | `NonLethalMelee` | `Body` | `Stun` |
+| `0xAD`, `0x2D` | `StunStab` | `Body` | `Stun` |
+| `0x0E` | `Gas` | `None` | `Wound` |
+
+**The release-day 1.0 ELF's `hitClass` is not the sleep/stun flag.** The stun and
+kill handlers at `0x6EDC90` and `0x6EEAF0` in that build switch on a `hitClass`
+where `1` is headshot and `2` is lock-on for the score counters
+(`docs/ADDRESSES.md` §2); both are score-side labels and neither is on the wire.
+The Ghidra program named `MGO2.ELF` here is the **1.36** image (`module_magic` at
+`0x0122a5cc`, text through `0x118e347`), where those two addresses hold unrelated
+transform code; its functions must not be renamed from the 1.0 index.
+
+The wire carries the zone in the subtype
+(`0x11`/`0x41` body, `0x12`/`0x42` head) and the sleep/stun decision in the
+family: `0x40` and the `0x41`/`0x42` darts sleep an emptied bar, while `0x21`/
+`0x24`, `0x91 00` and `0xC1` leave the stun pose. That is why `DamageHit.Zone`
+and `DamageHit.Effect` are derived from the decoded record, not from a score
+counter.
 
 ## Weapons, and the byte a record carries
 

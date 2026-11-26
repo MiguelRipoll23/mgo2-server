@@ -36,12 +36,13 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// every change another player makes.
 /// </para>
 /// <para>
-/// <b>The score is computed, from the kills and deaths this host counted.</b> The
+/// <b>The score is computed, from the counters this host counted.</b> The
 /// client does not bank a score: it walks the rule's coefficient table over the
 /// player's live counters every tick and clamps the result to <c>[0, 65535]</c>
-/// (<c>docs/PROTOCOL.md</c>, "SETTLED 2026-07-27"). The same is done here over the
-/// two counters the round's records carry, so the scoreboard's score bit moves
-/// with the round instead of waiting for a peer to state one
+/// (<c>docs/PROTOCOL.md</c>, "SETTLED 2026-07-27"). The same is done here over
+/// the counters the round's records carry — kills, deaths, knock-outs, headshots,
+/// combo and the objective counters — so the scoreboard's score bit moves with
+/// the round instead of waiting for a peer to state one
 /// (<see cref="MatchScoreRulesUtils"/>). A score a peer does state is kept as
 /// stated: it is that record's own number and has already been relayed.
 /// </para>
@@ -78,6 +79,9 @@ public sealed partial class MatchScoreService(
 
     private readonly Lock gate = new();
     private readonly Dictionary<byte, Row> rows = [];
+
+    /// <summary>The round's rule, kept after the close that clears the settings.</summary>
+    private int? lastRule;
     private readonly Dictionary<byte, Dictionary<int, int>> pending = [];
     private readonly Dictionary<(byte Killer, byte Victim), long> recentKills = [];
     private readonly Dictionary<byte, long> recentDeaths = [];
@@ -254,8 +258,11 @@ public sealed partial class MatchScoreService(
 
             rows.Clear();
             pending.Clear();
+            lastRule = roundState.RoundSettings?.Rule ?? lastRule;
             recentKills.Clear();
             recentDeaths.Clear();
+            recentKnockouts.Clear();
+            recentObjectives.Clear();
 
             foreach (var slot in resetSlots)
             {
@@ -316,12 +323,30 @@ public sealed partial class MatchScoreService(
     /// </param>
     private void QueueScore(byte slot, Row row, bool force = false)
     {
-        if (roundState.RoundSettings is not { } settings)
+        // The close clears the settings before the win is awarded; keep the rule.
+        if (roundState.RoundSettings is { } settings)
+        {
+            lastRule = settings.Rule;
+        }
+
+        if (lastRule is not { } rule)
         {
             return;
         }
 
-        var score = MatchScoreRulesUtils.Score(settings.Rule, row.Kills, row.Deaths, row.Headshots, row.Combo);
+        var counters = new MatchScoreCounters(
+            Kills: row.Kills,
+            Deaths: row.Deaths,
+            TeamWins: row.TeamWins,
+            KnockoutsDealt: row.KnockoutsDealt,
+            KnockoutsReceived: row.KnockoutsReceived,
+            Headshots: row.Headshots,
+            Combo: row.Combo,
+            BodySearches: row.BodySearches,
+            DogTags: row.DogTags,
+            HoldUps: row.HoldUps,
+            Checkpoints: row.Checkpoints);
+        var score = MatchScoreRulesUtils.Score(rule, counters);
         if (!force && (row.ScoreKnown ? row.Score == score : score == 0))
         {
             return;
@@ -334,7 +359,7 @@ public sealed partial class MatchScoreService(
             "Player in slot {Slot} now scores {Score} in rule {Rule}: {Kills} kill(s), {Deaths} death(s)",
             slot,
             score,
-            settings.Rule,
+            rule,
             row.Kills,
             row.Deaths);
     }

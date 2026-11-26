@@ -139,6 +139,52 @@ public sealed class OperationsStreamHandler(
                 roundState.NoteReadySetChanged();
             }
         }
+        else if (ObjectiveFeedBodiesUtils.IsObjectiveFeed(body))
+        {
+            // 04 <kind> <lobby slot>: a rule's objective moved. The delivery
+            // kinds are the checkpoint event -- a Capture put (0x02) or a Race
+            // goal (0x12), whose carrier the paired 0x12 record does not name --
+            // and the slot is the player who carried it. A take or a drop is
+            // logged and relayed; it does not move the count.
+            var kind = ObjectiveFeedBodiesUtils.KindOf(body);
+            var slot = ObjectiveFeedBodiesUtils.SlotOf(body);
+            logger.LogDebug(
+                "UDP {LocalPort}: {RemoteAddress} reports objective kind 0x{Kind:x2} for slot {Slot}",
+                context.LocalPort,
+                context.Remote,
+                kind,
+                slot);
+
+            if (slot > 0
+                && ObjectiveFeedBodiesUtils.IsDelivery(body)
+                && score.NoteCheckpoint(slot))
+            {
+                logger.LogInformation(
+                    "UDP {LocalPort}: slot {Slot} delivered an objective (0x04 kind 0x{Kind:x2}); "
+                    + "{Checkpoints} checkpoint(s) counted",
+                    context.LocalPort,
+                    slot,
+                    kind,
+                    score.Checkpoints(slot));
+                await publisher.PublishAsync(context);
+            }
+        }
+        else if (RaceGoalBodiesUtils.IsRaceGoal(body))
+        {
+            // 12 <flags> <goal> <spawn>: the team's target moved. The scorer is
+            // the objective feed's 0x12 record written in the same tick; this
+            // record is decoded so the goal, spawn and team are in the log and
+            // the body is not merely relayed as an unknown operation.
+            logger.LogDebug(
+                "UDP {LocalPort}: {RemoteAddress} reports a Race goal: team {Team}, goal {Goal}, "
+                + "spawn {Spawn}, scored {Scored}",
+                context.LocalPort,
+                context.Remote,
+                RaceGoalBodiesUtils.TeamOf(body),
+                RaceGoalBodiesUtils.GoalOf(body),
+                RaceGoalBodiesUtils.SpawnOf(body),
+                RaceGoalBodiesUtils.ScoredOf(body));
+        }
         else
         {
             // The stream's clock, state block and this host's own insertions share

@@ -29,9 +29,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// beat writes counts down with the round (
 /// <see cref="MatchRoundStateService.RemainingUnits"/>).
 /// </param>
-/// <param name="RoundOpen">
-/// Whether the round this beat serves has opened. A briefing's beat serves a
-/// round that has not, and no capture writes a player's health before the round
+/// <param name="ActorStreamActive">
+/// Whether the round's actor stream is live: the round is open, or it has closed
+/// and its result screens still hold the field. A briefing's beat serves a round
+/// that has not opened, and no capture writes a player's health before the round
 /// it plays is open (<see cref="IncludeVitals"/>).
 /// </param>
 
@@ -58,7 +59,7 @@ public sealed record BeatFramePlan(
     int FrameIndex,
     MatchRecordGenerationUtils Generation,
     int RoundClockUnits,
-    bool RoundOpen,
+    bool ActorStreamActive,
     int BlobsWritten,
     byte ItemBoxSequence,
     byte ItemBoxStateSequence,
@@ -245,6 +246,15 @@ public sealed record BeatFramePlan(
     /// waits out. This host's round opens on the report the spawn follows, so the
     /// round's own open states the onset and nothing else is needed.
     /// </para>
+    /// <para>
+    /// <b>It outlives the round by its result screens, and that is what keeps the
+    /// body drawn.</b> The reference holds the field after the whistle and goes on
+    /// writing the player's own record through it, so the record is the actor's
+    /// presence as well as its bar: a beat that stopped it at the close made the
+    /// character disappear until the next round. The player being invincible
+    /// while those screens are up is the client's own behaviour and is not
+    /// changed by this record.
+    /// </para>
     /// </remarks>
     /// <remarks>
     /// <b>It rides only when the beat has a body to carry</b>, which is the burst a
@@ -254,7 +264,7 @@ public sealed record BeatFramePlan(
     /// to <c>250</c> on the next — the bar that dropped and came back of 2026-11-11,
     /// and the collision at <c>0x10224D7B</c> thirty seconds into it.
     /// </remarks>
-    public bool IncludeVitals => RoundOpen && VitalsBody is not null;
+    public bool IncludeVitals => ActorStreamActive && VitalsBody is not null;
 
     /// <summary>
     /// Whether this frame's insertion is a state blob, which is what advances

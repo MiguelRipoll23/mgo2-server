@@ -245,6 +245,8 @@ public sealed partial class MatchResultService(
                 : string.Empty);
 
         await MatchRecordSendUtils.SendAsync(context, [record]);
+        // Result first: reference state[2] at t+154.244, scoreboard at t+198.680.
+        await publisher.PublishAsync(context);
 
         // The stage's own result screen is drawn from fields written 21.1 s
         // behind this record. The wait runs beside the caller's round watcher,
@@ -256,7 +258,7 @@ public sealed partial class MatchResultService(
     }
 
     /// <summary>
-    /// Steps the winning side's rounds-won counter, once per round, publishes the
+    /// Steps the winning side's rounds-won counter, once per round, queues the
     /// scoreboard that carries it, and settles the game's result when the round was
     /// its last.
     /// </summary>
@@ -267,9 +269,9 @@ public sealed partial class MatchResultService(
     /// (<see cref="MatchScoreboardFramesUtils.RoundsWonBit"/>).
     /// </para>
     /// <para>
-    /// <b>The deltas are published here and not left queued.</b> A closed round writes
-    /// no further kill or death, so nothing behind it would ever take them: the whole
-    /// side steps at the round's end and the screen states it immediately.
+    /// <b>The deltas are queued here and written after the result.</b> A closed round
+    /// writes no further kill or death, so nothing behind it would take them: the
+    /// whole side steps at the round's end and the result write publishes the step.
     /// </para>
     /// </remarks>
     /// <param name="roundResult">Result code the round ended on.</param>
@@ -301,7 +303,6 @@ public sealed partial class MatchResultService(
                     .ToList();
 
                 var credited = score.NoteRoundWin(winners);
-                await publisher.PublishAsync(context);
 
                 logger.LogInformation(
                     "UDP {LocalPort}: team {Team} took round {RoundNumber}, so its {PlayerCount} player(s) step "

@@ -16,10 +16,17 @@ public sealed partial class MatchScoreService
     {
         public int Kills;
         public int Deaths;
+        public int TeamWins;
         public int Score;
         public bool KillsKnown;
         public bool ScoreKnown;
         public int Headshots;
+        public int KnockoutsDealt;
+        public int KnockoutsReceived;
+        public int BodySearches;
+        public int DogTags;
+        public int HoldUps;
+        public int Checkpoints;
         public int KillStreak;
         public int BestKillStreak;
         public int ConsecutiveDeaths;

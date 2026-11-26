@@ -45,19 +45,6 @@ public sealed partial class TeamArrayService
     private readonly Dictionary<string, long> nextRepublish = [];
 
     /// <summary>
-    /// Sequence each peer's next pair carries, advanced with
-    /// <see cref="TeamArrayFramesUtils.NextSequence"/>: the capture's own runs read
-    /// <c>85 00</c>, <c>85 01</c>, <c>85 02</c>, so the repeats move the loop rather
-    /// than repeat one value.
-    /// </summary>
-    /// <remarks>
-    /// Held per peer for the reason the clock is: the sequence is what one client answers,
-    /// and a room of two where the peers share it hands the second client a number the
-    /// first has already answered.
-    /// </remarks>
-    private readonly Dictionary<string, byte> nextSequence = [];
-
-    /// <summary>
     /// The pair last written to a peer, so the copies behind it re-send those records
     /// rather than build and number new ones.
     /// </summary>
@@ -74,22 +61,35 @@ public sealed partial class TeamArrayService
 
     /// <summary>
     /// Republishes the room's side assignment to one peer on its own clock: the pair
-    /// itself while its copies last, and a freshly numbered one when they do not.
+    /// it has not answered is repeated under its own sequence, and the pair at the
+    /// sequence the client now holds is written once it has moved past it.
     /// </summary>
     /// <remarks>
-    /// It is per peer and not fanned out: the sequence is what a client answers, and every
-    /// peer holds its own. The room's rows are read on every tick, so the pair is rebuilt
-    /// the moment a player's side changes or the room's membership moves — a new value
-    /// for a record whose body is news is what the capture spends its values on.
+    /// <para>
+    /// <b>A tick repeats an unanswered record; it does not number a new one.</b> The
+    /// image re-sends a record under the byte it already carries until the peer
+    /// answers it (<c>P2P_FlushChannelQueues</c>, <c>0x285b58</c>). A tick that
+    /// advanced the sequence every 650 ms walked the loop from <c>1f</c> to
+    /// <c>4e</c> while the client was still answering <c>1f</c>; the pair behind it
+    /// was never confirmed, the client's echoes were refused, and the operations
+    /// stream it stopped acknowledging at that boundary never carried the round's
+    /// result to the screen. The round's open confirms the peer's answer and writes
+    /// the next sequence (<see cref="MatchRecords.MatchStartRunService.ConfirmEntryAsync"/>),
+    /// which is where the capture puts it.
+    /// </para>
+    /// <para>
+    /// It is per peer and not fanned out: the sequence is what a client answers, and
+    /// every peer holds its own. The room's rows are read only when a pair is built,
+    /// not on every repeat, so a repeat costs the room's rows nothing.
+    /// </para>
     /// </remarks>
     /// <param name="context">Context of the peer the pair is written to.</param>
     public async Task RepublishAsync(PeerContext context)
     {
         var now = Environment.TickCount64;
         var key = context.Remote.ToString();
-        var slots = await lobbySlots.ReadAsync();
+        var clientSequence = roster.PairSequenceOf(key);
 
-        byte sequence = 0;
         lock (republishGate)
         {
             if (nextRepublish.TryGetValue(key, out var due) && now < due)
@@ -98,19 +98,43 @@ public sealed partial class TeamArrayService
             }
 
             nextRepublish[key] = now + RepublishIntervalMilliseconds;
-
-            // **The pair is written when its content is news, and a copy is not written
-            // by this host at all.** The image has one re-sender — `P2P_FlushChannelQueues`
-            // (`0x285b58`) — and it repeats a record only while the peer has not answered
-            // it, under the byte that record already carries. A tick that wrote a held pair
-            // again produced six copies of each pair in `myserver.pcapng`, all under one
-            // byte the client had answered on the first, which the image cannot produce.
-            sequence = nextSequence.TryGetValue(key, out var next)
-                ? next
-                : TeamArrayFramesUtils.OpeningSequence;
-            nextSequence[key] = TeamArrayFramesUtils.NextSequence(sequence);
         }
 
+        List<RosterRecord>? heldPair = null;
+        byte heldSequence = 0;
+        lock (republishGate)
+        {
+            if (republished.TryGetValue(key, out var held))
+            {
+                if (clientSequence == held.Sequence)
+                {
+                    heldPair = [.. held.Pair];
+                    heldSequence = held.Sequence;
+                }
+                else
+                {
+                    // The client has moved past this pair — the open confirmed it — so
+                    // the next tick builds the pair at the sequence it now holds rather
+                    // than repeating a sequence it has already answered.
+                    republished.Remove(key);
+                    return;
+                }
+            }
+        }
+
+        if (heldPair is not null)
+        {
+            logger.LogDebug(
+                "UDP {LocalPort}: repeating the lobby-slot arrays at sequence {Sequence:x2} to {RemoteAddress}",
+                context.LocalPort,
+                heldSequence,
+                context.Remote);
+            await RosterRunSendUtils.SendAsync(context, heldPair);
+            return;
+        }
+
+        var slots = await lobbySlots.ReadAsync();
+        var sequence = clientSequence;
         var (newTeams, newOccupancy) = TeamArrayFramesUtils.BuildPair(sequence, slots);
         var ordinals = roster.TakeRunOrdinals(2);
         List<RosterRecord> pair =
@@ -127,7 +151,7 @@ public sealed partial class TeamArrayService
 
         lock (republishGate)
         {
-            republished[key] = new HeldPair(sequence, pair, 1);
+            republished[key] = new HeldPair(sequence, pair);
         }
 
         await RosterRunSendUtils.SendAsync(context, pair);
@@ -140,7 +164,6 @@ public sealed partial class TeamArrayService
         {
             republished.Clear();
             nextRepublish.Clear();
-            nextSequence.Clear();
         }
     }
 
@@ -152,13 +175,11 @@ public sealed partial class TeamArrayService
         {
             republished.Remove(remoteAddress);
             nextRepublish.Remove(remoteAddress);
-            nextSequence.Remove(remoteAddress);
         }
     }
 
-    /// <summary>A pair written to a peer, and how many times it has been written.</summary>
+    /// <summary>A pair written to a peer, held until the peer answers it.</summary>
     /// <param name="Sequence">Sequence the pair carries.</param>
     /// <param name="Pair">The two records, as they went out.</param>
-    /// <param name="Writes">Copies written so far, the first included.</param>
-    private sealed record HeldPair(byte Sequence, IReadOnlyList<RosterRecord> Pair, int Writes);
+    private sealed record HeldPair(byte Sequence, IReadOnlyList<RosterRecord> Pair);
 }

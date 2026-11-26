@@ -64,6 +64,18 @@ public sealed partial class RoomRosterService
     public void SeedRunOrdinal(byte value) => sequences.Seed(ExchangeIdentifier, value);
 
     /// <summary>
+    /// Restarts the room's exchange for the join that follows an emptied room.
+    /// </summary>
+    /// <remarks>
+    /// <b>The exchange's counter is the room's, not the process's.</b> Every member
+    /// is gone when this is called, so there is no peer holding a value of the old
+    /// stream; the next join opens the exchange at zero instead of continuing a
+    /// count nobody is waiting on (<see cref="MatchRecords.MatchRecordSequenceService.Forget"/>).
+    /// A room with a peer still in it never reaches this.
+    /// </remarks>
+    public void RestartExchange() => sequences.Forget(ExchangeIdentifier);
+
+    /// <summary>
     /// Takes the next values of the roster exchange's counter, in order, for a
     /// caller that writes several records under it.
     /// </summary>

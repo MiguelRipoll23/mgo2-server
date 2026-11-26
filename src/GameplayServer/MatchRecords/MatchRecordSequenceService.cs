@@ -193,6 +193,30 @@ public sealed class MatchRecordSequenceService(ILogger<MatchRecordSequenceServic
     }
 
     /// <summary>
+    /// Drops a stream's counter, because the room it belonged to has emptied.
+    /// </summary>
+    /// <remarks>
+    /// <b>Only an empty room may forget a stream.</b> The expectation a value is
+    /// compared against lives on the peer that read it, so dropping a stream a peer
+    /// is still reading hands that peer a value it has already passed. With every
+    /// member gone there is no such peer, and the next join opens the exchange at
+    /// zero rather than continuing a count nobody is waiting on.
+    /// </remarks>
+    /// <param name="identifier">Identifier whose stream is forgotten.</param>
+    public void Forget(ushort identifier)
+    {
+        var stream = StreamOf(identifier);
+        lock (gate)
+        {
+            nextOrdinals.Remove(stream);
+        }
+
+        logger.LogDebug(
+            "The 0x{Stream:x3} record stream is forgotten; the next room opens it at 0x00",
+            stream);
+    }
+
+    /// <summary>
     /// Opens a stream at a value, when nothing has taken from it yet.
     /// </summary>
     /// <remarks>

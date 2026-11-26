@@ -308,6 +308,42 @@ The server's `MatchScoreRulesUtils` applies:
 | INTERVAL | 0 | 0 | 0 | 0 |
 | RACE | 3 | 0 | 0 | 0 |
 
+**The score itself is the 37-column row.** `ComputeScore` (`0x6FA408`) walks the
+table the stage scripts fill with `-rule N -score <37 ints>` in `proc 23`, not the
+14-value `proc 24` row above. The seven playable rows — DM, TDM, RES, CAP, SNE,
+BASE and TSNE — are in `MatchScoreCounterUtils`. This host counts the columns its
+records can support: kills, deaths, round wins (column 5), knock-outs dealt and
+received (the stun family of a damage record), headshots, combo, checkpoints
+(column 27, B46 `capture_put_count`), body searches and dog tags (a Sneaking CQC
+hold-up on a knocked-out enemy), and CQC hold-ups.
+
+**CAP's kill and headshot cells are the captured card's, not the script's.** The
+stage row states `5` and `3` in columns 0 and 4; the captured scoreboard of
+`replay_396276_13.dat` (match 72518, CAP, twice 0-2) pays `3` for every kill,
+headshot kills included, and `5` for a round win. Every score step in that file
+is `+3` on a kill, `+5` on a round win, and `+1` on an assist or a carried-target
+point; the CAP row now carries `3` and `0` in those two cells so the computed
+score agrees with the capture. The remaining difference is the counters this
+host does not keep — assists (B37) and carried-target points (B51) — not a
+coefficient disagreement in the cells it does read. The captured counter is also
+cumulative across the match (the two rounds' scores add), while this host's rows
+reset at each round open; its scoreboard bit is therefore the round's
+contribution, and that structural difference is not yet reconciled.
+
+**The objective feed is the checkpoint record.** `0x04 <kind> <slot>` names the
+carrier and the rule's event; kind `0x02` is a target put in a Capture goal and
+kind `0x12` is a Race goal, and both count a checkpoint for that slot
+(`ObjectiveFeedBodiesUtils`, `MatchScoreService.NoteCheckpoint`). The `0x12`
+record's scorer is the paired `0x04 0x12 <slot>` written in the same tick; the
+`0x12` body itself is decoded for its flags, goal and spawn
+(`RaceGoalBodiesUtils`). The host still writes neither record.
+
+**The objective counters this host cannot see are not invented.** Checkpoints are
+fed by the `0x04` delivery and a round win by the award at the round's end; team
+kills, wakes, assists, the other mode objective counters and the off-wire `OTHER`
+column are still not counted. `NoteCheckpoint` is the door the operations handler
+now calls.
+
 The full 14-value stage rows, including the columns this host does not compute, are
 in [`../analysis/gameplay-data-functions.md`](../analysis/gameplay-data-functions.md)
 §3. The score is recomputed from the live counters and clamped to `[0, 65535]`, not
@@ -339,7 +375,7 @@ state the endings:
 | TSNE | all enemies down or a target brought home / both targets kept | state fields are candidates; no measured end |
 | SDM | last player standing in a shrinking area | no host-side area/end field located |
 | INTERVAL | no competitive result | clock only |
-| SCAP | a target taken to checkpoints a set number of times | no checkpoint record located |
+| SCAP | a target taken to checkpoints a set number of times | `0x04` kind `0x02` delivery, counted as a checkpoint |
 | RACE | race goal/checkpoint progress | `0x12` goal, `0x13` rating |
 
 The current server only decides a round on the clock or a TDM/DM ticket limit. A
@@ -388,8 +424,8 @@ The server's current per-rule behavior is narrower than the protocol:
 | team tickets | `TeamTicketBodiesUtils`, `MatchResultService.TicketsReachedAsync` | TDM only in practice; DM's FFA ticket has no measured consumer |
 | item boxes | `MatchStartRunService.ItemBoxes`, `BeatFramePlan` | measured generic pair written in every rule (TDM included); objective targets are the stage script's own props, not this group |
 | objective state | `MatchStateBodiesUtils` writes `0xff` at 40–43 | no rule writes holders/clocks |
-| objective feed | none | `0x04` not written |
-| race goal / rating | none | `0x12` / `0x13` not written |
+| objective feed | decoded on receipt (`ObjectiveFeedBodiesUtils`); a delivery counts a checkpoint | `0x04` not written |
+| race goal / rating | decoded on receipt (`RaceGoalBodiesUtils`) | `0x12` / `0x13` not written |
 | round end | clock or TDM/DM ticket | objectives not host-visible; clock uses score |
 | result | `state[2]`/`state[3]` | side/drawn/no-result only |
 

@@ -340,7 +340,7 @@ public sealed partial class BotActorPublishService
             // damage: the reference answers one whose victim its own earlier blast had
             // already put at zero (`actions.pcapng`, the t+167.38 record on a slot at 0
             // since t+160.68, written back at t+167.57).
-            var blast = kind is DamageKind.Explosive or DamageKind.ExplosiveStun;
+            var blast = kind is DamageKind.Explosion or DamageKind.SleepingExplosion;
             if (BotActorRecordUtils.SlotOfDamageIdentifier(identifier) is { } victim
                 && !blast
                 && IsVictimDownLocked(victim))

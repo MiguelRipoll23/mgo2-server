@@ -130,7 +130,7 @@ public sealed partial class BotActorPublishService
         // stamina and take no health, so nothing is counted here: the round's own
         // stats count a knock-out, and the client draws the fall. Read as damage,
         // each of them put the teammate it was aimed at down as if it had been shot.
-        if (hit.IsStun)
+        if (hit.IsKnockout)
         {
             return StunPlayer(hit, shooterSlot, now);
         }

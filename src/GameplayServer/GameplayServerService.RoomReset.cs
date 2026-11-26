@@ -58,6 +58,7 @@ public sealed partial class GameplayServerService
         positions.Reset();
         vitals.Reset();
         roster.Reset();
+        roster.RestartExchange();
         rosterAnswers.Reset();
         teamArrays.Reset();
 

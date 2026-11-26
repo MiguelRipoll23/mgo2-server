@@ -50,15 +50,15 @@ public sealed partial class BotSimulationService
         }
 
         var now = Environment.TickCount64;
-        if (hit.IsStun)
+        if (hit.IsKnockout)
         {
-            // **The stun family is not one behaviour.** A tranquilliser sleeps an
-            // emptied bar, a sleeping device sleeps it for its measured 26 s, and
+            // **The knock-out family is not one behaviour.** A tranquilliser sleeps
+            // an emptied bar, a sleeping device sleeps it for its measured 26 s, and
             // CQC or a knife leaves the stun pose while stamina refills. Reading a
             // dart as a death is what drew a body at health 250 as a corpse.
             var sleeps = hit.SleepsWhenEmpty;
             var stunPose = hit.ShowsStunPose;
-            var deviceSleep = hit.Kind is DamageKind.ExplosiveStun;
+            var deviceSleep = hit.IsSleepingDevice;
             Stun(body, hit.Damage, now, sleeps, stunPose, deviceSleep);
             return true;
         }
@@ -176,15 +176,25 @@ public sealed partial class BotSimulationService
         body.SleepUntilMilliseconds = stun.SleepUntilMilliseconds;
         body.StunAnimation = emptied && stunPose && !stun.Sleeping;
 
+        // The knock-out lands now, before the hit beat's actor block is built.
+        body.Moving = false;
+        body.TargetSlot = BotBodyState.NoTarget;
+        body.ShotThisBeat = false;
+
         body.NextVitalsMilliseconds = 0;
         BotLocomotionService.NoteHit(body, now);
 
         // The stun holds the `c1 81` head for as long as it lasts, rather than the
         // two hundred milliseconds a wound does: a stunned body is the one the client
         // draws falling.
+        body.BurstRemaining = 0;
         body.HitReacting = true;
         body.HitReactUntilMilliseconds = body.StunnedUntilMilliseconds;
-        body.BurstRemaining = 0;
+        if (stun.Sleeping)
+        {
+            body.HitReacting = false;
+            body.HitReactUntilMilliseconds = 0;
+        }
         logger.LogDebug(
             "Bot in slot {BotSlot} was stunned with {Stamina} stamina and gets up in {StunMilliseconds} ms",
             body.SessionSlot,

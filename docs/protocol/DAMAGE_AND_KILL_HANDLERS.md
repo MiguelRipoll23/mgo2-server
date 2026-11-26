@@ -71,14 +71,19 @@ blast, because it carries the victim's animation rather than a relay of damage
 
 ## 3. Subtypes
 
-| byte | blow | health | marker | weapon seen |
-|---|---|---|---|---|
-| `11` | body hit | the points in the word (33–69 in the capture; five or six put a body down) | `01` | `0x18` |
-| `12` | **headshot** | the whole bar (`10 7d` = 250.1) | `01` | `0x18` |
-| `42` | **stun** (Mk.2 dart) | **none** — the stun bar, not health | `01` | `02` |
-| `91` | knife | whole bar when the marker is `01` (**critical stab**) | `01` | `01` |
-| `91` | knife | **none** when the marker is `00` (**stun stab**) | `00` | `01` |
-| `13` | blast | the word the blast took (187.6 measured) | `00` | `34` |
+| byte | blow | zone | effect | health | marker | weapon seen |
+|---|---|---|---|---|---|---|
+| `11` | body hit | body | wound | the points in the word (33–69 in the capture; five or six put a body down) | `01` | `0x18` |
+| `12` | **headshot** | head | critical | the whole bar (`10 7d` = 250.1) | `01` | `0x18` |
+| `41` | **stun** (Mk.2 dart, body) | body | sleep | **none** — 36 of the stun bar | `01` | `02` |
+| `42` | **stun** (Mk.2 dart, head) | head | sleep | **none** — the whole stun bar | `01` | `02` |
+| `40` | sleeping device | none | sleep | **none** | `00`/`01` | `41`/`43` |
+| `91` | knife, critical stab | body | critical | whole bar when the marker is `01` | `01` | `01` |
+| `91` | knife, stun stab | body | stun | **none** when the marker is `00` | `00` | `01` |
+| `21`/`24` | CQC reach or impact | body | stun | **none** | — | `6b`–`6d` |
+| `C1` | non-lethal knife | body | stun | **none** | `01` | Mk.2 |
+| `AD`/`2D` | stun stab, short form | body | stun | **none** — whole stun bar | `00` | `01` |
+| `13` | blast | none | wound | the word the blast took (187.6 measured) | `00` | `34` |
 
 Readings that matter to a host:
 
@@ -90,13 +95,21 @@ Readings that matter to a host:
   with the zero the vitals record carries.
 - **A stun takes stamina, not health.** Its points are the part of the stun bar the blow
   spends. Read as health damage, the `42` word kills the actor the client was told was
-  knocked out, and announces a kill for a stun.
+  knocked out, and announces a kill for a stun. The `41`/`42` darts and the `40` device
+  **sleep** an emptied bar; CQC, the `91 00` stab and the `C1` non-lethal knife **stun** it.
+- **The release-day 1.0 ELF's `hitClass` is the score handler's, not the wire's effect.**
+  The stun and kill handlers (`0x6EDC90`, `0x6EEAF0`) in that build switch on `1` =
+  headshot, `2` = lock-on for their counters (`docs/ADDRESSES.md` §2). These addresses
+  are 1.0-only: the Ghidra `MGO2.ELF` is the 1.36 image, and at those addresses it has
+  unrelated transform/vector code, so no Ghidra function rename follows from them. The
+  wire names the zone in the subtype and the sleep/stun family in the row, which is what
+  `DamageHit.Zone` and `DamageHit.Effect` now state separately.
 - **The knife's marker byte decides.** `91 00` is a knockdown: two of them in the working
   capture, neither in any feed, neither victim's vitals at zero.
 
-`BotHitUtils.Decode` is the decoder; `KindOf` maps the subtype, and the decode refuses any
-length that is not 15 or 28, so the operations and objective streams (same class, lengths
-12–30) are never read as damage.
+`DamageRecordUtils.Decode` is the decoder; `KindOf` maps the subtype, and the decode
+refuses any length that is not 11, 15 or 28, so the operations and objective streams
+(same class, lengths 12–30) are never read as damage.
 
 ---
 

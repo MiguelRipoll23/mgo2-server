@@ -51,27 +51,53 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
+    /// Reports heard while the screens that follow a round ran. Those reports are
+    /// already the ones the next round opens on, so a spawn wait that only counted
+    /// `joinReportCount` waited for a second report the client had already sent.
+    /// </summary>
+    private int resultScreenReports;
+
+    /// <summary>
+    /// Join reports the room has heard, counting the ones heard behind a round's
+    /// result screens as well: every report the round that follows them opens on.
+    /// </summary>
+    public int ReportsHeard
+    {
+        get
+        {
+            lock (gate)
+            {
+                return joinReportCount + resultScreenReports;
+            }
+        }
+    }
+
+    /// <summary>
     /// Waits for the report the round's clock starts on: the one a client sends once
     /// it has left the weapon select, which is the screen that reads "please wait"
     /// until the host answers it with the round's run.
     /// </summary>
     /// <param name="context">Context the run is written through.</param>
-    private async Task WaitForSpawnReportAsync(PeerContext context)
+    /// <param name="reportsHeard">
+    /// <see cref="ReportsHeard"/> as it stood before the round opened: the run waits
+    /// for a report behind that count, which is the one the client sends after the
+    /// round opened rather than one it already sent behind the result screens.
+    /// </param>
+    private async Task WaitForSpawnReportAsync(PeerContext context, int reportsHeard)
     {
         var session = context.Session;
-        var openedAt = JoinReportCount;
         var waited = 0;
 
         while (MatchRecordPeerUtils.IsAlive(session)
             && roundState.IsOpen
-            && JoinReportCount == openedAt
+            && ReportsHeard <= reportsHeard
             && waited < SpawnReportWaitMilliseconds)
         {
             await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
             waited += MatchRoundStateService.BriefingRunPollMilliseconds;
         }
 
-        if (JoinReportCount == openedAt)
+        if (ReportsHeard <= reportsHeard)
         {
             logger.LogDebug(
                 "UDP {LocalPort}: no report came from {RemoteAddress} {Seconds} s after the round opened; "

@@ -134,11 +134,27 @@ public sealed partial class MatchRecordService
             // carries none.
             var carriesItemBoxes = roundState.IsOpen;
 
+            // The actor stream is the round's, and it does not stop at the
+            // whistle: the reference keeps writing positions and vitals through
+            // the result screens (`0x4f`, `0x4e` and `0x58` all continue past the
+            // round's end in `rounded-ended-by-reaching-tickets-limit`), which is
+            // what keeps a player's body drawn while the stats are up. A beat
+            // that gated them on `IsOpen` alone dropped the player's own actor
+            // record the moment the round closed, and the body vanished until the
+            // next round opened. Invincibility during those screens is the
+            // client's own and stays: the actor writer already runs its beats with
+            // combat off while the round is closed (`allowCombat: open`), so this
+            // only keeps the body on the field. The item-box group stays gated on
+            // the open round: it is the playing round's own, not the hold's.
+            var actorStreamActive = roundState.IsOpen
+                || roundState.IsRoundEnding
+                || roundState.IsStageEnding;
+
             var plan = new BeatFramePlan(
                 beat.FrameIndex,
                 generation,
                 roundState.RemainingUnits,
-                roundState.IsOpen,
+                actorStreamActive,
                 beat.BlobsWritten,
                 beat.ItemBoxSequence,
                 beat.ItemBoxStateSequence,

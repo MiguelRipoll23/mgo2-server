@@ -100,6 +100,17 @@ public sealed partial class BotActorPublishService
     private bool scoreboardDue;
 
     /// <summary>
+    /// Marks the scoreboard for publication on the next beat.
+    /// </summary>
+    /// <remarks>
+    /// A score can move outside this writer — a knock-out or a hold-up arrives on
+    /// a peer's tick, not on the beat — and the deltas it queues still have to
+    /// ride a frame. The frame's own publisher is what writes them, so the flag is
+    /// the hand-off rather than a second publisher.
+    /// </remarks>
+    public void NoteScoreChanged() => scoreboardDue = true;
+
+    /// <summary>
     /// Writes the deaths waiting in the simulation as kill-feed records and credits
     /// them; the scoreboard the credit changed is published behind the frame.
     /// </summary>

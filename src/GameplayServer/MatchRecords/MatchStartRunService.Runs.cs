@@ -76,6 +76,13 @@ public sealed partial class MatchStartRunService
                 // echoes the report, and there is no report behind a round that
                 // nobody asked for. The wait is the peer's own lifetime, because
                 // a briefing lasts as long as the players in it take.
+                //
+                // The report count is taken before the wait: the report that opens
+                // the round is the one the run follows, and a report heard while
+                // the result screens ran is already that report (OnJoinReport).
+                // Counting after the open made every next round wait ten seconds
+                // for a second report the client had already sent.
+                var reportsHeard = ReportsHeard;
                 await roundState.WaitForOpenAsync(session, MatchRoundStateService.WaitWhilePeerIsThere);
                 if (!roundState.IsOpen)
                 {
@@ -103,7 +110,7 @@ public sealed partial class MatchStartRunService
 
                 // The phase and the run wait for the report the client sends from its
                 // weapon select (report t+146.831, run t+147.650), not for a clock.
-                await WaitForSpawnReportAsync(context);
+                await WaitForSpawnReportAsync(context, reportsHeard);
                 await WriteRoomStateAsync(context);
                 await WriteRunAsync(context, generation);
 
@@ -161,29 +168,6 @@ public sealed partial class MatchStartRunService
     /// </remarks>
     private MatchRotationEntry? ReadBriefingRound() =>
         matchSettings.FindPublished()?.Round(roundState.RoundNumber + 1);
-
-    /// <summary>
-    /// Writes one round's opening run to a peer and repeats it behind itself.
-    /// </summary>
-    /// <param name="context">Context the run is written through.</param>
-    /// <param name="generation">Identifier set the round plays under.</param>
-    private async Task WriteRunAsync(PeerContext context, MatchRecordGenerationUtils generation)
-    {
-        if (roundState.RoundSettings is not { } round)
-        {
-            // The round closed under the wait — its clock ran out before this
-            // peer's worker reached the run — so there is nothing to open it with.
-            logger.LogDebug(
-                "UDP {LocalPort}: round {RoundNumber} closed before its opening run was written to "
-                + "{RemoteAddress}",
-                context.LocalPort,
-                roundState.RoundNumber,
-                context.Remote);
-            return;
-        }
-        await WriteRoundStartStateAsync(context, generation, round);
-        await WriteRunCoreAsync(context, generation, round, roundState.RemainingUnits, briefing: false);
-    }
 
     /// <summary>
     /// Writes one run — a round's, or the briefing's that precedes it — to a peer

@@ -1,3 +1,5 @@
+using Mgo2Server.GameplayServer.Match;
+
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
@@ -13,23 +15,27 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <c>[ede912] -score &lt;14 ints&gt;</c> plus a shorter <c>[adb9e7] -score</c> row, and
 /// the rows are identical across the stages. The client's table is wider than the
 /// fourteen values the script writes, but **column 0 is the kill score award and
-/// column 1 the death score penalty** in both, which is what this file uses. It
+/// column 1 the death score penalty** in both, which is what the fallback below
+/// uses. It
 /// recomputes the whole total from the player's live counters every tick and clamps
 /// it to <c>[0, 65535]</c> before storing it, so a score is never banked and a
 /// round that takes a player below zero states zero (<c>docs/PROTOCOL.md</c>, "SETTLED
 /// 2026-07-27"; <c>docs/proto/inbound/mgo2_cmd_4390_c2s.ksy</c>;
 /// <c>docs/analysis/gameplay-data-functions.md</c> §3).
 /// </para>
-/// <para>
-/// <b>Only the two counters this host measures are here.</b> The other
-/// thirty-five columns read live counters the gameplay channel does not carry —
-/// headshots, stuns dealt and received, wakes, combo, assists, hacks, the
-/// objective counters, the team-win bonus, and the off-wire <c>OTHER</c> counter
-/// at column 36. A counter the host does not have contributes nothing, which is
-/// what the table states for a player with none of it rather than a guessed
-/// value standing in for one. The totals are therefore exact for a round in which
-/// nothing else scored, and a floor in the three rules where <c>OTHER</c> pays.
-/// </para>
+    /// <para>
+    /// <b>The measured columns are the fallback, and the full row is the table.</b>
+    /// <see cref="MatchScoreCounterUtils"/> holds the 37-column rows for the seven
+    /// playable rules and computes the score from the counters this host now keeps:
+    /// kills, deaths, team wins, knock-outs dealt and received, headshots, combo,
+    /// checkpoints, body searches, dog tags and CQC hold-ups. A rule with no 37-column
+    /// row falls back to the four measured coefficients here — kill award, death
+    /// penalty, headshot award and combo award. The columns the host does not count
+    /// (team kills, wakes, assists, the other mode objective counters and the
+    /// off-wire <c>OTHER</c> at column 36) contribute nothing, which is what the table
+    /// states for a player with none of it rather than a guessed value standing in
+    /// for one.
+    /// </para>
 /// </remarks>
 public static class MatchScoreRulesUtils
 {
@@ -38,6 +44,14 @@ public static class MatchScoreRulesUtils
     /// <c>[0, 65535]</c> before the one write that stores it.
     /// </summary>
     public const int ScoreCeiling = 65_535;
+
+    /// <summary>
+    /// Points one checkpoint adds in SCAP, the rule whose score is its checkpoint
+    /// progress. The stage script states no 37-column row for SCAP, and the CAP
+    /// row's B46 <c>capture_put_count</c> -- the same delivery this host counts --
+    /// is 1, so that is the coefficient used rather than an invented one.
+    /// </summary>
+    private const int CheckpointScoreAward = 1;
 
     /// <summary>
     /// Kill score award per rule, indexed by the rule id the room states: the points
@@ -86,6 +100,33 @@ public static class MatchScoreRulesUtils
     /// </summary>
     private static readonly int[] ComboScoreAwardCoefficients =
         [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+    /// <summary>
+    /// A player's score in a rule, from the live counters this host holds.
+    /// </summary>
+    /// <remarks>
+    /// <b>The client's full row is used where the stage scripts state one.</b> The
+    /// seven playable rules in <see cref="MatchScoreCounterUtils"/> carry all 37
+    /// columns, so a knock-out, a dog tag or a hold-up pays its table value
+    /// instead of the kills-and-deaths approximation. A rule with no row — Bomb,
+    /// SDM, INTERVAL and RACE — falls back to the measured columns below rather
+    /// than to zero. SCAP is the exception: its score is its checkpoint progress,
+    /// at the one point the CAP row's B46 cell states for the same delivery.
+    /// </remarks>
+    /// <param name="rule">Rule id the round is played under.</param>
+    /// <param name="counters">The player's live counters.</param>
+    /// <returns>The score, clamped to <c>[0, 65535]</c> as the client clamps it.</returns>
+    public static int Score(int rule, MatchScoreCounters counters)
+    {
+        if (rule == MatchRuleUtils.SneakingCapture)
+        {
+            return Math.Clamp(counters.Checkpoints * CheckpointScoreAward, 0, ScoreCeiling);
+        }
+
+        return MatchScoreCounterUtils.HasRow(rule)
+            ? MatchScoreCounterUtils.Score(rule, counters)
+            : Score(rule, counters.Kills, counters.Deaths, counters.Headshots, counters.Combo);
+    }
 
     /// <summary>
     /// A player's score in a rule, from the kills and deaths this host has counted

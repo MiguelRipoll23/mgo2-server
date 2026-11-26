@@ -80,7 +80,7 @@ public sealed partial class BotActorPublishService
             var stunMilliseconds = emptied && hit.ShowsStunPose
                 ? ActorStaminaUtils.RecoveryMilliseconds(stamina)
                 : ActorStunUtils.StunMilliseconds;
-            var sleepMilliseconds = hit.Kind is DamageKind.ExplosiveStun
+            var sleepMilliseconds = hit.IsSleepingDevice
                 ? ActorStunUtils.SleepDeviceMilliseconds
                 : ActorStaminaUtils.RecoveryMilliseconds(stamina);
             var stun = ActorStunUtils.Apply(
@@ -147,9 +147,12 @@ public sealed partial class BotActorPublishService
                 ? DamageRecordUtils.HeadStunSubtype
                 : DamageRecordUtils.BodyStunSubtype)
             : DamageRecordUtils.MeleeSubtype;
+        var kind = shot.Kind is BotWeaponKind.StunDart
+            ? (shot.Headshot ? DamageKind.TranquilliserHead : DamageKind.TranquilliserBody)
+            : DamageKind.StunStab;
         var hit = new DamageHit(
             shot.VictimSlot,
-            DamageKind.Stun,
+            kind,
             shot.Damage,
             shot.Weapon,
             killerSlot,

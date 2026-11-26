@@ -124,6 +124,7 @@ public sealed partial class MatchStartRunService
             lock (gate)
             {
                 roundDeparted.Add(reporter);
+                resultScreenReports++;
                 reportedForNextRound = roundDeparted.Count;
             }
 

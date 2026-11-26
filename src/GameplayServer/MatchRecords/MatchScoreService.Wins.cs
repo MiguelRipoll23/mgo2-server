@@ -48,6 +48,13 @@ public sealed partial class MatchScoreService
                 var wins = roundWins.TryGetValue(slot, out var stored) ? stored + 1 : 1;
                 roundWins[slot] = wins;
                 Queue(slot, MatchScoreboardFramesUtils.RoundsWonBit, wins);
+
+                // Column 5 of the rule's row: a round win pays its 5 at the
+                // moment the round is awarded, which is the score change the
+                // captured card shows on the result beat (match 72518).
+                var row = RowOf(slot);
+                row.TeamWins++;
+                QueueScore(slot, row);
                 logger.LogDebug(
                     "Player in slot {Slot} has now won {Wins} round(s) of the game",
                     slot,

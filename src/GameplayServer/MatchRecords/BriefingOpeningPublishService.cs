@@ -65,6 +65,13 @@ public sealed class BriefingOpeningPublishService(
             var sequence = roster.PairSequenceOf(context.Remote.ToString());
             await teamArrays.ConfirmAsync(context, sequence);
 
+            // The pair the confirmation republishes is the one the briefing's run
+            // names. Noting it here keeps the run from naming the sequence the
+            // client has just answered while its echo of the next one is in flight.
+            roster.NotePairSequence(
+                context.Remote.ToString(),
+                TeamArrayFramesUtils.NextSequence(sequence));
+
             var slots = await lobbySlots.ReadAsync();
             var records = new List<RosterRecord>(slots.Count);
 

@@ -185,20 +185,26 @@ public static class DamageRecordUtils
 
         return body[0] switch
         {
-            BodySubtype when body.Length == BodyLength => DamageKind.Body,
-            AlternateBodySubtype when body.Length == BodyLength => DamageKind.Body,
+            BodySubtype when body.Length == BodyLength => DamageKind.BodyShot,
+            AlternateBodySubtype when body.Length == BodyLength => DamageKind.BodyShot,
             HeadshotSubtype when body.Length == BodyLength => DamageKind.Headshot,
-            ExplosiveSubtype when body.Length == BlastBodyLength => DamageKind.Explosive,
+            ExplosiveSubtype when body.Length == BlastBodyLength => DamageKind.Explosion,
             NonLethalExplosiveSubtype when body.Length is ShortBodyLength or BodyLength
-                => DamageKind.ExplosiveStun,
+                => DamageKind.SleepingExplosion,
             GasSubtype when body.Length == ShortBodyLength => DamageKind.Gas,
-            CriticalKnifeSubtype when body.Length == ShortBodyLength => DamageKind.MeleeKill,
+            CriticalKnifeSubtype when body.Length == ShortBodyLength => DamageKind.CriticalMelee,
             CqcSubtype or CqcImpactSubtype when body.Length is ShortBodyLength or BodyLength
-                => DamageKind.Knockout,
-            BodyStunSubtype or HeadStunSubtype when body.Length == BodyLength => DamageKind.Stun,
-            NonLethalSubtype when body.Length == BodyLength => DamageKind.Stun,
+                => DamageKind.Cqc,
+            // The short form is the same five-byte header without the impact
+            // direction: the live client writes it for a dart, and a decoder that
+            // demanded fifteen bytes read the tranquilliser as no hit at all.
+            BodyStunSubtype when body.Length is ShortBodyLength or BodyLength
+                => DamageKind.TranquilliserBody,
+            HeadStunSubtype when body.Length is ShortBodyLength or BodyLength
+                => DamageKind.TranquilliserHead,
+            NonLethalSubtype when body.Length == BodyLength => DamageKind.NonLethalMelee,
             StunStabSubtype or StunStabAlternativeSubtype when body.Length == ShortBodyLength
-                => DamageKind.Stun,
+                => DamageKind.StunStab,
             MeleeSubtype when body.Length == BodyLength => MeleeKindOf(body),
             _ => null,
         };
@@ -224,6 +230,6 @@ public static class DamageRecordUtils
             return DamageKind.Melee;
         }
 
-        return body[1] == 0 ? DamageKind.Stun : DamageKind.MeleeKill;
+        return body[1] == 0 ? DamageKind.StunStab : DamageKind.CriticalMelee;
     }
 }

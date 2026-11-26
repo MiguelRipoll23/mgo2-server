@@ -171,6 +171,15 @@ public sealed partial class MatchStartRunService
     /// t+193.621; `mgo2-game-joined-when-red-team-then-briefing` echoes at t+57.983
     /// and is confirmed at t+72.560. `mgo2-game1` and `mgo2-started-on-solo-game`
     /// are confirmed nowhere in their captures at all.
+    /// <para>
+    /// <b>The sequence is the peer's current one, not the one its first entry
+    /// named.</b> A client answers each pair the room publishes, so its sequence has
+    /// moved through the briefing; confirming the sequence of the first entry at the
+    /// next round's open is a confirmation the client has already passed, and it
+    /// waits for the pair at the sequence it is actually on until its session goes
+    /// quiet. <see cref="Rooms.RoomRosterService.PairSequenceOf"/> is the one the
+    /// client's own echoes update (<see cref="Commands.Peer.Room.PlayerProfileHandler"/>).
+    /// </para>
     /// </para>
     /// <para>
     /// <b>A confirmation in the entry pass stops the client where it stands.</b>
@@ -191,16 +200,24 @@ public sealed partial class MatchStartRunService
     /// <param name="context">Context of the peer whose entry is answered.</param>
     private async Task ConfirmEntryAsync(PeerContext context)
     {
-        byte sequence;
         lock (gate)
         {
-            if (!entrySequences.TryGetValue(context.Session, out sequence))
+            if (!entrySequences.ContainsKey(context.Session))
             {
                 return;
             }
         }
 
+        var sequence = roster.PairSequenceOf(context.Remote.ToString());
         await teamArrays.ConfirmAsync(context, sequence);
+
+        // The confirmation republishes the pair at the sequence after the one the
+        // client answered, and the round's run names that same pair. Noting it here
+        // is what keeps the run from falling back to the sequence the client has
+        // just answered while its echo of the next one is still in flight.
+        roster.NotePairSequence(
+            context.Remote.ToString(),
+            Rooms.TeamArrayFramesUtils.NextSequence(sequence));
     }
 
     /// <summary>

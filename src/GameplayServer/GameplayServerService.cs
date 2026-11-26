@@ -49,6 +49,8 @@ public sealed partial class GameplayServerService : IAsyncDisposable
     private readonly PeerControlByteService controlBytes;
     private readonly TeamArrayService teamArrays;
     private readonly PlayerSettingsBurstSchedulerService settingsBurstScheduler;
+    private readonly MatchRecords.MatchScoreService score;
+    private readonly Match.MatchSettingsService matchSettings;
     private readonly PlayerVitalsService vitals;
     private readonly PlayerPositionService positions;
     private readonly Bots.BotPopulationService bots;
@@ -105,6 +107,8 @@ public sealed partial class GameplayServerService : IAsyncDisposable
         controlBytes = serviceProvider.GetRequiredService<PeerControlByteService>();
         teamArrays = serviceProvider.GetRequiredService<TeamArrayService>();
         settingsBurstScheduler = serviceProvider.GetRequiredService<PlayerSettingsBurstSchedulerService>();
+        score = serviceProvider.GetRequiredService<MatchRecords.MatchScoreService>();
+        matchSettings = serviceProvider.GetRequiredService<Match.MatchSettingsService>();
         vitals = serviceProvider.GetRequiredService<PlayerVitalsService>();
         positions = serviceProvider.GetRequiredService<PlayerPositionService>();
         bots = serviceProvider.GetRequiredService<Bots.BotPopulationService>();
