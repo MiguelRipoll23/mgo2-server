@@ -99,6 +99,19 @@ public sealed partial class GameplayServerService
             matchStart.NoteEntryAnswers(session, entryAnswers);
         }
 
+        // The result screens answer nothing, which is what the reference host does:
+        // `rounded-ended-by-reaching-tickets-limit` leaves all nine records its client
+        // sends across the 9 s before the stage result unanswered. An answer carries the
+        // phase's control byte, and a screen below the stage's own step takes the first
+        // non-0xff byte as its advance, so answering a keep-alive while the result is up
+        // moves the client past the screen it is meant to show. The records are not
+        // dropped: the peer retransmits them, and the pass that receives them once the
+        // screens are down answers them then.
+        if (roundStates.IsRoundEnding || roundStates.IsStageEnding)
+        {
+            return;
+        }
+
         var answers = frame.Messages
             .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
             .Where(message => !TeamArrayFramesUtils.IsArrayEcho(message.Body))

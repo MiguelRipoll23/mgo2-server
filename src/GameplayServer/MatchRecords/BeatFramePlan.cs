@@ -79,8 +79,14 @@ public sealed record BeatFramePlan(
                 return BeatInsertion.Operations;
             }
 
-            if (FrameIndex % MatchRecordFramesUtils.OperationsClassBitPeriodFrames
-                == MatchRecordFramesUtils.OperationsClassBitPhaseFrames)
+            // The class-bit clock is the playing round's, like the item boxes:
+            // `rounded-ended-by-reaching-tickets-limit` writes none of them through its
+            // result and stage screens — every clock it writes there is under the plain
+            // operations identifier — so a closed round's screens carry none. A briefing
+            // has no screens and keeps the form the solo capture measured.
+            if (IsLiveRound
+                && FrameIndex % MatchRecordFramesUtils.OperationsClassBitPeriodFrames
+                    == MatchRecordFramesUtils.OperationsClassBitPhaseFrames)
             {
                 return BeatInsertion.OperationsClassBit;
             }
@@ -95,6 +101,13 @@ public sealed record BeatFramePlan(
                 : BeatInsertion.None;
         }
     }
+
+    /// <summary>
+    /// Whether this frame serves a live round rather than its result screens: a playing
+    /// round writes the item boxes, and a briefing has no actor stream. Both keep the
+    /// class-bit clock; the screens between them do not.
+    /// </summary>
+    private bool IsLiveRound => WritesItemBoxes || !ActorStreamActive;
 
     /// <summary>The insertion kinds a beat frame can open on.</summary>
     private enum BeatInsertion
