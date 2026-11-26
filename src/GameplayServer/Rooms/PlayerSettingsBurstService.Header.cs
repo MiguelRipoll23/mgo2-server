@@ -60,11 +60,11 @@ public sealed partial class PlayerSettingsBurstService
         List<RosterRecord> preamble =
         [
             new(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 rotationBody,
                 roster.TakeRunOrdinal()),
             new(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 SettingsHeaderBodiesUtils.BuildJoin((byte)(RoomRosterService.HostSessionSlot + 1)),
                 roster.TakeRunOrdinal()),
         ];
@@ -131,7 +131,7 @@ public sealed partial class PlayerSettingsBurstService
             }
 
             rows.Add(new(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 SettingsHeaderBodiesUtils.BuildJoin((byte)(member.SessionSlot + 1)),
                 roster.TakeRunOrdinal()));
         }
@@ -141,7 +141,7 @@ public sealed partial class PlayerSettingsBurstService
             foreach (var loadout in loadouts.OrderBy(player => player.Slot))
             {
                 rows.Add(new(
-                    UdpCommandConstants.PlayerProfile,
+                    UdpCommandConstants.RoomRecord,
                     PlayerGearBodiesUtils.Build(
                         (byte)(loadout.Slot + 1),
                         loadout.Appearance,

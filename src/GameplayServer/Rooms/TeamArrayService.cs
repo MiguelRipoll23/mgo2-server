@@ -137,8 +137,8 @@ public sealed partial class TeamArrayService(
         await RosterRunSendUtils.SendAsync(
             context,
             [
-                new(UdpCommandConstants.PlayerProfile, teams, ordinals[0]),
-                new(UdpCommandConstants.PlayerProfile, occupancy, ordinals[1]),
+                new(UdpCommandConstants.RoomRecord, teams, ordinals[0]),
+                new(UdpCommandConstants.RoomRecord, occupancy, ordinals[1]),
             ]);
     }
 
@@ -170,8 +170,8 @@ public sealed partial class TeamArrayService(
         await RosterRunSendUtils.SendAsync(
             context,
             [
-                new(UdpCommandConstants.PlayerProfile, answeredTeams, answeredOrdinals[0]),
-                new(UdpCommandConstants.PlayerProfile, answeredOccupancy, answeredOrdinals[1]),
+                new(UdpCommandConstants.RoomRecord, answeredTeams, answeredOrdinals[0]),
+                new(UdpCommandConstants.RoomRecord, answeredOccupancy, answeredOrdinals[1]),
             ]);
 
         var next = TeamArrayFramesUtils.NextSequence(answered);
@@ -184,7 +184,7 @@ public sealed partial class TeamArrayService(
             context.Remote);
 
         await context.Send(
-            UdpCommandConstants.PlayerProfile,
+            UdpCommandConstants.RoomRecord,
             run.Confirmation.Body,
             run.Confirmation.Ordinal);
 
@@ -200,8 +200,8 @@ public sealed partial class TeamArrayService(
         var ordinals = roster.TakeRunOrdinals(2);
         var pair = new List<RosterRecord>
         {
-            new(UdpCommandConstants.PlayerProfile, teams, ordinals[0]),
-            new(UdpCommandConstants.PlayerProfile, occupancy, ordinals[1]),
+            new(UdpCommandConstants.RoomRecord, teams, ordinals[0]),
+            new(UdpCommandConstants.RoomRecord, occupancy, ordinals[1]),
         };
 
         logger.LogDebug(
@@ -250,13 +250,13 @@ public sealed partial class TeamArrayService(
             var run = new ConfirmationRun(
                 answered,
                 new RosterRecord(
-                    UdpCommandConstants.PlayerProfile,
+                    UdpCommandConstants.RoomRecord,
                     TeamArrayFramesUtils.BuildConfirmation(answered),
                     ordinals[0]),
                 [
                     new(RoomRosterService.HostEntryType, announcement, ordinals[1]),
-                    new(UdpCommandConstants.PlayerProfile, firstCompanion, ordinals[2]),
-                    new(UdpCommandConstants.PlayerProfile, secondCompanion, ordinals[3]),
+                    new(UdpCommandConstants.RoomRecord, firstCompanion, ordinals[2]),
+                    new(UdpCommandConstants.RoomRecord, secondCompanion, ordinals[3]),
                 ]);
 
             confirmationRuns[key] = run;

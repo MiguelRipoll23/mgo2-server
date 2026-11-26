@@ -108,10 +108,18 @@ public sealed partial class MatchStartRunService
                 var round = roundState.RoundNumber;
                 var generation = roundState.Generation;
 
-                // The phase and the run wait for the report the client sends from its
-                // weapon select (report t+146.831, run t+147.650), not for a clock.
-                await WaitForSpawnReportAsync(context, reportsHeard);
+                // **The state write is the open's, not the report's.** The client's
+                // wait screen ends on it and it shows the weapon select from there;
+                // the capture writes it at t+146.007, 0.82 s before the client's
+                // report and 1.64 s before the run. Written behind the report it
+                // left the client waiting on a screen that had not been told the
+                // round exists, so no weapon-select report ever came.
                 await WriteRoomStateAsync(context);
+
+                // The run waits for the report the client sends from its weapon
+                // select (report t+146.831, run t+147.650), and then for the rest of
+                // the open-to-run gap; the report alone is not enough (Spawn.cs).
+                await WaitForSpawnReportAsync(context, reportsHeard);
                 await WriteRunAsync(context, generation);
 
                 // The room's phase, which a joining client's own state machine
@@ -208,19 +216,20 @@ public sealed partial class MatchStartRunService
             ? value
             : MatchStartBodiesUtils.DefaultJoinReportValue;
 
-        // The run's own 0x1001 identifiers take the roster exchange's counter's
-        // next values — the arrays, the room's own stage where a round has played
-        // and the close triple: the join's records and the burst took the ones
-        // before them, and every record written under those identifiers behind
-        // this one takes the next, which is what the captured stream does — its
-        // run carries 7 and 8 for the two arrays and 9, 10 and 11 for the close
-        // triple behind them (docs/protocol/GAMEPLAY_SERVER.md §7). A fresh
-        // briefing's run has no stage, so its closes are the values directly
-        // behind the arrays.
+        // The round's objectives are its rule's and its stage's; a rule that places
+        // no target is written no kind-0x03 record at all, which is what keeps
+        // KEROTAN and GA-KO out of a mode with no use for them (CustomPointSet).
+        var customPoints = CustomPointSet.For(round);
+
+        // The run's 0x1001 identifiers take the roster exchange's counter's next
+        // values — the arrays, the close pair, the round's points and the roster
+        // close — and every record under those identifiers behind this one takes
+        // the next, which is what the captured stream does: its run carries 7 and 8
+        // for the arrays and 9, 10 and 11 for the closes (GAMEPLAY_SERVER.md §7).
         var runOrdinals = roster.TakeRunOrdinals(
             carriesRoundState
-                ? MatchStartRunFramesUtils.RosterOrdinalCount
-                : MatchStartRunFramesUtils.BriefingRosterOrdinalCount);
+                ? MatchStartRunFramesUtils.RosterOrdinalCount(customPoints.Count)
+                : MatchStartRunFramesUtils.BriefingRosterOrdinalCount(customPoints.Count));
 
         // The run's operations records take its stream's first values. The stream
         // was restarted where the run's own stage began — the briefing restarted
@@ -246,6 +255,7 @@ public sealed partial class MatchStartRunService
             roster.PairSequenceOf(context.Remote.ToString()),
             slots,
             runOrdinals,
+            customPoints,
             operationsOrdinals,
             briefingStates.JoinedMask,
             clockUnits,

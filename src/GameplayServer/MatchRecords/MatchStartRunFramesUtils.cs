@@ -91,23 +91,34 @@ public static partial class MatchStartRunFramesUtils
     /// <summary>
     /// Values the run's own <c>0x1001</c>-family records take from the roster
     /// exchange's counter, in send order: the two lobby-slot arrays, the close pair
-    /// behind them, the room's own stage, the roster close that ends the tail and
-    /// the pair the run writes again behind its payload.
+    /// behind them, one record per objective point the round's rule places, the
+    /// roster close that ends the tail and the pair the run writes again behind its
+    /// payload.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Nine, and the values are consecutive because one counter hands them out:
+    /// The values are consecutive because one counter hands them out:
     /// `briefing-then-solo-game`'s round numbers its family <c>19</c>…<c>21</c>.
     /// </para>
     /// <para>
-    /// A fresh briefing's run takes seven of them and not nine: its counter runs
-    /// <c>07</c>, <c>08</c>, <c>09</c>, <c>0a</c>, then the room's stage at
-    /// <c>0b</c> and <c>0c</c> and the roster close at <c>0d</c>; the two a
-    /// payload's second array pair would take go unused because that run has no
-    /// payload (<see cref="BriefingRosterOrdinalCount"/>).
+    /// <b>Three of the values are not fixed, because the stage's points are not.</b>
+    /// A rule with no objectives carries none of them and its roster close sits
+    /// where the captured pair did; Capture carries two and sits where the capture
+    /// puts it; Bomb and Sneaking Capture carry one and Race two. The count is
+    /// therefore the five before the points, the points, and the two behind them
+    /// (<see cref="CustomPointOrdinalOffset"/>).
     /// </para>
     /// </remarks>
-    public const int RosterOrdinalCount = 9;
+    /// <param name="customPointCount">Objective points the round's rule places.</param>
+    /// <returns>Values the run takes from the roster exchange's counter.</returns>
+    public static int RosterOrdinalCount(int customPointCount) =>
+        CustomPointOrdinalOffset + customPointCount + 3;
+
+    /// <summary>
+    /// Ordinal the run's first objective point takes: the two lobby-slot arrays and
+    /// the close pair come before it.
+    /// </summary>
+    public const int CustomPointOrdinalOffset = 4;
 
     /// <summary>
     /// Operations records a fresh room's briefing run writes: its state block and
@@ -118,12 +129,16 @@ public static partial class MatchStartRunFramesUtils
 
     /// <summary>
     /// Values a fresh room's briefing run takes from the roster exchange's counter:
-    /// the two arrays, the close pair, the room's stage and the roster close. It is
-    /// two fewer than <see cref="RosterOrdinalCount"/> because the run carries no
-    /// payload and so no second array pair, which is what puts the reference's
-    /// roster close on <c>0d</c> (`briefing-then-solo-game` t+9.780).
+    /// the two arrays, the close pair, the round's objective points and the roster
+    /// close. It is two fewer than <see cref="RosterOrdinalCount"/> because the run
+    /// carries no payload and so no second array pair, which is what puts the
+    /// reference's roster close on <c>0d</c> (`briefing-then-solo-game` t+9.780,
+    /// whose two points are Blood Bath's Capture pair).
     /// </summary>
-    public const int BriefingRosterOrdinalCount = 7;
+    /// <param name="customPointCount">Objective points the round's rule places.</param>
+    /// <returns>Values the briefing's run takes from the roster exchange's counter.</returns>
+    public static int BriefingRosterOrdinalCount(int customPointCount) =>
+        CustomPointOrdinalOffset + customPointCount + 1;
 
     /// <summary>
     /// Records a run that answers the report opens on and its repeat leaves out:
@@ -163,13 +178,18 @@ public static partial class MatchStartRunFramesUtils
     /// The values the run's own <c>0x1001</c> identifiers take, in send order and
     /// <see cref="RosterOrdinalCount"/> of them, from the roster exchange's counter
     /// (<see cref="Rooms.RoomRosterService.TakeRunOrdinals"/>) rather than pinned:
-    /// the two lobby-slot arrays, the room's own stage and the close triple. The
-    /// replay parser tells a pair by its two records being consecutive, and they
-    /// are consecutive because they are the values one counter handed out — the
-    /// recorded run carries 7 and 8 for the arrays and 9, 10 and 11 for the
-    /// closes, which is where a join's own records leave the counter. Eight values
-    /// and not two, because the closes and the room's stage are under the same
-    /// identifiers and take the values behind the pair.
+    /// the two lobby-slot arrays, the close pair, one record per objective point
+    /// and the roster close. The replay parser tells a pair by its two records
+    /// being consecutive, and they are consecutive because they are the values one
+    /// counter handed out — the recorded run carries 7 and 8 for the arrays and 9,
+    /// 10 and 11 for the closes, which is where a join's own records leave the
+    /// counter.
+    /// </param>
+    /// <param name="customPoints">
+    /// The objective points the round's rule places on its stage, in send order
+    /// (<see cref="CustomPointSet.For"/>). Empty for a rule with no objectives — and
+    /// then the run carries none, which is the difference between a Capture round
+    /// that spawns KEROTAN and GA-KO and a Team Deathmatch round that does not.
     /// </param>
     /// <param name="operationsOrdinals">
     /// The three values the run's operations records take, in send order
@@ -222,6 +242,7 @@ public static partial class MatchStartRunFramesUtils
         byte teamArraySequence,
         IReadOnlyList<Rooms.LobbyTeamSlot> slots,
         IReadOnlyList<byte> runOrdinals,
+        Match.CustomPointSet customPoints,
         IReadOnlyList<byte> operationsOrdinals,
         byte reportingSet,
         int timeLimitUnits,
@@ -285,8 +306,8 @@ public static partial class MatchStartRunFramesUtils
         // write `0x1001 len 26` twice and never `0x9001` in twenty-three minutes of
         // host traffic — the only `0x9001` in that capture is the joiner's own
         // request, which the host leaves unanswered.
-        new(UdpCommandConstants.PlayerProfile, teams, runOrdinals[0]),
-        new(UdpCommandConstants.PlayerProfile, occupancy, runOrdinals[1]),
+        new(UdpCommandConstants.RoomRecord, teams, runOrdinals[0]),
+        new(UdpCommandConstants.RoomRecord, occupancy, runOrdinals[1]),
 
         // The join state record's answer, behind the arrays: the room's reporting
         // players as a bit set. A fresh briefing's run carries the four zero bytes
@@ -297,38 +318,34 @@ public static partial class MatchStartRunFramesUtils
             MatchStartBodiesUtils.JoinStateAnswer(carriesRoundState ? reportingSet : (byte)0),
             MatchStartBodiesUtils.JoinStateAnswerClass),
 
-        // The close pair, then the room's own stage, then the seven-byte roster
-        // close that ends a 0x1001 tail: the order `briefing-then-solo-game`
-        // writes at t+9.780, where the twenty-byte pair takes ordinals 09 and 0a
-        // and the two twenty-two-byte stage records take 0b and 0c. The stage is
-        // written whether or not a round has played — the reference's fresh
-        // briefing carries it — so the values follow the close pair in both cases.
+        // The close pair, then the round's objective points, then the seven-byte
+        // roster close that ends a 0x1001 tail: the order `briefing-then-solo-game`
+        // writes at t+9.780, where the twenty-byte pair takes ordinals 09 and 0a,
+        // Blood Bath's two Capture targets 0b and 0c and the roster close 0d. The
+        // points are written whether or not a round has played — the reference's
+        // fresh briefing carries them — so the values follow the close pair in both
+        // cases, and a rule with none leaves the close where the first would be.
         new(
-            UdpCommandConstants.PlayerProfile,
+            UdpCommandConstants.RoomRecord,
             MatchRecordBodiesUtils.MatchStartCloseFirst(),
             runOrdinals[2]),
         new(
-            UdpCommandConstants.PlayerProfile,
+            UdpCommandConstants.RoomRecord,
             MatchRecordBodiesUtils.MatchStartCloseSecond(),
             runOrdinals[3]),
-        // The room's own stage: the two twenty-two-byte records behind the close
-        // pair, written in a round's run and in a briefing's alike. The recording
-        // writes them before its first round exists — `briefing-then-solo-game`
-        // t+9.780 carries the close pair at 09/0a, the stage at 0b/0c and the
-        // roster close at 0d — and a fresh-briefing run that dropped them is the
-        // join whose client stopped drawing the room's rule instructions.
+        // The round's objective points: one kind-0x03 record per target the rule's
+        // script places, behind the close pair. The recording writes them before
+        // its first round exists — `briefing-then-solo-game` t+9.780 carries the
+        // close pair at 09/0a, Blood Bath's two Capture targets at 0b/0c and the
+        // roster close at 0d — and a run that dropped them is the join whose client
+        // never sees the mode's targets. They are the round's rule's, not the
+        // room's: a rule with no objectives writes none, and its roster close takes
+        // the ordinal the first point would have (<see cref="CustomPointUtils"/>).
+        .. CustomPointRunRecordsUtils.Build(customPoints, runOrdinals),
         new(
-            UdpCommandConstants.PlayerProfile,
-            RoomStateRecordBodiesUtils.RoomStateRecord(),
-            runOrdinals[4]),
-        new(
-            UdpCommandConstants.PlayerProfile,
-            RoomStateRecordBodiesUtils.RoomStateRecordSecond(),
-            runOrdinals[5]),
-        new(
-            UdpCommandConstants.PlayerProfile,
+            UdpCommandConstants.RoomRecord,
             PlayerProfileRecordUtility.BuildRosterClose(),
-            runOrdinals[6]),
+            runOrdinals[CustomPointOrdinalOffset + customPoints.Count]),
 
         // The round's clock, the answer to the report and the rules pair belong
         // to a round. A fresh room's briefing carries none of them: the reference
@@ -351,10 +368,17 @@ public static partial class MatchStartRunFramesUtils
                 // The lobby-slot pair once more, behind the payload: the same two
                 // records on the next two values the counter hands out (t+147.650,
                 // at `20` and `21`). The rules pair travels on the room's tick.
-                new(UdpCommandConstants.PlayerProfile, teams, runOrdinals[7]),
-                new(UdpCommandConstants.PlayerProfile, occupancy, runOrdinals[8]),
+                new(
+                    UdpCommandConstants.RoomRecord,
+                    teams,
+                    runOrdinals[CustomPointOrdinalOffset + customPoints.Count + 1]),
+                new(
+                    UdpCommandConstants.RoomRecord,
+                    occupancy,
+                    runOrdinals[CustomPointOrdinalOffset + customPoints.Count + 2]),
             }
             : []),
         ];
     }
+
 }

@@ -106,5 +106,23 @@ public sealed partial class MatchStartRunService
                 context.Remote,
                 waited / 1000);
         }
+
+        // **The run owns the rest of the measured open-to-run gap.** The report
+        // sits inside it (open t+146.007, report t+146.831, run t+147.650), so the
+        // wait is measured from the open and never spent twice. Written on the
+        // report's own tick the run reached a client still on its wait screen and
+        // was dropped; the repeat behind it carries no opening answer, so nothing
+        // else starts the round. A report that lands after the gap writes at once.
+        if (roundState.OpenedAt is not { } openedAt)
+        {
+            return;
+        }
+
+        var elapsed = (int)(DateTimeOffset.UtcNow - openedAt).TotalMilliseconds;
+        var remaining = MatchRecordTimingUtils.RoundStartRunGapMilliseconds - elapsed;
+        if (remaining > 0 && MatchRecordPeerUtils.IsAlive(session) && roundState.IsOpen)
+        {
+            await Task.Delay(remaining);
+        }
     }
 }

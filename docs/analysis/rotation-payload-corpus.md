@@ -116,7 +116,7 @@ room, the slots are build data and the question closes.
 | `0x4f`–`0x52` (field 7) | `0x00274022` | `0x0007622a`, `0x00126073`, `0x0007603a`, `0x00274022`, `0x00076022`, `0x00074022`, `0x00034033` | per-room 32-bit word; the native readers test bits `0x20` and `0x40`. Bit `0x20` is set in **all twenty-two** bodies; bit `0x40` only in `0x00126073`, and only for the one host whose join showed the client a team-selection screen (§7). An earlier reading claimed both bits were set in every value but `0x00034033`, which is wrong: six of the seven carry `0x20` alone. The rule reading — "set in the rooms that rotate SNE and SCAP" — is refuted by `mgo2-game2`, which rotates rule 15 and writes `0x00034033` |
 | `0x53`–`0x54` (field 8) | `0x0000` | `0x0000`, `0x00b4`, `0x00f0`, `0x012c` | per-room, and constant across that room's own captures; every value is a whole number of minutes held as seconds (`0`, `180`, `240`, `300`), which no other offset here but field 4 is. The `0x002c` an earlier row recorded is the low byte of `0x012c`. What the time limits is **[U]** |
 | `0x57`–`0x64` (fields 13, 17–27) | `00 00 00 05 00 00 00 05 00 00 01 00 00 00` | identical in the builder's own rooms, `00` in the all-default rooms, other values in the rest | partly a room's own: `0x60` is `2` in most rooms and `0` in the all-default ones, `0x63` is `2`, `3`, `6` or `0`, `0x64` is `10` or `0`; **`0x57` is the room's unique-character setting, repeated at `0xa0` in all fifteen** (below); the two words at `0x5a` and `0x5e` are a per-round pair (§7) |
-| `0x87`–`0x9b` (fields 30–49) | `02`×8 `01 02 02 02 32 1e 05 03 00 00 00 7f 7f` | `0x89`, `0x8d`, `0x90` take `2`, `4` or `6`; `0x91` takes `2` or `20`; `0x93`/`0x94` take `20/30`, `40/99`, `50/30`, `51/30`, `55/30`; `0x9a`/`0x9b` are `7f 7f` except `03 06` and `04 09` | the per-rule round and ticket counts, the SNE/extra-time settings, the tail bytes, and the unique-character pair; the run's own field boundaries are the client's, 15 + 4 + 2, and they are §5a |
+| `0x87`–`0x9b` (fields 30–49) | `02`×8 `01 02 02 02 32 1e 05 03 00 00 00 7f 7f` | `0x89`, `0x8d`, `0x90` take `2`, `4` or `6`; `0x91` takes `2` or `20`; `0x93`/`0x94` take `20/30`, `40/99`, `50/30`, `51/30`, `55/30`; `0x9a`/`0x9b` are `7f 7f` except `03 06` and `04 09` | the per-rule round and ticket counts, the SNE/extra-time settings, the DM/SDM/SCAP/RACE round counts and the unnamed host-flag bits, and the unique-character pair; the run's own field boundaries are the client's, 15 + 4 + 2, and they are §5a |
 | `0x9c` (field 50) | `0xff` | `0xff` in all fifteen | **constant**; the unassigned slot reference, confirmed beyond the one capture it came from |
 | `0x9d` (field 51) | `0x8c` | changes between bodies of one room (`140`, `232`, `233` for `64.181.216.250:5720`) | the capture's byte and not the room's; it is not a checksum of the body — byte sum, negated sum, `u16` sum, byte XOR and CRC16 over every prefix ending at `0x9d` or later match it in none of the twenty-two bodies |
 | `0x9e`–`0x9f` (field 52) | `0x0128` | constant per room across its own bodies (`277`, `296`, `3813`) | the room's own word, so the pair an earlier row called opaque is two fields; which counter it names is **[U]** |
@@ -288,7 +288,7 @@ measured, **[I]** inferred from a shape or a label, **[U]** open.
 | `0x57` | 13 | the room's unique-character setting, repeated at `0xa0` | [V] |
 | `0x58`–`0x64` | 17-27 | per-room settings; `0x5a`/`0x5e` the teams' remaining tickets, `0x60` the host stance, `0x61`–`0x62` the briefing time, `0x63`/`0x64` the level band | [I] / [ELF] |
 | `0x65`–`0x86` | 29 | seventeen rule times in seconds: 0-7 the eight standard rules, 8-11 the room family's own, 12-16 rules 12-16 | [V] unit, [I] binding |
-| `0x87`–`0x9b` | 30-49 | the SNE/CAP/RES/TDM/BASE/BOMB/TSNE round counts, the TDM/DM ticket counts, the Sneaking kill count, Capture extra time, the block's tail bytes and flags, and the unique-character pair | [ELF] builder sources |
+| `0x87`–`0x9b` | 30-49 | the SNE/CAP/RES/TDM/BASE/BOMB/TSNE round counts, the TDM/DM ticket counts, the Sneaking kill count, Capture extra time, the DM/SDM/SCAP/RACE round counts and the unnamed host-flag bits, and the unique-character pair | [ELF] builder sources |
 | `0x9c` | 50 | `0xff`, the unassigned slot reference | [V] |
 | `0x9d` | — | a byte that moves between bodies of one room; not a checksum of any prefix | [U] |
 | `0x9e`–`0x9f` | — | a word that holds across a room's bodies — a counter, unnamed | [U] |
@@ -544,7 +544,7 @@ builder:
 | `0x58` | **its presence gates the join state machine.** `0x288d18` tests `0xa1`, `0x52` and `0x58` through `0x27e198`, a presence test rather than a read, before advancing to its next state — which is why the body's `0x57` repeats `0xa0` |
 | `0x59` | **an index, not a value.** `0x2806f0` reads it and hands it as the id argument to `0xf0ea88`, beside a count and a list it builds from fields `0x11f`, `0x120` and `0x114` of the twenty-four state blocks |
 | `0x63` | **script-visible.** `0x77e668` reads it into `+0xd0` and fires stage event `0x16002c` with the byte, guarded by `+0xb8 < 10` and a `0xff` sentinel |
-| `0x5a` | the ticket block. `0x8eb030` and `0x8eb050` both read it and return `block[5]`, and `0x8eb078` returns `block[1]` |
+| `0x5a` | the ticket block. `P2P_ReadOperationStateField(block, 0x5a, 8, …)` copies body `0x5a`–`0x61`; `0x8eb078` returns byte 1 (`0x5b`) and `0x8eb030`/`0x8eb050` byte 5 (`0x5f`). Those are the **high bytes** of the two `u16` counters at `0x5a`/`0x5e` — zero for every captured count — so the getters are not the path the ticket panel reads a number from |
 
 Every other key in the run — `0x54`, `0x56`, `0x62`, `0x64`, `0x66`, `0x67` and the
 fifteen at `0x8a`–`0x98` — has no site outside the `0x9e9xxx` builder, where the client
@@ -593,16 +593,16 @@ so the block offsets are exact:
 | `0x8b` | `0x8e` | `+0x384` | `+0x94` | index 12 — Base rounds |
 | `0x8c` | `0x8f` | `+0x38c` | `+0x9C` | index 14 — Bomb rounds |
 | `0x8d` | `0x90` | `+0x394` | `+0xA4` | index 16 — Team Sneaking rounds |
-| `0x8f` | `0x92` | `+0x3b1` | `+0xC1` | tail byte |
-| `0x90` | `0x93` | `+0x3af` | `+0xBF` | tail byte |
-| `0x91` | `0x94` | `+0x3b3` | `+0xC3` | tail byte |
-| `0x92` | `0x95` | `+0x3b5` | `+0xC5` | tail byte |
+| `0x8f` | `0x92` | `+0x3b1` | `+0xC1` | Deathmatch rounds (wire `0x169`) |
+| `0x90` | `0x93` | `+0x3af` | `+0xBF` | Stealth Deathmatch rounds (wire `0x167`) |
+| `0x91` | `0x94` | `+0x3b3` | `+0xC3` | Sneaking Capture rounds (wire `0x16B`) |
+| `0x92` | `0x95` | `+0x3b5` | `+0xC5` | Race rounds (wire `0x16D`) |
 | `0x93` | `0x96` | `+0x374` | `+0x84` | index 8 — Team Deathmatch tickets |
 | `0x94` | `0x97` | `+0x37c` | `+0x8C` | index 10 — Deathmatch tickets |
 | `0x96` | `0x9a` | `+0x3ad` | `+0xBD` | `sneaking_snake_kills` |
 | `0x97` | `0x9b` | `+0x3ac` | `+0xBC` | `capture_extra_time` |
-| `0x98` | `0x9c` | `+0x3b7` bit 0 | `+0xC7` bit 0 | tail flag |
-| `0x99` | `0x9d` | `+0x3b7` bit 2 | `+0xC7` bit 2 | tail flag |
+| `0x98` | `0x9c` | `+0x3b7` bit 0 | `+0xC7` bit 0 | unnamed host flag, bit 0 (wire `0x16F`) |
+| `0x99` | `0x9d` | `+0x3b7` bit 2 | `+0xC7` bit 2 | unnamed host flag, bit 2 (wire `0x16F`) |
 | `0x9a`–`0x9b` | `0x9e` | `+0x398`/`+0x399` | `+0xA8`/`+0xA9` | `unique_red`/`unique_blue`; `0x7f` when zero |
 
 The rule-timer indices are the block's own order — SNE t/r, CAP t/r, RES t/r, TDM
@@ -613,10 +613,18 @@ per rule, TSNE's `01` is one, and `0x93`/`0x94` read `50`/`30` — TDM and DM ti
 
 Three corrections follow. **The briefing time is `0x61`–`0x62`, not `0x53`.** The
 builder stores block `+0x44` (`briefing_time`) into object `0x64` as a halfword; the
-`0x53` minute limit is a different field. **The tail is not unread.** `0x8f`–`0x92`
-and the two flags at `0x98`/`0x99` are block `+0xBF`–`+0xC7`, so the builder reads
-five bytes the `0x4313` spec calls `unread_tail`; their meanings are still open, but
-their sources are not. **The role pair is the unique-character pair.** The builder
+`0x53` minute limit is a different field. **The tail is not unread, and it is not a tail.** The four bytes at `0x8f`–`0x92`
+are the second half of the settings' own byte-sized timer row at wire `0x166`–`0x16D`
+(SDM time/rounds, INT time, DM rounds, SCAP time/rounds, RACE time/rounds), so the body
+carries the **DM, SDM, SCAP and RACE round counts** at block `+0xC1`, `+0xBF`, `+0xC3`
+and `+0xC5`. The two flags at `0x98`/`0x99` are bits 0 and 2 of the byte at `+0xC7` (wire
+`0x16F`), and they have **no name to give**: the fourteen bytes at wire `0x166` are one raw
+block (`0x4310` `src+942`, emitted unchanged at `0xD44C3C`; `0x4313` copies it raw at
+`0xD43BBC`) that the client never reads or writes, zero in all 214 archived `0x4310` pushes,
+so bits 0 and 2 reach the client from the server and pass straight through. No client screen
+names them and no reference server gives them a meaning. The old "bit 1 is the non-stat
+game" label is our own `0x4305` reply echoing the request's `0x155` back, and the ring of
+that echo is the only thing it ever measured. **The role pair is the unique-character pair.** The builder
 writes `unique_red`/`unique_blue` into object `0x9e`, or `0x7f 0x7f` when both are
 zero, which is why an unassigned round reads `7f 7f`.
 
@@ -985,7 +993,7 @@ and the client's reader at `0x8eb008` returns one bit of it as a boolean.
 | `0x5a`, `0x5e` | `5/5`, `40/40`, `47/35`, `15/33`, … | each team's **remaining tickets**. `0x93` is the room's *starting* count and this pair never exceeds it, so direction is now measured rather than assumed: the pair equals `0x93` in the rooms whose round has not been spent (`40/40` with `0x28`, `50/50` with `0x32`, `55/55` with `0x37`) and sits below it once players have respawned (`30/32` and `5/5` against `50`; `5/5` against `20`). The TDM panel states the mechanic — "Each team starts with a set number of tickets… steal tickets" — and the tooltip at `0x0cee5e` says a ticket is spent on each respawn |
 | `0x93` | `20`, `40`, `50`, `51`, `55` | the **Team Deathmatch ticket count** — block rule timer index 8, the TDM tickets setting — in the rooms that play a ticketed rule: never below the pair at `0x5a`/`0x5e` in any of the 34 bodies, and equal to it in the thirteen whose round is untouched. The SNE/SCAP room carries `51` because the TDM setting is still 51 even when TDM is not played, which is why the count appears where no tickets are spent. **[ELF]** |
 | `0x9a`, `0x9b` | `7f 7f` in most, `03/02`, `03/06`, `04/09` in one room | the **unique-character pair** — the players holding Snake and Metal Gear Mk.II, from block `+0xA8`/`+0xA9` (`unique_red`/`unique_blue`), with `0x7f` when both are zero. All fourteen bodies whose rotation holds neither SNE nor TSNE read `0x7f 0x7f`; a real pair appears only in the SNE/SCAP room, while sixteen of the twenty bodies that *do* hold SNE or TSNE still read `0x7f 0x7f`. So the pair is the assignment for the round being played, not a room setting, and it moves between bodies of that one room (`03/02` → `03/06` → `04/09`) |
-| `0x87`–`0x9b` | `… 32 1e 05 03`, `… 06 00 01 06 14 02` | the builder's fill code names the run: `0x87`–`0x8d` are the SNE/CAP/RES/TDM/BASE/BOMB/TSNE round counts (rule-timer indices 1, 3, 5, 7, 12, 14, 16), `0x8e` the SNE dog-tag count, `0x93`/`0x94` the TDM/DM ticket counts (indices 8, 10), `0x95` the checkpoint count, `0x96`/`0x97` the Sneaking kill count and Capture extra time, `0x8f`–`0x92` the block's tail bytes, and `0x98`/`0x99` two tail flags. `0x9a`/`0x9b` are the unique-character pair. **[ELF]** |
+| `0x87`–`0x9b` | `… 32 1e 05 03`, `… 06 00 01 06 14 02` | the builder's fill code names the run: `0x87`–`0x8d` are the SNE/CAP/RES/TDM/BASE/BOMB/TSNE round counts (rule-timer indices 1, 3, 5, 7, 12, 14, 16), `0x8e` the SNE dog-tag count, `0x93`/`0x94` the TDM/DM ticket counts (indices 8, 10), `0x95` the checkpoint count, `0x96`/`0x97` the Sneaking kill count and Capture extra time, `0x8f`–`0x92` the DM/SDM/SCAP/RACE round counts, and `0x98`/`0x99` bits 0 and 2 of an unnamed host-flag byte. `0x9a`/`0x9b` are the unique-character pair. **[ELF]** |
 | `0x91` | `2` everywhere, `20` in the one SNE room | the **SNE dog-tag count** — the stage script's SNE text: "Snake wins if he collects a set number of dog tags." The block's `unknown_72` is not the source: the `0x4313` spec records no live reader for it, and the builder never loads it. The room's SNE rule state is the writer. **[V] values, [I] name** |
 
 ### What the stage script adds beyond the labels

@@ -111,7 +111,7 @@ public static class MatchScoreboardFramesUtils
     /// The record type a scoreboard delta travels under: the roster identifier's
     /// low stream <c>0x001</c>, which is this server's player-profile type.
     /// </summary>
-    public const ushort RecordType = UdpCommandConstants.PlayerProfile;
+    public const ushort RecordType = UdpCommandConstants.RoomRecord;
 
     /// <summary>
     /// One value of a delta: the bit it belongs to and the value the record

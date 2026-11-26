@@ -217,8 +217,9 @@ two, `mgo2-game2` three, both briefings one — in one frame (compressed in
 `mgo2-game-started-on-briefing`): the marker, the two empty roster heads, the operations
 state block and the two-byte record behind it, the two lobby-slot arrays — which
 name the room's own players, each in the slot it holds and on the side the room's
-rows put it — the join state answer, the close **triple** (the two twenty-byte
-records and the seven-byte roster close), the round's clock, the payload echoing
+rows put it — the join state answer, the close pair, **one record per objective
+point the round's rule places on its stage** (`CustomPointRunRecordsUtils`) and
+the seven-byte roster close, the round's clock, the payload echoing
 that peer's own reported byte, the lobby-slot pair once more behind it, and the
 head and item of the box the round spawned with the state pair at its tail
 (`MatchStartRunFramesUtils`, `ItemBoxFramesUtils.RunOpeningGroup`). The room's
@@ -237,21 +238,22 @@ are one, nothing having been spent in the first 125 ms tick.
 the round's. A room that has **not played a round** is answered with the
 briefing's own: the two heads, the state block and the two-byte record behind it,
 the arrays with every slot free, the join state answer in its empty form, the
-close pair and the room's stage — no round clock, no payload and no rules pair,
-and the closes take the counter values directly behind the stage
-(`MatchStartRunFramesUtils.BriefingRosterOrdinalCount`).
+close pair and the round's objective points — no round clock, no payload and no
+rules pair, and the closes take the counter values directly behind the points
+(`MatchStartRunFramesUtils.BriefingRosterOrdinalCount(customPointCount)`).
 `briefing-then-solo-game`'s first briefing is that run at t+9.780 — the close pair
-at `09`/`0a`, the stage at `0b`/`0c` and the roster close at `0d` — and it is the
-shape this host writes. Its arrays name nobody and the joining player appears in
-the pair three seconds later (t+12.887), which is why this host leaves the run's
-pair free; its join state answer is four zeros. `mgo2-game-started-on-briefing`
-t+58.255 is the other
-reference briefing: it leaves the stage pair out and puts its roster close where
-the stage's first value would be, and this host does not follow it there. What
-tells a client a round exists is the clock and the payload, and a fresh room sent
-those enters the game instead of showing the briefing screen
-(`analysis/join-stall-after-mode2.md` §24); dropping the stage from the briefing
-run is what stopped a live join drawing the room's rule instructions.
+at `09`/`0a`, Blood Bath's two Capture targets at `0b`/`0c` and the roster close at
+`0d` — and it is the shape this host writes. Its arrays name nobody and the joining
+player appears in the pair three seconds later (t+12.887), which is why this host
+leaves the run's pair free; its join state answer is four zeros.
+`mgo2-game-started-on-briefing` t+58.255 is the other reference briefing: it
+leaves the points out and puts its roster close where the first point's value
+would be — a rule that places no target is written none — and a room with one to
+place writes them, as the capture above does. What tells a client a round exists
+is the clock and the payload, and a fresh room sent those enters the game instead
+of showing the briefing screen (`analysis/join-stall-after-mode2.md` §24);
+dropping them for a mode that has no target is what kept KEROTAN and GA-KO out of
+Team Deathmatch (`analysis/custom-points.md`).
 
 **The marker is the report's answer, and whichever record carries it carries it
 once.** This host answers every report beside it — the marker, the publication

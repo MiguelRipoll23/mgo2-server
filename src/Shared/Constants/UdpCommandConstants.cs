@@ -31,8 +31,34 @@ public static class UdpCommandConstants
     /// </summary>
     public const ushort KeepAlive = 0x5000;
 
-    /// <summary>Player-profile record sent by the joining peer.</summary>
-    public const ushort PlayerProfile = 0x1001;
+    /// <summary>
+    /// The room's record exchange: every record whose body opens with the
+    /// family's version byte, and whose own kind byte at <c>0x03</c> selects what
+    /// the client's stage object does with it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The identifier names a family, not a player profile.</b> A client sends
+    /// its own roster entry under it, which is the one body that is a profile —
+    /// the joining peer's name, character and clan. The host writes the same
+    /// identifier for the team and occupancy arrays, the close pair, the stage's
+    /// objective points, the spawn points and the scoreboard, and each of those is
+    /// a different <see cref="Mgo2Server.Shared.Types.RoomRecordKind"/> consumed by
+    /// a different node of the client's stage object
+    /// (<c>docs/analysis/roster-record-kinds.md</c> §§3–4). The kind byte is the
+    /// sub-command; the identifier is only the exchange it travels in.
+    /// </para>
+    /// <para>
+    /// The exchange is answered under its owner's tag: a joiner opens with
+    /// <see cref="JoinRequest"/> and the host writes its answers under this one,
+    /// because <c>0x8000</c> is the bit a client sets on its own records. The
+    /// profile itself is read by <c>PlayerProfileRecordParseUtils</c> and written
+    /// by <c>PlayerProfileRecordUtility</c>, both of which name the kind
+    /// <see cref="Mgo2Server.Shared.Types.RoomRecordKind.RosterEntry"/> body they
+    /// handle rather than the whole family.
+    /// </para>
+    /// </remarks>
+    public const ushort RoomRecord = 0x1001;
 
     /// <summary>
     /// Join request the joiner opens the exchange with. It carries the same

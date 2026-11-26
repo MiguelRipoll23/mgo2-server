@@ -4,8 +4,9 @@ using Mgo2Server.Shared.Types;
 namespace Mgo2Server.Shared.Udp;
 
 /// <summary>
-/// The receive-side gate: a sequenced record is taken only when it carries the byte its stream
-/// is waiting for, and a record that carries any other byte is dropped without advancing.
+/// The receive-side gate: a sequenced record is taken when it carries the byte its stream
+/// is waiting for, or a copy of one already taken, and a byte ahead of the expectation is
+/// dropped without advancing.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -42,6 +43,13 @@ namespace Mgo2Server.Shared.Udp;
 /// </remarks>
 public sealed class InboundRecordGateService
 {
+    /// <summary>
+    /// How far behind its stream's expectation a re-send may sit and still be taken: the
+    /// client's own window is 24 records deep (`JoinReportHandler` measures the join report
+    /// at the far end of it), so a window copy is never more than this behind.
+    /// </summary>
+    private const byte ReSendWindow = 32;
+
     /// <summary>The byte each container is waiting for, per peer.</summary>
     private readonly ConcurrentDictionary<(string Channel, ushort Container), byte> expected = [];
 
@@ -101,6 +109,18 @@ public sealed class InboundRecordGateService
 
             if (waiting != ordinal)
             {
+                // **A re-send is not a gap.** The peer keeps a window of records it has not
+                // had answered, and after a silent stretch it writes the whole window again:
+                // 2026-11-26's client re-sent 0x16-0x1c for the 24 s of round 1's result
+                // screens, and every copy was refused because only the one immediately below
+                // the expectation was taken. The copy is taken again without advancing the
+                // stream, so its handler can answer it; a byte ahead of the expectation is a
+                // genuine gap and is still refused.
+                if ((byte)(waiting - ordinal) <= ReSendWindow)
+                {
+                    return true;
+                }
+
                 return false;
             }
 

@@ -327,8 +327,8 @@ public sealed partial class BriefingRoomPublishService(
                 // client's own briefings are written (`mgo2-started-on-game-round1`,
                 // every 26-byte array it publishes): the joiner's 0x9001 opening tag
                 // is not an identifier the host writes.
-                new(UdpCommandConstants.PlayerProfile, teams, ordinals[0]),
-                new(UdpCommandConstants.PlayerProfile, occupancy, ordinals[1]),
+                new(UdpCommandConstants.RoomRecord, teams, ordinals[0]),
+                new(UdpCommandConstants.RoomRecord, occupancy, ordinals[1]),
             ]);
     }
 

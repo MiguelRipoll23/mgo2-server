@@ -73,7 +73,7 @@ public static class RoomRosterFramesUtils
     /// <summary>
     /// Builds the roster run as it goes on the wire: empty head, the host's own
     /// entry, every joining player, the close record and the room's count, all
-    /// under <see cref="UdpCommandConstants.PlayerProfile"/>.
+    /// under <see cref="UdpCommandConstants.RoomRecord"/>.
     /// </summary>
     /// <remarks>
     /// <b>The host writes its own entry under the room's identifier, not under the
@@ -106,18 +106,18 @@ public static class RoomRosterFramesUtils
         var run = new List<RosterRecord>(entries.Count + 3)
         {
             new(UdpCommandConstants.RosterHead, [], 0),
-            new(UdpCommandConstants.PlayerProfile, entries[0], 0),
+            new(UdpCommandConstants.RoomRecord, entries[0], 0),
         };
 
         // Each joining player carries its slot: the first reads one, so the
         // count runs from the host's own entry rather than from the head.
         for (var index = 1; index < entries.Count; index++)
         {
-            run.Add(new(UdpCommandConstants.PlayerProfile, entries[index], (byte)index));
+            run.Add(new(UdpCommandConstants.RoomRecord, entries[index], (byte)index));
         }
 
         run.Add(new(
-            UdpCommandConstants.PlayerProfile,
+            UdpCommandConstants.RoomRecord,
             PlayerProfileRecordUtility.BuildRosterClose(),
             (byte)entries.Count));
 
@@ -131,7 +131,7 @@ public static class RoomRosterFramesUtils
         // (`briefing-then-solo-game` t+1.662); the value is the peer's either way,
         // and the loadout follows it in the burst 3.0 s later.
         run.Add(new(
-            UdpCommandConstants.PlayerProfile,
+            UdpCommandConstants.RoomRecord,
             RoundStateBodiesUtils.JoinPlayerCountBody((byte)(members.Count + 1)),
             (byte)(entries.Count + 1)));
 
@@ -145,7 +145,7 @@ public static class RoomRosterFramesUtils
         if (answeringLoadout is not null)
         {
             run.Add(new(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 answeringLoadout,
                 (byte)(entries.Count + 2)));
         }

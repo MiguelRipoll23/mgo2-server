@@ -84,6 +84,17 @@ public sealed partial class GameplayServerService
         // pass after it answers that code flagged.
         var controlByte = controlBytes.Next();
 
+        // **A result screen is answered, but not advanced.** The answer is what retires
+        // the peer's record; withholding it fills the peer's window, and its own re-send
+        // bound is 30 s while a stage's result screens run 44.8 s (2026-11-26: the client
+        // went quiet five seconds after round 2's result, before the stage result). The
+        // byte must not move the screen: the client's two readers return on 0xff and step
+        // to 12 on any other value (`PeerControlByteService`), so the screens are answered
+        // with that one byte.
+        var answerByte = roundStates.IsRoundEnding || roundStates.IsStageEnding
+            ? PeerControlByteService.NoAdvanceByte
+            : controlByte;
+
         // The lobby-slot echo's answer is the briefing's run and not a record
         // written into this pass: the run opens on the pair, carrying the echo's
         // own fourth bytes (MatchStartRunService.NoteEntryAnswers). The answers
@@ -99,27 +110,14 @@ public sealed partial class GameplayServerService
             matchStart.NoteEntryAnswers(session, entryAnswers);
         }
 
-        // The result screens answer nothing, which is what the reference host does:
-        // `rounded-ended-by-reaching-tickets-limit` leaves all nine records its client
-        // sends across the 9 s before the stage result unanswered. An answer carries the
-        // phase's control byte, and a screen below the stage's own step takes the first
-        // non-0xff byte as its advance, so answering a keep-alive while the result is up
-        // moves the client past the screen it is meant to show. The records are not
-        // dropped: the peer retransmits them, and the pass that receives them once the
-        // screens are down answers them then.
-        if (roundStates.IsRoundEnding || roundStates.IsStageEnding)
-        {
-            return;
-        }
-
         var answers = frame.Messages
             .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
             .Where(message => !TeamArrayFramesUtils.IsArrayEcho(message.Body))
             .Where(message => !IsJoinReport(message))
             .Where(message =>
-                (message.Type & ~PeerAcknowledgementUtils.PayloadClassBit) != UdpCommandConstants.PlayerProfile ||
+                (message.Type & ~PeerAcknowledgementUtils.PayloadClassBit) != UdpCommandConstants.RoomRecord ||
                 PlayerProfileRecordParseUtils.Parse(message.Body) is not { Name.Length: > 0 })
-            .Select(message => PeerAcknowledgementUtils.AcknowledgementOf(message, controlByte))
+            .Select(message => PeerAcknowledgementUtils.AcknowledgementOf(message, answerByte))
             .ToList();
         if (answers.Count == 0)
         {

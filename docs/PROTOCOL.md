@@ -1478,7 +1478,7 @@ result slot and trips the error branch — so it targets some other build and wa
 | `0x164` | 2 | u8, u8 | capture extra time; **sneaking SNAKE count (1-5)** — clamped to [1,5] by the create-game adjuster at `0x8A1AC8` and **rendered as a number** at `0x89D7B8`, which is what rules out the older "Snake side" reading: a side index would be drawn as a name or sprite. Default 3. That the count is specifically *kills of Snake* is not decidable from the binary — that label lives on the disc. Was "Snake side" until 2026-07-28; corrected against the client's own default and four stored blobs. Zeros until stored |
 | `0x166` | 8 | u8 ×8 | byte-sized timers (echo: SDM t/r, INT t, DM r, SCAP t/r, RACE t/r); zeros until stored |
 | `0x16e` | 1 | u8 | zero |
-| `0x16f` | 1 | u8 | extra-time flags; bit 1 = non-stat game (echo) |
+| `0x16f` | 1 | u8 | unnamed host flag; the client never reads or writes it. The older "bit 1 = non-stat game" was this server's own `0x4305` reply echoing the request's byte, not a client fact |
 | `0x170` | 4 | — | zero |
 
 Then, per player, host's entry first:

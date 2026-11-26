@@ -21,7 +21,7 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// <para>
 /// It opens with a one-byte <see cref="UdpCommandConstants.InGameControl"/>
 /// record, carries the room's own settings and the payloads under
-/// <see cref="UdpCommandConstants.PlayerProfile"/> and closes with a
+/// <see cref="UdpCommandConstants.RoomRecord"/> and closes with a
 /// <see cref="UdpCommandConstants.GameStateBlob"/>. A seventh record, a second
 /// one-byte control record, follows 300 µs later on its own counter.
 ///
@@ -169,6 +169,7 @@ public sealed partial class PlayerSettingsBurstService(
         RoomState roomState,
         int currentRotationIndex,
         byte playerCount,
+        RoomBodySettings settings,
         byte answeringSlot = 0,
         bool autoAssignTeams = true,
         LevelLimitBand? levelLimit = null,
@@ -185,20 +186,13 @@ public sealed partial class PlayerSettingsBurstService(
             settingsGeneration);
 
         var rotationBody = rotation is null
-            ? RoomRotationBodiesUtils.RecordedRotationBody(playerCount, RoomStateBodyConstants.TicketLimit, levelLimit, settingsGeneration, sneakingDogTags, checkpoints)
+            ? RoomRotationBodiesUtils.DefaultRotationBody(
+                playerCount, RoomStateBodyConstants.TicketLimit, levelLimit, settingsGeneration,
+                sneakingDogTags, checkpoints, settings)
             : RoomRotationBodiesUtils.RoomRotationBody(
-                rotation,
-                roomState,
-                currentRotationIndex,
-                playerCount,
-                autoAssignTeams,
-                levelLimit,
-                settingsGeneration,
-                sneakingDogTags,
-                checkpoints,
-                uniqueCharacters,
-                unique.Red,
-                unique.Blue);
+                rotation, roomState, currentRotationIndex, playerCount, settings,
+                autoAssignTeams, levelLimit, settingsGeneration, sneakingDogTags, checkpoints,
+                uniqueCharacters, unique.Red, unique.Blue);
         return BuildSettingsBurst(rotationBody, loadouts, answeringSlot);
     }
 
@@ -225,6 +219,7 @@ public sealed partial class PlayerSettingsBurstService(
         RoomState roomState,
         int currentRotationIndex,
         byte playerCount,
+        RoomBodySettings settings,
         IReadOnlyList<int> ruleTimers,
         byte answeringSlot = 0,
         bool autoAssignTeams = true,
@@ -248,6 +243,7 @@ public sealed partial class PlayerSettingsBurstService(
             playerCount,
             ruleTimers,
             RoomRotationPayloadUtils.TeamTickets(rotation, currentRotationIndex),
+            settings,
             autoAssignTeams,
             levelLimit,
             settingsGeneration,
@@ -295,7 +291,7 @@ public sealed partial class PlayerSettingsBurstService(
             foreach (var loadout in loadouts.OrderBy(player => player.Slot))
             {
                 burst.Add(new(
-                    UdpCommandConstants.PlayerProfile,
+                    UdpCommandConstants.RoomRecord,
                     BuildLoadoutBody(loadout),
                     roster.TakeRunOrdinal()));
 
@@ -312,7 +308,7 @@ public sealed partial class PlayerSettingsBurstService(
         else
         {
             burst.Add(new(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 AnsweringLoadoutBody(loadouts, answeringSlot),
                 roster.TakeRunOrdinal()));
         }

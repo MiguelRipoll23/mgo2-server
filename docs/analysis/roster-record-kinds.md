@@ -264,13 +264,16 @@ Two field readings follow from those names rather than from the bytes:
   `0x14` the position in the order the 16-byte copy preserves. The middle value
   tracking the ground is now the client's floor check plus this 800 lift, not an
   inference from the captures.
-* **Kind `0x03`'s payload is a custom point plus its action.** `sv_custom_point`
-  counts two collections — points and actions — and bounds-checks each, which is
-  the shape a 22-byte record with a tag, an index and a pair of triples has: one
-  point, one action, the point written twice. The mirror in x and z with y
-  unchanged is what a point looks like stated for the two sides of an action
-  (approach and hold), not a rotation. **[I]**, and the bytes stay the
-  recording's.
+* **Kind `0x03`'s payload is one of the stage's objective points.** `sv_custom_point`
+  counts points and actions and bounds-checks each; the record is one point, its
+  index at `+4`, and `(task << 4) | index` at `+7`, with the three signed
+  sixteens written twice and `fd 00` behind them. **The point is the stage's, and
+  the task is the rule's mode** — the four captures match `PRP_RUGBY_TGT_01/02`
+  (Capture), `PRP_TGT_BOMB`, `PRP_SCAP_TGT_00` and `PRP_TRACE_TGT_A/B` (Race)
+  after `x`/`z` ÷ 10 and `y` + 900. The mirror this section read in x and z is
+  Race's two targets and not one point stated twice. **[V]** for those four;
+  `docs/analysis/custom-points.md` §2–§4. A rule with no target gets no record at
+  all, which is why the recorded pair must not be sent in Team Deathmatch.
 
 The close pair reads the same way from the captures' side: `UDP_COMMANDS.md`
 reads kind `0x02` as **a box with a count of corners** — an eight-byte header, a

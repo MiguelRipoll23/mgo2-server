@@ -59,18 +59,18 @@ public sealed class BotRosterPublishService(
             // The short layout and no endpoint field: a bot has no endpoint to
             // announce, which is the shape every captured bot entry carries.
             records.Add(new RosterRecord(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 member.BuildRecord(includeEndpointPairs: false),
                 roster.TakeRunOrdinal()));
         }
 
         records.Add(new RosterRecord(
-            UdpCommandConstants.PlayerProfile,
+            UdpCommandConstants.RoomRecord,
             PlayerProfileRecordUtility.BuildRosterClose(),
             roster.TakeRunOrdinal()));
 
         records.Add(new RosterRecord(
-            UdpCommandConstants.PlayerProfile,
+            UdpCommandConstants.RoomRecord,
             RoundStateBodiesUtils.JoinPlayerCountBody((byte)(roster.JoinerCount + 1)),
             roster.TakeRunOrdinal()));
 
@@ -79,7 +79,7 @@ public sealed class BotRosterPublishService(
         foreach (var loadout in room.Where(loadout => seats.Contains(loadout.Slot)).OrderBy(loadout => loadout.Slot))
         {
             records.Add(new RosterRecord(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 burst.BuildLoadoutBody(loadout),
                 roster.TakeRunOrdinal()));
 
@@ -87,7 +87,7 @@ public sealed class BotRosterPublishService(
             // seated at the join: a bot's loadout names its face, and this one
             // carries the gear behind the same key (`PlayerGearBodiesUtils`).
             records.Add(new RosterRecord(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 PlayerGearBodiesUtils.Build(
                     (byte)(loadout.Slot + 1),
                     loadout.Appearance,
@@ -105,7 +105,7 @@ public sealed class BotRosterPublishService(
             // it is drawn, and it takes no damage, because the row a hit is applied
             // to and the row a kill feed resolves are both this record's.
             records.Add(new RosterRecord(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 SettingsHeaderBodiesUtils.BuildJoin((byte)(loadout.Slot + 1)),
                 roster.TakeRunOrdinal()));
         }

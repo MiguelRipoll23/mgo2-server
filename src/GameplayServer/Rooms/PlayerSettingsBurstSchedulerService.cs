@@ -123,7 +123,7 @@ public sealed class PlayerSettingsBurstSchedulerService(
         body[RoomStateBodyConstants.CheckpointsOffset] = matchSettings.Checkpoints;
 
         var record = new RosterRecord(
-            UdpCommandConstants.PlayerProfile,
+            UdpCommandConstants.RoomRecord,
             body,
             roster.TakeRunOrdinal());
         logger.LogDebug(
@@ -177,6 +177,7 @@ public sealed class PlayerSettingsBurstSchedulerService(
                 roomState,
                 rotationIndex,
                 playerCount,
+                matchSettings.RoomBody,
                 answeringSlot,
                 matchSettings.AutoAssignTeams,
                 matchSettings.LevelLimit,
@@ -190,6 +191,7 @@ public sealed class PlayerSettingsBurstSchedulerService(
                 roomState,
                 rotationIndex,
                 playerCount,
+                matchSettings.RoomBody,
                 matchSettings.RuleTimers,
                 answeringSlot,
                 matchSettings.AutoAssignTeams,

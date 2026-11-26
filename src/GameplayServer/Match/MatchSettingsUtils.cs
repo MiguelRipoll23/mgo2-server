@@ -107,7 +107,10 @@ public static class MatchSettingsUtils
             // The room's own identity, which is what a browser reads the name off.
             Name = options.GameplayServerRoomName,
             Comment = "Gameplay server",
+            Stance = (short)options.GameplayServerHostStance,
             MaxPlayers = (short)options.GameplayServerMaxPlayers,
+            CaptureExtraTime = options.GameplayServerCaptureExtraTime,
+            TeamKillKick = (short)options.GameplayServerTeamKillKick,
             BriefingTime = options.GameplayServerBriefingMinutes,
             LevelLimitBase = options.GameplayServerLevelLimitBase,
             LevelLimitEnabled = options.GameplayServerLevelLimitEnabled,
@@ -132,6 +135,7 @@ public static class MatchSettingsUtils
             RotationMaps = [.. rotation.Select(entry => (short)entry.Map)],
             RotationFlags = [.. rotation.Select(entry => (short)entry.RoundOptions)],
             RuleTimers = RuleTimers(options),
+            SneakingSnakeKills = (short)options.GameplayServerSnakeDefeats,
             Dedicated = true,
             UniquesEnabled = options.GameplayServerUniqueCharacters,
         };
@@ -186,11 +190,25 @@ public static class MatchSettingsUtils
                 + $"(got {options.GameplayServerBriefingMinutes}); a briefing of zero ends the moment it opens.");
         }
 
+        if (options.GameplayServerBriefingMinutes > ushort.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_BRIEFING_MINUTES must fit the body's sixteen-bit minute count "
+                + $"(got {options.GameplayServerBriefingMinutes}).");
+        }
+
         if (options.GameplayServerMaxPlayers <= 0)
         {
             throw new InvalidOperationException(
                 $"GAMEPLAY_SERVER_MAX_PLAYERS must be a positive number of players "
                 + $"(got {options.GameplayServerMaxPlayers}); a room of zero admits nobody.");
+        }
+
+        if (options.GameplayServerMaxPlayers > byte.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_MAX_PLAYERS must fit body 0x4a's one-byte character cap "
+                + $"(got {options.GameplayServerMaxPlayers}).");
         }
 
 
@@ -229,6 +247,59 @@ public static class MatchSettingsUtils
             throw new InvalidOperationException(
                 "GAMEPLAY_SERVER_SNEAKING_DOG_TAGS must fit one byte, body 0x8e "
                 + $"(got {options.GameplayServerSneakingDogTags}).");
+        }
+
+        if (options.GameplayServerTeamKillKick is < 0 or > byte.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_TEAM_KILL_KICK must fit body 0x4e's one-byte kick "
+                + $"(got {options.GameplayServerTeamKillKick}).");
+        }
+
+        if (options.GameplayServerSnakeDefeats is < 1 or > 5)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_SNAKE_DEFEATS must be between 1 and 5, the range the client clamps "
+                + $"body 0x96 to (got {options.GameplayServerSnakeDefeats}).");
+        }
+
+        if (options.GameplayServerDeathmatchRounds is < 0 or > byte.MaxValue
+            || options.GameplayServerStealthDeathmatchRounds is < 0 or > byte.MaxValue
+            || options.GameplayServerSneakingCaptureRounds is < 0 or > byte.MaxValue
+            || options.GameplayServerRaceRounds is < 0 or > byte.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_DEATHMATCH_ROUNDS, _STEALTH_DEATHMATCH_ROUNDS, "
+                + "_SNEAKING_CAPTURE_ROUNDS and _RACE_ROUNDS must each fit body 0x8f-0x92's "
+                + "one-byte round count.");
+        }
+
+        if (options.GameplayServerMinuteLimitMinutes is < 0 or > ushort.MaxValue / 60)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_MINUTE_LIMIT_MINUTES must fit body 0x53's sixteen-bit seconds "
+                + $"(got {options.GameplayServerMinuteLimitMinutes}).");
+        }
+
+        if (options.GameplayServerHostStance is < 0 or > 9 or 8)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_HOST_STANCE must be 0-9 with 8 left unwritten, the client's "
+                + $"HOST_STANCE_* table (got {options.GameplayServerHostStance}).");
+        }
+
+        if (options.GameplayServerDeathmatchTickets is < 0 or > byte.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_DEATHMATCH_TICKETS must fit body 0x94's one-byte ticket count "
+                + $"(got {options.GameplayServerDeathmatchTickets}).");
+        }
+
+        if (options.GameplayServerRoomTailWord is < 0 or > ushort.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "GAMEPLAY_SERVER_ROOM_TAIL_WORD must fit body 0x9e's sixteen-bit word "
+                + $"(got {options.GameplayServerRoomTailWord}).");
         }
 
         if (options.GameplayServerCheckpoints is < 0 or > byte.MaxValue)

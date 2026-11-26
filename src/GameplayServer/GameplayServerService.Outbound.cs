@@ -244,7 +244,7 @@ public sealed partial class GameplayServerService
             if (message.FixedOrdinal
                 || MatchRecords.MatchRecordSequenceService.StreamOf(message.Type)
                     != MatchRecords.MatchRecordSequenceService.StreamOf(
-                        UdpCommandConstants.PlayerProfile)
+                        UdpCommandConstants.RoomRecord)
                 || !PeerAcknowledgementUtils.WaitsForAcknowledgement(message))
             {
                 continue;

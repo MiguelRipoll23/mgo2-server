@@ -115,7 +115,7 @@ public sealed partial class TeamArrayService
         var run = new List<RosterRecord>(4)
         {
             new(TeamsTypeOf(roundIsOpen), teams, pairOrdinals[0]),
-            new(UdpCommandConstants.PlayerProfile, occupancy, pairOrdinals[1]),
+            new(UdpCommandConstants.RoomRecord, occupancy, pairOrdinals[1]),
         };
 
         // The requesting peer's own player, when the room has one for it. A request
@@ -162,7 +162,7 @@ public sealed partial class TeamArrayService
             {
                 var side = slots.Find(slot => slot.Slot == player.SessionSlot);
                 run.Add(
-                    new(UdpCommandConstants.PlayerProfile,
+                    new(UdpCommandConstants.RoomRecord,
                         RoomPlayerEntryBodiesUtils.Build(
                             index++,
                             player.SessionSlot,
@@ -172,7 +172,7 @@ public sealed partial class TeamArrayService
             }
 
             run.Add(
-                new(UdpCommandConstants.PlayerProfile,
+                new(UdpCommandConstants.RoomRecord,
                     PlayerProfileRecordUtility.BuildRosterClose(),
                     roster.TakeRunOrdinal()));
         }
@@ -201,7 +201,7 @@ public sealed partial class TeamArrayService
                 // receives the field the team array writes for a player the room puts
                 // on no side, and not a zero.
                 run.Add(
-                    new(UdpCommandConstants.PlayerProfile,
+                    new(UdpCommandConstants.RoomRecord,
                         SettingsHeaderBodiesUtils.BuildJoin((byte)(member.SessionSlot + 1)),
                         roster.TakeRunOrdinal()));
             }
@@ -229,5 +229,5 @@ public sealed partial class TeamArrayService
     /// <param name="roundIsOpen">Whether a round is playing.</param>
     /// <returns>The type the teams array is written under.</returns>
     private static ushort TeamsTypeOf(bool roundIsOpen) =>
-        UdpCommandConstants.PlayerProfile;
+        UdpCommandConstants.RoomRecord;
 }

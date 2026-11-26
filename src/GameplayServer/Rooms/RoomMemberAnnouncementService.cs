@@ -101,15 +101,15 @@ public sealed class RoomMemberAnnouncementService(
         var records = new List<RosterRecord>(4)
         {
             new(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 member.BuildRecord(includeEndpointPairs),
                 roster.TakeRunOrdinal()),
             new(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 PlayerProfileRecordUtility.BuildRosterClose(),
                 roster.TakeRunOrdinal()),
             new(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 RoundStateBodiesUtils.JoinPlayerCountBody((byte)(roster.JoinerCount + 1)),
                 roster.TakeRunOrdinal()),
         };
@@ -124,7 +124,7 @@ public sealed class RoomMemberAnnouncementService(
             if (room.FirstOrDefault(loadout => loadout.Slot == member.SessionSlot) is { } loadout)
             {
                 records.Add(new(
-                    UdpCommandConstants.PlayerProfile,
+                    UdpCommandConstants.RoomRecord,
                     burst.BuildLoadoutBody(loadout),
                     roster.TakeRunOrdinal()));
             }
@@ -197,7 +197,7 @@ public sealed class RoomMemberAnnouncementService(
         return
         [
             new(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 RoomPlayerEntryBodiesUtils.Build(
                     (byte)roster.JoinerCount,
                     member.SessionSlot,
@@ -205,11 +205,11 @@ public sealed class RoomMemberAnnouncementService(
                     map),
                 roster.TakeRunOrdinal()),
             new(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 PlayerProfileRecordUtility.BuildRosterClose(),
                 roster.TakeRunOrdinal()),
             new(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 SettingsHeaderBodiesUtils.Build((byte)(member.SessionSlot + 1)),
                 roster.TakeRunOrdinal()),
         ];

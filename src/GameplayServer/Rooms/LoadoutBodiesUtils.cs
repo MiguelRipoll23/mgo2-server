@@ -47,7 +47,7 @@ public static class LoadoutBodiesUtils
     /// record carries a <c>07 48</c> roster entry on one datagram and a <c>0b</c>
     /// payload on the next.
     /// </remarks>
-    public const ushort LoadoutRecordType = UdpCommandConstants.PlayerProfile;
+    public const ushort LoadoutRecordType = UdpCommandConstants.RoomRecord;
 
     /// <summary>Slot byte on the host's own loadout record.</summary>
     public const byte PlayerLoadoutSlot = 0x01;

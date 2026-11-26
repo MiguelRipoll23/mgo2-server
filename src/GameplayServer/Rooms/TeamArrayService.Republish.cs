@@ -139,8 +139,8 @@ public sealed partial class TeamArrayService
         var ordinals = roster.TakeRunOrdinals(2);
         List<RosterRecord> pair =
         [
-            new(UdpCommandConstants.PlayerProfile, newTeams, ordinals[0]),
-            new(UdpCommandConstants.PlayerProfile, newOccupancy, ordinals[1]),
+            new(UdpCommandConstants.RoomRecord, newTeams, ordinals[0]),
+            new(UdpCommandConstants.RoomRecord, newOccupancy, ordinals[1]),
         ];
 
         logger.LogDebug(

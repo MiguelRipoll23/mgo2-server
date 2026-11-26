@@ -186,7 +186,7 @@ public sealed partial class MatchStartRunService
         try
         {
             await context.Send(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 Rooms.RoundStateBodiesUtils.RoomStateBody(state),
                 roster.TakeRunOrdinal());
         }

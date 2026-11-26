@@ -15,10 +15,11 @@ namespace Mgo2Server.Shared.Types;
 /// at are <c>docs/protocol/UDP_COMMANDS.md</c>, "Kinds <c>0x01</c>–<c>0x04</c>".
 /// </para>
 /// <para>
-/// <b>Three of the five say where a player stands.</b>
+/// <b>Three of the five say where something stands.</b>
 /// <see cref="RespawnPoint"/> is one spawn point per player slot, with the slot, the
 /// player's place and a sixteen-bit direction beside the three coordinates;
-/// <see cref="CustomPoint"/> is one custom point and its action, the point written twice;
+/// <see cref="CustomPoint"/> is one of the round's objectives — the stage's own target,
+/// with the mode's task byte and the point's index above it, and the point written twice;
 /// and <see cref="Box"/> is a region — a header and a count of eight-byte corners, which a
 /// host also writes with a count of nought to close it. Only
 /// <see cref="QuadAndItems"/> is unread; it shares <see cref="Box"/>'s tail two bytes
@@ -40,7 +41,11 @@ public enum RoomRecordKind : byte
     /// <summary>A region: an eight-byte header, a count, and that many eight-byte corners.</summary>
     Box = 0x02,
 
-    /// <summary>A custom point and its action: a tag, one point written twice, a sixteen-bit tail.</summary>
+    /// <summary>
+    /// One objective point of the round's stage: a tag carrying the mode's task and the
+    /// point's index, the point twice, and a sixteen-bit tail. A rule that places no target
+    /// is written none — see <c>CustomPointUtils</c> and <c>docs/analysis/custom-points.md</c>.
+    /// </summary>
     CustomPoint = 0x03,
 
     /// <summary>

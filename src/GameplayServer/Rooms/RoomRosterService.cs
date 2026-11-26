@@ -51,7 +51,7 @@ public sealed partial class RoomRosterService(
     /// <remarks>
     /// The recorded host opens its answer with its own entry under
     /// <see cref="UdpCommandConstants.JoinRequest"/> and follows it with the
-    /// joining players under <see cref="UdpCommandConstants.PlayerProfile"/> —
+    /// joining players under <see cref="UdpCommandConstants.RoomRecord"/> —
     /// the same tag the joiner itself opened the exchange with, which the host
     /// then uses for its own record. Both roster frames of the live session do
     /// this (docs/protocol/UDP_GAME_CAPTURE.md §4), so the head of the run is
@@ -66,7 +66,7 @@ public sealed partial class RoomRosterService(
     /// <see cref="MatchRecords.MatchRecordSequenceService"/> so that the controls
     /// the match-record writers insert take the same sequence.
     /// </summary>
-    public const ushort ExchangeIdentifier = UdpCommandConstants.PlayerProfile;
+    public const ushort ExchangeIdentifier = UdpCommandConstants.RoomRecord;
 
     private readonly Lock gate = new();
     private readonly List<RosterMember> members = [];
@@ -374,7 +374,7 @@ public sealed partial class RoomRosterService(
     /// <summary>
     /// Builds the roster run as it goes on the wire: empty head, the host's own
     /// entry under <see cref="HostEntryType"/>, every joining player under
-    /// <see cref="UdpCommandConstants.PlayerProfile"/>, the close record, the
+    /// <see cref="UdpCommandConstants.RoomRecord"/>, the close record, the
     /// room's count and the answered peer's own settings payload last.
     /// </summary>
     /// <param name="answeringLoadout">

@@ -257,5 +257,5 @@ public sealed class PeerSession
     /// </remarks>
     public bool RosterAcknowledged =>
         acknowledgedRecords.Any(acknowledged => acknowledged.Type
-            is UdpCommandConstants.PlayerProfile or UdpCommandConstants.JoinRequest);
+            is UdpCommandConstants.RoomRecord or UdpCommandConstants.JoinRequest);
 }

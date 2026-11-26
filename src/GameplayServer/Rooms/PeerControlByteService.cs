@@ -108,6 +108,13 @@ public sealed class PeerControlByteService(
     /// </summary>
     public const byte JoinByte = 0x06;
 
+    /// <summary>
+    /// The one byte the client's two screen readers return on instead of moving the
+    /// screen to step 12: an answer carrying it acknowledges a record without
+    /// advancing a screen that is already up.
+    /// </summary>
+    public const byte NoAdvanceByte = 0xff;
+
     private readonly object gate = new();
     private int answeredRound = -1;
     private int answeredInRound;

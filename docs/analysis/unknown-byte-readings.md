@@ -98,15 +98,18 @@ apart, with different clients and slots:
 ```
 07 0d 00 02 00 00 00 00 02 d2 5a 00 00 00 e0 8f 7e 00 00 00     kind 0x02 close pair
 07 0d 00 02 01 00 00 01 02 34 a4 1f 00 00 18 6e 01 00 00 00     kind 0x02, second index
-07 0f 00 03 00 00 00 00 84 03 84 03 3e fd 84 03 84 03 3e fd fd 00   kind 0x03 stage pair
-07 0f 00 03 01 00 00 01 3e fd 7d 03 07 03 3e fd 7d 03 07 03 fd 00
+07 0f 00 03 00 00 00 00 84 03 84 03 3e fd 84 03 84 03 3e fd fd 00   kind 0x03, Capture target 1
+07 0f 00 03 01 00 00 01 3e fd 7d 03 07 03 3e fd 7d 03 07 03 fd 00   kind 0x03, Capture target 2
 ```
 
 Both rooms are on the same map, so this is what `roster-record-kinds.md` §8 leaves
 open read from the other side: the pair is a **stage fact and not room state**, and
-a host may replay the recording's bytes for that stage (`RoomStateRecordBodiesUtils`
-does). The two records are also the ones a second room cannot distinguish, so
-nothing a room's players do reaches them.
+a host may replay the recording's bytes for that stage (`CustomPointRecordBodiesUtils`
+does, from `CustomPointTableUtils`). The two records are also the ones a second room
+cannot distinguish, so nothing a room's players do reaches them — and their meaning
+is **the stage's Capture targets**, not a stage banner: the same record on another
+round is that rule's objectives, and on Team Deathmatch it is not written at all
+(`docs/analysis/custom-points.md` §2–§4).
 
 ## 5. What the client binaries add, and what they do not
 

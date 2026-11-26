@@ -295,10 +295,17 @@ public sealed partial class MatchStartRunService
                 return;
             }
 
+            // **The screens' clock ends the screens; the room's post-screen report
+            // opens the round.** On 2026-11-26 the screens ended at 16:08:00, the
+            // client reported its map-loaded state at 16:08:01, and opening on the
+            // clock wrote the round's state at 16:08:00 — before that report — so the
+            // client never asked for its entry and never spawned. The reference keeps
+            // the same 0.2 s report-to-open gap (`mgo2-started-on-game-round1` round 2,
+            // t+215.632); the 24.0 s clock is the screens' own, not the open's.
             await WaitForRoundReportsAsync(roundNumber);
             var opened = OpenRound(
                 roundState.Generation.Sibling,
-                "the round result screens finished");
+                "the result screens finished and the room's post-screen reports followed them");
             if (!opened)
             {
                 logger.LogWarning(

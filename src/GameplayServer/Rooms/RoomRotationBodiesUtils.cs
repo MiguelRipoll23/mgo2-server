@@ -4,7 +4,7 @@ namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
 /// The room-state body's two entry points for callers that already hold a rotation:
-/// the recorded room's body and this room's own.
+/// the default body and this room's own.
 /// </summary>
 /// <remarks>
 /// Both are one call into <see cref="RoomRotationPayloadUtils"/>, which owns the
@@ -18,7 +18,7 @@ public static class RoomRotationBodiesUtils
     /// settings generation.
     /// </summary>
     /// <remarks>
-    /// The rotation is the recorded room's, because a room whose rotation could not
+    /// The rotation is the default's, because a room whose rotation could not
     /// be read has nothing better to tell a joiner; the population is not, because
     /// the joiner counts the room it is in and not the capture's two seats.
     /// </remarks>
@@ -29,20 +29,22 @@ public static class RoomRotationBodiesUtils
     /// <param name="sneakingDogTags">The room's SNE dog-tag count, body <c>0x8e</c>.</param>
     /// <param name="checkpoints">The room's checkpoint count, body <c>0x95</c>.</param>
     /// <returns>The body.</returns>
-    public static byte[] RecordedRotationBody(
+    public static byte[] DefaultRotationBody(
         byte playerCount,
         int teamTickets,
         LevelLimitBand? levelLimit = null,
         byte settingsGeneration = MatchSettingsService.SettingsGenerationSeed,
         byte sneakingDogTags = 2,
-        byte checkpoints = 5) =>
-        RoomRotationPayloadUtils.BuildReferenceBody(
+        byte checkpoints = 5,
+        RoomBodySettings? settings = null) =>
+        RoomRotationPayloadUtils.BuildDefaultBody(
             playerCount,
             teamTickets,
             levelLimit,
             settingsGeneration,
             sneakingDogTags,
-            checkpoints);
+            checkpoints,
+            settings);
 
     /// <summary>
     /// A settings body with this room's rotation and the state of the room it is
@@ -92,6 +94,7 @@ public static class RoomRotationBodiesUtils
         RoomState state,
         int currentRotationIndex,
         byte playerCount,
+        RoomBodySettings settings,
         bool autoAssignTeams = true,
         LevelLimitBand? levelLimit = null,
         byte settingsGeneration = MatchSettingsService.SettingsGenerationSeed,
@@ -100,7 +103,7 @@ public static class RoomRotationBodiesUtils
         bool uniqueCharacters = false,
         byte uniqueRed = RoomStateBodyConstants.UnassignedUniqueCharacterSlot,
         byte uniqueBlue = RoomStateBodyConstants.UnassignedUniqueCharacterSlot) =>
-        RoomRotationPayloadUtils.BuildReferenceBody(
+        RoomRotationPayloadUtils.BuildDefaultBody(
             rotation,
             state,
             currentRotationIndex,
@@ -113,5 +116,6 @@ public static class RoomRotationBodiesUtils
             checkpoints,
             uniqueCharacters,
             uniqueRed,
-            uniqueBlue);
+            uniqueBlue,
+            settings);
 }

@@ -80,7 +80,7 @@ public sealed class BriefingOpeningPublishService(
             foreach (var slot in slots)
             {
                 records.Add(new(
-                    UdpCommandConstants.PlayerProfile,
+                    UdpCommandConstants.RoomRecord,
                     SettingsHeaderBodiesUtils.Build((byte)(slot.Slot + 1)),
                     roster.TakeRunOrdinal()));
             }
@@ -93,7 +93,7 @@ public sealed class BriefingOpeningPublishService(
                 foreach (var loadout in await loadouts.ReadAsync())
                 {
                     records.Add(new(
-                        UdpCommandConstants.PlayerProfile,
+                        UdpCommandConstants.RoomRecord,
                         burst.BuildLoadoutBody(loadout),
                         roster.TakeRunOrdinal()));
                 }

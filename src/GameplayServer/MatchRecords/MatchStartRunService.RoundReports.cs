@@ -5,18 +5,20 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class MatchStartRunService
 {
     /// <summary>
-    /// Waits for every client in the room to report the round that follows the
-    /// result screens now ending.
+    /// Waits, after a round's result screens have ended, for the room's clients to
+    /// report the round that follows them.
     /// </summary>
     /// <remarks>
     /// <b>The reference opens on the room's last report, not on the screens'
-    /// clock alone.</b> A client that is still reading the result screen sends its
-    /// report before it leaves it; opening the round on the clock starts the map
-    /// over a client that has not reported, and its own player disappears and the
-    /// session drops. A room of one client and its bots has one report to wait for
-    /// too: the live client sends its report after the screen, so the one report is
-    /// waited for; a room of several waits for all of them, with a bound so one
-    /// client that never reports cannot hold the room for ever.
+    /// clock alone.</b> A client reports its map-loaded state once the screens are
+    /// behind it, and that report is also what makes it ask for its own entry: the
+    /// live run of 2026-11-26 opened round 2 at 16:08:00, wrote the round's state
+    /// before the client's 16:08:01 report, and the client never sent the `0x83`
+    /// request that draws the entry it spawns with. The count is the room's
+    /// reported players, which a round's end clears, so it is this boundary's
+    /// reports and not the round's; a room of one client and its bots waits for
+    /// its one report, and the bound keeps a client that never reports from
+    /// holding the room for ever.
     /// </remarks>
     /// <param name="roundNumber">The round whose screens just ended, for the log.</param>
     private async Task WaitForRoundReportsAsync(int roundNumber)
@@ -28,15 +30,11 @@ public sealed partial class MatchStartRunService
         }
 
         var waited = 0;
-        int departed;
+        int reported;
         while (true)
         {
-            lock (gate)
-            {
-                departed = roundDeparted.Count;
-            }
-
-            if (departed >= expected
+            reported = briefingStates.ReportedPlayerCount;
+            if (reported >= expected
                 || waited >= MatchScreenTimingsUtils.RoundReportWaitMilliseconds
                 || !roundState.HasRoundEnded)
             {
@@ -47,13 +45,13 @@ public sealed partial class MatchStartRunService
             waited += MatchRoundStateService.BriefingRunPollMilliseconds;
         }
 
-        if (departed < expected)
+        if (reported < expected)
         {
             logger.LogWarning(
-                "Round {RoundNumber}'s result screens ended with {Departed} of {Expected} client(s) "
+                "Round {RoundNumber}'s result screens ended with {Reported} of {Expected} client(s) "
                 + "reporting the round after them; opening it after {Waited} ms rather than holding the room",
                 roundNumber,
-                departed,
+                reported,
                 expected,
                 waited);
             return;

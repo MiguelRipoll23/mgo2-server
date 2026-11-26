@@ -60,6 +60,7 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class BriefingCountdownService(
     MatchRoundStateService roundState,
     Rooms.BriefingStateService briefingStates,
+    Match.MatchSettingsService matchSettings,
     MatchRecordSequenceService sequences,
     ILogger<BriefingCountdownService> logger)
 {
@@ -190,9 +191,9 @@ public sealed partial class BriefingCountdownService(
                     heldCountSent = true;
                 }
 
-                // The room's own stage rides with the countdown, which is the one
-                // thing this host writes through a briefing.
-                await PublishRoomStateAsync(context);
+                // The next round's objective points ride with the countdown, which
+                // is the one thing this host writes through a briefing.
+                await PublishCustomPointsAsync(context);
             }
             catch (Exception exception)
             {

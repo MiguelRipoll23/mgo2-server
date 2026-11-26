@@ -32,6 +32,18 @@ from one source.
 | rotation (rule, map and optional Drebin or Headshots flag, one per round) | this instance's own, by the decoder's rule names and the room's map names | `GAMEPLAY_SERVER_ROTATION` — `TDM@Blood Bath:DREBIN, TDM@Blood Bath:DREBIN, …` |
 | briefing time | this instance's own | `GAMEPLAY_SERVER_BRIEFING_MINUTES` |
 | max players | this instance's own | `GAMEPLAY_SERVER_MAX_PLAYERS` |
+| team-kill kick | this instance's own | `GAMEPLAY_SERVER_TEAM_KILL_KICK` |
+| Sneaking SNAKE defeats | this instance's own | `GAMEPLAY_SERVER_SNAKE_DEFEATS` |
+| whole-minute limit | this instance's own | `GAMEPLAY_SERVER_MINUTE_LIMIT_MINUTES` |
+| host stance | this instance's own | `GAMEPLAY_SERVER_HOST_STANCE` |
+| Capture extra time | this instance's own | `GAMEPLAY_SERVER_CAPTURE_EXTRA_TIME` |
+| unnamed host flags bits 0 and 2 | this instance's own | `GAMEPLAY_SERVER_HOST_FLAG0` / `GAMEPLAY_SERVER_HOST_FLAG2` |
+| Deathmatch rounds | this instance's own | `GAMEPLAY_SERVER_DEATHMATCH_ROUNDS` |
+| Stealth Deathmatch rounds | this instance's own | `GAMEPLAY_SERVER_STEALTH_DEATHMATCH_ROUNDS` |
+| Sneaking Capture rounds | this instance's own | `GAMEPLAY_SERVER_SNEAKING_CAPTURE_ROUNDS` |
+| Race rounds | this instance's own | `GAMEPLAY_SERVER_RACE_ROUNDS` |
+| Deathmatch tickets without a bank | this instance's own | `GAMEPLAY_SERVER_DEATHMATCH_TICKETS` |
+| room tail word | this instance's own | `GAMEPLAY_SERVER_ROOM_TAIL_WORD` |
 | weapon restrictions | this instance's own; all zero, so every weapon is offered | none: the room unlocks the full roster |
 | level-limit base | this instance's own | `GAMEPLAY_SERVER_LEVEL_LIMIT_BASE` |
 | auto assign teams | this instance's own; clear makes the client show its Red / Blue / Auto screen | `GAMEPLAY_SERVER_AUTO_ASSIGN_TEAMS` |
@@ -42,7 +54,9 @@ Both names are mapped through the replay console's own tables — `MODE_NAMES` a
 spelling of them, and a name neither table holds stops the process at startup
 (`MatchSettingsUtils.Validate`): a room that runs a rule or a map no client was
 told about is a room the client is not playing. Nothing on the gameplay channel
-carries any of these fields, which is why the clock below is where their effect is
+carries the character cap and the briefing at `0x4a` and `0x61`–`0x62`, and the kick and
+SNAKE count at `0x4e` and `0x96`; the rest reach a player through the row or the rotation,
+which is why the clock below is where their effect is
 measured.
 
 ## 1. The `0x4313` reply

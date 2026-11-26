@@ -136,6 +136,31 @@ public sealed class MatchSettingsService(
     public IReadOnlyList<int> RuleTimers => ruleTimers;
 
     /// <summary>
+    /// The room-state body's settings, resolved from this instance's options.
+    /// </summary>
+    /// <remarks>
+    /// It is built per call rather than cached so a round opens on the settings of the
+    /// process that opens it. The values are the ones the gameplay body states, each
+    /// with the default that reproduces the working capture.
+    /// </remarks>
+    public Rooms.RoomBodySettings RoomBody => new(
+        options.GameplayServerMaxPlayers,
+        options.GameplayServerBriefingMinutes,
+        options.GameplayServerTeamKillKick,
+        options.GameplayServerSnakeDefeats,
+        options.GameplayServerDeathmatchRounds,
+        options.GameplayServerStealthDeathmatchRounds,
+        options.GameplayServerSneakingCaptureRounds,
+        options.GameplayServerRaceRounds,
+        options.GameplayServerMinuteLimitMinutes,
+        (Rooms.RoomHostStance)options.GameplayServerHostStance,
+        options.GameplayServerCaptureExtraTime,
+        options.GameplayServerHostFlag0,
+        options.GameplayServerHostFlag2,
+        options.GameplayServerDeathmatchTickets,
+        (ushort)options.GameplayServerRoomTailWord);
+
+    /// <summary>
     /// The room's current SNE dog-tag count, body <c>0x8e</c>: the number Snake must
     /// collect. It starts at <see cref="ServerOptions.GameplayServerSneakingDogTags"/>;
     /// a gameplay change raises it with <see cref="IncreaseSneakingDogTags"/> and the
@@ -322,7 +347,10 @@ public sealed class MatchSettingsService(
             options.GameplayServerAutoAssignTeams,
             SneakingDogTags,
             Checkpoints,
-            options.GameplayServerUniqueCharacters);
+            options.GameplayServerUniqueCharacters,
+            options.GameplayServerMaxPlayers,
+            options.GameplayServerTeamKillKick,
+            options.GameplayServerSnakeDefeats);
         logger.LogDebug(
             "Room {GameIdentifier} ({GameName}) runs {RoundCount} round(s) on maps {Maps} with a "
             + "{BriefingTime}-minute briefing, from this instance's own settings",

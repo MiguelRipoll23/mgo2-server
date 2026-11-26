@@ -535,7 +535,7 @@ and the three capture-proven `0x4310` anchors land where they should.
 | 177 / 178 | 1 / 1 | commonA / commonB | `0x142` / `0x143` |
 | 180 / 182 | 2 / 2 | idle kick u16 / team-kill kick u16 | `0x145` / `0x147` |
 | 188 / 189 | 1 / 1 | capture extra time / **sneaking SNAKE count** | `0x149` / `0x14A` |
-| 190–203 | 14 | byte timers, extra-time flags | `0x14B` |
+| 190–203 | 14 | byte timers, unnamed host flag | `0x14B` |
 
 **One off-by-one to re-check, not resolved here:** `PROTOCOL.md` puts non-stat at `0x4310` wire
 `0x155` bit 1; this arithmetic puts block 199 at wire `0x154`. One of the two is wrong.

@@ -89,6 +89,6 @@ public sealed class LiveJoinerFrameTests(ITestOutputHelper output)
 
         Assert.True(frame.Compressed);
         Assert.Equal(0x8001, (ushort)(counter | UdpCommandConstants.CompressionMarker));
-        Assert.Contains(frame.Messages, message => message.Type == UdpCommandConstants.PlayerProfile);
+        Assert.Contains(frame.Messages, message => message.Type == UdpCommandConstants.RoomRecord);
     }
 }

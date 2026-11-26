@@ -249,9 +249,9 @@ public sealed partial class BotActorPublishService(
             // The value is taken here, from the profile stream the announcement travels
             // on, and travels with the record.
             run.Add(new RosterRecord(
-                UdpCommandConstants.PlayerProfile,
+                UdpCommandConstants.RoomRecord,
                 BotRoundStateBodiesUtils.Build(bot.SessionSlot),
-                sequences.Take(UdpCommandConstants.PlayerProfile)));
+                sequences.Take(UdpCommandConstants.RoomRecord)));
         }
 
         await RosterRunSendUtils.SendAsync(context, run);

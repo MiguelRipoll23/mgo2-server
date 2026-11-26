@@ -42,7 +42,8 @@ public sealed class PlayerSettingsBurstServiceTests
             rotation,
             state: Mgo2Server.GameplayServer.Rooms.RoomState.Briefing,
             currentRotationIndex: 0,
-            playerCount: 2);
+            playerCount: 2,
+            settings: RoomBodySettings.Defaults);
 
         Assert.Equal(161, body.Length);
         Assert.Equal(PlayerSettingsBurstService.RoomRotationPayloadLength, body.Length);
@@ -83,7 +84,7 @@ public sealed class PlayerSettingsBurstServiceTests
         // the recorded room's own — the two-player room of `mgo2-game1`, and the
         // forty-ticket limit its body carries at key 2 (`0x28`) — because the
         // fallback is that room's body.
-        var recorded = RoomRotationBodiesUtils.RecordedRotationBody(
+        var recorded = RoomRotationBodiesUtils.DefaultRotationBody(
             playerCount: 2,
             teamTickets: 0x28);
         Assert.Equal(161, recorded.Length);

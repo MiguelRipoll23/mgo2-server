@@ -12,7 +12,7 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// field 10 (<c>0x56</c>) the room population, host included, field 29 is the
 /// room's rule times in seconds, and <c>0x93</c> the round's starting ticket count.
 /// The rule round counts and the two ticket counts are the room's own bank when one
-/// is given; the reference body writes the capture's values, and the remaining fields
+/// is given; the default body writes the capture's values, and the remaining fields
 /// are named by offset (<c>docs/analysis/rotation-payload-corpus.md</c> §5a).
 /// </para>
 /// <para>
@@ -38,10 +38,10 @@ internal static class RoomRotationPayloadUtils
     /// <summary>Slots in the rotation field, of which fifteen play and one is zeroed.</summary>
     internal const int RotationEntryCount = 16;
 
-    private const byte ReferenceRoundNumber = 2;
-    private const int ReferenceRotationIndex = 4;
+    private const byte DefaultRoundNumber = 2;
+    private const int DefaultRotationIndex = 4;
 
-    private static readonly MatchRotationEntry[] ReferenceRotation =
+    private static readonly MatchRotationEntry[] DefaultRotation =
     [
         new(Rule: 5, Map: 12, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 5),
         new(Rule: 6, Map: 4, RoundOptions: RoundOption.Normal, TimeLimitMinutes: 5),
@@ -58,7 +58,7 @@ internal static class RoomRotationPayloadUtils
     /// The capture's own rotation and round, with the room's population.
     /// </summary>
     /// <remarks>
-    /// The rotation is the recorded room's, because a room whose rotation could not
+    /// The rotation is the default's, because a room whose rotation could not
     /// be read has nothing better to tell a joiner; the population is not, because
     /// the joiner counts the room it is in and not the capture's two seats. The two
     /// constants above are the capture's reported round and slot and stay pinned.
@@ -74,7 +74,7 @@ internal static class RoomRotationPayloadUtils
     /// The kill limit the room's rotation states is the number the ticket panel
     /// starts from, so the body's pair at <c>0x5a</c>/<c>0x5e</c> and the records
     /// <c>TeamTicketBodiesUtils</c> writes count down from the same number. A round
-    /// that states no limit plays no ticketed round and keeps the reference pair.
+    /// that states no limit plays no ticketed round and keeps the default pair.
     /// </remarks>
     /// <param name="rotation">The room's rotation.</param>
     /// <param name="currentRotationIndex">Slot of the round being played.</param>
@@ -85,18 +85,20 @@ internal static class RoomRotationPayloadUtils
         return rotation[slot].Tickets ?? RoomStateBodyConstants.TicketLimit;
     }
 
-    public static byte[] BuildReferenceBody(
+    public static byte[] BuildDefaultBody(
         byte playerCount,
         int teamTickets,
         LevelLimitBand? levelLimit = null,
         byte settingsGeneration = MatchSettingsService.SettingsGenerationSeed,
         byte sneakingDogTags = 2,
-        byte checkpoints = 5) =>
+        byte checkpoints = 5,
+        RoomBodySettings? settings = null) =>
         BuildCore(
-            ReferenceRotation,
-            (RoomState)ReferenceRoundNumber,
-            ReferenceRotationIndex,
+            DefaultRotation,
+            (RoomState)DefaultRoundNumber,
+            DefaultRotationIndex,
             playerCount,
+            settings ?? RoomBodySettings.Defaults,
             teamTickets,
             ruleTimers: null,
             autoAssignTeams: true,
@@ -125,7 +127,7 @@ internal static class RoomRotationPayloadUtils
     /// <param name="sneakingDogTags">The room's SNE dog-tag count, body <c>0x8e</c>.</param>
     /// <param name="checkpoints">The room's checkpoint count, body <c>0x95</c>.</param>
     /// <returns>The body.</returns>
-    public static byte[] BuildReferenceBody(
+    public static byte[] BuildDefaultBody(
         IReadOnlyList<MatchRotationEntry> rotation,
         RoomState state,
         int currentRotationIndex,
@@ -138,12 +140,14 @@ internal static class RoomRotationPayloadUtils
         byte checkpoints = 5,
         bool uniqueCharacters = false,
         byte uniqueRed = RoomStateBodyConstants.UnassignedUniqueCharacterSlot,
-        byte uniqueBlue = RoomStateBodyConstants.UnassignedUniqueCharacterSlot) =>
+        byte uniqueBlue = RoomStateBodyConstants.UnassignedUniqueCharacterSlot,
+        RoomBodySettings? settings = null) =>
         BuildCore(
             rotation,
             state,
             currentRotationIndex,
             playerCount,
+            settings ?? RoomBodySettings.Defaults,
             teamTickets,
             ruleTimers: null,
             autoAssignTeams,
@@ -162,6 +166,7 @@ internal static class RoomRotationPayloadUtils
         byte playerCount,
         IReadOnlyList<int> ruleTimers,
         int teamTickets,
+        RoomBodySettings settings,
         bool autoAssignTeams = true,
         LevelLimitBand? levelLimit = null,
         byte settingsGeneration = MatchSettingsService.SettingsGenerationSeed,
@@ -177,6 +182,7 @@ internal static class RoomRotationPayloadUtils
             state,
             currentRotationIndex,
             playerCount,
+            settings,
             teamTickets,
             ruleTimers,
             autoAssignTeams,
@@ -194,6 +200,7 @@ internal static class RoomRotationPayloadUtils
         RoomState state,
         int currentRotationIndex,
         byte playerCount,
+        RoomBodySettings settings,
         int teamTickets,
         IReadOnlyList<int>? ruleTimers,
         bool autoAssignTeams,
@@ -207,7 +214,7 @@ internal static class RoomRotationPayloadUtils
     {
         ArgumentNullException.ThrowIfNull(rotation);
 
-        // A caller that states no restriction writes the reference body's band with its
+        // A caller that states no restriction writes the default body's band with its
         // enable bit clear, which is what every captured room without the limit carries.
         var levelBand = levelLimit ?? LevelLimitBand.Disabled;
 
@@ -242,23 +249,24 @@ internal static class RoomRotationPayloadUtils
         RoomStateRegionUtils.WritePresenceMap(body);
         RoomStateRegionUtils.WriteRoundPhase(body, state);
         RoomStateRegionUtils.WriteRotationTriples(body, rotation);
-        RoomStateFieldUtils.WriteRoomSettings(body, playerCount, autoAssignTeams, levelBand);
+        RoomStateFieldUtils.WriteRoomSettings(body, playerCount, settings, autoAssignTeams, levelBand);
         RoomStateRegionUtils.WriteCurrentSlotAndPopulation(body, currentRotationIndex, playerCount);
-        RoomStateFieldUtils.WriteUniqueCharacterSetting(body, UniqueCharactersByte(uniqueCharacters));
+        RoomStateFieldUtils.WriteUniqueCharacterSetting(body, uniqueCharacters);
         RoomStateFieldUtils.WriteTeamTicketBlock(body, teamTickets);
-        RoomStateFieldUtils.WriteHostStance(body);
-        RoomStateFieldUtils.WriteBriefingTime(body);
+        RoomStateFieldUtils.WriteHostStance(body, settings);
+        RoomStateFieldUtils.WriteBriefingTime(body, settings.BriefingMinutes);
         RoomStateFieldUtils.WriteLevelBand(body, levelBand);
         RoomStateRegionUtils.WriteRuleTimerVector(body, ruleTimers);
         RoomStateFieldUtils.WriteRuleStateFields(
             body,
             ruleTimers,
             teamTickets,
+            settings,
             sneakingDogTags,
             checkpoints);
-        RoomStateFieldUtils.WriteSneakingStateFields(body);
+        RoomStateFieldUtils.WriteSneakingStateFields(body, settings);
         RoomStateFieldUtils.WriteUniqueCharacterSlots(body, uniqueRed, uniqueBlue);
-        RoomStateFieldUtils.WriteTailFields(body, settingsGeneration, UniqueCharactersByte(uniqueCharacters));
+        RoomStateFieldUtils.WriteTailFields(body, settingsGeneration, uniqueCharacters, settings);
 
         if (body.Count != PayloadLength)
         {
@@ -269,8 +277,4 @@ internal static class RoomRotationPayloadUtils
         return body.ToArray();
     }
 
-    private static byte UniqueCharactersByte(bool enabled) =>
-        enabled
-            ? RoomStateBodyConstants.UniqueCharactersEnabled
-            : RoomStateBodyConstants.UniqueCharactersDisabled;
 }

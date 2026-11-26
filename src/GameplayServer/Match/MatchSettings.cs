@@ -87,6 +87,16 @@ public sealed record MatchRotationEntry(
 /// Whether the room assigns the unique characters — Snake and Metal Gear Mk.II — at
 /// the start of a Sneaking or Team Sneaking round.
 /// </param>
+/// <param name="MaxPlayers">
+/// The room's character cap, body <c>0x4a</c>. The body never states fewer than the
+/// room's population.
+/// </param>
+/// <param name="TeamKillKick">
+/// Team kills a player may make before the room removes them, body <c>0x4e</c>.
+/// </param>
+/// <param name="SnakeDefeats">
+/// Times Snake must be defeated for Red and Blue to win, body <c>0x96</c>.
+/// </param>
 public sealed record MatchSettings(
     int GameIdentifier,
     string Name,
@@ -95,7 +105,10 @@ public sealed record MatchSettings(
     bool AutoAssignTeams = true,
     byte SneakingDogTags = 2,
     byte Checkpoints = 5,
-    bool UniqueCharacters = false)
+    bool UniqueCharacters = false,
+    int MaxPlayers = 16,
+    int TeamKillKick = 3,
+    int SnakeDefeats = 3)
 {
     /// <summary>
     /// The entry a round plays: the rotation is walked in order, so the first

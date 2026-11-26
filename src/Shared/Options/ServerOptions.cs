@@ -6,10 +6,10 @@ namespace Mgo2Server.Shared.Options;
 /// Options that describe how this server runs. Every one of them is read from
 /// a single upper-case environment variable.
 /// </summary>
-public sealed class ServerOptions
+public sealed partial class ServerOptions
 {
     /// <summary>
-    /// The recording's own rotation, round for round: nine rounds over five rules
+    /// The default rotation, round for round: nine rounds over five rules
     /// and seven maps, as <c>docs/protocol/GAME_SETTINGS_WIRE.md</c> §1 reads the
     /// <c>0x4313</c> reply's sixteen triples.
     /// </summary>
@@ -19,7 +19,7 @@ public sealed class ServerOptions
         + "BASE@Hazard House";
 
     /// <summary>
-    /// The recording's own seventeen per-rule words: five minutes and two rounds for
+    /// The default seventeen per-rule words: five minutes and two rounds for
     /// every rule the reply states a pair for, a fifty-ticket TDM and a thirty-ticket
     /// DM.
     /// </summary>
@@ -144,208 +144,4 @@ public sealed class ServerOptions
     /// </para>
     /// </summary>
     public string GameplayServerRuleTimers { get; set; } = DefaultRuleTimers;
-
-    /// <summary>
-    /// SNE dog-tag count of the room: the number Snake must collect, written at body
-    /// <c>0x8e</c>. The working capture carries <c>2</c>; a room that plays SNE states
-    /// its own.
-    /// </summary>
-    public int GameplayServerSneakingDogTags { get; set; } = 2;
-
-    /// <summary>
-    /// Checkpoint count of the room: the number a checkpoint rule requires, written at
-    /// body <c>0x95</c>. The working capture carries <c>5</c>.
-    /// </summary>
-    public int GameplayServerCheckpoints { get; set; } = 5;
-
-    /// <summary>
-    /// Whether the room assigns the unique characters — Snake and Metal Gear Mk.II —
-    /// at the start of every Sneaking or Team Sneaking round.
-    /// </summary>
-    /// <remarks>
-    /// The setting is body <c>0x57</c>/<c>0xa0</c> and the assigned pair body
-    /// <c>0x9a</c>/<c>0x9b</c>. The client's own picker (<c>P2P_AssignRoleSlots</c>,
-    /// <c>0x77b628</c>) advances an LCG and writes two distinct player slots; this
-    /// server makes the same draw over the room's player slots.
-    /// </remarks>
-    public bool GameplayServerUniqueCharacters { get; set; }
-
-    /// <summary>
-    /// Slots the gameplay server's room admits, the host's own seat among them. It is
-    /// the figure the room row and the host's settings row both state, and the one a
-    /// browsing client draws as the room's capacity.
-    /// </summary>
-    /// <remarks>
-    /// <b>The host holds a seat the row does not count.</b> This figure is what the
-    /// room list states and what a browsing client draws, and it is the players' —
-    /// the host's seat is added on the gameplay channel's side, as one more than the
-    /// row states (`GameplayServer.Match.MatchService.RoomCapacity`). A room of
-    /// sixteen therefore seats fifteen players and the host, which is the working
-    /// room's shape: `.pcapngs/actions/actions.pcapng`'s roster lists a nameless host
-    /// entry and `BOT-01` to `BOT-15`, and its kill feeds name the human in the
-    /// sixteenth player slot — fifteen bots, one player, one host. A room advertised
-    /// at sixteen that sized the fill from the row alone seated fourteen
-    /// (2026-11-11 13:52), the one bot short.
-    /// </remarks>
-    public int GameplayServerMaxPlayers { get; set; } = 16;
-
-    /// <summary>
-    /// Level-limit base the host's settings row states: the level the room's limit
-    /// is centred on, which the recorded room stated as 22.
-    /// </summary>
-    /// <remarks>
-    /// It is written whether or not the limit is in force, because the client keeps the
-    /// chosen band while the option is switched off — the working room's body carries a
-    /// band with its enable bit clear.
-    /// </remarks>
-    public int GameplayServerLevelLimitBase { get; set; } = 22;
-
-    /// <summary>
-    /// Whether the room's level band is in force: the bit the client tests before it
-    /// refuses a player whose level is outside the band.
-    /// </summary>
-    /// <remarks>
-    /// The band is body <c>0x63</c>/<c>0x64</c> and this is the <c>0x400000</c> bit of
-    /// the switch word at <c>0x4f</c>–<c>0x52</c>. Clear is what every captured room
-    /// that leaves the option off carries, with its band retained.
-    /// </remarks>
-    public bool GameplayServerLevelLimitEnabled { get; set; }
-
-    /// <summary>
-    /// Half-width of the room's level band, in levels: the <c>±</c> around
-    /// <see cref="GameplayServerLevelLimitBase"/>.
-    /// </summary>
-    /// <remarks>
-    /// Body <c>0x63</c>. The capture that switches the limit on and fills the Create
-    /// Game box with level 8 ± 2 carries <c>2</c> there and <c>8</c> at <c>0x64</c>, so
-    /// the two bytes are the width and then the centre.
-    /// </remarks>
-    public int GameplayServerLevelLimitTolerance { get; set; } = 2;
-
-    /// <summary>
-    /// Briefing time of the gameplay server's room, in minutes: how long the room
-    /// waits between two rounds.
-    /// <para>
-    /// The client pushes its own when a player hosts a room
-    /// (<c>characters_host_settings.briefing_time</c>, the lobby's
-    /// <c>0x4312</c> push), and a dedicated host has no such push: what its room
-    /// briefs for is this setting. Its form on the gameplay channel is not
-    /// settled, so no record carries it yet; it is resolved and reported, not
-    /// written.
-    /// </para>
-    /// </summary>
-    public int GameplayServerBriefingMinutes { get; set; } = 1;
-
-    /// <summary>
-    /// Whether the room puts joiners on a side itself. Clear writes the room's
-    /// <c>Auto Assign Teams</c> switch off, which is what makes the client show its
-    /// Red / Blue / Auto selection screen; a player's Red or Blue choice is then
-    /// stored from <c>0x4440</c>, and a player who leaves the screen on Auto keeps
-    /// the balanced side the room assigned on join.
-    /// </summary>
-    public bool GameplayServerAutoAssignTeams { get; set; } = true;
-
-    /// <summary>Display name of the account the gameplay server logs in with.</summary>
-    public string GameplayServerAccountName { get; set; } = "server";
-
-    /// <summary>
-    /// Password of the gameplay server account. When unset, a random one is
-    /// generated per process, so the account cannot be logged into by anyone
-    /// who knows the default.
-    /// </summary>
-    public string? GameplayServerAccountPassword { get; set; }
-
-    /// <summary>
-    /// Name of the character the gameplay server plays as. It is
-    /// <c>server-&lt;port&gt;</c> when it is not configured, which keeps every
-    /// dedicated host on a character of its own without an index being handed
-    /// out: the port is already unique and stable, and the registered
-    /// peer-to-peer endpoint is filed per character. It is the same shape and the
-    /// same value as <see cref="GameplayServerRoomName"/>'s fallback, so a host
-    /// told nothing plays as the character its room is named after.
-    /// </summary>
-    public string GameplayServerCharacterName
-    {
-        get => gameplayServerCharacterName
-            ?? DedicatedHostNameUtils.HostCharacterName(GameplayServerPort);
-        set => gameplayServerCharacterName = value;
-    }
-
-    /// <summary>
-    /// Clan name the gameplay server announces in its peer-to-peer
-    /// player-profile record. A recorded record carries an empty clan name when
-    /// the player has no clan, which is the case for a dedicated host.
-    /// </summary>
-    public string? GameplayServerClanName { get; set; }
-
-    /// <summary>
-    /// Address published to clients in place of each lobby's stored address.
-    /// Only set when the advertised address is a routable address rather than a
-    /// wildcard or loopback address.
-    /// </summary>
-    public string? OverrideIpAddress =>
-        string.IsNullOrWhiteSpace(AdvertisedAddress) ||
-        AdvertisedAddress is "0.0.0.0" or "127.0.0.1" or "localhost"
-            ? null
-            : AdvertisedAddress;
-
-    /// <summary>
-    /// Address this instance announces to clients and writes to the lobby rows:
-    /// the advertised address when one is configured, and the wildcard address
-    /// otherwise, which only a client on the same machine can reach.
-    /// </summary>
-    public string AnnouncedIpAddress => OverrideIpAddress ?? "0.0.0.0";
-
-    /// <summary>
-    /// Name of the room the gameplay server publishes. It is the configured game
-    /// name, and the host prefix and this instance's own port when none is
-    /// configured: the port is unique and stable, so two dedicated hosts never
-    /// publish a room under one name. A blank configured name reads as none, so a
-    /// room is never published under a name no client can show.
-    /// </summary>
-    public string GameplayServerRoomName =>
-        string.IsNullOrWhiteSpace(GameplayServerGameName)
-            ? $"server-{GameplayServerPort}"
-            : GameplayServerGameName;
-
-    /// <summary>Interval in seconds between two heartbeats of an owned row.</summary>
-    public int LobbyHeartbeatIntervalSeconds => LobbiesRefreshIntervalMinutes * 60;
-
-    /// <summary>
-    /// Threshold in seconds after which a gameplay lobby is considered stale:
-    /// twice <see cref="LobbyHeartbeatIntervalSeconds"/>, which is two hours at the
-    /// default beat. One window answers two questions, and they are the same
-    /// question asked twice: a lobby whose <c>updated_at</c> is older than it is
-    /// not listed — so a client never sees a lobby whose server stopped, however
-    /// long ago that was — and it is what the daily cleanup deletes.
-    /// </summary>
-    public int LobbyStaleSeconds => LobbyHeartbeatIntervalSeconds * 2;
-
-    /// <summary>
-    /// Threshold in seconds after which a room is considered stale: a minute. A
-    /// populated room is kept alive by its host's ping report, which the client
-    /// sends every half minute and which stamps <c>games.updated_at</c> through
-    /// <c>UpdatePingsAsync</c>; a room hosted by a dedicated server by its own
-    /// <see cref="MatchHeartbeatIntervalSeconds"/> beat. A minute of silence is
-    /// therefore a host that has missed both of its beats, whatever kind it was,
-    /// and the room is dropped from every list the moment it is that old — a
-    /// client is never shown a room whose host is gone.
-    /// <para>
-    /// It is deliberately two client beats and not more. The room list is what a
-    /// client joins from, so a room that is still listed is a room that can be
-    /// joined, and a window any wider than the beat that fills it lists hosts that
-    /// are no longer answering. The deletes are a different question with a
-    /// different answer: they are a daily batch, so a stale row lingers in the
-    /// table until midnight and is only ever invisible, never joined.
-    /// </para>
-    /// </summary>
-    public int GameStaleSeconds { get; set; } = 60;
-
-    /// <summary>
-    /// Interval in seconds between two beats of a dedicated host's own match row,
-    /// which is half of <see cref="GameStaleSeconds"/> so the beat lands once
-    /// inside the window the room is listed within. A player-hosted room needs no
-    /// such beat: its host's ping report is the beat.
-    /// </summary>
-    public int MatchHeartbeatIntervalSeconds => GameStaleSeconds / 2;
 }

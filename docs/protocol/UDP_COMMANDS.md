@@ -519,21 +519,26 @@ eight entries on one Blood Bath room, four at heading `0000` with `x` 20750, `y`
 `docs/analysis/join-stall-after-mode2.md` is the correction to an earlier reading
 that took the high halves of `x` and `z` for a side's flag.
 
-**Kind `0x03` — a tag, a triple written twice, and a sixteen-bit tail.** 41 records of 22
-bytes and 2 of 29. `[0x07]` is a tag nibble and the record's index (`0x40`, `0x50`, `0x60`,
-`0x61` measured); the six bytes at `0x08`–`0x0d` are written again at `0x0e`–`0x13`, and a
-sixteen-bit value closes the record (`0x00fd`, `0x0012`, `0x0002`). The two records of
-`mgo2-game-failed-memoryviolation` carry triples that mirror — `-2500, 916, 1800` and
-`2500, 900, -1800` — reading the six as three signed sixteen-bit values with x and z
-negated and y the ground height, **[I]**. The 29-byte form is the same tag and the same
-triple with seven more bytes behind it, and only two of those exist.
+**Kind `0x03` — an objective point, its task, and a sixteen-bit tail.** 41 records of 22
+bytes and 2 of 29. `[0x07]` is `(task << 4) | index` and `[0x04]` the index alone; the six
+bytes at `0x08`–`0x0d` are written again at `0x0e`–`0x13`; and a sixteen-bit value closes
+the record (`0x00fd`, `0x0012`, `0x0002`). The six are three signed sixteen-bit values,
+**[V]** — the mirror the recording showed (`-2500, 916, 1800` and `2500, 900, -1800`) is
+Race's two targets, not one point stated twice. The 29-byte form is the same tag and the
+same triple with seven more bytes behind it, and only two of those exist.
 
-**The kind is a custom point with an action.** The native port's supervisor keeps custom
-points and, for each, a list of actions — `sv_custom_point.cc` bounds-checks both
-(`over custom point %d`, `over action %d`) and prints `action %d` — which is the shape of
-this record: one point, one action, the point stated twice. That the two triples are the
-same point for the two sides of the action, and not a rotation, is the reading those names
-support (`docs/analysis/roster-record-kinds.md` §7); the values stay **[I]**.
+**The point is the stage's own target, and the task byte says what kind of target.**
+Every measured body matches the prop its stage's script hands the target placement: Blood
+Bath's Capture pair is `PRP_RUGBY_TGT_01/02`, Tomb of Tubes' Bomb body is
+`PRP_TGT_BOMB`, Blood Bath's Sneaking Capture body `PRP_SCAP_TGT_00` and its Race pair
+`PRP_TRACE_TGT_A/B`. The wire is the stage's `x` and `z` ÷ 10 with `y` lifted 900 —
+`(900, 900, -706)` is `(9000, 0.83, -7062.5)` — and the task byte is `0` Capture, `4`
+Bomb, `5` Sneaking Capture, `6` Race, with `1` Rescue and `2` Team Sneaking inferred from
+that ladder. **A rule that places no target is written no kind-`0x03` record at all**:
+Deathmatch, Team Deathmatch, Base, Sneaking and Stealth Deathmatch have none, and sending
+the recorded pair in one of them is how KEROTAN and GA-KO reached Team Deathmatch.
+`docs/analysis/custom-points.md` is the whole of it: §2 the four captures, §3 the
+conversion, §4 the per-rule proc and props, §5 the per-stage table.
 
 **Kind `0x02` — a box.** 134 records of 20 bytes and 28 of 52, and the two lengths are the
 same record with a count of nought and of four:
