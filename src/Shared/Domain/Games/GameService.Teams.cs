@@ -57,14 +57,16 @@ public sealed partial class GameService
 
     /// <summary>
     /// Places a player who left the choice on Auto on the side holding fewer
-    /// players. A Red or Blue choice reported afterwards (<c>0x4440</c>) overrides
+    /// players, or on the side the client's tiebreak picks when both hold the same
+    /// number. A Red or Blue choice reported afterwards (<c>0x4440</c>) overrides
     /// it; the assignment is the room's default for the player who picks neither.
     /// </summary>
     /// <remarks>
     /// <b>It is a balancing rule rather than a stored preference, because the
     /// client has no byte for Auto.</b> <c>0x4440</c> can only carry 1 or 2, so an
-    /// absent choice is exactly the case this covers. Ties go to the first side, the
-    /// same way the client's own picker breaks them. The joining row is left out of
+    /// absent choice is exactly the case this covers. A tie is the client's own
+    /// tiebreak: its picker advances the shared LCG and takes the new state's low
+    /// bit, so neither side wins a tie by position. The joining row is left out of
     /// both counts, since it was inserted on the first side before this runs.
     /// </remarks>
     /// <param name="gameIdentifier">Identifier of the room.</param>
@@ -85,7 +87,7 @@ public sealed partial class GameService
 
         var firstSide = others.Count(team => team == 0);
         var secondSide = others.Count(team => team == 1);
-        var side = secondSide < firstSide ? 1 : 0;
+        var side = TeamBalanceUtils.ChooseSide(firstSide, secondSide);
 
         await context.GamePlayers
             .Where(player => player.GameIdentifier == gameIdentifier &&
