@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.GameplayServer.Rooms;
 using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
@@ -35,6 +36,7 @@ public sealed partial class MatchResultService(
     MatchScoreService score,
     LobbySlotService lobbySlots,
     MatchRoundStateService roundState,
+    MatchSettingsService matchSettings,
     ScoreboardPublishService publisher,
     MatchRecordSequenceService sequences,
     ILogger<MatchResultService> logger)
@@ -189,11 +191,10 @@ public sealed partial class MatchResultService(
     /// one record — <c>02 02 02 02 02</c> — which is what the captured server that
     /// decides a match writes, and a round inside a game writes
     /// <c>state[2]</c> alone (<c>docs/protocol/STATE_VECTOR.md</c> §3). The value is
-    /// the side that took *every* round of the game and not the deciding round's
-    /// winner: <c>replay_360824_6</c> splits its rounds one each and its match goes
-    /// to the side that lost the last of them, so a split game's result is left
-    /// unwritten rather than guessed
-    /// (<c>docs/GAMEPLAY_SERVER.md</c> §5 item 1).
+    /// the side that took the game: the side that swept it, or, when the rounds
+    /// were split, the side with the higher total score. <c>replay_360824_6</c>
+    /// splits its rounds one each and its match goes to the side that lost the last
+    /// of them on that total (<c>docs/GAMEPLAY_SERVER.md</c> §5 item 1).
     /// </para>
     /// </remarks>
     /// <param name="context">Context the result is written through.</param>
@@ -316,8 +317,9 @@ public sealed partial class MatchResultService(
             settledResult = await DecideMatchResultAsync();
 
             // The stage's score is read from the rounds-won counters before the
-            // reset below clears them. A split game names no side, so its stage
-            // has no result to write; the target's result is a 2–0 sweep.
+            // reset below clears them. A split game names the side with the higher
+            // total score too, so its stage result is written from the rounds that
+            // side took; only a level split has no result to write.
             if (roundState.LastRoundClosedGame
                 && settledResult is { } matchCode
                 && MatchRecordBodiesUtils.TeamOfResult(matchCode) is { } matchWinner)
@@ -331,12 +333,18 @@ public sealed partial class MatchResultService(
                 {
                     stageResult = new StageResult(
                         (byte)matchWinner,
-                        (byte)Math.Clamp(rounds, 0, byte.MaxValue));
+                        (byte)Math.Clamp(rounds, 0, byte.MaxValue),
+                        (byte)Math.Clamp(
+                            matchSettings.RoundsInGame(roundState.RoundNumber),
+                            0,
+                            byte.MaxValue));
                     logger.LogInformation(
-                        "UDP {LocalPort}: the stage's result is team {Team}, {Rounds} round(s)",
+                        "UDP {LocalPort}: the stage's result is team {Team}, {Rounds} round(s) of "
+                        + "{StageRounds}",
                         context.LocalPort,
                         matchWinner,
-                        rounds);
+                        rounds,
+                        stageResult.StageRounds);
                 }
             }
 
@@ -356,45 +364,4 @@ public sealed partial class MatchResultService(
         }
     }
 
-    /// <summary>
-    /// The game's result when the round that just ended decided it: the side that
-    /// took every round of the game, or <c>null</c> when the rounds were split.
-    /// </summary>
-    /// <remarks>
-    /// <b>A split game is not decided here.</b> Of the replays that decide a match,
-    /// three were swept and each states the sweeping side; the fourth splits its
-    /// rounds one each and gives the match to the side with the higher total score
-    /// (<c>replay_360824_6</c>). One sample is not a rule to decide a screen with —
-    /// and the score this host keeps is a floor in the modes whose objectives it
-    /// cannot see — so a split game writes <c>state[2]</c> alone rather than a side
-    /// it cannot support (<c>docs/GAMEPLAY_SERVER.md</c> §5 item 1).
-    /// </remarks>
-    private async Task<byte?> DecideMatchResultAsync()
-    {
-        if (!roundState.LastRoundClosedGame)
-        {
-            return null;
-        }
-
-        var slots = await lobbySlots.ReadAsync(CancellationToken.None);
-        var holders = slots
-            .Where(slot => slot.Team is not null)
-            .GroupBy(slot => slot.Team!.Value)
-            .Where(side => side.Any(slot => score.RoundsWon(slot.Slot) > 0))
-            .Select(side => side.Key)
-            .ToList();
-        if (holders.Count == 1)
-        {
-            return MatchRecordBodiesUtils.ResultCode(holders[0]);
-        }
-
-        if (holders.Count > 1)
-        {
-            logger.LogInformation(
-                "The game's rounds went to both sides, so no match result is written for it: which side took "
-                + "a split game is not a rule this host has measured");
-        }
-
-        return null;
-    }
 }

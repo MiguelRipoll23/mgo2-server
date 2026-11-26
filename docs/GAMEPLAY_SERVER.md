@@ -668,16 +668,15 @@ record should be sent.
    `02 02 02 02 02` is "state[2] = 2, state[3] = 2" — at the round that is its
    game's last (`MatchSettings.IsLastRoundOfGame`, `MATCH_FLOW.md` §6), and a round
    inside a game writes `state[2]` alone. So the match's length is no longer open;
-   its *value* is settled for a game one side swept and left open for a split one.
-   The sweeping side is read off the rounds-won counter — the same number the result
-   screens state their score with — and of the replays that decide a match, three
-   were swept and each states the sweeping side
-   (`MatchResultService.DecideMatchResultAsync`). The fourth, `replay_360824_6`,
-   splits its rounds one each and gives the match to the side that lost the last of
-   them, on the higher total score; one sample is not a rule to decide a screen with,
-   and the score this host keeps is a floor in the modes whose objectives it cannot
-   see, so a split game writes `state[2]` alone rather than a side it cannot
-   support. What is still open is the rest of the block: `state[0..1]` and
+   its *value* is the side that took it: the sweeping side for a game one side won
+   every round — read off the rounds-won counter, the same number the result screens
+   state their score with — and the side with the higher total score for one whose
+   rounds were split. Of the replays that decide a match, three were swept and each
+   states the sweeping side; the fourth, `replay_360824_6`, splits its rounds one
+   each and gives the match to the side that lost the last of them on that total
+   (`MatchResultService.DecideMatchResultAsync`). A split game whose totals are level
+   names no side and writes `state[2]` alone. What is still open is the rest of the
+   block: `state[0..1]` and
    `state[4..6]` move at a match's end as well, and one decided match is the whole
    of the evidence for them (`STATE_VECTOR.md` §3). No round report is stored
    (`game_rounds` is written by a lobby's own handlers, not by a dedicated host), and

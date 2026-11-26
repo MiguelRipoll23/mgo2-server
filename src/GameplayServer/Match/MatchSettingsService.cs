@@ -252,13 +252,49 @@ public sealed class MatchSettingsService(
             return true;
         }
 
-        var current = rotation[index];
-        var next = rotation[index + 1];
-
-        return current.Rule != next.Rule
-            || current.Map != next.Map
-            || current.RoundOptions != next.RoundOptions;
+        return !SameRotationEntry(rotation[index], rotation[index + 1]);
     }
+
+    /// <summary>
+    /// How many rounds the game a round number belongs to plays: the run of
+    /// identical rotation entries that ends on that round.
+    /// </summary>
+    /// <remarks>
+    /// A game is that run (<see cref="IsLastRoundOfGame"/>), so the count is the walk
+    /// back from the round to the first entry it repeats. It is the number the stage
+    /// result states at <c>state[7]</c>, which a split game needs: its winner's rounds
+    /// are fewer than the stage's own.
+    /// </remarks>
+    /// <param name="roundNumber">Round counting from one, as the room counts them.</param>
+    /// <returns>Rounds in the game, one at least.</returns>
+    public int RoundsInGame(int roundNumber)
+    {
+        if (rotation.Count == 0)
+        {
+            return 1;
+        }
+
+        var index = (Math.Max(roundNumber, 1) - 1) % rotation.Count;
+        var start = index;
+        while (start > 0 && SameRotationEntry(rotation[start - 1], rotation[start]))
+        {
+            start--;
+        }
+
+        return index - start + 1;
+    }
+
+    /// <summary>
+    /// Whether two rotation entries name the same game: the rule, the map and the
+    /// round's options all alike.
+    /// </summary>
+    /// <param name="left">Entry to compare.</param>
+    /// <param name="right">Entry to compare.</param>
+    /// <returns><c>true</c> when the two are one game's rounds.</returns>
+    private static bool SameRotationEntry(MatchRotationEntry left, MatchRotationEntry right) =>
+        left.Rule == right.Rule
+        && left.Map == right.Map
+        && left.RoundOptions == right.RoundOptions;
 
     /// <summary>
     /// Writes the rotation entry the briefing after a stage end plays into the

@@ -19,10 +19,13 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// <para>
 /// <b>state[4] is the winning side's raw team, and state[5] is its rounds
 /// won.</b> Both captures are team 1's 2–0, so the pair reads
-/// <c>state[4] = 1, state[5] = 2</c>; state[7] repeats the 2 as the stage's
-/// total. The older <c>pcapng1</c> writes a team-0 win as
-/// <c>02 04 03 00 02 02</c>, with the third value at state[6] instead; the two
-/// shapes are not reconciled and this writer follows the t+184.730 capture.
+/// <c>state[4] = 1, state[5] = 2</c>, and state[7] repeats the 2 because that
+/// stage was a sweep. A game whose rounds were split is decided on the higher
+/// total score and its rounds are stated the same way; state[7] keeps the
+/// stage's own total, which is then more than the winner's. The older
+/// <c>pcapng1</c> writes a team-0 win as <c>02 04 03 00 02 02</c>, with the
+/// third value at state[6] instead; the two shapes are not reconciled and this
+/// writer follows the t+184.730 capture.
 /// </para>
 /// </remarks>
 public sealed partial class MatchResultService
@@ -35,7 +38,7 @@ public sealed partial class MatchResultService
 
     /// <summary>
     /// The stage result the round that was awarded last decided, or <c>null</c>
-    /// for a split game or a room that has emptied.
+    /// for a level split or a room that has emptied.
     /// </summary>
     private StageResult? stageResult;
 
@@ -45,11 +48,13 @@ public sealed partial class MatchResultService
     public StageResult? LastStageResult => stageResult;
 
     /// <summary>
-    /// The side a decided stage belongs to and the rounds it won.
+    /// The side a decided stage belongs to, the rounds it won and the rounds the
+    /// stage played.
     /// </summary>
     /// <param name="WinnerTeam">Raw team value the stage's result names.</param>
     /// <param name="WinningRounds">Rounds the winning side took.</param>
-    public sealed record StageResult(byte WinnerTeam, byte WinningRounds);
+    /// <param name="StageRounds">Rounds the stage as a whole played.</param>
+    public sealed record StageResult(byte WinnerTeam, byte WinningRounds, byte StageRounds);
 
     /// <summary>
     /// Writes the stage's result to a peer once its result screens have been up
@@ -100,7 +105,7 @@ public sealed partial class MatchResultService
                     ordinals[0]),
                 new(
                     generation.Operations,
-                    MatchRecordBodiesUtils.StateWrite(StageTotalIndex, result.WinningRounds),
+                    MatchRecordBodiesUtils.StateWrite(StageTotalIndex, result.StageRounds),
                     ordinals[1]),
             };
 
@@ -115,7 +120,7 @@ public sealed partial class MatchResultService
                 result.WinnerTeam,
                 result.WinningRounds,
                 StageTotalIndex,
-                result.WinningRounds);
+                result.StageRounds);
         }
         catch (Exception exception)
         {
