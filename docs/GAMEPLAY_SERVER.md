@@ -398,11 +398,32 @@ stage result screens (`rounded-ended-by-reaching-tickets-limit.pcapng`: its resu
 at t+163.597, the next stage's `0x0b` count at t+208.389), and the host keeps
 writing the played clock where it stopped through them. `MatchStartRunService.End`
 arms the next briefing once `MatchScreenTimingsUtils.StageEndMilliseconds` has
-passed; a round inside a stage holds the zero clock while its clients read the
-result screens and opens the next round on their post-screen reports. The
-reference's measured pace is 24.0 s (t+191.599 → t+215.632), and
-`MatchScreenTimingsUtils.RoundReportWaitMilliseconds` bounds the report wait at
-30 s.
+passed; a round inside a stage holds the clock it stopped on while its clients
+read the result screens — `01 c7 07`, 1 991 units, written unchanged every four
+seconds from t+65.497 to t+85.495 (`MatchRecordTimingUtils.ClockPeriodMilliseconds`,
+`MatchStartRunService.PublishRoundClockAsync`). Two more records hold the stretch: on
+`0x1001`, the peer's own slot state — `0b`, the slot key plus one, the 21-byte presence
+map naming fields 19, 20 and 55 (slot-state `0x38`, `0x3A` and `0x80`, all `u16`), and
+the closed-round count three times, 29 bytes — is re-stated every 1.14 s from the
+round's open and for as long as the peer is in the room, through the round, its
+screens and the briefing behind them (`MatchStartRunService.PeerRoundState`), its
+count stepping at each close
+(t+74.571 `01 00 01 00 01 00` → t+163.597 `02 00 02 00 02 00`). A room's first
+briefing gets none of it: the record is the round's state, and written into a
+briefing the client draws no briefing at all — the live run of 2026-11-27 11:53
+answered a joining client with the briefing's run and state, added this record in
+front of the round, and the client showed no briefing screen and started no round.
+So the beat begins where a round does, and the briefing a round closes into keeps
+it. And the round opens on
+their measured pace, 24.0 s
+(`MatchScreenTimingsUtils.RoundEndScreensMilliseconds`). The dedicated capture
+`rounded-ended-by-reaching-tickets-limit.pcapng` is the measurement: its first
+round's result is written at t+65.218 and the next round's full vector at
+t+88.163, 22.9 s later and with no client report in between. A post-screen
+report shortens the wait when it lands inside it, but it cannot be the gate:
+on 2026-11-27 the live client reported its map-loaded state 2 s after the bound
+had opened round 2, both against the 30 s bound and the 60 s one, because a
+client reports a round only once it has been told the round exists.
 
 ## 3. What is live, and what is still a replay
 
@@ -429,7 +450,7 @@ reference's measured pace is 24.0 s (t+191.599 → t+215.632), and
 | **the rotation the settings burst carries: this instance's configured rounds, the field walked round when the room names fewer than fifteen** | `MatchSettingsService` → `PlayerSettingsBurstService.RoomRotationBody` |
 | **the settings header each player is announced with: its own slot, and the join-time form of its slot state** (`0b <slot+1> <21-byte mask> <values>` in the join burst, where the recorded host writes it) | `RoomRosterService` (slot and host slot) → `SettingsHeaderBodiesUtils.BuildJoin` in `PlayerSettingsBurstService`, `Build` in `TeamArrayService.RoomEntry` |
 | **the join's round-state transfer: state `0x00`, field 10, the room's population, the host counted** (`0b 00 00 04 00 00 00 00 00 <players>` — one field, read by the client's `0x27E8B0`) | `RoomRosterService` (joiner count) → `RoundStateBodiesUtils.JoinPlayerCountBody` in `PlayerSettingsBurstService` |
-| **the room's state: state `0x00`, field 0, and not the round's number** (`0b 00 01 00 00 00 00 00 00 <state>` — `2` briefing, `3` a solo round start (one player, no bots, its clock held), `4` a round start with anybody else in the room; `0`, `1` and `5` are carried with names that keep their wire value, because no capture says what they state; the client's placement machine waits on `0` and `7`) | `RoomRosterService.IsSolo` → `MatchRoundStateService.State` → `RoundStateBodiesUtils.RoomStateBody` in `MatchStartRunService` |
+| **the room's state: state `0x00`, field 0, and not the round's number** (`0b 00 01 00 00 00 00 00 00 <state>` — `0` **not ready**, the placement machine's wait value, written as a briefing ends; `1` **transition**, the boundary both phases pass through, written as a briefing ends and as a round closes; `2` **briefing**; `3` **a solo round start** (one player, no bots, its clock held); `4` **a round start** with anybody else in the room; `5` unnamed, no capture in the tree holds a write; the client's placement machine waits on `0` and `7`) | `RoomRosterService.IsSolo` → `MatchRoundStateService.State` → `RoundStateBodiesUtils.RoomStateBody` in `MatchStartRunService` |
 | **the loadout each player is announced under: its own appearance, its equipped skills, the slot it holds and the side the room puts it on** | `CharacterService` (appearance + equipped skills) and `GameService` (sides) → `LobbyLoadoutService` → `LoadoutFramesUtils.TryWrite` |
 | **the vitals each player last reported: health and stamina, kept per player and cleared when it leaves** | `PlayerVitalsHandler` → `PlayerVitalsService`, cleared by the session reaper |
 | **the round's score: a death when a player's health reaches zero, a kill and a death when a kill feed names one, and a side's total over the slots the room puts it on** | `PlayerVitalsHandler`/`OperationsStreamHandler` → `MatchScoreService`, reset when the round opens |
@@ -807,25 +828,20 @@ record should be sent.
   a round does not stop, and not the one-per-second timer it was read as.
   `STATE_VECTOR.md` §4.
 
-* **The `0x0e` round-over record carries a verdict code, and this host writes
-  it.** The match code calls `P2P_PublishOpcode0E` (`0x754F18`) with literal
+* **The `0x0e` round-over record carries a verdict code, and this host does not
+  write it.** The match code calls `P2P_PublishOpcode0E` (`0x754F18`) with literal
   codes: `0` no verdict (`0x7748B8`), BASE's `1` clock and `2` all-bases-captured
   (`0x7A58D0`), the side judge's `4` clock and `5` ticket pool (`0x762F38`,
   `0x764228`), and `6`/`7` one of the two sides. The sender and the queued handler `0x75715C`
-  both dispatch script event `0x160023` with the byte, so the record is how a
-  client's stage scripts are told the round is over. The `instance + 0xC06`
-  counter the per-phase tick sends is only the pending fallback path. `mgo2-game1`
-  writes `0e 00` and `0e 07`; the newer ticket-limit and swap-spawn captures
-  contain no `0x0e` at all, so a client does not need it to leave a round there.
-  This host writes the verdict its played rule gives the close, ahead of the
-  result (`MatchResultService.WriteRoundOverAsync`): BASE's clock is `1`; TDM's
-  clock is `4` and its ticket pool `5`; a rule or reason with no measured code is
-  `0`. It deliberately does not write `2`: that is the BASE judge's "all the
-  bases are captured" verdict, and TDM shows that message when it receives it.
-  `5` is the side judge's ticket branch (its ticket-mode flag set and its `+0x20`
-  counter below one); `6`/`7` are its side branch. The mapping is
-  `MatchRoundOverBodiesUtils.VerdictFor`, gated on the played round's rule.
-  `udp-handlers-and-senders.md` §5.3. `STATE_VECTOR.md` §1.
+  both dispatch script event `0x160023` with the byte. That event is a *client
+  host's* stage-script call: a dedicated host runs no stage scripts, and its
+  record made receiving peers hide the actor and wait for a script sequence the
+  server never plays. `mgo2-game1` writes `0e 00` and `0e 07`; the newer
+  ticket-limit and swap-spawn captures contain no `0x0e` at all, so a client does
+  not need it to leave a round there. This host writes only the result state
+  (`MatchResultService.WriteResultAsync`). The verdict mapping is retained for
+  the protocol (`MatchRoundOverBodiesUtils.VerdictFor`), gated on the played
+  round's rule. `udp-handlers-and-senders.md` §5.3. `STATE_VECTOR.md` §1.
 
 * **[U]** the state blob's only varying field (a 16-bit value that runs 100, 0,
   94, 98, 99, 50 through a round). `joined-when-red-team`'s 754 steady blobs are

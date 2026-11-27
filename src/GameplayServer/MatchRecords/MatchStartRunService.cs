@@ -112,6 +112,7 @@ public sealed partial class MatchStartRunService(
     ScoreboardPublishService scoreboard,
     BriefingCountdownService countdown,
     MatchRecordSequenceService sequences,
+    Gameplay.PlayerVitalsService vitals,
     ILogger<MatchStartRunService> logger)
 {
     /// <summary>
@@ -243,6 +244,14 @@ public sealed partial class MatchStartRunService(
         // the sibling bit is inside the keyed twelve
         // (<see cref="MatchRecordSequenceService.StreamOf"/>).
         sequences.Restart(generation);
+
+        // **A round begins with every player alive.** A hit this host landed in
+        // the round that ended is held against the client's own reports until a
+        // respawn clears it (PlayerVitalsService.NoteDamage), and the round
+        // boundary is that respawn: left held, the beat writes the dead value
+        // under the next round's actor identifier, which is a character that does
+        // not come back.
+        vitals.BeginRound();
 
         // The round's score starts empty: the previous round's kills and deaths
         // are not this one's, and the scoreboard is a per-round board.

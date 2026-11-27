@@ -137,6 +137,11 @@ public sealed partial class MatchStartRunService
             // (Rooms.RoomState.Briefing).
             await WriteRoomStateAsync(context, Rooms.RoomState.Briefing);
 
+            // The peer's own round state is not started here. It is the round's
+            // state and not the briefing's, and a room's first briefing draws
+            // nothing when it is written into it; the round's open starts it and
+            // it then outlives the round (MatchStartRunService.PeerRoundState).
+
             // A room of one's closing zero then opens the round, and this host
             // writes that itself: no report follows the zero there. Measured:
             // `briefing-then-solo-game` writes its zero at t+145.098 and its round

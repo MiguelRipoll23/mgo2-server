@@ -178,12 +178,19 @@ The model this file supports, and that the host now follows:
 - a **stage** is a maximal run of identical rotation triples, so
   `MatchSettings.IsLastRoundOfGame(n)` is "the entry after this round names a
   different rule or map";
-- a round that is **not** its stage's last opens the next round itself on its
-  clients' post-screen reports (the measured 24.0 s
-  `MatchScreenTimingsUtils.RoundEndScreensMilliseconds` is the reference client's
-  screen pace, not a host gate: the reference opens 0.19 s after the last report in
-  §66, and `MatchScreenTimingsUtils.RoundReportWaitMilliseconds` bounds this host's
-  wait at 30 s), with no briefing, no countdown and no briefing run
+- a round that is **not** its stage's last opens the next round on its screens'
+  measured 24.0 s pace (`MatchScreenTimingsUtils.RoundEndScreensMilliseconds`),
+  with a post-screen report that lands inside the stretch opening it at once. The
+  capture measures the pace on a dedicated host: round 1's result at t+65.218 and
+  the next round's full vector at t+88.163, 22.9 s later, with no client report in
+  between. The 0.19 s in §66 is a client that reported inside the stretch, not a
+  gate — the live client of 2026-11-27 reported 2 s after the bound opened round
+  2, twice. The stretch itself carries one record beyond the result: the round's
+  stopped clock, `01 c7 07` (1 991 units), rewritten byte for byte every four
+  seconds and replaced by the next round's `01 60 09` at its open
+  (`MatchRecordTimingUtils.ClockPeriodMilliseconds`), and so does the peer's round
+  state on `0x1001` (`0b 03`, 29 bytes, every 1.14 s, its closed-round count
+  stepping at each close). No briefing, no countdown and no briefing run
   (`MatchStartRunService.WriteBriefingRunAsync` returns between rounds); the
   ready set is cleared at the close either way, so the next round starts from its
   own reports and not from the played round's;

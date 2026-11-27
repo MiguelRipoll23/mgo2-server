@@ -103,7 +103,9 @@ public enum OperationsOpcode : byte
     /// <summary>
     /// The end of a round, with the verdict that ended it. The image's
     /// <c>P2P_PublishOpcode0E</c> (<c>0x754F18</c>) dispatches script event
-    /// <c>0x160023</c> with the byte; the codes and this host's use of them are
+    /// <c>0x160023</c> with the byte. That call belongs to a client host's own
+    /// stage scripts; this dedicated host does not send the record, and the
+    /// reference ticket-limit and swap-spawn captures have none. The codes are
     /// <see cref="MatchRecords.MatchRoundOverBodiesUtils"/>.
     /// </summary>
     RoundOver = 0x0e,

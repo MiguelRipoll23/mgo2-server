@@ -174,6 +174,7 @@ public sealed partial class MatchRoundStateService
             stageEndClockUnits = 0;
             stageEndVersion++;
             briefingClockUnits = 0;
+            screensClockUnits = 0;
             return true;
         }
     }
@@ -279,8 +280,9 @@ public sealed partial class MatchRoundStateService
     private RoundOverVerdict lastRoundOverVerdict;
 
     /// <summary>
-    /// The round-over verdict the round that just ended was closed with: the byte
-    /// the operations stream's <c>0x0e</c> record carries.
+    /// The round-over verdict the round that just ended was classified with for
+    /// the protocol reading. The dedicated host does not write the <c>0x0e</c>
+    /// record (<see cref="MatchResultService.WriteResultAsync"/>).
     /// </summary>
     public RoundOverVerdict LastRoundOverVerdict
     {
@@ -310,7 +312,8 @@ public sealed partial class MatchRoundStateService
     /// needs the side each player holds and the counters this service does not keep.
     /// </param>
     /// <param name="roundOverVerdict">
-    /// Verdict the round-over record carries (<see cref="MatchRoundOverBodiesUtils"/>).
+    /// Verdict the close is classified with (<see cref="MatchRoundOverBodiesUtils"/>);
+    /// the dedicated host keeps it off the wire.
     /// </param>
     /// <returns>The round that ended, or <c>null</c> when none was playing.</returns>
     public int? Close(byte? roundResult, bool closesGame = false, RoundOverVerdict roundOverVerdict = RoundOverVerdict.None)

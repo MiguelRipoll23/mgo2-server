@@ -54,4 +54,14 @@ public static class MatchRecordTimingUtils
     /// </remarks>
     public const int RoundStartRunGapMilliseconds = 1643;
 
+    /// <summary>
+    /// The gap the reference leaves between two round-clock records: four
+    /// seconds. <c>rounded-ended-by-reaching-tickets-limit.pcapng</c> writes
+    /// <c>01 c7 07</c> at t+65.497, 69.496, 73.495, 77.497, 81.495 and 85.495 —
+    /// the closed round's stopped clock, byte for byte the same, through its
+    /// result screens — and the same four seconds separate the clock records of
+    /// the round before it (t+57.497, t+61.497).
+    /// </summary>
+    public const int ClockPeriodMilliseconds = 4_000;
+
 }

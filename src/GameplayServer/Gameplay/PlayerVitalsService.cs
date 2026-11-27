@@ -142,6 +142,31 @@ public sealed class PlayerVitalsService(ILogger<PlayerVitalsService> logger)
     }
 
     /// <summary>
+    /// Puts every player back at full health for a round that is opening.
+    /// </summary>
+    /// <remarks>
+    /// <b>A round begins with everyone alive, and a hit is not the round's.</b>
+    /// A hit this host landed is held against the client's own reports until the
+    /// respawn clears it (<see cref="NoteDamage"/>), and the round boundary is
+    /// that respawn: left held, the beat writes the dead value under the next
+    /// round's actor identifier and the character does not come back. A player
+    /// who is dead when the round ends is alive in the next one, so the value a
+    /// round opens with is full for every player the host was holding.
+    /// </remarks>
+    public void BeginRound()
+    {
+        lock (gate)
+        {
+            foreach (var address in held)
+            {
+                lastReported[address] = PlayerVitals.Full;
+            }
+
+            held.Clear();
+        }
+    }
+
+    /// <summary>
     /// The vitals a player last reported.
     /// </summary>
     /// <param name="remoteAddress">Endpoint the player is filed under.</param>

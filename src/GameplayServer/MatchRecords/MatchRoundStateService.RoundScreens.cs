@@ -14,10 +14,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// the next round or arm the next briefing underneath it. The reference keeps
 /// writing the closed round's clock — `01 00 00` after a round inside a stage,
 /// its stopped value after a stage's last — for that stretch. A round inside a
-/// stage is released by the room's post-screen reports; in
-/// <c>mgo2-started-on-game-round1</c> the first round's clock reaches zero at
-/// t+191.599, the client reports at t+215.4 and the next round opens 0.19 s
-/// later, 24.0 s after the zero (`docs/analysis/join-stall-after-mode2.md` §66).
+/// stage is released by the screens' own measured pace: in
+/// <c>rounded-ended-by-reaching-tickets-limit.pcapng</c> the first round's result
+/// is written at t+65.218 and the next round's vector at t+88.163, 22.9 s later
+/// and with no client report in between. A post-screen report that lands inside
+/// the stretch opens the round at once (`docs/protocol/MATCH_FLOW.md` §6).
 /// </para>
 /// <para>
 /// <b>A stage's last round has the longer hold.</b> Its screens are the round
@@ -43,6 +44,35 @@ public sealed partial class MatchRoundStateService
     /// invalidates it.
     /// </summary>
     private int roundScreensVersion;
+
+    /// <summary>
+    /// Units the closed round's clock stopped at: the value its screens are held
+    /// on, and zero once they are over.
+    /// </summary>
+    /// <remarks>
+    /// <b>The screens hold the clock the round stopped on and do not rewind it.</b>
+    /// <c>rounded-ended-by-reaching-tickets-limit.pcapng</c> closes its first round
+    /// with the clock at <c>c7 07</c> (1 991 units) and re-states exactly that,
+    /// every four seconds from t+65.497 to t+85.495, until the next round's clock
+    /// replaces it. A round that ended on its clock therefore holds <c>01 00 00</c>,
+    /// which is why the zero is a stopped clock and not a value the screens set.
+    /// </remarks>
+    private int screensClockUnits;
+
+    /// <summary>
+    /// The clock the round's screens are held on, as
+    /// <see cref="screensClockUnits"/> holds it.
+    /// </summary>
+    public int ScreensClockUnits
+    {
+        get
+        {
+            lock (gate)
+            {
+                return screensClockUnits;
+            }
+        }
+    }
 
     /// <summary>
     /// Whether a round inside a stage has ended and its result screens are still
@@ -97,6 +127,7 @@ public sealed partial class MatchRoundStateService
             roundScreensAt = null;
             roundScreensVersion++;
             briefingClockUnits = 0;
+            screensClockUnits = 0;
             logger.LogInformation(
                 "The screens that followed the round are over; the room may open its next round");
             return true;
@@ -111,6 +142,7 @@ public sealed partial class MatchRoundStateService
     {
         roundScreensAt = null;
         roundScreensVersion++;
+        screensClockUnits = 0;
     }
 
     /// <summary>
@@ -119,8 +151,9 @@ public sealed partial class MatchRoundStateService
     /// </summary>
     /// <remarks>
     /// The two boundaries. A round inside a stage writes the zero clock and its
-    /// successor opens on the room's post-screen reports; the nominal screen span
-    /// is <see cref="MatchScreenTimingsUtils.RoundEndScreensMilliseconds"/>. A
+    /// successor opens on the screens' own measured pace,
+    /// <see cref="MatchScreenTimingsUtils.RoundEndScreensMilliseconds"/>; a report
+    /// that lands inside it opens the round at once. A
     /// stage's last round keeps the clock it stopped on and is followed by the
     /// stage result, so its briefing is armed only after
     /// <see cref="MatchScreenTimingsUtils.StageEndMilliseconds"/> and its clock is
@@ -131,6 +164,9 @@ public sealed partial class MatchRoundStateService
     /// <param name="closesGame">Whether the closed round was its stage's last.</param>
     private void ArmScreensEnd(long closedAt, int clockAtClose, bool closesGame)
     {
+        // Both boundaries are held on the clock the round stopped on; only the
+        // stage end rewinds it, when it writes the zero its next briefing runs on.
+        screensClockUnits = clockAtClose;
         if (closesGame)
         {
             roundScreensAt = null;

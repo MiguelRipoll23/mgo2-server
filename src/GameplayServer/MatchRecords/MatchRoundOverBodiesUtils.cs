@@ -23,7 +23,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// those reasons through the played round's rule: BASE clock is <c>1</c>, TDM
 /// clock is <c>4</c> and TDM ticket exhaustion is <c>5</c>. A reason or rule the
 /// image does not give this host a code for is written as
-/// <see cref="RoundOverVerdict.None"/> rather than guessed.
+/// <see cref="RoundOverVerdict.None"/> rather than guessed. The mapping is kept
+/// as the protocol reading; the dedicated host does **not** put it on the wire.
+/// The reference ticket-limit and swap-spawn captures carry no <c>0x0e</c>, and
+/// the record's script event is the client host's own (see
+/// <c>MatchResultService.WriteResultAsync</c>).
 /// </para>
 /// </remarks>
 public static class MatchRoundOverBodiesUtils

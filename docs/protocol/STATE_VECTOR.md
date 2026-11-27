@@ -108,11 +108,17 @@ match code calls `P2P_PublishOpcode0E` with those literals (`0x7748B8`, `0x7A58D
 dispatch script event `0x160023` with the byte. The `instance + 0xC06` counter the
 per-phase tick sends is only the pending fallback
 (`docs/analysis/udp-handlers-and-senders.md` §5.2, §5.3). The two samples are then
-`0x00` and `0x07` as verdicts, not as a count; this host writes the code the
-played rule gives the close: BASE's clock `0x01`; TDM's clock `0x04` and its
-ticket pool `0x05`; a rule or reason with no measured code `0x00`. It does not
-write `0x02`, which is the BASE judge's "all the bases are captured" verdict and
-shows that message over TDM.
+`0x00` and `0x07` as verdicts, not as a count. This host does **not** write the
+record: the image publishes it from a *client host* and dispatches it to that
+host's own stage scripts, while a dedicated host has none, and the ticket-limit
+and swap-spawn captures from dedicated hosts contain no `0x0e`. A peer that
+receives it runs the same script event, which hides its actor and leaves the
+result screen waiting for a host sequence the server never plays. The verdict
+mapping (`MatchRoundOverBodiesUtils.VerdictFor`) is kept as protocol reading:
+BASE's clock `0x01`; TDM's clock `0x04` and its ticket pool `0x05`; a rule or
+reason with no measured code `0x00`. It deliberately does not map `0x02`, the
+BASE judge's "all the bases are captured" verdict, which shows that message over
+TDM.
 
 **Resolved 2026-11-27: the numbers in this file are write offsets, and the 00 vector is two bytes behind them.** The image's `02` handler copies `count` bytes to `state_block + offset` (`P2P_HandleQueuedOpcode02`, `0x756CF4`), and the block's own differ sends offset `index + 2` for a change at `state_block + 2 + index` (`P2P_PublishOpcode02WritesSecond`, `0x7579F8`). The full vector is `00` + `block[2..88]` + `block[0..1]` (`P2P_PublishOpcode00StateBlock`, `0x756070`), so **vector byte `i` is block byte `i + 2`**. The result write `02 02` therefore lands in vector byte `0`, not byte `2`; the sections below keep the offset names they were measured with, and the box in §3 gives the mapping.
 

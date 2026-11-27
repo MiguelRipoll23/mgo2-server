@@ -6,9 +6,9 @@ using Microsoft.Extensions.Logging;
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The room's own state record: state <c>0x00</c>'s field <c>0</c>, written as the
-/// briefing ends, at the round's open, on every tick of the round, and at its
-/// close.
+/// The room's own state record — state <c>0x00</c>'s field <c>0</c>, written as
+/// the briefing ends and at the round's open and re-stated through the round —
+/// and the round's clock record, re-stated through the round and its screens.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -52,21 +52,34 @@ public sealed partial class MatchStartRunService
     /// playing, and returns when the round closes or the peer goes.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// It runs beside the watcher's wait for the close rather than inside it, the
     /// way the countdown runs beside the beat, so the wait is not held behind a
     /// tick. The round is named rather than read each time: a room that has moved
     /// to the next round has its own writer, and this one stopping is what keeps
     /// two of them from numbering one round twice.
+    /// </para>
+    /// <para>
+    /// <b>It stops at the close, and the clock takes the screens.</b> The
+    /// reference writes no phase record at a round's boundary —
+    /// <c>rounded-ended-by-reaching-tickets-limit.pcapng</c> writes exactly one
+    /// record at t+65.218, the result — and what holds its screens is the stopped
+    /// clock record (<see cref="PublishRoundClockAsync"/>).
+    /// </para>
     /// </remarks>
     /// <param name="context">Context the records are written through.</param>
     /// <param name="round">The round the tick belongs to.</param>
     private async Task PublishRoundPhaseAsync(PeerContext context, int round)
     {
-        while (roundState.IsOpen && roundState.RoundNumber == round)
+        // The peer's own round state outlives this round and is started once per
+        // peer, not once per round (MatchStartRunService.PeerRoundState).
+        StartPeerRoundState(context);
+
+        while (roundState.RoundNumber == round && roundState.IsOpen)
         {
             await Task.Delay(PhasePeriodMilliseconds);
 
-            if (!roundState.IsOpen || roundState.RoundNumber != round)
+            if (roundState.RoundNumber != round || !roundState.IsOpen)
             {
                 return;
             }
@@ -81,6 +94,95 @@ public sealed partial class MatchStartRunService
             }
 
             await WriteRoomStateAsync(context);
+        }
+    }
+
+    /// <summary>
+    /// Re-states the round's clock every
+    /// <see cref="MatchRecordTimingUtils.ClockPeriodMilliseconds"/>, through the
+    /// round and through the result screens that follow it, and returns when the
+    /// room has moved past them or the peer goes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It is the record the screens are held on.</b> The reference writes the
+    /// round's clock — <c>01</c> and a little-endian count of 125 ms units —
+    /// every four seconds while the round plays and keeps writing it, unchanged,
+    /// after the round closes: <c>rounded-ended-by-reaching-tickets-limit.pcapng</c>
+    /// writes <c>01 c7 07</c> six times from t+65.497 to t+85.495, the clock its
+    /// round stopped at, and then the next round's <c>01 60 09</c> at t+88.163.
+    /// A client held on a result screen with no clock record is a client whose
+    /// screen has nothing saying the room is still there.
+    /// </para>
+    /// <para>
+    /// <b>The value is the room's clock and not a phase.</b> While the round plays
+    /// it is <see cref="MatchRoundStateService.RemainingUnits"/>; through the
+    /// screens it is the stopped value
+    /// (<see cref="MatchRoundStateService.ScreensClockUnits"/>), so the last four
+    /// seconds before the next round's clock are the same bytes as the ones before
+    /// them.
+    /// </para>
+    /// </remarks>
+    /// <param name="context">Context the records are written through.</param>
+    /// <param name="round">The round the clock belongs to.</param>
+    private async Task PublishRoundClockAsync(PeerContext context, int round)
+    {
+        while (roundState.RoundNumber == round && HoldsClockTick())
+        {
+            await Task.Delay(MatchRecordTimingUtils.ClockPeriodMilliseconds);
+
+            if (roundState.RoundNumber != round || !HoldsClockTick())
+            {
+                return;
+            }
+
+            if (!MatchRecordPeerUtils.IsAlive(context.Session))
+            {
+                logger.LogDebug(
+                    "UDP {LocalPort}: the round clock to {RemoteAddress} stopped because the peer is idle",
+                    context.LocalPort,
+                    context.Remote);
+                return;
+            }
+
+            await WriteClockAsync(
+                context,
+                roundState.IsOpen ? roundState.RemainingUnits : roundState.ScreensClockUnits);
+        }
+    }
+
+    /// <summary>
+    /// Whether the room still holds the round the clock belongs to: playing it,
+    /// or sitting on the result screens that follow it.
+    /// </summary>
+    /// <returns><c>true</c> while the round's clock is still the room's.</returns>
+    private bool HoldsClockTick() =>
+        roundState.IsOpen || roundState.IsRoundEnding || roundState.IsStageEnding;
+
+    /// <summary>
+    /// Writes one peer the round's clock record on the round's own stream.
+    /// </summary>
+    /// <param name="context">Context the record is written through.</param>
+    /// <param name="units">Units of <see cref="MatchRecordBodiesUtils.ClockUnitMilliseconds"/> the clock holds.</param>
+    private async Task WriteClockAsync(PeerContext context, int units)
+    {
+        try
+        {
+            var generation = roundState.Generation;
+            await MatchRecordSendUtils.SendAsync(
+                context,
+                [new(
+                    generation.Operations,
+                    MatchRecordBodiesUtils.RoundTimeLimitUnits(units),
+                    sequences.Take(generation.Operations))]);
+        }
+        catch (Exception exception)
+        {
+            logger.LogDebug(
+                exception,
+                "UDP {LocalPort}: the round clock to {RemoteAddress} was not sent",
+                context.LocalPort,
+                context.Remote);
         }
     }
 

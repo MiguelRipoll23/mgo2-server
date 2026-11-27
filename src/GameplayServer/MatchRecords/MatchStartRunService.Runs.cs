@@ -128,6 +128,7 @@ public sealed partial class MatchStartRunService
                 // (MatchStartRunService.Phases).
                 await WriteRoomStateAsync(context);
                 _ = PublishRoundPhaseAsync(context, round);
+                _ = PublishRoundClockAsync(context, round);
                 await roundState.WaitForCloseAsync(round, session);
 
                 // The result is written behind the round, on the set it played
@@ -136,13 +137,11 @@ public sealed partial class MatchStartRunService
                 // has no result of its own — only the one before it.
                 if (!roundState.IsOpen)
                 {
+                    // The result is the boundary's only record: the reference
+                    // writes nothing else here, and its screens are held by the
+                    // stopped clock the phase tick's clock writer keeps
+                    // re-stating (PublishRoundClockAsync).
                     await results.WriteResultAsync(context, generation);
-
-                    // The closed round's state is the one the working-server
-                    // captures write at this boundary: the value before the next
-                    // round's own, and not a zero a client's placement machine
-                    // would wait on (Rooms.RoomState.Unknown1).
-                    await WriteRoomStateAsync(context, Rooms.RoomState.Unknown1);
                 }
             }
         }

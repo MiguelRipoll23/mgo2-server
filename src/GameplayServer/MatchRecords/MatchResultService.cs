@@ -184,7 +184,8 @@ public sealed partial class MatchResultService(
     /// the decoder's own coding (<c>docs/protocol/BRIEFING_FLOW.md</c> §4, measured
     /// at every round end of `joined-when-red-team`). No result byte is written
     /// when the round ended with no result, which leaves the state block's own
-    /// <c>0xff</c> where it stands; the round-over verdict still goes out.
+    /// <c>0xff</c> where it stands. The dedicated host writes no <c>0x0e</c>
+    /// round-over record; see the note in <see cref="WriteResultAsync"/>.
     /// </para>
     /// <para>
     /// <b>The game's result rides the round's when the round decides it.</b> A
@@ -202,11 +203,13 @@ public sealed partial class MatchResultService(
     /// <param name="generation">Identifier set the round played under.</param>
     public async Task WriteResultAsync(PeerContext context, MatchRecordGenerationUtils generation)
     {
-        // The verdict goes out first, as the image's match code publishes it
-        // (`MatchResultService.RoundOver.cs`); a round with no result still has a
-        // verdict to announce, so this is before the result's own early return.
-        await WriteRoundOverAsync(context, generation);
-
+        // No `0x0e` round-over record here. The image's `P2P_PublishOpcode0E`
+        // dispatches script event `0x160023` to the *sender's own* stage scripts;
+        // a dedicated host has none, and the reference ticket-limit host writes no
+        // `0x0e` at all. Peer clients run that same event when the record arrives,
+        // which hides the actor and leaves the result screen waiting for a host
+        // script sequence this server never plays. The result state write below is
+        // what the client's result screens read, as it is in the capture.
         if (roundState.LastRoundResult is not { } result)
         {
             logger.LogDebug(

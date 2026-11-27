@@ -130,11 +130,12 @@ public sealed partial class MatchStartRunService
     /// number has gone out.
     /// </param>
     /// <param name="roundOverReason">
-    /// Why the round ended. The played round's rule turns it into the operations
-    /// stream's <c>0x0e</c> verdict (<see cref="MatchRoundOverBodiesUtils"/>): BASE's
-    /// clock is <c>1</c>, TDM's clock is <c>4</c> and its ticket pool is <c>5</c>, and
-    /// a rule with no measured code keeps <c>0</c> rather than borrowing another
-    /// rule's message.
+    /// Why the round ended. The played round's rule classifies it for the protocol
+    /// (<see cref="MatchRoundOverBodiesUtils"/>): BASE's clock is <c>1</c>, TDM's
+    /// clock is <c>4</c> and its ticket pool is <c>5</c>, and a rule with no measured
+    /// code keeps <c>0</c> rather than borrowing another rule's message. The
+    /// dedicated host keeps the classification and does not send the <c>0x0e</c>
+    /// record (<see cref="MatchResultService.WriteResultAsync"/>).
     /// </param>
     /// <returns><c>true</c> when a round was playing and has now ended.</returns>
     public bool End(
@@ -202,8 +203,8 @@ public sealed partial class MatchStartRunService
             _ = ReleaseRoundScreensAsync(roundState.RoundScreensVersion, ended.Value);
             logger.LogInformation(
                 "Round {RoundNumber} ended because {Reason}; its stage has another round, so the room "
-                + "runs no briefing, waits for its post-screen reports (the reference's "
-                + "{ScreensMilliseconds} ms pace) and then opens the next round",
+                + "runs no briefing, holds its result screens for their measured "
+                + "{ScreensMilliseconds} ms pace and then opens the next round",
                 ended,
                 reason,
                 MatchScreenTimingsUtils.RoundEndScreensMilliseconds);

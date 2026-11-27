@@ -22,8 +22,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// last post-screen publication, which is the report that ends the wait
 /// (<c>docs/analysis/join-stall-after-mode2.md</c> §66). The image has no such
 /// constant: the screens are the stage script's own, driven by its round-over
-/// event. This host uses the reports as the gate and only keeps this constant as
-/// the pace the screens are measured at; the release no longer waits it out.
+/// event. This host releases the next round on that pace: a client's post-screen
+/// report is sent only once the round it precedes has been told to it, so the
+/// report cannot be what opens the round. Measured twice on 2026-11-27 — the
+/// live client reported 2 s after a 30 s bound had opened round 2, and 2 s
+/// after a 60 s one.
 /// </para>
 /// <para>
 /// <b>The stage's hold is 44.792 s, measured.</b> In
@@ -38,20 +41,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public static class MatchScreenTimingsUtils
 {
     /// <summary>
-    /// The measured pace of a round's own result and score graph, kept as the
-    /// nominal span the screens are armed with. The next round of the same stage
-    /// opens on the room's post-screen reports, not on this value.
+    /// The measured pace of a round's own result and score graph: the span the
+    /// screens are armed with, and the point at which the room stops waiting for a
+    /// post-screen report and opens the next round of the stage.
     /// </summary>
     public const int RoundEndScreensMilliseconds = 24_000;
-
-    /// <summary>
-    /// How long the room waits, from the round's close, for its clients to report
-    /// the round after the result screens. It is the bound on the report gate, not
-    /// the reference's own interval: the reference waits for the last client, and a
-    /// client that never reports must not hold the room for ever. It spans the
-    /// measured 24.0 s screen with margin.
-    /// </summary>
-    public const int RoundReportWaitMilliseconds = 30_000;
 
     /// <summary>
     /// Delay from the round's result write to the stage's, which is the stage

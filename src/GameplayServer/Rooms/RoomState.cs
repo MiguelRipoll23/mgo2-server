@@ -33,30 +33,38 @@ namespace Mgo2Server.GameplayServer.Rooms;
 /// </para>
 /// <para>
 /// <b>The flow those captures show.</b> A room is in <see cref="Briefing"/> while
-/// its briefing runs. As the briefing ends the host writes <see cref="Unknown0"/>
-/// and then <see cref="Unknown1"/>; the round opens as <see cref="RoundStart"/>,
+/// its briefing runs. As the briefing ends the host writes <see cref="NotReady"/>
+/// and then <see cref="Transition"/>; the round opens as <see cref="RoundStart"/>,
 /// or <see cref="RoundStartSolo"/> in a room of one player and no bots, and that
 /// value is re-written through the round. The round's own end writes
-/// <see cref="Unknown1"/> again, in front of the next round's value. The client's
-/// placement machine treats <c>0</c> and <c>7</c> as "wait and ask again", so a
-/// room that has moved past its briefing needs a value other than zero to release
-/// a joining client.
+/// <see cref="Transition"/> again in the captures that write it, in front of the
+/// next round's value; the dedicated ticket-limit capture writes no field 0 at
+/// its boundary at all, and holds the screens on the stopped clock instead. The
+/// client's placement machine treats <c>0</c> and <c>7</c> as "wait and ask
+/// again", so a room that has moved past its briefing needs a value other than
+/// zero to release a joining client.
 /// </para>
 /// </remarks>
 public enum RoomState : byte
 {
     /// <summary>
-    /// Body value <c>0</c>: written in front of <see cref="Unknown1"/> as a
+    /// Body value <c>0</c>: written in front of <see cref="Transition"/> as a
     /// briefing ends, and one of the two values the client's placement machine
-    /// waits on. What it states is not established.
+    /// waits on (<c>0x288160</c>: <c>if (field0 == 0 || field0 == 7) retry</c>).
+    /// It states that the room is not ready for the peer to place itself, and
+    /// what ends it is the next value written behind it.
     /// </summary>
-    Unknown0 = 0,
+    NotReady = 0,
 
     /// <summary>
-    /// Body value <c>1</c>: written as a briefing ends and again as a round closes,
-    /// in front of the next round's value. What it states is not established.
+    /// Body value <c>1</c>: the boundary both phases pass through — written as a
+    /// briefing ends and as a round closes, each time in front of the next phase's
+    /// value. It is a transition and not a phase: no capture holds a room on it
+    /// for any stretch, and the screens that follow a round are held on the
+    /// stopped clock rather than on this value
+    /// (<c>rounded-ended-by-reaching-tickets-limit.pcapng</c>).
     /// </summary>
-    Unknown1 = 1,
+    Transition = 1,
 
     /// <summary>Body value <c>2</c>: the room is on its briefing screen.</summary>
     Briefing = 2,
@@ -78,8 +86,9 @@ public enum RoomState : byte
     /// Body value <c>5</c>: not a round-end marker, and not written once per round.
     /// <c>game-with-bots-workingserver</c> writes it eleven times in its one
     /// gameplay flow — once inside the first round, then a run of ten through the
-    /// second — where the round boundary itself is <see cref="Unknown1"/>. What it
-    /// states is not established.
+    /// second — where the round boundary itself is <see cref="Transition"/>. What it
+    /// states is not established, and no capture in this repository holds one of
+    /// those writes, so it keeps its wire value as its name.
     /// </summary>
     Unknown5 = 5,
 }
