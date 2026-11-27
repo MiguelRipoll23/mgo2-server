@@ -15,12 +15,12 @@ namespace Mgo2Server.Shared.Types;
 /// <para>
 /// <b>Which of these this host writes, and which it only reads.</b> A dedicated host
 /// writes <see cref="StateBlock"/>, <see cref="RoundClock"/>, <see cref="StateWrite"/>,
-/// <see cref="BriefingCountdown"/> and <see cref="UnnamedShort"/>; a client writes
-/// <see cref="KillFeed"/> and <see cref="BriefingReady"/>.
-/// <see cref="ObjectiveFeed"/>, <see cref="SlotRecord"/>, <see cref="RoundOver"/>,
-/// <see cref="RaceGoal"/> and <see cref="Rating"/> are the parser's readings of records
-/// this host has no measured body for, so they are named here and written nowhere — the
-/// capture's own rounds carry them.
+/// <see cref="RoundOver"/>, <see cref="BriefingCountdown"/> and
+/// <see cref="UnnamedShort"/>; a client writes <see cref="KillFeed"/> and
+/// <see cref="BriefingReady"/>. <see cref="ObjectiveFeed"/>, <see cref="SlotRecord"/>,
+/// <see cref="RaceGoal"/> and <see cref="Rating"/> are the parser's readings of
+/// records this host has no measured body for, so they are named here and written
+/// nowhere — the capture's own rounds carry them.
 /// </para>
 /// <para>
 /// <b>Seven more come from the image and the captures rather than from the parser.</b>
@@ -100,7 +100,12 @@ public enum OperationsOpcode : byte
     /// </summary>
     BriefingCountdown = 0x0b,
 
-    /// <summary>The end of a round, with the reason the parser reads off it.</summary>
+    /// <summary>
+    /// The end of a round, with the verdict that ended it. The image's
+    /// <c>P2P_PublishOpcode0E</c> (<c>0x754F18</c>) dispatches script event
+    /// <c>0x160023</c> with the byte; the codes and this host's use of them are
+    /// <see cref="MatchRecords.MatchRoundOverBodiesUtils"/>.
+    /// </summary>
     RoundOver = 0x0e,
 
     /// <summary>

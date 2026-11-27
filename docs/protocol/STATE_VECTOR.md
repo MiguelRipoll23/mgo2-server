@@ -42,7 +42,7 @@ Every record on the operations identifiers (`0x1254`, `0x1a54`, `0x9254`,
 | `0x05` | `[slot]` | names one player; **[U]** |
 | `0x09` | killer, victim | the kill feed |
 | `0x0b` | 7 bytes | the briefing countdown: seconds left and the room's reporting set (§4) |
-| `0x0e` | `[reason]` | **round over**, with the reason that ended it |
+| `0x0e` | `[verdict]` | **round over**, with the verdict that ended it: `0` none; BASE's `1` clock and `2` all bases captured; the side judge's `4` clock and `5` ticket pool; `6`/`7` one of the two sides. The byte is a code, not a counter: the match code calls `P2P_PublishOpcode0E` with the literals `0`, `4`, `5`, `6` and `7` (`0x762F38`, `0x764228`, `0x7748B8`), and `0x7A58D0` with `1` and `2`. Both the sender and the queued handler (`0x75715C`) dispatch script event `0x160023` with it |
 | `0x0f` | 2 bytes | the short record the run carries |
 | `0x13` | array | per-player rating |
 | `0x1d`, `0x1f`, `0x22` | varies | the **joiner's own** operations; **[U]** |
@@ -100,12 +100,20 @@ recorded one.
 `mgo2-game1` the round that ends with no result sends `0e 00` at t+352.007, and
 `state[2..3] = 06 01` lands at the same instant; the round a side takes sends
 `0e 07` at t+688.753 and `state[2] = 03` 2.1 s later. The record is the host
-announcing that the round is over, and its byte is the **client's own round-over
-count**: the per-phase tick appends `0x0e` and `instance + 0xC06`, clears that byte as
-it sends, and the client's writers of it increment it per recorded round-over while one
-is pending — or set it to zero when the pending one is answered as zero
-(`docs/analysis/udp-handlers-and-senders.md` §5.2, §5.3). [I] that is what the two
-samples are, `0x00` and `0x07`; this host writes no equivalent.
+announcing that the round is over, and its byte is a **verdict**: `0` none; BASE's
+`1` clock and `2` all bases captured; the side judge's `4` clock and `5` ticket
+pool; `6`/`7` a side. The image's
+match code calls `P2P_PublishOpcode0E` with those literals (`0x7748B8`, `0x7A58D0`,
+`0x762F38`, `0x764228`), and both the sender and the receive handler `0x75715C`
+dispatch script event `0x160023` with the byte. The `instance + 0xC06` counter the
+per-phase tick sends is only the pending fallback
+(`docs/analysis/udp-handlers-and-senders.md` §5.2, §5.3). The two samples are then
+`0x00` and `0x07` as verdicts, not as a count; this host writes `0x04` for the
+clock, `0x05` for a side's ticket pool and `0x00` when it has neither. It does not
+write `0x02`, which is the BASE judge's "all the bases are captured" verdict and
+shows that message over TDM.
+
+**Resolved 2026-11-27: the numbers in this file are write offsets, and the 00 vector is two bytes behind them.** The image's `02` handler copies `count` bytes to `state_block + offset` (`P2P_HandleQueuedOpcode02`, `0x756CF4`), and the block's own differ sends offset `index + 2` for a change at `state_block + 2 + index` (`P2P_PublishOpcode02WritesSecond`, `0x7579F8`). The full vector is `00` + `block[2..88]` + `block[0..1]` (`P2P_PublishOpcode00StateBlock`, `0x756070`), so **vector byte `i` is block byte `i + 2`**. The result write `02 02` therefore lands in vector byte `0`, not byte `2`; the sections below keep the offset names they were measured with, and the box in §3 gives the mapping.
 
 ## 2. Forty-nine of the eighty-nine bytes are constants
 
@@ -152,25 +160,40 @@ already known. What the corpus adds:
 * **A round's open leaves `state[3]` at zero, not at the `0xff` sentinel.** Five
   of six captures open `state[2] = 0xff` and `state[3] = 0x00`. The asymmetry is
   real, and the block here reproduces it rather than tidying it.
-* **`state[0]`, `state[1]` and `state[4..6]` move with them.** In the capture
-  that ends a match: the writes are `state[2..3] = 02 02`, then 20.7 s later
-  `state[4..6] = 00 02 02`, and the host's next full vector reads
-  `state[0..4] = 02 02 00 02 02`. The two do not agree with each other — the
-  full vector's `[2]` is `0` where the write left `2` — so the full vector and the
-  incremental writes are not the same field read the same way.
+* **The full vector and the writes agree once the two-byte base is applied.** In
+  the capture that ends a match the writes are `02 02 02 02 02` (offset 2, the
+  block's round and match results) and, 20.7 s later, `02 04 03 00 02 02` (offset
+  4, the stage block), and the host's next full vector reads `02 02 00 02 02` at
+  its bytes 0–4 — exactly the five bytes the writes put at block 2, 3 and 4, 5
+  and 6. The "disagreement" this file recorded was the offset/vector skew: the
+  full vector's byte 2 is block 4, which the write at offset 4 already set to
+  `00`, while the write at offset 2 set block 2, which is the vector's byte 0.
 * One further shape, in `mgo2-game1`: a round that ends with no result sends
-  `state[2..3] = 06 01` and, 21.9 s later, `state[4..5] = fe 05` — five values,
-  not three, and `fe` where the other capture has `00`.
+  `02 02 06 01` and, 21.9 s later, `02 04 fe 05` — the same two fields, a no-result
+  and a stage value, at the same offsets.
+* **The result block is a sixteen-byte field at block offset 1.**
+  `P2P_GetStateField01Byte` (`0x8EAF88`) reads sixteen bytes at offset 1 and
+  returns byte `n`, which is how the GCL scripts reach the block, and every result
+  write lands inside it: `02 02` is its byte 1, `02 03` its byte 2, `02 04` its
+  bytes 3–4, `02 07` its byte 6. So the block is
+  `[0]` the clock's high byte, `[1]` round result, `[2]` match result, `[3]` stage
+  winning team, `[4]` its rounds won, `[5]` the stage's total in the older capture
+  (offset 6) and `[6]` the same total in the modern ones (offset 7); `[7..15]` are
+  zero. The two shapes are one field's two positions, not two meanings, and which
+  of `[5]`/`[6]` a stage screen reads is still **[U]**. This host writes `[6]`.
 
 **The stage's own result is written 21.1 s behind the match's.** Two later
 captures of the same flow — `rounded-ended-by-reaching-tickets-limit.pcapng`
 and `swap-spawnpoint-side-between-rounds-enabled.pcapng` — write
 `02 04 02 01 02` and `02 07 01 02` 21.133 s and 21.136 s after the result
-`02 02 02 03 03`. The winning side is raw team 1, `state[5] = 2` is its rounds
-won, and `state[7] = 2` repeats the stage's total. The older `pcapng1` writes a
-team-0 win 21.132 s after its result as `02 04 03 00 02 02`, with the third
-value at `state[6]`; the two shapes are not reconciled. `state[0..1]`, the exact
-meaning of the repeated total, and which shape a team-0 win takes are `[U]`.
+`02 02 02 03 03`. Offset 4 is the result block's bytes 3 and 4: the stage's
+winning team (raw team 1) and the rounds it won (2). Offset 7 is its byte 6 —
+the stage's total (2). The older `pcapng1` writes a team-0 win as
+`02 04 03 00 02 02`, three bytes from offset 4: team 0, its 2 rounds and the
+stage's 2 rounds, with the total at offset 6 instead of offset 7. The two
+reference versions differ in which byte carries the total (the result field's
+byte 5 or 6), not in what the three values mean; this host writes the `02 07`
+position. Which the stage screen reads is **[U]**.
 
 ## 4. The briefing countdown is the `0x0b` count — and the 128-unit clock is not it
 
@@ -321,10 +344,9 @@ a client display matter, not something the clock or the feed withholds.
   the run opener `0x270E00`). Six bytes of 24 in the state block are that number
   [I]; nothing on the wire names the field. **`0x3c` is still open** — sixty in
   every room of every rule. §2.
-* **Which vector index the round result sits at.** Every capture writes
-  `02 02 01 02`, so the body is settled; whether that offset names `state[2]`
-  (direct base) or `state[0]` (`offset − 2`) is still open, because both readings
-  are of the same bytes. §5.
+* **Which result-field byte the stage screen reads for the stage's total** —
+  field byte 5 (offset 6, the older capture) or field byte 6 (offset 7, the
+  modern captures and this host). §3.
 * **Whether the 128-unit clock is the result screen's or a briefing's.** §3,
   §4.
 * **`0x04`, `0x1d`, `0x1f`, `0x22`, `0x26`** — present in the captures, not read.

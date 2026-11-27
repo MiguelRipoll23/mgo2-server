@@ -178,14 +178,18 @@ The model this file supports, and that the host now follows:
 - a **stage** is a maximal run of identical rotation triples, so
   `MatchSettings.IsLastRoundOfGame(n)` is "the entry after this round names a
   different rule or map";
-- a round that is **not** its stage's last opens the next round itself once its
-  result screens have run (`MatchScreenTimingsUtils.RoundEndScreensMilliseconds`, 24.0 s), with no
-  briefing, no countdown and no briefing run
+- a round that is **not** its stage's last opens the next round itself on its
+  clients' post-screen reports (the measured 24.0 s
+  `MatchScreenTimingsUtils.RoundEndScreensMilliseconds` is the reference client's
+  screen pace, not a host gate: the reference opens 0.19 s after the last report in
+  §66, and `MatchScreenTimingsUtils.RoundReportWaitMilliseconds` bounds this host's
+  wait at 30 s), with no briefing, no countdown and no briefing run
   (`MatchStartRunService.WriteBriefingRunAsync` returns between rounds); the
   ready set is cleared at the close either way, so the next round starts from its
   own reports and not from the played round's;
-- a round that **is** its stage's last keeps its result screens up for
-  `MatchScreenTimingsUtils.StageEndMilliseconds` (44.8 s) and only then arms the next briefing; the clock
+- a round that **is** its stage's last holds its next briefing for
+  `MatchScreenTimingsUtils.StageEndMilliseconds` (44.8 s, again a measured client pace,
+  not a reference timer) and only then arms it; the clock
   it is held on is `0` once one has played, and the briefing precedes the next
   map's first round.
 

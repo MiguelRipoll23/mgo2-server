@@ -17,20 +17,25 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// the screen's and not a clock this host has.
 /// </para>
 /// <para>
-/// <b>state[4] is the winning side's raw team, and state[5] is its rounds
-/// won.</b> Both captures are team 1's 2–0, so the pair reads
-/// <c>state[4] = 1, state[5] = 2</c>, and state[7] repeats the 2 because that
+/// <b>The first write's two bytes are the winning side's raw team and its
+/// rounds won.</b> Both captures are team 1's 2–0, so offset 4 carries
+/// <c>1, 2</c>, and offset 7 carries the stage's own total, 2, because that
 /// stage was a sweep. A game whose rounds were split is decided on the higher
-/// total score and its rounds are stated the same way; state[7] keeps the
-/// stage's own total, which is then more than the winner's. The older
-/// <c>pcapng1</c> writes a team-0 win as <c>02 04 03 00 02 02</c>, with the
-/// third value at state[6] instead; the two shapes are not reconciled and this
-/// writer follows the t+184.730 capture.
+/// total score and its rounds are stated the same way; the stage total is then
+/// more than the winner's. The older <c>pcapng1</c> writes a team-0 win as
+/// <c>02 04 03 00 02 02</c>, three bytes from offset 4, with the total there; the
+/// reference versions differ in the total's byte, and this writer follows the
+/// t+184.730 capture. A <c>02</c> offset is a byte offset into the state block:
+/// offset 4 is the block's bytes 2–3, which the <c>00</c> vector carries as its
+/// bytes 0–1 because the vector starts at block byte 2.
 /// </para>
 /// </remarks>
 public sealed partial class MatchResultService
 {
-    /// <summary>Offset of the winning side in the stage result's state block.</summary>
+    /// <summary>
+    /// Offset of the winning side in the stage result's state block — the block's
+    /// byte 2, which is vector byte 0 of the <c>00</c> record's data.
+    /// </summary>
     private const int StageWinnerIndex = 4;
 
     /// <summary>Offset of the stage's total rounds in the stage result's state block.</summary>

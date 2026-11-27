@@ -398,9 +398,11 @@ stage result screens (`rounded-ended-by-reaching-tickets-limit.pcapng`: its resu
 at t+163.597, the next stage's `0x0b` count at t+208.389), and the host keeps
 writing the played clock where it stopped through them. `MatchStartRunService.End`
 arms the next briefing once `MatchScreenTimingsUtils.StageEndMilliseconds` has
-passed; a round inside a stage holds the zero clock for
-`MatchScreenTimingsUtils.RoundEndScreensMilliseconds` (24.0 s, the reference's
-t+191.599 → t+215.632) and then opens the next round itself.
+passed; a round inside a stage holds the zero clock while its clients read the
+result screens and opens the next round on their post-screen reports. The
+reference's measured pace is 24.0 s (t+191.599 → t+215.632), and
+`MatchScreenTimingsUtils.RoundReportWaitMilliseconds` bounds the report wait at
+30 s.
 
 ## 3. What is live, and what is still a replay
 
@@ -781,10 +783,14 @@ record should be sent.
   player of the room once; whether the second copy is a repeat the peer needs,
   as the roster run's second copy is, nothing measured says.
 
-* **[U]** `state[0]`, `state[1]` and `state[4..6]`: they move at a match's end
-  beside the two results, and the full vector and the incremental writes do not
-  agree about them. One decided match is the whole of the evidence.
-  `STATE_VECTOR.md` §3.
+* **Resolved: `state[0..6]` is one result block.** `02` offsets are block
+  offsets, and the `00` vector starts at block byte 2, so the write at offset 2
+  lands in vector byte 0. The block is a sixteen-byte field at offset 1 that the
+  scripts read through `P2P_GetStateField01Byte` (`0x8EAF88`): byte 1 round
+  result, 2 match result, 3 stage winner, 4 its rounds, 5 the stage total in the
+  older capture (offset 6) and 6 the same total in the modern ones (offset 7),
+  7–15 zero. This host writes the modern position. The full vector and the writes
+  agree once the two-byte base is applied. `STATE_VECTOR.md` §3.
 
 * **[U]** what the briefing seconds limit's *length* tracks. `state[57..60]` holds four
   bytes in five captures and `state[57..84]` holds twenty-eight in the only
@@ -801,16 +807,24 @@ record should be sent.
   a round does not stop, and not the one-per-second timer it was read as.
   `STATE_VECTOR.md` §4.
 
-* **The `0x0e` round-over record's byte is the client's own count of round-overs.
-  [V] the byte the record carries is `instance + 0xC06`: the per-phase tick
-  `0x2729D8` appends `0x0e` and then that byte (`0x273298`) and clears it as it
-  sends (`0x2732B0`), and the client's two writers of it are `0x26D7C0`, which
-  **increments** it when a round-over is recorded while one is already pending
-  (bits 9 and 10 of `instance + 0xBCC`), and `0x26E350`, which sets it to its
-  argument when the pending one is answered as zero. [I] that is why the two
-  recorded values are `0x00` (no verdict) and `0x07` (the seventh such record);
-  this host writes no `0x0e` of its own. `udp-handlers-and-senders.md` §5.2 and
-  §5.3. `STATE_VECTOR.md` §1.
+* **The `0x0e` round-over record carries a verdict code, and this host writes
+  it.** The match code calls `P2P_PublishOpcode0E` (`0x754F18`) with literal
+  codes: `0` no verdict (`0x7748B8`), BASE's `1` clock and `2` all-bases-captured
+  (`0x7A58D0`), the side judge's `4` clock and `5` ticket pool (`0x762F38`,
+  `0x764228`), and `6`/`7` one of the two sides. The sender and the queued handler `0x75715C`
+  both dispatch script event `0x160023` with the byte, so the record is how a
+  client's stage scripts are told the round is over. The `instance + 0xC06`
+  counter the per-phase tick sends is only the pending fallback path. `mgo2-game1`
+  writes `0e 00` and `0e 07`; the newer ticket-limit and swap-spawn captures
+  contain no `0x0e` at all, so a client does not need it to leave a round there.
+  This host writes `4` for the clock, `5` for a side's ticket pool and `0x00`
+  when it has neither, ahead of the result
+  (`MatchResultService.WriteRoundOverAsync`). It deliberately does not write `2`:
+  that is the BASE judge's "all the bases are captured" verdict, and TDM shows
+  that message when it receives it. `5` is the side judge's ticket branch (its
+  ticket-mode flag set and its `+0x20` counter below one); `6`/`7` are its side
+  branch, which this host does not use. `udp-handlers-and-senders.md` §5.3.
+  `STATE_VECTOR.md` §1.
 
 * **[U]** the state blob's only varying field (a 16-bit value that runs 100, 0,
   94, 98, 99, 50 through a round). `joined-when-red-team`'s 754 steady blobs are
@@ -863,9 +877,9 @@ record should be sent.
   `swap-spawnpoint-side-between-rounds-enabled` write `02 04 02 01 02` and
   `02 07 01 02` 21.133 s and 21.136 s after their team-1 result. `state[7]`
   repeats the rounds as the stage's total, and this host writes that pair
-  (`MatchResultService.WriteStageResultAsync`); the older sample's third value at
-  `state[6]` is left as measured rather than written, because the two shapes are
-  not reconciled.
+  (`MatchResultService.WriteStageResultAsync`); the older `pcapng1` sample's
+  third value at `state[6]` is left as measured rather than written, because the
+  two shapes are not reconciled.
 * **Measured: the scoreboard's index byte is the roster counter's next value.**
   Its fourth byte is not its own numbering and not the roster run's: in
   `joined-when-red-team` the 2 606 `0x1001` records carry one ascending sequence,

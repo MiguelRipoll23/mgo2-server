@@ -228,6 +228,7 @@ public sealed partial class MatchRoundStateService
             var ended = isOpen;
             isOpen = false;
             lastRoundResult = null;
+            lastRoundOverVerdict = 0;
             lastRoundClosedGame = false;
             stageEndAt = null;
             stageEndClockUnits = 0;
@@ -275,6 +276,23 @@ public sealed partial class MatchRoundStateService
         }
     }
 
+    private byte lastRoundOverVerdict;
+
+    /// <summary>
+    /// The round-over verdict the round that just ended was closed with: the byte
+    /// the operations stream's <c>0x0e</c> record carries.
+    /// </summary>
+    public byte LastRoundOverVerdict
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastRoundOverVerdict;
+            }
+        }
+    }
+
     /// <summary>
     /// Ends the round now playing and keeps the results it ended on. Nothing is
     /// written here: the opener that owns the transition does that, and the
@@ -291,8 +309,11 @@ public sealed partial class MatchRoundStateService
     /// (<see cref="MatchResultService.DecideMatchResultAsync"/>), because that decision
     /// needs the side each player holds and the counters this service does not keep.
     /// </param>
+    /// <param name="roundOverVerdict">
+    /// Verdict the round-over record carries (<see cref="MatchRoundOverBodiesUtils"/>).
+    /// </param>
     /// <returns>The round that ended, or <c>null</c> when none was playing.</returns>
-    public int? Close(byte? roundResult, bool closesGame = false)
+    public int? Close(byte? roundResult, bool closesGame = false, byte roundOverVerdict = 0)
     {
         lock (gate)
         {
@@ -313,6 +334,7 @@ public sealed partial class MatchRoundStateService
             isOpen = false;
             hasRoundEnded = true;
             lastRoundResult = roundResult;
+            lastRoundOverVerdict = roundOverVerdict;
             lastRoundClosedGame = closesGame;
             roundsClosed++;
             roundSettings = null;

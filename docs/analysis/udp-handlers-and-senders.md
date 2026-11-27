@@ -256,8 +256,7 @@ byte.)
 `instance + 0xC06`; when it is nonzero it appends `0x0e` and then the byte itself
 (`0x273298`), clears the byte (`0x2732B0`), resets `instance + 0xBBC` and sends under
 the instance's handle (`0x2732D4`) and then under every live slot handle
-(`0x2732EC`–`0x273368`). **So the byte the wire's `0e` record carries is
-`instance + 0xC06`.** **[V]**
+(`0x2732EC`–`0x273368`). **So the byte this path carries is `instance + 0xC06`.** **[V]** The field itself is a **verdict code**, not only a counter: the match code calls the builder `P2P_PublishOpcode0E` (`0x754F18`) directly with the literals `0` (`0x7748B8`), `1` and `2` (`0x7A58D0`), `4` (`0x762F38`, `0x764228`), `5` (`0x762F38`, `0x764228`) and `6`/`7` (`0x762F38`, `0x764228`). The tick's `0xC06` is the fallback path when the pending verdict has no code of its own.
 
 **`0x0c <4 bytes>`, one record per marked word.** **[V]** The same two writers
 (`0x2734CC` and `0x273500`) append `0x0c` and then four bytes taken from
@@ -287,8 +286,7 @@ The two setters are a pair of leaf functions that keep a **round-over counter**:
   0x26D7DC: if (bit 9 set) and (bit 10 clear)
   0x26D7F8: 0xC06 = 0xC06 + 1   and   bit 10 set
 ```
-So `0xC06` is **the count of round-overs recorded while a verdict was pending**, not a
-rule code, and bit 9 of `instance + 0xBCC` is "a round-over is pending". **[V]**
+So `0xC06` is **the pending fallback counter**, and bit 9 of `instance + 0xBCC` is "a round-over is pending". **[V]** It is not the record's only meaning: the direct callers above pass a code — `0` no verdict, `1` BASE's clock, `2` BASE's all-bases-captured, `4` the side judge's clock, `5` its ticket pool, `6`/`7` a side — and both the sender and the receive handler `0x75715C` dispatch it to script event `0x160023`. The two capture values read as verdicts, not as a count: `0e 00` with a no-result state and `0e 07` with a side's win.
 
 ### 5.4 The run opener `0x270E00`: one body of up to 0x174 bytes
 
@@ -369,7 +367,7 @@ table, **[U]** for `0x1d`'s writer.
 |---|---|
 | the flags' low byte in the state schema, `[U]` in `udp-record-dispatch.md` §3.6 | **closed**: `0x0040` = publish this field, `0x0001` = publish when the write changes it; neither, and the write is not marked (§2) |
 | what the state's map at `descriptor + 0x0C` records, `[U]` there | **read**: a two-bit code per field, `2` inbound and `3` outbound (§2) |
-| the `0x0e` round-over record's reason byte, `[U]` in `GAMEPLAY_SERVER.md` §7 | **closed**: it is `instance + 0xC06`, a counter of round-overs recorded while a verdict was pending (§5.3) |
+| the `0x0e` round-over record's byte, `[U]` in `GAMEPLAY_SERVER.md` §7 | **closed**: a verdict code — `0` none, `1` BASE's clock, `2` BASE's all-bases-captured, `4` the side judge's clock, `5` its ticket pool, `6`/`7` a side — dispatched to script event `0x160023`; the `0xC06` counter is the pending fallback (§5.2, §5.3) |
 | what a client itself sends as `0x01` / `0x0c` / `0x0e` | **read**: `01` alone, `0c` plus a marked word, `0e` plus the counter (§5.2) |
 | `0x0b` in `GAMEPLAY_SERVER.md` §7 — "what a recurring per-entity countdown is" | **still [U]** for the countdown's unit, but narrowed: no sender in the module's per-phase tick writes `0x0b` (§5.2), and the two the scan finds in the match code (§5.5) write a *slot* and a five-field status body, neither of them the server's 7-byte countdown — so no sender anywhere in this image writes the record the host sends |
 | the ten-byte `0b` record's parse and handler (`join-stall-after-mode2.md` §33, then **[U]**) | **closed**: it is `[key 0x0B][state 0x00][7-byte map][one value]`, dispatched to `0x27E8B0`, and all 188 ten-byte bodies in the fourteen captures fit that parse with exactly one field each. The key **is** the record's first byte: keep it in the body and the index would be `0x0B`, a slot state whose presence map alone is 21 bytes (`join-stall-after-mode2.md` §34) |

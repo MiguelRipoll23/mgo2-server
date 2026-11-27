@@ -27,9 +27,9 @@ public sealed partial class MatchResultService
     /// </para>
     /// <para>
     /// <b>A level split names no side.</b> No capture or replay states which side
-    /// takes a game whose rounds and totals are both level, so <c>state[3]</c> is
-    /// left unwritten there rather than invented; <c>state[2]</c> alone still goes
-    /// out with the round's result.
+    /// takes a game whose rounds and totals are both level, so offset 3 is left
+    /// unwritten there rather than invented; offset 2 alone still goes out with the
+    /// round's result.
     /// </para>
     /// </remarks>
     private async Task<byte?> DecideMatchResultAsync()

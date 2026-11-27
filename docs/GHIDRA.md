@@ -400,7 +400,7 @@ the caller's is named for its shape instead.
 | `0x754a90` | `P2P_PublishOpcode1BOr1C` | `1b` or `1c` by the caller's argument, then the writer's own slot |
 | `0x754c38` | `P2P_PublishOpcode19` | two bytes, guest side only (`0x26d540() == 0`) |
 | `0x754de8` | `P2P_PublishOpcode23` | one byte, on the handle at `+0x84` |
-| `0x754f18` | `P2P_PublishOpcode0E` | one byte, then script event `0x160023` |
+| `0x754f18` | `P2P_PublishOpcode0E` | one byte — a round-over verdict (`0` none, `1` BASE's clock, `2` BASE's all-bases-captured, `4` the side judge's clock, `5` its ticket pool, `6`/`7` a side) — then script event `0x160023` |
 | `0x755168` | `P2P_PublishOpcode1F` | the writer's own slot and a state byte |
 | `0x755228` | `P2P_PublishOpcode0B` | a `u16` and a `u32` — the seven-byte countdown record |
 | `0x7552d8` | `P2P_PublishOpcode0A` | one byte with the caller's flag in bit 7 |

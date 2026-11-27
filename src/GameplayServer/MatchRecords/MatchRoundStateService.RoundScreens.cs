@@ -13,10 +13,11 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// on its result screens before it can play again, and the room must not open
 /// the next round or arm the next briefing underneath it. The reference keeps
 /// writing the closed round's clock — `01 00 00` after a round inside a stage,
-/// its stopped value after a stage's last — for that stretch, and starts the
-/// next thing only once it is over: in <c>mgo2-started-on-game-round1</c> the
-/// first round's clock reaches zero at t+191.599 and the next round opens at
-/// t+215.632, 24.0 s later (`docs/analysis/join-stall-after-mode2.md` §66).
+/// its stopped value after a stage's last — for that stretch. A round inside a
+/// stage is released by the room's post-screen reports; in
+/// <c>mgo2-started-on-game-round1</c> the first round's clock reaches zero at
+/// t+191.599, the client reports at t+215.4 and the next round opens 0.19 s
+/// later, 24.0 s after the zero (`docs/analysis/join-stall-after-mode2.md` §66).
 /// </para>
 /// <para>
 /// <b>A stage's last round has the longer hold.</b> Its screens are the round
@@ -117,11 +118,12 @@ public sealed partial class MatchRoundStateService
     /// round, the round's own for one that has another behind it.
     /// </summary>
     /// <remarks>
-    /// The two holds are the two captured boundaries. A round inside a stage
-    /// writes the zero clock and opens its successor after
-    /// <see cref="MatchScreenTimingsUtils.RoundEndScreensMilliseconds"/>; a stage's last round keeps the
-    /// clock it stopped on and is followed by the stage result, so its briefing is
-    /// armed only after <see cref="MatchScreenTimingsUtils.StageEndMilliseconds"/> and its clock is
+    /// The two boundaries. A round inside a stage writes the zero clock and its
+    /// successor opens on the room's post-screen reports; the nominal screen span
+    /// is <see cref="MatchScreenTimingsUtils.RoundEndScreensMilliseconds"/>. A
+    /// stage's last round keeps the clock it stopped on and is followed by the
+    /// stage result, so its briefing is armed only after
+    /// <see cref="MatchScreenTimingsUtils.StageEndMilliseconds"/> and its clock is
     /// written as zero there (<see cref="EndStageEnd"/>).
     /// </remarks>
     /// <param name="closedAt">When the round closed, in Unix milliseconds.</param>

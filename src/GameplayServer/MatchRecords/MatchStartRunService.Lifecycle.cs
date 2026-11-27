@@ -129,8 +129,14 @@ public sealed partial class MatchStartRunService
     /// game's own result and starts its rounds-won counters over once their last
     /// number has gone out.
     /// </param>
+    /// <param name="roundOverVerdict">
+    /// Verdict the operations stream's <c>0x0e</c> record carries: <c>4</c> for the
+    /// clock, <c>5</c> for a side's ticket pool, and <c>0</c> otherwise
+    /// (<see cref="MatchRoundOverBodiesUtils"/>). It is deliberately not the
+    /// BASE-only <c>2</c>, which shows "all the bases are captured" in TDM.
+    /// </param>
     /// <returns><c>true</c> when a round was playing and has now ended.</returns>
-    public bool End(string reason, byte? roundResult = null)
+    public bool End(string reason, byte? roundResult = null, byte roundOverVerdict = 0)
     {
         // The rotation is what says how many rounds a game is, and the count only
         // moves when the next round opens: the round now playing is the one that
@@ -143,7 +149,7 @@ public sealed partial class MatchStartRunService
         // A round that is its game's last states the game's result as well, in the
         // round's own write — `02 02 02 02 02` is "state[2] = 2, state[3] = 2"
         // (docs/protocol/STATE_VECTOR.md §3).
-        var ended = roundState.Close(roundResult, closesGame);
+        var ended = roundState.Close(roundResult, closesGame, roundOverVerdict);
         if (ended is null)
         {
             return false;
@@ -161,10 +167,10 @@ public sealed partial class MatchStartRunService
         // zero-clock stretch anywhere between them (docs/protocol/MATCH_FLOW.md §5).
         //
         // The round's own result and score graph come first, and they are the
-        // client's: the reference holds the zero clock for 24.0 s between a round's
-        // end and the next round's open, so a host that opened on the next report
-        // drew the next map over the screen the round had just earned
-        // (`MatchScreenTimingsUtils.RoundEndScreensMilliseconds`).
+        // client's. The reference holds the zero clock while that client reads
+        // them, and opens the next round on the client's last post-screen report;
+        // the 24.0 s the capture shows is that client's pace, not a hold this host
+        // imposes (`MatchScreenTimingsUtils.RoundEndScreensMilliseconds`).
         //
         // The ready set is rewritten between the rounds of one stage all the same:
         // the captures clear it at every round end and the round that follows opens
@@ -185,8 +191,8 @@ public sealed partial class MatchStartRunService
             _ = ReleaseRoundScreensAsync(roundState.RoundScreensVersion, ended.Value);
             logger.LogInformation(
                 "Round {RoundNumber} ended because {Reason}; its stage has another round, so the room "
-                + "runs no briefing, shows the round's result screens for {ScreensMilliseconds} ms and then "
-                + "opens the next round",
+                + "runs no briefing, waits for its post-screen reports (the reference's "
+                + "{ScreensMilliseconds} ms pace) and then opens the next round",
                 ended,
                 reason,
                 MatchScreenTimingsUtils.RoundEndScreensMilliseconds);
@@ -274,7 +280,7 @@ public sealed partial class MatchStartRunService
     /// result screens.
     /// </summary>
     /// <remarks>
-    /// <b>The screens' clock ends the screens; the room's reports open the next
+    /// <b>The room's post-screen reports end the screens and open the next
     /// round.</b> A client still reading the result screen reports before it
     /// leaves, and the room waits for every client's report before it opens the
     /// next round, with a bound so one client cannot hold it. The round opens
@@ -289,20 +295,20 @@ public sealed partial class MatchStartRunService
     {
         try
         {
-            await Task.Delay(MatchScreenTimingsUtils.RoundEndScreensMilliseconds);
+            // **The room's post-screen report ends the screens; the measured 24.0 s
+            // is the client's pace.** On 2026-11-26 the client reported its
+            // map-loaded state at 16:08:01, and opening on a clock wrote the round's
+            // state before that report, so the client never asked for its entry and
+            // never spawned. The reference opens 0.19 s after the last report
+            // (`mgo2-started-on-game-round1` round 2, t+215.632). Waiting here, with
+            // the screens still armed so those reports are the screens' own, is the
+            // same gate without a fixed hold in front of it.
+            await WaitForRoundReportsAsync(roundNumber);
             if (!roundState.EndRoundScreens(version) || roundState.IsOpen || !roundState.HasRoundEnded)
             {
                 return;
             }
 
-            // **The screens' clock ends the screens; the room's post-screen report
-            // opens the round.** On 2026-11-26 the screens ended at 16:08:00, the
-            // client reported its map-loaded state at 16:08:01, and opening on the
-            // clock wrote the round's state at 16:08:00 — before that report — so the
-            // client never asked for its entry and never spawned. The reference keeps
-            // the same 0.2 s report-to-open gap (`mgo2-started-on-game-round1` round 2,
-            // t+215.632); the 24.0 s clock is the screens' own, not the open's.
-            await WaitForRoundReportsAsync(roundNumber);
             var opened = OpenRound(
                 roundState.Generation.Sibling,
                 "the result screens finished and the room's post-screen reports followed them");
@@ -363,7 +369,8 @@ public sealed partial class MatchStartRunService
                 End(
                     $"round {roundNumber}'s time limit ran out after "
                     + $"{timeLimitMilliseconds} ms",
-                    await results.ClockResultAsync());
+                    await results.ClockResultAsync(),
+                    MatchRoundOverBodiesUtils.VerdictClock);
                 return;
             }
         }

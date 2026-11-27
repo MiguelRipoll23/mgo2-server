@@ -224,6 +224,7 @@ public sealed class OperationsStreamHandler(
             reached.WinningTeam);
         matchStart.End(
             $"team {reached.Team}'s tickets reached zero at the round's {reached.Tickets}-ticket limit",
-            reached.ResultCode);
+            reached.ResultCode,
+            MatchRoundOverBodiesUtils.VerdictTickets);
     }
 }

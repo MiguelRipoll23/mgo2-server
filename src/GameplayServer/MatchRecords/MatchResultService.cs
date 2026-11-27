@@ -179,18 +179,19 @@ public sealed partial class MatchResultService(
     /// <remarks>
     /// <para>
     /// The write is opcode <c>0x02</c> followed by the offset, the count and the
-    /// values, so <c>02 02 01 02</c> is "state[2] = 2" — the round's winner in the
-    /// decoder's own coding (<c>docs/protocol/BRIEFING_FLOW.md</c> §4, measured
-    /// at every round end of `joined-when-red-team`). Nothing is written when the
-    /// round ended with no result, which leaves the state block's own <c>0xff</c>
-    /// where it stands.
+    /// values, so <c>02 02 01 02</c> sets offset 2 — the result block's first byte,
+    /// which the <c>00</c> vector carries as its byte 0 — to the round's winner in
+    /// the decoder's own coding (<c>docs/protocol/BRIEFING_FLOW.md</c> §4, measured
+    /// at every round end of `joined-when-red-team`). No result byte is written
+    /// when the round ended with no result, which leaves the state block's own
+    /// <c>0xff</c> where it stands; the round-over verdict still goes out.
     /// </para>
     /// <para>
     /// <b>The game's result rides the round's when the round decides it.</b> A
-    /// round that is its game's last writes <c>state[2]</c> and <c>state[3]</c> in
-    /// one record — <c>02 02 02 02 02</c> — which is what the captured server that
-    /// decides a match writes, and a round inside a game writes
-    /// <c>state[2]</c> alone (<c>docs/protocol/STATE_VECTOR.md</c> §3). The value is
+    /// round that is its game's last writes offsets 2 and 3 in one record —
+    /// <c>02 02 02 02 02</c>, the round's and the match's results — which is what
+    /// the captured server that decides a match writes, and a round inside a game
+    /// writes offset 2 alone (<c>docs/protocol/STATE_VECTOR.md</c> §3). The value is
     /// the side that took the game: the side that swept it, or, when the rounds
     /// were split, the side with the higher total score. <c>replay_360824_6</c>
     /// splits its rounds one each and its match goes to the side that lost the last
@@ -201,6 +202,11 @@ public sealed partial class MatchResultService(
     /// <param name="generation">Identifier set the round played under.</param>
     public async Task WriteResultAsync(PeerContext context, MatchRecordGenerationUtils generation)
     {
+        // The verdict goes out first, as the image's match code publishes it
+        // (`MatchResultService.RoundOver.cs`); a round with no result still has a
+        // verdict to announce, so this is before the result's own early return.
+        await WriteRoundOverAsync(context, generation);
+
         if (roundState.LastRoundResult is not { } result)
         {
             logger.LogDebug(
