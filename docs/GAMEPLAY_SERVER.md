@@ -817,14 +817,15 @@ record should be sent.
   counter the per-phase tick sends is only the pending fallback path. `mgo2-game1`
   writes `0e 00` and `0e 07`; the newer ticket-limit and swap-spawn captures
   contain no `0x0e` at all, so a client does not need it to leave a round there.
-  This host writes `4` for the clock, `5` for a side's ticket pool and `0x00`
-  when it has neither, ahead of the result
-  (`MatchResultService.WriteRoundOverAsync`). It deliberately does not write `2`:
-  that is the BASE judge's "all the bases are captured" verdict, and TDM shows
-  that message when it receives it. `5` is the side judge's ticket branch (its
-  ticket-mode flag set and its `+0x20` counter below one); `6`/`7` are its side
-  branch, which this host does not use. `udp-handlers-and-senders.md` §5.3.
-  `STATE_VECTOR.md` §1.
+  This host writes the verdict its played rule gives the close, ahead of the
+  result (`MatchResultService.WriteRoundOverAsync`): BASE's clock is `1`; TDM's
+  clock is `4` and its ticket pool `5`; a rule or reason with no measured code is
+  `0`. It deliberately does not write `2`: that is the BASE judge's "all the
+  bases are captured" verdict, and TDM shows that message when it receives it.
+  `5` is the side judge's ticket branch (its ticket-mode flag set and its `+0x20`
+  counter below one); `6`/`7` are its side branch. The mapping is
+  `MatchRoundOverBodiesUtils.VerdictFor`, gated on the played round's rule.
+  `udp-handlers-and-senders.md` §5.3. `STATE_VECTOR.md` §1.
 
 * **[U]** the state blob's only varying field (a 16-bit value that runs 100, 0,
   94, 98, 99, 50 through a round). `joined-when-red-team`'s 754 steady blobs are

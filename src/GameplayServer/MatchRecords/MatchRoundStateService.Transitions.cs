@@ -228,7 +228,7 @@ public sealed partial class MatchRoundStateService
             var ended = isOpen;
             isOpen = false;
             lastRoundResult = null;
-            lastRoundOverVerdict = 0;
+            lastRoundOverVerdict = RoundOverVerdict.None;
             lastRoundClosedGame = false;
             stageEndAt = null;
             stageEndClockUnits = 0;
@@ -276,13 +276,13 @@ public sealed partial class MatchRoundStateService
         }
     }
 
-    private byte lastRoundOverVerdict;
+    private RoundOverVerdict lastRoundOverVerdict;
 
     /// <summary>
     /// The round-over verdict the round that just ended was closed with: the byte
     /// the operations stream's <c>0x0e</c> record carries.
     /// </summary>
-    public byte LastRoundOverVerdict
+    public RoundOverVerdict LastRoundOverVerdict
     {
         get
         {
@@ -313,7 +313,7 @@ public sealed partial class MatchRoundStateService
     /// Verdict the round-over record carries (<see cref="MatchRoundOverBodiesUtils"/>).
     /// </param>
     /// <returns>The round that ended, or <c>null</c> when none was playing.</returns>
-    public int? Close(byte? roundResult, bool closesGame = false, byte roundOverVerdict = 0)
+    public int? Close(byte? roundResult, bool closesGame = false, RoundOverVerdict roundOverVerdict = RoundOverVerdict.None)
     {
         lock (gate)
         {

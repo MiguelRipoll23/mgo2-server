@@ -129,14 +129,18 @@ public sealed partial class MatchStartRunService
     /// game's own result and starts its rounds-won counters over once their last
     /// number has gone out.
     /// </param>
-    /// <param name="roundOverVerdict">
-    /// Verdict the operations stream's <c>0x0e</c> record carries: <c>4</c> for the
-    /// clock, <c>5</c> for a side's ticket pool, and <c>0</c> otherwise
-    /// (<see cref="MatchRoundOverBodiesUtils"/>). It is deliberately not the
-    /// BASE-only <c>2</c>, which shows "all the bases are captured" in TDM.
+    /// <param name="roundOverReason">
+    /// Why the round ended. The played round's rule turns it into the operations
+    /// stream's <c>0x0e</c> verdict (<see cref="MatchRoundOverBodiesUtils"/>): BASE's
+    /// clock is <c>1</c>, TDM's clock is <c>4</c> and its ticket pool is <c>5</c>, and
+    /// a rule with no measured code keeps <c>0</c> rather than borrowing another
+    /// rule's message.
     /// </param>
     /// <returns><c>true</c> when a round was playing and has now ended.</returns>
-    public bool End(string reason, byte? roundResult = null, byte roundOverVerdict = 0)
+    public bool End(
+        string reason,
+        byte? roundResult = null,
+        RoundOverReason roundOverReason = RoundOverReason.None)
     {
         // The rotation is what says how many rounds a game is, and the count only
         // moves when the next round opens: the round now playing is the one that
@@ -145,6 +149,13 @@ public sealed partial class MatchStartRunService
         var closesGame = matchSettings.IsLastRoundOfGame(playing);
         var round = roundState.RoundSettings;
         var openedAt = roundState.OpenedAt;
+
+        // The close happens before the next entry can become current, so the played
+        // round's own rule gates the verdict.
+        var roundOverVerdict = MatchRoundOverBodiesUtils.VerdictFor(
+            round?.Rule ?? matchSettings.CurrentRule,
+            roundOverReason,
+            roundResult);
 
         // A round that is its game's last states the game's result as well, in the
         // round's own write — `02 02 02 02 02` is "state[2] = 2, state[3] = 2"
@@ -370,7 +381,7 @@ public sealed partial class MatchStartRunService
                     $"round {roundNumber}'s time limit ran out after "
                     + $"{timeLimitMilliseconds} ms",
                     await results.ClockResultAsync(),
-                    MatchRoundOverBodiesUtils.VerdictClock);
+                    RoundOverReason.Clock);
                 return;
             }
         }

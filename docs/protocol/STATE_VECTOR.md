@@ -108,8 +108,9 @@ match code calls `P2P_PublishOpcode0E` with those literals (`0x7748B8`, `0x7A58D
 dispatch script event `0x160023` with the byte. The `instance + 0xC06` counter the
 per-phase tick sends is only the pending fallback
 (`docs/analysis/udp-handlers-and-senders.md` §5.2, §5.3). The two samples are then
-`0x00` and `0x07` as verdicts, not as a count; this host writes `0x04` for the
-clock, `0x05` for a side's ticket pool and `0x00` when it has neither. It does not
+`0x00` and `0x07` as verdicts, not as a count; this host writes the code the
+played rule gives the close: BASE's clock `0x01`; TDM's clock `0x04` and its
+ticket pool `0x05`; a rule or reason with no measured code `0x00`. It does not
 write `0x02`, which is the BASE judge's "all the bases are captured" verdict and
 shows that message over TDM.
 

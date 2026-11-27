@@ -143,7 +143,7 @@ public sealed class PlayerVitalsHandler(
             matchStart.End(
                 $"team {reached.Team}'s tickets reached zero at the round's {reached.Tickets}-ticket limit",
                 reached.ResultCode,
-                MatchRoundOverBodiesUtils.VerdictTickets);
+                RoundOverReason.Tickets);
         }
     }
 
