@@ -262,6 +262,79 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
+    /// Writes one peer the two state-0 transfers a round's close leaves behind it.
+    /// </summary>
+    /// <remarks>
+    /// <b>They follow the result write and are the same boundary's state.</b> The
+    /// first clears field 19, the round's own state, which the capture writes with
+    /// its round-over records (t+74.067, t+163.096); the second states field 0 at
+    /// <c>6</c> — the result screen's phase — and field 20 at the round, beside the
+    /// result write (t+74.571, t+163.597)
+    /// (<see cref="Rooms.RoundStateBodiesUtils.RoundEndTransfers"/>).
+    /// </remarks>
+    /// <param name="context">Context the records are written through.</param>
+    /// <param name="roundNumber">The round that closed, which field 20 carries.</param>
+    private async Task WriteRoundEndTransfersAsync(PeerContext context, int roundNumber)
+    {
+        foreach (var body in Rooms.RoundStateBodiesUtils.RoundEndTransfers(roundNumber))
+        {
+            try
+            {
+                await context.Send(
+                    UdpCommandConstants.RoomRecord,
+                    body,
+                    roster.TakeRunOrdinal());
+            }
+            catch (Exception exception)
+            {
+                logger.LogDebug(
+                    exception,
+                    "UDP {LocalPort}: a round-close state transfer to {RemoteAddress} was not sent",
+                    context.LocalPort,
+                    context.Remote);
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes one peer the two state-0 transfers the reference puts in front of a
+    /// round's state record.
+    /// </summary>
+    /// <remarks>
+    /// <b>They are the open's, and they are what a round's state record follows.</b>
+    /// `rounded-ended-by-reaching-tickets-limit` writes them at t+96.112 and
+    /// t+96.482, the pair the client answers at t+96.497 and the room's own state
+    /// record in the same frame as the second; before this host wrote them the
+    /// frame carried the room state alone
+    /// (<see cref="Rooms.RoundStateBodiesUtils.RoundOpenTransfers"/>).
+    /// </remarks>
+    /// <param name="context">Context the records are written through.</param>
+    /// <param name="roundNumber">The round the open is writing, which field 51 carries.</param>
+    private async Task WriteRoundOpenTransfersAsync(PeerContext context, int roundNumber)
+    {
+        foreach (var body in Rooms.RoundStateBodiesUtils.RoundOpenTransfers(roundNumber))
+        {
+            try
+            {
+                await context.Send(
+                    UdpCommandConstants.RoomRecord,
+                    body,
+                    roster.TakeRunOrdinal());
+            }
+            catch (Exception exception)
+            {
+                logger.LogDebug(
+                    exception,
+                    "UDP {LocalPort}: a round-open state transfer to {RemoteAddress} was not sent",
+                    context.LocalPort,
+                    context.Remote);
+                return;
+            }
+        }
+    }
+
+    /// <summary>
     /// Writes one peer the room's state record, read from the room's roster and
     /// round.
     /// </summary>

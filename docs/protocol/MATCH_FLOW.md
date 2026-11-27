@@ -180,7 +180,15 @@ The model this file supports, and that the host now follows:
   different rule or map";
 - a round that is **not** its stage's last opens the next round on its screens'
   measured 24.0 s pace (`MatchScreenTimingsUtils.RoundEndScreensMilliseconds`),
-  with a post-screen report that lands inside the stretch opening it at once. The
+  and the round it opens is answered on the client's answer to the lobby-slot
+  pair the open publishes: the state write goes out at the open, the pair
+  (`85 NN`/`86 NN`) follows it, and the run — the vector, the spawn record and the
+  clock — waits for the client's `82 NN`/`84 NN`. In the reference the pair is at
+  t+96.497, the echo at t+97.320 and the run burst 0.196 s later; its join report
+  at t+95.765 is the record the client sends on its way into the room, and the
+  `0x1001` `81 NN` beside it is the lobby-slot confirmation, not a round record.
+  A state written over a screen the client is still showing is a round it never
+  picks a weapon for and never spawns into. The
   capture measures the pace on a dedicated host: round 1's result at t+65.218 and
   the next round's full vector at t+88.163, 22.9 s later, with no client report in
   between. The 0.19 s in §66 is a client that reported inside the stretch, not a

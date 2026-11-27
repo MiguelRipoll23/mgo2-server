@@ -1,3 +1,4 @@
+using Mgo2Server.GameplayServer.Match;
 using Mgo2Server.Shared.Types;
 
 namespace Mgo2Server.GameplayServer.MatchRecords;
@@ -22,6 +23,18 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </remarks>
 public sealed partial class MatchStartRunService
 {
+    /// <summary>
+    /// The round the briefing now running precedes: the next round the room's own
+    /// rotation names. It is <c>null</c> while the room is not published.
+    /// </summary>
+    /// <remarks>
+    /// It reads the rotation directly rather than going through
+    /// <see cref="ReadRound"/> because the briefing polls it and a warning per poll
+    /// is noise; the round's own open logs it once.
+    /// </remarks>
+    private MatchRotationEntry? ReadBriefingRound() =>
+        matchSettings.FindPublished()?.Round(roundState.RoundNumber + 1);
+
     /// <summary>
     /// Writes the briefing's own run to a peer once the briefing has heard a
     /// report and the dwell behind the peer's entry has been spent, and returns

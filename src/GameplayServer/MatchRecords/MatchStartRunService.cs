@@ -193,6 +193,37 @@ public sealed partial class MatchStartRunService(
     private Rooms.RoomState CurrentRoomState => roundState.State(roster.IsSolo);
 
     /// <summary>
+    /// The peers a run worker is already running for.
+    /// </summary>
+    private readonly HashSet<PeerSession> writing = [];
+
+    /// <summary>
+    /// Starts writing the round's opening run to a peer, once. A joining client
+    /// re-sends its profile while it waits for the roster and every one of those
+    /// answers reaches this service; only the first starts the worker, and the
+    /// worker goes on to serve every round the room opens.
+    /// </summary>
+    /// <param name="context">Context of the message the join was answered through.</param>
+    public void Start(PeerContext context)
+    {
+        lock (gate)
+        {
+            if (!writing.Add(context.Session))
+            {
+                return;
+            }
+        }
+
+        BeginBriefingForEntry();
+
+        logger.LogDebug(
+            "UDP {LocalPort}: watching for rounds to open for {RemoteAddress}",
+            context.LocalPort,
+            context.Remote);
+        _ = RunAsync(context);
+    }
+
+    /// <summary>
     /// Opens the room's round, under the identifier set a report arrived on.
     /// </summary>
     /// <param name="generation">The set the round plays under.</param>

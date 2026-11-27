@@ -17,6 +17,23 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class MatchStartRunService
 {
     /// <summary>
+    /// Join reports the room has heard, counted since the process started.
+    /// </summary>
+    private int joinReportCount;
+
+    /// <summary>Join reports the room has heard, counted since the process started.</summary>
+    public int JoinReportCount
+    {
+        get
+        {
+            lock (gate)
+            {
+                return joinReportCount;
+            }
+        }
+    }
+
+    /// <summary>
     /// The peers that have sent the report they send *after* the briefing's
     /// closing zero, which is the one a player sends leaving its briefing screen.
     /// </summary>
@@ -124,7 +141,6 @@ public sealed partial class MatchStartRunService
             lock (gate)
             {
                 roundDeparted.Add(reporter);
-                resultScreenReports++;
                 reportedForNextRound = roundDeparted.Count;
             }
 

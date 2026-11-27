@@ -23,34 +23,6 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// </remarks>
 public sealed partial class MatchStartRunService
 {
-    private readonly HashSet<PeerSession> writing = [];
-
-    /// <summary>
-    /// Starts writing the round's opening run to a peer, once. A joining client
-    /// re-sends its profile while it waits for the roster and every one of those
-    /// answers reaches this service; only the first starts the worker, and the
-    /// worker goes on to serve every round the room opens.
-    /// </summary>
-    /// <param name="context">Context of the message the join was answered through.</param>
-    public void Start(PeerContext context)
-    {
-        lock (gate)
-        {
-            if (!writing.Add(context.Session))
-            {
-                return;
-            }
-        }
-
-        BeginBriefingForEntry();
-
-        logger.LogDebug(
-            "UDP {LocalPort}: watching for rounds to open for {RemoteAddress}",
-            context.LocalPort,
-            context.Remote);
-        _ = RunAsync(context);
-    }
-
     /// <summary>
     /// Writes a peer's runs, one per round the room opens, for as long as the
     /// peer is there.
@@ -77,12 +49,12 @@ public sealed partial class MatchStartRunService
                 // nobody asked for. The wait is the peer's own lifetime, because
                 // a briefing lasts as long as the players in it take.
                 //
-                // The report count is taken before the wait: the report that opens
-                // the round is the one the run follows, and a report heard while
-                // the result screens ran is already that report (OnJoinReport).
-                // Counting after the open made every next round wait ten seconds
-                // for a second report the client had already sent.
-                var reportsHeard = ReportsHeard;
+                // The echo count is taken before the wait: the client echoes the
+                // lobby-slot pair on its way into the room, and every run in every
+                // capture follows that echo (BRIEFING_FLOW.md §2). Counting it after
+                // the open counted the echo the run was already waiting on.
+                var echoesHeard = ArrayEchoesHeard(context.Remote.ToString());
+
                 await roundState.WaitForOpenAsync(session, MatchRoundStateService.WaitWhilePeerIsThere);
                 if (!roundState.IsOpen)
                 {
@@ -108,18 +80,26 @@ public sealed partial class MatchStartRunService
                 var round = roundState.RoundNumber;
                 var generation = roundState.Generation;
 
-                // **The state write is the open's, not the report's.** The client's
-                // wait screen ends on it and it shows the weapon select from there;
-                // the capture writes it at t+146.007, 0.82 s before the client's
-                // report and 1.64 s before the run. Written behind the report it
-                // left the client waiting on a screen that had not been told the
-                // round exists, so no weapon-select report ever came.
+                // **The state goes out at the open and the run behind the client's
+                // echo.** Both captures write the same order whether the round follows
+                // a briefing or the result screens: the state first, because it is
+                // what puts the client on its weapon select (`briefing-then-solo-game`
+                // t+146.007), and the run only once the client has echoed the
+                // lobby-slot pair on its way into the room (`rounded-ended-by-reaching-
+                // tickets-limit`: state t+96.112, pair t+96.497, echo t+97.320, run
+                // t+97.516; the briefing's own open is echoed at t+146.831 and its run
+                // follows at t+147.650). Written on the report instead the run reaches
+                // a client that has not asked to be placed, and the round it should
+                // spawn into is the one it does not have. The two state-0 transfers the
+                // reference writes ahead of the room's state record ride here too, so
+                // the frame reads the way its open does.
+                await WriteRoundOpenTransfersAsync(context, round);
                 await WriteRoomStateAsync(context);
+                await WaitForArrayEchoAsync(context, echoesHeard);
 
-                // The run waits for the report the client sends from its weapon
-                // select (report t+146.831, run t+147.650), and then for the rest of
-                // the open-to-run gap; the report alone is not enough (Spawn.cs).
-                await WaitForSpawnReportAsync(context, reportsHeard);
+                // The run waits for the client's answer to the pair the open
+                // published (echo t+97.320, run t+97.516), and then for the rest of
+                // the open-to-run gap; the echo alone is not enough (Spawn.cs).
                 await WriteRunAsync(context, generation);
 
                 // The room's phase, which a joining client's own state machine
@@ -137,11 +117,15 @@ public sealed partial class MatchStartRunService
                 // has no result of its own — only the one before it.
                 if (!roundState.IsOpen)
                 {
-                    // The result is the boundary's only record: the reference
-                    // writes nothing else here, and its screens are held by the
-                    // stopped clock the phase tick's clock writer keeps
-                    // re-stating (PublishRoundClockAsync).
+                    // The result, and the two state-0 transfers the capture writes
+                    // behind it: field 19 cleared with the round-over records and
+                    // field 0 at the result screen's own value with field 20 at the
+                    // round (t+74.067 and t+74.571 in the ticket-limit capture).
+                    // The screens that follow are held by the stopped clock the
+                    // phase tick's clock writer keeps re-stating
+                    // (PublishRoundClockAsync).
                     await results.WriteResultAsync(context, generation);
+                    await WriteRoundEndTransfersAsync(context, round);
                 }
             }
         }
@@ -163,18 +147,6 @@ public sealed partial class MatchStartRunService
             }
         }
     }
-
-    /// <summary>
-    /// The round the briefing now running precedes: the next round the room's own
-    /// rotation names. It is <c>null</c> while the room is not published.
-    /// </summary>
-    /// <remarks>
-    /// It reads the rotation directly rather than going through
-    /// <see cref="ReadRound"/> because the briefing polls it and a warning per poll
-    /// is noise; the round's own open logs it once.
-    /// </remarks>
-    private MatchRotationEntry? ReadBriefingRound() =>
-        matchSettings.FindPublished()?.Round(roundState.RoundNumber + 1);
 
     /// <summary>
     /// Writes one run — a round's, or the briefing's that precedes it — to a peer

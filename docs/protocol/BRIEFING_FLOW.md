@@ -338,6 +338,14 @@ t+147.650  OUT 0x1a54  01 60 09               the round clock, under 03
 `0x1a54 02 0d 03 00 00 00`, t+530.066, so the offset and the values are the
 host's own state and not a constant of the record.)
 
+**The two `0b 00 01` records are ten bytes each, and a room's first round holds no
+field 51.** They are `0b 00 01 00 00 00 00 00 00 00` and `0b 00 01 00 00 00 00 00
+00 01` — one field, the room's own, at the not-ready value and then at the
+transition — because that room has played no round yet. A round that follows one
+opens with the hold instead: `0b 00 01 20 00 00 00 00 08 07 01 02`, field 0 at `7`,
+field 13 at `1` and field 51 at the rounds played
+(`rounded-ended-by-reaching-tickets-limit` t+96.112).
+
 **The four fields are the unclaimed holders and clocks. [V]** A write's offset
 counts from the state base, two bytes before the block's own vector: the port's
 builder appends the `count` bytes at `[this+0x84] + offset`

@@ -113,6 +113,11 @@ public sealed partial class PlayerProfileHandler(
             // host answers `82 8c` with `85 8c`, and a host that answers with a
             // captured client's byte leaves the peer's exchange unconfirmed.
             var echoed = TeamArrayFramesUtils.SequenceOf(context.Message.Body);
+
+            // The pair the round's run is written behind is this answer: the run
+            // waits for a peer's echo past the count it opened at (Spawn.cs), and
+            // this is the only record that moves that count.
+            matchStart.NoteArrayEcho(context.Remote.ToString());
             roster.NotePairSequence(context.Remote.ToString(), echoed);
             var first = matchStart.OnRoomEntry(context);
 

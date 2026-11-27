@@ -97,7 +97,7 @@ public sealed partial class MatchStartRunService
             briefingGeneration = null;
             countStartedBriefing = null;
             joinReportCount = 0;
-            resultScreenReports = 0;
+            arrayEchoes.Clear();
             stageBriefingPending = false;
             stageBriefingNumber = 0;
         }
