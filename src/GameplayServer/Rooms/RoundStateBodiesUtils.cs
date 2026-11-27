@@ -211,6 +211,7 @@ public static class RoundStateBodiesUtils
         RoundStateField.Population => 1,
         RoundStateField.FollowsAnotherRound => 1,
         RoundStateField.RoundState => 2,
+        RoundStateField.RoundNumber => 1,
         RoundStateField.RoundsPlayed => 1,
         _ => throw new ArgumentOutOfRangeException(
             nameof(field),
