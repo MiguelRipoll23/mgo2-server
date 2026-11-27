@@ -10,4 +10,4 @@ resources:
 # GitOps was adopted; while it still reads `latest`, no sync is trustworthy.
 images:
   - name: ghcr.io/miguelripoll23/mgo2-server/mgo2-gate-lobby-server
-    newTag: 2d3e3a6a7e277efaf170df9fbbcb29b7fa21576a
+    newTag: 567c6544a280c6c32eee2ed1e6420e6996f442c4
