@@ -145,10 +145,68 @@ public sealed class JoinReportHandler(
         {
             await AnnounceBotsAsync(context);
 
-            // The publication goes out on every report and not only on the first: it
-            // is the host's answer to the report, and a client whose report changed
-            // nothing is still waiting to be answered.
-            await PublishAsync(context, generation);
+            // **A report inside a round is not a briefing's, and this publication
+            // is the briefing's.** It is the `0x1b06` player state per reporter and
+            // per bot — the row a client's briefing list is filled from — plus a
+            // `0x1ade` round payload behind them, carrying the round clock the
+            // briefing is held on (`BriefingRoundUnits`, which is the played round's
+            // stopped clock once one has ended). A round's boundary is not where
+            // that set goes out: the capture that plays two rounds back to back
+            // writes **no** `0x1b06` at all and exactly two `0x1ade` records over its
+            // whole 210 s — the report's own `e1` echo and the round's start
+            // (`rounded-ended-by-reaching-tickets-limit.pcapng`, t+97.610 to
+            // t+99.364). **[I]** a client handed the briefing's rows again as the
+            // second round opens is one the briefing its own flow built can claim,
+            // which is the screen this host writes them for; the capture refuses the
+            // records either way, so the set waits for the next briefing. The
+            // report's answer while a round plays is the join state above and the
+            // bare acknowledgement below, which are records of the round's own.
+            if (!roundState.IsOpen)
+            {
+                // The publication goes out on every report and not only on the first: it
+                // is the host's answer to the report, and a client whose report changed
+                // nothing is still waiting to be answered.
+                await PublishAsync(context, generation);
+            }
+            else
+            {
+                // **A report while a round plays is the client in the map for that
+                // round, and it is answered in this pass.** The capture answers the
+                // report itself before anything else — `e0 02 00 00 00` at t+99.364 —
+                // and the room's entries follow the run (t+99.547), never in front of
+                // it.
+                //
+                // **The entries are not written here.** They are the placement, and
+                // the client's phase is opened by the run: an opening set that lands
+                // after the entries is refused outright while the phase flag is set
+                // (`P2P_RunOpener_BuildAndSend`, `+0xc0`, MGO2.ELF), which is a round
+                // heard playing under a black screen with no body in it (live session
+                // of 2026-11-28, round 2). The run places the peer behind itself.
+                await context.Send(
+                    generation.MatchStartPayload,
+                    MatchStartBodiesUtils.MatchStartPayload(reported),
+                    0);
+            }
+        }
+        else
+        {
+            // **The report on the result screens is answered with the round's own
+            // record, and that answer is what the client's fade waits on.** A client
+            // that has finished its result screens sends the same join report again
+            // — it is leaving them for the weapon select and the spawn — and the
+            // capture answers each one where it lands, before any round opens:
+            // `rounded-ended-by-reaching-tickets-limit` writes one `0xe0` per
+            // reporting player at t+214.231 and opens the next round at t+215.632
+            // (`docs/analysis/join-stall-after-mode2.md` §57's cadence). This host
+            // used to answer the screens' report with the join state and the bare
+            // acknowledgement only, and the round's own record waited for the run
+            // behind the open: a client that reported before the open sat in the
+            // fade until its own deadline, then faded in on a round already playing
+            // (live session of 2026-11-28 00:50:54).
+            await context.Send(
+                generation.MatchStartPayload,
+                MatchStartBodiesUtils.MatchStartPayload(reported),
+                0);
         }
 
         if (!matchStart.OnJoinReport(context.Message.Type, player))

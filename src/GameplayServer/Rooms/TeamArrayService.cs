@@ -9,8 +9,9 @@ namespace Mgo2Server.GameplayServer.Rooms;
 
 /// <summary>
 /// Runs the lobby-slot array handshake: it answers the sequence a client echoed
-/// with the pair at that same sequence, then confirms it and publishes the pair
-/// under the next one.
+/// with the pair at that same sequence, then confirms it. The pair under the next
+/// sequence is its own call (<see cref="PublishNextPairAsync"/>), written at the
+/// moment the phase it opens puts it at.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -89,6 +90,14 @@ public sealed partial class TeamArrayService(
     private readonly HashSet<string> answeredEchoes = [];
 
     /// <summary>
+    /// The round each peer's player entries were last written for, by endpoint:
+    /// the entries are the spawn, so a round writes them once and not again when
+    /// the client's own placement request follows the round's own placement
+    /// (<see cref="PlaceOnceForRound"/>).
+    /// </summary>
+    private readonly Dictionary<string, int> placedRounds = [];
+
+    /// <summary>
     /// Answers a peer's re-sent lobby-slot echo with the pair under the sequence
     /// it named, and with nothing else.
     /// </summary>
@@ -143,10 +152,11 @@ public sealed partial class TeamArrayService(
     }
 
     /// <summary>
-    /// Answers the sequence a client echoed and then confirms it, publishing the
-    /// pair under the next one.
+    /// Answers the sequence a client echoed and then confirms it, returning the
+    /// sequence the pair is republished under.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <b>The pair at the echoed sequence comes first, and it is what the
     /// captures answer an echo with.</b> A client's <c>82 NN</c>/<c>84 NN</c> is
     /// met by <c>85 NN</c>/<c>86 NN</c> — the pair at the very sequence it named —
@@ -157,22 +167,50 @@ public sealed partial class TeamArrayService(
     /// confirmation alone, which is an answer to a sequence the client had not been
     /// given since it asked. `docs/analysis/udp-protocol-patterns.md` has the
     /// measured loop and the stall that is still unexplained.
+    /// </para>
+    /// <para>
+    /// <b>The next sequence's pair is not written here.</b> A round's open puts it
+    /// behind its two state transfers and not in front of them, because the
+    /// reference releases the client from its hold before the pair it is to echo is
+    /// published (<see cref="PublishNextPairAsync"/>); a briefing's opening writes
+    /// it in the same pass as before. What the confirmation names is still the next
+    /// sequence — the announcement group with it — so the caller has only the pair
+    /// left to publish.
+    /// </para>
     /// </remarks>
     /// <param name="context">Context of the answer being confirmed.</param>
     /// <param name="answered">Sequence the client answered.</param>
-    public async Task ConfirmAsync(PeerContext context, byte answered)
+    /// <param name="writeAnsweredPair">
+    /// Whether the pair at the answered sequence is written in front of the
+    /// confirmation. A round's open passes <c>false</c>: its client never sees a
+    /// pair at the sequence the confirmation names, and a pair written there is a
+    /// stale one it echoes back instead of advancing
+    /// (<see cref="PublishNextPairAsync"/>).
+    /// </param>
+    /// <returns>The sequence the pair is republished under, which the client answers next.</returns>
+    public async Task<byte> ConfirmAsync(
+        PeerContext context,
+        byte answered,
+        bool writeAnsweredPair = true)
     {
         // The echo names the pair the client wants, and the pair is written under
-        // that same sequence before anything advances it.
-        var (answeredTeams, answeredOccupancy) =
-            TeamArrayFramesUtils.BuildPair(answered, await lobbySlots.ReadAsync());
-        var answeredOrdinals = roster.TakeRunOrdinals(2);
-        await RosterRunSendUtils.SendAsync(
-            context,
-            [
-                new(UdpCommandConstants.RoomRecord, answeredTeams, answeredOrdinals[0]),
-                new(UdpCommandConstants.RoomRecord, answeredOccupancy, answeredOrdinals[1]),
-            ]);
+        // that same sequence before anything advances it — except at a round's open,
+        // where the capture's first record is the confirmation alone (`81 00` at
+        // t+15.933 and `81 01` at t+97.610 of
+        // `rounded-ended-by-reaching-tickets-limit`) and the next pair it shows a
+        // client is the one behind the hold and the release.
+        if (writeAnsweredPair)
+        {
+            var (answeredTeams, answeredOccupancy) =
+                TeamArrayFramesUtils.BuildPair(answered, await lobbySlots.ReadAsync());
+            var answeredOrdinals = roster.TakeRunOrdinals(2);
+            await RosterRunSendUtils.SendAsync(
+                context,
+                [
+                    new(UdpCommandConstants.RoomRecord, answeredTeams, answeredOrdinals[0]),
+                    new(UdpCommandConstants.RoomRecord, answeredOccupancy, answeredOrdinals[1]),
+                ]);
+        }
 
         var next = TeamArrayFramesUtils.NextSequence(answered);
         var run = TakeConfirmationRun(context, answered, next);
@@ -190,13 +228,37 @@ public sealed partial class TeamArrayService(
 
         await RosterRunSendUtils.SendAsync(context, run.Group);
 
-        var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(next, await lobbySlots.ReadAsync());
+        return next;
+    }
 
-        // The pair's two index bytes are the next two values of the roster
-        // exchange's counter, not a restarted 0 and 1: the counter is what tells
-        // the replay parser the two records are one pair, and a pair that
-        // restarted would carry numbers records before it have already taken
-        // (docs/GAMEPLAY_SERVER.md §7).
+    /// <summary>
+    /// Publishes the lobby-slot pair at the sequence the client is to answer next,
+    /// which is the one the confirmation it just read named.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It is written at the phase's own moment and not inside the
+    /// confirmation.</b> A round's open publishes it behind the two state transfers
+    /// that hold and then release the client: the reference confirms the sequence
+    /// the client answered (<c>81 01</c> at t+97.610), holds the room on field 0 at
+    /// <c>7</c> (t+97.960), releases it with <c>0</c> and <c>1</c> (t+98.330) and only
+    /// then writes <c>85 02</c>/<c>86 02</c> (t+98.345), which the client echoes at
+    /// t+99.168 (`rounded-ended-by-reaching-tickets-limit.pcapng`). A pair written
+    /// in the confirmation's own pass reaches a client the hold has not released yet.
+    /// </para>
+    /// <para>
+    /// <b>The pair's two index bytes are the next two values of the roster
+    /// exchange's counter</b>, not a restarted 0 and 1: the counter is what tells the
+    /// replay parser the two records are one pair, and a pair that restarted would
+    /// carry numbers records before it have already taken
+    /// (docs/GAMEPLAY_SERVER.md §7).
+    /// </para>
+    /// </remarks>
+    /// <param name="context">Context the pair is written to.</param>
+    /// <param name="sequence">Sequence the pair carries, from <see cref="ConfirmAsync"/>.</param>
+    public async Task PublishNextPairAsync(PeerContext context, byte sequence)
+    {
+        var (teams, occupancy) = TeamArrayFramesUtils.BuildPair(sequence, await lobbySlots.ReadAsync());
         var ordinals = roster.TakeRunOrdinals(2);
         var pair = new List<RosterRecord>
         {
@@ -207,7 +269,7 @@ public sealed partial class TeamArrayService(
         logger.LogDebug(
             "UDP {LocalPort}: publishing the lobby-slot arrays again at sequence {Sequence:x2} to {RemoteAddress}",
             context.LocalPort,
-            next,
+            sequence,
             context.Remote);
 
         await RosterRunSendUtils.SendAsync(context, pair);
@@ -271,6 +333,7 @@ public sealed partial class TeamArrayService(
         {
             confirmationRuns.Clear();
             answeredEchoes.Clear();
+            placedRounds.Clear();
         }
 
         ResetRepublished();
@@ -293,6 +356,7 @@ public sealed partial class TeamArrayService(
         lock (confirmationGate)
         {
             answeredEchoes.RemoveWhere(key => key.StartsWith($"{remoteAddress}:", StringComparison.Ordinal));
+            placedRounds.Remove(remoteAddress);
             ForgetRepublished(remoteAddress);
             if (confirmationRuns.Remove(remoteAddress))
             {

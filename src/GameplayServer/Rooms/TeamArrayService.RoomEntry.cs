@@ -107,6 +107,16 @@ public sealed partial class TeamArrayService
         var slots = await lobbySlots.ReadAsync();
         var roundIsOpen = roundState.IsOpen;
 
+        // **The entries are the spawn, and a round writes them once.** The round's
+        // opener writes them behind its run, because a client stops asking after
+        // its first join (`MatchStartRunService.PlacePeerInRoundAsync`); the
+        // client's own request then lands about a second behind that, and answering
+        // it with the entries again gave the live session of 2026-11-28 00:34 two
+        // bodies for the one player — two 19-record answers, at 00:34:07 and
+        // 00:34:08. The second answer in a round carries the pair alone.
+        var placesNow = roundIsOpen
+            && PlaceOnceForRound(context.Session.RemoteAddress, roundState.RoundNumber);
+
         // The pair opens the answer, under the sequence the request named, and
         // everything after it is the phase's: the captures' own order, measured in
         // the five answers named above.
@@ -133,7 +143,7 @@ public sealed partial class TeamArrayService
         // header: the entry and the close that follow them in a round are the
         // round's records, and a peer still being briefed that is handed the entry
         // leaves the briefing for a round that has not opened (the remarks above).
-        if (roundIsOpen)
+        if (placesNow)
         {
             // One entry per player in the room, and not only the asking peer's.
             // The entry is what gives a player a body in the map, and the
@@ -176,7 +186,7 @@ public sealed partial class TeamArrayService
                     PlayerProfileRecordUtility.BuildRosterClose(),
                     roster.TakeRunOrdinal()));
         }
-        else
+        else if (!roundIsOpen)
         {
             // The countdown numbers itself on the stream its tick writes, so the
             // record the answer carries is one the client could have received a
@@ -215,11 +225,34 @@ public sealed partial class TeamArrayService
             run.Count,
             sequence,
             slots.Count,
-            roundIsOpen
-                ? "with the player's own entry"
-                : "with the briefing's countdown and the player's settings header");
+            !roundIsOpen
+                ? "with the briefing's countdown and the player's settings header"
+                : placesNow
+                    ? "with the player's own entry"
+                    : "with the pair alone, its entries already with it for this round");
 
         await RosterRunSendUtils.SendAsync(context, run);
+    }
+
+    /// <summary>
+    /// Whether this peer's player entries are to be written now, which is the
+    /// first time it is placed in a round.
+    /// </summary>
+    /// <param name="remoteAddress">Endpoint the peer is filed under.</param>
+    /// <param name="round">Round the entries belong to.</param>
+    /// <returns><c>true</c> when the round has not been placed for this peer yet.</returns>
+    private bool PlaceOnceForRound(string remoteAddress, int round)
+    {
+        lock (confirmationGate)
+        {
+            if (placedRounds.TryGetValue(remoteAddress, out var placed) && placed == round)
+            {
+                return false;
+            }
+
+            placedRounds[remoteAddress] = round;
+            return true;
+        }
     }
 
     /// <summary>

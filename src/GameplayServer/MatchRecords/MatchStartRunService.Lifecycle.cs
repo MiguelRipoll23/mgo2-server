@@ -321,8 +321,11 @@ public sealed partial class MatchStartRunService
                 return;
             }
 
+            // **A round keeps the set the round before it played under.** The reference
+            // runs `0x1250` through `0x00…0x17` and opens round 2 on `0x1250` again at
+            // t+97.960 (run `0x1254`); a round opened on the sibling is never read.
             var opened = OpenRound(
-                roundState.Generation.Sibling,
+                roundState.Generation,
                 "the result screens finished and the room's post-screen reports followed them");
             if (!opened)
             {

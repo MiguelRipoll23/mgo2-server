@@ -61,16 +61,18 @@ public sealed class BriefingOpeningPublishService(
         try
         {
             // The confirmation moves the client's array exchange on, and the pair it
-            // republishes is the room's membership as the briefing sees it.
+            // names is the room's membership as the briefing sees it. A briefing's
+            // opening writes that pair in the confirmation's own pass, which is where
+            // this host has written it here: it is a round's open, below, that puts it
+            // behind the release the reference holds its next round on.
             var sequence = roster.PairSequenceOf(context.Remote.ToString());
-            await teamArrays.ConfirmAsync(context, sequence);
+            var next = await teamArrays.ConfirmAsync(context, sequence);
+            await teamArrays.PublishNextPairAsync(context, next);
 
             // The pair the confirmation republishes is the one the briefing's run
             // names. Noting it here keeps the run from naming the sequence the
             // client has just answered while its echo of the next one is in flight.
-            roster.NotePairSequence(
-                context.Remote.ToString(),
-                TeamArrayFramesUtils.NextSequence(sequence));
+            roster.NotePairSequence(context.Remote.ToString(), next);
 
             var slots = await lobbySlots.ReadAsync();
             var records = new List<RosterRecord>(slots.Count);

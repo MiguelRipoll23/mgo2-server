@@ -348,6 +348,24 @@ public sealed partial class MatchStartRunService
     private async Task WriteRoomStateAsync(PeerContext context)
     {
         roundState.NoteSolo(roster.IsSolo);
+
+        // **The screens between two rounds are held on the stopped clock and on no
+        // room state at all.** `rounded-ended-by-reaching-tickets-limit` writes no
+        // field 0 at its boundary: its result transfer states the result once
+        // (`6`, t+74.571) and the screens behind it carry the round's stopped clock
+        // every four seconds and nothing else until the next round's open writes
+        // `1` (t+96.482). Field 0 at `1` is a transition and not a phase — no
+        // capture holds a room on it for any stretch — so a phase tick that
+        // re-stated it through the whole hold put the client on a value it waits to
+        // leave, which is the fade it sat in through this room's screens (live
+        // session of 2026-11-28 00:42:40). The open's own write is beside this one
+        // and is unaffected: it states `1` once, in the frame that releases the
+        // client from its hold.
+        if (roundState.IsRoundEnding || roundState.IsStageEnding)
+        {
+            return;
+        }
+
         await WriteRoomStateAsync(context, CurrentRoomState);
     }
 

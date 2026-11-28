@@ -158,8 +158,9 @@ public sealed partial class MatchStartRunService
     }
 
     /// <summary>
-    /// Answers the peer's entry with the lobby-slot confirmation and the pair
-    /// under the next sequence, which is what a briefing ends on.
+    /// Answers the peer's entry with the lobby-slot confirmation, which is what a
+    /// briefing ends on, and returns the sequence the pair it is to echo next is
+    /// published under.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -182,6 +183,14 @@ public sealed partial class MatchStartRunService
     /// </para>
     /// </para>
     /// <para>
+    /// <b>The pair the client answers next is the caller's, not this pass's.</b>
+    /// A round's open publishes it behind the two state transfers that hold and
+    /// release the client, which is where the reference puts it, so the sequence is
+    /// returned rather than written here (<see cref="Rooms.TeamArrayService.ConfirmAsync"/>,
+    /// <see cref="Rooms.TeamArrayService.PublishNextPairAsync"/>). What is noted here
+    /// is the sequence itself, because the round's run names it.
+    /// </para>
+    /// <para>
     /// <b>A confirmation in the entry pass stops the client where it stands.</b>
     /// `myserver20.pcapng` is that: the echo at t+61.265 was answered 37 ms later
     /// with the pair, <c>81 f3</c>, the group and the pair at <c>f4</c> (twice, once
@@ -198,26 +207,36 @@ public sealed partial class MatchStartRunService
     /// </para>
     /// </remarks>
     /// <param name="context">Context of the peer whose entry is answered.</param>
-    private async Task ConfirmEntryAsync(PeerContext context)
+    /// <returns>
+    /// The sequence the pair the client answers next carries, or <c>null</c> when
+    /// this peer has no entry to confirm.
+    /// </returns>
+    private async Task<byte?> ConfirmEntryAsync(PeerContext context)
     {
         lock (gate)
         {
             if (!entrySequences.ContainsKey(context.Session))
             {
-                return;
+                return null;
             }
         }
 
+        // **The open writes the confirmation alone.** The reference's first record of
+        // a boundary is `81 NN` with no pair in front of it (`81 00` at t+15.933 and
+        // `81 01` at t+97.610 of `rounded-ended-by-reaching-tickets-limit`), and the
+        // pair the client echoes is the one behind the hold and the release, at
+        // `NN + 1`. Republishing the answered pair first hands the client a sequence
+        // it has already echoed: it echoes that one again and never asks to be
+        // placed, which is the round that starts with no body in the map.
         var sequence = roster.PairSequenceOf(context.Remote.ToString());
-        await teamArrays.ConfirmAsync(context, sequence);
+        var next = await teamArrays.ConfirmAsync(context, sequence, writeAnsweredPair: false);
 
         // The confirmation republishes the pair at the sequence after the one the
         // client answered, and the round's run names that same pair. Noting it here
         // is what keeps the run from falling back to the sequence the client has
         // just answered while its echo of the next one is still in flight.
-        roster.NotePairSequence(
-            context.Remote.ToString(),
-            Rooms.TeamArrayFramesUtils.NextSequence(sequence));
+        roster.NotePairSequence(context.Remote.ToString(), next);
+        return next;
     }
 
     /// <summary>

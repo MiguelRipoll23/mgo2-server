@@ -57,4 +57,22 @@ public static class MatchScreenTimingsUtils
     /// How long a stage's result screens run before its next briefing may begin.
     /// </summary>
     public const int StageEndMilliseconds = 44_800;
+
+    /// <summary>
+    /// Gap between a round's announcement (<c>81 NN</c>) and the transfers that
+    /// follow it at the open, measured at 0.35 s.
+    /// </summary>
+    /// <remarks>
+    /// The reference writes the open as a cadence and not as one burst:
+    /// <c>rounded-ended-by-reaching-tickets-limit</c> writes <c>81 01</c> at
+    /// t+97.610, the transfer block at t+97.960 and the release at t+98.330,
+    /// with the pair 0.015 s behind the release. A client handed all of it in one
+    /// datagram burst stays on its result screens, and the round plays to a fade.
+    /// </remarks>
+    public const int RoundOpenTransfersGapMilliseconds = 350;
+
+    /// <summary>
+    /// Gap between the open's transfers and its release, measured at 0.37 s.
+    /// </summary>
+    public const int RoundOpenReleaseGapMilliseconds = 370;
 }

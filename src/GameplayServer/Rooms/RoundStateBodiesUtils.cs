@@ -242,13 +242,13 @@ public static class RoundStateBodiesUtils
     /// plays on.
     /// </para>
     /// <para>
-    /// <b>A room's first round opens on the two plain phase values and no
-    /// hold.</b> <c>briefing-then-solo-game.pcapng</c> opens its round at
-    /// t+146.007 with two ten-byte records — <c>0b 00 01 00 00 00 00 00 00 00</c>
-    /// then <c>0b 00 01 00 00 00 00 00 00 01</c>, field 0 at <see cref="RoomState.NotReady"/>
-    /// and then at <see cref="RoomState.Transition"/> — and no field 51 at all,
-    /// because that room has played nothing. The hold pair belongs to the rounds
-    /// behind it, which is where the capture's <c>07 01 02</c> is read from.
+    /// <b>A room's first round opens on the plain phase value and no hold.</b>
+    /// <c>briefing-then-solo-game.pcapng</c> opens its round at t+146.007 with
+    /// <c>0b 00 01 00 00 00 00 00 00 00</c> — field 0 at
+    /// <see cref="RoomState.NotReady"/>, ten bytes and no field 51, because that
+    /// room has played nothing — and the room's own state record behind it states
+    /// <see cref="RoomState.Transition"/>. The hold pair belongs to the rounds behind
+    /// it, which is where the capture's <c>07 01 02</c> is read from.
     /// </para>
     /// </remarks>
     /// <param name="roundNumber">The round the open is writing, its stage's first being 1.</param>
@@ -257,11 +257,7 @@ public static class RoundStateBodiesUtils
     {
         if (roundNumber <= 1)
         {
-            return
-            [
-                TransferBody((RoundStateField.RoomState, (int)RoomState.NotReady)),
-                TransferBody((RoundStateField.RoomState, (int)RoomState.Transition)),
-            ];
+            return [TransferBody((RoundStateField.RoomState, (int)RoomState.NotReady))];
         }
 
         var played = Math.Clamp(roundNumber, 0, byte.MaxValue);

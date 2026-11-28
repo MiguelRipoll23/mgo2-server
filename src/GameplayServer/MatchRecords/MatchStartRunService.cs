@@ -265,16 +265,17 @@ public sealed partial class MatchStartRunService(
             return false;
         }
 
-        // The round opens its own streams. The run's three records take the first
-        // values of the operations stream and the beat's clocks go on from there —
-        // the recorded run carries 00 01 02 and its beat 03 — and the briefing's
-        // clock, which wrote under the same identifier, is behind this point. The
-        // item-box pair restarts with it, because the working host opens the group
-        // as one act (<see cref="MatchRecordGenerationUtils.OpenedStreams"/>). A
-        // round whose generation is the other one opens streams of its own, because
-        // the sibling bit is inside the keyed twelve
-        // (<see cref="MatchRecordSequenceService.StreamOf"/>).
-        sequences.Restart(generation);
+        // The round opens its own streams **at zero**. The run's three records take
+        // the first values of the operations stream and the beat's clocks go on from
+        // there — the recorded run carries 00 01 02 and its beat 03 — and the item-box
+        // pair restarts with it, because the working host opens the group as one act
+        // (<see cref="MatchRecordGenerationUtils.OpenedStreams"/>). It is a drop and
+        // not the guarded restart: the peer's handle for the round is new, so it
+        // expects zero whatever the briefing or the sibling round left the counter at
+        // (`rounded-ended-by-reaching-tickets-limit` runs 0x1250 through 0x00…0x17 and
+        // opens round 2 with 0x00). Left counting, the round's opening set is refused
+        // with everything behind it (<see cref="MatchRecordSequenceService.Forget"/>).
+        sequences.Forget(generation);
 
         // **A round begins with every player alive.** A hit this host landed in
         // the round that ended is held against the client's own reports until a

@@ -193,6 +193,32 @@ public sealed class MatchRecordSequenceService(ILogger<MatchRecordSequenceServic
     }
 
     /// <summary>
+    /// Drops a generation's own streams so the round that opens them starts at
+    /// <c>0x00</c>, whatever the briefing or the sibling round left them at.
+    /// </summary>
+    /// <remarks>
+    /// <b>A round's streams do rewind at its open: the peer's handle for the round is
+    /// new, so its expectation is zero.</b> <c>rounded-ended-by-reaching-tickets-limit</c>
+    /// runs the item-box stream <c>0x1250</c> through <c>0x00</c>…<c>0x17</c> in round 1
+    /// and opens round 2 with <c>0x00</c> again at t+97.960, and the round-2 run's
+    /// <c>0x1254</c> starts at <c>0x00</c> at t+99.364. A counter kept counting because
+    /// the stream was already known writes <c>0x12</c>… while the peer waits for
+    /// <c>0x00</c>, and the round's opening set is refused with everything behind it —
+    /// the 2026-11-28 01:16 live session, whose stream <c>0xa50</c> the client never
+    /// took past <c>0x11</c>. The roster is not one of these streams and keeps counting
+    /// across the boundary (<c>0x33</c>…<c>0x43</c> in the same capture).
+    /// </remarks>
+    /// <param name="generation">Generation whose streams the round opens.</param>
+    public void Forget(MatchRecordGenerationUtils generation)
+    {
+        ArgumentNullException.ThrowIfNull(generation);
+        foreach (var identifier in generation.OpenedStreams)
+        {
+            Forget(identifier);
+        }
+    }
+
+    /// <summary>
     /// Drops a stream's counter, because the room it belonged to has emptied.
     /// </summary>
     /// <remarks>

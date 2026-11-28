@@ -74,33 +74,61 @@ public sealed partial class MatchStartRunService
                 await scoreboard.PublishAsync(context);
 
                 // The briefing ends on the lobby-slot confirmation, which is
-                // written here and not at the entry (ConfirmEntryAsync).
-                await ConfirmEntryAsync(context);
+                // written here and not at the entry (ConfirmEntryAsync). The pair it
+                // names is the one the client answers next, and that pair is written
+                // behind the open's transfers rather than in the same pass.
+                var nextPairSequence = await ConfirmEntryAsync(context);
+
+                // **The open is paced like the capture's** (`81 NN` t+97.610, transfers
+                // t+97.960, release t+98.330): one burst leaves the client on its screens.
+                await Task.Delay(MatchScreenTimingsUtils.RoundOpenTransfersGapMilliseconds);
 
                 var round = roundState.RoundNumber;
                 var generation = roundState.Generation;
 
                 // **The state goes out at the open and the run behind the client's
-                // echo.** Both captures write the same order whether the round follows
-                // a briefing or the result screens: the state first, because it is
-                // what puts the client on its weapon select (`briefing-then-solo-game`
-                // t+146.007), and the run only once the client has echoed the
-                // lobby-slot pair on its way into the room (`rounded-ended-by-reaching-
-                // tickets-limit`: state t+96.112, pair t+96.497, echo t+97.320, run
-                // t+97.516; the briefing's own open is echoed at t+146.831 and its run
-                // follows at t+147.650). Written on the report instead the run reaches
-                // a client that has not asked to be placed, and the round it should
-                // spawn into is the one it does not have. The two state-0 transfers the
-                // reference writes ahead of the room's state record ride here too, so
-                // the frame reads the way its open does.
+                // echo.** Both captures write the state first (`briefing-then-solo-game`
+                // t+146.007, `rounded-ended-by-reaching-tickets-limit` t+96.482) and the
+                // run only once the pair is echoed (t+97.320 against t+97.516); the
+                // two state-0 transfers the reference writes ahead of the state ride in
+                // the same frame here.
                 await WriteRoundOpenTransfersAsync(context, round);
-                await WriteRoomStateAsync(context);
+
+                await Task.Delay(MatchScreenTimingsUtils.RoundOpenReleaseGapMilliseconds);
+
+                // **The open states the transition, not the round's start.** Both
+                // captures write field 0 at `1` in the frame that opens a round —
+                // `briefing-then-solo-game` t+146.007 and
+                // `rounded-ended-by-reaching-tickets-limit` t+96.482, the record
+                // behind the release transfer — and the round's own value (`4`, or
+                // `3` in a room of one) only appears later, in the phase tick.
+                await WriteRoomStateAsync(context, Rooms.RoomState.Transition);
+
+                // **The pair the client is to echo goes behind the release, not in
+                // front of it.** The reference confirms the sequence the client
+                // answered, holds the room on field 0 at `7`, releases it with `0`
+                // and `1`, and only then publishes `85 NN`/`86 NN` at the next
+                // sequence, which the client echoes
+                // (`rounded-ended-by-reaching-tickets-limit` t+97.610, 97.960,
+                // 98.330, 98.345 and the echo at 99.168). Written in the
+                // confirmation's own pass the pair reaches a client the hold has not
+                // released yet, and the echo this worker waits on is the one it must
+                // then still ask for.
+                if (nextPairSequence is { } nextPair)
+                {
+                    await teamArrays.PublishNextPairAsync(context, nextPair);
+                }
+
                 await WaitForArrayEchoAsync(context, echoesHeard);
 
                 // The run waits for the client's answer to the pair the open
                 // published (echo t+97.320, run t+97.516), and then for the rest of
                 // the open-to-run gap; the echo alone is not enough (Spawn.cs).
                 await WriteRunAsync(context, generation);
+
+                // And the round places the peer in the map behind its run, whether
+                // or not the client asks to be placed (Placement.cs).
+                await PlacePeerInRoundAsync(context, round);
 
                 // The room's phase, which a joining client's own state machine
                 // waits on: the round it is now playing, written behind its run

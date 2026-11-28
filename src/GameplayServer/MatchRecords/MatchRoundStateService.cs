@@ -130,11 +130,26 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
     /// the room holds one player or more.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <b>It is a state and not the round counter.</b> The value repeats while the
     /// phase it names lasts — a room of one plays a whole round on
     /// <see cref="Rooms.RoomState.RoundStartSolo"/> — where the counter moved at
     /// every round. The values and the flow they are written in are
     /// <see cref="Rooms.RoomState"/>'s.
+    /// </para>
+    /// <para>
+    /// <b>The screens between two rounds of one game are not a briefing.</b> A game
+    /// of several rounds is stated as consecutive identical rotation entries, and the
+    /// captures play those rounds back to back with no briefing between them
+    /// (<c>docs/protocol/MATCH_FLOW.md</c> §5), so the room states the boundary it is
+    /// passing through — <see cref="Rooms.RoomState.Transition"/>, the value the
+    /// reference writes as a round closes, in front of the next round's own — and not
+    /// <see cref="Rooms.RoomState.Briefing"/>. Read as a briefing there, the room body
+    /// a peer joining across that stretch is answered with tells its client the room
+    /// is on the screen a round is briefed on, which is the screen this host's
+    /// between-rounds briefing used to draw. A round that was its game's last is the
+    /// case that does brief, and it keeps <see cref="Rooms.RoomState.Briefing"/>.
+    /// </para>
     /// </remarks>
     /// <param name="solo">
     /// Whether the room holds one player and no bots, the roster's own count.
@@ -146,7 +161,9 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
         {
             if (!isOpen)
             {
-                return Rooms.RoomState.Briefing;
+                return hasRoundEnded && !lastRoundClosedGame
+                    ? Rooms.RoomState.Transition
+                    : Rooms.RoomState.Briefing;
             }
 
             return solo ? Rooms.RoomState.RoundStartSolo : Rooms.RoomState.RoundStart;
@@ -330,6 +347,23 @@ public sealed partial class MatchRoundStateService(ILogger<MatchRoundStateServic
             {
                 if (roundSettings is not { } settings || !isOpen)
                 {
+                    // **A round whose screens are up holds the clock it stopped
+                    // on.** The beat re-states the round's clock in every state
+                    // block it writes and the clock record re-sends it every four
+                    // seconds, and both read this value until the next round's
+                    // clock replaces it: `rounded-ended-by-reaching-tickets-limit`
+                    // writes `01 c7 07` from t+65.497 to t+85.495, unchanged. The
+                    // briefing's held value was read here instead, which is the
+                    // whole clock for a briefing and zero for a round whose
+                    // screens followed it — so every state block the screens
+                    // carried said the clock had run out, and the client drew a
+                    // clock still running against a round that had stopped (the
+                    // live session of 2026-11-28 00:34:53).
+                    if (roundScreensAt is not null || stageEndAt is not null)
+                    {
+                        return screensClockUnits;
+                    }
+
                     // The room is briefed and no round plays yet. The clock is
                     // still a clock: the reference holds it whole — the same
                     // value the briefing's own run carries — so the beat's
