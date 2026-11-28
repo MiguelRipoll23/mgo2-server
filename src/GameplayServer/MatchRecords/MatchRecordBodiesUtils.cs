@@ -129,26 +129,30 @@ public static class MatchRecordBodiesUtils
     public const int StateMatchResultIndex = 3;
 
     /// <summary>
-    /// The result code a side's win is written as: side <c>0</c> is the decoder's
-    /// code <c>2</c>, side <c>1</c> its code <c>3</c> and side <c>2</c> its code
-    /// <c>4</c>, since the coding names the game's own team ids and the room's rows
-    /// hold sides.
-    /// </summary>
-    /// <param name="team">Side the room's rows hold, 0, 1 or 2.</param>
-    /// <returns>The result code.</returns>
-    public static byte ResultCode(short team) =>
-        (byte)(StateResultTeamZero + team);
-
-    /// <summary>
-    /// The room's raw side a result code names: <c>2</c> is side <c>0</c>, <c>3</c>
-    /// side <c>1</c> and <c>4</c> side <c>2</c>, while the drawn and no-result codes
-    /// name no side.
+    /// The result code a side's win is written as, in the state block's own
+    /// numbering: team <c>0</c> is code <c>2</c>, team <c>1</c> code <c>3</c> and
+    /// team <c>2</c> code <c>4</c>.
     /// </summary>
     /// <remarks>
-    /// The codes carry the game's own team ids, which number the second side
-    /// <c>2</c>; the room's rows and <see cref="ResultCode"/> use <c>0</c> and
-    /// <c>1</c>, so the two are not the same numbering and a caller that read the
-    /// code as a team would put every second-side win on a side nobody is on.
+    /// <b>Measured in `rounded-ended-by-reaching-tickets-limit`.</b> Its round's
+    /// winner is raw team <c>1</c> and its ticket-limit result writes
+    /// <c>02 02 02 03 03</c> — <c>state[2] = 3</c> — so the code follows the raw
+    /// side in the <see cref="StateResultTeamZero"/> ladder rather than crossing
+    /// it. A crossing wrote raw team 1 as <c>2</c> and stepped raw team 0's count,
+    /// which is the live report of 2026-11-28.
+    /// </remarks>
+    /// <param name="team">Side the room's rows hold: blue <c>0</c>, red <c>1</c> or orange <c>2</c>.</param>
+    /// <returns>The result code.</returns>
+    public static byte ResultCode(short team) => (byte)(StateResultTeamZero + team);
+
+    /// <summary>
+    /// The room's raw side a result code names: <c>2</c> team <c>0</c>, <c>3</c>
+    /// team <c>1</c> and <c>4</c> team <c>2</c>, while the drawn and no-result
+    /// codes name no side.
+    /// </summary>
+    /// <remarks>
+    /// This is the inverse of <see cref="ResultCode"/> and the only place the state
+    /// block's numbering meets the room's. The team ids do not cross between them.
     /// </remarks>
     /// <param name="resultCode">Result code in the state block's own coding.</param>
     /// <returns>The raw team value the room's rows hold, or <c>null</c>.</returns>

@@ -1,3 +1,4 @@
+using Mgo2Server.Shared.Types;
 using Microsoft.Extensions.Logging;
 
 namespace Mgo2Server.GameplayServer.MatchRecords;
@@ -28,6 +29,22 @@ public sealed partial class MatchStartRunService
     /// report into it does not restart the stream the opening is numbering.
     /// </summary>
     private bool stageBriefingArmed;
+
+    /// <summary>
+    /// When each peer's stage-end opening was published: the instant the peer's
+    /// briefing screen is on the wire.
+    /// </summary>
+    /// <remarks>
+    /// <b>The opening is paced, and the client's report can beat it.</b> The
+    /// stage end confirms the array exchange, waits for the result screens' pace
+    /// and then states the briefing, so the map-loaded report that arrives inside
+    /// those three seconds is not a request for the round. What the report is owed
+    /// is the briefing's own run, and the round waits for the briefing's count to
+    /// close — the same count a room of one's round opens on. Opening on the
+    /// report instead put the client into the next stage's first round in the same
+    /// second as the briefing screen (live session of 2026-11-28 02:52:15).
+    /// </remarks>
+    private readonly Dictionary<PeerSession, DateTimeOffset> stageOpeningPublished = [];
 
     /// <summary>The stage-end briefing now armed, or zero before the first one.</summary>
     public int StageBriefingNumber
@@ -73,6 +90,33 @@ public sealed partial class MatchStartRunService
     /// has neither, which is the one case that is not timed at all.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Notes that a peer's stage-end opening is on the wire, so the peer's report
+    /// may open the round it precedes.
+    /// </summary>
+    /// <param name="session">Session the opening was written to.</param>
+    public void NoteStageOpeningPublished(PeerSession session)
+    {
+        lock (gate)
+        {
+            stageOpeningPublished[session] = DateTimeOffset.UtcNow;
+        }
+    }
+
+    /// <summary>
+    /// When a peer's stage-end opening was published, or <c>null</c> while it is
+    /// still being written.
+    /// </summary>
+    /// <param name="session">Session the opening belongs to.</param>
+    /// <returns>The instant the opening ended, or <c>null</c>.</returns>
+    private DateTimeOffset? StageOpeningPublishedAt(PeerSession session)
+    {
+        lock (gate)
+        {
+            return stageOpeningPublished.TryGetValue(session, out var instant) ? instant : null;
+        }
+    }
+
     /// <param name="afterStageScreens">
     /// Whether this briefing follows a completed stage, whose countdown and ready
     /// set are started again for it.
@@ -97,13 +141,22 @@ public sealed partial class MatchStartRunService
                 // writers before this briefing's own run is written.
                 roundState.ClearRunWrites();
                 stageBriefingNumber++;
+                stageOpeningPublished.Clear();
             }
 
             stageBriefingArmed = afterStageScreens;
             briefingNumber++;
             lastJoinReportIdentifier = null;
             briefingGeneration = null;
-            briefingReportInstant = null;
+
+            // **A stage-end briefing is already being waited on.** Its opening is
+            // written before any peer reports, so the dwell that spaces a joining
+            // client's run from its entry is counted from the opening and is spent
+            // by the report. The reference writes that run 0.32 s after the report
+            // (`rounded-ended-by-reaching-tickets-limit` t+212.886 and t+213.207);
+            // counting the dwell from the report puts it 2.5 s behind, on a screen
+            // the client has already drawn.
+            briefingReportInstant = afterStageScreens ? DateTimeOffset.UtcNow : null;
             countStartedBriefing = null;
         }
 
@@ -133,7 +186,17 @@ public sealed partial class MatchStartRunService
         // round's sibling, the set the client is already reading.
         if (afterStageScreens)
         {
-            BeginBriefingClock(roundState.Generation.Sibling);
+            // **The stage end continues the stream the client is reading.** The
+            // set is the closed round's sibling, which the client has been on for
+            // the whole round: its reader is past the sibling's opening values.
+            // Restarting that stream here rewinds the host to values the client
+            // has already consumed, so it refuses them, the reliable window fills
+            // with retries, and the stage-result screen never releases into the
+            // briefing (live session of 2026-11-28 03:49: the opening's state and
+            // count records repeated from ordinal 0x4b while the client's reader
+            // was at 0x74). A room's first briefing has no such reader and still
+            // opens the stream with `restartStreams: true`.
+            BeginBriefingClock(roundState.Generation.Sibling, restartStreams: false);
         }
 
         logger.LogDebug(
@@ -176,7 +239,7 @@ public sealed partial class MatchStartRunService
     /// The set the briefing's first report arrived on, whose operations stream the
     /// countdown is written on and restarted.
     /// </param>
-    private void BeginBriefingClock(MatchRecordGenerationUtils generation)
+    private void BeginBriefingClock(MatchRecordGenerationUtils generation, bool restartStreams = true)
     {
         var settings = matchSettings.FindPublished();
         if (settings is null)
@@ -193,7 +256,14 @@ public sealed partial class MatchStartRunService
         // report and not to the briefing's preparation, which happens before any
         // report names a set. The item boxes restart with it because the working host
         // opens them as one group (<see cref="MatchRecordGenerationUtils.OpenedStreams"/>).
-        sequences.Restart(generation);
+        //
+        // A stage-end briefing is the exception: the client is already on the
+        // sibling set and its reader is past those first values, so this one
+        // continues the stream instead of opening it again.
+        if (restartStreams)
+        {
+            sequences.Restart(generation);
+        }
 
         // The countdown goes to the peers the briefing is shown to, so it is armed
         // with it: a client waiting out its own briefing timer is told how much of

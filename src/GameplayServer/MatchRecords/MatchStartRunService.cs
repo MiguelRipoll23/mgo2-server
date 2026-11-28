@@ -98,6 +98,10 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 /// burst's, which is what keeps the pair consecutive and every record of that
 /// identifier in one ascending sequence.
 /// </param>
+/// <param name="botSimulation">
+/// The bots' simulation, whose bodies are returned to their spawns when a round
+/// opens.
+/// </param>
 /// <param name="logger">Logger of this service.</param>
 public sealed partial class MatchStartRunService(
     MatchRoundStateService roundState,
@@ -113,6 +117,7 @@ public sealed partial class MatchStartRunService(
     BriefingCountdownService countdown,
     MatchRecordSequenceService sequences,
     Gameplay.PlayerVitalsService vitals,
+    Bots.BotSimulationService botSimulation,
     ILogger<MatchStartRunService> logger)
 {
     /// <summary>
@@ -289,6 +294,11 @@ public sealed partial class MatchStartRunService(
         // are not this one's, and the scoreboard is a per-round board.
         score.Reset();
 
+        // **The bots come back to their spawns with the round.** Their bodies are
+        // kept from the round that ended, so without this a bot starts the next one
+        // where it was left and with the death the last round still owed it.
+        botSimulation.BeginRound();
+
         logger.LogInformation(
             "Opening round {RoundNumber} for the room: {OpenedBy}, so the round plays under that set",
             round,
@@ -363,6 +373,7 @@ public sealed partial class MatchStartRunService(
         lock (gate)
         {
             entered.Remove(session);
+            stageOpeningPublished.Remove(session);
             ForgetEntry(session);
         }
     }

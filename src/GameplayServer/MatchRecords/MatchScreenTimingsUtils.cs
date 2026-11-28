@@ -75,4 +75,18 @@ public static class MatchScreenTimingsUtils
     /// Gap between the open's transfers and its release, measured at 0.37 s.
     /// </summary>
     public const int RoundOpenReleaseGapMilliseconds = 370;
+
+    /// <summary>
+    /// Gap between a stage end's confirmation and the state pair that opens its
+    /// briefing, measured at 2.789 s.
+    /// </summary>
+    /// <remarks>
+    /// The reference writes <c>81 02</c> at t+207.448 and the two state transfers
+    /// at t+210.237 (<c>rounded-ended-by-reaching-tickets-limit</c>), with the
+    /// next-sequence group, the settings and the held count between them. A stage
+    /// end written as one burst puts the state pair in the same instant as the
+    /// confirmation, and the client that received it on 2026-11-28 02:40 answered
+    /// nothing from the confirmation onward.
+    /// </remarks>
+    public const int StageOpeningStateGapMilliseconds = 2_789;
 }

@@ -288,6 +288,18 @@ public static partial class MatchStartRunFramesUtils
             ? new MatchRecordFramesUtils.RecordMessage[] { new(generation.MatchStartMarker, []) }
             : []),
 
+        // **A briefing's run has no clock to put the answer behind.** The
+        // reference puts the stage-end briefing's report answer in front of its
+        // state block (`rounded-ended-by-reaching-tickets-limit` t+211.359:
+        // `1ade e0 02 00 00 00` then the 90-byte block). A round's run keeps its
+        // answer behind the clock, where the captures write it.
+        .. (answersReport && !carriesRoundState
+            ? new MatchRecordFramesUtils.RecordMessage[]
+            {
+                new(generation.MatchStartPayload, MatchStartBodiesUtils.MatchStartPayload(reported)),
+            }
+            : []),
+
         // The operations stream's state block and the short record behind it,
         // ahead of the arrays: the order both captures write them in.
         new(

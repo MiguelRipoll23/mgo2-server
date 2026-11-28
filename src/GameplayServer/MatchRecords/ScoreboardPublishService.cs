@@ -65,6 +65,14 @@ public sealed class ScoreboardPublishService(
     private int publishedRound;
 
     /// <summary>
+    /// Whether the round that is now the room's has yet to be told its sides'
+    /// starting tickets. A new round writes both panels at the limit, because the
+    /// client carries the count of the round that ended into the next one until a
+    /// ticket record moves it.
+    /// </summary>
+    private bool resetTicketsPending;
+
+    /// <summary>
     /// Copies of a delta still to be written: the reference writes each one four times,
     /// the copies 0.6 s apart (slot 11's kill at t+46.45 of <c>working-server-v2</c> is
     /// written again at 47.05, 47.63 and 48.30), so a client that missed the first still
@@ -105,6 +113,7 @@ public sealed class ScoreboardPublishService(
         {
             publishedRound = roundState.RoundNumber;
             publishedDeaths.Clear();
+            resetTicketsPending = true;
             lock (repeats)
             {
                 repeats.Clear();
@@ -228,18 +237,12 @@ public sealed class ScoreboardPublishService(
     /// <returns>The bodies to publish, one per side that moved.</returns>
     private async Task<IReadOnlyList<byte[]>> TicketRecordsAsync()
     {
+        var reset = resetTicketsPending;
+        resetTicketsPending = false;
+
         if (roundState.RoundSettings is not { Tickets: not null })
         {
             return [];
-        }
-
-        // A round's tickets start over with its score, so the cache is the round's
-        // and not the room's: the first death of a new round states the new count
-        // even when the number it reaches is one the previous round also held.
-        if (roundState.RoundNumber != publishedRound)
-        {
-            publishedRound = roundState.RoundNumber;
-            publishedDeaths.Clear();
         }
 
         // The count is the room body's own pair and not the bank's ticket word: the
@@ -252,7 +255,35 @@ public sealed class ScoreboardPublishService(
         // pair is only the fallback for a round whose entry states no limit.
         var limit = roundState.RoundSettings?.Tickets ?? RoomStateBodyConstants.TicketLimit;
         var bodies = new List<byte[]>(2);
-        foreach (var team in score.TeamScores(await lobbySlots.ReadAsync()))
+        var teams = score.TeamScores(await lobbySlots.ReadAsync());
+
+        // **A round that follows another writes both panels at its own limit.** The
+        // ticket record is what the panel counts down from, and the client keeps the
+        // last round's count until one moves it: a side that ended on zero showed
+        // zero through the next round's first death, where the panel stepped to nine
+        // from a number it had never been given. The room's first round needs no
+        // reset, because a fresh room's panel starts on the limit the room body
+        // states; a new stage's round one does, because it follows a played round
+        // and its number can be one again.
+        if (reset && roundState.HasRoundEnded)
+        {
+            foreach (var team in teams)
+            {
+                publishedDeaths[team.Team] = team.Deaths;
+                var remaining = Math.Max(0, limit - team.Deaths);
+                bodies.Add(TeamTicketBodiesUtils.Build(team.Team, remaining));
+                logger.LogDebug(
+                    "Round {RoundNumber} starts with {Remaining} of {Limit} ticket(s) for team {Team}",
+                    roundState.RoundNumber,
+                    remaining,
+                    limit,
+                    team.Team);
+            }
+
+            return bodies;
+        }
+
+        foreach (var team in teams)
         {
             // A side no death has touched is a side at zero, and zero is where the
             // cache starts: reading a missing entry as "already published" is what

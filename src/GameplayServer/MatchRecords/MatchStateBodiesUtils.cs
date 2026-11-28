@@ -322,13 +322,10 @@ public static class MatchStateBodiesUtils
     /// briefing seconds limit and the round clock.
     /// </summary>
     /// <remarks>
-    /// The round's result is opened as the sentinel, which is what a working
-    /// server writes at a round's open, and the match's is left at the zero a
-    /// fresh vector already holds — also what a working server writes. The two
-    /// are written together when a round decides the match, by
-    /// <see cref="MatchRecordBodiesUtils.StateMatchResultIndex"/>
-    /// (<c>docs/protocol/STATE_VECTOR.md</c> §3), and a match that is still
-    /// undecided is the zero.
+    /// The reference run opens `00 00 00 ff`: the first result byte zero and the
+    /// second the sentinel. Both are written together when a round decides the
+    /// match (<see cref="MatchRecordBodiesUtils.StateMatchResultIndex"/>,
+    /// `docs/protocol/STATE_VECTOR.md` §3).
     /// </remarks>
     /// <param name="stateOpcode">Opcode the operations stream uses for its state block.</param>
     /// <param name="roundClockUnits">Round clock the vector carries, in 125 ms units.</param>
@@ -341,7 +338,8 @@ public static class MatchStateBodiesUtils
             Array.Fill(vector, value, offset, length);
         }
 
-        vector[StateRoundResultIndex] = StateUnwritten;
+        vector[StateRoundResultIndex] = 0;
+        vector[StateLastRoundResultIndex] = StateUnwritten;
         vector[StateObjectiveHolderFirstIndex] = StateUnclaimed;
         vector[StateObjectiveHolderSecondIndex] = StateUnclaimed;
         vector[StateCaptureClockFirstIndex] = StateUnclaimed;

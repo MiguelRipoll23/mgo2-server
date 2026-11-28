@@ -72,14 +72,14 @@ public static class TeamTicketBodiesUtils
     public const int RemainingOffset = 9;
 
     /// <summary>
-    /// Code <c>3</c> at field 13, the first team's ticket word: the mask's low pair of
-    /// the third byte's second nibble.
+    /// Code <c>3</c> at field 13, the client's first ticket panel (blue): the
+    /// mask's low pair of the third byte's second nibble.
     /// </summary>
     public const byte FirstSide = 0x08;
 
     /// <summary>
-    /// Code <c>3</c> at field 15, the second team's ticket word: the top pair of the
-    /// same mask byte.
+    /// Code <c>3</c> at field 15, the client's second ticket panel (red): the top
+    /// pair of the same mask byte.
     /// </summary>
     public const byte SecondSide = 0x40;
 
@@ -94,6 +94,12 @@ public static class TeamTicketBodiesUtils
         var body = new byte[BodyLength];
         body[0] = PayloadType;
         body[1] = RoomSlot;
+
+        // **Measured, and the room's raw id does not cross here.**
+        // `game-with-bots-workingserver` writes `0x08` for raw team 0 and `0x40`
+        // for raw team 1 (this class's remarks), so each side keeps its place in
+        // the mask. A raw id written to the other field emptied the panel it was
+        // not playing on, which is the live report of 2026-11-28.
         body[SideOffset] = team == 0 ? FirstSide : SecondSide;
 
         var left = (ushort)Math.Clamp(remaining, 0, ushort.MaxValue);

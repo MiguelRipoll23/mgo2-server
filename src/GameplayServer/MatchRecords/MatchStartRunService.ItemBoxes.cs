@@ -3,7 +3,7 @@ using Mgo2Server.Shared.Types;
 namespace Mgo2Server.GameplayServer.MatchRecords;
 
 /// <summary>
-/// The item-box half of the round opener: the filler groups a fresh briefing's run
+/// The item-box half of the round opener: the filler groups a briefing's run
 /// writes behind itself, which the beat takes over once a round opens.
 /// </summary>
 /// <remarks>
@@ -14,8 +14,8 @@ namespace Mgo2Server.GameplayServer.MatchRecords;
 public sealed partial class MatchStartRunService
 {
     /// <summary>
-    /// The item-box filler groups a fresh briefing writes: the first riding the
-    /// run's own frame and the two behind it in datagrams of their own.
+    /// The item-box filler groups a briefing writes: the first riding the run's
+    /// own frame and the two behind it in datagrams of their own.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -41,9 +41,12 @@ public sealed partial class MatchStartRunService
     /// turns the beat's group over only once the round is open).
     /// </para>
     /// <para>
-    /// A room whose round has played keeps the full run and none of this: the
-    /// captured briefings that follow a round write no item-box group before their
-    /// round opens.
+    /// <b>A briefing that follows a played round writes the same filler.</b> The
+    /// stage-end screen is the same briefing screen, and the reference's stage-end
+    /// opening writes the item-box pair before its run
+    /// (`rounded-ended-by-reaching-tickets-limit.pcapng` t+210.237). The room has
+    /// spawned no box for the briefing, so it takes the filler the first round
+    /// takes rather than a spawned box's events.
     /// </para>
     /// <para>
     /// <b>They are built here and written behind the run, and the separation is
@@ -99,15 +102,12 @@ public sealed partial class MatchStartRunService
     /// <b>And a briefing's shape is the room's, not its rotation's.</b> The filler
     /// belongs to a room that has played no round here; a room that opens on a later
     /// entry of its rotation has played none of them, so its first briefing is a
-    /// fresh room's and takes
-    /// the filler — gating on the round number read that room as a room between
-    /// rounds and handed its briefing the spawned box of a round that never
-    /// played. A briefing handed a box's events is a briefing whose client is
-    /// told a round is under way and enters the game instead of drawing its
-    /// screen, which is the same mechanism the run's own round state has
+    /// fresh room's and takes the filler — gating on the round number read that room
+    /// as a room between rounds and handed its briefing the spawned box of a round
+    /// that never played. A briefing handed a box's events is a briefing whose
+    /// client is told a round is under way and enters the game instead of drawing
+    /// its screen, which is the same mechanism the run's own round state has
     /// (<see cref="MatchStartRunFramesUtils.BuildRun"/>, `carriesRoundState`).
-    /// A room that has played a round writes no group before the next round
-    /// opens, which is why the answer above is <c>null</c> and not the filler.
     /// </para>
     /// </remarks>
     /// <param name="generation">Identifier set of the run.</param>
@@ -121,11 +121,6 @@ public sealed partial class MatchStartRunService
     {
         if (briefing)
         {
-            if (roundState.HasRoundEnded)
-            {
-                return null;
-            }
-
             var groups = BuildItemBoxGroups(generation);
             run.AddRange(groups[0]);
             return groups;

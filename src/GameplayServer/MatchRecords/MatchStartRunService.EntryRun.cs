@@ -70,6 +70,7 @@ public sealed partial class MatchStartRunService
     private async Task WriteBriefingRunAsync(PeerContext context)
     {
         var session = context.Session;
+        var waitingOnStageOpening = 0;
 
         while (MatchRecordPeerUtils.IsAlive(session) && !roundState.IsOpen)
         {
@@ -100,6 +101,33 @@ public sealed partial class MatchStartRunService
             // has nothing to write one from.
             if (BriefingGeneration is not { } generation)
             {
+                await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
+                continue;
+            }
+
+            // **The stage-end briefing is paced by its opening and then follows
+            // the initial briefing's own path.** The opening states the room and
+            // holds the count before any peer reports; the report that arrives
+            // while it is being paced is the client's map-loaded state and not the
+            // round's request. Once the opening is out, the run, the room state
+            // behind it and the count's own zero are the ones a room's first
+            // briefing writes, and the round opens on that zero — never on the
+            // report that beat the opening, which put the client into the next
+            // stage's first round in the same second as the briefing screen (live
+            // session of 2026-11-28 02:52:15).
+            if (StageBriefingNumber > 0 && StageOpeningPublishedAt(session) is null)
+            {
+                if (waitingOnStageOpening != StageBriefingNumber)
+                {
+                    waitingOnStageOpening = StageBriefingNumber;
+                    logger.LogInformation(
+                        "UDP {LocalPort}: the stage-end briefing {BriefingNumber} is waiting for its "
+                        + "opening to reach {RemoteAddress}",
+                        context.LocalPort,
+                        StageBriefingNumber,
+                        context.Remote);
+                }
+
                 await Task.Delay(MatchRoundStateService.BriefingRunPollMilliseconds);
                 continue;
             }
@@ -147,7 +175,11 @@ public sealed partial class MatchStartRunService
 
             // The room's state while this peer is briefed: the value the room body
             // it joined with carries, so the state record and the room agree
-            // (Rooms.RoomState.Briefing).
+            // (Rooms.RoomState.Briefing). The stage-end briefing writes it here as
+            // well: its opening states the transition and the phase in front of the
+            // roster, and the run is followed by the same briefing state a room's
+            // first briefing writes, so both briefings leave the room on the value
+            // their run is drawn under.
             await WriteRoomStateAsync(context, Rooms.RoomState.Briefing);
 
             // The peer's own round state is not started here. It is the round's

@@ -114,7 +114,10 @@ public sealed partial class BriefingStateService(
     {
         get
         {
-            var members = roster.Snapshot();
+            // **The bots do not close a briefing.** A complete ready set is every
+            // *player* ready; bots ready the instant a briefing opens, which closed
+            // the stage-end briefing of 2026-11-28 01:31 in two seconds.
+            var members = roster.Snapshot().Where(member => !member.IsBot).ToList();
             if (members.Count == 0)
             {
                 return false;

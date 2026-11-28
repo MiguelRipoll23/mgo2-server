@@ -75,7 +75,9 @@ public static class MatchRoundOverBodiesUtils
     /// <returns>The side verdict, or <see cref="RoundOverVerdict.None"/>.</returns>
     private static RoundOverVerdict SideVerdict(byte? roundResult) =>
         roundResult is { } code && MatchRecordBodiesUtils.TeamOfResult(code) is { } team
-            ? team == 0 ? RoundOverVerdict.SideZero : RoundOverVerdict.SideOne
+            // The verdict's side 0 is the client's first side, red; the room's
+            // rows name that side 1, so the room's 0 is the verdict's side one.
+            ? team == 1 ? RoundOverVerdict.SideZero : RoundOverVerdict.SideOne
             : RoundOverVerdict.None;
 
     /// <summary>

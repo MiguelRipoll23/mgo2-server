@@ -100,8 +100,8 @@ public sealed partial class MatchStartRunService
             arrayEchoes.Clear();
             stageBriefingPending = false;
             stageBriefingNumber = 0;
+            stageOpeningPublished.Clear();
         }
-
         entered.Clear();
         entrySequences.Clear();
         entryAnswers.Clear();

@@ -189,11 +189,12 @@ public sealed partial class MatchStartRunService
     /// round that is already playing.
     /// </param>
     /// <param name="briefing">
-    /// Whether this is the run a briefing is answered with. A room that has not
-    /// played a round writes the briefing's own shape, without the round's clock,
-    /// its payload or its rules pair; a room whose round has played keeps the full
-    /// run, which is what the reference writes between one round and the next. The
-    /// room's stage and its close pair are written in both.
+    /// Whether this is the run a briefing is answered with. A briefing's run never
+    /// carries the round's clock, its payload or the second array pair, whether or
+    /// not a round has played: those records tell a client a round exists, and a
+    /// client told that while it is still being briefed enters the game instead of
+    /// showing the briefing screen. The room's stage and its close pair are written
+    /// in both shapes.
     /// </param>
     private async Task WriteRunCoreAsync(
         PeerContext context,
@@ -202,14 +203,12 @@ public sealed partial class MatchStartRunService
         int clockUnits,
         bool briefing)
     {
-        // A room's first briefing has no round behind it, so the run that answers
-        // it carries no round state. Writing the clock there is what told the client
-        // a round already existed and started it in the game instead of on the
-        // briefing screen; the reference host's fresh-room run
-        // (`mgo2-game-started-on-briefing` t+58.255) holds no clock, and a run with
-        // no round carries no payload or rules pair either. The room's stage and its
-        // close pair are the briefing's too (`briefing-then-solo-game` t+9.780).
-        var carriesRoundState = !briefing || roundState.HasRoundEnded;
+        // A briefing precedes a round and never carries one. Writing its clock is
+        // what told the client a round already existed, so it entered the game
+        // instead of showing the briefing screen — the reference's post-stage run
+        // (t+213.207) is the state block, `0f 00`, one array pair and the closes,
+        // with no 3-byte clock and no second pair.
+        var carriesRoundState = !briefing;
 
         var reported = briefingStates.TryGetReported(context.Session.RemoteAddress, out var value)
             ? value
@@ -265,7 +264,9 @@ public sealed partial class MatchStartRunService
             // pass that received it. A run that repeats that marker hands the
             // peer a second round start a few seconds after it entered
             // (`docs/analysis/join-stall-after-mode2.md` §26).
-            answersReport: !briefing);
+            // **A stage-end briefing's run answers the report; a room's first
+            // briefing's does not.** Its answer goes before its state block.
+            answersReport: !briefing || StageBriefingNumber > 0);
 
         logger.LogInformation(
             "UDP {LocalPort}: writing an opening run to {RemoteAddress}: {RecordCount} records, "
@@ -305,7 +306,7 @@ public sealed partial class MatchStartRunService
         // groups behind it, or a round's spawned box (`AddRunItemBoxes`).
         var itemBoxGroups = AddRunItemBoxes(generation, run, briefing);
 
-        await MatchRecordSendUtils.SendAsync(context, WithEntryAnswers(context.Session, run));
+        await MatchRecordSendUtils.SendAsync(context, WithEntryAnswers(context.Session, run, markerLeads: briefing && StageBriefingNumber > 0));
 
         if (itemBoxGroups is not null)
         {
@@ -373,15 +374,15 @@ public sealed partial class MatchStartRunService
                 context,
                 MatchStartRunFramesUtils.RepeatOf(generation, run));
 
-            // A fresh briefing's repeat carries the item-box groups again, numbered
-            // on from the run's own, and the pair goes on behind it for the stretch
+            // A briefing's repeat carries the item-box groups again, numbered on
+            // from the run's own, and the pair goes on behind it for the stretch
             // every capture holds before the briefing goes quiet
             // (ContinueItemBoxGroupsAsync).
             //
             // Its shape is the room's and not the round number's: a room staged
             // mid-rotation writes the filler and keeps writing it, and the two must
             // agree or the groups stop after the first tick (`AddRunItemBoxes`).
-            if (!wasOpen && !roundState.HasRoundEnded)
+            if (!wasOpen)
             {
                 await RepeatItemBoxGroupsAsync(context, generation);
                 await ContinueItemBoxGroupsAsync(context, generation);

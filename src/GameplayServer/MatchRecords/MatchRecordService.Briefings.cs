@@ -71,7 +71,17 @@ public sealed partial class MatchRecordService
     private async Task WatchStageBriefingsAsync(PeerContext context)
     {
         var session = context.Session;
-        var observed = matchStart.StageBriefingNumber;
+
+        // **A briefing already running when this watcher starts is still owed to
+        // the peer.** A peer that enters during the stage's result screens starts
+        // this watcher after the stage end may have numbered the briefing, and one
+        // that starts observing at that number never opens it: the client sits on
+        // its result screen while the run watcher waits for an opening that this
+        // watcher alone writes. Starting at zero lets the first pass see the
+        // briefing the room is already in, and the guards below keep a between-
+        // rounds join from opening one (only a stage's last round has a stage-end
+        // briefing).
+        var observed = 0;
 
         try
         {
@@ -91,12 +101,14 @@ public sealed partial class MatchRecordService
                 }
 
                 observed = current;
-                if (roundState.IsOpen || !roundState.HasRoundEnded)
+                if (roundState.IsOpen
+                    || !roundState.HasRoundEnded
+                    || !roundState.LastRoundClosedGame)
                 {
                     continue;
                 }
 
-                if (!StartStageBriefingWriters(context, current))
+                if (!await StartStageBriefingWritersAsync(context, current))
                 {
                     logger.LogDebug(
                         "UDP {LocalPort}: the stage-end briefing {BriefingNumber} begins while the writers "
@@ -124,11 +136,17 @@ public sealed partial class MatchRecordService
     /// <param name="context">Context the writers write through.</param>
     /// <param name="briefing">The stage-end briefing now beginning, for the log.</param>
     /// <returns><c>true</c> when a new pair of writers was started.</returns>
-    private bool StartStageBriefingWriters(PeerContext context, int briefing)
+    private async Task<bool> StartStageBriefingWritersAsync(PeerContext context, int briefing)
     {
-        // The opening is owed to every peer of the stage-end briefing, even one
-        // whose join-time writers are still waiting for this briefing's run.
-        _ = opening.PublishAsync(context);
+        // **The opening is owed to every peer of the stage-end briefing, and it is
+        // awaited.** Its paced records are what the client reads before its report
+        // opens the round, so the report's round run must not overtake them; the
+        // wait is also what lets this service note the instant the round may open
+        // (<see cref="MatchStartRunService.NoteStageOpeningPublished"/>). A peer
+        // whose join-time writers are still waiting for this briefing's run is
+        // served by them, but it is still owed the opening.
+        await opening.PublishAsync(context);
+        matchStart.NoteStageOpeningPublished(context.Session);
 
         lock (gate)
         {

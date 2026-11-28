@@ -110,13 +110,19 @@ public sealed partial class GameplayServerService
             matchStart.NoteEntryAnswers(session, entryAnswers);
         }
 
+        // **Every other record is answered, including a re-sent profile or join
+        // report.** A client whose window base is one of those records re-sends it
+        // and cannot move until it is answered; the handler's own reply is not an
+        // answer when it writes nothing (`0x9001` ordinal 49 of the live session of
+        // 2026-11-28 03:28:52), and the three filters that stood here let that copy
+        // go unanswered. The client then stopped acknowledging this host's
+        // operations stream at `0x1a54/24` and went quiet thirty seconds later.
+        // The array echo is the one exception: its answer is the run's opening pair
+        // and is held for it (`MatchStartRunService.NoteEntryAnswers`).
         var answers = frame.Messages
             .Where(PeerAcknowledgementUtils.WaitsForAcknowledgement)
             .Where(message => !TeamArrayFramesUtils.IsArrayEcho(message.Body))
             .Where(message => !IsJoinReport(message))
-            .Where(message =>
-                (message.Type & ~PeerAcknowledgementUtils.PayloadClassBit) != UdpCommandConstants.RoomRecord ||
-                PlayerProfileRecordParseUtils.Parse(message.Body) is not { Name.Length: > 0 })
             .Select(message => PeerAcknowledgementUtils.AcknowledgementOf(message, answerByte))
             .ToList();
         if (answers.Count == 0)

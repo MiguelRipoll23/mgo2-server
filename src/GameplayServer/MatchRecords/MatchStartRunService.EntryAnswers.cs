@@ -114,10 +114,17 @@ public sealed partial class MatchStartRunService
     /// </remarks>
     /// <param name="session">Session the run is written to.</param>
     /// <param name="run">The run as built.</param>
+    /// <param name="markerLeads">
+    /// Whether the run's own marker precedes the held answers. A stage-end
+    /// briefing's run does that in the reference — `rounded-ended-by-reaching-
+    /// tickets-limit` t+211.359 opens `0x5ade`, then the entry's `0xd001`/`0x5001`
+    /// answers, then the payload. A round's run keeps the answers in front.
+    /// </param>
     /// <returns>The run, opening on the held answers when the pair was heard.</returns>
     public List<MatchRecordFramesUtils.RecordMessage> WithEntryAnswers(
         PeerSession session,
-        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run)
+        IReadOnlyList<MatchRecordFramesUtils.RecordMessage> run,
+        bool markerLeads = false)
     {
         // The echo is a pair: `82 NN` on the team array and `84 NN` on the
         // occupancy one, each its own record. One heard on its own is a client
@@ -135,11 +142,13 @@ public sealed partial class MatchStartRunService
             return [.. run];
         }
 
-        return
-        [
-            .. held.Select(message =>
-                new MatchRecordFramesUtils.RecordMessage(message.Type, message.Body, message.Flags)),
-            .. run,
-        ];
+        var answers = held
+            .Select(message =>
+                new MatchRecordFramesUtils.RecordMessage(message.Type, message.Body, message.Flags))
+            .ToList();
+
+        return markerLeads && run.Count > 0
+            ? [run[0], .. answers, .. run.Skip(1)]
+            : [.. answers, .. run];
     }
 }
