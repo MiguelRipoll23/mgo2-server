@@ -41,7 +41,7 @@ internal static class RoomStateBodyConstants
     /// writes the room's configured cap, never below its population; this is the
     /// default's.
     /// </remarks>
-    internal const int DefaultMaximumCharacters = 15;
+    internal const int DefaultMaximumCharacters = 17;
 
     /// <summary>
     /// Body <c>0x4b</c>–<c>0x4c</c>: <c>0x00b4</c>, which the client writes itself.
